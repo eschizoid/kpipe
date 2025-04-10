@@ -12,17 +12,17 @@ import org.junit.jupiter.api.Test;
 
 class DslJsonMessageProcessorsTest {
 
-  // Use the same type as in the implementation class
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
 
   private static String normalizeJson(String json) {
-    try (final var input = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
-        final var output = new ByteArrayOutputStream()) {
+    try (
+      final var input = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
+      final var output = new ByteArrayOutputStream()
+    ) {
       final var parsed = DSL_JSON.deserialize(Map.class, input);
       DSL_JSON.serialize(parsed, output);
       return output.toString(StandardCharsets.UTF_8);
-    } catch (IOException e) {
-      // If parsing fails, return a consistent representation for invalid input
+    } catch (final IOException e) {
       return "{}";
     }
   }
@@ -31,7 +31,7 @@ class DslJsonMessageProcessorsTest {
   void testParseJsonValidJson() {
     // Arrange
     final var json =
-        """
+      """
                     {
                       "key":"value"
                     }
@@ -61,14 +61,13 @@ class DslJsonMessageProcessorsTest {
   @Test
   void testAddFieldValidJson() {
     // Arrange
-    final var json =
-        """
+    final var json = """
                   {
                     "key":"value"
                   }
                   """;
     final var expectedJson =
-        """
+      """
             {
               "key":"value",
               "newKey":"newValue"
@@ -80,8 +79,7 @@ class DslJsonMessageProcessorsTest {
     final var result = addField.apply(json.getBytes(StandardCharsets.UTF_8));
 
     // Assert
-    assertEquals(
-        normalizeJson(expectedJson), normalizeJson(new String(result, StandardCharsets.UTF_8)));
+    assertEquals(normalizeJson(expectedJson), normalizeJson(new String(result, StandardCharsets.UTF_8)));
   }
 
   @Test
@@ -142,7 +140,7 @@ class DslJsonMessageProcessorsTest {
     // Arrange
     final var emptyJson = "{}";
     final var expectedJson =
-        """
+      """
                       {
                         "newKey":"newValue"
                       }
@@ -153,8 +151,7 @@ class DslJsonMessageProcessorsTest {
     final var result = addField.apply(emptyJson.getBytes(StandardCharsets.UTF_8));
 
     // Assert
-    assertEquals(
-        normalizeJson(expectedJson), normalizeJson(new String(result, StandardCharsets.UTF_8)));
+    assertEquals(normalizeJson(expectedJson), normalizeJson(new String(result, StandardCharsets.UTF_8)));
   }
 
   @Test
@@ -194,7 +191,7 @@ class DslJsonMessageProcessorsTest {
   void testRemoveFields() {
     // Arrange
     final var json =
-        """
+      """
             {
               "field1":"value1",
               "field2":"value2",
@@ -202,8 +199,7 @@ class DslJsonMessageProcessorsTest {
             }
             """;
     final var removeFields = DslJsonMessageProcessors.removeFields("field1", "field3");
-    final var expected =
-        """
+    final var expected = """
             {
               "field2":"value2"
             }
@@ -213,15 +209,13 @@ class DslJsonMessageProcessorsTest {
     final var result = removeFields.apply(json.getBytes(StandardCharsets.UTF_8));
 
     // Assert
-    assertEquals(
-        normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
+    assertEquals(normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
   }
 
   @Test
   void testRemoveNonExistingFields() {
     // Arrange
-    final var json =
-        """
+    final var json = """
             {
               "field1":"value1"
             }
@@ -239,17 +233,18 @@ class DslJsonMessageProcessorsTest {
   void testTransformField() {
     // Arrange
     final var json =
-        """
+      """
             {
               "message":"hello",
               "count":5
             }
             """;
-    final var transformField =
-        DslJsonMessageProcessors.transformField(
-            "message", value -> value instanceof String ? ((String) value).toUpperCase() : value);
+    final var transformField = DslJsonMessageProcessors.transformField(
+      "message",
+      value -> value instanceof String ? ((String) value).toUpperCase() : value
+    );
     final var expected =
-        """
+      """
             {
               "message":"HELLO",
               "count":5
@@ -260,25 +255,25 @@ class DslJsonMessageProcessorsTest {
     final var result = transformField.apply(json.getBytes(StandardCharsets.UTF_8));
 
     // Assert
-    assertEquals(
-        normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
+    assertEquals(normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
   }
 
   @Test
   void testTransformNumericField() {
     // Arrange
     final var json =
-        """
+      """
             {
               "message":"hello",
               "count":5
             }
             """;
-    final var transformField =
-        DslJsonMessageProcessors.transformField(
-            "count", value -> value instanceof Number ? ((Number) value).intValue() * 2 : value);
+    final var transformField = DslJsonMessageProcessors.transformField(
+      "count",
+      value -> value instanceof Number ? ((Number) value).intValue() * 2 : value
+    );
     final var expected =
-        """
+      """
             {
               "message":"hello",
               "count":10
@@ -289,21 +284,18 @@ class DslJsonMessageProcessorsTest {
     final var result = transformField.apply(json.getBytes(StandardCharsets.UTF_8));
 
     // Assert
-    assertEquals(
-        normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
+    assertEquals(normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
   }
 
   @Test
   void testTransformNonExistingField() {
     // Arrange
-    final var json =
-        """
+    final var json = """
             {
               "message":"hello"
             }
             """;
-    final var transformField =
-        DslJsonMessageProcessors.transformField("nonExisting", value -> "transformed");
+    final var transformField = DslJsonMessageProcessors.transformField("nonExisting", value -> "transformed");
 
     // Act
     final var result = transformField.apply(json.getBytes(StandardCharsets.UTF_8));
@@ -315,14 +307,12 @@ class DslJsonMessageProcessorsTest {
   @Test
   void testMergeWith() {
     // Arrange
-    final var json =
-        """
+    final var json = """
             {
               "original":"value"
             }
             """;
-    final var mergeWith =
-        DslJsonMessageProcessors.mergeWith(Map.of("added1", "value1", "added2", 42));
+    final var mergeWith = DslJsonMessageProcessors.mergeWith(Map.of("added1", "value1", "added2", 42));
 
     // Act
     final var result = mergeWith.apply(json.getBytes(StandardCharsets.UTF_8));
@@ -337,8 +327,7 @@ class DslJsonMessageProcessorsTest {
   @Test
   void testMergeWithOverlappingKeys() {
     // Arrange
-    final var json =
-        """
+    final var json = """
             {
               "key":"originalValue"
             }

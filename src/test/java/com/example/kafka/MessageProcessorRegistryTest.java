@@ -34,8 +34,8 @@ class MessageProcessorRegistryTest {
   void shouldRegisterAndRetrieveProcessor() {
     // Arrange
     final var processorName = "testProcessor";
-    byte[] input = "input".getBytes();
-    byte[] output = "output".getBytes();
+    final var input = "input".getBytes();
+    final var output = "output".getBytes();
     Function<byte[], byte[]> testProcessor = message -> output;
 
     // Act
@@ -62,22 +62,23 @@ class MessageProcessorRegistryTest {
   void shouldComposeProcessorPipeline() {
     // Arrange
     registry.register(
-        "doubleKey",
-        message -> {
-          String json = new String(message);
-          return json.replace("key", "keykey").getBytes();
-        });
+      "doubleKey",
+      message -> {
+        String json = new String(message);
+        return json.replace("key", "keykey").getBytes();
+      }
+    );
 
     // Act
     Function<byte[], byte[]> pipeline = registry.pipeline("parseJson", "doubleKey");
 
-    final var result =
-        pipeline.apply(
-            """
+    final var result = pipeline.apply(
+      """
             {
               "key":"value"
             }
-            """.getBytes());
+            """.getBytes()
+    );
     final var resultJson = new String(result);
 
     // Assert
@@ -89,14 +90,13 @@ class MessageProcessorRegistryTest {
   void shouldCreatePipelineFromListOfProcessors() {
     // Arrange
     Function<byte[], byte[]> processor1 = message -> "test1-".getBytes();
-    Function<byte[], byte[]> processor2 =
-        message -> {
-          byte[] suffix = "suffix".getBytes();
-          byte[] result = new byte[message.length + suffix.length];
-          System.arraycopy(message, 0, result, 0, message.length);
-          System.arraycopy(suffix, 0, result, message.length, suffix.length);
-          return result;
-        };
+    Function<byte[], byte[]> processor2 = message -> {
+      byte[] suffix = "suffix".getBytes();
+      byte[] result = new byte[message.length + suffix.length];
+      System.arraycopy(message, 0, result, 0, message.length);
+      System.arraycopy(suffix, 0, result, message.length, suffix.length);
+      return result;
+    };
 
     // Act
     Function<byte[], byte[]> pipeline = registry.pipeline(List.of(processor1, processor2));
@@ -110,13 +110,14 @@ class MessageProcessorRegistryTest {
   @Test
   void shouldHandleErrorsGracefully() {
     // Arrange
-    Function<byte[], byte[]> processor =
-        message -> {
-          throw new RuntimeException("Test exception");
-        };
+    Function<byte[], byte[]> processor = message -> {
+      throw new RuntimeException("Test exception");
+    };
 
-    Function<byte[], byte[]> safeProcessor =
-        MessageProcessorRegistry.withErrorHandling(processor, "fallback".getBytes());
+    Function<byte[], byte[]> safeProcessor = MessageProcessorRegistry.withErrorHandling(
+      processor,
+      "fallback".getBytes()
+    );
 
     // Act
     final var result = safeProcessor.apply("any input".getBytes());
@@ -132,8 +133,11 @@ class MessageProcessorRegistryTest {
     Function<byte[], byte[]> falseProcessor = message -> "false".getBytes();
 
     // Act
-    Function<byte[], byte[]> conditionalProcessor =
-        MessageProcessorRegistry.when(message -> message.length > 5, trueProcessor, falseProcessor);
+    Function<byte[], byte[]> conditionalProcessor = MessageProcessorRegistry.when(
+      message -> message.length > 5,
+      trueProcessor,
+      falseProcessor
+    );
 
     // Assert
     final var longMessage = "123456".getBytes();

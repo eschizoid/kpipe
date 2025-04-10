@@ -1,5 +1,7 @@
 package com.example.kafka;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -9,8 +11,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -48,7 +48,8 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
  * @param <V> The type of Kafka record values
  */
 public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
-  private static final Logger LOGGER = Logger.getLogger(FunctionalKafkaConsumer.class.getName());
+
+  private static final Logger LOGGER = System.getLogger(FunctionalKafkaConsumer.class.getName());
 
   // Core components
   private final KafkaConsumer<K, V> consumer;
@@ -79,8 +80,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param <K> The type of Kafka record key
    * @param <V> The type of Kafka record value
    */
-  public record ProcessingError<K, V>(
-      ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
+  public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
 
   /**
    * Builder for creating instances of the {@link FunctionalKafkaConsumer} with a fluent interface.
@@ -101,6 +101,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param <V> The type of Kafka record values
    */
   public static class Builder<K, V> {
+
     private Properties kafkaProps;
     private String topic;
     private Function<V, V> processor;
@@ -226,8 +227,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param topic the topic to consume from
    * @param processor function to process each message
    */
-  public FunctionalKafkaConsumer(
-      final Properties kafkaProps, final String topic, Function<V, V> processor) {
+  public FunctionalKafkaConsumer(final Properties kafkaProps, final String topic, Function<V, V> processor) {
     this(kafkaProps, topic, processor, Duration.ofMillis(100));
   }
 
@@ -240,16 +240,16 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param pollTimeout duration to wait when polling for messages
    */
   public FunctionalKafkaConsumer(
-      final Properties kafkaProps,
-      final String topic,
-      final Function<V, V> processor,
-      final Duration pollTimeout) {
-    final var builder =
-        new Builder<K, V>()
-            .withProperties(kafkaProps)
-            .withTopic(topic)
-            .withProcessor(processor)
-            .withPollTimeout(pollTimeout);
+    final Properties kafkaProps,
+    final String topic,
+    final Function<V, V> processor,
+    final Duration pollTimeout
+  ) {
+    final var builder = new Builder<K, V>()
+      .withProperties(kafkaProps)
+      .withTopic(topic)
+      .withProcessor(processor)
+      .withPollTimeout(pollTimeout);
 
     this.consumer = createConsumer(Objects.requireNonNull(kafkaProps));
     this.topic = Objects.requireNonNull(topic);
@@ -296,18 +296,17 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   public void start() {
     consumer.subscribe(List.of(topic));
 
-    Thread.startVirtualThread(
-        () -> {
-          try {
-            while (running.get()) {
-              poll().ifPresent(this::processRecords);
-            }
-          } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Error in consumer thread", e);
-          } finally {
-            consumer.close();
-          }
-        });
+    Thread.startVirtualThread(() -> {
+      try {
+        while (running.get()) {
+          poll().ifPresent(this::processRecords);
+        }
+      } catch (Exception e) {
+        LOGGER.log(Level.ERROR, "Error in consumer thread", e);
+      } finally {
+        consumer.close();
+      }
+    });
   }
 
   /**
@@ -319,7 +318,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   public void pause() {
     if (paused.compareAndSet(false, true)) {
       consumer.pause(consumer.assignment());
-      LOGGER.info("Consumer paused for topic " + topic);
+      LOGGER.log(Level.INFO, "Consumer paused for topic %s".formatted(topic));
     }
   }
 
@@ -331,7 +330,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   public void resume() {
     if (paused.compareAndSet(true, false)) {
       consumer.resume(consumer.assignment());
-      LOGGER.info("Consumer resumed for topic " + topic);
+      LOGGER.log(Level.INFO, "Consumer resumed for topic %s".formatted(topic));
     }
   }
 
@@ -368,11 +367,10 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    */
   public Map<String, Long> getMetrics() {
     if (!enableMetrics) {
-      return Collections.emptyMap();
+      return Map.of();
     }
 
-    return metrics.entrySet().stream()
-        .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
+    return metrics.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
   }
 
   /**
@@ -392,7 +390,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   @Override
   public void close() {
     if (running.compareAndSet(true, false)) {
-      LOGGER.info("Shutting down consumer for topic " + topic);
+      LOGGER.log(Level.INFO, "Shutting down consumer for topic " + topic);
       consumer.wakeup();
       virtualThreadExecutor.close();
     }
@@ -418,8 +416,9 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param records batch of consumer records to process
    */
   protected void processRecords(final ConsumerRecords<K, V> records) {
-    StreamSupport.stream(records.records(topic).spliterator(), false)
-        .forEach(record -> virtualThreadExecutor.submit(() -> processRecord(record)));
+    StreamSupport
+      .stream(records.records(topic).spliterator(), false)
+      .forEach(record -> virtualThreadExecutor.submit(() -> processRecord(record)));
   }
 
   /**
@@ -431,8 +430,8 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
     try {
       final var records = consumer.poll(pollTimeout);
       return records.isEmpty() ? Optional.empty() : Optional.of(records);
-    } catch (Exception e) {
-      LOGGER.log(Level.WARNING, "Error during poll", e);
+    } catch (final Exception e) {
+      LOGGER.log(Level.INFO, "Error during poll", e);
       return Optional.empty();
     }
   }
@@ -457,7 +456,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
           metrics.get("messagesProcessed").incrementAndGet();
         }
         return; // Success
-      } catch (Exception e) {
+      } catch (final Exception e) {
         if (enableMetrics) {
           metrics.get("processingErrors").incrementAndGet();
           if (attempts > 0) {
@@ -470,11 +469,10 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
         // Last attempt failed
         if (attempts > maxRetries) {
           LOGGER.log(
-              Level.WARNING,
-              String.format(
-                  "Failed to process message at offset %d after %d attempts",
-                  record.offset(), attempts),
-              e);
+            Level.WARNING,
+            "Failed to process message at offset %d after %d attempts".formatted(record.offset(), attempts),
+            e
+          );
           errorHandler.accept(new ProcessingError<>(record, e, attempts - 1));
           break;
         }
@@ -497,9 +495,9 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param processed the processed message value
    */
   private void logProcessedMessage(final ConsumerRecord<K, V> record, V processed) {
-    LOGGER.info(
-        String.format(
-            """
+    LOGGER.log(
+      Level.INFO,
+      """
                     {
                       "topic": "%s",
                       "partition": %d,
@@ -507,7 +505,13 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
                       "key": "%s",
                       "processedMessage": "%s"
                     }
-                    """,
-            topic, record.partition(), record.offset(), record.key(), processed));
+                    """.formatted(
+          topic,
+          record.partition(),
+          record.offset(),
+          record.key(),
+          processed
+        )
+    );
   }
 }
