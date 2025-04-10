@@ -3,6 +3,8 @@ package com.example.kafka;
 import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.function.Function;
@@ -26,6 +28,8 @@ import java.util.function.Function;
  * }</pre>
  */
 public class DslJsonMessageProcessors {
+
+  private static final Logger LOGGER = System.getLogger(DslJsonMessageProcessors.class.getName());
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
   private static final byte[] EMPTY_JSON = "{}".getBytes(StandardCharsets.UTF_8);
 
@@ -80,12 +84,13 @@ public class DslJsonMessageProcessors {
    */
   public static Function<byte[], byte[]> addField(final String key, final String value) {
     return jsonBytes ->
-        processJson(
-            jsonBytes,
-            obj -> {
-              obj.put(key, value);
-              return obj;
-            });
+      processJson(
+        jsonBytes,
+        obj -> {
+          obj.put(key, value);
+          return obj;
+        }
+      );
   }
 
   /**
@@ -117,12 +122,13 @@ public class DslJsonMessageProcessors {
    */
   public static Function<byte[], byte[]> addTimestamp(final String fieldName) {
     return jsonBytes ->
-        processJson(
-            jsonBytes,
-            obj -> {
-              obj.put(fieldName, System.currentTimeMillis());
-              return obj;
-            });
+      processJson(
+        jsonBytes,
+        obj -> {
+          obj.put(fieldName, System.currentTimeMillis());
+          return obj;
+        }
+      );
   }
 
   /**
@@ -154,14 +160,15 @@ public class DslJsonMessageProcessors {
    */
   public static Function<byte[], byte[]> removeFields(final String... fields) {
     return jsonBytes ->
-        processJson(
-            jsonBytes,
-            obj -> {
-              for (String field : fields) {
-                obj.remove(field);
-              }
-              return obj;
-            });
+      processJson(
+        jsonBytes,
+        obj -> {
+          for (final String field : fields) {
+            obj.remove(field);
+          }
+          return obj;
+        }
+      );
   }
 
   /**
@@ -198,16 +205,19 @@ public class DslJsonMessageProcessors {
    * @return Function that transforms the specified field
    */
   public static Function<byte[], byte[]> transformField(
-      final String field, final Function<Object, Object> transformer) {
+    final String field,
+    final Function<Object, Object> transformer
+  ) {
     return jsonBytes ->
-        processJson(
-            jsonBytes,
-            obj -> {
-              if (obj.containsKey(field)) {
-                obj.put(field, transformer.apply(obj.get(field)));
-              }
-              return obj;
-            });
+      processJson(
+        jsonBytes,
+        obj -> {
+          if (obj.containsKey(field)) {
+            obj.put(field, transformer.apply(obj.get(field)));
+          }
+          return obj;
+        }
+      );
   }
 
   /**
@@ -245,12 +255,13 @@ public class DslJsonMessageProcessors {
    */
   public static Function<byte[], byte[]> mergeWith(final Map<String, Object> additionalJson) {
     return jsonBytes ->
-        processJson(
-            jsonBytes,
-            obj -> {
-              obj.putAll(additionalJson);
-              return obj;
-            });
+      processJson(
+        jsonBytes,
+        obj -> {
+          obj.putAll(additionalJson);
+          return obj;
+        }
+      );
   }
 
   /**
@@ -261,17 +272,25 @@ public class DslJsonMessageProcessors {
    * @return Serialized JSON bytes after processing
    */
   private static byte[] processJson(
-      final byte[] jsonBytes, final Function<Map<String, Object>, Map<String, Object>> processor) {
-    try (var input = new ByteArrayInputStream(jsonBytes);
-        var output = new ByteArrayOutputStream()) {
+    final byte[] jsonBytes,
+    final Function<Map<String, Object>, Map<String, Object>> processor
+  ) {
+    if (jsonBytes == null || jsonBytes.length == 0) {
+      return EMPTY_JSON;
+    }
+    try (final var input = new ByteArrayInputStream(jsonBytes); final var output = new ByteArrayOutputStream()) {
       final var parsed = DSL_JSON.deserialize(Map.class, input);
       if (parsed == null) {
         return EMPTY_JSON;
       }
       final var processed = processor.apply(parsed);
+      if (processed == null) {
+        return EMPTY_JSON;
+      }
       DSL_JSON.serialize(processed, output);
       return output.toByteArray();
     } catch (final Exception e) {
+      LOGGER.log(Level.WARNING, "Error processing JSON", e);
       return EMPTY_JSON;
     }
   }

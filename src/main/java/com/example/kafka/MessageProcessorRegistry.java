@@ -1,5 +1,7 @@
 package com.example.kafka;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
@@ -9,8 +11,6 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * A registry for managing and composing byte array message processors used in Kafka message
@@ -37,13 +37,15 @@ import java.util.logging.Logger;
  * </ul>
  */
 public class MessageProcessorRegistry {
-  private static final Logger LOGGER = Logger.getLogger(MessageProcessorRegistry.class.getName());
+
+  private static final Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
   private final ConcurrentHashMap<String, ProcessorEntry> registry = new ConcurrentHashMap<>();
   private final byte[] defaultErrorValue;
   private final String sourceAppName;
 
   /** Class to hold a processor and its metrics */
   private static class ProcessorEntry {
+
     final Function<byte[], byte[]> processor;
     long invocationCount = 0;
     long errorCount = 0;
@@ -60,7 +62,7 @@ public class MessageProcessorRegistry {
         invocationCount++;
         totalProcessingTimeNs += Duration.between(start, Instant.now()).toNanos();
         return result;
-      } catch (Exception e) {
+      } catch (final Exception e) {
         errorCount++;
         throw e;
       }
@@ -89,8 +91,7 @@ public class MessageProcessorRegistry {
    */
   public MessageProcessorRegistry(final String sourceAppName, byte[] defaultErrorValue) {
     this.sourceAppName = Objects.requireNonNull(sourceAppName, "Source app name cannot be null");
-    this.defaultErrorValue =
-        Objects.requireNonNull(defaultErrorValue, "Default error value cannot be null");
+    this.defaultErrorValue = Objects.requireNonNull(defaultErrorValue, "Default error value cannot be null");
 
     // Register default processors
     register("parseJson", DslJsonMessageProcessors.parseJson());
@@ -267,7 +268,9 @@ public class MessageProcessorRegistry {
    * @return A function that handles errors during processing
    */
   public static Function<byte[], byte[]> withErrorHandling(
-      final Function<byte[], byte[]> processor, final byte[] defaultValue) {
+    final Function<byte[], byte[]> processor,
+    final byte[] defaultValue
+  ) {
     return message -> {
       try {
         return processor.apply(message);
@@ -310,9 +313,10 @@ public class MessageProcessorRegistry {
    * @return A function that conditionally processes messages
    */
   public static Function<byte[], byte[]> when(
-      final Predicate<byte[]> condition,
-      final Function<byte[], byte[]> ifTrue,
-      final Function<byte[], byte[]> ifFalse) {
+    final Predicate<byte[]> condition,
+    final Function<byte[], byte[]> ifTrue,
+    final Function<byte[], byte[]> ifFalse
+  ) {
     Objects.requireNonNull(condition, "Condition predicate cannot be null");
     Objects.requireNonNull(ifTrue, "True-branch processor cannot be null");
     Objects.requireNonNull(ifFalse, "False-branch processor cannot be null");
@@ -365,15 +369,16 @@ public class MessageProcessorRegistry {
   public Map<String, Object> getMetrics(final String name) {
     final var entry = registry.get(name);
     if (entry == null) {
-      return Collections.emptyMap();
+      return Map.of();
     }
 
     final var metrics = new ConcurrentHashMap<String, Object>();
     metrics.put("invocationCount", entry.invocationCount);
     metrics.put("errorCount", entry.errorCount);
     metrics.put(
-        "averageProcessingTimeNs",
-        entry.invocationCount > 0 ? entry.totalProcessingTimeNs / entry.invocationCount : 0);
+      "averageProcessingTimeNs",
+      entry.invocationCount > 0 ? entry.totalProcessingTimeNs / entry.invocationCount : 0
+    );
 
     return metrics;
   }

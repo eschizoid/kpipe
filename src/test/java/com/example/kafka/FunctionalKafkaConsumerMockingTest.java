@@ -3,8 +3,8 @@ package com.example.kafka;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -25,11 +25,14 @@ class FunctionalKafkaConsumerMockingTest {
 
   private static final String TOPIC = "test-topic";
 
-  @Mock private Function<String, String> processor;
+  @Mock
+  private Function<String, String> processor;
 
-  @Mock private KafkaConsumer<String, String> mockConsumer;
+  @Mock
+  private KafkaConsumer<String, String> mockConsumer;
 
-  @Captor private ArgumentCaptor<List<String>> topicCaptor;
+  @Captor
+  private ArgumentCaptor<List<String>> topicCaptor;
 
   @Test
   void shouldSubscribeToTopic() {
@@ -39,7 +42,7 @@ class FunctionalKafkaConsumerMockingTest {
     consumer.start();
 
     verify(mockConsumer).subscribe(topicCaptor.capture());
-    assertEquals(Collections.singletonList(TOPIC), topicCaptor.getValue());
+    assertEquals(List.of(TOPIC), topicCaptor.getValue());
   }
 
   @Test
@@ -49,9 +52,8 @@ class FunctionalKafkaConsumerMockingTest {
 
     // Create mock records
     final var partition = new TopicPartition(TOPIC, 0);
-    final var recordsList =
-        Collections.singletonList(new ConsumerRecord<>(TOPIC, 0, 0L, "test-key", "test-value"));
-    final var records = new ConsumerRecords<>(Collections.singletonMap(partition, recordsList));
+    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, 0, 0L, "test-key", "test-value"));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create consumer with mock
     final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
@@ -60,13 +62,12 @@ class FunctionalKafkaConsumerMockingTest {
     final var latch = new CountDownLatch(1);
 
     // Combine both counting down the latch and returning a value
-    doAnswer(
-            invocation -> {
-              latch.countDown();
-              return "processed-value";
-            })
-        .when(processor)
-        .apply("test-value");
+    doAnswer(invocation -> {
+        latch.countDown();
+        return "processed-value";
+      })
+      .when(processor)
+      .apply("test-value");
 
     // Test
     consumer.executeProcessRecords(records);
@@ -83,19 +84,17 @@ class FunctionalKafkaConsumerMockingTest {
     final var latch = new CountDownLatch(1);
 
     // Configure mock to throw exception and count down latch
-    doAnswer(
-            invocation -> {
-              latch.countDown();
-              throw new RuntimeException("Test exception");
-            })
-        .when(processor)
-        .apply("test-value");
+    doAnswer(invocation -> {
+        latch.countDown();
+        throw new RuntimeException("Test exception");
+      })
+      .when(processor)
+      .apply("test-value");
 
     // Create mock records
     final var partition = new TopicPartition(TOPIC, 0);
-    final var recordsList =
-        Collections.singletonList(new ConsumerRecord<>(TOPIC, 0, 0L, "test-key", "test-value"));
-    final var records = new ConsumerRecords<>(Collections.singletonMap(partition, recordsList));
+    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, 0, 0L, "test-key", "test-value"));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create consumer with mock
     final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);

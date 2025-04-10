@@ -1,8 +1,10 @@
+# <img src="img/kpipe.png" width="100" height="100">
+
 # ☕ KPipe - A Modern Kafka Consumer
 
 A **modern, functional, and high-performance Kafka consumer** built using **Java 23** features like **virtual threads**,
-**Scoped Values**, and **composable message processors**. Ideal for large-scale systems and shared library use across
-multiple teams.
+**composable message processors**, and **DslJson** for JSON processing. Ideal for large-scale systems and shared library
+use across multiple teams.
 
 ---
 
@@ -13,11 +15,24 @@ multiple teams.
 - **Virtual Threads** for massive concurrency with minimal overhead.
 - **ScopedValue** for clean, immutable trace propagation (Coming!)
 
-### ♻️ Composable + Functional Design
-
-- Message processors are **pure functions** (`Function<byte[], byte[]>`) and easily **composed** using
-  `Function::andThen`.
-- Teams can **register their own processors** via config or code.
+- Message processors are **pure functions** (`Function<V, V>`) that transform data without side effects
+- Build complex pipelines through **function composition** using `Function::andThen` or the registry
+- **Declarative processing** lets you describe *what* to do, not *how* to do it
+- **Higher-order functions** enable conditional processing, retry logic, and error handling
+- Teams can **register their own processors** in a central registry via:
+  
+  ```java
+  // Register team-specific processors
+  MessageProcessorRegistry.register("sanitizeData", 
+      DslJsonMessageProcessors.removeFields("password", "ssn"));
+  
+  // Create pipelines from registered processors
+  var pipeline = MessageProcessorRegistry.pipeline(
+      "parseJson", "validateSchema", "sanitizeData", "addMetadata");
+      
+  // Apply transformations with built-in error handling and retry logic
+  consumer.withProcessor(pipeline).withRetry(3, Duration.ofSeconds(1)).start();
+  ```
 
 ### ⚡ High-Performance JSON Handling
 
@@ -28,6 +43,7 @@ multiple teams.
 
 - Built as a shared library that teams can use and extend.
 - **Register your own processors** in code or via configuration:
+
   ```java
   // Register custom processors for your team's needs
   MessageProcessorRegistry.register("extractMetadata", message -> {
@@ -37,22 +53,31 @@ multiple teams.
   
   // Load processors from configuration
   String[] configuredProcessors = config.getStringArray("message.processors");
-  Function<byte[], byte[]> pipeline = MessageProcessorRegistry.pipeline(configuredProcessors);
+  Function<V, V> pipeline = MessageProcessorRegistry.pipeline(configuredProcessors);
   
-  // Create team-specific processing pipeline
-  Function<byte[], byte[]> teamPipeline = MessageProcessorRegistry.pipeline(
-    "parseJson",
-    "validateSchema",
-    "extractMetadata",
-    "addTeamIdentifier"
-  );
+  // Create a consumer with team-specific processing pipeline
+  var consumer = new FunctionalKafkaConsumer.Builder<String, JsonObject>()
+      .withProperties(kafkaProps)
+      .withTopic("team-topic")
+      .withProcessor(MessageProcessorRegistry.pipeline(
+          "parseJson", 
+          "validateSchema",
+          "extractMetadata", 
+          "addTeamIdentifier"))
+      .withErrorHandler(error -> publishToErrorTopic(error))
+      .withRetry(3, Duration.ofSeconds(1))
+      .build();
   
   // Apply conditional processing based on message contents
-  Function<byte[], byte[]> smartPipeline = MessageProcessorRegistry.when(
-    msg -> new String(msg).contains("priority"),
-    MessageProcessorRegistry.get("highPriorityProcessor"),
-    MessageProcessorRegistry.get("standardProcessor")
-  );
+  Function<JsonObject, JsonObject> smartProcessor = msg -> {
+      if (msg.containsKey("priority") && "high".equals(msg.get("priority"))) {
+          return highPriorityProcessor.apply(msg);
+      }
+      return standardProcessor.apply(msg);
+  };
+  
+  // Use the processor in your consumer
+  consumer.start();
   ```
 
 ---
@@ -74,34 +99,57 @@ multiple teams.
 Extend the registry like this:
 
   ```java
-  // Register a custom processor for uppercase conversion
-  MessageProcessorRegistry.register("uppercase", jsonBytes ->
-          new String(jsonBytes).toUpperCase().getBytes());
+  // Register a processor for JSON field transformations
+  MessageProcessorRegistry.register("uppercase", message -> {
+      if (message instanceof JsonObject json) {
+          if (json.containsKey("text")) {
+              String text = json.getString("text");
+              json.put("text", text.toUpperCase());
+          }
+          return json;
+      }
+      return message;
+  });
   
-  // Register a processor that adds a custom field
-          MessageProcessorRegistry.register("addEnvironment",
-                                            DslJsonMessageProcessors.addField("environment", "production"));
+  // Register a processor that adds environment information
+  MessageProcessorRegistry.register("addEnvironment",
+      DslJsonMessageProcessors.addField("environment", "production"));
   
-  // Create a processor pipeline from registered processors
-  Function<byte[], byte[]> pipeline = MessageProcessorRegistry.pipeline(
-          "parseJson", "addEnvironment", "uppercase", "markProcessed"
+  // Create a reusable processor pipeline
+  var pipeline = MessageProcessorRegistry.pipeline(
+      "parseJson", "validateSchema", "addEnvironment", "uppercase", "addTimestamp"
   );
   
-  // Add error handling to your pipeline
-  Function<byte[], byte[]> safePipeline = MessageProcessorRegistry.withErrorHandling(
-          pipeline,
-          "{\"error\":\"Processing failed\"}".getBytes()
-  );
+  // Use the pipeline with a consumer
+  var consumer = new FunctionalKafkaConsumer.Builder<String, JsonObject>()
+      .withProperties(kafkaProps)
+      .withTopic("events")
+      .withProcessor(pipeline)
+      .withRetry(3, Duration.ofSeconds(1))
+      .build();
   
-  // Process messages with your pipeline
-  byte[] result = safePipeline.apply(rawMessage);
+  // Start processing messages
+  consumer.start();
+  
+  // Create a conditional processor for different message types
+  Function<JsonObject, JsonObject> routingProcessor = msg -> {
+      String type = msg.getString("type", "unknown");
+      return switch(type) {
+          case "order" -> orderProcessor.apply(msg);
+          case "payment" -> paymentProcessor.apply(msg);
+          default -> defaultProcessor.apply(msg);
+      };
+  };
+  
+  // Use the conditional processor
+  consumer.withProcessor(routingProcessor).start();
   ```
 
 ---
 
 ## 🛠️ Requirements
 
-- Java 23 (Preview/EA if not yet final)
+- Java 23+
 - Apache Kafka 3.0+
 - DslJson (via Maven or Gradle)
 
@@ -112,6 +160,9 @@ Extend the registry like this:
 ```bash
 java KafkaConsumerApp
 ```
+
+TODO
+- Add Dockerfile for easy deployment
 
 Kafka consumer will:
 
@@ -135,7 +186,6 @@ Kafka consumer will:
 This library is inspired by the best practices from:
 
 - [Project Loom](https://openjdk.org/projects/loom/)
-- [Reactive Design with Functional Java](https://www.baeldung.com/java-functional-programming)
 - [High-performance JSON libraries (DslJson, Jsoniter)](https://github.com/ngs-doo/dsl-json)
 
 ---

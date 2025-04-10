@@ -1,9 +1,9 @@
 plugins {
     id("java")
-    id("com.diffplug.spotless") version "6.21.0"
+    id("com.diffplug.spotless") version "7.0.3"
 }
 
-group = "org.example"
+group = "kpipe"
 version = "1.0-SNAPSHOT"
 
 repositories {
@@ -38,8 +38,23 @@ tasks.test {
 
 spotless {
     java {
-        target("src/**/*.java") // Target all Java files in the project
-        googleJavaFormat("1.17.0") // Use Google Java Format
+        target("src/**/*.java")
+        googleJavaFormat("1.26.0")
+        toggleOffOn()
+        importOrder()
+        removeUnusedImports()
+        prettier(
+            mapOf(
+                "prettier" to "2.8.8",
+                "prettier-plugin-java" to "2.1.0"
+            )
+        ).config(
+            mapOf(
+                "parser" to "java",
+                "tabWidth" to 2,
+                "printWidth" to 120
+            )
+        )
     }
 }
 
