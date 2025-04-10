@@ -7,6 +7,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -57,6 +58,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   private final Function<V, V> processor;
   private final ExecutorService virtualThreadExecutor;
   private final Duration pollTimeout;
+  private Thread consumerThread;
 
   // Error handling and retry
   private final Consumer<ProcessingError<K, V>> errorHandler;
@@ -206,7 +208,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    *
    * @param builder the builder containing configuration
    */
-  private FunctionalKafkaConsumer(final Builder<K, V> builder) {
+  public FunctionalKafkaConsumer(final Builder<K, V> builder) {
     this.consumer = createConsumer(Objects.requireNonNull(builder.kafkaProps));
     this.topic = Objects.requireNonNull(builder.topic);
     this.processor = Objects.requireNonNull(builder.processor);
@@ -296,17 +298,18 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   public void start() {
     consumer.subscribe(List.of(topic));
 
-    Thread.startVirtualThread(() -> {
-      try {
-        while (running.get()) {
-          poll().ifPresent(this::processRecords);
+    consumerThread =
+      Thread.startVirtualThread(() -> {
+        try {
+          while (running.get()) {
+            poll().ifPresent(this::processRecords);
+          }
+        } catch (Exception e) {
+          LOGGER.log(Level.ERROR, "Error in consumer thread", e);
+        } finally {
+          consumer.close();
         }
-      } catch (Exception e) {
-        LOGGER.log(Level.ERROR, "Error in consumer thread", e);
-      } finally {
-        consumer.close();
-      }
-    });
+      });
   }
 
   /**
@@ -389,10 +392,40 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    */
   @Override
   public void close() {
-    if (running.compareAndSet(true, false)) {
-      LOGGER.log(Level.INFO, "Shutting down consumer for topic " + topic);
-      consumer.wakeup();
-      virtualThreadExecutor.close();
+    if (isRunning()) {
+      running.set(false);
+
+      // First wake up the consumer to unblock any poll operation
+      if (consumer != null) {
+        consumer.wakeup();
+      }
+
+      // Wait for consumer thread to finish naturally
+      try {
+        if (consumerThread != null) {
+          consumerThread.join(5000);
+        }
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        LOGGER.log(Level.WARNING, "Interrupted while waiting for consumer thread to complete");
+      }
+
+      // Shutdown executor and wait for in-flight tasks
+      try {
+        virtualThreadExecutor.shutdown();
+        if (!virtualThreadExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+          LOGGER.log(Level.WARNING, "Not all processing tasks completed during shutdown");
+          virtualThreadExecutor.shutdownNow();
+        }
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        virtualThreadExecutor.shutdownNow();
+      }
+
+      // Now it's safe to close the consumer
+      if (consumer != null) {
+        consumer.close(Duration.ofSeconds(5));
+      }
     }
   }
 

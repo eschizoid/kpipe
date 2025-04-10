@@ -249,9 +249,9 @@ public class KafkaConsumerApp implements AutoCloseable {
       }
 
       LOGGER.log(
-              Level.WARNING,
-              "Drain timeout reached with {0} messages still in-flight",
-              (received - processed - errors)
+        Level.WARNING,
+        "Drain timeout reached with {0} messages still in-flight",
+        (received - processed - errors)
       );
       return false;
     } catch (InterruptedException e) {
