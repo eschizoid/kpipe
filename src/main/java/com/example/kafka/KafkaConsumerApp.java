@@ -1,7 +1,6 @@
 package com.example.kafka;
 
 import java.time.Duration;
-import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
@@ -37,8 +36,7 @@ public class KafkaConsumerApp {
   private final MessageProcessorRegistry registry;
 
   public KafkaConsumerApp(final String bootstrapServers, final String consumerGroup, String topic) {
-    Properties kafkaProps =
-        KafkaConfigFactory.createConsumerConfig(bootstrapServers, consumerGroup);
+    final var kafkaProps = KafkaConfigFactory.createConsumerConfig(bootstrapServers, consumerGroup);
 
     // Initialize the registry with application name
     this.registry = new MessageProcessorRegistry(getEnvOrDefault("APP_NAME", "kafka-consumer-app"));
