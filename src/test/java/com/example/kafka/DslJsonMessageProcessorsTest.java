@@ -16,9 +16,8 @@ class DslJsonMessageProcessorsTest {
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
 
   private static String normalizeJson(String json) {
-    try (ByteArrayInputStream input =
-            new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
-        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+    try (final var input = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
+        final var output = new ByteArrayOutputStream()) {
       final var parsed = DSL_JSON.deserialize(Map.class, input);
       DSL_JSON.serialize(parsed, output);
       return output.toString(StandardCharsets.UTF_8);
@@ -33,10 +32,10 @@ class DslJsonMessageProcessorsTest {
     // Arrange
     final var json =
         """
-                  {
-                    "key":"value"
-                  }
-                """;
+                    {
+                      "key":"value"
+                    }
+                    """;
     final var parseJson = DslJsonMessageProcessors.parseJson();
 
     // Act
@@ -64,10 +63,10 @@ class DslJsonMessageProcessorsTest {
     // Arrange
     final var json =
         """
-                {
-                  "key":"value"
-                }
-                """;
+                  {
+                    "key":"value"
+                  }
+                  """;
     final var expectedJson =
         """
             {
@@ -332,7 +331,6 @@ class DslJsonMessageProcessorsTest {
     // Assert
     assertEquals("value", resultMap.get("original"));
     assertEquals("value1", resultMap.get("added1"));
-    // Use numeric equality instead of object equality
     assertEquals(42, ((Number) resultMap.get("added2")).intValue());
   }
 

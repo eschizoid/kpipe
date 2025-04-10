@@ -52,7 +52,7 @@ class MessageProcessorRegistryTest {
     Function<byte[], byte[]> processor = registry.get("nonExistentProcessor");
 
     // Act
-    byte[] input = "test".getBytes();
+    final var input = "test".getBytes();
 
     // Assert
     assertArrayEquals(input, processor.apply(input));
@@ -78,7 +78,7 @@ class MessageProcessorRegistryTest {
               "key":"value"
             }
             """.getBytes());
-    String resultJson = new String(result);
+    final var resultJson = new String(result);
 
     // Assert
     assertEquals("""
@@ -101,7 +101,7 @@ class MessageProcessorRegistryTest {
     // Act
     Function<byte[], byte[]> pipeline = registry.pipeline(List.of(processor1, processor2));
 
-    byte[] result = pipeline.apply("input".getBytes());
+    final var result = pipeline.apply("input".getBytes());
 
     // Assert
     assertEquals("test1-suffix", new String(result));
@@ -119,7 +119,7 @@ class MessageProcessorRegistryTest {
         MessageProcessorRegistry.withErrorHandling(processor, "fallback".getBytes());
 
     // Act
-    byte[] result = safeProcessor.apply("any input".getBytes());
+    final var result = safeProcessor.apply("any input".getBytes());
 
     // Assert
     assertEquals("fallback", new String(result));
@@ -136,11 +136,11 @@ class MessageProcessorRegistryTest {
         MessageProcessorRegistry.when(message -> message.length > 5, trueProcessor, falseProcessor);
 
     // Assert
-    byte[] longMessage = "123456".getBytes();
+    final var longMessage = "123456".getBytes();
     assertArrayEquals("true".getBytes(), conditionalProcessor.apply(longMessage));
 
     // Test condition false
-    byte[] shortMessage = "1234".getBytes();
+    final var shortMessage = "1234".getBytes();
     assertArrayEquals("false".getBytes(), conditionalProcessor.apply(shortMessage));
   }
 

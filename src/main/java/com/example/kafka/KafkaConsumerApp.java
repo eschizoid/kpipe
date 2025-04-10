@@ -57,7 +57,7 @@ public class KafkaConsumerApp {
 
   private Function<byte[], byte[]> wrapWithMetrics(Function<byte[], byte[]> processor) {
     return message -> {
-      byte[] result = processor.apply(message);
+      final var result = processor.apply(message);
       MESSAGES_PROCESSED.incrementAndGet();
       return result;
     };

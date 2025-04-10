@@ -116,7 +116,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
      * @param props Kafka consumer configuration properties
      * @return this builder for method chaining
      */
-    public Builder<K, V> withProperties(Properties props) {
+    public Builder<K, V> withProperties(final Properties props) {
       this.kafkaProps = props;
       return this;
     }
@@ -127,7 +127,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
      * @param topic name of the Kafka topic
      * @return this builder for method chaining
      */
-    public Builder<K, V> withTopic(String topic) {
+    public Builder<K, V> withTopic(final String topic) {
       this.topic = topic;
       return this;
     }
@@ -138,7 +138,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
      * @param processor function that processes messages of type V
      * @return this builder for method chaining
      */
-    public Builder<K, V> withProcessor(Function<V, V> processor) {
+    public Builder<K, V> withProcessor(final Function<V, V> processor) {
       this.processor = processor;
       return this;
     }
@@ -149,7 +149,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
      * @param timeout duration to wait for poll operation
      * @return this builder for method chaining
      */
-    public Builder<K, V> withPollTimeout(Duration timeout) {
+    public Builder<K, V> withPollTimeout(final Duration timeout) {
       this.pollTimeout = timeout;
       return this;
     }
@@ -160,7 +160,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
      * @param handler consumer function that handles processing errors
      * @return this builder for method chaining
      */
-    public Builder<K, V> withErrorHandler(Consumer<ProcessingError<K, V>> handler) {
+    public Builder<K, V> withErrorHandler(final Consumer<ProcessingError<K, V>> handler) {
       this.errorHandler = handler;
       return this;
     }
@@ -172,7 +172,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
      * @param backoff duration to wait between retry attempts
      * @return this builder for method chaining
      */
-    public Builder<K, V> withRetry(int maxRetries, Duration backoff) {
+    public Builder<K, V> withRetry(final int maxRetries, final Duration backoff) {
       this.maxRetries = maxRetries;
       this.retryBackoff = backoff;
       return this;
@@ -184,7 +184,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
      * @param enable true to enable metrics, false to disable
      * @return this builder for method chaining
      */
-    public Builder<K, V> withMetrics(boolean enable) {
+    public Builder<K, V> withMetrics(final boolean enable) {
       this.enableMetrics = enable;
       return this;
     }
@@ -205,7 +205,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    *
    * @param builder the builder containing configuration
    */
-  private FunctionalKafkaConsumer(Builder<K, V> builder) {
+  private FunctionalKafkaConsumer(final Builder<K, V> builder) {
     this.consumer = createConsumer(Objects.requireNonNull(builder.kafkaProps));
     this.topic = Objects.requireNonNull(builder.topic);
     this.processor = Objects.requireNonNull(builder.processor);
@@ -447,7 +447,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
       metrics.get("messagesReceived").incrementAndGet();
     }
 
-    int attempts = 0;
+    var attempts = 0;
 
     while (attempts <= maxRetries) {
       try {
@@ -496,7 +496,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param record the original Kafka record
    * @param processed the processed message value
    */
-  private void logProcessedMessage(ConsumerRecord<K, V> record, V processed) {
+  private void logProcessedMessage(final ConsumerRecord<K, V> record, V processed) {
     LOGGER.info(
         String.format(
             """

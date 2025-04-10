@@ -57,24 +57,21 @@ class FunctionalKafkaConsumerTest {
 
   @Test
   void isRunningShouldReturnTrueAfterConstruction() {
-    try (FunctionalKafkaConsumer<String, String> consumer =
-        new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor)) {
+    try (final var consumer = new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor)) {
       assertTrue(consumer.isRunning());
     }
   }
 
   @Test
   void isRunningShouldReturnFalseAfterClose() {
-    FunctionalKafkaConsumer<String, String> consumer =
-        new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor);
+    final var consumer = new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor);
     consumer.close();
     assertFalse(consumer.isRunning());
   }
 
   @Test
   void closeCalledMultipleTimesShouldBeIdempotent() {
-    FunctionalKafkaConsumer<String, String> consumer =
-        new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor);
+    final var consumer = new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor);
     assertTrue(consumer.isRunning());
     consumer.close();
     assertFalse(consumer.isRunning());

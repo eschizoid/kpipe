@@ -114,9 +114,8 @@ public class MessageProcessorRegistry {
    *
    * @param name The unique name for the processor
    * @param processor The function that processes byte arrays
-   * @return This registry instance for method chaining
    */
-  public MessageProcessorRegistry register(final String name, Function<byte[], byte[]> processor) {
+  public void register(final String name, final Function<byte[], byte[]> processor) {
     Objects.requireNonNull(name, "Processor name cannot be null");
     Objects.requireNonNull(processor, "Processor function cannot be null");
 
@@ -124,9 +123,8 @@ public class MessageProcessorRegistry {
       throw new IllegalArgumentException("Processor name cannot be empty");
     }
 
-    ProcessorEntry entry = new ProcessorEntry(withErrorHandling(processor, defaultErrorValue));
+    final var entry = new ProcessorEntry(withErrorHandling(processor, defaultErrorValue));
     registry.put(name, entry);
-    return this;
   }
 
   /**
@@ -181,8 +179,8 @@ public class MessageProcessorRegistry {
    * @return The processor function, or identity function if not found
    */
   public Function<byte[], byte[]> get(final String name) {
-    ProcessorEntry entry = registry.get(name);
-    return entry != null ? input -> entry.execute(input) : Function.identity();
+    final var entry = registry.get(name);
+    return entry != null ? entry::execute : Function.identity();
   }
 
   /**
@@ -205,7 +203,7 @@ public class MessageProcessorRegistry {
    */
   public Function<byte[], byte[]> pipeline(final String... processorNames) {
     return message -> {
-      byte[] result = message;
+      var result = message;
       for (final String name : processorNames) {
         result = get(name).apply(result);
       }
@@ -343,7 +341,7 @@ public class MessageProcessorRegistry {
    * @return Unmodifiable map of all processor names and functions
    */
   public Map<String, Function<byte[], byte[]>> getAll() {
-    Map<String, Function<byte[], byte[]>> result = new ConcurrentHashMap<>();
+    final var result = new ConcurrentHashMap<String, Function<byte[], byte[]>>();
     registry.forEach((name, entry) -> result.put(name, entry::execute));
     return Collections.unmodifiableMap(result);
   }
@@ -365,12 +363,12 @@ public class MessageProcessorRegistry {
    * @return Map containing metrics or empty map if processor not found
    */
   public Map<String, Object> getMetrics(final String name) {
-    ProcessorEntry entry = registry.get(name);
+    final var entry = registry.get(name);
     if (entry == null) {
       return Collections.emptyMap();
     }
 
-    Map<String, Object> metrics = new ConcurrentHashMap<>();
+    final var metrics = new ConcurrentHashMap<String, Object>();
     metrics.put("invocationCount", entry.invocationCount);
     metrics.put("errorCount", entry.errorCount);
     metrics.put(

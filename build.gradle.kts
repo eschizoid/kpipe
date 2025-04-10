@@ -17,21 +17,19 @@ java {
 }
 
 dependencies {
-    // Kafka dependencies
+    // Kafka
     implementation("org.apache.kafka:kafka-clients:3.9.0")
 
-    // DSL-JSON library
+    // DSL-JSON
     implementation("com.dslplatform:dsl-json:2.0.2")
 
-    // JUnit 5 for testing
+    // JUnit 5
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
 
-    // Mockito dependencies with ByteBuddy
+    // Mockito
     testImplementation("org.mockito:mockito-core:5.17.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.17.0")
-    testImplementation("net.bytebuddy:byte-buddy:1.17.5")
-    testImplementation("net.bytebuddy:byte-buddy-agent:1.17.5")
 }
 
 tasks.test {
