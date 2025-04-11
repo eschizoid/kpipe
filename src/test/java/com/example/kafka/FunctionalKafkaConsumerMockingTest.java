@@ -3,16 +3,20 @@ package com.example.kafka;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class FunctionalKafkaConsumerMockingTest {
 
   private static final String TOPIC = "test-topic";
+  private Properties properties;
 
   @Mock
   private Function<String, String> processor;
@@ -31,8 +36,23 @@ class FunctionalKafkaConsumerMockingTest {
   @Mock
   private KafkaConsumer<String, String> mockConsumer;
 
+  @Mock
+  private Consumer<FunctionalKafkaConsumer.ProcessingError<String, String>> errorHandler;
+
   @Captor
   private ArgumentCaptor<List<String>> topicCaptor;
+
+  @Captor
+  private ArgumentCaptor<FunctionalKafkaConsumer.ProcessingError<String, String>> errorCaptor;
+
+  @BeforeEach
+  void setUp() {
+    properties = new Properties();
+    properties.put("bootstrap.servers", "localhost:9092");
+    properties.put("group.id", "test-group");
+    properties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+    properties.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+  }
 
   @Test
   void shouldSubscribeToTopic() {
@@ -110,12 +130,326 @@ class FunctionalKafkaConsumerMockingTest {
   }
 
   @Test
-  void shouldCloseKafkaConsumerWhenClosed() {
+  void shouldCloseKafkaConsumerWhenClosed() throws Exception {
+    // Setup
+    final var props = new Properties();
+    KafkaConsumer<String, String> mockConsumer = mock(KafkaConsumer.class);
+    Function<String, String> processor = value -> value;
+
+    final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    consumer.start();
+
+    // Test
+    consumer.close();
+
+    // Verify
+    verify(mockConsumer).wakeup();
+
+    // Use atLeastOnce() instead of the default times(1)
+    verify(mockConsumer, atLeastOnce()).close();
+
+    // Or, to be more specific about the exact number of times:
+    // verify(mockConsumer, times(2)).close();
+
+    assertFalse(consumer.isRunning());
+  }
+
+  @Test
+  void shouldRetryProcessingOnFailureUpToMaxRetries() throws Exception {
+    // Setup
+    final var props = new Properties();
+    final var latch = new CountDownLatch(3); // Expect 3 calls (initial + 2 retries)
+
+    // Configure mock to always fail and count down latch
+    doAnswer(inv -> {
+        latch.countDown();
+        throw new RuntimeException("Test exception");
+      })
+      .when(processor)
+      .apply(anyString());
+
+    // Create mock record
+    final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "key", "value");
+    final var partition = new TopicPartition(TOPIC, 0);
+    final var recordsList = List.of(record);
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
+
+    // Create consumer with retry config
+    var consumer = new TestableKafkaConsumer<>(
+      props,
+      TOPIC,
+      processor,
+      mockConsumer,
+      2,
+      Duration.ofMillis(10),
+      errorHandler
+    );
+
+    // Process records
+    consumer.executeProcessRecords(records);
+
+    // Wait for all attempts to complete
+    assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
+
+    // Verify processor was called 3 times (initial + 2 retries)
+    verify(processor, times(3)).apply(anyString());
+
+    // Add timeout to handle async processing
+    verify(errorHandler, timeout(1000)).accept(errorCaptor.capture());
+
+    // Verify error details
+    var error = errorCaptor.getValue();
+    assertEquals(record, error.record());
+    assertEquals(2, error.retryCount()); // 2 retries
+    assertNotNull(error.exception());
+  }
+
+  @Test
+  void shouldNotRetryWhenMaxRetriesIsZero() throws Exception {
+    // Setup
+    final var props = new Properties();
+    final var latch = new CountDownLatch(1);
+
+    // Configure mock to fail and count down latch
+    doAnswer(inv -> {
+        latch.countDown();
+        throw new RuntimeException("Test exception");
+      })
+      .when(processor)
+      .apply(anyString());
+
+    // Create mock records
+    final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "key", "value");
+    final var partition = new TopicPartition(TOPIC, 0);
+    final var recordsList = List.of(record);
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
+
+    // Create consumer with no retries
+    final var consumer = new TestableKafkaConsumer<>(
+      props,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
+
+    // Process records
+    consumer.executeProcessRecords(records);
+
+    assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
+
+    // Verify processor was called only once (no retries)
+    verify(processor, times(1)).apply(anyString());
+
+    // Verify error handler was called - with timeout to handle async processing
+    verify(errorHandler, timeout(1000)).accept(errorCaptor.capture());
+
+    // Verify error details
+    var error = errorCaptor.getValue();
+    assertEquals(0, error.retryCount()); // No retries
+  }
+
+  @Test
+  void shouldPauseConsumerWhenPauseCalled() {
+    // Setup
     final var props = new Properties();
     final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
 
-    consumer.close();
+    // Mock the assignment
+    final var assignment = Set.of(new TopicPartition(TOPIC, 0));
+    when(mockConsumer.assignment()).thenReturn(assignment);
 
-    verify(mockConsumer).wakeup();
+    // Test
+    consumer.pause();
+
+    // Verify
+    assertTrue(consumer.isPaused());
+    verify(mockConsumer).pause(assignment);
+  }
+
+  @Test
+  void shouldResumeConsumerWhenResumeCalled() {
+    // Setup
+    var props = new Properties();
+    var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+
+    // Mock the assignment
+    var assignment = Set.of(new TopicPartition(TOPIC, 0));
+    when(mockConsumer.assignment()).thenReturn(assignment);
+
+    // Pause the consumer first
+    consumer.pause();
+    assertTrue(consumer.isPaused());
+
+    // Test
+    consumer.resume();
+
+    // Verify
+    assertFalse(consumer.isPaused());
+    verify(mockConsumer).resume(assignment);
+  }
+
+  @Test
+  void pauseAndResumeShouldBeIdempotent() {
+    // Setup
+    var props = new Properties();
+    var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+
+    // Mock the assignment
+    var assignment = Set.of(new TopicPartition(TOPIC, 0));
+    when(mockConsumer.assignment()).thenReturn(assignment);
+
+    // Test pause idempotence
+    consumer.pause();
+    consumer.pause(); // Second call should have no effect
+
+    // Verify pause was only called once
+    verify(mockConsumer, times(1)).pause(any());
+
+    // Test resume idempotence
+    consumer.resume();
+    consumer.resume(); // Second call should have no effect
+
+    // Verify resume was only called once
+    verify(mockConsumer, times(1)).resume(any());
+  }
+
+  @Test
+  void shouldUpdateMetricsOnSuccessfulProcessing() throws Exception {
+    // Setup
+    final var props = new Properties();
+    final var latch = new CountDownLatch(1);
+
+    // Configure mock to return success and count down latch
+    doAnswer(inv -> {
+        latch.countDown();
+        return "processed-value";
+      })
+      .when(processor)
+      .apply(anyString());
+
+    // Create mock records
+    var partition = new TopicPartition(TOPIC, 0);
+    var recordsList = List.of(new ConsumerRecord<>(TOPIC, 0, 0L, "key", "value"));
+    var records = new ConsumerRecords<>(Map.of(partition, recordsList));
+
+    // Create test consumer
+    var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+
+    // Process records
+    consumer.executeProcessRecords(records);
+
+    assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
+
+    // Verify metrics
+    final var metrics = consumer.getMetrics();
+    assertEquals(1L, metrics.get("messagesReceived"));
+    assertEquals(1L, metrics.get("messagesProcessed"));
+    assertEquals(0L, metrics.get("processingErrors"));
+    assertEquals(0L, metrics.get("retries"));
+  }
+
+  @Test
+  void shouldUpdateMetricsOnProcessingError() throws Exception {
+    // Setup
+    final var props = new Properties();
+    final var latch = new CountDownLatch(1);
+
+    // Configure mock to throw exception and count down latch
+    doAnswer(inv -> {
+        latch.countDown();
+        throw new RuntimeException("Test exception");
+      })
+      .when(processor)
+      .apply(anyString());
+
+    // Create mock records
+    final var partition = new TopicPartition(TOPIC, 0);
+    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, 0, 0L, "key", "value"));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
+
+    // Create test consumer
+    final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+
+    // Process records
+    consumer.executeProcessRecords(records);
+
+    assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
+
+    // Verify metrics
+    final var metrics = consumer.getMetrics();
+    assertEquals(1L, metrics.get("messagesReceived"));
+    assertEquals(0L, metrics.get("messagesProcessed"));
+    assertEquals(1L, metrics.get("processingErrors"));
+  }
+
+  @Test
+  void shouldNotCollectMetricsWhenDisabled() {
+    // Setup
+    final var props = new Properties();
+    props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+    props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+    props.put("bootstrap.servers", "localhost:9092"); // Can be any value since we just test metrics
+
+    // Create consumer with disabled metrics
+    try (
+      var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+        .withProperties(props)
+        .withTopic(TOPIC)
+        .withProcessor(processor)
+        .withMetrics(false)
+        .build()
+    ) {
+      // Verify metrics are empty
+      assertTrue(consumer.getMetrics().isEmpty());
+    }
+  }
+
+  @Test
+  void builderShouldCreateConsumerWithMinimalConfig() {
+    var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(processor)
+      .build();
+
+    assertNotNull(consumer);
+    assertTrue(consumer.isRunning());
+  }
+
+  @Test
+  void builderShouldRespectAllOptions() {
+    final var customPollTimeout = Duration.ofMillis(200);
+    final var customRetryBackoff = Duration.ofMillis(300);
+    final var maxRetries = 3;
+
+    var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(processor)
+      .withPollTimeout(customPollTimeout)
+      .withErrorHandler(errorHandler)
+      .withRetry(maxRetries, customRetryBackoff)
+      .withMetrics(false)
+      .build();
+
+    assertNotNull(consumer);
+    assertTrue(consumer.isRunning());
+    assertTrue(consumer.getMetrics().isEmpty()); // Metrics disabled
+  }
+
+  @Test
+  void builderShouldThrowNullPointerExceptionWhenMissingRequiredFields() {
+    final var builder = new FunctionalKafkaConsumer.Builder<String, String>();
+
+    assertThrows(NullPointerException.class, builder::build);
+
+    builder.withProperties(properties);
+    assertThrows(NullPointerException.class, builder::build);
+
+    builder.withTopic(TOPIC);
+    assertThrows(NullPointerException.class, builder::build);
   }
 }

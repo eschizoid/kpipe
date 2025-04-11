@@ -2,6 +2,7 @@ package com.example.kafka;
 
 import java.time.Duration;
 import java.util.Properties;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -18,22 +19,31 @@ public class TestableKafkaConsumer<K, V> extends FunctionalKafkaConsumer<K, V> {
   ) {
     super(kafkaProps, topic, processor);
     this.mockConsumer = mockConsumer;
-    setConsumerField(mockConsumer);
+    setMockConsumer();
   }
 
   public TestableKafkaConsumer(
-    final Properties kafkaProps,
+    final Properties props,
     final String topic,
     final Function<V, V> processor,
-    final Duration pollTimeout,
-    final KafkaConsumer<K, V> mockConsumer
+    final KafkaConsumer<K, V> mockConsumer,
+    final int maxRetries,
+    final Duration retryBackoff,
+    final Consumer<ProcessingError<K, V>> errorHandler
   ) {
-    super(kafkaProps, topic, processor, pollTimeout);
+    super(
+      new Builder<K, V>()
+        .withProperties(props)
+        .withTopic(topic)
+        .withProcessor(processor)
+        .withRetry(maxRetries, retryBackoff)
+        .withErrorHandler(errorHandler)
+    );
     this.mockConsumer = mockConsumer;
-    setConsumerField(mockConsumer);
+    setMockConsumer();
   }
 
-  private void setConsumerField(final KafkaConsumer<K, V> mockConsumer) {
+  private void setMockConsumer() {
     try {
       final var consumerField = FunctionalKafkaConsumer.class.getDeclaredField("consumer");
       consumerField.setAccessible(true);
@@ -44,12 +54,11 @@ public class TestableKafkaConsumer<K, V> extends FunctionalKafkaConsumer<K, V> {
   }
 
   @Override
-  protected KafkaConsumer<K, V> createConsumer(final Properties kafkaProps) {
+  protected KafkaConsumer<K, V> createConsumer(Properties kafkaProps) {
     return mockConsumer;
   }
 
-  // Expose protected methods for testing
-  public void executeProcessRecords(final ConsumerRecords<K, V> records) {
+  public void executeProcessRecords(ConsumerRecords<K, V> records) {
     processRecords(records);
   }
 }
