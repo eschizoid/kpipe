@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   zookeeper:
     image: bitnami/zookeeper:latest
@@ -18,7 +16,7 @@ services:
     restart: unless-stopped
 
   kafka:
-    image: bitnami/kafka:latest
+    image: bitnami/kafka:3.4.1
     ports:
       - "9092:9092"
     environment:
@@ -44,7 +42,7 @@ services:
     build: .
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - KAFKA_CONSUMER_GROUP=functional-group
+      - KAFKA_CONSUMER_GROUP=kpipe-group
       - KAFKA_TOPIC=json-topic
       - APP_NAME=kafka-consumer-app
     depends_on:
@@ -52,7 +50,7 @@ services:
     restart: unless-stopped
 
   kafka-init:
-    image: bitnami/kafka:latest
+    image: bitnami/kafka:3.4.1
     depends_on:
       - kafka
     command: >

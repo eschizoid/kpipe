@@ -50,7 +50,7 @@ public class KafkaConfigFactory {
    * @param groupId Consumer group identifier for this consumer
    * @return Properties object configured for a Kafka consumer
    */
-  public static Properties createConsumerConfig(String bootstrapServers, String groupId) {
+  public static Properties createConsumerConfig(final String bootstrapServers, final String groupId) {
     final var props = new Properties();
     props.put("bootstrap.servers", bootstrapServers);
     props.put("group.id", groupId);

@@ -343,6 +343,9 @@ class FunctionalKafkaConsumerMockingTest {
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
+    // Give virtual threads time to complete processing
+    Thread.sleep(100);
+
     // Verify metrics
     final var metrics = consumer.getMetrics();
     assertEquals(1L, metrics.get("messagesReceived"));

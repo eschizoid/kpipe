@@ -10,7 +10,7 @@ use across multiple teams.
 
 ## 🚀 Why This Library?
 
-### ✅ Modern Java 23 Features
+### ✅ Modern Java 21 Features
 
 - **Virtual Threads** for massive concurrency with minimal overhead.
 - **ScopedValue** for clean, immutable trace propagation (Coming!)
