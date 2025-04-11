@@ -1,7 +1,12 @@
 package com.example.kafka;
 
+import com.dslplatform.json.DslJson;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,6 +56,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(FunctionalKafkaConsumer.class.getName());
+  private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
 
   // Core components
   private final KafkaConsumer<K, V> consumer;
@@ -525,26 +531,83 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * Logs information about a successfully processed message.
    *
    * @param record the original Kafka record
-   * @param processed the processed message value
+   * @param processedMessage the processed message value
    */
-  private void logProcessedMessage(final ConsumerRecord<K, V> record, V processed) {
-    LOGGER.log(
-      Level.INFO,
-      """
-                    {
-                      "topic": "%s",
-                      "partition": %d,
-                      "offset": %d,
-                      "key": "%s",
-                      "processedMessage": "%s"
-                    }
-                    """.formatted(
-          topic,
-          record.partition(),
-          record.offset(),
-          record.key(),
-          processed
-        )
+  private void logProcessedMessage(final ConsumerRecord<K, V> record, final V processedMessage) {
+    // Skip logging if not needed
+    if (!LOGGER.isLoggable(Level.INFO)) {
+      return;
+    }
+
+    // Format the log entry data
+    final var logData = Map.of(
+      "topic",
+      record.topic(),
+      "partition",
+      record.partition(),
+      "offset",
+      record.offset(),
+      "key",
+      String.valueOf(record.key()),
+      "processedMessage",
+      formatMessageValue(processedMessage)
     );
+
+    // Serialize and log as JSON
+    try (final var out = new ByteArrayOutputStream()) {
+      DSL_JSON.serialize(logData, out);
+      LOGGER.log(Level.INFO, out.toString(StandardCharsets.UTF_8));
+    } catch (final IOException e) {
+      // Fallback to simple format if serialization fails
+      LOGGER.log(
+        Level.INFO,
+        "Processed message (topic=%s, partition=%d, offset=%d)".formatted(
+            record.topic(),
+            record.partition(),
+            record.offset()
+          )
+      );
+    }
+  }
+
+  /**
+   * Formats a message value for logging, with special handling for byte arrays.
+   *
+   * @param value The value to format
+   * @return A string representation suitable for logging
+   */
+  private String formatMessageValue(final V value) {
+    if (value == null) {
+      return "null";
+    }
+
+    if (value instanceof byte[] bytes) {
+      if (bytes.length == 0) {
+        return "empty";
+      }
+
+      try {
+        // Try to convert to UTF-8 string
+        final var strValue = new String(bytes, StandardCharsets.UTF_8);
+
+        // If it looks like JSON, try to pretty-print it
+        if (strValue.trim().startsWith("{") || strValue.trim().startsWith("[")) {
+          try {
+            final var json = DSL_JSON.deserialize(Object.class, new ByteArrayInputStream(bytes));
+            final var out = new ByteArrayOutputStream();
+            DSL_JSON.serialize(json, out);
+            return out.toString(StandardCharsets.UTF_8);
+          } catch (final Exception ignored) {
+            // If JSON parsing fails, use the raw string
+          }
+        }
+        return strValue;
+      } catch (Exception e) {
+        // Not valid UTF-8, use Base64 encoding
+        return "Base64: " + Base64.getEncoder().encodeToString(bytes);
+      }
+    }
+
+    return String.valueOf(value);
   }
 }

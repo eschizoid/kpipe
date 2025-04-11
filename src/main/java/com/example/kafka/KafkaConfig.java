@@ -62,7 +62,7 @@ public class KafkaConfig {
    * @param topic Kafka topic to consume from
    * @param appName Application name for metrics and logging
    * @param pollTimeout Duration to wait in poll operations
-   * @param shutdownTimeout Maximum duration to wait during shutdown
+   * @param shutdownTimeout Maximum duration to wait during graceful shutdown
    * @param metricsInterval Interval between metrics reporting
    * @param processors List of processor names to use in the processing pipeline
    */
@@ -112,8 +112,8 @@ public class KafkaConfig {
    */
   public static KafkaConfig fromEnv() {
     return new KafkaConfig(
-      getEnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
-      getEnvOrDefault("KAFKA_CONSUMER_GROUP", "functional-group"),
+      getEnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
+      getEnvOrDefault("KAFKA_CONSUMER_GROUP", "kpipe-group"),
       getEnvOrDefault("KAFKA_TOPIC", "json-topic"),
       getEnvOrDefault("APP_NAME", "kafka-consumer-app"),
       parseDurationWithFallback(getEnvOrDefault("KAFKA_POLL_TIMEOUT_MS", "100"), "100", Duration::ofMillis),
