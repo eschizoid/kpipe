@@ -3,12 +3,12 @@ package org.kpipe;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
-import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
-import org.kpipe.config.KafkaConfig;
+import org.kpipe.config.AppConfig;
+import org.kpipe.config.KafkaConsumerConfig;
 import org.kpipe.consumer.FunctionalKafkaConsumer;
 import org.kpipe.processor.MessageProcessorRegistry;
 import org.kpipe.sink.LoggingSink;
@@ -39,7 +39,6 @@ public class KafkaConsumerApp implements AutoCloseable {
   private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
   private final FunctionalKafkaConsumer<byte[], byte[]> consumer;
   private final MessageProcessorRegistry registry;
-  private final MessageSink<byte[], byte[]> messageSink;
   private final Duration metricsInterval;
   private final Duration shutdownTimeout;
   private volatile boolean running = false;
@@ -62,7 +61,7 @@ public class KafkaConsumerApp implements AutoCloseable {
    * @param args command line arguments (not used)
    */
   public static void main(String[] args) {
-    final var config = KafkaConfig.fromEnv();
+    final var config = AppConfig.fromEnv();
 
     try (final KafkaConsumerApp app = new KafkaConsumerApp(config)) {
       app.start();
@@ -94,12 +93,11 @@ public class KafkaConsumerApp implements AutoCloseable {
    *
    * @param config the application configuration
    */
-  public KafkaConsumerApp(final KafkaConfig config) {
+  public KafkaConsumerApp(final AppConfig config) {
     final MessageProcessorRegistry registry = new MessageProcessorRegistry(config.appName);
     final MessageSink<byte[], byte[]> messageSink = new LoggingSink<>();
 
     this.registry = registry;
-    this.messageSink = messageSink;
     this.consumer = createConsumer(config, registry, messageSink);
     this.metricsInterval = config.metricsInterval;
     this.shutdownTimeout = config.shutdownTimeout;
@@ -122,11 +120,11 @@ public class KafkaConsumerApp implements AutoCloseable {
    * @return a new functional Kafka consumer
    */
   private static FunctionalKafkaConsumer<byte[], byte[]> createConsumer(
-    final KafkaConfig config,
+    final AppConfig config,
     final MessageProcessorRegistry registry,
     final MessageSink<byte[], byte[]> messageSink
   ) {
-    final var kafkaProps = KafkaConfigFactory.createConsumerConfig(config.bootstrapServers, config.consumerGroup);
+    final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers, config.consumerGroup);
 
     return new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
       .withProperties(kafkaProps)
@@ -145,7 +143,7 @@ public class KafkaConsumerApp implements AutoCloseable {
    * @return a function that processes messages
    */
   private static Function<byte[], byte[]> createProcessorPipeline(
-    final KafkaConfig config,
+    final AppConfig config,
     final MessageProcessorRegistry registry
   ) {
     Function<byte[], byte[]> pipeline = config.processors.isEmpty()
