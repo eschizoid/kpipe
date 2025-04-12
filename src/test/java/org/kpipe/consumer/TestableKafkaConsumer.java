@@ -1,4 +1,4 @@
-package com.example.kafka;
+package org.kpipe.consumer;
 
 import java.time.Duration;
 import java.util.Properties;

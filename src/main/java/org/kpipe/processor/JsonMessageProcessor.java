@@ -1,4 +1,4 @@
-package com.example.kafka;
+package org.kpipe.processor;
 
 import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
@@ -27,9 +27,9 @@ import java.util.function.Function;
  * byte[] result = pipeline.apply("{\"data\":\"value\"}".getBytes());
  * }</pre>
  */
-public class DslJsonMessageProcessors {
+public class JsonMessageProcessor {
 
-  private static final Logger LOGGER = System.getLogger(DslJsonMessageProcessors.class.getName());
+  private static final Logger LOGGER = System.getLogger(JsonMessageProcessor.class.getName());
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
   private static final byte[] EMPTY_JSON = "{}".getBytes(StandardCharsets.UTF_8);
 

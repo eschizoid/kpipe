@@ -5,7 +5,7 @@ plugins {
     id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
-group = "kpipe"
+group = "org.kpipe"
 version = "1.0-SNAPSHOT"
 
 repositories {
@@ -13,7 +13,7 @@ repositories {
 }
 
 application {
-    mainClass.set("com.example.kafka.KafkaConsumerApp")
+    mainClass.set("org.kpipe.KafkaConsumerApp")
 }
 
 java {

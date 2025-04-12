@@ -1,4 +1,4 @@
-package com.example.kafka;
+package org.kpipe.processor;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-class DslJsonMessageProcessorsTest {
+class JsonMessageProcessorTest {
 
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
 
@@ -36,7 +36,7 @@ class DslJsonMessageProcessorsTest {
                       "key":"value"
                     }
                     """;
-    final var parseJson = DslJsonMessageProcessors.parseJson();
+    final var parseJson = JsonMessageProcessor.parseJson();
 
     // Act
     final var result = parseJson.apply(json.getBytes(StandardCharsets.UTF_8));
@@ -49,7 +49,7 @@ class DslJsonMessageProcessorsTest {
   void testParseJsonInvalidJson() {
     // Arrange
     final var invalidJson = "invalid json";
-    final var parseJson = DslJsonMessageProcessors.parseJson();
+    final var parseJson = JsonMessageProcessor.parseJson();
 
     // Act
     final var result = parseJson.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
@@ -73,7 +73,7 @@ class DslJsonMessageProcessorsTest {
               "newKey":"newValue"
             }
           """;
-    final var addField = DslJsonMessageProcessors.addField("newKey", "newValue");
+    final var addField = JsonMessageProcessor.addField("newKey", "newValue");
 
     // Act
     final var result = addField.apply(json.getBytes(StandardCharsets.UTF_8));
@@ -86,7 +86,7 @@ class DslJsonMessageProcessorsTest {
   void testAddFieldInvalidJson() {
     // Arrange
     final var invalidJson = "invalid json";
-    final var addField = DslJsonMessageProcessors.addField("newKey", "newValue");
+    final var addField = JsonMessageProcessor.addField("newKey", "newValue");
 
     // Act
     final var result = addField.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
@@ -101,7 +101,7 @@ class DslJsonMessageProcessorsTest {
     final var jsonArray = """
                     ["value1", "value2"]
                 """;
-    final var addField = DslJsonMessageProcessors.addField("newKey", "newValue");
+    final var addField = JsonMessageProcessor.addField("newKey", "newValue");
 
     // Act
     final var result = addField.apply(jsonArray.getBytes(StandardCharsets.UTF_8));
@@ -114,7 +114,7 @@ class DslJsonMessageProcessorsTest {
   void testParseJsonEmptyJson() {
     // Arrange
     final var emptyJson = "{}";
-    final var parseJson = DslJsonMessageProcessors.parseJson();
+    final var parseJson = JsonMessageProcessor.parseJson();
 
     // Act
     final var result = parseJson.apply(emptyJson.getBytes(StandardCharsets.UTF_8));
@@ -126,7 +126,7 @@ class DslJsonMessageProcessorsTest {
   @Test
   void testParseJsonNullInput() {
     // Arrange
-    final var parseJson = DslJsonMessageProcessors.parseJson();
+    final var parseJson = JsonMessageProcessor.parseJson();
 
     // Act
     final var result = parseJson.apply(null);
@@ -145,7 +145,7 @@ class DslJsonMessageProcessorsTest {
                         "newKey":"newValue"
                       }
                       """;
-    final var addField = DslJsonMessageProcessors.addField("newKey", "newValue");
+    final var addField = JsonMessageProcessor.addField("newKey", "newValue");
 
     // Act
     final var result = addField.apply(emptyJson.getBytes(StandardCharsets.UTF_8));
@@ -162,7 +162,7 @@ class DslJsonMessageProcessorsTest {
               "key":"value"
             }
             """;
-    final var addTimestamp = DslJsonMessageProcessors.addTimestamp("timestamp");
+    final var addTimestamp = JsonMessageProcessor.addTimestamp("timestamp");
 
     // Act
     final var result = addTimestamp.apply(json.getBytes(StandardCharsets.UTF_8));
@@ -178,7 +178,7 @@ class DslJsonMessageProcessorsTest {
   void testAddTimestampToInvalidJson() {
     // Arrange
     final var invalidJson = "invalid json";
-    final var addTimestamp = DslJsonMessageProcessors.addTimestamp("timestamp");
+    final var addTimestamp = JsonMessageProcessor.addTimestamp("timestamp");
 
     // Act
     final var result = addTimestamp.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
@@ -198,7 +198,7 @@ class DslJsonMessageProcessorsTest {
               "field3":"value3"
             }
             """;
-    final var removeFields = DslJsonMessageProcessors.removeFields("field1", "field3");
+    final var removeFields = JsonMessageProcessor.removeFields("field1", "field3");
     final var expected = """
             {
               "field2":"value2"
@@ -220,7 +220,7 @@ class DslJsonMessageProcessorsTest {
               "field1":"value1"
             }
             """;
-    final var removeFields = DslJsonMessageProcessors.removeFields("field2");
+    final var removeFields = JsonMessageProcessor.removeFields("field2");
 
     // Act
     final var result = removeFields.apply(json.getBytes(StandardCharsets.UTF_8));
@@ -239,7 +239,7 @@ class DslJsonMessageProcessorsTest {
               "count":5
             }
             """;
-    final var transformField = DslJsonMessageProcessors.transformField(
+    final var transformField = JsonMessageProcessor.transformField(
       "message",
       value -> value instanceof String ? ((String) value).toUpperCase() : value
     );
@@ -268,7 +268,7 @@ class DslJsonMessageProcessorsTest {
               "count":5
             }
             """;
-    final var transformField = DslJsonMessageProcessors.transformField(
+    final var transformField = JsonMessageProcessor.transformField(
       "count",
       value -> value instanceof Number ? ((Number) value).intValue() * 2 : value
     );
@@ -295,7 +295,7 @@ class DslJsonMessageProcessorsTest {
               "message":"hello"
             }
             """;
-    final var transformField = DslJsonMessageProcessors.transformField("nonExisting", value -> "transformed");
+    final var transformField = JsonMessageProcessor.transformField("nonExisting", value -> "transformed");
 
     // Act
     final var result = transformField.apply(json.getBytes(StandardCharsets.UTF_8));
@@ -312,7 +312,7 @@ class DslJsonMessageProcessorsTest {
               "original":"value"
             }
             """;
-    final var mergeWith = DslJsonMessageProcessors.mergeWith(Map.of("added1", "value1", "added2", 42));
+    final var mergeWith = JsonMessageProcessor.mergeWith(Map.of("added1", "value1", "added2", 42));
 
     // Act
     final var result = mergeWith.apply(json.getBytes(StandardCharsets.UTF_8));
@@ -332,7 +332,7 @@ class DslJsonMessageProcessorsTest {
               "key":"originalValue"
             }
             """;
-    final var mergeWith = DslJsonMessageProcessors.mergeWith(Map.of("key", "newValue"));
+    final var mergeWith = JsonMessageProcessor.mergeWith(Map.of("key", "newValue"));
 
     // Act
     final var result = mergeWith.apply(json.getBytes(StandardCharsets.UTF_8));
