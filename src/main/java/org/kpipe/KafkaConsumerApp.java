@@ -1,4 +1,4 @@
-package com.example.kafka;
+package org.kpipe;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -8,6 +8,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import org.kpipe.config.KafkaConfig;
+import org.kpipe.consumer.FunctionalKafkaConsumer;
+import org.kpipe.processor.MessageProcessorRegistry;
+import org.kpipe.sink.LoggingSink;
+import org.kpipe.sink.MessageSink;
 
 /**
  * Application that consumes messages from a Kafka topic and processes them using a configurable
@@ -34,6 +39,7 @@ public class KafkaConsumerApp implements AutoCloseable {
   private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
   private final FunctionalKafkaConsumer<byte[], byte[]> consumer;
   private final MessageProcessorRegistry registry;
+  private final MessageSink<byte[], byte[]> messageSink;
   private final Duration metricsInterval;
   private final Duration shutdownTimeout;
   private volatile boolean running = false;
@@ -90,32 +96,13 @@ public class KafkaConsumerApp implements AutoCloseable {
    */
   public KafkaConsumerApp(final KafkaConfig config) {
     final MessageProcessorRegistry registry = new MessageProcessorRegistry(config.appName);
+    final MessageSink<byte[], byte[]> messageSink = new LoggingSink<>();
 
     this.registry = registry;
-    this.consumer = createConsumer(config, registry);
+    this.messageSink = messageSink;
+    this.consumer = createConsumer(config, registry, messageSink);
     this.metricsInterval = config.metricsInterval;
     this.shutdownTimeout = config.shutdownTimeout;
-  }
-
-  /**
-   * Creates a new KafkaConsumerApp with the specified components. This constructor is primarily
-   * intended for testing and dependency injection.
-   *
-   * @param registry the message processor registry
-   * @param consumer the Kafka consumer
-   * @param metricsInterval the interval between metrics reporting
-   * @param shutdownTimeout the maximum duration to wait during graceful shutdown
-   */
-  public KafkaConsumerApp(
-    final MessageProcessorRegistry registry,
-    final FunctionalKafkaConsumer<byte[], byte[]> consumer,
-    final Duration metricsInterval,
-    final Duration shutdownTimeout
-  ) {
-    this.registry = Objects.requireNonNull(registry, "Registry cannot be null");
-    this.consumer = Objects.requireNonNull(consumer, "Consumer cannot be null");
-    this.metricsInterval = metricsInterval != null ? metricsInterval : KafkaConfig.DEFAULT_METRICS_INTERVAL;
-    this.shutdownTimeout = shutdownTimeout != null ? shutdownTimeout : KafkaConfig.DEFAULT_SHUTDOWN_TIMEOUT;
   }
 
   /**
@@ -136,15 +123,18 @@ public class KafkaConsumerApp implements AutoCloseable {
    */
   private static FunctionalKafkaConsumer<byte[], byte[]> createConsumer(
     final KafkaConfig config,
-    final MessageProcessorRegistry registry
+    final MessageProcessorRegistry registry,
+    final MessageSink<byte[], byte[]> messageSink
   ) {
     final var kafkaProps = KafkaConfigFactory.createConsumerConfig(config.bootstrapServers, config.consumerGroup);
-    return new FunctionalKafkaConsumer<>(
-      kafkaProps,
-      config.topic,
-      createProcessorPipeline(config, registry),
-      config.pollTimeout
-    );
+
+    return new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
+      .withProperties(kafkaProps)
+      .withTopic(config.topic)
+      .withProcessor(createProcessorPipeline(config, registry))
+      .withPollTimeout(config.pollTimeout)
+      .withMessageSink(messageSink)
+      .build();
   }
 
   /**
@@ -158,7 +148,6 @@ public class KafkaConsumerApp implements AutoCloseable {
     final KafkaConfig config,
     final MessageProcessorRegistry registry
   ) {
-    // Create pipeline with error handling
     Function<byte[], byte[]> pipeline = config.processors.isEmpty()
       ? registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp")
       : registry.pipeline(config.processors.toArray(new String[0]));

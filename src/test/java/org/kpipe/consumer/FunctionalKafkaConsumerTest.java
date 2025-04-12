@@ -1,4 +1,4 @@
-package com.example.kafka;
+package org.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 

@@ -1,4 +1,4 @@
-package com.example.kafka;
+package org.kpipe;
 
 import java.util.Properties;
 

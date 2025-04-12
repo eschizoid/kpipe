@@ -1,4 +1,4 @@
-package com.example.kafka;
+package org.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -344,7 +344,7 @@ class FunctionalKafkaConsumerMockingTest {
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
     // Give virtual threads time to complete processing
-    Thread.sleep(100);
+    Thread.sleep(500);
 
     // Verify metrics
     final var metrics = consumer.getMetrics();

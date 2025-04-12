@@ -1,4 +1,4 @@
-package com.example.kafka;
+package org.kpipe.processor;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -89,15 +89,15 @@ public class MessageProcessorRegistry {
    * @param sourceAppName The application name to use in processors
    * @param defaultErrorValue The default value to return on errors
    */
-  public MessageProcessorRegistry(final String sourceAppName, byte[] defaultErrorValue) {
+  public MessageProcessorRegistry(final String sourceAppName, final byte[] defaultErrorValue) {
     this.sourceAppName = Objects.requireNonNull(sourceAppName, "Source app name cannot be null");
     this.defaultErrorValue = Objects.requireNonNull(defaultErrorValue, "Default error value cannot be null");
 
     // Register default processors
-    register("parseJson", DslJsonMessageProcessors.parseJson());
-    register("addSource", DslJsonMessageProcessors.addField("source", sourceAppName));
-    register("markProcessed", DslJsonMessageProcessors.addField("processed", "true"));
-    register("addTimestamp", DslJsonMessageProcessors.addTimestamp("timestamp"));
+    register("parseJson", JsonMessageProcessor.parseJson());
+    register("addSource", JsonMessageProcessor.addField("source", sourceAppName));
+    register("markProcessed", JsonMessageProcessor.addField("processed", "true"));
+    register("addTimestamp", JsonMessageProcessor.addTimestamp("timestamp"));
   }
 
   /**
