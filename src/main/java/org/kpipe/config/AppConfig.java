@@ -6,40 +6,34 @@ import java.util.Objects;
 import java.util.function.Function;
 
 /**
- * Blocks the current thread until the application shuts down or the configured shutdown timeout is
- * reached. This method is typically called after {@link #start()} to keep the main thread alive
- * while the consumer runs.
+ * Configuration class for Kafka consumer applications in the kpipe framework. Provides properties
+ * and settings needed to configure a Kafka consumer application.
  *
- * <p>Example usage in a standard application flow:
+ * <p>This class stores configuration parameters such as Kafka connection details, consumer group,
+ * topic information, and timing settings.
  *
- * <pre>
- * KafkaConfig config = KafkaConfig.fromEnv();
- * try (KafkaConsumerApp app = new KafkaConsumerApp(config)) {
- *     app.start();
- *     app.awaitShutdown(); // Block until shutdown signal or timeout
- * }
- * </pre>
+ * <p>Example usage with default values from environment:
  *
- * <p>Custom timeout example:
+ * <pre>{@code
+ * AppConfig config = AppConfig.fromEnv();
+ * }</pre>
  *
- * <pre>
- * KafkaConfig config = new KafkaConfig(
+ * <p>Example with custom configuration:
+ *
+ * <pre>{@code
+ * AppConfig config = new AppConfig(
  *     "localhost:9092",
  *     "my-group",
  *     "my-topic",
  *     "my-app",
  *     Duration.ofMillis(100),
- *     Duration.ofSeconds(60), // longer shutdown timeout
+ *     Duration.ofSeconds(60),
  *     Duration.ofMinutes(1),
  *     List.of("parseJson", "addTimestamp")
  * );
- * try (KafkaConsumerApp app = new KafkaConsumerApp(config)) {
- *     app.start();
- *     app.awaitShutdown();
- * }
- * </pre>
+ * }</pre>
  */
-public class KafkaConfig {
+public class AppConfig {
 
   public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
   public static final Duration DEFAULT_SHUTDOWN_TIMEOUT = Duration.ofSeconds(30);
@@ -66,7 +60,7 @@ public class KafkaConfig {
    * @param metricsInterval Interval between metrics reporting
    * @param processors List of processor names to use in the processing pipeline
    */
-  public KafkaConfig(
+  public AppConfig(
     final String bootstrapServers,
     final String consumerGroup,
     final String topic,
@@ -110,8 +104,8 @@ public class KafkaConfig {
    *
    * @return A new KafkaConfig instance configured from environment
    */
-  public static KafkaConfig fromEnv() {
-    return new KafkaConfig(
+  public static AppConfig fromEnv() {
+    return new AppConfig(
       getEnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
       getEnvOrDefault("KAFKA_CONSUMER_GROUP", "kpipe-group"),
       getEnvOrDefault("KAFKA_TOPIC", "json-topic"),
