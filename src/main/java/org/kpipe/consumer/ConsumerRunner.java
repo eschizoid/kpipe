@@ -14,6 +14,66 @@ import java.util.function.Function;
  *
  * <p>This class provides a reusable pattern for starting, monitoring, and gracefully shutting down
  * FunctionalConsumer components, with special handling for in-flight messages during shutdown.
+ *
+ * <p>Key features:
+ *
+ * <ul>
+ *   <li>Starts and monitors consumer instances
+ *   <li>Provides health check mechanisms
+ *   <li>Manages graceful shutdown with in-flight message handling
+ *   <li>Offers configurable shutdown hooks and timeouts
+ * </ul>
+ *
+ * <h2>Basic Usage Example</h2>
+ *
+ * <pre>{@code
+ * // Create a consumer
+ * FunctionalConsumer<String, String> consumer = new FunctionalConsumer.Builder<String, String>()
+ *     .withTopic("my-topic")
+ *     .withProcessor(msg -> msg.toUpperCase())
+ *     .build();
+ *
+ * // Create and start a runner
+ * ConsumerRunner<FunctionalConsumer<String, String>> runner = ConsumerRunner
+ *     .builder(consumer)
+ *     .withShutdownTimeout(5000)
+ *     .withShutdownHook(true)
+ *     .build();
+ *
+ * runner.start();
+ *
+ * // Wait for shutdown (triggered by JVM shutdown hook)
+ * runner.awaitShutdown();
+ * }</pre>
+ *
+ * <h2>Custom Graceful Shutdown Example</h2>
+ *
+ * <pre>{@code
+ * ConsumerRunner<FunctionalConsumer<byte[], byte[]>> runner = ConsumerRunner
+ *     .builder(consumer)
+ *     .withGracefulShutdown((consumer, timeoutMs) -> {
+ *         // Custom pre-shutdown actions
+ *         someResource.close();
+ *
+ *         // Use the default shutdown behavior
+ *         return ConsumerRunner.performGracefulConsumerShutdown(consumer, timeoutMs);
+ *     })
+ *     .build();
+ * }</pre>
+ *
+ * <h2>Monitoring Example</h2>
+ *
+ * <pre>{@code
+ * // Start a thread to monitor consumer health
+ * Thread.startVirtualThread(() -> {
+ *     while (!Thread.currentThread().isInterrupted()) {
+ *         if (!runner.isHealthy()) {
+ *             System.err.println("Consumer is unhealthy!");
+ *         }
+ *         Thread.sleep(Duration.ofSeconds(30));
+ *     }
+ * });
+ * }</pre>
  */
 public class ConsumerRunner<F extends FunctionalConsumer<?, ?>> implements AutoCloseable {
 
@@ -108,7 +168,7 @@ public class ConsumerRunner<F extends FunctionalConsumer<?, ?>> implements AutoC
       }
     }
 
-    boolean completed;
+    boolean completed = false;
     try {
       completed = gracefulShutdown.apply(consumer, timeoutMs);
       LOGGER.log(Level.INFO, "Graceful shutdown completed: %s".formatted(completed));
@@ -272,6 +332,7 @@ public class ConsumerRunner<F extends FunctionalConsumer<?, ?>> implements AutoC
     }
   }
 
+  // Add this to ConsumerRunner.java
   public static <F extends FunctionalConsumer<?, ?>> boolean performGracefulConsumerShutdown(
     final F consumer,
     final long timeoutMs

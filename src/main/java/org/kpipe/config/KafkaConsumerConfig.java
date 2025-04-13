@@ -41,11 +41,9 @@ import java.util.function.UnaryOperator;
  *     .build();
  * }</pre>
  */
-public class KafkaConsumerConfig {
+public final class KafkaConsumerConfig {
 
-  private KafkaConsumerConfig() {
-    // Utility class, no instances
-  }
+  private KafkaConsumerConfig() {}
 
   /**
    * Creates configuration properties for a Kafka consumer with customization.
@@ -297,7 +295,7 @@ public class KafkaConsumerConfig {
      * @return This builder for chaining
      */
     public ConsumerConfigBuilder with(final UnaryOperator<Properties> customizer) {
-      Properties updated = customizer.apply(props);
+      final var updated = customizer.apply(props);
       props.clear();
       props.putAll(updated);
       return this;
@@ -309,7 +307,7 @@ public class KafkaConsumerConfig {
      * @return The configured properties
      */
     public Properties build() {
-      Properties result = new Properties();
+      final var result = new Properties();
       result.putAll(props);
       return result;
     }

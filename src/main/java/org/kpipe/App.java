@@ -54,11 +54,11 @@ public class App implements AutoCloseable {
 
   /** Creates a new KafkaConsumerApp with the specified configuration. */
   public App(final AppConfig config) {
-    final MessageProcessorRegistry registry = new MessageProcessorRegistry(config.appName);
+    final MessageProcessorRegistry registry = new MessageProcessorRegistry(config.appName());
     final MessageSink<byte[], byte[]> messageSink = new LoggingSink<>();
 
     this.consumer = createConsumer(config, registry, messageSink);
-    this.metricsInterval = config.metricsInterval;
+    this.metricsInterval = config.metricsInterval();
 
     this.consumerMetricsReporter =
       new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime.get(), null);
@@ -87,7 +87,7 @@ public class App implements AutoCloseable {
         // Delegate to standard consumer shutdown logic
         return ConsumerRunner.performGracefulConsumerShutdown(c, timeoutMs);
       })
-      .withShutdownTimeout(config.shutdownTimeout.toMillis())
+      .withShutdownTimeout(config.shutdownTimeout().toMillis())
       .withShutdownHook(true)
       .build();
   }
@@ -97,13 +97,13 @@ public class App implements AutoCloseable {
     final MessageProcessorRegistry registry,
     final MessageSink<byte[], byte[]> messageSink
   ) {
-    final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers, config.consumerGroup);
+    final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
 
     return new FunctionalConsumer.Builder<byte[], byte[]>()
       .withProperties(kafkaProps)
-      .withTopic(config.topic)
+      .withTopic(config.topic())
       .withProcessor(createProcessorPipeline(config, registry))
-      .withPollTimeout(config.pollTimeout)
+      .withPollTimeout(config.pollTimeout())
       .withMessageSink(messageSink)
       .withMetrics(true)
       .build();
@@ -113,9 +113,9 @@ public class App implements AutoCloseable {
     final AppConfig config,
     final MessageProcessorRegistry registry
   ) {
-    final Function<byte[], byte[]> pipeline = config.processors.isEmpty()
+    final Function<byte[], byte[]> pipeline = config.processors().isEmpty()
       ? registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp")
-      : registry.pipeline(config.processors.toArray(new String[0]));
+      : registry.pipeline(config.processors().toArray(new String[0]));
 
     return MessageProcessorRegistry.withErrorHandling(pipeline, null);
   }
