@@ -33,20 +33,19 @@ import java.util.function.Function;
  * );
  * }</pre>
  */
-public class AppConfig {
-
+public record AppConfig(
+  String bootstrapServers,
+  String consumerGroup,
+  String topic,
+  String appName,
+  Duration pollTimeout,
+  Duration shutdownTimeout,
+  Duration metricsInterval,
+  List<String> processors
+) {
   public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
   public static final Duration DEFAULT_SHUTDOWN_TIMEOUT = Duration.ofSeconds(30);
   public static final Duration DEFAULT_METRICS_INTERVAL = Duration.ofMinutes(1);
-
-  public final String bootstrapServers;
-  public final String consumerGroup;
-  public final String topic;
-  public final String appName;
-  public final Duration pollTimeout;
-  public final Duration shutdownTimeout;
-  public final Duration metricsInterval;
-  public final List<String> processors;
 
   /**
    * Creates a new Kafka configuration with the specified parameters.

@@ -524,11 +524,64 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   }
 
   /**
-   * Processes a single record with error handling and retry logic.
+   * Processes a single Kafka consumer record using the configured processor function.
    *
-   * @param record the Kafka record to process
+   * <p>This method applies the processor function to the record value and handles any exceptions by
+   * implementing retry logic based on the configured {@code maxRetries} and {@code retryBackoff}.
+   * If all retry attempts fail, the error handler is invoked.
+   *
+   * <p>Metrics tracked during processing:
+   *
+   * <ul>
+   *   <li>messagesReceived - Incremented when a record is received for processing
+   *   <li>messagesProcessed - Incremented when a record is successfully processed
+   *   <li>retries - Incremented for each retry attempt (second and subsequent attempts only)
+   *   <li>processingErrors - Incremented when processing fails after all retry attempts
+   * </ul>
+   *
+   * <p>Example with successful processing:
+   *
+   * <pre>{@code
+   * // Record will be processed directly
+   * ConsumerRecord<String, String> record = new ConsumerRecord<>("topic", 0, 0, "key", "value");
+   * consumer.processRecord(record);
+   * // Result: messagesReceived = 1, messagesProcessed = 1, retries = 0
+   * }</pre>
+   *
+   * <p>Example with retry and success:
+   *
+   * <pre>{@code
+   * // Configure consumer with 2 max retries
+   * var consumer = new FunctionalConsumer.Builder<String, String>()
+   *     .withProcessor(intermittentProcessor)
+   *     .withRetry(2, Duration.ofMillis(10))
+   *     .withMetrics(true)
+   *     .build();
+   *
+   * // Process record that fails on first attempt but succeeds on second attempt
+   * consumer.processRecord(record);
+   * // Result: messagesReceived = 1, messagesProcessed = 1, retries = 1
+   * }</pre>
+   *
+   * <p>Example with max retries exceeded:
+   *
+   * <pre>{@code
+   * // Configure consumer with 2 max retries but all attempts fail
+   * var consumer = new FunctionalConsumer.Builder<String, String>()
+   *     .withProcessor(failingProcessor)
+   *     .withRetry(2, Duration.ofMillis(10))
+   *     .withErrorHandler(error -> handleError(error))
+   *     .withMetrics(true)
+   *     .build();
+   *
+   * consumer.processRecord(record);
+   * // Result: messagesReceived = 1, messagesProcessed = 0, retries = 2, processingErrors = 1
+   * // Error handler receives: retryCount = 2 (maxRetries)
+   * }</pre>
+   *
+   * @param record The Kafka consumer record to process
    */
-  private void processRecord(final ConsumerRecord<K, V> record) {
+  public void processRecord(final ConsumerRecord<K, V> record) {
     if (enableMetrics) {
       metrics.get("messagesReceived").incrementAndGet();
     }
@@ -536,20 +589,20 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     var attempts = 0;
 
     while (attempts <= maxRetries) {
+      // Count retry attempts (not the first attempt)
+      if (enableMetrics && attempts > 0) {
+        metrics.get("retries").incrementAndGet();
+      }
+
       try {
         V processed = processor.apply(record.value());
-        messageSink.accept(record, processed); // Use MessageSink instead of logging
+        messageSink.accept(record, processed);
         if (enableMetrics) {
           metrics.get("messagesProcessed").incrementAndGet();
         }
         return; // Success
       } catch (final Exception e) {
         attempts++;
-
-        // Only count as a retry if this is a retry attempt, not the first attempt
-        if (enableMetrics && attempts > 1) {
-          metrics.get("retries").incrementAndGet();
-        }
 
         // Last attempt failed
         if (attempts > maxRetries) {
@@ -562,14 +615,14 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
             "Failed to process message at offset %d after %d attempts".formatted(record.offset(), attempts),
             e
           );
-          errorHandler.accept(new ProcessingError<>(record, e, attempts - 1));
+          errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
           break;
         }
 
         // Wait before next retry attempt
         try {
           Thread.sleep(retryBackoff.toMillis());
-        } catch (InterruptedException ie) {
+        } catch (final InterruptedException ie) {
           Thread.currentThread().interrupt();
           break;
         }
