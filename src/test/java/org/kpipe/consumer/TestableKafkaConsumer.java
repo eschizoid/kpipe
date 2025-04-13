@@ -7,7 +7,7 @@ import java.util.function.Function;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 
-public class TestableKafkaConsumer<K, V> extends FunctionalKafkaConsumer<K, V> {
+public class TestableKafkaConsumer<K, V> extends FunctionalConsumer<K, V> {
 
   private final KafkaConsumer<K, V> mockConsumer;
 
@@ -45,7 +45,7 @@ public class TestableKafkaConsumer<K, V> extends FunctionalKafkaConsumer<K, V> {
 
   private void setMockConsumer() {
     try {
-      final var consumerField = FunctionalKafkaConsumer.class.getDeclaredField("consumer");
+      final var consumerField = FunctionalConsumer.class.getDeclaredField("consumer");
       consumerField.setAccessible(true);
       consumerField.set(this, mockConsumer);
     } catch (Exception e) {

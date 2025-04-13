@@ -37,13 +37,13 @@ class FunctionalKafkaConsumerMockingTest {
   private KafkaConsumer<String, String> mockConsumer;
 
   @Mock
-  private Consumer<FunctionalKafkaConsumer.ProcessingError<String, String>> errorHandler;
+  private Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler;
 
   @Captor
   private ArgumentCaptor<List<String>> topicCaptor;
 
   @Captor
-  private ArgumentCaptor<FunctionalKafkaConsumer.ProcessingError<String, String>> errorCaptor;
+  private ArgumentCaptor<FunctionalConsumer.ProcessingError<String, String>> errorCaptor;
 
   @BeforeEach
   void setUp() {
@@ -398,7 +398,7 @@ class FunctionalKafkaConsumerMockingTest {
 
     // Create consumer with disabled metrics
     try (
-      var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+      var consumer = new FunctionalConsumer.Builder<String, String>()
         .withProperties(props)
         .withTopic(TOPIC)
         .withProcessor(processor)
@@ -412,7 +412,7 @@ class FunctionalKafkaConsumerMockingTest {
 
   @Test
   void builderShouldCreateConsumerWithMinimalConfig() {
-    var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+    var consumer = new FunctionalConsumer.Builder<String, String>()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(processor)
@@ -428,7 +428,7 @@ class FunctionalKafkaConsumerMockingTest {
     final var customRetryBackoff = Duration.ofMillis(300);
     final var maxRetries = 3;
 
-    var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+    var consumer = new FunctionalConsumer.Builder<String, String>()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(processor)
@@ -445,7 +445,7 @@ class FunctionalKafkaConsumerMockingTest {
 
   @Test
   void builderShouldThrowNullPointerExceptionWhenMissingRequiredFields() {
-    final var builder = new FunctionalKafkaConsumer.Builder<String, String>();
+    final var builder = new FunctionalConsumer.Builder<String, String>();
 
     assertThrows(NullPointerException.class, builder::build);
 

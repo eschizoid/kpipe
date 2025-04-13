@@ -1,6 +1,5 @@
 package org.kpipe.consumer;
 
-import com.dslplatform.json.DslJson;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
@@ -33,7 +32,7 @@ import org.kpipe.sink.MessageSink;
  *
  * <pre>{@code
  * // Create consumer with builder pattern
- * var consumer = new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
+ * var consumer = new FunctionalConsumer.Builder<byte[], byte[]>()
  *     // Required configuration
  *     .withProperties(KafkaConfigFactory.createConsumerConfig("localhost:9092", "group-id"))
  *     .withTopic("json-topic")
@@ -57,10 +56,9 @@ import org.kpipe.sink.MessageSink;
  * @param <K> The type of Kafka record keys
  * @param <V> The type of Kafka record values
  */
-public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
+public class FunctionalConsumer<K, V> implements AutoCloseable {
 
-  private static final Logger LOGGER = System.getLogger(FunctionalKafkaConsumer.class.getName());
-  private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
+  private static final Logger LOGGER = System.getLogger(FunctionalConsumer.class.getName());
 
   // Core components
   private final KafkaConsumer<K, V> consumer;
@@ -96,12 +94,12 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
 
   /**
-   * Builder for creating instances of the {@link FunctionalKafkaConsumer} with a fluent interface.
+   * Builder for creating instances of the {@link FunctionalConsumer} with a fluent interface.
    *
    * <p>Example:
    *
    * <pre>{@code
-   * var consumer = new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
+   * var consumer = new FunctionalConsumer.Builder<byte[], byte[]>()
    *     .withProperties(kafkaProps)
    *     .withTopic("json-topic")
    *     .withProcessor(msg -> processJson(msg))
@@ -216,13 +214,13 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
     }
 
     /**
-     * Creates a new {@link FunctionalKafkaConsumer} with the configured settings.
+     * Creates a new {@link FunctionalConsumer} with the configured settings.
      *
      * @return a new consumer instance
      * @throws NullPointerException if required properties are null
      */
-    public FunctionalKafkaConsumer<K, V> build() {
-      return new FunctionalKafkaConsumer<>(this);
+    public FunctionalConsumer<K, V> build() {
+      return new FunctionalConsumer<>(this);
     }
   }
 
@@ -231,7 +229,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    *
    * @param builder the builder containing configuration
    */
-  public FunctionalKafkaConsumer(final Builder<K, V> builder) {
+  public FunctionalConsumer(final Builder<K, V> builder) {
     this.consumer = createConsumer(Objects.requireNonNull(builder.kafkaProps));
     this.topic = Objects.requireNonNull(builder.topic);
     this.processor = Objects.requireNonNull(builder.processor);
@@ -253,7 +251,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param topic the topic to consume from
    * @param processor function to process each message
    */
-  public FunctionalKafkaConsumer(final Properties kafkaProps, final String topic, Function<V, V> processor) {
+  public FunctionalConsumer(final Properties kafkaProps, final String topic, Function<V, V> processor) {
     this(kafkaProps, topic, processor, Duration.ofMillis(100));
   }
 
@@ -265,7 +263,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * @param processor function to process each message
    * @param pollTimeout duration to wait when polling for messages
    */
-  public FunctionalKafkaConsumer(
+  public FunctionalConsumer(
     final Properties kafkaProps,
     final String topic,
     final Function<V, V> processor,
@@ -296,6 +294,36 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   }
 
   /**
+   * Creates a MessageTracker configured for this consumer's metrics. The tracker can be used to
+   * monitor in-flight messages, especially during shutdown.
+   *
+   * <p>Example:
+   *
+   * <pre>{@code
+   * // Create and configure the tracker
+   * MessageTracker tracker = consumer.createMessageTracker();
+   *
+   * // Check current in-flight messages
+   * long inFlight = tracker.getInFlightMessageCount();
+   *
+   * // Wait for processing to complete during shutdown
+   * consumer.pause();
+   * boolean completed = tracker.waitForCompletion(5000).orElse(false);
+   * }</pre>
+   *
+   * @return a configured MessageTracker instance
+   */
+  public MessageTracker createMessageTracker() {
+    return MessageTracker
+      .builder()
+      .withMetricsSupplier(this::getMetrics)
+      .withReceivedMetricKey("messagesReceived")
+      .withProcessedMetricKey("messagesProcessed")
+      .withErrorsMetricKey("processingErrors")
+      .build();
+  }
+
+  /**
    * Starts the consumer and begins processing messages.
    *
    * <p>The consumer runs in a dedicated virtual thread and processes each received message in its
@@ -304,7 +332,7 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
    * <p>Example:
    *
    * <pre>{@code
-   * var consumer = new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
+   * var consumer = new FunctionalConsumer.Builder<byte[], byte[]>()
    *     // ... configure consumer
    *     .build();
    *
@@ -413,6 +441,13 @@ public class FunctionalKafkaConsumer<K, V> implements AutoCloseable {
   public void close() {
     if (isRunning()) {
       running.set(false);
+
+      // First pause to stop consuming new messages
+      pause();
+
+      // Use MessageTracker to wait for in-flight messages
+      final var tracker = createMessageTracker();
+      tracker.waitForCompletion(5000);
 
       // First wake up the consumer to unblock any poll operation
       if (consumer != null) {
