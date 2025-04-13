@@ -3,12 +3,13 @@ package org.kpipe;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
+import org.kpipe.consumer.ConsumerRunner;
 import org.kpipe.consumer.FunctionalKafkaConsumer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
@@ -37,34 +38,23 @@ public class KafkaConsumerApp implements AutoCloseable {
   private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
 
-  private final CountDownLatch shutdownLatch = new CountDownLatch(1);
   private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
-  private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
   private final FunctionalKafkaConsumer<byte[], byte[]> consumer;
+  private final ConsumerRunner<FunctionalKafkaConsumer<byte[], byte[]>> runner;
   private final Duration metricsInterval;
   private final Duration shutdownTimeout;
   private final MetricsReporter consumerMetricsReporter;
   private final MetricsReporter processorMetricsReporter;
-  private volatile boolean running = false;
+  private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
+
   private Thread metricsThread;
 
   /**
    * Main entry point for the Kafka consumer application.
    *
-   * <p>The application lifecycle is managed through two complementary mechanisms:
-   *
-   * <ul>
-   *   <li>A JVM shutdown hook that initiates graceful shutdown when the application receives
-   *       termination signals (CTRL+C, SIGTERM)
-   *   <li>The awaitShutdown method that keeps the main thread alive until shutdown is complete
-   * </ul>
-   *
-   * <p>This ensures both proper operation during normal runtime and clean termination when the
-   * application is stopped.
-   *
    * @param args command line arguments (not used)
    */
-  public static void main(String[] args) {
+  public static void main(final String[] args) {
     final var config = AppConfig.fromEnv();
 
     try (final KafkaConsumerApp app = new KafkaConsumerApp(config)) {
@@ -74,8 +64,8 @@ public class KafkaConsumerApp implements AutoCloseable {
         .getRuntime()
         .addShutdownHook(
           new Thread(() -> {
-            long timeoutMillis = app.getShutdownTimeout().toMillis();
-            boolean shutdownSuccess = app.shutdownGracefully(timeoutMillis);
+            final long timeoutMillis = app.getShutdownTimeout().toMillis();
+            final boolean shutdownSuccess = app.shutdownGracefully(timeoutMillis);
             if (!shutdownSuccess) {
               LOGGER.log(Level.WARNING, "Graceful shutdown timed out after %s ms".formatted(timeoutMillis));
             }
@@ -109,6 +99,80 @@ public class KafkaConsumerApp implements AutoCloseable {
       new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime.get(), null);
 
     this.processorMetricsReporter = new ProcessorMetricsReporter(registry, null);
+
+    // Configure and create the ConsumerRunner
+    this.runner =
+      ConsumerRunner
+        .builder(consumer)
+        .withStartAction(c -> {
+          startMetricsReporting();
+          c.start();
+          LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
+        })
+        .withHealthCheck(FunctionalKafkaConsumer::isRunning)
+        .withGracefulShutdown(this::performGracefulShutdown)
+        .build();
+  }
+
+  /**
+   * Performs a graceful shutdown of the consumer, waiting for in-flight messages.
+   *
+   * @param consumer the consumer to shut down
+   * @param timeoutMs maximum time in milliseconds to wait for in-flight messages
+   * @return true if all in-flight messages completed, false if timeout was reached
+   */
+  private boolean performGracefulShutdown(FunctionalKafkaConsumer<byte[], byte[]> consumer, long timeoutMs) {
+    LOGGER.log(Level.INFO, "Initiating graceful shutdown with {0}ms drain timeout", timeoutMs);
+
+    try {
+      consumer.pause();
+    } catch (Exception e) {
+      LOGGER.log(Level.WARNING, "Error pausing consumer during shutdown", e);
+    }
+
+    // Check if consumer is already done processing (no in-flight messages)
+    var metrics = consumer.getMetrics();
+    currentMetrics.set(metrics);
+    var received = metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L);
+    var processed = metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L);
+    var errors = metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L);
+
+    // If all messages are accounted for, we can skip waiting
+    if (received == processed + errors) {
+      LOGGER.log(Level.INFO, "No in-flight messages detected, proceeding with shutdown");
+      return true;
+    }
+
+    // Wait for in-flight messages with periodic checks
+    final var startTime = System.currentTimeMillis();
+    final var deadline = startTime + timeoutMs;
+
+    try {
+      while (System.currentTimeMillis() < deadline) {
+        Thread.sleep(Math.min(500, timeoutMs / 10)); // Check periodically
+
+        metrics = consumer.getMetrics();
+        currentMetrics.set(metrics);
+        processed = metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L);
+        errors = metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L);
+
+        if (received == processed + errors) {
+          LOGGER.log(Level.INFO, "All in-flight messages completed, proceeding with shutdown");
+          return true;
+        }
+      }
+
+      LOGGER.log(
+        Level.WARNING,
+        "Drain timeout reached with {0} messages still in-flight",
+        (received - processed - errors)
+      );
+      return false;
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      LOGGER.log(Level.WARNING, "Graceful shutdown was interrupted");
+      return false;
+    }
   }
 
   /**
@@ -125,6 +189,7 @@ public class KafkaConsumerApp implements AutoCloseable {
    *
    * @param config the application configuration
    * @param registry the message processor registry to use
+   * @param messageSink the message sink to use
    * @return a new functional Kafka consumer
    */
   private static FunctionalKafkaConsumer<byte[], byte[]> createConsumer(
@@ -140,6 +205,7 @@ public class KafkaConsumerApp implements AutoCloseable {
       .withProcessor(createProcessorPipeline(config, registry))
       .withPollTimeout(config.pollTimeout)
       .withMessageSink(messageSink)
+      .withMetrics(true)
       .build();
   }
 
@@ -154,167 +220,44 @@ public class KafkaConsumerApp implements AutoCloseable {
     final AppConfig config,
     final MessageProcessorRegistry registry
   ) {
-    Function<byte[], byte[]> pipeline = config.processors.isEmpty()
+    final Function<byte[], byte[]> pipeline = config.processors.isEmpty()
       ? registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp")
       : registry.pipeline(config.processors.toArray(new String[0]));
 
     return MessageProcessorRegistry.withErrorHandling(pipeline, null);
   }
 
-  /**
-   * Starts the Kafka consumer application.
-   *
-   * <p>This method initiates:
-   *
-   * <ul>
-   *   <li>The background metrics reporting thread
-   *   <li>The Kafka consumer to begin processing messages
-   * </ul>
-   *
-   * <p>If the application is already running, this method has no effect.
-   */
+  /** Starts the Kafka consumer application. */
   public void start() {
-    if (running) {
-      return;
-    }
-
-    running = true;
-    startMetricsReporting();
-    consumer.start();
-    LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
+    runner.start();
   }
 
   /**
-   * Blocks the current thread until the application shuts down. This method should block
-   * indefinitely until an explicit shutdown is triggered.
+   * Blocks the current thread until the application shuts down.
    *
    * @return true if the application shut down normally, false otherwise
    */
   public boolean awaitShutdown() {
-    try {
-      shutdownLatch.await();
-      return true;
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      LOGGER.log(Level.WARNING, "Shutdown wait interrupted");
-      return false;
-    }
+    return runner.awaitShutdown();
   }
 
   /**
-   * Initiates a graceful shutdown by allowing in-flight messages to complete processing before
-   * shutting down.
+   * Initiates a graceful shutdown allowing in-flight messages to complete.
    *
-   * <p>This method actively monitors the status of in-flight messages and attempts to:
-   *
-   * <ul>
-   *   <li>Prevent new messages from being consumed by pausing the consumer
-   *   <li>Wait for any in-flight messages to complete processing
-   *   <li>Exit early if all messages are already processed
-   *   <li>Ensure proper resource cleanup even if the timeout is reached
-   * </ul>
-   *
-   * <p>The method will monitor the difference between received and processed messages to determine
-   * when all in-flight processing has completed.
-   *
-   * @param drainTimeoutMs maximum time in milliseconds to wait for in-flight messages
-   * @return true if all in-flight messages completed processing within the timeout, false otherwise
+   * @param timeoutMs maximum time in milliseconds to wait for in-flight messages
+   * @return true if all in-flight messages completed within the timeout, false otherwise
    */
-  public boolean shutdownGracefully(long drainTimeoutMs) {
-    // Only allow one shutdown to proceed
-    if (!shuttingDown.compareAndSet(false, true)) {
-      LOGGER.log(Level.INFO, "Shutdown already in progress, ignoring additional request");
-      return true;
-    }
-
-    LOGGER.log(Level.INFO, "Initiating graceful shutdown with {0}ms drain timeout", drainTimeoutMs);
-
-    // Signal consumer to stop accepting new messages
-    try {
-      consumer.pause();
-    } catch (Exception e) {
-      LOGGER.log(Level.WARNING, "Error pausing consumer during shutdown", e);
-      // Continue with shutdown despite the error
-    }
-
-    // Check if consumer is already done processing (no in-flight messages)
-    var metrics = consumer.getMetrics();
-    var received = metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L);
-    var processed = metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L);
-    var errors = metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L);
-
-    // If all messages are accounted for, we can skip waiting
-    if (received == processed + errors) {
-      LOGGER.log(Level.INFO, "No in-flight messages detected, proceeding with shutdown");
-      close();
-      return true;
-    }
-
-    // Wait for in-flight messages with periodic checks
-    final var startTime = System.currentTimeMillis();
-    final var deadline = startTime + drainTimeoutMs;
-
-    try {
-      while (System.currentTimeMillis() < deadline) {
-        Thread.sleep(Math.min(500, drainTimeoutMs / 10)); // Check periodically
-
-        metrics = consumer.getMetrics();
-        processed = metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L);
-        errors = metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L);
-
-        if (received == processed + errors) {
-          LOGGER.log(Level.INFO, "All in-flight messages completed, proceeding with shutdown");
-          close();
-          return true;
-        }
-      }
-
-      LOGGER.log(
-        Level.WARNING,
-        "Drain timeout reached with {0} messages still in-flight",
-        (received - processed - errors)
-      );
-      return false;
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      LOGGER.log(Level.WARNING, "Graceful shutdown was interrupted");
-      return false;
-    } finally {
-      // Ensure resources are properly closed exactly once
-      close();
-    }
+  public boolean shutdownGracefully(final long timeoutMs) {
+    return runner.shutdownGracefully(timeoutMs);
   }
 
   /**
    * Returns whether the consumer application is healthy and functioning properly.
    *
-   * <p>This method checks that:
-   *
-   * <ul>
-   *   <li>The application is currently in a running state
-   *   <li>The underlying Kafka consumer is active and operational
-   * </ul>
-   *
-   * <p>This method is designed to be used by health monitoring systems such as:
-   *
-   * <ul>
-   *   <li>Docker container health checks (via HEALTHCHECK directive)
-   *   <li>Kubernetes liveness and readiness probes
-   *   <li>Application monitoring tools
-   *   <li>Custom health endpoints in REST APIs
-   * </ul>
-   *
-   * <p>Example usage with a Docker HEALTHCHECK:
-   *
-   * <pre>
-   * HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-   *   CMD java -cp myapp.jar com.example.HealthCheck || exit 1
-   * </pre>
-   *
-   * @return true if the application is running and the consumer is processing messages
+   * @return true if the application is running and the consumer is operational
    */
   public boolean isHealthy() {
-    return running && consumer.isRunning();
+    return runner.isHealthy();
   }
 
   /**
@@ -323,7 +266,7 @@ public class KafkaConsumerApp implements AutoCloseable {
    * @return true if the application is running, false otherwise
    */
   public boolean isRunning() {
-    return running;
+    return runner.isHealthy();
   }
 
   /**
@@ -332,40 +275,25 @@ public class KafkaConsumerApp implements AutoCloseable {
    * @return true if the application is shutting down, false otherwise
    */
   public boolean isShuttingDown() {
-    return shuttingDown.get();
+    return !runner.isHealthy() && !isRunning();
   }
 
   /**
-   * Closes all resources associated with this application. This method is called automatically when
-   * using try-with-resources.
+   * Returns the current metrics from the consumer.
+   *
+   * @return a map containing the current metrics
    */
+  public Map<String, Long> getMetrics() {
+    return currentMetrics.get();
+  }
+
+  /** Closes all resources associated with this application. */
   @Override
   public void close() {
-    // If we're already not running, don't try to close again
-    if (!running) {
-      return;
-    }
+    runner.close();
 
-    // Mark as not running to prevent further operations
-    running = false;
-    LOGGER.log(Level.INFO, "Closing resources...");
-
-    try {
-      // Close the consumer first to stop receiving messages
-      try {
-        if (consumer != null) {
-          consumer.close();
-        }
-      } catch (Exception e) {
-        LOGGER.log(Level.WARNING, "Error closing consumer", e);
-      }
-
-      // Stop the metrics thread - no need for join with virtual threads
-      if (metricsThread != null) {
-        metricsThread.interrupt();
-      }
-    } finally {
-      shutdownLatch.countDown();
+    if (metricsThread != null) {
+      metricsThread.interrupt();
     }
   }
 
@@ -374,10 +302,13 @@ public class KafkaConsumerApp implements AutoCloseable {
     metricsThread =
       Thread.startVirtualThread(() -> {
         try {
-          while (running && !Thread.currentThread().isInterrupted()) {
+          while (!Thread.currentThread().isInterrupted()) {
             try {
               consumerMetricsReporter.reportMetrics();
               processorMetricsReporter.reportMetrics();
+
+              // Store current metrics for health checks
+              currentMetrics.set(consumer.getMetrics());
             } catch (Exception e) {
               LOGGER.log(Level.WARNING, "Error during metrics reporting", e);
             }
