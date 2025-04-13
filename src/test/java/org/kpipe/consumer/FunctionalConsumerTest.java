@@ -12,7 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class FunctionalKafkaConsumerTest {
+class FunctionalConsumerTest {
 
   private static final String TOPIC = "test-topic";
   private static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
@@ -34,38 +34,35 @@ class FunctionalKafkaConsumerTest {
 
   @Test
   void constructor_WithValidParameters_ShouldNotThrowException() {
-    assertDoesNotThrow(() -> new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor));
-    assertDoesNotThrow(() -> new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor, POLL_TIMEOUT));
+    assertDoesNotThrow(() -> new FunctionalConsumer<>(properties, TOPIC, mockProcessor));
+    assertDoesNotThrow(() -> new FunctionalConsumer<>(properties, TOPIC, mockProcessor, POLL_TIMEOUT));
   }
 
   @Test
   void constructor_WithNullParameters_ShouldThrowNullPointerException() {
-    assertThrows(NullPointerException.class, () -> new FunctionalKafkaConsumer<>(null, TOPIC, mockProcessor));
-    assertThrows(NullPointerException.class, () -> new FunctionalKafkaConsumer<>(properties, null, mockProcessor));
-    assertThrows(NullPointerException.class, () -> new FunctionalKafkaConsumer<>(properties, TOPIC, null));
-    assertThrows(
-      NullPointerException.class,
-      () -> new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor, null)
-    );
+    assertThrows(NullPointerException.class, () -> new FunctionalConsumer<>(null, TOPIC, mockProcessor));
+    assertThrows(NullPointerException.class, () -> new FunctionalConsumer<>(properties, null, mockProcessor));
+    assertThrows(NullPointerException.class, () -> new FunctionalConsumer<>(properties, TOPIC, null));
+    assertThrows(NullPointerException.class, () -> new FunctionalConsumer<>(properties, TOPIC, mockProcessor, null));
   }
 
   @Test
   void isRunningShouldReturnTrueAfterConstruction() {
-    try (final var consumer = new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor)) {
+    try (final var consumer = new FunctionalConsumer<>(properties, TOPIC, mockProcessor)) {
       assertTrue(consumer.isRunning());
     }
   }
 
   @Test
   void isRunningShouldReturnFalseAfterClose() {
-    final var consumer = new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor);
+    final var consumer = new FunctionalConsumer<>(properties, TOPIC, mockProcessor);
     consumer.close();
     assertFalse(consumer.isRunning());
   }
 
   @Test
   void closeCalledMultipleTimesShouldBeIdempotent() {
-    final var consumer = new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor);
+    final var consumer = new FunctionalConsumer<>(properties, TOPIC, mockProcessor);
     assertTrue(consumer.isRunning());
     consumer.close();
     assertFalse(consumer.isRunning());
@@ -76,8 +73,8 @@ class FunctionalKafkaConsumerTest {
 
   @Test
   void autoCloseableShouldCloseConsumerWhenExitingTryWithResources() {
-    FunctionalKafkaConsumer<String, String> consumer = null;
-    try (FunctionalKafkaConsumer<String, String> c = new FunctionalKafkaConsumer<>(properties, TOPIC, mockProcessor)) {
+    FunctionalConsumer<String, String> consumer = null;
+    try (FunctionalConsumer<String, String> c = new FunctionalConsumer<>(properties, TOPIC, mockProcessor)) {
       consumer = c;
       assertTrue(consumer.isRunning());
     }

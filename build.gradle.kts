@@ -13,7 +13,7 @@ repositories {
 }
 
 application {
-    mainClass.set("org.kpipe.KafkaConsumerApp")
+    mainClass.set("org.kpipe.App")
 }
 
 java {

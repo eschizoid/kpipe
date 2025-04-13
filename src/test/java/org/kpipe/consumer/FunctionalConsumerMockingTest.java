@@ -25,7 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class FunctionalKafkaConsumerMockingTest {
+class FunctionalConsumerMockingTest {
 
   private static final String TOPIC = "test-topic";
   private Properties properties;
@@ -37,13 +37,13 @@ class FunctionalKafkaConsumerMockingTest {
   private KafkaConsumer<String, String> mockConsumer;
 
   @Mock
-  private Consumer<FunctionalKafkaConsumer.ProcessingError<String, String>> errorHandler;
+  private Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler;
 
   @Captor
   private ArgumentCaptor<List<String>> topicCaptor;
 
   @Captor
-  private ArgumentCaptor<FunctionalKafkaConsumer.ProcessingError<String, String>> errorCaptor;
+  private ArgumentCaptor<FunctionalConsumer.ProcessingError<String, String>> errorCaptor;
 
   @BeforeEach
   void setUp() {
@@ -57,7 +57,7 @@ class FunctionalKafkaConsumerMockingTest {
   @Test
   void shouldSubscribeToTopic() {
     final var props = new Properties();
-    final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     consumer.start();
 
@@ -76,7 +76,7 @@ class FunctionalKafkaConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create consumer with mock
-    final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     // Create a CountDownLatch to wait for async processing
     final var latch = new CountDownLatch(1);
@@ -117,7 +117,7 @@ class FunctionalKafkaConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create consumer with mock
-    final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     // Test - should not throw exception
     assertDoesNotThrow(() -> consumer.executeProcessRecords(records));
@@ -136,7 +136,7 @@ class FunctionalKafkaConsumerMockingTest {
     KafkaConsumer<String, String> mockConsumer = mock(KafkaConsumer.class);
     Function<String, String> processor = value -> value;
 
-    final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
     consumer.start();
 
     // Test
@@ -175,7 +175,7 @@ class FunctionalKafkaConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create consumer with retry config
-    var consumer = new TestableKafkaConsumer<>(
+    var consumer = new TestableFunctionalConsumer<>(
       props,
       TOPIC,
       processor,
@@ -225,7 +225,7 @@ class FunctionalKafkaConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create consumer with no retries
-    final var consumer = new TestableKafkaConsumer<>(
+    final var consumer = new TestableFunctionalConsumer<>(
       props,
       TOPIC,
       processor,
@@ -255,7 +255,7 @@ class FunctionalKafkaConsumerMockingTest {
   void shouldPauseConsumerWhenPauseCalled() {
     // Setup
     final var props = new Properties();
-    final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     // Mock the assignment
     final var assignment = Set.of(new TopicPartition(TOPIC, 0));
@@ -273,7 +273,7 @@ class FunctionalKafkaConsumerMockingTest {
   void shouldResumeConsumerWhenResumeCalled() {
     // Setup
     var props = new Properties();
-    var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     // Mock the assignment
     var assignment = Set.of(new TopicPartition(TOPIC, 0));
@@ -295,7 +295,7 @@ class FunctionalKafkaConsumerMockingTest {
   void pauseAndResumeShouldBeIdempotent() {
     // Setup
     var props = new Properties();
-    var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     // Mock the assignment
     var assignment = Set.of(new TopicPartition(TOPIC, 0));
@@ -336,7 +336,7 @@ class FunctionalKafkaConsumerMockingTest {
     var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create test consumer
-    var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     // Process records
     consumer.executeProcessRecords(records);
@@ -374,7 +374,7 @@ class FunctionalKafkaConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create test consumer
-    final var consumer = new TestableKafkaConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     // Process records
     consumer.executeProcessRecords(records);
@@ -398,7 +398,7 @@ class FunctionalKafkaConsumerMockingTest {
 
     // Create consumer with disabled metrics
     try (
-      var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+      var consumer = new FunctionalConsumer.Builder<String, String>()
         .withProperties(props)
         .withTopic(TOPIC)
         .withProcessor(processor)
@@ -412,7 +412,7 @@ class FunctionalKafkaConsumerMockingTest {
 
   @Test
   void builderShouldCreateConsumerWithMinimalConfig() {
-    var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+    var consumer = new FunctionalConsumer.Builder<String, String>()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(processor)
@@ -428,7 +428,7 @@ class FunctionalKafkaConsumerMockingTest {
     final var customRetryBackoff = Duration.ofMillis(300);
     final var maxRetries = 3;
 
-    var consumer = new FunctionalKafkaConsumer.Builder<String, String>()
+    var consumer = new FunctionalConsumer.Builder<String, String>()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(processor)
@@ -445,7 +445,7 @@ class FunctionalKafkaConsumerMockingTest {
 
   @Test
   void builderShouldThrowNullPointerExceptionWhenMissingRequiredFields() {
-    final var builder = new FunctionalKafkaConsumer.Builder<String, String>();
+    final var builder = new FunctionalConsumer.Builder<String, String>();
 
     assertThrows(NullPointerException.class, builder::build);
 
