@@ -10,6 +10,9 @@ import java.util.function.Function;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
 import org.kpipe.consumer.FunctionalKafkaConsumer;
+import org.kpipe.metrics.ConsumerMetricsReporter;
+import org.kpipe.metrics.MetricsReporter;
+import org.kpipe.metrics.ProcessorMetricsReporter;
 import org.kpipe.processor.MessageProcessorRegistry;
 import org.kpipe.sink.LoggingSink;
 import org.kpipe.sink.MessageSink;
@@ -38,9 +41,10 @@ public class KafkaConsumerApp implements AutoCloseable {
   private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
   private final FunctionalKafkaConsumer<byte[], byte[]> consumer;
-  private final MessageProcessorRegistry registry;
   private final Duration metricsInterval;
   private final Duration shutdownTimeout;
+  private final MetricsReporter consumerMetricsReporter;
+  private final MetricsReporter processorMetricsReporter;
   private volatile boolean running = false;
   private Thread metricsThread;
 
@@ -97,10 +101,14 @@ public class KafkaConsumerApp implements AutoCloseable {
     final MessageProcessorRegistry registry = new MessageProcessorRegistry(config.appName);
     final MessageSink<byte[], byte[]> messageSink = new LoggingSink<>();
 
-    this.registry = registry;
     this.consumer = createConsumer(config, registry, messageSink);
     this.metricsInterval = config.metricsInterval;
     this.shutdownTimeout = config.shutdownTimeout;
+
+    this.consumerMetricsReporter =
+      new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime.get(), null);
+
+    this.processorMetricsReporter = new ProcessorMetricsReporter(registry, null);
   }
 
   /**
@@ -368,8 +376,8 @@ public class KafkaConsumerApp implements AutoCloseable {
         try {
           while (running && !Thread.currentThread().isInterrupted()) {
             try {
-              reportConsumerMetrics();
-              reportProcessorMetrics();
+              consumerMetricsReporter.reportMetrics();
+              processorMetricsReporter.reportMetrics();
             } catch (Exception e) {
               LOGGER.log(Level.WARNING, "Error during metrics reporting", e);
             }
@@ -381,46 +389,5 @@ public class KafkaConsumerApp implements AutoCloseable {
           LOGGER.log(Level.INFO, "Metrics reporting thread interrupted");
         }
       });
-  }
-
-  /** Reports consumer metrics to the logger. */
-  private void reportConsumerMetrics() {
-    try {
-      final var consumerMetrics = consumer.getMetrics();
-      if (consumerMetrics != null && !consumerMetrics.isEmpty()) {
-        LOGGER.log(
-          Level.INFO,
-          "Consumer metrics: messages received: %s, messages processed: %s, errors: %s, uptime: %s ms".formatted(
-              consumerMetrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L),
-              consumerMetrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L),
-              consumerMetrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L),
-              System.currentTimeMillis() - startTime.get()
-            )
-        );
-      }
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error retrieving consumer metrics", e);
-    }
-  }
-
-  /** Reports processor metrics to the logger. */
-  private void reportProcessorMetrics() {
-    try {
-      registry
-        .getAll()
-        .keySet()
-        .forEach(processorName -> {
-          try {
-            final var metrics = registry.getMetrics(processorName);
-            if (!metrics.isEmpty()) {
-              LOGGER.log(Level.INFO, "Processor '%s' metrics: %s".formatted(processorName, metrics));
-            }
-          } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Error retrieving metrics for processor: %s".formatted(processorName));
-          }
-        });
-    } catch (Exception e) {
-      LOGGER.log(Level.WARNING, "Error retrieving processor registry", e);
-    }
   }
 }

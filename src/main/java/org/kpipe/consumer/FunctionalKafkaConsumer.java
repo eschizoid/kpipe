@@ -29,16 +29,22 @@ import org.kpipe.sink.MessageSink;
  * processor function. Each message is processed in its own virtual thread, allowing for massive
  * concurrency with minimal overhead.
  *
- * <p>Example usage:
+ * <p>Example usage with all builder options:
  *
  * <pre>{@code
  * // Create consumer with builder pattern
  * var consumer = new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
+ *     // Required configuration
  *     .withProperties(KafkaConfigFactory.createConsumerConfig("localhost:9092", "group-id"))
  *     .withTopic("json-topic")
  *     .withProcessor(MessageProcessorRegistry.pipeline("parseJson", "addMetadata"))
+ *
+ *     // Optional configuration
+ *     .withPollTimeout(Duration.ofMillis(100))
  *     .withRetry(3, Duration.ofSeconds(1))
  *     .withErrorHandler(error -> logError(error))
+ *     .withMetrics(true)
+ *     .withMessageSink(new CustomMessageSink<>())
  *     .build();
  *
  * // Start consuming messages
