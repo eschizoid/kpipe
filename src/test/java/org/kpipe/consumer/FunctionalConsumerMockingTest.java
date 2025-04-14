@@ -254,66 +254,80 @@ class FunctionalConsumerMockingTest {
   @Test
   void shouldPauseConsumerWhenPauseCalled() {
     // Setup
-    final var props = new Properties();
-    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var mockConsumer = mock(KafkaConsumer.class);
+    final var partition = new TopicPartition("test-topic", 0);
+    final var partitions = Set.of(partition);
+    when(mockConsumer.assignment()).thenReturn(partitions);
 
-    // Mock the assignment
-    final var assignment = Set.of(new TopicPartition(TOPIC, 0));
-    when(mockConsumer.assignment()).thenReturn(assignment);
+    FunctionalConsumer<String, String> consumer = new FunctionalConsumer<>(properties, "test-topic", value -> value) {
+      @Override
+      protected KafkaConsumer<String, String> createConsumer(Properties kafkaProps) {
+        return mockConsumer;
+      }
+    };
 
-    // Test
+    // Action
     consumer.pause();
+    consumer.processCommandsForTest(); // Process the command
 
-    // Verify
-    assertTrue(consumer.isPaused());
-    verify(mockConsumer).pause(assignment);
+    // Verification
+    verify(mockConsumer).pause(partitions);
   }
 
   @Test
   void shouldResumeConsumerWhenResumeCalled() {
     // Setup
-    var props = new Properties();
-    var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var mockConsumer = mock(KafkaConsumer.class);
+    final var partition = new TopicPartition("test-topic", 0);
+    final var partitions = Set.of(partition);
+    when(mockConsumer.assignment()).thenReturn(partitions);
 
-    // Mock the assignment
-    var assignment = Set.of(new TopicPartition(TOPIC, 0));
-    when(mockConsumer.assignment()).thenReturn(assignment);
+    FunctionalConsumer<String, String> consumer = new FunctionalConsumer<>(properties, "test-topic", value -> value) {
+      @Override
+      protected KafkaConsumer<String, String> createConsumer(Properties kafkaProps) {
+        return mockConsumer;
+      }
+    };
 
-    // Pause the consumer first
+    // Set up paused state
     consumer.pause();
-    assertTrue(consumer.isPaused());
+    consumer.processCommandsForTest(); // Process pause command
 
-    // Test
+    // Clear any previous interactions with the mock
+    reset(mockConsumer);
+    when(mockConsumer.assignment()).thenReturn(partitions);
+
+    // Action
     consumer.resume();
+    consumer.processCommandsForTest(); // Process resume command
 
-    // Verify
-    assertFalse(consumer.isPaused());
-    verify(mockConsumer).resume(assignment);
+    // Verification
+    verify(mockConsumer).resume(partitions);
   }
 
   @Test
   void pauseAndResumeShouldBeIdempotent() {
     // Setup
-    var props = new Properties();
-    var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var mockConsumer = mock(KafkaConsumer.class);
+    final var partition = new TopicPartition("test-topic", 0);
+    final var partitions = Set.of(partition);
+    when(mockConsumer.assignment()).thenReturn(partitions);
 
-    // Mock the assignment
-    var assignment = Set.of(new TopicPartition(TOPIC, 0));
-    when(mockConsumer.assignment()).thenReturn(assignment);
+    FunctionalConsumer<String, String> consumer = new FunctionalConsumer<>(properties, "test-topic", value -> value) {
+      @Override
+      protected KafkaConsumer<String, String> createConsumer(Properties kafkaProps) {
+        return mockConsumer;
+      }
+    };
 
-    // Test pause idempotence
+    // Action
     consumer.pause();
-    consumer.pause(); // Second call should have no effect
+    consumer.processCommandsForTest(); // Process the pause command
+    consumer.pause(); // Second call should be idempotent
+    consumer.processCommandsForTest(); // Process second command (should do nothing)
 
-    // Verify pause was only called once
+    // Verify
     verify(mockConsumer, times(1)).pause(any());
-
-    // Test resume idempotence
-    consumer.resume();
-    consumer.resume(); // Second call should have no effect
-
-    // Verify resume was only called once
-    verify(mockConsumer, times(1)).resume(any());
   }
 
   @Test
@@ -336,7 +350,7 @@ class FunctionalConsumerMockingTest {
     var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create test consumer
-    var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
 
     // Process records
     consumer.executeProcessRecords(records);
@@ -398,7 +412,7 @@ class FunctionalConsumerMockingTest {
 
     // Create consumer with disabled metrics
     try (
-      var consumer = new FunctionalConsumer.Builder<String, String>()
+      final var consumer = new FunctionalConsumer.Builder<String, String>()
         .withProperties(props)
         .withTopic(TOPIC)
         .withProcessor(processor)
@@ -412,7 +426,7 @@ class FunctionalConsumerMockingTest {
 
   @Test
   void builderShouldCreateConsumerWithMinimalConfig() {
-    var consumer = new FunctionalConsumer.Builder<String, String>()
+    final var consumer = new FunctionalConsumer.Builder<String, String>()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(processor)

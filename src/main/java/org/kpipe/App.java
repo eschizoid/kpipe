@@ -2,7 +2,6 @@ package org.kpipe;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,12 +28,7 @@ public class App implements AutoCloseable {
   private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final FunctionalConsumer<byte[], byte[]> consumer;
   private final ConsumerRunner<FunctionalConsumer<byte[], byte[]>> runner;
-  private final Duration metricsInterval;
-  private final MetricsReporter consumerMetricsReporter;
-  private final MetricsReporter processorMetricsReporter;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
-
-  private Thread metricsThread;
 
   /** Main entry point for the Kafka consumer application. */
   public static void main(final String[] args) {
@@ -58,35 +52,35 @@ public class App implements AutoCloseable {
     final MessageSink<byte[], byte[]> messageSink = new LoggingSink<>();
 
     this.consumer = createConsumer(config, registry, messageSink);
-    this.metricsInterval = config.metricsInterval();
 
-    this.consumerMetricsReporter =
-      new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime.get(), null);
+    final var consumerMetricsReporter = new ConsumerMetricsReporter(
+      consumer::getMetrics,
+      () -> System.currentTimeMillis() - startTime.get(),
+      null
+    );
 
-    this.processorMetricsReporter = new ProcessorMetricsReporter(registry, null);
+    final var processorMetricsReporter = new ProcessorMetricsReporter(registry, null);
 
-    this.runner = createConsumerRunner(config);
+    this.runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
   }
 
   /** Creates the consumer runner with appropriate lifecycle hooks. */
-  private ConsumerRunner<FunctionalConsumer<byte[], byte[]>> createConsumerRunner(final AppConfig config) {
+  private ConsumerRunner<FunctionalConsumer<byte[], byte[]>> createConsumerRunner(
+    final AppConfig config,
+    final MetricsReporter consumerMetricsReporter,
+    final MetricsReporter processorMetricsReporter
+  ) {
     return ConsumerRunner
       .builder(consumer)
       .withStartAction(c -> {
-        startMetricsReporting();
         c.start();
         LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
       })
       .withHealthCheck(FunctionalConsumer::isRunning)
-      .withGracefulShutdown((c, timeoutMs) -> {
-        // App-specific cleanup - stop metrics thread
-        if (metricsThread != null) {
-          metricsThread.interrupt();
-          LOGGER.log(Level.INFO, "Metrics reporting stopped");
-        }
-        // Delegate to standard consumer shutdown logic
-        return ConsumerRunner.performGracefulConsumerShutdown(c, timeoutMs);
-      })
+      .withGracefulShutdown(ConsumerRunner::performGracefulConsumerShutdown)
+      .withMetricsReporter(consumerMetricsReporter)
+      .withMetricsReporter(processorMetricsReporter)
+      .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())
       .withShutdownHook(true)
       .build();
@@ -113,7 +107,7 @@ public class App implements AutoCloseable {
     final AppConfig config,
     final MessageProcessorRegistry registry
   ) {
-    final Function<byte[], byte[]> pipeline = config.processors().isEmpty()
+    final var pipeline = config.processors().isEmpty()
       ? registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp")
       : registry.pipeline(config.processors().toArray(new String[0]));
 
@@ -135,30 +129,5 @@ public class App implements AutoCloseable {
   @Override
   public void close() {
     runner.close();
-
-    if (metricsThread != null) {
-      metricsThread.interrupt();
-    }
-  }
-
-  private void startMetricsReporting() {
-    metricsThread =
-      Thread.startVirtualThread(() -> {
-        try {
-          while (!Thread.currentThread().isInterrupted()) {
-            try {
-              consumerMetricsReporter.reportMetrics();
-              processorMetricsReporter.reportMetrics();
-              currentMetrics.set(consumer.getMetrics());
-            } catch (final Exception e) {
-              LOGGER.log(Level.WARNING, "Error during metrics reporting", e);
-            }
-            Thread.sleep(metricsInterval);
-          }
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-          LOGGER.log(Level.INFO, "Metrics reporting thread interrupted");
-        }
-      });
   }
 }

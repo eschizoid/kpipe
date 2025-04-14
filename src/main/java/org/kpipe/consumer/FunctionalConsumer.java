@@ -10,6 +10,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -17,48 +18,64 @@ import java.util.stream.StreamSupport;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.kpipe.annotations.VisibleForTesting;
 import org.kpipe.sink.LoggingSink;
 import org.kpipe.sink.MessageSink;
 
 /**
- * A modern, functional Kafka consumer implementation leveraging Java 23's virtual threads for
- * concurrent message processing.
+ * A high-performance Kafka consumer that processes messages functionally through virtual threads.
  *
- * <p>This consumer processes Kafka messages through a functional pipeline defined by the provided
- * processor function. Each message is processed in its own virtual thread, allowing for massive
- * concurrency with minimal overhead.
+ * <p>This class provides a simplified interface for consuming Kafka messages and processing them
+ * using a functional approach. Each record is processed asynchronously in a dedicated virtual
+ * thread, allowing for high throughput and efficient resource utilization.
  *
- * <p>Example usage with all builder options:
+ * <p>Features include:
+ *
+ * <ul>
+ *   <li>Functional processing with a simple {@code Function<V, V>} interface
+ *   <li>Asynchronous processing using virtual threads
+ *   <li>Configurable error handling and retry mechanisms
+ *   <li>Pause/resume capabilities for flow control
+ *   <li>Built-in metrics collection
+ *   <li>Graceful shutdown with in-flight message tracking
+ * </ul>
+ *
+ * <p>Example usage:
  *
  * <pre>{@code
- * // Create consumer with builder pattern
- * var consumer = new FunctionalConsumer.Builder<byte[], byte[]>()
- *     // Required configuration
- *     .withProperties(KafkaConfigFactory.createConsumerConfig("localhost:9092", "group-id"))
- *     .withTopic("json-topic")
- *     .withProcessor(MessageProcessorRegistry.pipeline("parseJson", "addMetadata"))
+ * var props = new Properties();
+ * props.put("bootstrap.servers", "localhost:9092");
+ * props.put("group.id", "my-group");
+ * props.put("key.deserializer", StringDeserializer.class.getName());
+ * props.put("value.deserializer", StringDeserializer.class.getName());
  *
- *     // Optional configuration
- *     .withPollTimeout(Duration.ofMillis(100))
+ * var consumer = new FunctionalConsumer.Builder<String, String>()
+ *     .withProperties(props)
+ *     .withTopic("my-topic")
+ *     .withProcessor(value -> value.toUpperCase())
  *     .withRetry(3, Duration.ofSeconds(1))
- *     .withErrorHandler(error -> logError(error))
- *     .withMetrics(true)
- *     .withMessageSink(new CustomMessageSink<>())
  *     .build();
  *
- * // Start consuming messages
  * consumer.start();
- *
- * // Later, gracefully shut down
+ * // Later when finished
  * consumer.close();
  * }</pre>
  *
- * @param <K> The type of Kafka record keys
- * @param <V> The type of Kafka record values
+ * @param <K> the type of keys in the consumed records
+ * @param <V> the type of values in the consumed records
  */
 public class FunctionalConsumer<K, V> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(FunctionalConsumer.class.getName());
+
+  // Command pattern for thread-safe operations
+  private enum ConsumerCommand {
+    PAUSE,
+    RESUME,
+    CLOSE,
+  }
+
+  private final AtomicReference<ConsumerCommand> pendingCommand = new AtomicReference<>(null);
 
   // Core components
   private final KafkaConsumer<K, V> consumer;
@@ -83,33 +100,22 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
 
   /**
-   * Record for capturing information about processing errors during message consumption.
+   * Represents an error that occurred during record processing. Contains the original record, the
+   * exception that was thrown, and the number of retry attempts made.
    *
-   * @param record The Kafka record that caused the error
-   * @param exception The exception that occurred during processing
-   * @param retryCount The number of retry attempts made before giving up
-   * @param <K> The type of Kafka record key
-   * @param <V> The type of Kafka record value
+   * @param <K> the type of the record key
+   * @param <V> the type of the record value
+   * @param record the Kafka record that failed processing
+   * @param exception the exception that occurred during processing
+   * @param retryCount the number of retry attempts made
    */
   public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
 
   /**
-   * Builder for creating instances of the {@link FunctionalConsumer} with a fluent interface.
+   * Builder for creating and configuring {@link FunctionalConsumer} instances.
    *
-   * <p>Example:
-   *
-   * <pre>{@code
-   * var consumer = new FunctionalConsumer.Builder<byte[], byte[]>()
-   *     .withProperties(kafkaProps)
-   *     .withTopic("json-topic")
-   *     .withProcessor(msg -> processJson(msg))
-   *     .withErrorHandler(error -> reportError(error))
-   *     .withRetry(3, Duration.ofSeconds(1))
-   *     .build();
-   * }</pre>
-   *
-   * @param <K> The type of Kafka record keys
-   * @param <V> The type of Kafka record values
+   * @param <K> the type of keys in the consumed records
+   * @param <V> the type of values in the consumed records
    */
   public static class Builder<K, V> {
 
@@ -123,112 +129,52 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     private boolean enableMetrics = true;
     private MessageSink<K, V> messageSink;
 
-    /**
-     * Sets the Kafka properties for the consumer.
-     *
-     * @param props Kafka consumer configuration properties
-     * @return this builder for method chaining
-     */
     public Builder<K, V> withProperties(final Properties props) {
       this.kafkaProps = props;
       return this;
     }
 
-    /**
-     * Sets the Kafka topic to consume from.
-     *
-     * @param topic name of the Kafka topic
-     * @return this builder for method chaining
-     */
     public Builder<K, V> withTopic(final String topic) {
       this.topic = topic;
       return this;
     }
 
-    /**
-     * Sets the function to process each message.
-     *
-     * @param processor function that processes messages of type V
-     * @return this builder for method chaining
-     */
     public Builder<K, V> withProcessor(final Function<V, V> processor) {
       this.processor = processor;
       return this;
     }
 
-    /**
-     * Sets the poll timeout duration for the Kafka consumer.
-     *
-     * @param timeout duration to wait for poll operation
-     * @return this builder for method chaining
-     */
     public Builder<K, V> withPollTimeout(final Duration timeout) {
       this.pollTimeout = timeout;
       return this;
     }
 
-    /**
-     * Sets a handler for processing errors.
-     *
-     * @param handler consumer function that handles processing errors
-     * @return this builder for method chaining
-     */
     public Builder<K, V> withErrorHandler(final Consumer<ProcessingError<K, V>> handler) {
       this.errorHandler = handler;
       return this;
     }
 
-    /**
-     * Configures retry behavior for failed message processing.
-     *
-     * @param maxRetries maximum number of retry attempts
-     * @param backoff duration to wait between retry attempts
-     * @return this builder for method chaining
-     */
     public Builder<K, V> withRetry(final int maxRetries, final Duration backoff) {
       this.maxRetries = maxRetries;
       this.retryBackoff = backoff;
       return this;
     }
 
-    /**
-     * Enables or disables metrics collection.
-     *
-     * @param enable true to enable metrics, false to disable
-     * @return this builder for method chaining
-     */
     public Builder<K, V> withMetrics(final boolean enable) {
       this.enableMetrics = enable;
       return this;
     }
 
-    /**
-     * Sets the message sink for handling processed records.
-     *
-     * @param messageSink the sink that will handle processed messages
-     * @return this builder for method chaining
-     */
     public Builder<K, V> withMessageSink(final MessageSink<K, V> messageSink) {
       this.messageSink = messageSink;
       return this;
     }
 
-    /**
-     * Creates a new {@link FunctionalConsumer} with the configured settings.
-     *
-     * @return a new consumer instance
-     * @throws NullPointerException if required properties are null
-     */
     public FunctionalConsumer<K, V> build() {
       return new FunctionalConsumer<>(this);
     }
   }
 
-  /**
-   * Private constructor used by the Builder.
-   *
-   * @param builder the builder containing configuration
-   */
   public FunctionalConsumer(final Builder<K, V> builder) {
     this.consumer = createConsumer(Objects.requireNonNull(builder.kafkaProps));
     this.topic = Objects.requireNonNull(builder.topic);
@@ -244,25 +190,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     initializeMetrics();
   }
 
-  /**
-   * Creates a consumer with default settings.
-   *
-   * @param kafkaProps Kafka consumer properties
-   * @param topic the topic to consume from
-   * @param processor function to process each message
-   */
   public FunctionalConsumer(final Properties kafkaProps, final String topic, Function<V, V> processor) {
     this(kafkaProps, topic, processor, Duration.ofMillis(100));
   }
 
-  /**
-   * Creates a consumer with custom poll timeout.
-   *
-   * @param kafkaProps Kafka consumer properties
-   * @param topic the topic to consume from
-   * @param processor function to process each message
-   * @param pollTimeout duration to wait when polling for messages
-   */
   public FunctionalConsumer(
     final Properties kafkaProps,
     final String topic,
@@ -283,7 +214,6 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     initializeMetrics();
   }
 
-  /** Initializes metrics counters if metrics are enabled. */
   private void initializeMetrics() {
     if (enableMetrics) {
       metrics.put("messagesReceived", new AtomicLong(0));
@@ -294,24 +224,19 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   }
 
   /**
-   * Creates a MessageTracker configured for this consumer's metrics. The tracker can be used to
-   * monitor in-flight messages, especially during shutdown.
+   * Processes pending commands immediately for testing purposes. This method allows tests to verify
+   * consumer operations without starting the consumer thread.
+   */
+  @VisibleForTesting
+  public void processCommandsForTest() {
+    processCommand();
+  }
+
+  /**
+   * Creates a message tracker that can monitor the state of in-flight messages. The tracker uses
+   * the consumer's metrics to determine how many messages have been received versus processed.
    *
-   * <p>Example:
-   *
-   * <pre>{@code
-   * // Create and configure the tracker
-   * MessageTracker tracker = consumer.createMessageTracker();
-   *
-   * // Check current in-flight messages
-   * long inFlight = tracker.getInFlightMessageCount();
-   *
-   * // Wait for processing to complete during shutdown
-   * consumer.pause();
-   * boolean completed = tracker.waitForCompletion(5000).orElse(false);
-   * }</pre>
-   *
-   * @return a configured MessageTracker instance
+   * @return a new {@link MessageTracker} instance
    */
   public MessageTracker createMessageTracker() {
     return MessageTracker
@@ -324,23 +249,8 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   }
 
   /**
-   * Starts the consumer and begins processing messages.
-   *
-   * <p>The consumer runs in a dedicated virtual thread and processes each received message in its
-   * own virtual thread.
-   *
-   * <p>Example:
-   *
-   * <pre>{@code
-   * var consumer = new FunctionalConsumer.Builder<byte[], byte[]>()
-   *     // ... configure consumer
-   *     .build();
-   *
-   * // Start the consumer
-   * consumer.start();
-   *
-   * // Your application continues running...
-   * }</pre>
+   * Starts the consumer thread and begins consuming messages from the configured topic. The
+   * consumer will poll for records and process them asynchronously in virtual threads.
    */
   public void start() {
     consumer.subscribe(List.of(topic));
@@ -349,7 +259,21 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       Thread.startVirtualThread(() -> {
         try {
           while (running.get()) {
-            poll().ifPresent(this::processRecords);
+            // Process any pending commands first
+            processCommand();
+
+            // Only poll if not paused
+            if (!paused.get()) {
+              poll().ifPresent(this::processRecords);
+            } else {
+              // Sleep briefly when paused to avoid tight loop
+              try {
+                Thread.sleep(100);
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+              }
+            }
           }
         } catch (Exception e) {
           LOGGER.log(Level.ERROR, "Error in consumer thread", e);
@@ -359,61 +283,78 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       });
   }
 
+  // Process any pending commands in the consumer thread
+  private void processCommand() {
+    final var command = pendingCommand.getAndSet(null);
+    if (command == null) return;
+
+    try {
+      switch (command) {
+        case PAUSE -> {
+          consumer.pause(consumer.assignment());
+          LOGGER.log(Level.INFO, "Consumer paused for topic %s".formatted(topic));
+        }
+        case RESUME -> {
+          consumer.resume(consumer.assignment());
+          LOGGER.log(Level.INFO, "Consumer resumed for topic %s".formatted(topic));
+        }
+        case CLOSE -> {
+          // Additional close handling if needed
+          LOGGER.log(Level.INFO, "Close command received for topic %s".formatted(topic));
+        }
+      }
+    } catch (Exception e) {
+      LOGGER.log(Level.ERROR, "Error processing consumer command: %s".formatted(command), e);
+    }
+  }
+
   /**
-   * Pauses message consumption from Kafka.
+   * Pauses consumption from the topic. Any in-flight messages will continue processing, but no new
+   * messages will be consumed until {@link #resume()} is called.
    *
-   * <p>The consumer will continue running but will not fetch more records from Kafka until {@link
-   * #resume()} is called.
+   * <p>This method is idempotent - calling it multiple times has no additional effect.
    */
   public void pause() {
     if (paused.compareAndSet(false, true)) {
-      consumer.pause(consumer.assignment());
-      LOGGER.log(Level.INFO, "Consumer paused for topic %s".formatted(topic));
+      pendingCommand.set(ConsumerCommand.PAUSE);
+      LOGGER.log(Level.INFO, "Consumer pause requested for topic %s".formatted(topic));
     }
   }
 
   /**
-   * Resumes message consumption after a pause.
+   * Resumes consumption from the topic after being paused.
    *
-   * <p>This method takes effect only if the consumer was previously paused via {@link #pause()}.
+   * <p>This method is idempotent - calling it multiple times has no additional effect.
    */
   public void resume() {
     if (paused.compareAndSet(true, false)) {
-      consumer.resume(consumer.assignment());
-      LOGGER.log(Level.INFO, "Consumer resumed for topic %s".formatted(topic));
+      pendingCommand.set(ConsumerCommand.RESUME);
+      LOGGER.log(Level.INFO, "Consumer resume requested for topic %s".formatted(topic));
     }
   }
 
   /**
-   * Checks if the consumer is currently paused.
+   * Returns whether the consumer is currently paused.
    *
-   * @return true if the consumer is paused, false otherwise
+   * @return {@code true} if the consumer is paused, {@code false} otherwise
    */
   public boolean isPaused() {
     return paused.get();
   }
 
   /**
-   * Returns the current metrics collected by this consumer.
+   * Returns a snapshot of the current metrics collected by this consumer.
    *
-   * <p>Available metrics when enabled:
+   * <p>Available metrics include:
    *
    * <ul>
-   *   <li>messagesReceived: Total number of messages received from Kafka
-   *   <li>messagesProcessed: Successfully processed messages
-   *   <li>processingErrors: Number of processing errors encountered
-   *   <li>retries: Number of retry attempts made
+   *   <li>{@code messagesReceived} - count of records received from Kafka
+   *   <li>{@code messagesProcessed} - count of records successfully processed
+   *   <li>{@code processingErrors} - count of records that failed processing after all retries
+   *   <li>{@code retries} - count of retry attempts made for failed records
    * </ul>
    *
-   * <p>Example:
-   *
-   * <pre>{@code
-   * Map<String, Long> metrics = consumer.getMetrics();
-   * System.out.println("Processed: " + metrics.get("messagesProcessed"));
-   * System.out.println("Errors: " + metrics.get("processingErrors"));
-   * }</pre>
-   *
-   * @return map of metric names to values, or empty map if metrics are disabled
+   * @return a map of metric names to their current values, or an empty map if metrics are disabled
    */
   public Map<String, Long> getMetrics() {
     if (!enableMetrics) {
@@ -424,26 +365,36 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   }
 
   /**
-   * Checks if the consumer is currently running.
+   * Returns whether the consumer is running.
    *
-   * @return true if the consumer is running, false if it has been closed
+   * @return {@code true} if the consumer is running, {@code false} if it has been closed
    */
   public boolean isRunning() {
     return running.get();
   }
 
   /**
-   * Closes the consumer and releases all resources.
+   * Closes this consumer, stopping message consumption and processing.
    *
-   * <p>This method is idempotent and can be called multiple times safely.
+   * <p>This method performs a graceful shutdown by:
+   *
+   * <ol>
+   *   <li>Setting the running flag to false to stop the main loop
+   *   <li>Pausing consumption to prevent new records from being processed
+   *   <li>Using a MessageTracker to wait for in-flight messages to complete
+   *   <li>Waking up the consumer to unblock any polling operation
+   *   <li>Waiting for the consumer thread to finish
+   *   <li>Shutting down the executor and waiting for processing tasks to complete
+   * </ol>
    */
   @Override
   public void close() {
     if (isRunning()) {
       running.set(false);
 
-      // First pause to stop consuming new messages
+      // First request a pause via the command pattern
       pause();
+      pendingCommand.set(ConsumerCommand.CLOSE);
 
       // Use MessageTracker to wait for in-flight messages
       final var tracker = createMessageTracker();
@@ -475,44 +426,20 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         Thread.currentThread().interrupt();
         virtualThreadExecutor.shutdownNow();
       }
-
-      // Now it's safe to close the consumer
-      if (consumer != null) {
-        consumer.close(Duration.ofSeconds(5));
-      }
+      // Now it's safe to close the consumer - consumer thread will handle this in finally block
     }
   }
 
-  /**
-   * Creates the Kafka consumer instance with the provided properties.
-   *
-   * <p>This method can be overridden by subclasses to customize consumer creation.
-   *
-   * @param kafkaProps properties for configuring the Kafka consumer
-   * @return a new Kafka consumer instance
-   */
   protected KafkaConsumer<K, V> createConsumer(final Properties kafkaProps) {
     return new KafkaConsumer<>(kafkaProps);
   }
 
-  /**
-   * Processes a batch of records received from Kafka.
-   *
-   * <p>Each record is submitted to the virtual thread executor for concurrent processing.
-   *
-   * @param records batch of consumer records to process
-   */
   protected void processRecords(final ConsumerRecords<K, V> records) {
     StreamSupport
       .stream(records.records(topic).spliterator(), false)
       .forEach(record -> virtualThreadExecutor.submit(() -> processRecord(record)));
   }
 
-  /**
-   * Polls Kafka for new records.
-   *
-   * @return an Optional containing the records if any were received, or empty if none
-   */
   private Optional<ConsumerRecords<K, V>> poll() {
     try {
       final var records = consumer.poll(pollTimeout);
@@ -523,64 +450,6 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Processes a single Kafka consumer record using the configured processor function.
-   *
-   * <p>This method applies the processor function to the record value and handles any exceptions by
-   * implementing retry logic based on the configured {@code maxRetries} and {@code retryBackoff}.
-   * If all retry attempts fail, the error handler is invoked.
-   *
-   * <p>Metrics tracked during processing:
-   *
-   * <ul>
-   *   <li>messagesReceived - Incremented when a record is received for processing
-   *   <li>messagesProcessed - Incremented when a record is successfully processed
-   *   <li>retries - Incremented for each retry attempt (second and subsequent attempts only)
-   *   <li>processingErrors - Incremented when processing fails after all retry attempts
-   * </ul>
-   *
-   * <p>Example with successful processing:
-   *
-   * <pre>{@code
-   * // Record will be processed directly
-   * ConsumerRecord<String, String> record = new ConsumerRecord<>("topic", 0, 0, "key", "value");
-   * consumer.processRecord(record);
-   * // Result: messagesReceived = 1, messagesProcessed = 1, retries = 0
-   * }</pre>
-   *
-   * <p>Example with retry and success:
-   *
-   * <pre>{@code
-   * // Configure consumer with 2 max retries
-   * var consumer = new FunctionalConsumer.Builder<String, String>()
-   *     .withProcessor(intermittentProcessor)
-   *     .withRetry(2, Duration.ofMillis(10))
-   *     .withMetrics(true)
-   *     .build();
-   *
-   * // Process record that fails on first attempt but succeeds on second attempt
-   * consumer.processRecord(record);
-   * // Result: messagesReceived = 1, messagesProcessed = 1, retries = 1
-   * }</pre>
-   *
-   * <p>Example with max retries exceeded:
-   *
-   * <pre>{@code
-   * // Configure consumer with 2 max retries but all attempts fail
-   * var consumer = new FunctionalConsumer.Builder<String, String>()
-   *     .withProcessor(failingProcessor)
-   *     .withRetry(2, Duration.ofMillis(10))
-   *     .withErrorHandler(error -> handleError(error))
-   *     .withMetrics(true)
-   *     .build();
-   *
-   * consumer.processRecord(record);
-   * // Result: messagesReceived = 1, messagesProcessed = 0, retries = 2, processingErrors = 1
-   * // Error handler receives: retryCount = 2 (maxRetries)
-   * }</pre>
-   *
-   * @param record The Kafka consumer record to process
-   */
   public void processRecord(final ConsumerRecord<K, V> record) {
     if (enableMetrics) {
       metrics.get("messagesReceived").incrementAndGet();

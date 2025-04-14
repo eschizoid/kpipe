@@ -26,14 +26,18 @@ class ConsumerRunnerTest {
   void shouldStartConsumer() {
     // Arrange
     when(mockConsumer.isRunning()).thenReturn(true);
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner =
+      ConsumerRunner
+        .builder(mockConsumer)
+        .withHealthCheck(FunctionalConsumer::isRunning) // Use the isRunning method in health check
+        .build();
 
     // Act
     runner.start();
 
     // Assert
     verify(mockConsumer).start();
-    assertTrue(runner.isHealthy());
+    assertTrue(runner.isHealthy()); // This will use the stubbed isRunning method
   }
 
   @Test
@@ -179,11 +183,14 @@ class ConsumerRunnerTest {
   @Test
   void shouldAwaitShutdownSuccessfully() throws Exception {
     // Arrange
+    when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
+    when(mockTracker.getInFlightMessageCount()).thenReturn(0L);
+
     runner = ConsumerRunner.builder(mockConsumer).build();
     runner.start();
 
     // Create a thread to close the runner after a delay
-    Thread closeThread = new Thread(() -> {
+    final var closeThread = new Thread(() -> {
       try {
         Thread.sleep(100);
         runner.close();
@@ -269,5 +276,66 @@ class ConsumerRunnerTest {
     verify(mockConsumer).pause();
     verify(mockTracker, times(2)).getInFlightMessageCount();
     verify(mockTracker).waitForCompletion(anyLong());
+  }
+
+  @Test
+  void performGracefulConsumerShutdownShouldHandlePartiallyProcessedMessages() {
+    // Arrange
+    when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
+    when(mockTracker.getInFlightMessageCount()).thenReturn(5L).thenReturn(2L);
+    when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.of(false));
+
+    // Act
+    boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+
+    // Assert
+    assertFalse(result);
+    verify(mockConsumer).pause();
+    verify(mockTracker, times(2)).getInFlightMessageCount();
+    verify(mockTracker).waitForCompletion(anyLong());
+    verify(mockConsumer).close();
+  }
+
+  @Test
+  void performGracefulConsumerShutdownShouldHandleExceptionFromTracker() {
+    // Arrange
+    when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
+    when(mockTracker.getInFlightMessageCount()).thenThrow(new RuntimeException("Tracker failure"));
+
+    // Act & Assert
+    assertThrows(RuntimeException.class, () -> ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000));
+
+    // Should still close consumer even if exception occurs
+    verify(mockConsumer).close();
+  }
+
+  @Test
+  void performGracefulConsumerShutdownShouldHandleEmptyCompletionResult() {
+    // Arrange
+    when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
+    when(mockTracker.getInFlightMessageCount()).thenReturn(5L).thenReturn(3L);
+    when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.empty());
+
+    // Act
+    boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+
+    // Assert
+    assertFalse(result);
+    verify(mockTracker).waitForCompletion(anyLong());
+    verify(mockConsumer).close();
+  }
+
+  @Test
+  void performGracefulConsumerShutdownShouldHandleNullTracker() {
+    // Arrange
+    when(mockConsumer.createMessageTracker()).thenReturn(null);
+
+    // Act
+    boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+
+    // Assert
+    assertTrue(result);
+    verify(mockConsumer).pause();
+    verify(mockConsumer).close();
   }
 }
