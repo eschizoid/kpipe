@@ -70,7 +70,7 @@ use across multiple teams.
 
 ---
 
-## 📆 Structure Overview
+## 📆 Structure Overview (TODO Update this Section)
 
 ```
 ├── KafkaConsumerApp.java         # Main app with virtual thread runner

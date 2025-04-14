@@ -2,360 +2,407 @@ package org.kpipe.consumer;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import org.kpipe.metrics.MetricsReporter;
 
 /**
- * A runner that manages the lifecycle of FunctionalConsumer instances.
+ * A thread-safe runner for {@link FunctionalConsumer} instances that manages the consumer
+ * lifecycle.
  *
- * <p>This class provides a reusable pattern for starting, monitoring, and gracefully shutting down
- * FunctionalConsumer components, with special handling for in-flight messages during shutdown.
- *
- * <p>Key features:
+ * <p>The ConsumerRunner provides:
  *
  * <ul>
- *   <li>Starts and monitors consumer instances
- *   <li>Provides health check mechanisms
- *   <li>Manages graceful shutdown with in-flight message handling
- *   <li>Offers configurable shutdown hooks and timeouts
+ *   <li>Controlled startup and shutdown
+ *   <li>Health monitoring
+ *   <li>Graceful shutdown with in-flight message handling
+ *   <li>Metrics reporting at configurable intervals
  * </ul>
  *
- * <h2>Basic Usage Example</h2>
+ * <p>Example usage:
  *
  * <pre>{@code
- * // Create a consumer
- * FunctionalConsumer<String, String> consumer = new FunctionalConsumer.Builder<String, String>()
+ * FunctionalConsumer<String, String> consumer = new FunctionalConsumer.Builder<>()
  *     .withTopic("my-topic")
- *     .withProcessor(msg -> msg.toUpperCase())
+ *     .withProcessor(message -> processMessage(message))
  *     .build();
  *
- * // Create and start a runner
- * ConsumerRunner<FunctionalConsumer<String, String>> runner = ConsumerRunner
- *     .builder(consumer)
- *     .withShutdownTimeout(5000)
+ * ConsumerRunner<FunctionalConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
+ *     .withHealthCheck(FunctionalConsumer::isRunning)
  *     .withShutdownHook(true)
+ *     .withShutdownTimeoutMs(5000)
  *     .build();
  *
  * runner.start();
- *
- * // Wait for shutdown (triggered by JVM shutdown hook)
  * runner.awaitShutdown();
  * }</pre>
  *
- * <h2>Custom Graceful Shutdown Example</h2>
- *
- * <pre>{@code
- * ConsumerRunner<FunctionalConsumer<byte[], byte[]>> runner = ConsumerRunner
- *     .builder(consumer)
- *     .withGracefulShutdown((consumer, timeoutMs) -> {
- *         // Custom pre-shutdown actions
- *         someResource.close();
- *
- *         // Use the default shutdown behavior
- *         return ConsumerRunner.performGracefulConsumerShutdown(consumer, timeoutMs);
- *     })
- *     .build();
- * }</pre>
- *
- * <h2>Monitoring Example</h2>
- *
- * <pre>{@code
- * // Start a thread to monitor consumer health
- * Thread.startVirtualThread(() -> {
- *     while (!Thread.currentThread().isInterrupted()) {
- *         if (!runner.isHealthy()) {
- *             System.err.println("Consumer is unhealthy!");
- *         }
- *         Thread.sleep(Duration.ofSeconds(30));
- *     }
- * });
- * }</pre>
+ * @param <T> the type of consumer being managed, must extend FunctionalConsumer
  */
-public class ConsumerRunner<F extends FunctionalConsumer<?, ?>> implements AutoCloseable {
+public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(ConsumerRunner.class.getName());
 
-  private final F consumer;
-  private final Consumer<F> startAction;
-  private final Function<F, Boolean> healthCheck;
-  private final BiFunction<F, Long, Boolean> gracefulShutdown;
-  private final long shutdownTimeoutMs;
-  private final boolean registerShutdownHook;
+  // Consumer state
+  private final T consumer;
+  private final AtomicBoolean started = new AtomicBoolean(false);
+  private final AtomicBoolean closed = new AtomicBoolean(false);
   private final CountDownLatch shutdownLatch = new CountDownLatch(1);
-  private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
-  private final AtomicBoolean running = new AtomicBoolean(false);
-  private Thread shutdownHook;
 
-  private ConsumerRunner(final Builder<F> builder) {
+  // Configuration
+  private final Consumer<T> startAction;
+  private final Predicate<T> healthCheck;
+  private final BiFunction<T, Long, Boolean> gracefulShutdown;
+  private final long shutdownTimeoutMs;
+
+  // Metrics
+  private final List<MetricsReporter> metricsReporters;
+  private final long metricsIntervalMs;
+  private volatile Thread metricsThread;
+
+  private ConsumerRunner(Builder<T> builder) {
     this.consumer = builder.consumer;
     this.startAction = builder.startAction;
     this.healthCheck = builder.healthCheck;
     this.gracefulShutdown = builder.gracefulShutdown;
     this.shutdownTimeoutMs = builder.shutdownTimeoutMs;
-    this.registerShutdownHook = builder.registerShutdownHook;
+    this.metricsReporters = new ArrayList<>(builder.metricsReporters);
+    this.metricsIntervalMs = builder.metricsIntervalMs;
+
+    if (builder.useShutdownHook) {
+      Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+    }
   }
 
   /**
-   * Starts the consumer by executing the configured start action.
+   * Creates a new builder for configuring a ConsumerRunner.
    *
-   * <p>If the consumer is already running, this method has no effect. The start action is defined
-   * using {@link Builder#withStartAction(Consumer)}.
+   * @param <T> the type of consumer to run
+   * @param consumer the consumer instance to manage
+   * @return a new builder instance
    */
-  public void start() {
-    if (!running.compareAndSet(false, true)) {
-      return;
-    }
+  public static <T extends FunctionalConsumer<?, ?>> Builder<T> builder(T consumer) {
+    return new Builder<>(consumer);
+  }
 
-    try {
-      startAction.accept(consumer);
-    } catch (final Exception e) {
-      running.set(false);
-      LOGGER.log(Level.ERROR, "Error starting consumer", e);
-      throw e;
+  /**
+   * Starts the consumer if it hasn't been started already.
+   *
+   * <p>This method is idempotent - calling it multiple times has no effect after the first call.
+   *
+   * @return this ConsumerRunner instance
+   * @throws RuntimeException if the consumer fails to start
+   */
+  public ConsumerRunner<T> start() {
+    if (started.compareAndSet(false, true)) {
+      try {
+        startAction.accept(consumer);
+        startMetricsThread();
+      } catch (Exception e) {
+        started.set(false);
+        LOGGER.log(Level.ERROR, "Failed to start consumer", e);
+        throw e;
+      }
     }
-
-    // Register shutdown hook if enabled
-    if (registerShutdownHook) {
-      shutdownHook =
-        new Thread(() -> {
-          LOGGER.log(Level.INFO, "Executing shutdown hook");
-          boolean success = shutdownGracefully(shutdownTimeoutMs);
-          LOGGER.log(Level.INFO, "Shutdown hook completed with status: %s".formatted(success));
-        });
-      Runtime.getRuntime().addShutdownHook(shutdownHook);
-      LOGGER.log(Level.INFO, "Consumer started with shutdown hook registered");
-    } else {
-      LOGGER.log(Level.INFO, "Consumer started (without shutdown hook)");
-    }
+    return this;
   }
 
   /**
    * Checks if the consumer is healthy according to the configured health check.
    *
-   * @return true if the consumer is running and the health check passes, false otherwise
+   * @return true if the consumer is healthy, false otherwise
    */
   public boolean isHealthy() {
-    return running.get() && healthCheck.apply(consumer);
+    return !closed.get() && started.get() && healthCheck.test(consumer);
   }
 
   /**
-   * Attempts to shut down the consumer gracefully within the specified timeout. This includes
-   * pausing the consumer and waiting for in-flight messages to complete processing.
+   * Initiates a graceful shutdown of the consumer, waiting for in-flight messages to complete.
    *
-   * @param timeoutMs maximum time in milliseconds to wait for graceful shutdown
-   * @return true if shutdown completed successfully, false otherwise
+   * @param timeoutMs maximum time in milliseconds to wait for in-flight messages
+   * @return true if shutdown completed successfully, false if it timed out
    */
   public boolean shutdownGracefully(final long timeoutMs) {
-    // If already shutting down, return true to indicate shutdown is in progress
-    if (!shuttingDown.compareAndSet(false, true)) {
-      LOGGER.log(Level.INFO, "Shutdown already in progress, ignoring redundant request");
-      return true;
-    }
-
-    LOGGER.log(Level.INFO, "Beginning graceful shutdown with timeout: %s ms".formatted(timeoutMs));
-
-    // If we have a registered shutdown hook, and we're not being called from it
-    if (registerShutdownHook && shutdownHook != null && Thread.currentThread() != shutdownHook) {
+    if (closed.compareAndSet(false, true)) {
+      stopMetricsThread();
       try {
-        Runtime.getRuntime().removeShutdownHook(shutdownHook);
-        LOGGER.log(Level.INFO, "Removed registered shutdown hook");
-      } catch (final IllegalStateException e) {
-        // JVM is already shutting down, ignore
+        return gracefulShutdown.apply(consumer, timeoutMs);
+      } finally {
+        shutdownLatch.countDown();
       }
     }
-
-    boolean completed = false;
-    try {
-      completed = gracefulShutdown.apply(consumer, timeoutMs);
-      LOGGER.log(Level.INFO, "Graceful shutdown completed: %s".formatted(completed));
-      return completed;
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error during graceful shutdown", e);
-      return false;
-    } finally {
-      close();
-    }
+    return true;
   }
 
   /**
-   * Blocks the current thread until the consumer has been shut down.
+   * Waits for the consumer to be shutdown, either by this thread or another thread calling {@link
+   * #close()} or {@link #shutdownGracefully(long)}.
    *
-   * @return true if shutdown completed normally, false if interrupted
+   * @return true if the shutdown completed normally, false if the wait was interrupted
    */
   public boolean awaitShutdown() {
-    try {
-      LOGGER.log(Level.INFO, "Waiting for consumer shutdown");
-      shutdownLatch.await();
-      LOGGER.log(Level.INFO, "Consumer shutdown complete");
-      return true;
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      LOGGER.log(Level.WARNING, "Shutdown wait interrupted");
-      return false;
-    }
+    return awaitShutdown(0);
   }
 
   /**
-   * Blocks the current thread until the consumer has been shut down or timeout occurs.
+   * Waits up to the specified timeout for the consumer to be shutdown.
    *
-   * @param timeoutMs maximum time in milliseconds to wait for shutdown
-   * @return true if shutdown completed normally, false if interrupted or timed out
+   * @param timeoutMs maximum time in milliseconds to wait, 0 means wait indefinitely
+   * @return true if the shutdown completed normally within the timeout, false otherwise
    */
-  public boolean awaitShutdown(final long timeoutMs) {
+  public boolean awaitShutdown(long timeoutMs) {
     try {
-      LOGGER.log(Level.INFO, "Waiting for consumer shutdown with timeout: %s ms".formatted(timeoutMs));
-      boolean completed = shutdownLatch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
-      if (completed) {
-        LOGGER.log(Level.INFO, "Consumer shutdown complete");
-      } else {
-        LOGGER.log(Level.WARNING, "Consumer shutdown timed out after %s ms".formatted(timeoutMs));
-      }
-      return completed;
-    } catch (final InterruptedException e) {
+      return timeoutMs > 0
+        ? shutdownLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        : shutdownLatch.await(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+    } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      LOGGER.log(Level.WARNING, "Shutdown wait interrupted");
       return false;
     }
   }
 
-  /** Closes the consumer and releases all resources. */
   @Override
   public void close() {
-    if (!running.compareAndSet(true, false)) return;
+    shutdownGracefully(shutdownTimeoutMs);
+  }
 
-    try {
-      LOGGER.log(Level.INFO, "Closing consumer");
-      consumer.close();
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error closing consumer", e);
-    } finally {
-      shutdownLatch.countDown();
+  /**
+   * Performs a graceful shutdown of a FunctionalConsumer by handling in-flight messages.
+   *
+   * <p>This method follows these steps to ensure a clean shutdown:
+   *
+   * <ol>
+   *   <li>Pauses the consumer to prevent receiving new messages
+   *   <li>Obtains a message tracker from the consumer
+   *   <li>Checks for in-flight messages:
+   *       <ul>
+   *         <li>If no in-flight messages exist, closes the consumer immediately
+   *         <li>If in-flight messages exist, waits for their completion (up to timeout)
+   *       </ul>
+   *   <li>Verifies if all messages were processed
+   *   <li>Closes the consumer regardless of processing outcome
+   * </ol>
+   *
+   * <p>The method calls {@code getInFlightMessageCount()} twice - first to determine if any
+   * messages need processing, and then after the wait period to confirm the final state.
+   *
+   * @param <T> the type of consumer extending FunctionalConsumer
+   * @param consumer the consumer to shut down
+   * @param timeoutMs maximum time in milliseconds to wait for in-flight messages to complete
+   * @return {@code true} if all in-flight messages were successfully processed before shutdown,
+   *     {@code false} if the timeout was reached with messages still in-flight
+   * @throws RuntimeException if an exception occurs during the shutdown process
+   */
+  public static <T extends FunctionalConsumer<?, ?>> boolean performGracefulConsumerShutdown(
+    final T consumer,
+    final long timeoutMs
+  ) {
+    consumer.pause();
+
+    return Optional
+      .ofNullable(consumer.createMessageTracker())
+      .map(tracker -> {
+        try {
+          long inFlightCount = tracker.getInFlightMessageCount();
+
+          if (inFlightCount == 0) {
+            consumer.close();
+            return true;
+          }
+
+          LOGGER.log(Level.INFO, "Waiting for %s in-flight messages to be processed".formatted(inFlightCount));
+
+          final boolean completed = tracker.waitForCompletion(timeoutMs).orElse(false);
+          inFlightCount = tracker.getInFlightMessageCount();
+          final boolean allProcessed = completed && inFlightCount == 0;
+
+          if (allProcessed) {
+            LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down");
+          } else {
+            LOGGER.log(
+              Level.WARNING,
+              "Shutdown timeout reached with %s messages still in flight".formatted(inFlightCount)
+            );
+          }
+
+          consumer.close();
+          return allProcessed;
+        } catch (final Exception e) {
+          LOGGER.log(Level.WARNING, "Error during graceful shutdown", e);
+          consumer.close();
+          throw e;
+        }
+      })
+      .orElseGet(() -> {
+        LOGGER.log(Level.WARNING, "No message tracker available, closing consumer immediately");
+        consumer.close();
+        return true;
+      });
+  }
+
+  private void startMetricsThread() {
+    if (metricsReporters.isEmpty() || metricsIntervalMs <= 0) {
+      return;
+    }
+
+    metricsThread =
+      new Thread(
+        () -> {
+          while (!closed.get() && !Thread.currentThread().isInterrupted()) {
+            try {
+              for (MetricsReporter reporter : metricsReporters) {
+                reporter.reportMetrics();
+              }
+              Thread.sleep(metricsIntervalMs);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              break;
+            } catch (Exception e) {
+              LOGGER.log(Level.WARNING, "Error reporting metrics", e);
+            }
+          }
+        },
+        "metrics-reporter"
+      );
+
+    metricsThread.setDaemon(true);
+    metricsThread.start();
+  }
+
+  private void stopMetricsThread() {
+    if (metricsThread != null) {
+      metricsThread.interrupt();
+      metricsThread = null;
     }
   }
 
   /**
-   * Creates a new builder for constructing a ConsumerRunner.
+   * Builder for creating ConsumerRunner instances with custom configuration.
    *
-   * @param <F> the type of FunctionalConsumer to run
-   * @param consumer the consumer instance to manage
-   * @return a new builder instance
+   * @param <T> the type of consumer being managed
    */
-  public static <F extends FunctionalConsumer<?, ?>> Builder<F> builder(final F consumer) {
-    return new Builder<>(consumer);
-  }
+  public static class Builder<T extends FunctionalConsumer<?, ?>> {
 
-  public static class Builder<F extends FunctionalConsumer<?, ?>> {
+    private final T consumer;
+    private Consumer<T> startAction;
+    private Predicate<T> healthCheck;
+    private BiFunction<T, Long, Boolean> gracefulShutdown;
+    private long shutdownTimeoutMs = 30000;
+    private boolean useShutdownHook = false;
+    private final List<MetricsReporter> metricsReporters = new ArrayList<>();
+    private long metricsIntervalMs = 60000;
 
-    private final F consumer;
-    private Consumer<F> startAction;
-    private Function<F, Boolean> healthCheck = c -> c.isRunning();
-    private BiFunction<F, Long, Boolean> gracefulShutdown;
-    private long shutdownTimeoutMs = 10000; // Default 10 seconds
-    private boolean registerShutdownHook = false; // Default to false so App can control it
-
-    private Builder(final F consumer) {
-      this.consumer = Objects.requireNonNull(consumer);
-
-      // Set default start action
-      this.startAction = F::start;
-
-      // Set default graceful shutdown strategy
+    private Builder(T consumer) {
+      this.consumer = consumer;
+      this.startAction = T::start;
+      this.healthCheck = c -> true;
       this.gracefulShutdown = ConsumerRunner::performGracefulConsumerShutdown;
     }
 
     /**
-     * Configures the action to execute when starting the consumer.
+     * Sets a custom action to perform when starting the consumer.
      *
-     * @param startAction consumer that starts the consumer
-     * @return this builder for chaining
+     * @param startAction the action to execute on consumer start
+     * @return this builder instance
      */
-    public Builder<F> withStartAction(final Consumer<F> startAction) {
+    public Builder<T> withStartAction(Consumer<T> startAction) {
       this.startAction = startAction;
       return this;
     }
 
     /**
-     * Configures the health check function for the consumer.
+     * Sets a predicate that determines if the consumer is healthy.
      *
-     * @param healthCheck function that returns true if consumer is healthy
-     * @return this builder for chaining
+     * @param healthCheck the predicate to use for health checks
+     * @return this builder instance
      */
-    public Builder<F> withHealthCheck(final Function<F, Boolean> healthCheck) {
+    public Builder<T> withHealthCheck(Predicate<T> healthCheck) {
       this.healthCheck = healthCheck;
       return this;
     }
 
     /**
-     * Configures the graceful shutdown strategy.
+     * Sets a custom function to handle graceful shutdown of the consumer.
      *
-     * @param gracefulShutdown function that implements graceful shutdown behavior
-     * @return this builder for chaining
+     * @param gracefulShutdown the function to use for graceful shutdown
+     * @return this builder instance
      */
-    public Builder<F> withGracefulShutdown(final BiFunction<F, Long, Boolean> gracefulShutdown) {
+    public Builder<T> withGracefulShutdown(BiFunction<T, Long, Boolean> gracefulShutdown) {
       this.gracefulShutdown = gracefulShutdown;
       return this;
     }
 
     /**
-     * Configures the shutdown timeout.
+     * Sets the shutdown timeout in milliseconds.
      *
-     * @param shutdownTimeoutMs the timeout in milliseconds for graceful shutdown
-     * @return this builder for chaining
+     * @param shutdownTimeoutMs maximum time to wait during shutdown
+     * @return this builder instance
      */
-    public Builder<F> withShutdownTimeout(final long shutdownTimeoutMs) {
+    public Builder<T> withShutdownTimeout(long shutdownTimeoutMs) {
       this.shutdownTimeoutMs = shutdownTimeoutMs;
       return this;
     }
 
     /**
-     * Configures whether to register a JVM shutdown hook.
+     * Configures whether to register a JVM shutdown hook that calls close().
      *
-     * @param registerShutdownHook true to register a shutdown hook, false otherwise
-     * @return this builder for chaining
+     * @param useShutdownHook true to register a shutdown hook, false otherwise
+     * @return this builder instance
      */
-    public Builder<F> withShutdownHook(final boolean registerShutdownHook) {
-      this.registerShutdownHook = registerShutdownHook;
+    public Builder<T> withShutdownHook(boolean useShutdownHook) {
+      this.useShutdownHook = useShutdownHook;
       return this;
     }
 
     /**
-     * Builds a new ConsumerRunner with the configured options.
+     * Adds a metrics reporter to run periodically.
      *
-     * @return the configured ConsumerRunner
+     * @param reporter the metrics reporter to add
+     * @return this builder instance
      */
-    public ConsumerRunner<F> build() {
-      return new ConsumerRunner<>(this);
+    public Builder<T> withMetricsReporter(MetricsReporter reporter) {
+      this.metricsReporters.add(reporter);
+      return this;
     }
-  }
 
-  // Add this to ConsumerRunner.java
-  public static <F extends FunctionalConsumer<?, ?>> boolean performGracefulConsumerShutdown(
-    final F consumer,
-    final long timeoutMs
-  ) {
-    try {
-      consumer.pause();
-      LOGGER.log(Level.INFO, "Consumer paused, waiting for in-flight messages...");
+    /**
+     * Sets the interval in milliseconds between metrics reports.
+     *
+     * @param metricsIntervalMs the reporting interval in milliseconds
+     * @return this builder instance
+     */
+    public Builder<T> withMetricsInterval(long metricsIntervalMs) {
+      this.metricsIntervalMs = metricsIntervalMs;
+      return this;
+    }
 
-      final var tracker = consumer.createMessageTracker();
-      final var inFlightBefore = tracker.getInFlightMessageCount();
+    /**
+     * Applies a custom configuration function to this builder.
+     *
+     * <p>This method allows for composing multiple configuration steps.
+     *
+     * @param configurer a function that applies configuration to this builder
+     * @return this builder instance
+     */
+    public Builder<T> with(Function<Builder<T>, Builder<T>> configurer) {
+      return configurer.apply(this);
+    }
 
-      if (inFlightBefore > 0) {
-        LOGGER.log(Level.INFO, "Waiting for %s in-flight messages".formatted(inFlightBefore));
-        boolean completed = tracker.waitForCompletion(timeoutMs).orElse(false);
-
-        long remaining = tracker.getInFlightMessageCount();
-        LOGGER.log(Level.INFO, "Wait completed: %s, remaining messages: %s".formatted(completed, remaining));
-        return completed && remaining == 0;
-      }
-      return true;
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error during graceful consumer shutdown", e);
-      return false;
+    /**
+     * Builds a new ConsumerRunner with the configured settings.
+     *
+     * @return a new ConsumerRunner instance
+     */
+    public ConsumerRunner<T> build() {
+      return new ConsumerRunner<>(this);
     }
   }
 }
