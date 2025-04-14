@@ -46,6 +46,9 @@ public record AppConfig(
   public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
   public static final Duration DEFAULT_SHUTDOWN_TIMEOUT = Duration.ofSeconds(30);
   public static final Duration DEFAULT_METRICS_INTERVAL = Duration.ofMinutes(1);
+  public static final Duration DEFAULT_WAIT_FOR_MESSAGES = Duration.ofMillis(5000);
+  public static final Duration DEFAULT_THREAD_TERMINATION = Duration.ofMillis(5000);
+  public static final Duration DEFAULT_EXECUTOR_TERMINATION = Duration.ofMillis(10000);
 
   /**
    * Creates a new Kafka configuration with the specified parameters.

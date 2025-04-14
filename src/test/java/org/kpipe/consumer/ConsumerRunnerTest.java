@@ -302,11 +302,12 @@ class ConsumerRunnerTest {
     when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
     when(mockTracker.getInFlightMessageCount()).thenThrow(new RuntimeException("Tracker failure"));
 
-    // Act & Assert
-    assertThrows(RuntimeException.class, () -> ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000));
+    // Act
+    final boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
-    // Should still close consumer even if exception occurs
-    verify(mockConsumer).close();
+    // Assert
+    assertFalse(result); // Expect false when an exception occurs
+    verify(mockConsumer).close(); // Should still close consumer even when exception occurs
   }
 
   @Test

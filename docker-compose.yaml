@@ -5,15 +5,19 @@ services:
       - "2181:2181"
     environment:
       - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_TICK_TIME=2000
+      - ZOO_INIT_LIMIT=10
+      - ZOO_SYNC_LIMIT=5
     volumes:
       - zookeeper_data:/bitnami/zookeeper
     healthcheck:
-      test: ["CMD", "zkServer.sh", "status"]
-      interval: 30s
+      test: [ "CMD", "zkServer.sh", "status" ]
+      interval: 15s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 30s
     restart: unless-stopped
+    stop_grace_period: 1m
 
   kafka:
     image: bitnami/kafka:3.4.1
@@ -26,17 +30,25 @@ services:
       - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
       - ALLOW_PLAINTEXT_LISTENER=yes
       - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      # Increase these timeouts significantly
+      - KAFKA_CFG_ZOOKEEPER_CONNECTION_TIMEOUT_MS=120000
+      - KAFKA_CFG_ZOOKEEPER_SESSION_TIMEOUT_MS=120000
+      # Add these for better restart behavior
+      - KAFKA_DELETE_TOPIC_ENABLE=true
+      - KAFKA_CFG_AUTO_LEADER_REBALANCE_ENABLE=true
     volumes:
       - kafka_data:/bitnami/kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --list --bootstrap-server localhost:9092"]
+      test: ["CMD-SHELL", "kafka-topics.sh --list --bootstrap-server localhost:9092 || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 90s
-    restart: unless-stopped
+      timeout: 20s
+      retries: 5
+      start_period: 120s
+    restart: on-failure
+    stop_grace_period: 3m
 
   kafka-consumer-app:
     build: .

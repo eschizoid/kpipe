@@ -207,8 +207,9 @@ The JSON processors handle deserialization and transformation of JSON data:
 ## 🛠️ Requirements
 
 - Java 21+
-- Apache Kafka 3.0+
-- DslJson (via Maven or Gradle)
+- gradle (for building the project)
+- kcat (for testing)
+- Docker (for local Kafka setup)
 
 ---
 
@@ -227,14 +228,29 @@ Configure via environment variables:
 
 ---
 
-## 🥪 Running It
+## 🧪 Testing
+
+Follow these steps to test the KPipe Kafka Consumer:
+
+### Build and Run
 
   ```bash
-  java KafkaConsumerApp
-  ```
+  # Format code and build the application
+  ./gradlew clean spotlessApply build
 
-TODO
-- Add Dockerfile for easy deployment 
+  # Build the consumer app container and start all services
+  docker compose build --no-cache kafka-consumer-app && docker compose up --force-recreate
+  
+  # Publish a simple JSON message to the json-topic
+  echo '{"message":"Hello world"}' | kcat -P -b kafka:9092 -t json-topic
+  
+  # For complex JSON messages, use a file
+  cat test-message.json | kcat -P -b kafka:9092 -t json-topic
+  
+  # Publish multiple test messages
+  for i in {1..10}; do echo "{\"id\":$i,\"message\":\"Test message $i\"}" | \
+    kcat -P -b kafka:9092 -t json-topic; done
+  ```
 
 Kafka consumer will:
 
