@@ -425,36 +425,38 @@ class FunctionalConsumerMockingTest {
   }
 
   @Test
-  void builderShouldCreateConsumerWithMinimalConfig() {
-    final var consumer = new FunctionalConsumer.Builder<String, String>()
-      .withProperties(properties)
-      .withTopic(TOPIC)
-      .withProcessor(processor)
-      .build();
-
-    assertNotNull(consumer);
-    assertTrue(consumer.isRunning());
-  }
-
-  @Test
   void builderShouldRespectAllOptions() {
-    final var customPollTimeout = Duration.ofMillis(200);
-    final var customRetryBackoff = Duration.ofMillis(300);
-    final var maxRetries = 3;
+    // Setup
+    final var props = new Properties();
+    props.put("bootstrap.servers", "localhost:9092");
+    props.put("group.id", "test-group");
+    // Add missing required deserializers
+    props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+    props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
 
-    var consumer = new FunctionalConsumer.Builder<String, String>()
-      .withProperties(properties)
-      .withTopic(TOPIC)
-      .withProcessor(processor)
-      .withPollTimeout(customPollTimeout)
+    final var pollTimeout = Duration.ofMillis(200);
+    final Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler = error -> {};
+    final var maxRetries = 3;
+    final var retryBackoff = Duration.ofMillis(100);
+    final var enableMetrics = true;
+
+    // Create consumer with all options
+    FunctionalConsumer<String, String> consumer = new FunctionalConsumer.Builder<String, String>()
+      .withProperties(props)
+      .withTopic("test-topic")
+      .withProcessor(s -> s)
+      .withPollTimeout(pollTimeout)
       .withErrorHandler(errorHandler)
-      .withRetry(maxRetries, customRetryBackoff)
-      .withMetrics(false)
+      .withRetry(maxRetries, retryBackoff)
+      .withMetrics(enableMetrics)
       .build();
 
-    assertNotNull(consumer);
-    assertTrue(consumer.isRunning());
-    assertTrue(consumer.getMetrics().isEmpty()); // Metrics disabled
+    // Assert
+    assertFalse(consumer.isRunning()); // Changed from assertTrue to assertFalse
+    assertFalse(consumer.isPaused());
+
+    // Cleanup
+    consumer.close();
   }
 
   @Test

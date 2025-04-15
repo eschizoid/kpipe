@@ -38,7 +38,7 @@ import org.kpipe.metrics.MetricsReporter;
  * ConsumerRunner<FunctionalConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
  *     .withHealthCheck(FunctionalConsumer::isRunning)
  *     .withShutdownHook(true)
- *     .withShutdownTimeoutMs(5000)
+ *     .withShutdownTimeout(5000)
  *     .build();
  *
  * runner.start();
@@ -65,17 +65,17 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
 
   // Metrics
   private final List<MetricsReporter> metricsReporters;
-  private final long metricsIntervalMs;
+  private final long metricsInterval;
   private volatile Thread metricsThread;
 
-  private ConsumerRunner(Builder<T> builder) {
+  private ConsumerRunner(final Builder<T> builder) {
     this.consumer = builder.consumer;
     this.startAction = builder.startAction;
     this.healthCheck = builder.healthCheck;
     this.gracefulShutdown = builder.gracefulShutdown;
-    this.shutdownTimeoutMs = builder.shutdownTimeoutMs;
+    this.shutdownTimeoutMs = builder.shutdownTimeout;
     this.metricsReporters = new ArrayList<>(builder.metricsReporters);
-    this.metricsIntervalMs = builder.metricsIntervalMs;
+    this.metricsInterval = builder.metricsInterval;
 
     if (builder.useShutdownHook) {
       Runtime.getRuntime().addShutdownHook(new Thread(this::close));
@@ -89,7 +89,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
    * @param consumer the consumer instance to manage
    * @return a new builder instance
    */
-  public static <T extends FunctionalConsumer<?, ?>> Builder<T> builder(T consumer) {
+  public static <T extends FunctionalConsumer<?, ?>> Builder<T> builder(final T consumer) {
     return new Builder<>(consumer);
   }
 
@@ -98,21 +98,19 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
    *
    * <p>This method is idempotent - calling it multiple times has no effect after the first call.
    *
-   * @return this ConsumerRunner instance
    * @throws RuntimeException if the consumer fails to start
    */
-  public ConsumerRunner<T> start() {
+  public void start() {
     if (started.compareAndSet(false, true)) {
       try {
         startAction.accept(consumer);
         startMetricsThread();
-      } catch (Exception e) {
+      } catch (final Exception e) {
         started.set(false);
         LOGGER.log(Level.ERROR, "Failed to start consumer", e);
         throw e;
       }
     }
-    return this;
   }
 
   /**
@@ -163,7 +161,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
       return timeoutMs > 0
         ? shutdownLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
         : shutdownLatch.await(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-    } catch (InterruptedException e) {
+    } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       return false;
     }
@@ -220,7 +218,13 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
 
           LOGGER.log(Level.INFO, "Waiting for %s in-flight messages to be processed".formatted(inFlightCount));
 
-          final boolean completed = tracker.waitForCompletion(timeoutMs).orElse(false);
+          var completed = false;
+          try {
+            completed = tracker.waitForCompletion(timeoutMs).orElse(false);
+          } catch (final Exception e) {
+            LOGGER.log(Level.WARNING, "Error while waiting for message completion", e);
+          }
+
           inFlightCount = tracker.getInFlightMessageCount();
           final boolean allProcessed = completed && inFlightCount == 0;
 
@@ -238,7 +242,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
         } catch (final Exception e) {
           LOGGER.log(Level.WARNING, "Error during graceful shutdown", e);
           consumer.close();
-          throw e;
+          return false;
         }
       })
       .orElseGet(() -> {
@@ -249,7 +253,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
   }
 
   private void startMetricsThread() {
-    if (metricsReporters.isEmpty() || metricsIntervalMs <= 0) {
+    if (metricsReporters.isEmpty() || metricsInterval <= 0) {
       return;
     }
 
@@ -258,11 +262,11 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
         () -> {
           while (!closed.get() && !Thread.currentThread().isInterrupted()) {
             try {
-              for (MetricsReporter reporter : metricsReporters) {
+              for (final var reporter : metricsReporters) {
                 reporter.reportMetrics();
               }
-              Thread.sleep(metricsIntervalMs);
-            } catch (InterruptedException e) {
+              Thread.sleep(metricsInterval);
+            } catch (final InterruptedException e) {
               Thread.currentThread().interrupt();
               break;
             } catch (Exception e) {
@@ -278,8 +282,15 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
   }
 
   private void stopMetricsThread() {
-    if (metricsThread != null) {
-      metricsThread.interrupt();
+    final var thread = metricsThread;
+    if (thread != null) {
+      thread.interrupt();
+      try {
+        thread.join(1000); // Wait up to 1 second for thread to terminate
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        LOGGER.log(Level.WARNING, "Interrupted while stopping metrics thread");
+      }
       metricsThread = null;
     }
   }
@@ -295,12 +306,12 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     private Consumer<T> startAction;
     private Predicate<T> healthCheck;
     private BiFunction<T, Long, Boolean> gracefulShutdown;
-    private long shutdownTimeoutMs = 30000;
+    private long shutdownTimeout = 30000;
     private boolean useShutdownHook = false;
     private final List<MetricsReporter> metricsReporters = new ArrayList<>();
-    private long metricsIntervalMs = 60000;
+    private long metricsInterval = 60000;
 
-    private Builder(T consumer) {
+    private Builder(final T consumer) {
       this.consumer = consumer;
       this.startAction = T::start;
       this.healthCheck = c -> true;
@@ -313,7 +324,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
      * @param startAction the action to execute on consumer start
      * @return this builder instance
      */
-    public Builder<T> withStartAction(Consumer<T> startAction) {
+    public Builder<T> withStartAction(final Consumer<T> startAction) {
       this.startAction = startAction;
       return this;
     }
@@ -324,7 +335,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
      * @param healthCheck the predicate to use for health checks
      * @return this builder instance
      */
-    public Builder<T> withHealthCheck(Predicate<T> healthCheck) {
+    public Builder<T> withHealthCheck(final Predicate<T> healthCheck) {
       this.healthCheck = healthCheck;
       return this;
     }
@@ -335,7 +346,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
      * @param gracefulShutdown the function to use for graceful shutdown
      * @return this builder instance
      */
-    public Builder<T> withGracefulShutdown(BiFunction<T, Long, Boolean> gracefulShutdown) {
+    public Builder<T> withGracefulShutdown(final BiFunction<T, Long, Boolean> gracefulShutdown) {
       this.gracefulShutdown = gracefulShutdown;
       return this;
     }
@@ -343,11 +354,11 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     /**
      * Sets the shutdown timeout in milliseconds.
      *
-     * @param shutdownTimeoutMs maximum time to wait during shutdown
+     * @param shutdownTimeout maximum time to wait during shutdown
      * @return this builder instance
      */
-    public Builder<T> withShutdownTimeout(long shutdownTimeoutMs) {
-      this.shutdownTimeoutMs = shutdownTimeoutMs;
+    public Builder<T> withShutdownTimeout(final long shutdownTimeout) {
+      this.shutdownTimeout = shutdownTimeout;
       return this;
     }
 
@@ -357,7 +368,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
      * @param useShutdownHook true to register a shutdown hook, false otherwise
      * @return this builder instance
      */
-    public Builder<T> withShutdownHook(boolean useShutdownHook) {
+    public Builder<T> withShutdownHook(final boolean useShutdownHook) {
       this.useShutdownHook = useShutdownHook;
       return this;
     }
@@ -368,7 +379,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
      * @param reporter the metrics reporter to add
      * @return this builder instance
      */
-    public Builder<T> withMetricsReporter(MetricsReporter reporter) {
+    public Builder<T> withMetricsReporter(final MetricsReporter reporter) {
       this.metricsReporters.add(reporter);
       return this;
     }
@@ -376,11 +387,11 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     /**
      * Sets the interval in milliseconds between metrics reports.
      *
-     * @param metricsIntervalMs the reporting interval in milliseconds
+     * @param metricsInterval the reporting interval in milliseconds
      * @return this builder instance
      */
-    public Builder<T> withMetricsInterval(long metricsIntervalMs) {
-      this.metricsIntervalMs = metricsIntervalMs;
+    public Builder<T> withMetricsInterval(final long metricsInterval) {
+      this.metricsInterval = metricsInterval;
       return this;
     }
 
@@ -392,7 +403,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
      * @param configurer a function that applies configuration to this builder
      * @return this builder instance
      */
-    public Builder<T> with(Function<Builder<T>, Builder<T>> configurer) {
+    public Builder<T> with(final Function<Builder<T>, Builder<T>> configurer) {
       return configurer.apply(this);
     }
 

@@ -86,7 +86,7 @@ public class App implements AutoCloseable {
       .build();
   }
 
-  private static FunctionalConsumer<byte[], byte[]> createConsumer(
+  public static FunctionalConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
     final MessageProcessorRegistry registry,
     final MessageSink<byte[], byte[]> messageSink
@@ -114,15 +114,15 @@ public class App implements AutoCloseable {
     return MessageProcessorRegistry.withErrorHandling(pipeline, null);
   }
 
-  public void start() {
+  private void start() {
     runner.start();
   }
 
-  public boolean awaitShutdown() {
+  private boolean awaitShutdown() {
     return runner.awaitShutdown();
   }
 
-  public Map<String, Long> getMetrics() {
+  private Map<String, Long> getMetrics() {
     return currentMetrics.get();
   }
 

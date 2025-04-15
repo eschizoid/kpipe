@@ -56,13 +56,12 @@ public class MessageTracker {
 
   private static final Logger LOGGER = System.getLogger(MessageTracker.class.getName());
 
-  // Immutable state
   private final Supplier<Map<String, Long>> metricsSupplier;
   private final String receivedMetricKey;
   private final String processedMetricKey;
   private final String errorsMetricKey;
 
-  private MessageTracker(Builder builder) {
+  private MessageTracker(final Builder builder) {
     this.metricsSupplier = Objects.requireNonNull(builder.metricsSupplier, "metricsSupplier must not be null");
     this.receivedMetricKey = Objects.requireNonNull(builder.receivedMetricKey, "receivedMetricKey must not be null");
     this.processedMetricKey = Objects.requireNonNull(builder.processedMetricKey, "processedMetricKey must not be null");
@@ -70,12 +69,12 @@ public class MessageTracker {
   }
 
   /**
-   * Pure function to calculate in-flight message count from metrics.
+   * Function to calculate in-flight message count from metrics.
    *
    * @param metrics the metrics map
    * @return number of in-flight messages
    */
-  public long calculateInFlightCount(Map<String, Long> metrics) {
+  public long calculateInFlightCount(final Map<String, Long> metrics) {
     long received = metrics.getOrDefault(receivedMetricKey, 0L);
     long processed = metrics.getOrDefault(processedMetricKey, 0L);
     long errors = metrics.getOrDefault(errorsMetricKey, 0L);
@@ -111,7 +110,7 @@ public class MessageTracker {
   }
 
   /**
-   * Functional approach to waiting for in-flight messages to complete.
+   * Function for waiting for in-flight messages to complete.
    *
    * @param timeoutMs maximum time to wait in milliseconds
    * @return Optional containing success state, empty if interrupted
@@ -134,7 +133,10 @@ public class MessageTracker {
           if (completed) {
             LOGGER.log(Level.INFO, "All in-flight messages completed");
           } else {
-            LOGGER.log(Level.WARNING, "Timeout reached with {0} messages still in-flight", getInFlightMessageCount());
+            LOGGER.log(
+              Level.WARNING,
+              "Timeout reached with %s messages still in-flight".formatted(getInFlightMessageCount())
+            );
           }
           return completed;
         });
@@ -146,7 +148,7 @@ public class MessageTracker {
   }
 
   /**
-   * Functional wait pattern that polls a predicate until it returns true or deadline is reached.
+   * Wait pattern that polls a predicate until it returns true or deadline is reached.
    *
    * @param deadline when to stop waiting
    * @param checkInterval how often to check the predicate
