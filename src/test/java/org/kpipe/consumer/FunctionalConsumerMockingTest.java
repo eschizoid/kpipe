@@ -268,7 +268,7 @@ class FunctionalConsumerMockingTest {
 
     // Action
     consumer.pause();
-    consumer.processCommandsForTest(); // Process the command
+    consumer.processCommands(); // Process the command
 
     // Verification
     verify(mockConsumer).pause(partitions);
@@ -291,7 +291,7 @@ class FunctionalConsumerMockingTest {
 
     // Set up paused state
     consumer.pause();
-    consumer.processCommandsForTest(); // Process pause command
+    consumer.processCommands(); // Process pause command
 
     // Clear any previous interactions with the mock
     reset(mockConsumer);
@@ -299,7 +299,7 @@ class FunctionalConsumerMockingTest {
 
     // Action
     consumer.resume();
-    consumer.processCommandsForTest(); // Process resume command
+    consumer.processCommands(); // Process resume command
 
     // Verification
     verify(mockConsumer).resume(partitions);
@@ -322,9 +322,9 @@ class FunctionalConsumerMockingTest {
 
     // Action
     consumer.pause();
-    consumer.processCommandsForTest(); // Process the pause command
+    consumer.processCommands(); // Process the pause command
     consumer.pause(); // Second call should be idempotent
-    consumer.processCommandsForTest(); // Process second command (should do nothing)
+    consumer.processCommands(); // Process second command (should do nothing)
 
     // Verify
     verify(mockConsumer, times(1)).pause(any());

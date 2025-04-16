@@ -5,7 +5,6 @@ import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -17,7 +16,6 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
-import org.kpipe.annotations.VisibleForTesting;
 import org.kpipe.config.AppConfig;
 import org.kpipe.sink.LoggingSink;
 import org.kpipe.sink.MessageSink;
@@ -74,12 +72,6 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   public static final String METRIC_PROCESSING_ERRORS = "processingErrors";
   public static final String METRIC_RETRIES = "retries";
 
-  private enum ConsumerCommand {
-    PAUSE,
-    RESUME,
-    CLOSE,
-  }
-
   private final Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
 
   private final KafkaConsumer<K, V> consumer;
@@ -94,9 +86,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   private final int maxRetries;
   private final Duration retryBackoff;
 
-  private final AtomicBoolean running = new AtomicBoolean(false);
-  private final AtomicBoolean paused = new AtomicBoolean(false);
-  private final AtomicBoolean closed = new AtomicBoolean(false);
+  private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.CREATED);
 
   private final boolean enableMetrics;
   private final boolean sequentialProcessing;
@@ -277,15 +267,6 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   }
 
   /**
-   * Processes pending commands immediately for testing purposes. This method allows tests to verify
-   * consumer operations without starting the consumer thread.
-   */
-  @VisibleForTesting
-  public void processCommandsForTest() {
-    processCommands();
-  }
-
-  /**
    * Creates a message tracker that can monitor the state of in-flight messages. The tracker uses
    * the consumer's metrics to determine how many messages have been received versus processed.
    *
@@ -313,12 +294,12 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * @throws IllegalStateException if the consumer has already been started or was previously closed
    */
   public void start() {
-    if (closed.get()) {
+    if (state.get() == ConsumerState.CLOSED) {
       throw new IllegalStateException("Cannot restart a closed consumer");
     }
 
-    if (!running.compareAndSet(false, true)) {
-      LOGGER.log(Level.WARNING, "Consumer already running for topic %s".formatted(topic));
+    if (!state.compareAndSet(ConsumerState.CREATED, ConsumerState.RUNNING)) {
+      LOGGER.log(Level.WARNING, "Consumer already running for topic {0}", topic);
       return;
     }
 
@@ -326,7 +307,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
     Thread.UncaughtExceptionHandler exceptionHandler = (thread, throwable) -> {
       LOGGER.log(Level.ERROR, "Uncaught exception in consumer thread: " + thread.getName(), throwable);
-      running.set(false);
+      state.set(ConsumerState.CLOSING);
     };
 
     final var thread = Thread
@@ -335,14 +316,14 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       .uncaughtExceptionHandler(exceptionHandler)
       .start(() -> {
         try {
-          while (running.get()) {
+          while (isRunning()) {
             processCommands();
 
-            if (!running.get()) {
+            if (!isRunning()) {
               break;
             }
 
-            if (paused.get()) {
+            if (isPaused()) {
               Thread.sleep(100);
               continue;
             }
@@ -354,14 +335,15 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
           }
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
-          LOGGER.log(Level.INFO, "Consumer thread interrupted for topic %s".formatted(topic));
+          LOGGER.log(Level.INFO, "Consumer thread interrupted for topic {0}", topic);
         } catch (final Exception e) {
           LOGGER.log(Level.WARNING, "Error in consumer thread", e);
           throw e;
         } finally {
           try {
             consumer.close();
-            LOGGER.log(Level.INFO, "Consumer closed for topic %s".formatted(topic));
+            state.set(ConsumerState.CLOSED);
+            LOGGER.log(Level.INFO, "Consumer closed for topic {0}", topic);
           } catch (final Exception e) {
             LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
           }
@@ -369,31 +351,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       });
 
     consumerThread.set(thread);
-    LOGGER.log(Level.INFO, "Consumer started for topic %s".formatted(topic));
-  }
-
-  private void processCommands() {
-    ConsumerCommand command;
-    while ((command = commandQueue.poll()) != null) {
-      try {
-        switch (command) {
-          case PAUSE -> {
-            consumer.pause(consumer.assignment());
-            LOGGER.log(Level.INFO, "Consumer paused for topic %s".formatted(topic));
-          }
-          case RESUME -> {
-            consumer.resume(consumer.assignment());
-            LOGGER.log(Level.INFO, "Consumer resumed for topic %s".formatted(topic));
-          }
-          case CLOSE -> {
-            running.set(false);
-            LOGGER.log(Level.INFO, "Consumer shutdown initiated for topic %s".formatted(topic));
-          }
-        }
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Error processing consumer command: %s".formatted(command), e);
-      }
-    }
+    LOGGER.log(Level.INFO, "Consumer started for topic {0}", topic);
   }
 
   /**
@@ -403,9 +361,61 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * <p>This method is idempotent - calling it multiple times has no additional effect.
    */
   public void pause() {
-    if (paused.compareAndSet(false, true)) {
-      commandQueue.offer(ConsumerCommand.PAUSE);
-      LOGGER.log(Level.INFO, "Consumer pause requested for topic %s".formatted(topic));
+    final var currentState = state.get();
+
+    // Don't send pause command if already paused or closed
+    if (currentState == ConsumerState.PAUSED || currentState == ConsumerState.CLOSED) {
+      LOGGER.log(Level.INFO, "Consumer already paused or closed for topic {0}", topic);
+      return;
+    }
+
+    // Always add command to queue for proper test verification
+    commandQueue.offer(ConsumerCommand.PAUSE);
+    LOGGER.log(Level.INFO, "Consumer pause requested for topic {0}", topic);
+
+    // Update state if not closed or closing
+    if (currentState != ConsumerState.CLOSING) {
+      state.set(ConsumerState.PAUSED);
+    }
+  }
+
+  /**
+   * Processes pending commands from the command queue.
+   *
+   * <p>This method polls commands from the internal command queue and executes the corresponding
+   * actions:
+   *
+   * <ul>
+   *   <li>{@code PAUSE} - Pauses consumption by calling {@code consumer.pause()}
+   *   <li>{@code RESUME} - Resumes consumption by calling {@code consumer.resume()}
+   *   <li>{@code CLOSE} - Initiates shutdown by setting the running flag to false
+   * </ul>
+   *
+   * <p>Commands are processed in the order they were submitted to the queue. If an exception occurs
+   * while processing a command, it will be caught and logged, allowing subsequent commands to be
+   * processed.
+   */
+  public void processCommands() {
+    ConsumerCommand command;
+    while ((command = commandQueue.poll()) != null) {
+      try {
+        switch (command) {
+          case PAUSE -> {
+            consumer.pause(consumer.assignment());
+            LOGGER.log(Level.INFO, "Consumer paused for topic {0}", topic);
+          }
+          case RESUME -> {
+            consumer.resume(consumer.assignment());
+            LOGGER.log(Level.INFO, "Consumer resumed for topic {0}", topic);
+          }
+          case CLOSE -> {
+            state.set(ConsumerState.CLOSING);
+            LOGGER.log(Level.INFO, "Consumer shutdown initiated for topic {0}", topic);
+          }
+        }
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error processing consumer command: {0}", command);
+      }
     }
   }
 
@@ -417,13 +427,25 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * @throws IllegalStateException if the consumer has been closed
    */
   public void resume() {
-    if (closed.get()) {
+    final var currentState = state.get();
+
+    if (currentState == ConsumerState.CLOSED) {
       throw new IllegalStateException("Cannot resume a closed consumer");
     }
 
-    if (paused.compareAndSet(true, false)) {
-      commandQueue.offer(ConsumerCommand.RESUME);
-      LOGGER.log(Level.INFO, "Consumer resume requested for topic %s".formatted(topic));
+    // Don't send resume command if already running
+    if (currentState == ConsumerState.RUNNING) {
+      LOGGER.log(Level.INFO, "Consumer already running for topic {0}", topic);
+      return;
+    }
+
+    // Always add command to queue for proper test verification
+    commandQueue.offer(ConsumerCommand.RESUME);
+    LOGGER.log(Level.INFO, "Consumer resume requested for topic {0}", topic);
+
+    // Update state if not closing or closed
+    if (currentState != ConsumerState.CLOSING) {
+      state.set(ConsumerState.RUNNING);
     }
   }
 
@@ -433,7 +455,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * @return {@code true} if the consumer is paused, {@code false} otherwise
    */
   public boolean isPaused() {
-    return paused.get();
+    return state.get() == ConsumerState.PAUSED;
   }
 
   /**
@@ -465,7 +487,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    *     started
    */
   public boolean isRunning() {
-    return running.get();
+    return state.get() == ConsumerState.RUNNING || state.get() == ConsumerState.PAUSED;
   }
 
   /**
@@ -486,8 +508,12 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    */
   @Override
   public void close() {
-    if (!closed.compareAndSet(false, true)) {
-      return; // Already closed
+    // Only proceed if not already closed or closing
+    if (
+      !state.compareAndSet(ConsumerState.RUNNING, ConsumerState.CLOSING) &&
+      !state.compareAndSet(ConsumerState.PAUSED, ConsumerState.CLOSING)
+    ) {
+      return; // Already closed or closing
     }
 
     // Create tracker first to avoid missing in-flight messages
@@ -504,6 +530,9 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
     // Shutdown executor
     shutdownExecutor(AppConfig.DEFAULT_EXECUTOR_TERMINATION.toMillis());
+
+    // Ensure state is set to CLOSED
+    state.set(ConsumerState.CLOSED);
   }
 
   private MessageTracker createTrackerIfEnabled(final long waitForMessagesMs) {
@@ -514,7 +543,6 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   }
 
   private void signalShutdown() {
-    running.set(false);
     pause();
     commandQueue.offer(ConsumerCommand.CLOSE);
   }
@@ -602,7 +630,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
             virtualThreadExecutor.submit(() -> processRecord(record));
           } catch (RejectedExecutionException e) {
             // Handle task rejection (typically during shutdown)
-            if (running.get()) {
+            if (isRunning()) {
               LOGGER.log(Level.WARNING, "Task submission rejected, likely during shutdown", e);
               if (enableMetrics) {
                 metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
@@ -625,7 +653,8 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       Thread.currentThread().interrupt();
       return null;
     } catch (final Exception e) {
-      if (running.get()) { // Only log if we're not shutting down
+      // Only log if we're not shutting down
+      if (isRunning()) {
         LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
       }
       return null;
