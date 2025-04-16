@@ -122,7 +122,7 @@ public class MessageTracker {
       return Optional.of(true);
     }
 
-    LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", getInFlightMessageCount());
+    LOGGER.log(Level.INFO, "Waiting for %s in-flight messages to complete".formatted(getInFlightMessageCount()));
 
     final Instant deadline = Instant.now().plusMillis(timeoutMs);
 

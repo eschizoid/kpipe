@@ -239,7 +239,9 @@ Follow these steps to test the KPipe Kafka Consumer:
   ./gradlew clean spotlessApply build
 
   # Build the consumer app container and start all services
-  docker compose build --no-cache kafka-consumer-app && docker compose up --force-recreate
+  docker compose build --no-cache
+  docker compose down -v
+  docker compose up -d
   
   # Publish a simple JSON message to the json-topic
   echo '{"message":"Hello world"}' | kcat -P -b kafka:9092 -t json-topic
