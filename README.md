@@ -3,8 +3,8 @@
 # ☕ KPipe - A Modern Kafka Consumer
 
 A **modern, functional, and high-performance Kafka consumer** built using **Java 21** features like **virtual threads**,
-**composable message processors**, and **DslJson** for JSON processing. Ideal for large-scale systems and shared library
-use across multiple teams.
+**composable message processors**, and **DslJson** for JSON processing. Features robust error handling, configurable
+retries, built-in metrics, and support for both parallel and sequential processing. Ideal for large-scale systems.
 
 ---
 

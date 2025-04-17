@@ -39,37 +39,84 @@ class FunctionalConsumerTest {
   }
 
   @Test
-  void constructor_WithValidParameters_ShouldNotThrowException() {
-    assertDoesNotThrow(() -> new FunctionalConsumer<>(properties, TOPIC, mockProcessor));
-    assertDoesNotThrow(() -> new FunctionalConsumer<>(properties, TOPIC, mockProcessor, POLL_TIMEOUT));
+  void constructorWithValidParametersShouldNotThrowException() {
+    assertDoesNotThrow(() ->
+      new FunctionalConsumer.Builder<String, String>()
+        .withProperties(properties)
+        .withTopic(TOPIC)
+        .withProcessor(mockProcessor)
+        .build()
+    );
+
+    assertDoesNotThrow(() ->
+      new FunctionalConsumer.Builder<String, String>()
+        .withProperties(properties)
+        .withTopic(TOPIC)
+        .withProcessor(mockProcessor)
+        .withPollTimeout(POLL_TIMEOUT)
+        .build()
+    );
   }
 
   @Test
-  void constructor_WithNullParameters_ShouldThrowNullPointerException() {
-    assertThrows(NullPointerException.class, () -> new FunctionalConsumer<>(null, TOPIC, mockProcessor));
-    assertThrows(NullPointerException.class, () -> new FunctionalConsumer<>(properties, null, mockProcessor));
-    assertThrows(NullPointerException.class, () -> new FunctionalConsumer<>(properties, TOPIC, null));
-    assertThrows(NullPointerException.class, () -> new FunctionalConsumer<>(properties, TOPIC, mockProcessor, null));
+  void constructorWithNullParametersShouldThrowNullPointerException() {
+    // Empty builder
+    final var emptyBuilder = new FunctionalConsumer.Builder<String, String>();
+    assertThrows(NullPointerException.class, emptyBuilder::build);
+
+    // Missing properties
+    final var noPropsBuilder = new FunctionalConsumer.Builder<String, String>()
+      .withProperties(null)
+      .withTopic(TOPIC)
+      .withProcessor(mockProcessor);
+    assertThrows(NullPointerException.class, noPropsBuilder::build);
+
+    // Missing topic
+    final var noTopicBuilder = new FunctionalConsumer.Builder<String, String>()
+      .withProperties(properties)
+      .withTopic(null)
+      .withProcessor(mockProcessor);
+    assertThrows(NullPointerException.class, noTopicBuilder::build);
+
+    // Missing processor
+    final var noProcessorBuilder = new FunctionalConsumer.Builder<String, String>()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(null);
+    assertThrows(NullPointerException.class, noProcessorBuilder::build);
   }
 
   @Test
   void isRunningShouldReturnFalseAfterConstruction() {
-    try (final var consumer = new FunctionalConsumer<>(properties, TOPIC, mockProcessor)) {
+    try (
+      final var consumer = new FunctionalConsumer.Builder<String, String>()
+        .withProperties(properties)
+        .withTopic(TOPIC)
+        .withProcessor(mockProcessor)
+        .build()
+    ) {
       assertFalse(consumer.isRunning());
     }
   }
 
   @Test
   void isRunningShouldReturnFalseAfterClose() {
-    final var consumer = new FunctionalConsumer<>(properties, TOPIC, mockProcessor);
+    final var consumer = new FunctionalConsumer.Builder<String, String>()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(mockProcessor)
+      .build();
     consumer.close();
     assertFalse(consumer.isRunning());
   }
 
   @Test
   void closeCalledMultipleTimesShouldBeIdempotent() {
-    // Create consumer directly
-    FunctionalConsumer<String, String> consumer = new FunctionalConsumer<>(properties, TOPIC, mockProcessor);
+    FunctionalConsumer<String, String> consumer = new FunctionalConsumer.Builder<String, String>()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(mockProcessor)
+      .build();
 
     // First close
     consumer.close();
@@ -82,8 +129,13 @@ class FunctionalConsumerTest {
 
   @Test
   void autoCloseableShouldCloseConsumerWhenExitingTryWithResources() {
-    // Using try-with-resources should close the consumer
-    try (final var consumer = new FunctionalConsumer<>(properties, TOPIC, mockProcessor)) {
+    try (
+      final var consumer = new FunctionalConsumer.Builder<String, String>()
+        .withProperties(properties)
+        .withTopic(TOPIC)
+        .withProcessor(mockProcessor)
+        .build()
+    ) {
       assertFalse(consumer.isRunning());
     }
 

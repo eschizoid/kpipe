@@ -57,7 +57,15 @@ class FunctionalConsumerMockingTest {
   @Test
   void shouldSubscribeToTopic() {
     final var props = new Properties();
-    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(
+      props,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
 
     consumer.start();
 
@@ -76,7 +84,15 @@ class FunctionalConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create consumer with mock
-    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(
+      props,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
 
     // Create a CountDownLatch to wait for async processing
     final var latch = new CountDownLatch(1);
@@ -117,7 +133,15 @@ class FunctionalConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create consumer with mock
-    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(
+      props,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
 
     // Test - should not throw exception
     assertDoesNotThrow(() -> consumer.executeProcessRecords(records));
@@ -133,10 +157,18 @@ class FunctionalConsumerMockingTest {
   void shouldCloseKafkaConsumerWhenClosed() throws Exception {
     // Setup
     final var props = new Properties();
-    KafkaConsumer<String, String> mockConsumer = mock(KafkaConsumer.class);
+    final var mockConsumer = mock(KafkaConsumer.class);
     Function<String, String> processor = value -> value;
 
-    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(
+      props,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
     consumer.start();
 
     // Test
@@ -259,12 +291,15 @@ class FunctionalConsumerMockingTest {
     final var partitions = Set.of(partition);
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    FunctionalConsumer<String, String> consumer = new FunctionalConsumer<>(properties, "test-topic", value -> value) {
-      @Override
-      protected KafkaConsumer<String, String> createConsumer(Properties kafkaProps) {
-        return mockConsumer;
-      }
-    };
+    final var consumer = new TestableFunctionalConsumer<>(
+      new Properties(),
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
 
     // Action
     consumer.pause();
@@ -282,12 +317,15 @@ class FunctionalConsumerMockingTest {
     final var partitions = Set.of(partition);
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    FunctionalConsumer<String, String> consumer = new FunctionalConsumer<>(properties, "test-topic", value -> value) {
-      @Override
-      protected KafkaConsumer<String, String> createConsumer(Properties kafkaProps) {
-        return mockConsumer;
-      }
-    };
+    final var consumer = new TestableFunctionalConsumer<>(
+      new Properties(),
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
 
     // Set up paused state
     consumer.pause();
@@ -313,12 +351,15 @@ class FunctionalConsumerMockingTest {
     final var partitions = Set.of(partition);
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    FunctionalConsumer<String, String> consumer = new FunctionalConsumer<>(properties, "test-topic", value -> value) {
-      @Override
-      protected KafkaConsumer<String, String> createConsumer(Properties kafkaProps) {
-        return mockConsumer;
-      }
-    };
+    final var consumer = new TestableFunctionalConsumer<>(
+      new Properties(),
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
 
     // Action
     consumer.pause();
@@ -350,7 +391,15 @@ class FunctionalConsumerMockingTest {
     var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create test consumer
-    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(
+      props,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
 
     // Process records
     consumer.executeProcessRecords(records);
@@ -388,7 +437,15 @@ class FunctionalConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create test consumer
-    final var consumer = new TestableFunctionalConsumer<>(props, TOPIC, processor, mockConsumer);
+    final var consumer = new TestableFunctionalConsumer<>(
+      props,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
 
     // Process records
     consumer.executeProcessRecords(records);
@@ -441,7 +498,7 @@ class FunctionalConsumerMockingTest {
     final var enableMetrics = true;
 
     // Create consumer with all options
-    FunctionalConsumer<String, String> consumer = new FunctionalConsumer.Builder<String, String>()
+    final var consumer = new FunctionalConsumer.Builder<String, String>()
       .withProperties(props)
       .withTopic("test-topic")
       .withProcessor(s -> s)
@@ -452,7 +509,7 @@ class FunctionalConsumerMockingTest {
       .build();
 
     // Assert
-    assertFalse(consumer.isRunning()); // Changed from assertTrue to assertFalse
+    assertFalse(consumer.isRunning());
     assertFalse(consumer.isPaused());
 
     // Cleanup
@@ -480,17 +537,6 @@ class FunctionalConsumerMockingTest {
       final Properties kafkaProps,
       final String topic,
       final Function<V, V> processor,
-      final KafkaConsumer<K, V> mockConsumer
-    ) {
-      super(kafkaProps, topic, processor);
-      this.mockConsumer = mockConsumer;
-      setMockConsumer();
-    }
-
-    public TestableFunctionalConsumer(
-      final Properties props,
-      final String topic,
-      final Function<V, V> processor,
       final KafkaConsumer<K, V> mockConsumer,
       final int maxRetries,
       final Duration retryBackoff,
@@ -498,7 +544,7 @@ class FunctionalConsumerMockingTest {
     ) {
       super(
         new Builder<K, V>()
-          .withProperties(props)
+          .withProperties(kafkaProps)
           .withTopic(topic)
           .withProcessor(processor)
           .withRetry(maxRetries, retryBackoff)
@@ -523,7 +569,7 @@ class FunctionalConsumerMockingTest {
       return mockConsumer;
     }
 
-    public void executeProcessRecords(ConsumerRecords<K, V> records) {
+    public void executeProcessRecords(final ConsumerRecords<K, V> records) {
       processRecords(records);
     }
   }

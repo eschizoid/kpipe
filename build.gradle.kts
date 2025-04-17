@@ -88,6 +88,7 @@ spotless {
         toggleOffOn()
         importOrder()
         removeUnusedImports()
+        ratchetFrom("origin/main")
         prettier(
             mapOf(
                 "prettier" to "2.8.8",

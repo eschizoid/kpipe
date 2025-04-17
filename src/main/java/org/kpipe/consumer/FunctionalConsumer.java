@@ -36,6 +36,9 @@ import org.kpipe.sink.MessageSink;
  *   <li>Pause/resume capabilities for flow control
  *   <li>Built-in metrics collection
  *   <li>Graceful shutdown with in-flight message tracking
+ *   <li>Optional sequential processing mode for order-sensitive workloads
+ *   <li>Configurable message sink for processed record handling
+ *   <li>Flexible timeout configurations for graceful shutdown stages
  * </ul>
  *
  * <p>Example usage:
@@ -67,10 +70,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   private static final Logger LOGGER = System.getLogger(FunctionalConsumer.class.getName());
 
   // Metric key constants
-  public static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
-  public static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
-  public static final String METRIC_PROCESSING_ERRORS = "processingErrors";
-  public static final String METRIC_RETRIES = "retries";
+  private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
+  private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
+  private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
+  private static final String METRIC_RETRIES = "retries";
 
   private final Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
 
@@ -81,8 +84,23 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   private final Duration pollTimeout;
   private final MessageSink<K, V> messageSink;
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
+  private final Duration waitForMessagesTimeout;
+  private final Duration threadTerminationTimeout;
+  private final Duration executorTerminationTimeout;
 
-  private final Consumer<ProcessingError<K, V>> errorHandler;
+  private Consumer<ProcessingError<K, V>> errorHandler = error -> {
+    LOGGER.log(
+      Level.WARNING,
+      "Processing failed for record (topic=%s, partition=%d, offset=%d) after %d retries: %s".formatted(
+          error.record().topic(),
+          error.record().partition(),
+          error.record().offset(),
+          error.retryCount(),
+          error.exception().getMessage()
+        ),
+      error.exception()
+    );
+  };
   private final int maxRetries;
   private final Duration retryBackoff;
 
@@ -116,12 +134,15 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     private String topic;
     private Function<V, V> processor;
     private Duration pollTimeout = Duration.ofMillis(100);
-    private Consumer<ProcessingError<K, V>> errorHandler = error -> {};
+    private Consumer<ProcessingError<K, V>> errorHandler;
     private int maxRetries = 0;
     private Duration retryBackoff = Duration.ofMillis(500);
     private boolean enableMetrics = true;
     private boolean sequentialProcessing = false;
     private MessageSink<K, V> messageSink;
+    private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
+    private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
+    private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
 
     public Builder<K, V> withProperties(final Properties props) {
       this.kafkaProps = props;
@@ -169,6 +190,21 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
+    public Builder<K, V> withWaitForMessagesTimeout(final Duration timeout) {
+      this.waitForMessagesTimeout = Objects.requireNonNull(timeout);
+      return this;
+    }
+
+    public Builder<K, V> withThreadTerminationTimeout(final Duration timeout) {
+      this.threadTerminationTimeout = Objects.requireNonNull(timeout);
+      return this;
+    }
+
+    public Builder<K, V> withExecutorTerminationTimeout(final Duration timeout) {
+      this.executorTerminationTimeout = Objects.requireNonNull(timeout);
+      return this;
+    }
+
     /**
      * Builds a new FunctionalConsumer with the configured settings.
      *
@@ -209,52 +245,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     this.enableMetrics = builder.enableMetrics;
     this.sequentialProcessing = builder.sequentialProcessing;
     this.messageSink = builder.messageSink != null ? builder.messageSink : new LoggingSink<>();
-
-    ExecutorService executor = null;
-    try {
-      executor = Executors.newVirtualThreadPerTaskExecutor();
-      initializeMetrics();
-      this.virtualThreadExecutor = executor;
-      executor = null;
-    } finally {
-      if (executor != null) {
-        executor.shutdown();
-      }
-    }
-  }
-
-  /**
-   * Creates a new FunctionalConsumer with basic configuration.
-   *
-   * @param kafkaProps Kafka client properties
-   * @param topic the topic to consume from
-   * @param processor the function to process each record value
-   */
-  public FunctionalConsumer(final Properties kafkaProps, final String topic, Function<V, V> processor) {
-    this(new Builder<K, V>().withProperties(kafkaProps).withTopic(topic).withProcessor(processor));
-  }
-
-  /**
-   * Creates a new FunctionalConsumer with custom poll timeout.
-   *
-   * @param kafkaProps Kafka client properties
-   * @param topic the topic to consume from
-   * @param processor the function to process each record value
-   * @param pollTimeout the duration to wait for records when polling
-   */
-  public FunctionalConsumer(
-    final Properties kafkaProps,
-    final String topic,
-    final Function<V, V> processor,
-    final Duration pollTimeout
-  ) {
-    this(
-      new Builder<K, V>()
-        .withProperties(kafkaProps)
-        .withTopic(topic)
-        .withProcessor(processor)
-        .withPollTimeout(pollTimeout)
-    );
+    this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
+    this.threadTerminationTimeout = builder.threadTerminationTimeout;
+    this.executorTerminationTimeout = builder.executorTerminationTimeout;
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    initializeMetrics();
   }
 
   private void initializeMetrics() {
@@ -328,7 +323,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
               continue;
             }
 
-            final ConsumerRecords<K, V> records = pollRecords();
+            final var records = pollRecords();
             if (records != null && !records.isEmpty()) {
               processRecords(records);
             }
@@ -517,86 +512,22 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     }
 
     // Create tracker first to avoid missing in-flight messages
-    final var tracker = createTrackerIfEnabled(AppConfig.DEFAULT_WAIT_FOR_MESSAGES.toMillis());
+    final var tracker = createTrackerIfEnabled(waitForMessagesTimeout.toMillis());
 
     // Signal shutdown
     signalShutdown();
 
     // Wait for in-flight messages
-    waitForInFlightMessages(tracker, AppConfig.DEFAULT_WAIT_FOR_MESSAGES.toMillis());
+    waitForInFlightMessages(tracker, waitForMessagesTimeout.toMillis());
 
     // Wake up consumer and wait for thread termination
-    wakeupAndWaitForConsumerThread(AppConfig.DEFAULT_THREAD_TERMINATION.toMillis());
+    wakeupAndWaitForConsumerThread(threadTerminationTimeout.toMillis());
 
     // Shutdown executor
-    shutdownExecutor(AppConfig.DEFAULT_EXECUTOR_TERMINATION.toMillis());
+    shutdownExecutor(executorTerminationTimeout.toMillis());
 
     // Ensure state is set to CLOSED
     state.set(ConsumerState.CLOSED);
-  }
-
-  private MessageTracker createTrackerIfEnabled(final long waitForMessagesMs) {
-    if (waitForMessagesMs > 0 && enableMetrics) {
-      return createMessageTracker();
-    }
-    return null;
-  }
-
-  private void signalShutdown() {
-    pause();
-    commandQueue.offer(ConsumerCommand.CLOSE);
-  }
-
-  private void waitForInFlightMessages(final MessageTracker tracker, long waitForMessagesMs) {
-    if (tracker != null) {
-      try {
-        long inFlightCount = tracker.getInFlightMessageCount();
-        if (inFlightCount > 0) {
-          LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlightCount));
-          tracker.waitForCompletion(waitForMessagesMs);
-        }
-      } catch (Exception e) {
-        LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
-      }
-    }
-  }
-
-  private void wakeupAndWaitForConsumerThread(long threadTerminationMs) {
-    // Safe wakeup of the consumer
-    final var consumerRef = consumer;
-    if (consumerRef != null) {
-      try {
-        consumerRef.wakeup();
-      } catch (Exception e) {
-        LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
-      }
-    }
-
-    // Wait for thread termination
-    final var localThread = consumerThread.get();
-    if (localThread != null && localThread.isAlive()) {
-      try {
-        localThread.join(threadTerminationMs);
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        LOGGER.log(Level.WARNING, "Interrupted while waiting for consumer thread");
-      }
-    }
-  }
-
-  private void shutdownExecutor(long executorTerminationMs) {
-    try {
-      virtualThreadExecutor.shutdown();
-      if (!virtualThreadExecutor.awaitTermination(executorTerminationMs, TimeUnit.MILLISECONDS)) {
-        LOGGER.log(Level.WARNING, "Not all processing tasks completed during shutdown");
-        final var pending = virtualThreadExecutor.shutdownNow();
-        LOGGER.log(Level.WARNING, "%d tasks were not processed".formatted(pending.size()));
-      }
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      virtualThreadExecutor.shutdownNow();
-      LOGGER.log(Level.WARNING, "Interrupted while waiting for executor termination");
-    }
   }
 
   /**
@@ -618,7 +549,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   protected void processRecords(final ConsumerRecords<K, V> records) {
     if (sequentialProcessing) {
       // Process sequentially for cases where order matters
-      for (ConsumerRecord<K, V> record : records.records(topic)) {
+      for (final var record : records.records(topic)) {
         processRecord(record);
       }
     } else {
@@ -628,7 +559,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         .forEach(record -> {
           try {
             virtualThreadExecutor.submit(() -> processRecord(record));
-          } catch (RejectedExecutionException e) {
+          } catch (final RejectedExecutionException e) {
             // Handle task rejection (typically during shutdown)
             if (isRunning()) {
               LOGGER.log(Level.WARNING, "Task submission rejected, likely during shutdown", e);
@@ -639,25 +570,6 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
             }
           }
         });
-    }
-  }
-
-  private ConsumerRecords<K, V> pollRecords() {
-    try {
-      return consumer.poll(pollTimeout);
-    } catch (final WakeupException e) {
-      // Expected during shutdown, no need to log
-      return null;
-    } catch (final InterruptException e) {
-      // Propagate interruption
-      Thread.currentThread().interrupt();
-      return null;
-    } catch (final Exception e) {
-      // Only log if we're not shutting down
-      if (isRunning()) {
-        LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
-      }
-      return null;
     }
   }
 
@@ -722,7 +634,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
         try {
           Thread.sleep(retryBackoff.toMillis());
-        } catch (InterruptedException ie) {
+        } catch (final InterruptedException ie) {
           Thread.currentThread().interrupt();
           break;
         }
@@ -732,6 +644,89 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
           "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempts, maxRetries)
         );
       }
+    }
+  }
+
+  private ConsumerRecords<K, V> pollRecords() {
+    try {
+      return consumer.poll(pollTimeout);
+    } catch (final WakeupException e) {
+      // Expected during shutdown, no need to log
+      return null;
+    } catch (final InterruptException e) {
+      // Propagate interruption
+      Thread.currentThread().interrupt();
+      return null;
+    } catch (final Exception e) {
+      // Only log if we're not shutting down
+      if (isRunning()) {
+        LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
+      }
+      return null;
+    }
+  }
+
+  private MessageTracker createTrackerIfEnabled(final long waitForMessagesMs) {
+    if (waitForMessagesMs > 0 && enableMetrics) {
+      return createMessageTracker();
+    }
+    return null;
+  }
+
+  private void signalShutdown() {
+    pause();
+    commandQueue.offer(ConsumerCommand.CLOSE);
+  }
+
+  private void waitForInFlightMessages(final MessageTracker tracker, final long waitForMessagesMs) {
+    if (tracker != null) {
+      try {
+        long inFlightCount = tracker.getInFlightMessageCount();
+        if (inFlightCount > 0) {
+          LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlightCount));
+          tracker.waitForCompletion(waitForMessagesMs);
+        }
+      } catch (Exception e) {
+        LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
+      }
+    }
+  }
+
+  private void wakeupAndWaitForConsumerThread(final long threadTerminationMs) {
+    // Safe wakeup of the consumer
+    final var consumerRef = consumer;
+    if (consumerRef != null) {
+      try {
+        consumerRef.wakeup();
+      } catch (Exception e) {
+        LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
+      }
+    }
+
+    // Wait for thread termination
+    final var localThread = consumerThread.get();
+    if (localThread != null && localThread.isAlive()) {
+      try {
+        localThread.join(threadTerminationMs);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        LOGGER.log(Level.WARNING, "Interrupted while waiting for consumer thread");
+      }
+    }
+  }
+
+  private void shutdownExecutor(final long executorTerminationMs) {
+    try {
+      virtualThreadExecutor.shutdown();
+      if (!virtualThreadExecutor.awaitTermination(executorTerminationMs, TimeUnit.MILLISECONDS)) {
+        LOGGER.log(Level.WARNING, "Not all processing tasks completed during shutdown");
+        final var pending = virtualThreadExecutor.shutdownNow();
+        LOGGER.log(Level.WARNING, "%d tasks were not processed".formatted(pending.size()));
+      }
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      virtualThreadExecutor.shutdownNow();
+      LOGGER.log(Level.WARNING, "Interrupted while waiting for executor termination");
     }
   }
 }
