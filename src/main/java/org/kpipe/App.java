@@ -2,6 +2,7 @@ package org.kpipe;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -78,8 +79,7 @@ public class App implements AutoCloseable {
       })
       .withHealthCheck(FunctionalConsumer::isRunning)
       .withGracefulShutdown(ConsumerRunner::performGracefulConsumerShutdown)
-      .withMetricsReporter(consumerMetricsReporter)
-      .withMetricsReporter(processorMetricsReporter)
+      .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter))
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())
       .withShutdownHook(true)

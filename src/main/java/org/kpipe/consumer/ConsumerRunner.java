@@ -3,6 +3,7 @@ package org.kpipe.consumer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -156,7 +157,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
    * @param timeoutMs maximum time in milliseconds to wait, 0 means wait indefinitely
    * @return true if the shutdown completed normally within the timeout, false otherwise
    */
-  public boolean awaitShutdown(long timeoutMs) {
+  public boolean awaitShutdown(final long timeoutMs) {
     try {
       return timeoutMs > 0
         ? shutdownLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
@@ -374,13 +375,13 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     }
 
     /**
-     * Adds a metrics reporter to run periodically.
+     * Adds multiple metrics reporters to run periodically.
      *
-     * @param reporter the metrics reporter to add
+     * @param reporters the collection of metrics reporters to add
      * @return this builder instance
      */
-    public Builder<T> withMetricsReporter(final MetricsReporter reporter) {
-      this.metricsReporters.add(reporter);
+    public Builder<T> withMetricsReporters(final Collection<MetricsReporter> reporters) {
+      this.metricsReporters.addAll(reporters);
       return this;
     }
 
