@@ -1,4 +1,4 @@
-package org.kpipe.processor;
+package org.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -49,7 +49,7 @@ class MessageProcessorRegistryTest {
   @Test
   void shouldReturnIdentityForMissingProcessor() {
     // Arrange
-    Function<byte[], byte[]> processor = registry.get("nonExistentProcessor");
+    final var processor = registry.get("nonExistentProcessor");
 
     // Act
     final var input = "test".getBytes();
@@ -70,7 +70,7 @@ class MessageProcessorRegistryTest {
     );
 
     // Act
-    Function<byte[], byte[]> pipeline = registry.pipeline("parseJson", "doubleKey");
+    final var pipeline = registry.pipeline("parseJson", "doubleKey");
 
     final var result = pipeline.apply(
       """
@@ -99,7 +99,7 @@ class MessageProcessorRegistryTest {
     };
 
     // Act
-    Function<byte[], byte[]> pipeline = registry.pipeline(List.of(processor1, processor2));
+    final var pipeline = registry.pipeline(List.of(processor1, processor2));
 
     final var result = pipeline.apply("input".getBytes());
 
@@ -114,10 +114,7 @@ class MessageProcessorRegistryTest {
       throw new RuntimeException("Test exception");
     };
 
-    Function<byte[], byte[]> safeProcessor = MessageProcessorRegistry.withErrorHandling(
-      processor,
-      "fallback".getBytes()
-    );
+    final var safeProcessor = MessageProcessorRegistry.withErrorHandling(processor, "fallback".getBytes());
 
     // Act
     final var result = safeProcessor.apply("any input".getBytes());
@@ -133,7 +130,7 @@ class MessageProcessorRegistryTest {
     Function<byte[], byte[]> falseProcessor = message -> "false".getBytes();
 
     // Act
-    Function<byte[], byte[]> conditionalProcessor = MessageProcessorRegistry.when(
+    final var conditionalProcessor = MessageProcessorRegistry.when(
       message -> message.length > 5,
       trueProcessor,
       falseProcessor

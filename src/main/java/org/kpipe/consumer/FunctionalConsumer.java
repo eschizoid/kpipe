@@ -605,7 +605,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
       try {
         V processed = processor.apply(record.value());
-        messageSink.accept(record, processed);
+        messageSink.send(record, processed);
 
         if (enableMetrics) {
           metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();

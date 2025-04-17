@@ -7,7 +7,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import org.kpipe.processor.MessageProcessorRegistry;
+import org.kpipe.registry.MessageProcessorRegistry;
 
 /**
  * Reports metrics for message processors.
