@@ -111,7 +111,8 @@ public class App implements AutoCloseable {
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
 
-    return new FunctionalConsumer.Builder<byte[], byte[]>()
+    return FunctionalConsumer
+      .<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
       .withProcessor(createProcessorPipeline(processorRegistry))

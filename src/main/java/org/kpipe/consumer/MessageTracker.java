@@ -170,26 +170,19 @@ public class MessageTracker {
     return Optional.of(false);
   }
 
-
-    /**
-     * Creates a new Builder instance for constructing MessageTracker objects.
-     *
-     * @return a new Builder instance
-     */
+  /**
+   * Creates a new Builder instance for constructing MessageTracker objects.
+   *
+   * @return a new Builder instance
+   */
   public static Builder builder() {
     return new Builder();
   }
 
-  /**
-   * Constructs a new Builder object.
-   */
+  /** Constructs a new Builder object. */
   public static class Builder {
 
-    /**
-     * Constructs a new Builder object.
-     */
-    public Builder() {
-    }
+    private Builder() {}
 
     private Supplier<Map<String, Long>> metricsSupplier;
     private String receivedMetricKey;

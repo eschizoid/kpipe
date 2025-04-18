@@ -41,7 +41,8 @@ class FunctionalConsumerTest {
   @Test
   void constructorWithValidParametersShouldNotThrowException() {
     assertDoesNotThrow(() ->
-      new FunctionalConsumer.Builder<String, String>()
+      FunctionalConsumer
+        .<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(mockProcessor)
@@ -49,7 +50,8 @@ class FunctionalConsumerTest {
     );
 
     assertDoesNotThrow(() ->
-      new FunctionalConsumer.Builder<String, String>()
+      FunctionalConsumer
+        .<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(mockProcessor)
@@ -61,25 +63,28 @@ class FunctionalConsumerTest {
   @Test
   void constructorWithNullParametersShouldThrowNullPointerException() {
     // Empty builder
-    final var emptyBuilder = new FunctionalConsumer.Builder<String, String>();
+    final var emptyBuilder = FunctionalConsumer.<String, String>builder();
     assertThrows(NullPointerException.class, emptyBuilder::build);
 
     // Missing properties
-    final var noPropsBuilder = new FunctionalConsumer.Builder<String, String>()
+    final var noPropsBuilder = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(null)
       .withTopic(TOPIC)
       .withProcessor(mockProcessor);
     assertThrows(NullPointerException.class, noPropsBuilder::build);
 
     // Missing topic
-    final var noTopicBuilder = new FunctionalConsumer.Builder<String, String>()
+    final var noTopicBuilder = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(properties)
       .withTopic(null)
       .withProcessor(mockProcessor);
     assertThrows(NullPointerException.class, noTopicBuilder::build);
 
     // Missing processor
-    final var noProcessorBuilder = new FunctionalConsumer.Builder<String, String>()
+    final var noProcessorBuilder = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(null);
@@ -89,7 +94,8 @@ class FunctionalConsumerTest {
   @Test
   void isRunningShouldReturnFalseAfterConstruction() {
     try (
-      final var consumer = new FunctionalConsumer.Builder<String, String>()
+      final var consumer = FunctionalConsumer
+        .<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(mockProcessor)
@@ -101,7 +107,8 @@ class FunctionalConsumerTest {
 
   @Test
   void isRunningShouldReturnFalseAfterClose() {
-    final var consumer = new FunctionalConsumer.Builder<String, String>()
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(mockProcessor)
@@ -112,7 +119,8 @@ class FunctionalConsumerTest {
 
   @Test
   void closeCalledMultipleTimesShouldBeIdempotent() {
-    FunctionalConsumer<String, String> consumer = new FunctionalConsumer.Builder<String, String>()
+    FunctionalConsumer<String, String> consumer = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(mockProcessor)
@@ -130,7 +138,8 @@ class FunctionalConsumerTest {
   @Test
   void autoCloseableShouldCloseConsumerWhenExitingTryWithResources() {
     try (
-      final var consumer = new FunctionalConsumer.Builder<String, String>()
+      final var consumer = FunctionalConsumer
+        .<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(mockProcessor)
@@ -156,7 +165,8 @@ class FunctionalConsumerTest {
       return value.toUpperCase();
     };
 
-    final var consumer = new FunctionalConsumer.Builder<String, String>()
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(retryProcessor)
@@ -187,7 +197,8 @@ class FunctionalConsumerTest {
 
     final Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler = mock(Consumer.class);
 
-    final var consumer = new FunctionalConsumer.Builder<String, String>()
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(failingProcessor)
@@ -229,7 +240,8 @@ class FunctionalConsumerTest {
       return value.toUpperCase();
     };
 
-    final var consumer = new FunctionalConsumer.Builder<String, String>()
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(intermittentProcessor)

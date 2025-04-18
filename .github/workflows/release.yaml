@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      releaseType:
+        description: "Release Type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "graalvm"
+          java-version: "23"
+          cache: "gradle"
+
+      - name: Set Git Identity
+        run: |
+          git config --global user.email "marian.gonzalez.mx@gmail.com"
+          git config --global user.name "Mariano Gonzalez"
+
+      - name: Generate Tag
+        run: |
+          ./gradlew release -Prelease.incrementer=${{ github.event.inputs.releaseType }} -Prelease.disableChecks -Prelease.pushTagsOnly
+
+      - name: Get Current Version
+        id: version
+        run: |
+          VERSION=$(./gradlew currentVersion -q -Prelease.quiet)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build with Gradle
+        run: ./gradlew build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            build/libs/kpipe-${{ steps.version.outputs.version }}.jar
