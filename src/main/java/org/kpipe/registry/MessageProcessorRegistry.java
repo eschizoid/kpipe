@@ -1,7 +1,6 @@
 package org.kpipe.registry;
 
 import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +46,7 @@ public class MessageProcessorRegistry {
     final Function<byte[], byte[]> processor;
     long invocationCount = 0;
     long errorCount = 0;
-    long totalProcessingTimeNs = 0;
+    long totalProcessingTimeMs = 0;
 
     ProcessorEntry(final Function<byte[], byte[]> processor) {
       this.processor = processor;
@@ -56,7 +55,7 @@ public class MessageProcessorRegistry {
     public byte[] execute(final byte[] input) {
       final Supplier<Long> counterIncrement = () -> invocationCount++;
       final Supplier<Long> errorIncrement = () -> errorCount++;
-      final Consumer<Duration> timeAccumulator = duration -> totalProcessingTimeNs += duration.toNanos();
+      final Consumer<Duration> timeAccumulator = duration -> totalProcessingTimeMs += duration.toNanos();
 
       final var timedExecution = RegistryFunctions.<byte[], byte[]>timedExecution(
         counterIncrement,
@@ -199,7 +198,7 @@ public class MessageProcessorRegistry {
   public Function<byte[], byte[]> pipeline(final String... processorNames) {
     return message -> {
       var result = message;
-      for (final String name : processorNames) {
+      for (final var name : processorNames) {
         result = get(name).apply(result);
       }
       return result;
@@ -231,7 +230,7 @@ public class MessageProcessorRegistry {
     Objects.requireNonNull(processors, "Processor list cannot be null");
     return message -> {
       byte[] result = message;
-      for (final Function<byte[], byte[]> processor : processors) {
+      for (final var processor : processors) {
         result = processor.apply(result);
       }
       return result;
@@ -265,14 +264,7 @@ public class MessageProcessorRegistry {
     final Function<byte[], byte[]> processor,
     final byte[] defaultValue
   ) {
-    return message -> {
-      try {
-        return processor.apply(message);
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Error processing message", e);
-        return defaultValue != null ? defaultValue : "{}".getBytes();
-      }
-    };
+    return RegistryFunctions.withFunctionErrorHandling(processor, defaultValue, LOGGER);
   }
 
   /**
@@ -364,7 +356,7 @@ public class MessageProcessorRegistry {
       return Map.of();
     }
 
-    return RegistryFunctions.createMetrics(entry.invocationCount, entry.errorCount, entry.totalProcessingTimeNs);
+    return RegistryFunctions.createMetrics(entry.invocationCount, entry.errorCount, entry.totalProcessingTimeMs);
   }
 
   /**

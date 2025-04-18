@@ -61,7 +61,7 @@ public class MessageSinkRegistry {
     final MessageSink<K, V> sink;
     long messageCount = 0;
     long errorCount = 0;
-    long totalProcessingTimeNs = 0;
+    long totalProcessingTimeMs = 0;
 
     SinkEntry(final MessageSink<K, V> sink) {
       this.sink = sink;
@@ -70,7 +70,7 @@ public class MessageSinkRegistry {
     public void send(final ConsumerRecord<K, V> record, final V processedValue) {
       final Supplier<Long> counterIncrement = () -> messageCount++;
       final Supplier<Long> errorIncrement = () -> errorCount++;
-      final Consumer<Duration> timeAccumulator = duration -> totalProcessingTimeNs += duration.toNanos();
+      final Consumer<Duration> timeAccumulator = duration -> totalProcessingTimeMs += duration.toMillis();
 
       final var timedExecution = RegistryFunctions.<V, Void>timedExecution(
         counterIncrement,
@@ -201,7 +201,6 @@ public class MessageSinkRegistry {
    * @param <V> The type of message value
    * @return A composite sink that delegates to all specified sinks
    */
-  @SuppressWarnings("unchecked")
   public <K, V> MessageSink<K, V> pipeline(final String... sinkNames) {
     return (record, processedValue) -> {
       for (final var name : sinkNames) {
@@ -251,7 +250,7 @@ public class MessageSinkRegistry {
    * Map<String, Object> metrics = registry.getMetrics("database");
    * System.out.println("Messages processed: " + metrics.get("messageCount"));
    * System.out.println("Errors: " + metrics.get("errorCount"));
-   * System.out.println("Avg processing time (ns): " + metrics.get("averageProcessingTimeNs"));
+   * System.out.println("Avg processing time (ms): " + metrics.get("averageProcessingTimeMs"));
    * }</pre>
    *
    * @param name The sink name
@@ -263,7 +262,7 @@ public class MessageSinkRegistry {
       return Map.of();
     }
 
-    return RegistryFunctions.createMetrics(entry.messageCount, entry.errorCount, entry.totalProcessingTimeNs);
+    return RegistryFunctions.createMetrics(entry.messageCount, entry.errorCount, entry.totalProcessingTimeMs);
   }
 
   /**

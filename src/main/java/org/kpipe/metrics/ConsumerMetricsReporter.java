@@ -149,7 +149,7 @@ public class ConsumerMetricsReporter implements MetricsReporter {
     }
   }
 
-  private void logMetrics(String metrics) {
+  private void logMetrics(final String metrics) {
     LOGGER.log(Level.INFO, metrics);
   }
 }

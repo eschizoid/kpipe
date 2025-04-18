@@ -12,7 +12,12 @@ package org.kpipe.consumer;
  * </ul>
  */
 public enum ConsumerCommand {
+  /** Pause the consumer from processing messages. */
   PAUSE,
+
+  /** Resume a paused consumer. */
   RESUME,
+
+  /** Close the consumer and release resources. */
   CLOSE,
 }

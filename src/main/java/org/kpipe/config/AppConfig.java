@@ -32,6 +32,14 @@ import java.util.function.Function;
  *     List.of("parseJson", "addTimestamp")
  * );
  * }</pre>
+ *
+ * @param consumerGroup The Kafka consumer group identifier
+ * @param topic The Kafka topic to consume from
+ * @param appName The name of the application
+ * @param pollTimeout Timeout duration for polling messages
+ * @param shutdownTimeout Timeout duration for graceful shutdown
+ * @param metricsInterval Interval between metrics reporting
+ * @param processors List of processor names to apply to messages
  */
 public record AppConfig(
   String bootstrapServers,
