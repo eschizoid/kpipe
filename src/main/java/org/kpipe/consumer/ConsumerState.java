@@ -14,9 +14,18 @@ package org.kpipe.consumer;
  * </ul>
  */
 public enum ConsumerState {
+  /** Consumer has been created but not started. */
   CREATED,
+
+  /** Consumer is actively processing messages. */
   RUNNING,
+
+  /** Consumer is temporarily paused. */
   PAUSED,
+
+  /** Consumer is in the process of shutting down. */
   CLOSING,
+
+  /** Consumer has completed shutdown and can't be restarted. */
   CLOSED,
 }

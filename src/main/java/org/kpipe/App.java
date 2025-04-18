@@ -33,7 +33,11 @@ public class App implements AutoCloseable {
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
 
-  /** Main entry point for the Kafka consumer application. */
+  /**
+   * Main entry point for the Kafka consumer application.
+   *
+   * @param args Command line arguments
+   */
   public static void main(final String[] args) {
     final var config = AppConfig.fromEnv();
 
@@ -49,7 +53,11 @@ public class App implements AutoCloseable {
     }
   }
 
-  /** Creates a new KafkaConsumerApp with the specified configuration. */
+  /**
+   * Creates a new KafkaConsumerApp with the specified configuration.
+   *
+   * @param config The application configuration
+   */
   public App(final AppConfig config) {
     this.processorRegistry = new MessageProcessorRegistry(config.appName());
     this.sinkRegistry = new MessageSinkRegistry();
@@ -88,6 +96,14 @@ public class App implements AutoCloseable {
       .build();
   }
 
+  /**
+   * Creates a configured consumer for processing byte array messages.
+   *
+   * @param config The application configuration
+   * @param processorRegistry Map of processor functions
+   * @param sinkRegistry Map of sink functions
+   * @return A configured functional consumer
+   */
   public static FunctionalConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
     final MessageProcessorRegistry processorRegistry,

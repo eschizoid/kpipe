@@ -1,0 +1,34 @@
+name: Build
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "graalvm"
+          java-version: "23"
+          cache: "gradle"
+
+      - name: Test with Gradle
+        run: ./gradlew clean spotlessApply build
+
+      - name: Jacoco
+        run: ./gradlew jacocoTestReport
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+            token: ${{ secrets.CODECOV_TOKEN }}
+            slug: eschizoid/kpipe

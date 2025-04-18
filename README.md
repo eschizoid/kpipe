@@ -70,17 +70,41 @@ retries, built-in metrics, and support for both parallel and sequential processi
 
 ---
 
-## 📆 Structure Overview (TODO Update this Section)
+## 📁 Project Structure
 
 ```
-├── KafkaConsumerApp.java         # Main app with virtual thread runner
-├── FunctionalKafkaConsumer.java  # Core Kafka wrapper using functional streams
-├── KafkaConfigFactory.java       # Kafka properties factory
-├── DslJsonMessageProcessors.java # High-perf JSON processors
-└── MessageProcessorRegistry.java # Registry for dynamic processor loading
+├── src/main/java/org/kpipe/
+│   ├── App.java                          # Main application class
+│   │
+│   ├── config/                           # Configuration components
+│   │   ├── AppConfig.java                # Application configuration
+│   │   └── KafkaConsumerConfig.java      # Kafka consumer configuration
+│   │
+│   ├── consumer/                         # Core consumer components
+│   │   ├── ConsumerCommand.java          # Command pattern for consumer operations
+│   │   ├── ConsumerRunner.java           # Runner implementation for consumers
+│   │   ├── ConsumerState.java            # State management for consumers
+│   │   ├── FunctionalConsumer.java       # Base functional consumer interface
+│   │   ├── FunctionalConsumer.java       # Functional Kafka consumer implementation
+│   │   └── MessageTracker.java           # Tracks message processing state
+│   │
+│   ├── metrics/                          # Metrics components
+│   │   ├── ConsumerMetricsReporter.java  # Reports consumer metrics
+│   │   ├── MetricsReporter.java          # Metrics reporting interface
+│   │   └── ProcessorMetricsReporter.java # Reports processor metrics
+│   │
+│   ├── processor/                        # Message processors
+│   │   └── JsonMessageProcessors.java    # JSON processing with DslJson
+│   │
+│   ├── registry/                         # Registry components
+│   │   ├── MessageProcessorRegistry.java # Registry for processor functions
+│   │   ├── MessageSinkRegistry.java      # Registry for message sinks
+│   │   └── RegistryFunctions.java        # Shared utilities for registries
+│   │
+│   └── sink/                             # Message sink implementations
+│       ├── LoggingSink.java              # Logging sink implementation
+│       └── MessageSink.java              # Message sink interface
 ```
-
----
 
 ## ⚙️ Example: Add Custom Processor
 
@@ -135,7 +159,7 @@ Monitor your consumer with built-in metrics:
 Configure automatic metrics reporting:
 
   ```java
-  new KafkaConsumerApp(config)
+  new App(config)
     .withMetricsInterval(Duration.ofSeconds(30))
     .start();
   ```

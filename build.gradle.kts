@@ -1,12 +1,20 @@
 plugins {
     application
+    `maven-publish`
+    jacoco
+    idea
     id("java")
     id("com.diffplug.spotless") version "7.0.3"
     id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("pl.allegro.tech.build.axion-release") version "1.18.7"
+}
+
+scmVersion {
+    unshallowRepoOnCI.set(true)
 }
 
 group = "org.kpipe"
-version = "1.0-SNAPSHOT"
+version = scmVersion.version
 
 repositories {
     mavenCentral()
@@ -17,9 +25,15 @@ application {
 }
 
 java {
+    withSourcesJar()
+    withJavadocJar()
     toolchain {
         languageVersion = JavaLanguageVersion.of(23)
     }
+}
+
+repositories {
+    mavenCentral()
 }
 
 dependencies {

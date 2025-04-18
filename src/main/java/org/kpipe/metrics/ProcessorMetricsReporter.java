@@ -146,7 +146,7 @@ public class ProcessorMetricsReporter implements MetricsReporter {
             if (!metrics.isEmpty()) {
               reporter.accept("Processor '%s' metrics: %s".formatted(processorName, metrics));
             }
-          } catch (Exception e) {
+          } catch (final Exception e) {
             LOGGER.log(Level.WARNING, "Error retrieving metrics for processor: %s".formatted(processorName), e);
           }
         });
