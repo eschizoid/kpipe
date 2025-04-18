@@ -1,16 +1,14 @@
-package org.kpipe.processor;
+package org.kpipe.registry;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
-import java.util.function.Predicate;
+import java.util.function.*;
+import org.kpipe.processor.JsonMessageProcessor;
 
 /**
  * A registry for managing and composing byte array message processors used in Kafka message
@@ -51,27 +49,23 @@ public class MessageProcessorRegistry {
     long errorCount = 0;
     long totalProcessingTimeNs = 0;
 
-    ProcessorEntry(Function<byte[], byte[]> processor) {
+    ProcessorEntry(final Function<byte[], byte[]> processor) {
       this.processor = processor;
     }
 
-    byte[] execute(final byte[] input) {
-      final var start = Instant.now();
-      try {
-        byte[] result = processor.apply(input);
-        invocationCount++;
-        totalProcessingTimeNs += Duration.between(start, Instant.now()).toNanos();
-        return result;
-      } catch (final Exception e) {
-        errorCount++;
-        throw e;
-      }
-    }
-  }
+    public byte[] execute(final byte[] input) {
+      final Supplier<Long> counterIncrement = () -> invocationCount++;
+      final Supplier<Long> errorIncrement = () -> errorCount++;
+      final Consumer<Duration> timeAccumulator = duration -> totalProcessingTimeNs += duration.toNanos();
 
-  /** Constructs a registry with default configuration. */
-  public MessageProcessorRegistry() {
-    this("app-default", "{}".getBytes());
+      final var timedExecution = RegistryFunctions.<byte[], byte[]>timedExecution(
+        counterIncrement,
+        errorIncrement,
+        timeAccumulator
+      );
+
+      return timedExecution.apply(input, processor);
+    }
   }
 
   /**
@@ -345,9 +339,7 @@ public class MessageProcessorRegistry {
    * @return Unmodifiable map of all processor names and functions
    */
   public Map<String, Function<byte[], byte[]>> getAll() {
-    final var result = new ConcurrentHashMap<String, Function<byte[], byte[]>>();
-    registry.forEach((name, entry) -> result.put(name, entry::execute));
-    return Collections.unmodifiableMap(result);
+    return RegistryFunctions.createUnmodifiableView(registry, entry -> ((ProcessorEntry) entry)::execute);
   }
 
   /**
@@ -372,15 +364,7 @@ public class MessageProcessorRegistry {
       return Map.of();
     }
 
-    final var metrics = new ConcurrentHashMap<String, Object>();
-    metrics.put("invocationCount", entry.invocationCount);
-    metrics.put("errorCount", entry.errorCount);
-    metrics.put(
-      "averageProcessingTimeNs",
-      entry.invocationCount > 0 ? entry.totalProcessingTimeNs / entry.invocationCount : 0
-    );
-
-    return metrics;
+    return RegistryFunctions.createMetrics(entry.invocationCount, entry.errorCount, entry.totalProcessingTimeNs);
   }
 
   /**

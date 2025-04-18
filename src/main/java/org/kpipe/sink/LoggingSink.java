@@ -4,6 +4,7 @@ import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -33,7 +34,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  */
 public class LoggingSink<K, V> implements MessageSink<K, V> {
 
-  private static final System.Logger LOGGER = System.getLogger(LoggingSink.class.getName());
+  private static final Logger LOGGER = System.getLogger(LoggingSink.class.getName());
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private final Level logLevel;
 
@@ -52,15 +53,13 @@ public class LoggingSink<K, V> implements MessageSink<K, V> {
   }
 
   /**
-   * Processes a Kafka message by logging it with its metadata and processed value. This
-   * implementation ensures that any internal exceptions do not affect the main processing flow or
-   * metric collection.
+   * Logs a message with its key and value.
    *
    * @param record The original Kafka consumer record
    * @param processedValue The value after processing
    */
   @Override
-  public void accept(final ConsumerRecord<K, V> record, V processedValue) {
+  public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {
       // Skip if logging level doesn't require it
       if (!LOGGER.isLoggable(logLevel)) {
@@ -123,17 +122,10 @@ public class LoggingSink<K, V> implements MessageSink<K, V> {
     return String.valueOf(value);
   }
 
-  /**
-   * Formats a byte array for logging, handling UTF-8 text and JSON content.
-   *
-   * @param bytes The byte array to format
-   * @return A formatted string representation
-   */
   private String formatByteArray(byte[] bytes) {
     try {
       final var strValue = new String(bytes, StandardCharsets.UTF_8);
 
-      // Handle JSON formatting if possible
       if (isLikelyJson(strValue)) {
         try {
           final var json = DSL_JSON.deserialize(Object.class, new ByteArrayInputStream(bytes));
@@ -151,12 +143,6 @@ public class LoggingSink<K, V> implements MessageSink<K, V> {
     }
   }
 
-  /**
-   * Checks if a string value is likely to be JSON.
-   *
-   * @param value The string to check
-   * @return true if the string appears to be JSON
-   */
   private boolean isLikelyJson(String value) {
     return (
       (value.startsWith("{") || value.startsWith("[")) && (value.trim().endsWith("}") || value.trim().endsWith("]"))

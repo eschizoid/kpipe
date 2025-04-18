@@ -11,7 +11,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kpipe.processor.MessageProcessorRegistry;
+import org.kpipe.registry.MessageProcessorRegistry;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -70,7 +70,7 @@ class ProcessorMetricsReporterTest {
   void shouldCreateFromRegistryWithCustomReporter() {
     // Arrange
     final var processorMap = new HashMap<>();
-    for (String name : processorNames) {
+    for (final var name : processorNames) {
       processorMap.put(name, new Object());
     }
     doReturn(processorMap).when(registry).getAll();
@@ -85,7 +85,7 @@ class ProcessorMetricsReporterTest {
     verify(reporter, times(processorNames.size())).accept(reportCaptor.capture());
     final var reports = reportCaptor.getAllValues();
     assertEquals(processorNames.size(), reports.size());
-    for (String report : reports) {
+    for (final var report : reports) {
       assertTrue(report.contains("Processor '"));
       assertTrue(report.contains("metrics: {"));
     }

@@ -14,8 +14,8 @@ import org.kpipe.consumer.FunctionalConsumer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
-import org.kpipe.processor.MessageProcessorRegistry;
-import org.kpipe.sink.LoggingSink;
+import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.sink.MessageSink;
 
 /**
@@ -30,6 +30,8 @@ public class App implements AutoCloseable {
   private final FunctionalConsumer<byte[], byte[]> consumer;
   private final ConsumerRunner<FunctionalConsumer<byte[], byte[]>> runner;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
+  private final MessageProcessorRegistry processorRegistry;
+  private final MessageSinkRegistry sinkRegistry;
 
   /** Main entry point for the Kafka consumer application. */
   public static void main(final String[] args) {
@@ -49,10 +51,10 @@ public class App implements AutoCloseable {
 
   /** Creates a new KafkaConsumerApp with the specified configuration. */
   public App(final AppConfig config) {
-    final MessageProcessorRegistry registry = new MessageProcessorRegistry(config.appName());
-    final MessageSink<byte[], byte[]> messageSink = new LoggingSink<>();
+    this.processorRegistry = new MessageProcessorRegistry(config.appName());
+    this.sinkRegistry = new MessageSinkRegistry();
 
-    this.consumer = createConsumer(config, registry, messageSink);
+    this.consumer = createConsumer(config, processorRegistry, sinkRegistry);
 
     final var consumerMetricsReporter = new ConsumerMetricsReporter(
       consumer::getMetrics,
@@ -60,7 +62,7 @@ public class App implements AutoCloseable {
       null
     );
 
-    final var processorMetricsReporter = new ProcessorMetricsReporter(registry, null);
+    final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
 
     this.runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
   }
@@ -88,30 +90,59 @@ public class App implements AutoCloseable {
 
   public static FunctionalConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
-    final MessageProcessorRegistry registry,
-    final MessageSink<byte[], byte[]> messageSink
+    final MessageProcessorRegistry processorRegistry,
+    final MessageSinkRegistry sinkRegistry
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
 
     return new FunctionalConsumer.Builder<byte[], byte[]>()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createProcessorPipeline(config, registry))
+      .withProcessor(createProcessorPipeline(processorRegistry))
       .withPollTimeout(config.pollTimeout())
-      .withMessageSink(messageSink)
+      .withMessageSink(createSinksPipeline(sinkRegistry))
       .withMetrics(true)
       .build();
   }
 
-  private static Function<byte[], byte[]> createProcessorPipeline(
-    final AppConfig config,
-    final MessageProcessorRegistry registry
-  ) {
-    final var pipeline = config.processors().isEmpty()
-      ? registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp")
-      : registry.pipeline(config.processors().toArray(new String[0]));
+  /**
+   * Creates a message sink pipeline using the provided registry.
+   *
+   * @param registry the message sink registry
+   * @return a message sink that processes messages through the pipeline
+   */
+  private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
+    final var pipeline = registry.<byte[], byte[]>pipeline("logging");
+    return MessageSinkRegistry.withErrorHandling(pipeline);
+  }
 
+  /**
+   * Creates a processor pipeline using the provided registry.
+   *
+   * @param registry the message processor registry
+   * @return a function that processes messages through the pipeline
+   */
+  private static Function<byte[], byte[]> createProcessorPipeline(final MessageProcessorRegistry registry) {
+    final var pipeline = registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp");
     return MessageProcessorRegistry.withErrorHandling(pipeline, null);
+  }
+
+  /**
+   * Gets the processor registry used by this application.
+   *
+   * @return the message processor registry
+   */
+  public MessageProcessorRegistry getProcessorRegistry() {
+    return processorRegistry;
+  }
+
+  /**
+   * Gets the sink registry used by this application.
+   *
+   * @return the message sink registry
+   */
+  public MessageSinkRegistry getSinkRegistry() {
+    return sinkRegistry;
   }
 
   private void start() {
