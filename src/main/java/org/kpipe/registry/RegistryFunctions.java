@@ -67,26 +67,26 @@ import java.util.function.*;
  */
 public final class RegistryFunctions {
 
-    private RegistryFunctions() {}
+  private RegistryFunctions() {}
 
   /**
    * Creates a metrics map containing operation statistics for monitoring and reporting.
    *
    * @param operationCount the total number of operations performed
    * @param errorCount the total number of errors encountered
-   * @param totalTimeNs the total processing time in nanoseconds
-   * @return an unmodifiable map containing metrics with keys "invocationCount", "errorCount", and
-   *     "averageProcessingTimeMs"
+   * @param totalTimeMs the total processing time in milliseconds
+   * @return an unmodifiable map containing metrics with keys "messageCount"/"invocationCount",
+   *     "errorCount", and "averageProcessingTimeMs"
    */
   public static Map<String, Object> createMetrics(
     final long operationCount,
     final long errorCount,
-    final long totalTimeNs
+    final long totalTimeMs
   ) {
     final var metrics = new ConcurrentHashMap<String, Object>();
     metrics.put("invocationCount", operationCount);
     metrics.put("errorCount", errorCount);
-    metrics.put("averageProcessingTimeMs", operationCount > 0 ? totalTimeNs / operationCount : 0);
+    metrics.put("averageProcessingTimeMs", operationCount > 0 ? totalTimeMs / operationCount : 0);
     return metrics;
   }
 
