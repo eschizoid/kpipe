@@ -7,8 +7,7 @@ import java.io.IOException;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.Map;
+import java.util.LinkedHashMap;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
@@ -32,24 +31,21 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @param <K> The type of message key
  * @param <V> The type of message value
  */
-public class LoggingSink<K, V> implements MessageSink<K, V> {
+public class ConsoleSink<K, V> implements MessageSink<K, V> {
 
-  private static final Logger LOGGER = System.getLogger(LoggingSink.class.getName());
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private final Level logLevel;
-
-  /** Creates a LoggingSink with default INFO log level. */
-  public LoggingSink() {
-    this(Level.INFO);
-  }
+  private final Logger logger;
 
   /**
-   * Creates a LoggingSink with specified log level.
+   * Creates a ConsoleSink with the specified log level.
    *
-   * @param logLevel the level at which to log messages
+   * @param logger The logger to use for logging messages
+   * @param logLevel The log level to use for logging messages
    */
-  public LoggingSink(final Level logLevel) {
+  public ConsoleSink(final System.Logger logger, final Level logLevel) {
     this.logLevel = logLevel;
+    this.logger = logger;
   }
 
   /**
@@ -62,33 +58,25 @@ public class LoggingSink<K, V> implements MessageSink<K, V> {
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {
       // Skip if logging level doesn't require it
-      if (!LOGGER.isLoggable(logLevel)) {
+      if (!logger.isLoggable(logLevel)) {
         return;
       }
 
       // Create log data structure
-      final var logData = Map.of(
-        "topic",
-        record.topic(),
-        "partition",
-        record.partition(),
-        "offset",
-        record.offset(),
-        "key",
-        String.valueOf(record.key()),
-        "processedMessage",
-        formatValue(processedValue)
-      );
+      final var logData = LinkedHashMap.newLinkedHashMap(5);
+      logData.put("topic", record.topic());
+      logData.put("partition", record.partition());
+      logData.put("offset", record.offset());
+      logData.put("key", String.valueOf(record.key()));
+      logData.put("processedMessage", formatValue(processedValue));
 
-      // Serialize and log
       try (final var out = new ByteArrayOutputStream()) {
         DSL_JSON.serialize(logData, out);
-        LOGGER.log(logLevel, out.toString(StandardCharsets.UTF_8));
+        logger.log(logLevel, out.toString(StandardCharsets.UTF_8));
       } catch (final IOException e) {
-        // Fallback logging if serialization fails
-        LOGGER.log(
-          logLevel,
-          "Processed message (topic=%s, partition=%d, offset=%d)".formatted(
+        logger.log(
+          Level.WARNING,
+          "Failed to processed message (topic=%s, partition=%d, offset=%d)".formatted(
               record.topic(),
               record.partition(),
               record.offset()
@@ -96,7 +84,7 @@ public class LoggingSink<K, V> implements MessageSink<K, V> {
         );
       }
     } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error in LoggingSink while processing message", e);
+      logger.log(Level.ERROR, "Error in ConsoleSink while processing message", e);
     }
   }
 
@@ -106,7 +94,7 @@ public class LoggingSink<K, V> implements MessageSink<K, V> {
    * @param value The value to format
    * @return A string representation of the value suitable for logging
    */
-  private String formatValue(V value) {
+  private String formatValue(final V value) {
     if (value == null) {
       return "null";
     }
@@ -122,7 +110,7 @@ public class LoggingSink<K, V> implements MessageSink<K, V> {
     return String.valueOf(value);
   }
 
-  private String formatByteArray(byte[] bytes) {
+  private String formatByteArray(final byte[] bytes) {
     try {
       final var strValue = new String(bytes, StandardCharsets.UTF_8);
 
@@ -133,13 +121,13 @@ public class LoggingSink<K, V> implements MessageSink<K, V> {
           DSL_JSON.serialize(json, out);
           return out.toString(StandardCharsets.UTF_8);
         } catch (final Exception e) {
-          LOGGER.log(Level.DEBUG, "Failed to parse/format JSON content, falling back to raw string", e);
+          logger.log(Level.DEBUG, "Failed to parse/format JSON content, falling back to raw string", e);
         }
       }
       return strValue;
     } catch (final Exception e) {
-      LOGGER.log(Level.DEBUG, "Failed to parse/format as JSON", e);
-      return "Base64: %s".formatted(Base64.getEncoder().encodeToString(bytes));
+      logger.log(Level.DEBUG, "Failed to parse/format as JSON", e);
+      return "";
     }
   }
 

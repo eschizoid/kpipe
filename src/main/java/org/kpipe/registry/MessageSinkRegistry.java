@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.kpipe.sink.LoggingSink;
+import org.kpipe.sink.ConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /**
@@ -99,7 +99,7 @@ public class MessageSinkRegistry {
    * }</pre>
    */
   public MessageSinkRegistry() {
-    register("logging", new LoggingSink<>());
+    register("logging", new ConsoleSink<>(System.getLogger(ConsoleSink.class.getName()), Level.INFO));
   }
 
   /**
@@ -170,10 +170,10 @@ public class MessageSinkRegistry {
    *
    * <pre>{@code
    * // Get the logging sink
-   * MessageSink<String, JsonNode> loggingSink = registry.get("logging");
+   * MessageSink<String, JsonNode> consoleSink = registry.get("logging");
    *
    * // Send a processed message to the sink
-   * loggingSink.send(record, processedValue);
+   * consoleSink.send(record, processedValue);
    * }</pre>
    *
    * @param name The name of the sink to retrieve

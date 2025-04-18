@@ -102,7 +102,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
 │   │   └── RegistryFunctions.java        # Shared utilities for registries
 │   │
 │   └── sink/                             # Message sink implementations
-│       ├── LoggingSink.java              # Logging sink implementation
+│       ├── ConsoleSink.java              # Logging sink implementation
 │       └── MessageSink.java              # Message sink interface
 ```
 

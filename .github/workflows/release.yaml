@@ -36,10 +36,6 @@ jobs:
           git config --global user.email "marian.gonzalez.mx@gmail.com"
           git config --global user.name "Mariano Gonzalez"
 
-      - name: Generate Tag
-        run: |
-          ./gradlew release -Prelease.incrementer=${{ github.event.inputs.releaseType }} -Prelease.disableChecks -Prelease.pushTagsOnly
-
       - name: Get Current Version
         id: version
         run: |
@@ -50,7 +46,7 @@ jobs:
         run: ./gradlew build
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: Release ${{ steps.version.outputs.version }}
