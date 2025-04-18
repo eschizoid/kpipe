@@ -26,7 +26,7 @@ class MessageTrackerTest {
     tracker =
       MessageTracker
         .builder()
-        .withMetricsSupplier(() -> metrics)
+        .withMetrics(() -> metrics)
         .withReceivedMetricKey("received")
         .withProcessedMetricKey("processed")
         .withErrorsMetricKey("errors")
@@ -101,7 +101,7 @@ class MessageTrackerTest {
 
     MessageTracker dynamicTracker = MessageTracker
       .builder()
-      .withMetricsSupplier(metricsRef::get)
+      .withMetrics(metricsRef::get)
       .withReceivedMetricKey("received")
       .withProcessedMetricKey("processed")
       .withErrorsMetricKey("errors")
@@ -165,7 +165,7 @@ class MessageTrackerTest {
       () ->
         MessageTracker
           .builder()
-          .withMetricsSupplier(HashMap::new)
+          .withMetrics(HashMap::new)
           .withProcessedMetricKey("processed")
           .withErrorsMetricKey("errors")
           .build(),
@@ -177,7 +177,7 @@ class MessageTrackerTest {
       () ->
         MessageTracker
           .builder()
-          .withMetricsSupplier(HashMap::new)
+          .withMetrics(HashMap::new)
           .withReceivedMetricKey("received")
           .withErrorsMetricKey("errors")
           .build(),
@@ -189,7 +189,7 @@ class MessageTrackerTest {
       () ->
         MessageTracker
           .builder()
-          .withMetricsSupplier(HashMap::new)
+          .withMetrics(HashMap::new)
           .withReceivedMetricKey("received")
           .withProcessedMetricKey("processed")
           .build(),

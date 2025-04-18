@@ -32,3 +32,4 @@ jobs:
         with:
             token: ${{ secrets.CODECOV_TOKEN }}
             slug: eschizoid/kpipe
+            files: ./build/reports/jacoco/test/jacocoTestReport.xml

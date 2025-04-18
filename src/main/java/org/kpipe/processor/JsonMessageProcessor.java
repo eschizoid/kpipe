@@ -29,6 +29,12 @@ import java.util.function.Function;
  */
 public class JsonMessageProcessor {
 
+    /**
+     * Constructs a new JsonMessageProcessor object.
+     */
+    public JsonMessageProcessor() {
+    }
+
   private static final Logger LOGGER = System.getLogger(JsonMessageProcessor.class.getName());
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
   private static final byte[] EMPTY_JSON = "{}".getBytes(StandardCharsets.UTF_8);

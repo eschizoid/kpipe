@@ -230,6 +230,12 @@ public final class KafkaConsumerConfig {
    */
   public static class ConsumerConfigBuilder {
 
+    /**
+     * Constructs a new ConsumerConfigBuilder object.
+     */
+    public ConsumerConfigBuilder() {
+    }
+
     private final Properties props = new Properties();
 
     /**

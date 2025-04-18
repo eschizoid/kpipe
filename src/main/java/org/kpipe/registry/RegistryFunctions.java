@@ -65,7 +65,9 @@ import java.util.function.*;
  * );
  * }</pre>
  */
-public class RegistryFunctions {
+public final class RegistryFunctions {
+
+    private RegistryFunctions() {}
 
   /**
    * Creates a metrics map containing operation statistics for monitoring and reporting.
