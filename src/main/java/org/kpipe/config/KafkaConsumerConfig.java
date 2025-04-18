@@ -132,7 +132,7 @@ public final class KafkaConsumerConfig {
     final String valueDeserializer
   ) {
     return props -> {
-      Properties newProps = new Properties();
+      final var newProps = new Properties();
       newProps.putAll(props);
       newProps.put("key.deserializer", keyDeserializer);
       newProps.put("value.deserializer", valueDeserializer);
@@ -230,11 +230,7 @@ public final class KafkaConsumerConfig {
    */
   public static class ConsumerConfigBuilder {
 
-    /**
-     * Constructs a new ConsumerConfigBuilder object.
-     */
-    public ConsumerConfigBuilder() {
-    }
+    private ConsumerConfigBuilder() {}
 
     private final Properties props = new Properties();
 

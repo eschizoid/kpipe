@@ -469,7 +469,8 @@ class FunctionalConsumerMockingTest {
 
     // Create consumer with disabled metrics
     try (
-      final var consumer = new FunctionalConsumer.Builder<String, String>()
+      final var consumer = FunctionalConsumer
+        .<String, String>builder()
         .withProperties(props)
         .withTopic(TOPIC)
         .withProcessor(processor)
@@ -498,7 +499,8 @@ class FunctionalConsumerMockingTest {
     final var enableMetrics = true;
 
     // Create consumer with all options
-    final var consumer = new FunctionalConsumer.Builder<String, String>()
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
       .withProperties(props)
       .withTopic("test-topic")
       .withProcessor(s -> s)
@@ -518,7 +520,7 @@ class FunctionalConsumerMockingTest {
 
   @Test
   void builderShouldThrowNullPointerExceptionWhenMissingRequiredFields() {
-    final var builder = new FunctionalConsumer.Builder<String, String>();
+    final var builder = FunctionalConsumer.<String, String>builder();
 
     assertThrows(NullPointerException.class, builder::build);
 
@@ -543,7 +545,8 @@ class FunctionalConsumerMockingTest {
       final Consumer<ProcessingError<K, V>> errorHandler
     ) {
       super(
-        new Builder<K, V>()
+        FunctionalConsumer
+          .<K, V>builder()
           .withProperties(kafkaProps)
           .withTopic(topic)
           .withProcessor(processor)

@@ -29,11 +29,7 @@ import java.util.function.Function;
  */
 public class JsonMessageProcessor {
 
-    /**
-     * Constructs a new JsonMessageProcessor object.
-     */
-    public JsonMessageProcessor() {
-    }
+  private JsonMessageProcessor() {}
 
   private static final Logger LOGGER = System.getLogger(JsonMessageProcessor.class.getName());
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();

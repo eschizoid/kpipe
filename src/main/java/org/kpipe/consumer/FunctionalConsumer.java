@@ -123,6 +123,17 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
 
   /**
+   * Creates a new builder for constructing {@link FunctionalConsumer} instances.
+   *
+   * @param <K> the type of keys in the consumed records
+   * @param <V> the type of values in the consumed records
+   * @return a new builder instance
+   */
+  public static <K, V> Builder<K, V> builder() {
+    return new Builder<>();
+  }
+
+  /**
    * Builder for creating and configuring {@link FunctionalConsumer} instances.
    *
    * @param <K> the type of keys in the consumed records
@@ -130,11 +141,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    */
   public static class Builder<K, V> {
 
-    /**
-     * Constructs a new Builder object.
-     */
-    public Builder() {
-    }
+    private Builder() {}
 
     private Properties kafkaProps;
     private String topic;
