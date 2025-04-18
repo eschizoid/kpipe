@@ -60,6 +60,14 @@ tasks.test {
     useJUnitPlatform()
 }
 
+tasks.jacocoTestReport {
+    reports {
+        xml.required.set(true)
+        csv.required.set(true)
+        html.required.set(true)
+    }
+}
+
 // Disable the standard jar task
 tasks.jar {
     enabled = false

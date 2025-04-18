@@ -88,6 +88,16 @@ public class MessageSinkRegistry {
     }
   }
 
+    /**
+     * Constructs a new {@code MessageSinkRegistry} object with a default logging sink.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * // Create a new registry with the default logging sink
+     * MessageSinkRegistry registry = new MessageSinkRegistry();
+     * }</pre>
+     */
   public MessageSinkRegistry() {
     register("logging", new LoggingSink<>());
   }

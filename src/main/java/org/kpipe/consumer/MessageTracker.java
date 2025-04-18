@@ -170,37 +170,81 @@ public class MessageTracker {
     return Optional.of(false);
   }
 
+
+    /**
+     * Creates a new Builder instance for constructing MessageTracker objects.
+     *
+     * @return a new Builder instance
+     */
   public static Builder builder() {
     return new Builder();
   }
 
+  /**
+   * Constructs a new Builder object.
+   */
   public static class Builder {
+
+    /**
+     * Constructs a new Builder object.
+     */
+    public Builder() {
+    }
 
     private Supplier<Map<String, Long>> metricsSupplier;
     private String receivedMetricKey;
     private String processedMetricKey;
     private String errorsMetricKey;
 
-    public Builder withMetricsSupplier(final Supplier<Map<String, Long>> metricsSupplier) {
+    /**
+     * Sets the metrics supplier function.
+     *
+     * @param metricsSupplier the supplier that provides the metrics map
+     * @return this Builder instance for method chaining
+     */
+    public Builder withMetrics(final Supplier<Map<String, Long>> metricsSupplier) {
       this.metricsSupplier = metricsSupplier;
       return this;
     }
 
+    /**
+     * Sets the key for received messages metric.
+     *
+     * @param receivedMetricKey the key for received messages metric
+     * @return this Builder instance for method chaining
+     */
     public Builder withReceivedMetricKey(final String receivedMetricKey) {
       this.receivedMetricKey = receivedMetricKey;
       return this;
     }
 
+    /**
+     * Sets the key for processed messages metric.
+     *
+     * @param processedMetricKey the key for processed messages metric
+     * @return this Builder instance for method chaining
+     */
     public Builder withProcessedMetricKey(final String processedMetricKey) {
       this.processedMetricKey = processedMetricKey;
       return this;
     }
 
+    /**
+     * Sets the key for error messages metric.
+     *
+     * @param errorsMetricKey the key for error messages metric
+     * @return this Builder instance for method chaining
+     */
     public Builder withErrorsMetricKey(final String errorsMetricKey) {
       this.errorsMetricKey = errorsMetricKey;
       return this;
     }
 
+    /**
+     * Builds a new MessageTracker instance with the configured parameters.
+     *
+     * @return a new MessageTracker instance
+     */
     public MessageTracker build() {
       return new MessageTracker(this);
     }

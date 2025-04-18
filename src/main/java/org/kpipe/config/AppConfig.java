@@ -33,6 +33,7 @@ import java.util.function.Function;
  * );
  * }</pre>
  *
+ * @param bootstrapServers The Kafka bootstrap servers connection string
  * @param consumerGroup The Kafka consumer group identifier
  * @param topic The Kafka topic to consume from
  * @param appName The name of the application

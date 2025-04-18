@@ -130,6 +130,12 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    */
   public static class Builder<K, V> {
 
+    /**
+     * Constructs a new Builder object.
+     */
+    public Builder() {
+    }
+
     private Properties kafkaProps;
     private String topic;
     private Function<V, V> processor;
@@ -144,62 +150,136 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
     private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
 
+    /**
+     * Sets the properties for the Kafka consumer.
+     *
+     * @param props The Kafka consumer properties
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withProperties(final Properties props) {
       this.kafkaProps = props;
       return this;
     }
 
+    /**
+     * Sets the Kafka topic to consume from.
+     *
+     * @param topic The topic name
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withTopic(final String topic) {
       this.topic = topic;
       return this;
     }
 
+    /**
+     * Sets the function to process each consumed message value.
+     *
+     * @param processor The function that transforms message values
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withProcessor(final Function<V, V> processor) {
       this.processor = processor;
       return this;
     }
 
+    /**
+     * Sets the timeout duration for the consumer's poll operation.
+     *
+     * @param timeout The maximum time to wait for messages in each poll
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withPollTimeout(final Duration timeout) {
       this.pollTimeout = timeout;
       return this;
     }
 
+    /**
+     * Sets the handler for processing errors.
+     *
+     * @param handler The consumer function that handles processing errors
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withErrorHandler(final Consumer<ProcessingError<K, V>> handler) {
       this.errorHandler = handler;
       return this;
     }
 
+    /**
+     * Configures retry behavior for failed message processing.
+     *
+     * @param maxRetries Maximum number of retry attempts
+     * @param backoff Duration to wait between retry attempts
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withRetry(final int maxRetries, final Duration backoff) {
       this.maxRetries = maxRetries;
       this.retryBackoff = backoff;
       return this;
     }
 
+    /**
+     * Enables or disables metrics collection.
+     *
+     * @param enable Whether to enable metrics collection
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withMetrics(final boolean enable) {
       this.enableMetrics = enable;
       return this;
     }
 
+    /**
+     * Configures whether messages should be processed sequentially.
+     *
+     * @param sequential If true, messages will be processed in order; if false, parallel processing
+     *     is used
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withSequentialProcessing(final boolean sequential) {
       this.sequentialProcessing = sequential;
       return this;
     }
 
+    /**
+     * Sets the message sink that receives processed messages.
+     *
+     * @param messageSink The sink that handles successfully processed messages
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withMessageSink(final MessageSink<K, V> messageSink) {
       this.messageSink = messageSink;
       return this;
     }
 
+    /**
+     * Sets the timeout for waiting for in-flight messages during shutdown.
+     *
+     * @param timeout Maximum time to wait for in-flight messages to complete
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withWaitForMessagesTimeout(final Duration timeout) {
       this.waitForMessagesTimeout = Objects.requireNonNull(timeout);
       return this;
     }
 
+    /**
+     * Sets the timeout for waiting for the consumer thread to terminate during shutdown.
+     *
+     * @param timeout Maximum time to wait for the consumer thread to finish
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withThreadTerminationTimeout(final Duration timeout) {
       this.threadTerminationTimeout = Objects.requireNonNull(timeout);
       return this;
     }
 
+    /**
+     * Sets the timeout for waiting for the executor to terminate during shutdown.
+     *
+     * @param timeout Maximum time to wait for in-progress tasks to complete
+     * @return This builder instance for method chaining
+     */
     public Builder<K, V> withExecutorTerminationTimeout(final Duration timeout) {
       this.executorTerminationTimeout = Objects.requireNonNull(timeout);
       return this;
@@ -275,7 +355,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
     return MessageTracker
       .builder()
-      .withMetricsSupplier(this::getMetrics)
+      .withMetrics(this::getMetrics)
       .withReceivedMetricKey(METRIC_MESSAGES_RECEIVED)
       .withProcessedMetricKey(METRIC_MESSAGES_PROCESSED)
       .withErrorsMetricKey(METRIC_PROCESSING_ERRORS)
