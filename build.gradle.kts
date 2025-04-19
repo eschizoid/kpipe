@@ -157,7 +157,7 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepositories.add("target/staging-deploy")
+                    stagingRepository("build/staging-deploy")
                 }
             }
         }
@@ -167,12 +167,16 @@ jreleaser {
 publishing {
     publications {
         create<MavenPublication>("maven") {
-            artifact(tasks.shadowJar)
+            groupId = "org.kpipe"
+            artifactId = "kpipe"
+
+            from(components["java"])
 
             pom {
-                name.set("KPipe")
+                name.set("kpipe")
                 description.set("Functional Kafka Consumer Library")
                 url.set("https://github.com/eschizoid/kpipe")
+                inceptionYear.set("2025")
 
                 licenses {
                     license {
@@ -195,6 +199,11 @@ publishing {
                     url.set("https://github.com/eschizoid/kpipe")
                 }
             }
+        }
+    }
+    repositories {
+        maven {
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
     }
 }

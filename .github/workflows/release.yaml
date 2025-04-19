@@ -73,4 +73,8 @@ jobs:
           JRELEASER_GPG_SECRET_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_PASSWORD }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_USERNAME }}
-        run: ./gradlew jreleaserDeploy --info
+        run: |
+          ./gradlew jreleaserConfig
+          ./gradlew clean
+          ./gradlew publish
+          ./gradlew jreleaserFullRelease
