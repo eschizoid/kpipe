@@ -134,36 +134,6 @@ spotless {
     }
 }
 
-jreleaser {
-    project {
-        description.set("Functional Kafka Consumer Library")
-        authors.set(listOf("Mariano Gonzalez"))
-        license.set("Apache-2.0")
-        links {
-            homepage.set("https://github.com/eschizoid/kpipe")
-        }
-        inceptionYear.set("2025")
-        tags.set(listOf("kafka", "consumer", "functional", "java"))
-    }
-
-    signing {
-        active.set(ALWAYS)
-        armored.set(true)
-    }
-
-    deploy {
-        maven {
-            mavenCentral {
-                create("sonatype") {
-                    active.set(ALWAYS)
-                    url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository("build/staging-deploy")
-                }
-            }
-        }
-    }
-}
-
 publishing {
     publications {
         create<MavenPublication>("maven") {
@@ -204,6 +174,36 @@ publishing {
     repositories {
         maven {
             url = uri(layout.buildDirectory.dir("staging-deploy"))
+        }
+    }
+}
+
+jreleaser {
+    project {
+        description.set("Functional Kafka Consumer Library")
+        authors.set(listOf("Mariano Gonzalez"))
+        license.set("Apache-2.0")
+        links {
+            homepage.set("https://github.com/eschizoid/kpipe")
+        }
+        inceptionYear.set("2025")
+        tags.set(listOf("kafka", "consumer", "functional", "java"))
+    }
+
+    signing {
+        active.set(ALWAYS)
+        armored.set(true)
+    }
+
+    deploy {
+        maven {
+            mavenCentral {
+                create("sonatype") {
+                    active.set(ALWAYS)
+                    url.set("https://central.sonatype.com/api/v1/publisher")
+                    stagingRepository("target/staging-deploy")
+                }
+            }
         }
     }
 }
