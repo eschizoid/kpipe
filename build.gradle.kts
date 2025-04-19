@@ -153,13 +153,11 @@ jreleaser {
 
     deploy {
         maven {
-            nexus2 {
-                create("maven-central") {
+            mavenCentral {
+                create("sonatype") {
                     active.set(ALWAYS)
-                    url.set("https://central.sonatype.com/service/local")
-                    closeRepository.set(true)
-                    releaseRepository.set(true)
-                    stagingRepositories.add("build/publications/maven")
+                    url.set("https://central.sonatype.com/api/v1/publisher")
+                    stagingRepositories.add("target/staging-deploy")
                 }
             }
         }
