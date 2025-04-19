@@ -77,7 +77,5 @@ jobs:
         run: |
           ./gradlew jreleaserConfig
           ./gradlew clean
-          ./gradlew publish jreleaserPublish
-          ./gradlew jreleaserSign
-          ./gradlew jreleaserDeploy --debug --stacktrace
-          ./gradlew jreleaserRelease --debug --stacktrace
+          ./gradlew publish
+          ./gradlew jreleaserFullRelease
