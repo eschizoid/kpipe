@@ -26,6 +26,15 @@ version = scmVersion.version
 
 repositories {
     mavenCentral()
+    maven {
+        credentials {
+            username = System.getenv("JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME")
+                ?: project.properties["mavencentralSonatypeUsername"]?.toString()
+            password = System.getenv("JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD")
+                ?: project.properties["mavencentralSonatypePassword"]?.toString()
+        }
+        url = uri("https://central.sonatype.com/")
+    }
 }
 
 application {
@@ -38,10 +47,6 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(23)
     }
-}
-
-repositories {
-    mavenCentral()
 }
 
 dependencies {
@@ -140,7 +145,9 @@ publishing {
             groupId = "org.kpipe"
             artifactId = "kpipe"
 
-            from(components["java"])
+            artifact(tasks.shadowJar.get())
+            artifact(tasks["sourcesJar"])
+            artifact(tasks["javadocJar"])
 
             pom {
                 name.set("kpipe")
@@ -201,16 +208,9 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository("target/staging-deploy")
+                    stagingRepository(layout.buildDirectory.dir("staging-deploy").toString())
                 }
             }
         }
     }
-}
-
-signing {
-    val signingKey: String? by project
-    val signingPassword: String? by project
-    useInMemoryPgpKeys(signingKey, signingPassword)
-    sign(publishing.publications["maven"])
 }
