@@ -79,5 +79,5 @@ jobs:
           ./gradlew clean
           ./gradlew publish jreleaserPublish
           ./gradlew jreleaserSign
-          ./gradlew jreleaserDeploy --info
-          ./gradlew jreleaserRelease --info
+          ./gradlew jreleaserDeploy --debug --stacktrace
+          ./gradlew jreleaserRelease --debug --stacktrace
