@@ -20,7 +20,7 @@ scmVersion {
     }
 }
 
-group = "org.kpipe"
+group = "io.github.eschizoid"
 description = "KPipe - Functional Kafka Consumer"
 version = scmVersion.version
 
@@ -160,7 +160,7 @@ signing {
 publishing {
     publications {
         create<MavenPublication>("maven") {
-            groupId = "org.kpipe"
+            groupId = "io.github.eschizoid"
             artifactId = "kpipe"
 
             artifact(tasks.shadowJar.get())

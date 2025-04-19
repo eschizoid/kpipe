@@ -11,6 +11,10 @@
 .idea/**/usage.statistics.xml
 .idea/**/dictionaries
 .idea/**/shelf
+.idea/material_theme_project_new.xml
+.idea/misc.xml
+.idea/vcs.xml
+.idea/codeStyles/
 
 # AWS User-specific
 .idea/**/aws.xml
@@ -220,3 +224,4 @@ gradle-app.setting
 *.hprof
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,intellij,visualstudiocode,java,gradle
+/.idea/codeStyles/
