@@ -1,4 +1,5 @@
-[![codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
+[![GitHub release](https://img.shields.io/github/release/eschizoid/kpipe.svg?style=flat-square)](https://github.com/eschizoid/kpipe/releases/latest)
+[![Codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
 
 # <img src="img/kpipe.png" width="200" height="200">
 
@@ -35,7 +36,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
       "parseJson", "validateSchema", "sanitizeData", "addMetadata");
   
   // Apply transformations with built-in error handling and retry logic
-  var consumer = new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
+  var consumer = new FunctionalConsumer.<byte[], byte[]>build()
     .withProcessor(pipeline)
     .withRetry(3, Duration.ofSeconds(1))
     .build();
@@ -54,7 +55,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
   Function<byte[], byte[]> pipeline = MessageProcessorRegistry.pipeline(configuredProcessors);
   
   // Create a consumer with team-specific processing pipeline
-  var consumer = new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
+  var consumer = new FunctionalConsumer.<byte[], byte[]>builder()
     .withProperties(kafkaProps)
     .withTopic("team-topic")
     .withProcessor(MessageProcessorRegistry.pipeline(
@@ -104,7 +105,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
 │   │   └── RegistryFunctions.java        # Shared utilities for registries
 │   │
 │   └── sink/                             # Message sink implementations
-│       ├── ConsoleSink.java              # Logging sink implementation
+│       ├── ConsoleSink.java              # Console sink implementation
 │       └── MessageSink.java              # Message sink interface
 ```
 
@@ -133,7 +134,7 @@ Extend the registry like this:
   );
   
   // Use the pipeline with a consumer
-  var consumer = new FunctionalKafkaConsumer.Builder<byte[], byte[]>()
+  var consumer = new FunctionalConsumer.<byte[], byte[]>build()
       .withProperties(kafkaProps)
       .withTopic("events")
       .withProcessor(pipeline)
@@ -194,13 +195,13 @@ The JSON processors handle deserialization and transformation of JSON data:
 
   ```java
   // Add a timestamp field to messages
-  var addTimestampProcessor = DslJsonMessageProcessors.addTimestamp("processedAt");
+  var addTimestampProcessor = JsonMessageProcessors.addTimestamp("processedAt");
   
   // Remove sensitive fields
-  var sanitizeProcessor = DslJsonMessageProcessors.removeFields("password", "ssn", "creditCard");
+  var sanitizeProcessor = JsonMessageProcessors.removeFields("password", "ssn", "creditCard");
   
   // Transform specific fields
-  var uppercaseSubjectProcessor = DslJsonMessageProcessors.transformField("subject", value -> {
+  var uppercaseSubjectProcessor = JsonMessageProcessors.transformField("subject", value -> {
       if (value instanceof String text) {
           return text.toUpperCase();
       }
@@ -232,7 +233,7 @@ The JSON processors handle deserialization and transformation of JSON data:
 
 ## 🛠️ Requirements
 
-- Java 21+
+- Java 23+
 - gradle (for building the project)
 - kcat (for testing)
 - Docker (for local Kafka setup)

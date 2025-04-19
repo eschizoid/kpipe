@@ -33,7 +33,7 @@ jobs:
 
       - name: Set Git Identity
         run: |
-          git config --global user.email "marian.gonzalez.mx@gmail.com"
+          git config --global user.email "mariano.gonzalez.mx@gmail.com"
           git config --global user.name "Mariano Gonzalez"
 
       - name: Update Version and Create Tag
@@ -59,3 +59,17 @@ jobs:
           generate_release_notes: true
           files: |
             build/libs/kpipe-${{ steps.version.outputs.version }}.jar
+
+      - name: Setup GPG
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Publish to Maven Central
+        env:
+          ORG_GRADLE_PROJECT_sonatypeUsername: ${{ secrets.SONATYPE_USERNAME }}
+          ORG_GRADLE_PROJECT_sonatypePassword: ${{ secrets.SONATYPE_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.GPG_PASSPHRASE }}
+        run: ./gradlew jreleaserDeploy --info
