@@ -11,6 +11,9 @@ plugins {
 
 scmVersion {
     unshallowRepoOnCI.set(true)
+    tag {
+        prefix.set("v")
+    }
 }
 
 group = "org.kpipe"

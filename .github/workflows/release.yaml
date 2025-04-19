@@ -36,13 +36,13 @@ jobs:
           git config --global user.email "marian.gonzalez.mx@gmail.com"
           git config --global user.name "Mariano Gonzalez"
 
-      - name: Create Release
-        id: release
+      - name: Update Version and Create Tag
+        id: version
         run: |
           # Create release with specified increment type
           ./gradlew release -Prelease.incrementer=${{ inputs.releaseType }} -Prelease.disableChecks -x test
-          
-          # Get the new version after release
+
+          # Get the new version
           NEW_VERSION=$(./gradlew currentVersion -q -Prelease.quiet)
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
@@ -52,8 +52,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.release.outputs.version }}
-          name: Release ${{ steps.release.outputs.version }}
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
-            build/libs/kpipe-${{ steps.release.outputs.version }}.jar
+            build/libs/kpipe-${{ steps.version.outputs.version }}.jar
