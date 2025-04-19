@@ -71,6 +71,6 @@ jobs:
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
           JRELEASER_GPG_SECRET_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          JRELEASER_NEXUS2_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
-          JRELEASER_NEXUS2_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_PASSWORD }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_USERNAME }}
         run: ./gradlew jreleaserDeploy --info
