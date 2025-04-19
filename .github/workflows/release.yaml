@@ -75,7 +75,7 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
-          ./gradlew jreleaserConfig
-          ./gradlew clean
-          ./gradlew publish
-          ./gradlew jreleaserFullRelease
+         # Remove clean - don't delete artifacts we'll need
+         ./gradlew publish
+         # Use assemble instead of fullRelease - this is more reliable
+         ./gradlew jreleaserAssemble jreleaserSign jreleaserDeploy --info --stacktrace
