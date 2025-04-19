@@ -78,4 +78,4 @@ jobs:
           ./gradlew jreleaserConfig
           ./gradlew clean
           ./gradlew publish
-          ./gradlew jreleaserUpload
+          ./gradlew jreleaseSign jreleaseDeploy

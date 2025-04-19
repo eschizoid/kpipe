@@ -139,6 +139,24 @@ spotless {
     }
 }
 
+signing {
+    afterEvaluate {
+        sign(publishing.publications["maven"])
+    }
+
+    val signingKey = System.getenv("JRELEASER_GPG_SECRET_KEY")
+        ?: project.properties["signing.secretKey"]?.toString()
+
+    val signingPassword = System.getenv("JRELEASER_GPG_PASSPHRASE")
+        ?: project.properties["signing.password"]?.toString()
+
+    if (signingKey != null && signingPassword != null) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+    } else {
+        logger.warn("Signing keys not found! Publication will not be signed")
+    }
+}
+
 publishing {
     publications {
         create<MavenPublication>("maven") {
@@ -208,7 +226,7 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository(layout.buildDirectory.dir("staging-deploy").toString())
+                    stagingRepository("target/staging-deploy")
                 }
             }
         }
