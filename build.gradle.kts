@@ -226,7 +226,7 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository("target/staging-deploy")
+                    stagingRepository("build/staging-deploy")
                 }
             }
         }
