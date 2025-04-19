@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
+
 # <img src="img/kpipe.png" width="200" height="200">
 
 # ☕ KPipe - A Modern Kafka Consumer
