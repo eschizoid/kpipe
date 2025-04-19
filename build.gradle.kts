@@ -134,6 +134,50 @@ spotless {
     }
 }
 
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = "org.kpipe"
+            artifactId = "kpipe"
+
+            from(components["java"])
+
+            pom {
+                name.set("kpipe")
+                description.set("Functional Kafka Consumer Library")
+                url.set("https://github.com/eschizoid/kpipe")
+                inceptionYear.set("2025")
+
+                licenses {
+                    license {
+                        name.set("Apache License 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    }
+                }
+
+                developers {
+                    developer {
+                        id.set("eschizoid")
+                        name.set("Mariano Gonzalez")
+                        email.set("mariano.gonzalez.mx@gmail.com")
+                    }
+                }
+
+                scm {
+                    connection.set("scm:git:git://github.com/eschizoid/kpipe.git")
+                    developerConnection.set("scm:git:ssh://github.com/eschizoid/kpipe.git")
+                    url.set("https://github.com/eschizoid/kpipe")
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
+        }
+    }
+}
+
 jreleaser {
     project {
         description.set("Functional Kafka Consumer Library")
@@ -157,42 +201,7 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepositories.add("target/staging-deploy")
-                }
-            }
-        }
-    }
-}
-
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            artifact(tasks.shadowJar)
-
-            pom {
-                name.set("KPipe")
-                description.set("Functional Kafka Consumer Library")
-                url.set("https://github.com/eschizoid/kpipe")
-
-                licenses {
-                    license {
-                        name.set("Apache License 2.0")
-                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
-                    }
-                }
-
-                developers {
-                    developer {
-                        id.set("eschizoid")
-                        name.set("Mariano Gonzalez")
-                        email.set("mariano.gonzalez.mx@gmail.com")
-                    }
-                }
-
-                scm {
-                    connection.set("scm:git:git://github.com/eschizoid/kpipe.git")
-                    developerConnection.set("scm:git:ssh://github.com/eschizoid/kpipe.git")
-                    url.set("https://github.com/eschizoid/kpipe")
+                    stagingRepository("target/staging-deploy")
                 }
             }
         }
