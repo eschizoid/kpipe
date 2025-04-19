@@ -1,12 +1,16 @@
+import org.jreleaser.model.Active.ALWAYS
+
 plugins {
     application
-    `maven-publish`
-    jacoco
     idea
+    jacoco
+    `maven-publish`
+    signing
     id("java")
     id("com.diffplug.spotless") version "7.0.3"
     id("com.github.johnrengelman.shadow") version "8.1.1"
     id("pl.allegro.tech.build.axion-release") version "1.18.7"
+    id("org.jreleaser") version "1.17.0"
 }
 
 scmVersion {
@@ -17,6 +21,7 @@ scmVersion {
 }
 
 group = "org.kpipe"
+description = "KPipe - Functional Kafka Consumer"
 version = scmVersion.version
 
 repositories {
@@ -127,4 +132,78 @@ spotless {
             )
         )
     }
+}
+
+jreleaser {
+    project {
+        description.set("Functional Kafka Consumer Library")
+        authors.set(listOf("Mariano Gonzalez"))
+        license.set("Apache-2.0")
+        links {
+            homepage.set("https://github.com/eschizoid/kpipe")
+        }
+        inceptionYear.set("2025")
+        tags.set(listOf("kafka", "consumer", "functional", "java"))
+    }
+
+    signing {
+        active.set(ALWAYS)
+        armored.set(true)
+    }
+
+    deploy {
+        maven {
+            nexus2 {
+                create("maven-central") {
+                    active.set(ALWAYS)
+                    url.set("https://central.sonatype.com/service/local")
+                    closeRepository.set(true)
+                    releaseRepository.set(true)
+                    stagingRepositories.add("build/publications/maven")
+                }
+            }
+        }
+    }
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            artifact(tasks.shadowJar)
+
+            pom {
+                name.set("KPipe")
+                description.set("Functional Kafka Consumer Library")
+                url.set("https://github.com/eschizoid/kpipe")
+
+                licenses {
+                    license {
+                        name.set("Apache License 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    }
+                }
+
+                developers {
+                    developer {
+                        id.set("eschizoid")
+                        name.set("Mariano Gonzalez")
+                        email.set("mariano.gonzalez.mx@gmail.com")
+                    }
+                }
+
+                scm {
+                    connection.set("scm:git:git://github.com/eschizoid/kpipe.git")
+                    developerConnection.set("scm:git:ssh://github.com/eschizoid/kpipe.git")
+                    url.set("https://github.com/eschizoid/kpipe")
+                }
+            }
+        }
+    }
+}
+
+signing {
+    val signingKey: String? by project
+    val signingPassword: String? by project
+    useInMemoryPgpKeys(signingKey, signingPassword)
+    sign(publishing.publications["maven"])
 }

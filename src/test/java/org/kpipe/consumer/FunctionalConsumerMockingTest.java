@@ -8,8 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -531,8 +532,264 @@ class FunctionalConsumerMockingTest {
     assertThrows(NullPointerException.class, builder::build);
   }
 
+  @Test
+  void shouldHandleEmptyRecordBatch() {
+    // Setup
+    final var consumer = new FunctionalConsumerMockingTest.TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
+
+    // Create empty records
+    final var records = new ConsumerRecords<String, String>(Map.of());
+
+    // Process records
+    consumer.executeProcessRecords(records);
+
+    // Verify processor was never called
+    verifyNoInteractions(processor);
+
+    // Verify metrics
+    final var metrics = consumer.getMetrics();
+    assertEquals(0L, metrics.get("messagesReceived"));
+  }
+
+  @Test
+  void shouldHandleNullValueInRecord() throws Exception {
+    // Setup
+    final var latch = new CountDownLatch(1);
+
+    doAnswer(inv -> {
+        latch.countDown();
+        return null;
+      })
+      .when(processor)
+      .apply(null);
+
+    final var consumer = new FunctionalConsumerMockingTest.TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
+
+    // Create record with null value
+    final var partition = new TopicPartition(TOPIC, 0);
+    final var recordsList = List.of(new ConsumerRecord<String, String>(TOPIC, 0, 0L, "key", null));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
+
+    // Process records
+    consumer.executeProcessRecords(records);
+
+    assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
+
+    // Verify processor was called with null
+    verify(processor).apply(null);
+  }
+
+  @Test
+  void shouldNotInterruptShutdownWithInFlightMessages() throws Exception {
+    // Setup - create a processor that takes time
+    final var processingStarted = new CountDownLatch(1);
+    final var processingBlocked = new AtomicBoolean(true);
+
+    Function<String, String> slowProcessor = value -> {
+      processingStarted.countDown();
+      while (processingBlocked.get()) {
+        try {
+          Thread.sleep(10);
+        } catch (InterruptedException e) {
+          // Ignore
+        }
+      }
+      return value;
+    };
+
+    // Create a custom consumer that lets us track processing state
+    final var consumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      slowProcessor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
+
+    // Manually simulate processing in progress
+    consumer.incrementProcessingCount(); // Use the custom method
+
+    // Initiate close in a separate thread
+    final var closeFuture = CompletableFuture.runAsync(consumer::close);
+
+    // Verify close doesn't complete immediately
+    assertFalse(closeFuture.isDone(), "Close should wait for in-flight messages");
+
+    // Allow processing to complete
+    consumer.decrementProcessingCount(); // Use the custom method
+
+    // Verify close completes
+    closeFuture.get(1, TimeUnit.SECONDS);
+  }
+
+  @Test
+  void shouldTrackInFlightMessagesCorrectly() throws Exception {
+    // Create custom consumer with tracking methods
+    final var consumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
+
+    // Check initial state
+    assertEquals(0, consumer.getProcessingCount(), "Initially no in-flight messages");
+
+    // Create records
+    final var partition = new TopicPartition(TOPIC, 0);
+    final var recordsList = List.of(
+      new ConsumerRecord<>(TOPIC, 0, 0L, "key1", "value1"),
+      new ConsumerRecord<>(TOPIC, 0, 1L, "key2", "value2")
+    );
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
+
+    // Use CountDownLatch to control when processing completes
+    final var startLatch = new CountDownLatch(2);
+    final var completeLatch = new CountDownLatch(1);
+
+    // Mock processor that counts down startLatch and waits on completeLatch
+    when(processor.apply(anyString()))
+      .thenAnswer(inv -> {
+        startLatch.countDown();
+        completeLatch.await(1, TimeUnit.SECONDS);
+        return inv.getArgument(0);
+      });
+
+    // Process records
+    CompletableFuture.runAsync(() -> consumer.executeProcessRecords(records));
+
+    // Wait for processing to start
+    assertTrue(startLatch.await(1, TimeUnit.SECONDS), "Processing did not start in time");
+
+    // Verify processing count
+    assertEquals(2, consumer.getProcessingCount(), "Should have 2 in-flight messages");
+
+    // Allow processing to complete
+    completeLatch.countDown();
+
+    // Wait for processing to complete
+    Thread.sleep(300);
+
+    // Verify count returns to 0
+    assertEquals(0, consumer.getProcessingCount(), "Should have no in-flight messages after completion");
+  }
+
+  @Test
+  void shouldHandleInterruptedPollOperation() throws Exception {
+    // Setup - mock the behavior to first throw exception, then simulate wakeup
+    when(mockConsumer.poll(any(Duration.class)))
+      .thenThrow(new RuntimeException("Poll interrupted"))
+      .thenThrow(new RuntimeException("Poll interrupted again"));
+
+    final var consumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler
+    );
+
+    // Start in separate thread
+    final var executor = Executors.newSingleThreadExecutor();
+    final var future = executor.submit(consumer::start);
+
+    // Allow time for poll to be called
+    Thread.sleep(100);
+
+    // Force stop the consumer
+    consumer.close();
+
+    // Wait for thread to complete
+    future.get(1, TimeUnit.SECONDS);
+
+    // Verify consumer is no longer running
+    assertFalse(consumer.isRunning(), "Consumer should stop after close");
+
+    // Cleanup
+    executor.shutdownNow();
+  }
+
+  @Test
+  void stateShouldTransitionCorrectlyDuringLifecycle() throws InterruptedException {
+    // Create consumer
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(s -> s)
+      .build();
+
+    // Initial state
+    assertFalse(consumer.isRunning(), "Should not be running initially");
+    assertFalse(consumer.isPaused(), "Should not be paused initially");
+
+    // Start consumer
+    final var executor = Executors.newSingleThreadExecutor();
+    executor.submit(consumer::start);
+
+    // Wait for consumer to start
+    Thread.sleep(100);
+
+    // Check running state
+    assertTrue(consumer.isRunning(), "Should be running after start");
+    assertFalse(consumer.isPaused(), "Should not be paused after start");
+
+    // Pause consumer
+    consumer.pause();
+    Thread.sleep(50);
+
+    // Check paused state
+    assertTrue(consumer.isRunning(), "Should still be running when paused");
+    assertTrue(consumer.isPaused(), "Should be paused after pause");
+
+    // Resume consumer
+    consumer.resume();
+    Thread.sleep(50);
+
+    // Check resumed state
+    assertTrue(consumer.isRunning(), "Should be running after resume");
+    assertFalse(consumer.isPaused(), "Should not be paused after resume");
+
+    // Close consumer
+    consumer.close();
+    Thread.sleep(50);
+
+    // Check closed state
+    assertFalse(consumer.isRunning(), "Should not be running after close");
+
+    // Cleanup
+    executor.shutdownNow();
+  }
+
   public static class TestableFunctionalConsumer<K, V> extends FunctionalConsumer<K, V> {
 
+    private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
+    private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
+    private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
+    private static final String METRIC_RETRIES = "retries";
     private final KafkaConsumer<K, V> mockConsumer;
 
     public TestableFunctionalConsumer(
@@ -574,6 +831,40 @@ class FunctionalConsumerMockingTest {
 
     public void executeProcessRecords(final ConsumerRecords<K, V> records) {
       processRecords(records);
+    }
+
+    public int getProcessingCount() {
+      // In-flight count is the difference between received and processed
+      final var metrics = getMetrics();
+      final var received = metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L);
+      final var processed = metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L);
+      return (int) (received - processed);
+    }
+
+    public void incrementProcessingCount() {
+      // Simulate an in-flight message by incrementing the received count
+      try {
+        final var metricsField = FunctionalConsumer.class.getDeclaredField("metrics");
+        metricsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        final var metricsMap = (Map<String, AtomicLong>) metricsField.get(this);
+        metricsMap.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
+      } catch (Exception e) {
+        throw new RuntimeException("Failed to increment processing count", e);
+      }
+    }
+
+    public void decrementProcessingCount() {
+      // Simulate completing an in-flight message by incrementing the processed count
+      try {
+        final var metricsField = FunctionalConsumer.class.getDeclaredField("metrics");
+        metricsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        final var metricsMap = (Map<String, AtomicLong>) metricsField.get(this);
+        metricsMap.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+      } catch (Exception e) {
+        throw new RuntimeException("Failed to decrement processing count", e);
+      }
     }
   }
 }
