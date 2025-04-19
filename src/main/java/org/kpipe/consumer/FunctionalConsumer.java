@@ -17,7 +17,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.config.AppConfig;
-import org.kpipe.sink.LoggingSink;
+import org.kpipe.sink.ConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /**
@@ -331,7 +331,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     this.retryBackoff = builder.retryBackoff;
     this.enableMetrics = builder.enableMetrics;
     this.sequentialProcessing = builder.sequentialProcessing;
-    this.messageSink = builder.messageSink != null ? builder.messageSink : new LoggingSink<>();
+    this.messageSink =
+      builder.messageSink != null
+        ? builder.messageSink
+        : new ConsoleSink<>(System.getLogger(ConsoleSink.class.getName()), Level.INFO);
     this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
     this.executorTerminationTimeout = builder.executorTerminationTimeout;

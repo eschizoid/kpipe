@@ -20,11 +20,11 @@ class MessageSinkRegistryTest {
   }
 
   @Test
-  void shouldHaveDefaultLoggingSink() {
+  void shouldHaveDefaultConsoleSink() {
     // Assert
     final var allSinks = registry.getAll();
     assertTrue(allSinks.containsKey("logging"));
-    assertEquals("LoggingSink", allSinks.get("logging"));
+    assertEquals("ConsoleSink", allSinks.get("logging"));
   }
 
   @Test
