@@ -25,7 +25,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
 - **Declarative processing** lets you describe *what* to do, not *how* to do it
 - **Higher-order functions** enable conditional processing, retry logic, and error handling
 - Teams can **register their own processors** in a central registry via:
-  
+
   ```java
   // Register team-specific processors
   MessageProcessorRegistry.register("sanitizeData",
@@ -73,6 +73,38 @@ retries, built-in metrics, and support for both parallel and sequential processi
 
 ---
 
+## 📦 Installation
+
+### Maven
+
+  ```xml
+  <dependency>
+      <groupId>io.github.eschizoid</groupId>
+      <artifactId>kpipe</artifactId>
+      <version>0.1.0</version>
+  </dependency>
+  ```
+
+### Gradle (Groovy)
+
+  ```grovy
+  implementation 'io.github.eschizoid:kpipe:0.1.0'
+  ```
+
+### Gradle (Kotlin)
+
+  ```kotlin
+  implementation("io.github.eschizoid:kpipe:0.1.0")
+  ```
+
+### SBT
+
+  ```sbt
+  libraryDependencies += "io.github.eschizoid" % "kpipe" % "0.1.0"
+  ```
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -88,7 +120,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
 │   │   ├── ConsumerRunner.java           # Runner implementation for consumers
 │   │   ├── ConsumerState.java            # State management for consumers
 │   │   ├── FunctionalConsumer.java       # Base functional consumer interface
-│   │   ├── FunctionalConsumer.java       # Functional Kafka consumer implementation
+│   │   ├── FunctionalConsumer.java       # Functional consumer implementation
 │   │   └── MessageTracker.java           # Tracks message processing state
 │   │
 │   ├── metrics/                          # Metrics components
@@ -129,12 +161,12 @@ Extend the registry like this:
       DslJsonMessageProcessors.addField("environment", "production"));
   
   // Create a reusable processor pipeline
-  var pipeline = MessageProcessorRegistry.pipeline(
+  final var pipeline = MessageProcessorRegistry.pipeline(
       "parseJson", "validateSchema", "addEnvironment", "uppercase", "addTimestamp"
   );
   
   // Use the pipeline with a consumer
-  var consumer = new FunctionalConsumer.<byte[], byte[]>build()
+  final var consumer = new FunctionalConsumer.<byte[], byte[]>build()
       .withProperties(kafkaProps)
       .withTopic("events")
       .withProcessor(pipeline)
@@ -195,13 +227,13 @@ The JSON processors handle deserialization and transformation of JSON data:
 
   ```java
   // Add a timestamp field to messages
-  var addTimestampProcessor = JsonMessageProcessors.addTimestamp("processedAt");
+  final var addTimestampProcessor = JsonMessageProcessors.addTimestamp("processedAt");
   
   // Remove sensitive fields
-  var sanitizeProcessor = JsonMessageProcessors.removeFields("password", "ssn", "creditCard");
+  final var sanitizeProcessor = JsonMessageProcessors.removeFields("password", "ssn", "creditCard");
   
   // Transform specific fields
-  var uppercaseSubjectProcessor = JsonMessageProcessors.transformField("subject", value -> {
+  final var uppercaseSubjectProcessor = JsonMessageProcessors.transformField("subject", value -> {
       if (value instanceof String text) {
           return text.toUpperCase();
       }
@@ -224,7 +256,7 @@ The JSON processors handle deserialization and transformation of JSON data:
   );
   
   // Or use the registry to build pipelines
-  var registryPipeline = MessageProcessorRegistry.pipeline(
+  final var registryPipeline = MessageProcessorRegistry.pipeline(
       "sanitize", "addTimestamp", "uppercaseSubject", "addMetadata"
   );
   ```
@@ -235,7 +267,7 @@ The JSON processors handle deserialization and transformation of JSON data:
 
 - Java 23+
 - gradle (for building the project)
-- kcat (for testing)
+- [kcat](https://github.com/edenhill/kcat) (for testing)
 - Docker (for local Kafka setup)
 
 ---
@@ -298,14 +330,14 @@ For maintainable pipelines, group related processors:
 
   ```java
   // Create focused processor groups
-  var securityProcessors = MessageProcessorRegistry.pipeline(
+  final var securityProcessors = MessageProcessorRegistry.pipeline(
       "sanitizeData", "encryptSensitiveFields", "addAuditTrail");
       
-  var enrichmentProcessors = MessageProcessorRegistry.pipeline(
+  final var enrichmentProcessors = MessageProcessorRegistry.pipeline(
       "addMetadata", "addTimestamp", "addEnvironment");
       
   // Compose them into a master pipeline
-  var fullPipeline = message -> enrichmentProcessors.apply(
+  final var fullPipeline = message -> enrichmentProcessors.apply(
       securityProcessors.apply(message));
   
   // Or register the composed pipeline
