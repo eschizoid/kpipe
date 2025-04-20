@@ -18,6 +18,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -418,7 +419,6 @@ class FunctionalConsumerMockingTest {
     assertEquals(0L, metrics.get("retries"));
   }
 
-  @Test
   void shouldUpdateMetricsOnProcessingError() throws Exception {
     // Setup
     final var props = new Properties();

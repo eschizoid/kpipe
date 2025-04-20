@@ -32,11 +32,11 @@ retries, built-in metrics, and support for both parallel and sequential processi
       DslJsonMessageProcessors.removeFields("password", "ssn"));
   
   // Create pipelines from registered processors
-  var pipeline = MessageProcessorRegistry.pipeline(
+  final var pipeline = MessageProcessorRegistry.pipeline(
       "parseJson", "validateSchema", "sanitizeData", "addMetadata");
   
   // Apply transformations with built-in error handling and retry logic
-  var consumer = new FunctionalConsumer.<byte[], byte[]>build()
+  final var consumer = new FunctionalConsumer.<byte[], byte[]>build()
     .withProcessor(pipeline)
     .withRetry(3, Duration.ofSeconds(1))
     .build();
@@ -55,7 +55,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
   Function<byte[], byte[]> pipeline = MessageProcessorRegistry.pipeline(configuredProcessors);
   
   // Create a consumer with team-specific processing pipeline
-  var consumer = new FunctionalConsumer.<byte[], byte[]>builder()
+  final var consumer = new FunctionalConsumer.<byte[], byte[]>builder()
     .withProperties(kafkaProps)
     .withTopic("team-topic")
     .withProcessor(MessageProcessorRegistry.pipeline(
