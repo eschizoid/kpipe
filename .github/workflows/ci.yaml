@@ -25,11 +25,11 @@ jobs:
         run: ./gradlew clean spotlessApply build
 
       - name: Jacoco
-        run: ./gradlew jacocoTestReport
+        run: ./gradlew :lib:jacocoTestReport
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
             token: ${{ secrets.CODECOV_TOKEN }}
             slug: eschizoid/kpipe
-            files: ./build/reports/jacoco/test/jacocoTestReport.xml
+            files: ./lib/build/reports/jacoco/test/jacocoTestReport.xml

@@ -120,7 +120,7 @@ public record AppConfig(
       getEnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
       getEnvOrDefault("KAFKA_CONSUMER_GROUP", "kpipe-group"),
       getEnvOrDefault("KAFKA_TOPIC", "json-topic"),
-      getEnvOrDefault("APP_NAME", "kafka-consumer-app"),
+      getEnvOrDefault("APP_NAME", "kpipe-app"),
       parseDurationWithFallback(getEnvOrDefault("KAFKA_POLL_TIMEOUT_MS", "100"), "100", Duration::ofMillis),
       parseDurationWithFallback(getEnvOrDefault("SHUTDOWN_TIMEOUT_SEC", "30"), "30", Duration::ofSeconds),
       parseDurationWithFallback(getEnvOrDefault("METRICS_INTERVAL_SEC", "60"), "60", Duration::ofSeconds),
