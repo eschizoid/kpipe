@@ -63,6 +63,8 @@ tasks.jacocoTestReport {
 publishing {
     publications {
         create<MavenPublication>("maven") {
+            groupId = "io.github.eschizoid"
+            artifactId = "kpipe"
             from(components["java"])
 
             pom {
@@ -103,6 +105,10 @@ publishing {
 }
 
 signing {
+    afterEvaluate {
+        sign(publishing.publications["maven"])
+    }
+    
     val signingKey = System.getenv("JRELEASER_GPG_SECRET_KEY")
         ?: project.properties["signing.secretKey"]?.toString()
     val signingPassword = System.getenv("JRELEASER_GPG_PASSPHRASE")
@@ -111,8 +117,6 @@ signing {
     if (signingKey != null && signingPassword != null) {
         useInMemoryPgpKeys(signingKey, signingPassword)
     }
-
-    sign(publishing.publications["maven"])
 }
 
 jreleaser {
