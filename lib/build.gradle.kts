@@ -149,7 +149,7 @@ jreleaser {
 
     release {
         github {
-            enabled.set(false)
+            //enabled.set(false)
             overwrite.set(false)
         }
     }
