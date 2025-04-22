@@ -97,4 +97,4 @@ jobs:
           ./gradlew :lib:jreleaserConfig
           ./gradlew clean
           ./gradlew :lib:publish
-          ./gradlew :lib:jreleaserFullRelease --stacktrace
+          ./gradlew :lib:jreleaserFullRelease --debug --stacktrace
