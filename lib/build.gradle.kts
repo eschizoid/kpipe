@@ -129,6 +129,11 @@ jreleaser {
 
     gitRootSearch.set(true)
 
+    checksum {
+        individual.set(true)
+        artifacts.set(true)
+    }
+
     project {
         name.set("kpipe")
         description.set("Functional Kafka Consumer Library")
