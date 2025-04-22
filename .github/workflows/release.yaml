@@ -61,6 +61,7 @@ jobs:
       - name: Build project
         run: |
           ./gradlew clean :lib:build :lib:publishToMavenLocal
+          ls -lrta  /home/runner/.m2/repository/io/github/eschizoid/kpipe/0.1.1/
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
