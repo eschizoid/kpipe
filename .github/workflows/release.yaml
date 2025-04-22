@@ -83,6 +83,6 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
           # Use the simpler Maven deploy approach with JReleaser
-          ./gradlew :lib:jreleaserConfigurePublication
+          ./gradlew :lib:jreleaserAutoConfigRelease
           ./gradlew :lib:jreleaserPackage
           ./gradlew :lib:jreleaserDeploy --info
