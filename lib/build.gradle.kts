@@ -120,15 +120,14 @@ publishing {
 
     repositories {
         maven {
-                
-                url = uri(layout.buildDirectory.dir("staging-deploy"))
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
     }
 }
 
 jreleaser {
 
-    gitRootSearch.set(true)
+    //gitRootSearch.set(true)
 
     project {
         name.set("kpipe")
@@ -153,7 +152,7 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository("lib/build/staging-deploy")
+                    stagingRepository("build/staging-deploy")
                     enabled.set(true)
                 }
             }
