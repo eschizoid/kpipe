@@ -93,4 +93,4 @@ jobs:
         run: |
           # Configure and run JReleaser
           ./gradlew :lib:jreleaserConfig
-          ./gradlew :lib:jreleaserFullRelease --info
+          ./gradlew :lib:jreleaserFullRelease --debug --stacktrace
