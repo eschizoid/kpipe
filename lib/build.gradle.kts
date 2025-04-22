@@ -120,9 +120,7 @@ publishing {
 
     repositories {
         maven {
-                val releasesRepoUrl = uri(layout.buildDirectory.dir("staging-deploy/releases"))
-                val snapshotsRepoUrl = uri(layout.buildDirectory.dir("staging-deploy/snapshots"))
-                url = if (version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl
+            url = uri(layout.buildDirectory.dir("lib/build/staging-deploy"))
         }
     }
 }
@@ -154,7 +152,7 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository("lib/build/staging-deploy/releases")
+                    stagingRepository("lib/build/staging-deploy")
                     enabled.set(true)
                 }
             }
