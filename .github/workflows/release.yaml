@@ -89,4 +89,4 @@ jobs:
           ./gradlew :lib:jreleaserConfig
           
           # Let JReleaser handle the signing and publishing
-          ./gradlew :lib:jreleaserPackage :lib:jreleaserPublish :lib:jreleaserRelease --info
+          ./gradlew :lib:publish :lib:jreleaserRelease --info
