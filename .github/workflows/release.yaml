@@ -76,7 +76,7 @@ jobs:
           name: Release ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
-            lib/build/staging-deploy/releases/io/github/eschizoid/kpipe/${{ steps.version.outputs.version }}/*
+            lib/build/staging-deploy/io/github/eschizoid/kpipe/${{ steps.version.outputs.version }}/*
 
       - name: Publish to Maven Central
         env:
