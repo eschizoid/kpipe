@@ -78,7 +78,7 @@ jobs:
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
-            lib/build/publications/maven/pom-default.xml
+            lib/build/publications/maven/module.json
             lib/build/publications/maven/pom-default.xml
 
       - name: Deploy to Maven Central
@@ -93,4 +93,4 @@ jobs:
         run: |
           # Configure and run JReleaser
           ./gradlew :lib:jreleaserConfig
-          ./gradlew :lib:jreleaserFullRelease --info --stacktrace
+          ./gradlew :lib:jreleaserFullRelease --info
