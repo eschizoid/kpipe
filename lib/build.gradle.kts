@@ -60,8 +60,10 @@ tasks.jacocoTestReport {
     }
 }
 
-tasks.named<Jar>("jar") {
-    archiveBaseName.set("kpipe")
+afterEvaluate {
+    tasks.withType<Jar>().configureEach {
+        archiveBaseName.set("kpipe")
+    }
 }
 
 signing {
