@@ -127,8 +127,6 @@ publishing {
 
 jreleaser {
 
-    //gitRootSearch.set(true)
-
     project {
         name.set("kpipe")
         description.set("Functional Kafka Consumer Library")
