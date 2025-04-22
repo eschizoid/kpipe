@@ -129,11 +129,6 @@ jreleaser {
 
     gitRootSearch.set(true)
 
-    checksum {
-        individual.set(true)
-        artifacts.set(true)
-    }
-
     project {
         name.set("kpipe")
         description.set("Functional Kafka Consumer Library")
@@ -158,6 +153,7 @@ jreleaser {
                     url.set("https://central.sonatype.com/api/v1/publisher")
                     stagingRepository("build/staging-deploy")
                     enabled.set(true)
+                    sign.set(false)
                 }
             }
         }
