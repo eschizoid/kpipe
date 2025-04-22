@@ -1,4 +1,5 @@
 import org.jreleaser.model.Active.ALWAYS
+import java.security.MessageDigest
 
 plugins {
     java
@@ -164,4 +165,41 @@ jreleaser {
             overwrite.set(false)
         }
     }
+}
+
+tasks.register("generateMavenLocalChecksums") {
+    group = "publishing"
+    description = "Generate SHA-256 and SHA-512 checksums for Maven local artifacts"
+
+    doLast {
+        val version = project.version.toString()
+        val artifactId = "kpipe"
+        val groupPath = "io/github/eschizoid"
+        val versionPath = "$groupPath/$artifactId/$version"
+        val m2Dir = File(System.getProperty("user.home"), ".m2/repository/$versionPath")
+
+        if (m2Dir.exists()) {
+            m2Dir.listFiles()?.filter {
+                it.name.endsWith(".jar") || it.name.endsWith(".pom") || it.name.endsWith(".module")
+            }?.forEach { file ->
+                generateChecksum(file, "SHA-256")
+                generateChecksum(file, "SHA-512")
+            }
+        }
+    }
+}
+
+fun generateChecksum(file: File, algorithm: String) {
+    val checksum = file.inputStream().use { fis ->
+        val digest = MessageDigest.getInstance(algorithm).digest(fis.readBytes())
+        digest.joinToString("") { byte -> "%02x".format(byte) }
+    }
+    val checksumFile = File(file.absolutePath + "." + algorithm.lowercase().replace("-", ""))
+    checksumFile.writeText(checksum)
+    println("Generated ${file.name}.${algorithm.lowercase().replace("-", "")}")
+}
+
+// Make publishToMavenLocal trigger the checksum generation
+tasks.named("publishToMavenLocal") {
+    finalizedBy("generateMavenLocalChecksums")
 }
