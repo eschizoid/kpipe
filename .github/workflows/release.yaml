@@ -73,7 +73,7 @@ jobs:
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
 
-      - name: Publish to Maven Central with JReleaser
+      - name: Publish to Maven Central
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -82,11 +82,7 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
-          # Skip the publish task so JReleaser can generate and sign artifacts consistently
-          ./gradlew :lib:assemble
-          
-          # Configure JReleaser
-          ./gradlew :lib:jreleaserConfig
-          
-          # Let JReleaser handle the signing and publishing
-          ./gradlew :lib:publish :lib:jreleaserRelease --debug --stacktrace
+          # Use the simpler Maven deploy approach with JReleaser
+          ./gradlew :lib:jreleaserConfigurePublication
+          ./gradlew :lib:jreleaserPackage
+          ./gradlew :lib:jreleaserDeploy --info
