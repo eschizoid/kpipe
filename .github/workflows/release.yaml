@@ -59,16 +59,8 @@ jobs:
           echo "tagName=$TAG_VERSION" >> $GITHUB_OUTPUT
 
       - name: Build project
-        env:
-          JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
-          JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
-          JRELEASER_GPG_SECRET_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
-          JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
-          ./gradlew clean
-          ./gradlew :lib:publish
+          ./gradlew clean build
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -80,10 +72,8 @@ jobs:
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
-            lib/build/publications/maven/module.json
-            lib/build/publications/maven/pom-default.xml
 
-      - name: Publish to Maven Central
+      - name: Sign and Publish to Maven Central
         timeout-minutes: 60
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
@@ -94,4 +84,4 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
           ./gradlew :lib:jreleaserConfig
-          ./gradlew :lib:jreleaserFullRelease --stacktrace
+          ./gradlew :lib:jreleaserFullRelease --info
