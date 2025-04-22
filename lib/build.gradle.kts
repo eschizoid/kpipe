@@ -1,3 +1,4 @@
+import org.jreleaser.model.Active.NEVER
 import org.jreleaser.model.Active.ALWAYS
 
 plugins {
@@ -60,19 +61,23 @@ tasks.jacocoTestReport {
     }
 }
 
+afterEvaluate {
+    tasks.withType<Jar>().configureEach {
+        archiveBaseName.set("kpipe")
+    }
+}
+
 signing {
+    afterEvaluate {
+        sign(publishing.publications["maven"])
+    }
+
     val signingKey = System.getenv("JRELEASER_GPG_SECRET_KEY") ?: project.properties["signing.secretKey"]?.toString()
     val signingPassword =
         System.getenv("JRELEASER_GPG_PASSPHRASE") ?: project.properties["signing.password"]?.toString()
 
     if (signingKey != null && signingPassword != null) {
         useInMemoryPgpKeys(signingKey, signingPassword)
-    } else {
-        logger.warn("Signing keys not found! Publication will not be signed")
-    }
-    
-    afterEvaluate {
-        sign(publishing.publications["maven"])
     }
 }
 
@@ -121,9 +126,11 @@ publishing {
 }
 
 jreleaser {
+
     gitRootSearch.set(true)
 
     project {
+        name.set("kpipe")
         description.set("Functional Kafka Consumer Library")
         authors.set(listOf("Mariano Gonzalez"))
         license.set("Apache-2.0")
@@ -135,8 +142,7 @@ jreleaser {
     }
 
     signing {
-        active.set(ALWAYS)
-        armored.set(true)
+        active.set(NEVER)
     }
 
     deploy {
@@ -146,6 +152,8 @@ jreleaser {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
                     stagingRepository("build/staging-deploy")
+                    enabled.set(true)
+                    sign.set(false)
                 }
             }
         }
@@ -153,7 +161,7 @@ jreleaser {
 
     release {
         github {
-            //enabled.set(false)
+            enabled.set(true)
             overwrite.set(false)
         }
     }

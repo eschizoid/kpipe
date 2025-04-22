@@ -37,6 +37,12 @@ jobs:
           git config --global user.email "mariano.gonzalez.mx@gmail.com"
           git config --global user.name "Mariano Gonzalez"
 
+      - name: Setup GPG
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
       - name: Update Version and Create Tag
         id: version
         run: |
@@ -52,6 +58,17 @@ jobs:
           echo "version=$RAW_VERSION" >> $GITHUB_OUTPUT
           echo "tagName=$TAG_VERSION" >> $GITHUB_OUTPUT
 
+      - name: Build project
+        run: |
+          ./gradlew clean :lib:build :lib:publish
+        env:
+          JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
+          JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+          JRELEASER_GPG_SECRET_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -59,16 +76,9 @@ jobs:
           name: Release ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
-            build/libs/kpipe-${{ steps.version.outputs.version }}.jar
-
-      - name: Setup GPG
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+            lib/build/staging-deploy/io/github/eschizoid/kpipe/${{ steps.version.outputs.version }}/**/*
 
       - name: Publish to Maven Central
-        timeout-minutes: 60
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -77,7 +87,4 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
-          ./gradlew :lib:jreleaserConfig
-          ./gradlew clean
-          ./gradlew :lib:publish
           ./gradlew :lib:jreleaserFullRelease --stacktrace
