@@ -196,7 +196,7 @@ fun generateChecksum(file: File, algorithm: String) {
     }
     val checksumFile = File(file.absolutePath + "." + algorithm.lowercase().replace("-", ""))
     checksumFile.writeText(checksum)
-    println("Generated ${file.name}.${algorithm.lowercase().replace("-", "")}")
+    println("Generated checksum file at: ${checksumFile.absolutePath}")
 }
 
 // Make publishToMavenLocal trigger the checksum generation
