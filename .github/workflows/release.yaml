@@ -59,9 +59,16 @@ jobs:
           echo "tagName=$TAG_VERSION" >> $GITHUB_OUTPUT
 
       - name: Build project
+        env:
+          JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
+          JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+          JRELEASER_GPG_SECRET_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
           ./gradlew clean
-          ./gradlew :lib:build
+          ./gradlew :lib:publish
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -71,8 +78,11 @@ jobs:
           generate_release_notes: true
           files: |
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar.asc
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar.asc
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar.asc
 
       - name: Publish to Maven Central
         timeout-minutes: 60
