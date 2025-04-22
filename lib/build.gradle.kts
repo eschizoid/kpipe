@@ -154,7 +154,7 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository(layout.buildDirectory.dir("staging-deploy/releases").toString())
+                    stagingRepository("lib/build/staging-deploy/releases")
                     enabled.set(true)
                 }
             }
