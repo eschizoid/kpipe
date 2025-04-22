@@ -60,7 +60,6 @@ jobs:
 
       - name: Build project
         run: |
-          ./gradlew :lib:sign
           ./gradlew :lib:publishToMavenLocal
 
       - name: Create GitHub Release
