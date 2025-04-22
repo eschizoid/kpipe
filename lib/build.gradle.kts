@@ -61,16 +61,18 @@ tasks.jacocoTestReport {
 }
 
 signing {
-    afterEvaluate {
-        sign(publishing.publications["maven"])
-    }
-
     val signingKey = System.getenv("JRELEASER_GPG_SECRET_KEY") ?: project.properties["signing.secretKey"]?.toString()
     val signingPassword =
         System.getenv("JRELEASER_GPG_PASSPHRASE") ?: project.properties["signing.password"]?.toString()
 
     if (signingKey != null && signingPassword != null) {
         useInMemoryPgpKeys(signingKey, signingPassword)
+    } else {
+        logger.warn("Signing keys not found! Publication will not be signed")
+    }
+    
+    afterEvaluate {
+        sign(publishing.publications["maven"])
     }
 }
 
@@ -119,7 +121,6 @@ publishing {
 }
 
 jreleaser {
-
     gitRootSearch.set(true)
 
     project {
