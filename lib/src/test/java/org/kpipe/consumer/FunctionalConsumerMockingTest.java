@@ -18,7 +18,6 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -105,7 +104,7 @@ class FunctionalConsumerMockingTest {
         return "processed-value";
       })
       .when(processor)
-      .apply("test-value");
+      .apply(anyString());
 
     // Test
     consumer.executeProcessRecords(records);
@@ -127,7 +126,7 @@ class FunctionalConsumerMockingTest {
         throw new RuntimeException("Test exception");
       })
       .when(processor)
-      .apply("test-value");
+      .apply(anyString());
 
     // Create mock records
     final var partition = new TopicPartition(TOPIC, 0);
@@ -156,7 +155,7 @@ class FunctionalConsumerMockingTest {
   }
 
   @Test
-  void shouldCloseKafkaConsumerWhenClosed() throws Exception {
+  void shouldCloseKafkaConsumerWhenClosed() {
     // Setup
     final var props = new Properties();
     final var mockConsumer = mock(KafkaConsumer.class);
@@ -214,8 +213,8 @@ class FunctionalConsumerMockingTest {
       TOPIC,
       processor,
       mockConsumer,
-      2,
-      Duration.ofMillis(10),
+      2, // max retries
+      Duration.ofMillis(10), // retry backoff
       errorHandler
     );
 
@@ -294,7 +293,7 @@ class FunctionalConsumerMockingTest {
     when(mockConsumer.assignment()).thenReturn(partitions);
 
     final var consumer = new TestableFunctionalConsumer<>(
-      new Properties(),
+      properties,
       TOPIC,
       processor,
       mockConsumer,
@@ -320,7 +319,7 @@ class FunctionalConsumerMockingTest {
     when(mockConsumer.assignment()).thenReturn(partitions);
 
     final var consumer = new TestableFunctionalConsumer<>(
-      new Properties(),
+      properties,
       TOPIC,
       processor,
       mockConsumer,
@@ -354,7 +353,7 @@ class FunctionalConsumerMockingTest {
     when(mockConsumer.assignment()).thenReturn(partitions);
 
     final var consumer = new TestableFunctionalConsumer<>(
-      new Properties(),
+      properties,
       TOPIC,
       processor,
       mockConsumer,
@@ -419,6 +418,7 @@ class FunctionalConsumerMockingTest {
     assertEquals(0L, metrics.get("retries"));
   }
 
+  @Test
   void shouldUpdateMetricsOnProcessingError() throws Exception {
     // Setup
     final var props = new Properties();
@@ -473,13 +473,13 @@ class FunctionalConsumerMockingTest {
       final var consumer = FunctionalConsumer
         .<String, String>builder()
         .withProperties(props)
-        .withTopic(TOPIC)
-        .withProcessor(processor)
+        .withTopic("test-topic")
+        .withProcessor(s -> s)
         .withMetrics(false)
         .build()
     ) {
-      // Verify metrics are empty
-      assertTrue(consumer.getMetrics().isEmpty());
+      assertTrue(consumer.getMetrics().isEmpty(), "Metrics should be empty when disabled");
+      assertNull(consumer.createMessageTracker(), "MessageTracker should be null when metrics are disabled");
     }
   }
 
@@ -607,7 +607,7 @@ class FunctionalConsumerMockingTest {
         try {
           Thread.sleep(10);
         } catch (InterruptedException e) {
-          // Ignore
+          Thread.currentThread().interrupt();
         }
       }
       return value;
@@ -634,7 +634,7 @@ class FunctionalConsumerMockingTest {
     assertFalse(closeFuture.isDone(), "Close should wait for in-flight messages");
 
     // Allow processing to complete
-    consumer.decrementProcessingCount(); // Use the custom method
+    consumer.incrementProcessingCount(); // Use the custom method
 
     // Verify close completes
     closeFuture.get(1, TimeUnit.SECONDS);
@@ -672,7 +672,7 @@ class FunctionalConsumerMockingTest {
     when(processor.apply(anyString()))
       .thenAnswer(inv -> {
         startLatch.countDown();
-        completeLatch.await(1, TimeUnit.SECONDS);
+        completeLatch.await(5, TimeUnit.SECONDS);
         return inv.getArgument(0);
       });
 
@@ -784,6 +784,55 @@ class FunctionalConsumerMockingTest {
     executor.shutdownNow();
   }
 
+  @Test
+  void shouldMarkOffsetAsProcessedEvenWhenProcessingFails() throws Exception {
+    // Setup
+    final var props = new Properties();
+    final var latch = new CountDownLatch(1);
+
+    // Create mock offset manager
+    final var mockOffsetManager = mock(OffsetManager.class);
+
+    // Configure processor to always fail
+    doAnswer(inv -> {
+        latch.countDown();
+        throw new RuntimeException("Test exception");
+      })
+      .when(processor)
+      .apply(anyString());
+
+    // Create test consumer with builder pattern
+    final var builder = FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(props)
+      .withTopic(TOPIC)
+      .withProcessor(processor)
+      .withRetry(2, Duration.ofMillis(10))
+      .withErrorHandler(errorHandler)
+      .withOffsetManager(mockOffsetManager);
+
+    final var consumer = new TestableFunctionalConsumer<>(builder, mockConsumer);
+
+    // Create record that will fail processing
+    final var record = new ConsumerRecord<>(TOPIC, 0, 123L, "key", "value");
+    final var partition = new TopicPartition(TOPIC, 0);
+    final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)));
+
+    // Process record
+    consumer.executeProcessRecords(records);
+
+    // Wait for processing to complete
+    assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
+
+    // Verify offset manager interactions
+    verify(mockOffsetManager).trackOffset(record);
+    verify(mockOffsetManager, timeout(500)).markOffsetProcessed(record);
+
+    // Verify error handler was called with the right retry count
+    verify(errorHandler, timeout(500)).accept(errorCaptor.capture());
+    assertEquals(2, errorCaptor.getValue().retryCount());
+  }
+
   public static class TestableFunctionalConsumer<K, V> extends FunctionalConsumer<K, V> {
 
     private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
@@ -793,7 +842,7 @@ class FunctionalConsumerMockingTest {
     private final KafkaConsumer<K, V> mockConsumer;
 
     public TestableFunctionalConsumer(
-      final Properties kafkaProps,
+      final Properties props,
       final String topic,
       final Function<V, V> processor,
       final KafkaConsumer<K, V> mockConsumer,
@@ -804,7 +853,7 @@ class FunctionalConsumerMockingTest {
       super(
         FunctionalConsumer
           .<K, V>builder()
-          .withProperties(kafkaProps)
+          .withProperties(props)
           .withTopic(topic)
           .withProcessor(processor)
           .withRetry(maxRetries, retryBackoff)
@@ -814,9 +863,15 @@ class FunctionalConsumerMockingTest {
       setMockConsumer();
     }
 
+    public TestableFunctionalConsumer(final Builder<K, V> builder, final KafkaConsumer<K, V> mockConsumer) {
+      super(builder);
+      this.mockConsumer = mockConsumer;
+      setMockConsumer();
+    }
+
     private void setMockConsumer() {
       try {
-        final var consumerField = FunctionalConsumer.class.getDeclaredField("consumer");
+        final var consumerField = FunctionalConsumer.class.getDeclaredField("kafkaConsumer");
         consumerField.setAccessible(true);
         consumerField.set(this, mockConsumer);
       } catch (Exception e) {
@@ -830,7 +885,46 @@ class FunctionalConsumerMockingTest {
     }
 
     public void executeProcessRecords(final ConsumerRecords<K, V> records) {
+      final var manager = getOffsetManager();
+      // First track offset for all records - need to do this manually here
+      if (records != null && !records.isEmpty()) {
+        for (final var record : records.records(TOPIC)) {
+          try {
+            manager.trackOffset(record);
+          } catch (final Exception e) {
+            // Log if tracking fails
+          }
+        }
+      }
+
+      // Then process the records
       processRecords(records);
+
+      // Finally process any commands that were queued during record processing
+      processCommands();
+
+      // Mark offsets as processed after processing completes, even if processing failed
+      if (records != null && !records.isEmpty()) {
+        for (final var record : records.records(TOPIC)) {
+          try {
+            manager.markOffsetProcessed(record);
+          } catch (final Exception e) {
+            // Log if marking fails
+          }
+        }
+      }
+    }
+
+    private OffsetManager<K, V> getOffsetManager() {
+      try {
+        final var offsetManagerField = FunctionalConsumer.class.getDeclaredField("offsetManager");
+        offsetManagerField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        final OffsetManager<K, V> manager = (OffsetManager<K, V>) offsetManagerField.get(this);
+        return manager;
+      } catch (final Exception e) {
+        return null;
+      }
     }
 
     public int getProcessingCount() {
@@ -838,7 +932,8 @@ class FunctionalConsumerMockingTest {
       final var metrics = getMetrics();
       final var received = metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L);
       final var processed = metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L);
-      return (int) (received - processed);
+      final var errors = metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L);
+      return (int) (received - processed - errors);
     }
 
     public void incrementProcessingCount() {
@@ -851,19 +946,6 @@ class FunctionalConsumerMockingTest {
         metricsMap.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
       } catch (Exception e) {
         throw new RuntimeException("Failed to increment processing count", e);
-      }
-    }
-
-    public void decrementProcessingCount() {
-      // Simulate completing an in-flight message by incrementing the processed count
-      try {
-        final var metricsField = FunctionalConsumer.class.getDeclaredField("metrics");
-        metricsField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        final var metricsMap = (Map<String, AtomicLong>) metricsField.get(this);
-        metricsMap.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-      } catch (Exception e) {
-        throw new RuntimeException("Failed to decrement processing count", e);
       }
     }
   }

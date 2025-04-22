@@ -130,7 +130,7 @@ class ConsumerRunnerTest {
     runner.start();
 
     // Act
-    boolean result = runner.shutdownGracefully(1000);
+    final var result = runner.shutdownGracefully(1000);
 
     // Assert
     assertTrue(result);
@@ -201,7 +201,7 @@ class ConsumerRunnerTest {
 
     // Act
     closeThread.start();
-    boolean result = runner.awaitShutdown(1000);
+    final var result = runner.awaitShutdown(1000);
 
     // Assert
     assertTrue(result);
@@ -214,7 +214,7 @@ class ConsumerRunnerTest {
     runner.start();
 
     // Act
-    boolean result = runner.awaitShutdown(100);
+    final var result = runner.awaitShutdown(100);
 
     // Assert
     assertFalse(result);
@@ -252,7 +252,7 @@ class ConsumerRunnerTest {
     when(mockTracker.getInFlightMessageCount()).thenReturn(0L);
 
     // Act
-    boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertTrue(result);
@@ -269,7 +269,7 @@ class ConsumerRunnerTest {
     when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.of(true));
 
     // Act
-    boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertTrue(result);
@@ -286,7 +286,7 @@ class ConsumerRunnerTest {
     when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.of(false));
 
     // Act
-    boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertFalse(result);
@@ -303,7 +303,7 @@ class ConsumerRunnerTest {
     when(mockTracker.getInFlightMessageCount()).thenThrow(new RuntimeException("Tracker failure"));
 
     // Act
-    final boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertFalse(result); // Expect false when an exception occurs
@@ -318,7 +318,7 @@ class ConsumerRunnerTest {
     when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.empty());
 
     // Act
-    boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertFalse(result);
@@ -332,7 +332,7 @@ class ConsumerRunnerTest {
     when(mockConsumer.createMessageTracker()).thenReturn(null);
 
     // Act
-    boolean result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertTrue(result);
