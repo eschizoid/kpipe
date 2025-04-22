@@ -36,6 +36,12 @@ jobs:
         run: |
           git config --global user.email "mariano.gonzalez.mx@gmail.com"
           git config --global user.name "Mariano Gonzalez"
+          
+      - name: Setup GPG
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Update Version and Create Tag
         id: version
@@ -70,12 +76,6 @@ jobs:
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar.asc
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar.asc
-
-      - name: Setup GPG
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Publish to Maven Central
         timeout-minutes: 60
