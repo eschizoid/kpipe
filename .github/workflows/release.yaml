@@ -87,4 +87,4 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
-          ./gradlew :lib:jreleaserFullRelease --debug --stacktrace
+          ./gradlew :lib:jreleaserFullRelease --stacktrace
