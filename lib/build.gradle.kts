@@ -117,7 +117,7 @@ publishing {
 
     repositories {
         maven {
-            url = uri(layout.buildDirectory.dir("staging-deploy"))
+            url = uri("lib/build/staging-deploy")
         }
     }
 }
@@ -149,7 +149,7 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository(layout.buildDirectory.dir("staging-deploy").get().toString())
+                    stagingRepository("lib/build/staging-deploy")
                     enabled.set(true)
                 }
             }
