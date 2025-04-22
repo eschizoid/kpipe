@@ -58,15 +58,9 @@ jobs:
           echo "version=$RAW_VERSION" >> $GITHUB_OUTPUT
           echo "tagName=$TAG_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build and Publish to Staging
-        env:
-          JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
-          JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
-          JRELEASER_GPG_SECRET_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      - name: Build project
         run: |
-          # Build and publish to the staging directory
-          ./gradlew clean :lib:build :lib:publish
+          ./gradlew clean :lib:build
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -78,11 +72,8 @@ jobs:
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
-            lib/build/publications/maven/module.json
-            lib/build/publications/maven/pom-default.xml
 
-      - name: Deploy to Maven Central
-        timeout-minutes: 60
+      - name: Publish to Maven Central with JReleaser
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -91,6 +82,11 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
-          # Configure and run JReleaser
+          # Skip the publish task so JReleaser can generate and sign artifacts consistently
+          ./gradlew :lib:assemble
+          
+          # Configure JReleaser
           ./gradlew :lib:jreleaserConfig
-          ./gradlew :lib:jreleaserFullRelease --debug --stacktrace
+          
+          # Let JReleaser handle the signing and publishing
+          ./gradlew :lib:jreleaserPackage :lib:jreleaserPublish :lib:jreleaserRelease --info
