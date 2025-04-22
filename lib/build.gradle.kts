@@ -60,6 +60,10 @@ tasks.jacocoTestReport {
     }
 }
 
+tasks.named<Jar>("jar") {
+    archiveBaseName.set("kpipe")
+}
+
 signing {
     afterEvaluate {
         sign(publishing.publications["maven"])
@@ -154,7 +158,7 @@ jreleaser {
 
     release {
         github {
-            enabled.set(true)
+            enabled.set(false)
             overwrite.set(false)
         }
     }
