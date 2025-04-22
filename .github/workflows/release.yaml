@@ -54,7 +54,8 @@ jobs:
 
       - name: Build project
         run: |
-          ./gradlew :lib:assemble
+          ./gradlew :lib:sign
+          ./gradlew :lib:publishToMavenLocal
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
