@@ -58,20 +58,23 @@ jobs:
           echo "version=$RAW_VERSION" >> $GITHUB_OUTPUT
           echo "tagName=$TAG_VERSION" >> $GITHUB_OUTPUT
 
-      #- name: Build project
-      #  run: |
-      #    ./gradlew clean :lib:build
-      #
-      #- name: Create GitHub Release
-      #  uses: softprops/action-gh-release@v2
-      #  with:
-      #    tag_name: ${{ steps.version.outputs.tagName }}
-      #    name: Release ${{ steps.version.outputs.version }}
-      #    generate_release_notes: true
-      #    files: |
-      #      lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar
-      #      lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar
-      #      lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
+      - name: Build project
+        run: |
+          ./gradlew clean :lib:build :lib:publish
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tagName }}
+          name: Release ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar.asc
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar.asc
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar.asc
 
       - name: Publish to Maven Central
         env:
@@ -82,6 +85,4 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
-          ./gradlew :lib:clean
-          ./gradlew :lib:publish
           ./gradlew :lib:jreleaserFullRelease --debug --stacktrace
