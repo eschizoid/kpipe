@@ -68,7 +68,7 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
           ./gradlew clean
-          ./gradlew :lib:publish
+          ./gradlew :lib:build
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -78,11 +78,8 @@ jobs:
           generate_release_notes: true
           files: |
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar
-            lib/build/libs/kpipe-${{ steps.version.outputs.version }}.jar.asc
-            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar
-            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar.asc
+            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar 
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
-            lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar.asc
 
       - name: Publish to Maven Central
         timeout-minutes: 60
@@ -97,4 +94,4 @@ jobs:
           ./gradlew :lib:jreleaserConfig
           ./gradlew clean
           ./gradlew :lib:publish
-          ./gradlew :lib:jreleaserFullRelease --debug --stacktrace
+          ./gradlew :lib:jreleaserFullRelease --stacktrace
