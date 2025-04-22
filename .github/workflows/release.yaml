@@ -81,7 +81,8 @@ jobs:
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-sources.jar 
             lib/build/libs/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
             lib/publications/maven/module.json
-            lib/publications/maven/pom-default.xml
+            lib/build/publications/maven/pom-default.xml
+            lib/build/publications/maven/pom-default.xml
 
       - name: Publish to Maven Central
         timeout-minutes: 60
