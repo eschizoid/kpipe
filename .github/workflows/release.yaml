@@ -60,8 +60,7 @@ jobs:
 
       - name: Build project
         run: |
-          ./gradlew clean :lib:build :lib:publishToMavenLocal
-          ls -lrta  /home/runner/.m2/repository/io/github/eschizoid/kpipe/0.1.1/
+          ./gradlew clean :lib:build :lib:publish
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -77,26 +76,7 @@ jobs:
           name: Release ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}.jar
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}.jar.asc
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}.jar.asc.sha256
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}.jar.asc.sha512
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-sources.jar
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-sources.jar.asc
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-sources.jar.asc.sha256
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-sources.jar.asc.sha512
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-javadoc.jar
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-javadoc.jar.asc
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-javadoc.jar.asc.sha256
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-javadoc.jar.asc.sha512
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-module
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-module.asc
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-module.asc.sha256
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-module.asc.sha512
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-pom.xml
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-pom.xml.asc
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-pom.xml.asc.sha256
-            /home/runner/.m2/repository/io/github/eschizoid/kipe/${{ steps.version.outputs.version }}/kpipe-${{ steps.version.outputs.version }}-pom.xml.asc.sha512
+            lib/build/staging-deploy/releases/io/github/eschizoid/kpipe/${{ steps.version.outputs.version }}
 
       - name: Publish to Maven Central
         env:
