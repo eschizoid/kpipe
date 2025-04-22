@@ -60,6 +60,20 @@ tasks.jacocoTestReport {
     }
 }
 
+signing {
+    afterEvaluate {
+        sign(publishing.publications["maven"])
+    }
+
+    val signingKey = System.getenv("JRELEASER_GPG_SECRET_KEY") ?: project.properties["signing.secretKey"]?.toString()
+    val signingPassword =
+        System.getenv("JRELEASER_GPG_PASSPHRASE") ?: project.properties["signing.password"]?.toString()
+
+    if (signingKey != null && signingPassword != null) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+    }
+}
+
 publishing {
     publications {
         create<MavenPublication>("maven") {
@@ -101,21 +115,6 @@ publishing {
         maven {
             url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
-    }
-}
-
-signing {
-    afterEvaluate {
-        sign(publishing.publications["maven"])
-    }
-    
-    val signingKey = System.getenv("JRELEASER_GPG_SECRET_KEY")
-        ?: project.properties["signing.secretKey"]?.toString()
-    val signingPassword = System.getenv("JRELEASER_GPG_PASSPHRASE")
-        ?: project.properties["signing.password"]?.toString()
-
-    if (signingKey != null && signingPassword != null) {
-        useInMemoryPgpKeys(signingKey, signingPassword)
     }
 }
 
