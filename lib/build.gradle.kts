@@ -120,7 +120,8 @@ publishing {
 
     repositories {
         maven {
-            url = uri("lib/build/staging-deploy")
+                
+                url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
     }
 }
