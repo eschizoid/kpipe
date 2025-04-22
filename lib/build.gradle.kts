@@ -1,5 +1,5 @@
+import org.jreleaser.model.Active.NEVER
 import org.jreleaser.model.Active.ALWAYS
-import java.security.MessageDigest
 
 plugins {
     java
@@ -147,8 +147,7 @@ jreleaser {
     }
 
     signing {
-        active.set(ALWAYS)
-        armored.set(true)
+        active.set(NEVER)
     }
 
     deploy {
