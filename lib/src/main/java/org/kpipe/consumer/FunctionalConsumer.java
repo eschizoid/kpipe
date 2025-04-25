@@ -10,10 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.config.AppConfig;
@@ -23,34 +20,34 @@ import org.kpipe.sink.ConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /**
- * A functional-style Kafka consumer that simplifies record processing with parallel execution.
+ * A functional-style Kafka consumer that processes records using a provided function.
  *
- * <p>This consumer provides an efficient way to process Kafka messages using function composition.
- * It leverages Java's virtual threads for high-throughput parallel processing while maintaining
- * proper offset management.
- *
- * <p>Key features:
+ * <p>This consumer provides:
  *
  * <ul>
- *   <li>Function-based message processing
- *   <li>Parallel processing using virtual threads
- *   <li>Built-in retry mechanism with configurable backoff
- *   <li>Comprehensive metrics collection
- *   <li>Safe offset management for concurrent processing
- *   <li>Graceful shutdown with in-flight message completion
- *   <li>Support for custom message sinks
+ *   <li>A simple functional interface for message processing
+ *   <li>Built-in retry logic with configurable backoff
+ *   <li>Support for sequential or parallel message processing
+ *   <li>Thread-safe offset management for concurrent processing scenarios
+ *   <li>Customizable error handling
+ *   <li>Message sink support for processed records
+ *   <li>Built-in metrics tracking
+ *   <li>Graceful shutdown handling
  * </ul>
  *
- * <p>The optional offset management feature provides safe, transaction-like offset commits when
- * processing records in parallel:
+ * <p>The offset management features:
  *
  * <ul>
- *   <li>Tracks which offsets are being processed vs. completed
+ *   <li>Thread-safe tracking of offsets for concurrent processing
  *   <li>Ensures only contiguous completed offsets are committed
  *   <li>Commits offsets periodically at a configurable interval
+ *   <li>Properly handles consumer rebalancing events
  *   <li>Prevents data loss during parallel processing
- *   <li>Handles non-sequential processing scenarios safely
+ *   <li>Handles non-sequential offset completion safely
  * </ul>
+ *
+ * <p>When using an OffsetManager, auto-commit is automatically disabled since offset commits are
+ * managed explicitly.
  *
  * <p>Example usage:
  *
@@ -61,7 +58,10 @@ import org.kpipe.sink.MessageSink;
  *     .withProcessor(value -> processValue(value))
  *     .withRetry(3, Duration.ofSeconds(1))
  *     .withSequentialProcessing(false) // Set to true for ordered processing
- *     .withOffsetManagement() // Enable safe parallel offset management
+ *     .withOffsetManagerProvider(consumer -> OffsetManager.builder(consumer)
+ *         .withCommitInterval(Duration.ofSeconds(30))
+ *         .withCommandQueue(commandQueue)
+ *         .build())
  *     .build();
  *
  * consumer.start();
@@ -94,6 +94,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   private final Duration threadTerminationTimeout;
   private final Duration executorTerminationTimeout;
   private final OffsetManager<K, V> offsetManager;
+  private final ConsumerRebalanceListener rebalanceListener;
 
   private java.util.function.Consumer<ProcessingError<K, V>> errorHandler = error -> {
     LOGGER.log(
@@ -166,6 +167,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     private OffsetManager<K, V> offsetManager;
     private Function<Consumer<K, V>, OffsetManager<K, V>> offsetManagerFactory;
     private Queue<ConsumerCommand> commandQueue;
+    private ConsumerRebalanceListener rebalanceListener;
 
     /**
      * Sets the properties for the Kafka consumer.
@@ -299,7 +301,12 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
      * @return This builder instance for method chaining
      */
     public Builder<K, V> withOffsetManagerProvider(final Function<Consumer<K, V>, OffsetManager<K, V>> provider) {
-      this.offsetManagerFactory = Objects.requireNonNull(provider, "OffsetManager provider cannot be null");
+      this.offsetManagerFactory =
+        consumer -> {
+          final var offsetManager = Objects.requireNonNull(provider.apply(consumer), "OffsetManager cannot be null");
+          this.rebalanceListener = offsetManager.createRebalanceListener();
+          return offsetManager;
+        };
       return this;
     }
 
@@ -312,6 +319,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
      */
     public Builder<K, V> withOffsetManager(final OffsetManager<K, V> manager) {
       this.offsetManager = Objects.requireNonNull(manager, "OffsetManager cannot be null");
+      this.rebalanceListener = manager.createRebalanceListener();
       return this;
     }
 
@@ -382,6 +390,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         ? builder.offsetManager
         : builder.offsetManagerFactory != null ? builder.offsetManagerFactory.apply(this.kafkaConsumer) : null;
     this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
+    this.rebalanceListener = builder.rebalanceListener != null ? builder.rebalanceListener : null;
 
     initializeMetrics();
   }
@@ -432,12 +441,15 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       return;
     }
 
-    // Start the offset manager if enabled
     if (offsetManager != null) {
       offsetManager.start();
     }
 
-    kafkaConsumer.subscribe(List.of(topic));
+    if (rebalanceListener != null) {
+      kafkaConsumer.subscribe(List.of(topic), rebalanceListener);
+    } else {
+      kafkaConsumer.subscribe(List.of(topic));
+    }
 
     Thread.UncaughtExceptionHandler exceptionHandler = (thread, throwable) -> {
       LOGGER.log(Level.ERROR, "Uncaught exception in consumer thread: " + thread.getName(), throwable);
@@ -929,14 +941,5 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Error closing offset manager", e);
       }
     }
-  }
-
-  /**
-   * Gets the command queue used by this consumer.
-   *
-   * @return the command queue
-   */
-  public Queue<ConsumerCommand> getCommandQueue() {
-    return commandQueue;
   }
 }

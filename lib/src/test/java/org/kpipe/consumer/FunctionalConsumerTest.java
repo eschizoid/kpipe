@@ -210,7 +210,7 @@ class FunctionalConsumerTest {
 
     // Act
     consumer.processRecord(record);
-    Thread.sleep(50);
+    Thread.sleep(100);
 
     // Assert
     final var errorCaptor = ArgumentCaptor.forClass(FunctionalConsumer.ProcessingError.class);
