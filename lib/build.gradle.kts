@@ -51,6 +51,14 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+
+    if (project.hasProperty("excludeTests")) {
+        val excludePattern = project.property("excludeTests").toString()
+        exclude("**/${excludePattern.replace(".", "/")}.class")
+    }
+
+    minHeapSize = "2g"
+    maxHeapSize = "2g"
 }
 
 tasks.jacocoTestReport {

@@ -116,7 +116,7 @@ public class App implements AutoCloseable {
     final MessageSinkRegistry sinkRegistry
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
-    final Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     return FunctionalConsumer
       .<byte[], byte[]>builder()
