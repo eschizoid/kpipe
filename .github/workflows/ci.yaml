@@ -18,7 +18,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: "graalvm"
-          java-version: "23"
+          java-version: "24"
           cache: "gradle"
 
       - name: Test with Gradle

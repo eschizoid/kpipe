@@ -28,30 +28,30 @@ allprojects {
     }
 }
 
-spotless{
-    java {
-        target("src/**/*.java")
-        googleJavaFormat("1.26.0")
-        toggleOffOn()
-        importOrder()
-        removeUnusedImports()
-        ratchetFrom("origin/main")
-        prettier(
-            mapOf(
-                "prettier" to "2.8.8", "prettier-plugin-java" to "2.1.0"
-            )
-        ).config(
-            mapOf(
-                "parser" to "java", "tabWidth" to 2, "printWidth" to 120
-            )
-        )
-    }
-}
-
 subprojects {
     apply(plugin = "com.diffplug.spotless")
 
+    spotless {
+        java {
+            target("src/**/*.java")
+            googleJavaFormat("1.26.0")
+            toggleOffOn()
+            importOrder()
+            removeUnusedImports()
+            ratchetFrom("origin/main")
+            prettier(
+                mapOf(
+                    "prettier" to "2.8.8", "prettier-plugin-java" to "2.1.0"
+                )
+            ).config(
+                mapOf(
+                    "parser" to "java", "tabWidth" to 2, "printWidth" to 120
+                )
+            )
+        }
+    }
+
     tasks.withType<JavaCompile> {
-        options.release.set(23)
+        options.release.set(24)
     }
 }
