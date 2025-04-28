@@ -52,6 +52,6 @@ subprojects {
     }
 
     tasks.withType<JavaCompile> {
-        options.release.set(23)
+        options.release.set(24)
     }
 }

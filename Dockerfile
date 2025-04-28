@@ -1,4 +1,4 @@
-FROM openjdk:23-slim
+FROM openjdk:24-slim
 
 RUN apt-get update && apt-get install -y procps && rm -rf /var/lib/apt/lists/*
 

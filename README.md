@@ -266,7 +266,7 @@ The JSON processors handle deserialization and transformation of JSON data:
 
 ## 🛠️ Requirements
 
-- Java 23+
+- Java 24+
 - gradle (for building the project)
 - [kcat](https://github.com/edenhill/kcat) (for testing)
 - Docker (for local Kafka setup)

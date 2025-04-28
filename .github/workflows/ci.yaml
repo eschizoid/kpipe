@@ -18,8 +18,8 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          distribution: "corretto"
-          java-version: "23"
+          distribution: "graalvm"
+          java-version: "24"
           cache: "gradle"
 
       - name: Set up Gradle
