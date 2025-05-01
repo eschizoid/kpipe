@@ -1,18 +1,25 @@
 package org.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kpipe.consumer.enums.ConsumerCommand;
+import org.kpipe.sink.MessageSink;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -38,17 +45,23 @@ class FunctionalConsumerTest {
     properties.put("enable.auto.commit", "true");
   }
 
+  private FunctionalConsumer<String, String> createConsumer(Function<String, String> processor) {
+    return FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(processor)
+      .build();
+  }
+
+  private ConsumerRecord<String, String> createRecord(long offset, String key, String value) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, key, value);
+  }
+
   @Test
   void constructorWithValidParametersShouldNotThrowException() {
-    assertDoesNotThrow(() ->
-      FunctionalConsumer
-        .<String, String>builder()
-        .withProperties(properties)
-        .withTopic(TOPIC)
-        .withProcessor(mockProcessor)
-        .build()
-    );
-
+    // Arrange & Act & Assert
+    assertDoesNotThrow(() -> createConsumer(mockProcessor));
     assertDoesNotThrow(() ->
       FunctionalConsumer
         .<String, String>builder()
@@ -62,94 +75,83 @@ class FunctionalConsumerTest {
 
   @Test
   void constructorWithNullParametersShouldThrowNullPointerException() {
-    // Empty builder
-    final var emptyBuilder = FunctionalConsumer.<String, String>builder();
-    assertThrows(NullPointerException.class, emptyBuilder::build);
-
-    // Missing properties
-    final var noPropsBuilder = FunctionalConsumer
-      .<String, String>builder()
-      .withProperties(null)
-      .withTopic(TOPIC)
-      .withProcessor(mockProcessor);
-    assertThrows(NullPointerException.class, noPropsBuilder::build);
-
-    // Missing topic
-    final var noTopicBuilder = FunctionalConsumer
-      .<String, String>builder()
-      .withProperties(properties)
-      .withTopic(null)
-      .withProcessor(mockProcessor);
-    assertThrows(NullPointerException.class, noTopicBuilder::build);
-
-    // Missing processor
-    final var noProcessorBuilder = FunctionalConsumer
-      .<String, String>builder()
-      .withProperties(properties)
-      .withTopic(TOPIC)
-      .withProcessor(null);
-    assertThrows(NullPointerException.class, noProcessorBuilder::build);
+    // Arrange & Act & Assert
+    assertThrows(NullPointerException.class, () -> FunctionalConsumer.<String, String>builder().build());
+    assertThrows(
+      NullPointerException.class,
+      () ->
+        FunctionalConsumer
+          .<String, String>builder()
+          .withProperties(null)
+          .withTopic(TOPIC)
+          .withProcessor(mockProcessor)
+          .build()
+    );
+    assertThrows(
+      NullPointerException.class,
+      () ->
+        FunctionalConsumer
+          .<String, String>builder()
+          .withProperties(properties)
+          .withTopic(null)
+          .withProcessor(mockProcessor)
+          .build()
+    );
+    assertThrows(
+      NullPointerException.class,
+      () ->
+        FunctionalConsumer
+          .<String, String>builder()
+          .withProperties(properties)
+          .withTopic(TOPIC)
+          .withProcessor(null)
+          .build()
+    );
   }
 
   @Test
   void isRunningShouldReturnFalseAfterConstruction() {
-    try (
-      final var consumer = FunctionalConsumer
-        .<String, String>builder()
-        .withProperties(properties)
-        .withTopic(TOPIC)
-        .withProcessor(mockProcessor)
-        .build()
-    ) {
-      assertFalse(consumer.isRunning());
-    }
+    // Arrange
+    final var consumer = createConsumer(mockProcessor);
+
+    // Act & Assert
+    assertFalse(consumer.isRunning());
+    consumer.close();
   }
 
   @Test
   void isRunningShouldReturnFalseAfterClose() {
-    final var consumer = FunctionalConsumer
-      .<String, String>builder()
-      .withProperties(properties)
-      .withTopic(TOPIC)
-      .withProcessor(mockProcessor)
-      .build();
+    // Arrange
+    final var consumer = createConsumer(mockProcessor);
+
+    // Act
     consumer.close();
+
+    // Assert
     assertFalse(consumer.isRunning());
   }
 
   @Test
   void closeCalledMultipleTimesShouldBeIdempotent() {
-    FunctionalConsumer<String, String> consumer = FunctionalConsumer
-      .<String, String>builder()
-      .withProperties(properties)
-      .withTopic(TOPIC)
-      .withProcessor(mockProcessor)
-      .build();
+    // Arrange
+    final var consumer = createConsumer(mockProcessor);
 
-    // First close
+    // Act
     consumer.close();
-    assertFalse(consumer.isRunning());
+    consumer.close();
 
-    // Second close should be idempotent
-    consumer.close();
+    // Assert
     assertFalse(consumer.isRunning());
   }
 
   @Test
   void autoCloseableShouldCloseConsumerWhenExitingTryWithResources() {
-    try (
-      final var consumer = FunctionalConsumer
-        .<String, String>builder()
-        .withProperties(properties)
-        .withTopic(TOPIC)
-        .withProcessor(mockProcessor)
-        .build()
-    ) {
+    // Arrange & Act
+    try (final var consumer = createConsumer(mockProcessor)) {
+      // Assert
       assertFalse(consumer.isRunning());
     }
-
-    // After try-with-resources, consumer should be closed
-    // We can't access the consumer here, so just assert that we reached this point
+    // No exception means success
     assertTrue(true);
   }
 
@@ -157,15 +159,11 @@ class FunctionalConsumerTest {
   void processorWithRetryEnabledShouldRetryFailedMessages() throws InterruptedException {
     // Arrange
     final var attempts = new AtomicInteger(0);
-    Function<String, String> retryProcessor = value -> {
-      int currentAttempt = attempts.getAndIncrement();
-      if (currentAttempt == 0) {
-        throw new RuntimeException("First attempt failure");
-      }
+    final Function<String, String> retryProcessor = value -> {
+      if (attempts.getAndIncrement() == 0) throw new RuntimeException("First attempt failure");
       return value.toUpperCase();
     };
-
-    final var consumer = FunctionalConsumer
+    var consumer = FunctionalConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -173,7 +171,7 @@ class FunctionalConsumerTest {
       .withRetry(2, Duration.ofMillis(10))
       .withMetrics(true)
       .build();
-    final var record = new ConsumerRecord<>(TOPIC, 0, 0, "key", "hello");
+    final var record = createRecord(0, "key", "hello");
 
     // Act
     consumer.processRecord(record);
@@ -181,23 +179,21 @@ class FunctionalConsumerTest {
 
     // Assert
     final var metrics = consumer.getMetrics();
-    assertEquals(2, attempts.get(), "Processor should be called exactly twice (initial + retry)");
-    assertEquals(1, metrics.get("messagesProcessed"), "Message should be processed");
-    assertEquals(1, metrics.get("retries"), "One retry should be counted");
-    assertEquals(0, metrics.get("processingErrors"), "No errors expected");
+    assertEquals(2, attempts.get());
+    assertEquals(1, metrics.get("messagesProcessed"));
+    assertEquals(1, metrics.get("retries"));
+    assertEquals(0, metrics.get("processingErrors"));
     consumer.close();
   }
 
   @Test
   void processorWithMaxRetriesExceededShouldCallErrorHandler() throws InterruptedException {
     // Arrange
-    Function<String, String> failingProcessor = value -> {
+    final Function<String, String> failingProcessor = value -> {
       throw new RuntimeException("Always failing");
     };
-
-    final Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler = mock(Consumer.class);
-
-    final var consumer = FunctionalConsumer
+    Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler = mock(Consumer.class);
+    var consumer = FunctionalConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -206,7 +202,7 @@ class FunctionalConsumerTest {
       .withErrorHandler(errorHandler)
       .withMetrics(true)
       .build();
-    final var record = new ConsumerRecord<>(TOPIC, 0, 0, "key", "hello");
+    final var record = createRecord(0, "key", "hello");
 
     // Act
     consumer.processRecord(record);
@@ -215,14 +211,12 @@ class FunctionalConsumerTest {
     // Assert
     final var errorCaptor = ArgumentCaptor.forClass(FunctionalConsumer.ProcessingError.class);
     verify(errorHandler).accept(errorCaptor.capture());
-
     final var error = errorCaptor.getValue();
     assertEquals(record, error.record());
     assertEquals(2, error.retryCount());
     assertNotNull(error.exception());
-
     final var metrics = consumer.getMetrics();
-    assertEquals(2, metrics.get("retries"), "Two retries should be counted"); // Updated from 3 to 2
+    assertEquals(2, metrics.get("retries"));
     assertEquals(0, metrics.get("messagesProcessed"));
     assertEquals(1, metrics.get("processingErrors"));
     consumer.close();
@@ -232,15 +226,12 @@ class FunctionalConsumerTest {
   void metricsTrackingWithFailuresAndRetriesShouldIncrementCorrectly() throws InterruptedException {
     // Arrange
     final var counter = new AtomicInteger(0);
-    Function<String, String> intermittentProcessor = value -> {
+    final Function<String, String> intermittentProcessor = value -> {
       int count = counter.incrementAndGet();
-      if (count % 3 != 0) {
-        throw new RuntimeException("Intermittent failure #" + count);
-      }
+      if (count % 3 != 0) throw new RuntimeException("Intermittent failure #" + count);
       return value.toUpperCase();
     };
-
-    final var consumer = FunctionalConsumer
+    var consumer = FunctionalConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -251,18 +242,162 @@ class FunctionalConsumerTest {
 
     // Act
     for (int i = 0; i < 3; i++) {
-      final var record = new ConsumerRecord<>(TOPIC, 0, i, "key" + i, "value" + i);
+      var record = createRecord(i, "key" + i, "value" + i);
       consumer.processRecord(record);
     }
-    // Give time for retry processing to complete
     Thread.sleep(200);
 
     // Assert
-    final var metrics = consumer.getMetrics();
+    var metrics = consumer.getMetrics();
     assertEquals(3, metrics.get("messagesReceived"));
     assertEquals(3, metrics.get("messagesProcessed"));
-    assertEquals(6, metrics.get("retries"), "Each message requires 2 retries (total of 6)");
+    assertEquals(6, metrics.get("retries"));
     assertEquals(0, metrics.get("processingErrors"));
+    consumer.close();
+  }
+
+  @Test
+  void pauseShouldChangeStateAndEnqueuePauseCommand() {
+    // Arrange
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(mockProcessor)
+      .withCommandQueue(commandQueue)
+      .build();
+
+    // Act
+    consumer.pause();
+
+    // Assert
+    assertTrue(consumer.isPaused());
+    assertTrue(commandQueue.contains(ConsumerCommand.PAUSE));
+  }
+
+  @Test
+  void resumeShouldChangeStateAndEnqueueResumeCommand() {
+    // Arrange
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(mockProcessor)
+      .withCommandQueue(commandQueue)
+      .build();
+    consumer.pause();
+
+    // Act
+    consumer.resume();
+
+    // Assert
+    assertFalse(consumer.isPaused());
+    assertTrue(commandQueue.contains(ConsumerCommand.RESUME));
+  }
+
+  @Test
+  void closeShouldEnqueueCloseCommand() {
+    // Arrange
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(mockProcessor)
+      .withCommandQueue(commandQueue)
+      .build();
+
+    consumer.start();
+
+    // Act
+    consumer.close();
+
+    // Assert
+    assertTrue(commandQueue.contains(ConsumerCommand.CLOSE));
+  }
+
+  @Test
+  void processCommandsShouldHandleClose() {
+    // Arrange
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var consumer = createConsumer(mockProcessor);
+    commandQueue.offer(ConsumerCommand.CLOSE);
+
+    // Act & Assert
+    assertDoesNotThrow(consumer::processCommands);
+  }
+
+  @Test
+  void customMessageSinkShouldReceiveProcessedMessages() {
+    // Arrange
+    @SuppressWarnings("unchecked")
+    final var sink = mock(MessageSink.class);
+    var consumer = FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(s -> s + "-processed")
+      .withMessageSink(sink)
+      .build();
+    var record = createRecord(1, "k", "v");
+
+    // Act
+    consumer.processRecord(record);
+
+    // Assert
+    verify(sink).send(eq(record), eq("v-processed"));
+    consumer.close();
+  }
+
+  @Test
+  void metricsShouldBeEmptyWhenDisabled() {
+    // Arrange
+    final var consumer = FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(s -> s)
+      .withMetrics(false)
+      .build();
+    final var record = createRecord(1, "k", "v");
+
+    // Act
+    consumer.processRecord(record);
+
+    // Assert
+    assertTrue(consumer.getMetrics().isEmpty());
+    consumer.close();
+  }
+
+  @Test
+  void sequentialProcessingShouldProcessInOrder() {
+    // Arrange
+    final var processed = new ArrayList<>();
+    var consumer = FunctionalConsumer
+      .<String, String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessor(s -> {
+        processed.add(s);
+        return s;
+      })
+      .withSequentialProcessing(true)
+      .build();
+
+    final var records = new ConsumerRecords<>(
+      Map.of(
+        new TopicPartition(TOPIC, 0),
+        List.of(createRecord(0, "k1", "v1"), createRecord(1, "k2", "v2"), createRecord(2, "k3", "v3"))
+      )
+    );
+
+    // Act
+    consumer.processRecords(records);
+
+    // Assert
+    assertEquals(List.of("v1", "v2", "v3"), processed);
     consumer.close();
   }
 }

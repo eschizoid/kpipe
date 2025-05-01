@@ -63,7 +63,6 @@ import org.kpipe.consumer.enums.OffsetState;
 public class OffsetManager<K, V> implements AutoCloseable {
 
   private static final Logger LOGGER = Logger.getLogger(OffsetManager.class.getName());
-  private static final long DEFAULT_COMMAND_TIMEOUT_MS = 5000;
 
   private final Consumer<K, V> kafkaConsumer;
   private final ExecutorService executorService;
@@ -200,14 +199,21 @@ public class OffsetManager<K, V> implements AutoCloseable {
   }
 
   /**
-   * Tracks an offset that is about to be processed.
+   * Tracks an offset that is about to be processed using a ConsumerRecord.
+   *
+   * <p>This method extracts the topic, partition, and offset from the consumer record and adds the
+   * offset+1 to the pending offsets. In Kafka's offset model, committing offset N means you've
+   * processed through offset N-1 and expect to receive N next.
+   *
+   * <p>When using this method with {@link #markOffsetProcessed(ConsumerRecord)}, the offset
+   * transformation is handled automatically. This method initializes the next offset to commit
+   * using the raw record offset, which is appropriate for the first record in a partition.
    *
    * @param record The consumer record to track
    */
   public void trackOffset(final ConsumerRecord<K, V> record) {
     final var partition = new TopicPartition(record.topic(), record.partition());
     final long offset = record.offset();
-
     if (state.get() == OffsetState.STOPPED) {
       return;
     }
@@ -216,22 +222,29 @@ public class OffsetManager<K, V> implements AutoCloseable {
     pendingOffsets.computeIfAbsent(partition, k -> new ConcurrentSkipListSet<>()).add(offset + 1);
 
     // Initialize the next offset to commit if not already set
-    // We should use the actual offset here, not offset+1
     nextOffsetsToCommit.computeIfAbsent(partition, k -> offset);
   }
 
   /**
-   * Tracks an offset that is about to be processed.
+   * Tracks an offset that is about to be processed using explicit partition and offset values.
+   *
+   * <p>This method assumes the offset provided is already in the "next to consume" format that
+   * Kafka uses when committing. When calling this method directly, you should provide the offset
+   * you expect to receive next (which is record.offset()+1 if you're deriving it from a
+   * ConsumerRecord).
+   *
+   * <p>The method initializes the next offset to commit as offset-1 to be consistent with the
+   * {@link #trackOffset(ConsumerRecord)} method.
    *
    * @param partition The topic partition the offset belongs to
-   * @param offset The offset to track
+   * @param offset The offset to track (should be the "next" offset format)
    */
   public void trackOffset(final TopicPartition partition, final long offset) {
     if (state.get() == OffsetState.STOPPED) {
       return;
     }
 
-    // Add to pending offsets (we expect offset to already be the "next" offset)
+    // Add to pending offsets (we expect the offset to already be the "next" offset)
     pendingOffsets.computeIfAbsent(partition, k -> new ConcurrentSkipListSet<>()).add(offset);
 
     // Initialize the next offset to commit if not already set
@@ -240,7 +253,14 @@ public class OffsetManager<K, V> implements AutoCloseable {
   }
 
   /**
-   * Marks an offset as successfully processed.
+   * Marks an offset as successfully processed using a ConsumerRecord.
+   *
+   * <p>This method extracts the topic, partition, and offset from the consumer record, increments
+   * the offset by 1 to match Kafka's "next offset" semantics, and delegates to {@link
+   * #markOffsetProcessed(TopicPartition, long)}.
+   *
+   * <p>The +1 adjustment ensures that when this record's offset is committed, Kafka will begin
+   * delivering messages from the next offset after this one.
    *
    * @param record The consumer record that was processed
    */
@@ -249,17 +269,25 @@ public class OffsetManager<K, V> implements AutoCloseable {
   }
 
   /**
-   * Marks an offset as successfully processed.
+   * Marks an offset as successfully processed using explicit partition and offset values.
+   *
+   * <p>This method assumes the offset is already in the "next to consume" format. When using this
+   * method directly, the offset should be the next offset you expect to receive (which is
+   * record.offset()+1 if you're deriving it from a ConsumerRecord).
+   *
+   * <p>The method updates the tracking data structures to indicate this offset has been processed
+   * and can be committed. It also updates the highest processed offset for the partition and
+   * removes this offset from pending offsets.
    *
    * @param partition The topic partition the offset belongs to
-   * @param offset The offset to mark as processed
+   * @param offset The offset to mark as processed (should be the "next" offset format)
    */
   public void markOffsetProcessed(final TopicPartition partition, final long offset) {
     if (state.get() == OffsetState.STOPPED) {
       return;
     }
 
-    // Track highest processed offset for the partition
+    // Track the highest processed offset for the partition
     highestProcessedOffsets.compute(partition, (k, v) -> v == null ? offset : Math.max(v, offset));
 
     final var offsets = pendingOffsets.get(partition);
@@ -349,11 +377,34 @@ public class OffsetManager<K, V> implements AutoCloseable {
     return performCommitAndCleanup(offsetsToCommit, timeoutSeconds);
   }
 
-  /** Prepares a map of offsets to commit. */
+  /**
+   * Prepares offsets for commit based on the current processing state. This method calculates the
+   * offsets to commit at the time of commit, rather than maintaining them continuously.
+   *
+   * @return Map of partition to offset metadata ready for committing
+   */
   private Map<TopicPartition, OffsetAndMetadata> prepareOffsetsToCommit() {
-    final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
-    nextOffsetsToCommit.forEach((partition, offset) -> offsetsToCommit.put(partition, new OffsetAndMetadata(offset)));
-    return offsetsToCommit;
+    final var committableOffsets = new HashMap<TopicPartition, OffsetAndMetadata>();
+    final var allPartitions = new HashSet<TopicPartition>();
+    allPartitions.addAll(pendingOffsets.keySet());
+    allPartitions.addAll(highestProcessedOffsets.keySet());
+
+    // Use lowest pending offset if available
+    allPartitions.forEach(partition -> {
+      final var pending = pendingOffsets.get(partition);
+      if (pending != null && !pending.isEmpty()) {
+        committableOffsets.put(partition, new OffsetAndMetadata(pending.first()));
+      }
+      // Otherwise use the highest processed + 1
+      else {
+        final var highestProcessed = highestProcessedOffsets.get(partition);
+        if (highestProcessed != null) {
+          committableOffsets.put(partition, new OffsetAndMetadata(highestProcessed + 1));
+        }
+      }
+    });
+
+    return committableOffsets;
   }
 
   private boolean performCommitAndCleanup(Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, int timeoutSeconds)
@@ -376,7 +427,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
           long committedOffset = metadata.offset();
           final var pending = pendingOffsets.get(partition);
 
-          // Remove all pending offsets less than committed offset
+          // Remove all pending offsets less than the committed offset
           if (pending != null) {
             pending.removeIf(offset -> offset < committedOffset);
             if (pending.isEmpty()) {
@@ -522,36 +573,18 @@ public class OffsetManager<K, V> implements AutoCloseable {
     try {
       // Stop the scheduler first
       stopScheduler();
-
-      // Final commit - direct without using executor
-      performFinalCommit();
+      try {
+        final var offsetsToCommit = prepareOffsetsToCommit();
+        performCommitAndCleanup(offsetsToCommit, 5); // Use 5 seconds timeout as in the original
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        LOGGER.log(WARNING, "Interrupted during final commit", e);
+      } catch (final Exception e) {
+        LOGGER.log(WARNING, "Error during final offset commit", e);
+      }
     } finally {
       cleanup();
       state.set(OffsetState.STOPPED);
-    }
-  }
-
-  /** Performs a final commit before shutting down. */
-  private void performFinalCommit() {
-    try {
-      final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
-      nextOffsetsToCommit.forEach((partition, offset) -> offsetsToCommit.put(partition, new OffsetAndMetadata(offset)));
-
-      if (!offsetsToCommit.isEmpty()) {
-        final var commitId = UUID.randomUUID().toString();
-        final var future = new CompletableFuture<Boolean>();
-        commitFutures.put(commitId, future);
-
-        commandQueue.offer(ConsumerCommand.COMMIT_OFFSETS.withOffsets(offsetsToCommit).withCommitId(commitId));
-
-        try {
-          future.get(5, TimeUnit.SECONDS);
-        } catch (final ExecutionException | TimeoutException e) {
-          LOGGER.log(WARNING, "Final commit did not complete in time", e);
-        }
-      }
-    } catch (final Exception e) {
-      LOGGER.log(WARNING, "Error during final offset commit", e);
     }
   }
 

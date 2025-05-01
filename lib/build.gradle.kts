@@ -57,8 +57,8 @@ tasks.test {
         exclude("**/${excludePattern.replace(".", "/")}.class")
     }
 
-    minHeapSize = "2g"
-    maxHeapSize = "2g"
+    minHeapSize = "6g"
+    maxHeapSize = "6g"
 }
 
 tasks.jacocoTestReport {

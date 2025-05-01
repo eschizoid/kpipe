@@ -9,7 +9,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.kpipe.registry.MessageProcessorRegistry;
@@ -139,7 +138,6 @@ class ProcessorMetricsReporterTest {
   }
 
   @Test
-  @Disabled("Timing out in GitHub Actions")
   void shouldHandleExceptionInMetricsFetcher() {
     // Arrange
     when(processorNamesSupplier.get()).thenReturn(processorNames);

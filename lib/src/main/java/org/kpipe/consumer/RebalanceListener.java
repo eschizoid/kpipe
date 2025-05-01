@@ -46,8 +46,8 @@ public class RebalanceListener implements ConsumerRebalanceListener {
    *
    * @param state The current offset state reference
    * @param pendingOffsets A map of pending offsets for each partition
-   * @param nextOffsetsToCommit A map of next offsets to commit for each partition
-   * @param highestProcessedOffsets A map of highest processed offsets for each partition
+   * @param nextOffsetsToCommit A map of the next offsets to commit for each partition
+   * @param highestProcessedOffsets A map of the highest processed offsets for each partition
    * @param kafkaConsumer The Kafka consumer instance
    */
   public RebalanceListener(
