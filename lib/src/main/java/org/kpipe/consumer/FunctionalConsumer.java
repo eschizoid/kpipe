@@ -7,6 +7,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -574,13 +575,15 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
           }
           case TRACK_OFFSET -> {
             if (offsetManager != null && command.getRecord() != null) {
-              var typedRecord = (ConsumerRecord<K, V>) command.getRecord();
+              @SuppressWarnings("unchecked")
+              final var typedRecord = (ConsumerRecord<K, V>) command.getRecord();
               offsetManager.trackOffset(typedRecord);
             }
           }
           case MARK_OFFSET_PROCESSED -> {
             if (offsetManager != null && command.getRecord() != null) {
-              final ConsumerRecord typedRecord = command.getRecord();
+              @SuppressWarnings("unchecked")
+              final var typedRecord = (ConsumerRecord<K, V>) command.getRecord();
               offsetManager.markOffsetProcessed(typedRecord);
             }
           }
@@ -792,30 +795,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
     }
 
-    var attempts = 0;
-
-    while (attempts <= maxRetries) {
-      if (enableMetrics && attempts > 0) {
-        metrics.get(METRIC_RETRIES).incrementAndGet();
-      }
-
-      try {
-        V processed = processor.apply(record.value());
-        messageSink.send(record, processed);
-
-        // Mark offset as processed after successful processing
-        if (offsetManager != null) {
-          commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
-        }
-
-        if (enableMetrics) {
-          metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-        }
-        return; // Success
-      } catch (final Exception e) {
-        attempts++;
-
-        if (attempts > maxRetries) {
+    BiFunction<Integer, Exception, V> retryProcessor = new BiFunction<>() {
+      @Override
+      public V apply(final Integer attempt, final Exception previousException) {
+        // If we've exceeded max retries, handle the error and return null
+        if (attempt > maxRetries) {
           if (enableMetrics) {
             metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
           }
@@ -824,59 +808,90 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
             Level.WARNING,
             "Failed to process message at offset %d after %d attempts: %s".formatted(
                 record.offset(),
-                attempts,
-                e.getMessage()
+                attempt,
+                previousException.getMessage()
               ),
-            e
+            previousException
           );
 
-          if (offsetManager != null) {
-            commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+          errorHandler.accept(new ProcessingError<>(record, previousException, maxRetries));
+          return null;
+        }
+
+        // If this is a retry attempt, log and increment metrics
+        if (attempt > 0) {
+          if (enableMetrics) {
+            metrics.get(METRIC_RETRIES).incrementAndGet();
           }
 
-          errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
-          break;
+          LOGGER.log(
+            Level.INFO,
+            "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempt, maxRetries)
+          );
+
+          // Wait before retry
+          try {
+            Thread.sleep(retryBackoff.toMillis());
+          } catch (final InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return null;
+          }
         }
 
+        // Attempt to process the record
         try {
-          Thread.sleep(retryBackoff.toMillis());
-        } catch (final InterruptedException ie) {
-          Thread.currentThread().interrupt();
-          break;
+          return processor.apply(record.value());
+        } catch (final Exception e) {
+          // If processing fails, retry with an incremented attempt count
+          return apply(attempt + 1, e);
         }
-
-        LOGGER.log(
-          Level.INFO,
-          "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempts, maxRetries)
-        );
       }
+    };
+
+    // Process the record with retry logic starting at attempt 0
+    final V processedValue = retryProcessor.apply(0, null);
+
+    // If processing was successful, send to sink and update metrics
+    if (processedValue != null) {
+      messageSink.send(record, processedValue);
+
+      if (enableMetrics) {
+        metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+      }
+    }
+
+    // Mark offset as processed regardless of success or failure
+    if (offsetManager != null) {
+      commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
     }
   }
 
   private ConsumerRecords<K, V> pollRecords() {
-    try {
-      return kafkaConsumer.poll(pollTimeout);
-    } catch (final WakeupException e) {
-      // Expected during shutdown, no need to log
-      return null;
-    } catch (final InterruptException e) {
-      // Propagate interruption
-      Thread.currentThread().interrupt();
-      return null;
-    } catch (final Exception e) {
-      // Only log if we're not shutting down
-      if (isRunning()) {
-        LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
-      }
-      return null;
-    }
+    return Optional
+      .ofNullable(kafkaConsumer)
+      .map(consumer -> {
+        try {
+          return consumer.poll(pollTimeout);
+        } catch (final WakeupException e) {
+          // Expected during shutdown, no need to log
+          return null;
+        } catch (final InterruptException e) {
+          // Propagate interruption
+          Thread.currentThread().interrupt();
+          return null;
+        } catch (final Exception e) {
+          // Only log if we're not shutting down
+          if (isRunning()) {
+            LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
+          }
+          return null;
+        }
+      })
+      .orElse(null);
   }
 
   private MessageTracker createTrackerIfEnabled(final long waitForMessagesMs) {
-    if (waitForMessagesMs > 0 && enableMetrics) {
-      return createMessageTracker();
-    }
-    return null;
+    return (waitForMessagesMs > 0 && enableMetrics) ? createMessageTracker() : null;
   }
 
   private void signalShutdown() {
@@ -885,40 +900,45 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   }
 
   private void waitForInFlightMessages(final MessageTracker tracker, final long waitForMessagesMs) {
-    if (tracker != null) {
-      try {
-        long inFlightCount = tracker.getInFlightMessageCount();
-        if (inFlightCount > 0) {
-          LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlightCount));
-          tracker.waitForCompletion(waitForMessagesMs);
+    Optional
+      .ofNullable(tracker)
+      .ifPresent(t -> {
+        try {
+          long inFlightCount = t.getInFlightMessageCount();
+          if (inFlightCount > 0) {
+            LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlightCount));
+            t.waitForCompletion(waitForMessagesMs);
+          }
+        } catch (Exception e) {
+          LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
         }
-      } catch (Exception e) {
-        LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
-      }
-    }
+      });
   }
 
   private void wakeupAndWaitForConsumerThread(final long threadTerminationMs) {
-    // Safe wakeup of the consumer
-    final var consumerRef = kafkaConsumer;
-    if (consumerRef != null) {
-      try {
-        consumerRef.wakeup();
-      } catch (Exception e) {
-        LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
-      }
-    }
+    // Safe wakeup of the consumer using Optional
+    Optional
+      .ofNullable(kafkaConsumer)
+      .ifPresent(consumer -> {
+        try {
+          consumer.wakeup();
+        } catch (Exception e) {
+          LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
+        }
+      });
 
-    // Wait for thread termination
-    final var localThread = consumerThread.get();
-    if (localThread != null && localThread.isAlive()) {
-      try {
-        localThread.join(threadTerminationMs);
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        LOGGER.log(Level.WARNING, "Interrupted while waiting for consumer thread");
-      }
-    }
+    // Wait for thread termination using Optional
+    Optional
+      .ofNullable(consumerThread.get())
+      .filter(Thread::isAlive)
+      .ifPresent(thread -> {
+        try {
+          thread.join(threadTerminationMs);
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+          LOGGER.log(Level.WARNING, "Interrupted while waiting for consumer thread");
+        }
+      });
   }
 
   private void shutdownExecutor(final long executorTerminationMs) {
@@ -944,14 +964,5 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Error closing offset manager", e);
       }
     }
-  }
-
-  /**
-   * Returns the current state of the consumer.
-   *
-   * @return the current consumer state
-   */
-  public ConsumerState getState() {
-    return state.get();
   }
 }

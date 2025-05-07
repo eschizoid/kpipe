@@ -57,7 +57,7 @@ public class ConsoleSink<K, V> implements MessageSink<K, V> {
   @Override
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {
-      // Skip if logging level doesn't require it
+      // Skip if the logging level doesn't require it
       if (!logger.isLoggable(logLevel)) {
         return;
       }

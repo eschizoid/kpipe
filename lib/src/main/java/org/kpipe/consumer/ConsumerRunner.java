@@ -259,8 +259,11 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     }
 
     metricsThread =
-      new Thread(
-        () -> {
+      Thread
+        .ofPlatform()
+        .name("metrics-reporter")
+        .daemon(true)
+        .start(() -> {
           while (!closed.get() && !Thread.currentThread().isInterrupted()) {
             try {
               for (final var reporter : metricsReporters) {
@@ -274,12 +277,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
               LOGGER.log(Level.WARNING, "Error reporting metrics", e);
             }
           }
-        },
-        "metrics-reporter"
-      );
-
-    metricsThread.setDaemon(true);
-    metricsThread.start();
+        });
   }
 
   private void stopMetricsThread() {
