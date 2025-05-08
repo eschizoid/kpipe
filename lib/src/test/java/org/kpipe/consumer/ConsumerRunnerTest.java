@@ -3,11 +3,14 @@ package org.kpipe.consumer;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kpipe.metrics.MetricsReporter;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -19,6 +22,9 @@ class ConsumerRunnerTest {
 
   @Mock
   private MessageTracker mockTracker;
+
+  @Mock
+  private MetricsReporter mockReporter;
 
   private ConsumerRunner<FunctionalConsumer<String, String>> runner;
 
@@ -225,7 +231,10 @@ class ConsumerRunnerTest {
     // Arrange
     final var customTimeout = 5000L;
     final var timeoutCaptured = new AtomicBoolean(false);
-    BiFunction<FunctionalConsumer<String, String>, Long, Boolean> timeoutCapturingShutdown = (consumer, timeout) -> {
+    final BiFunction<FunctionalConsumer<String, String>, Long, Boolean> timeoutCapturingShutdown = (
+      consumer,
+      timeout
+    ) -> {
       timeoutCaptured.set(timeout == customTimeout);
       return true;
     };
@@ -338,5 +347,186 @@ class ConsumerRunnerTest {
     assertTrue(result);
     verify(mockConsumer).pause();
     verify(mockConsumer).close();
+  }
+
+  @Test
+  void shouldUseCustomStartAction() {
+    // Arrange
+    final var customStartActionCalled = new AtomicBoolean(false);
+    final Consumer<FunctionalConsumer<String, String>> customStartAction = consumer -> {
+      customStartActionCalled.set(true);
+      consumer.start();
+    };
+
+    runner = ConsumerRunner.builder(mockConsumer).withStartAction(customStartAction).build();
+
+    // Act
+    runner.start();
+
+    // Assert
+    assertTrue(customStartActionCalled.get());
+    verify(mockConsumer).start();
+  }
+
+  @Test
+  void shouldAddShutdownHook() {
+    // This test verifies that a shutdown hook is added when requested
+    // Note: We can't directly test the Runtime shutdown hook registration,
+    // but we can verify the behavior through reflection or functional testing
+
+    // Arrange & Act - Create runner with shutdown hook
+    runner = ConsumerRunner.builder(mockConsumer).withShutdownHook(true).build();
+    // No direct assertion possible - this is mostly for coverage
+    // The actual shutdown hook behavior would be tested in integration tests
+  }
+
+  @Test
+  void shouldStartMetricsThreadWithReporters() throws Exception {
+    // Arrange
+    final long metricsInterval = 100; // Short interval for testing
+    runner =
+      ConsumerRunner
+        .builder(mockConsumer)
+        .withMetricsReporters(List.of(mockReporter))
+        .withMetricsInterval(metricsInterval)
+        .build();
+
+    // Act
+    runner.start();
+
+    // Wait a bit to allow metrics thread to execute at least once
+    Thread.sleep(metricsInterval * 2);
+
+    // Assert
+    verify(mockReporter, atLeastOnce()).reportMetrics();
+
+    // Cleanup
+    runner.close();
+  }
+
+  @Test
+  void shouldNotStartMetricsThreadWithoutReporters() {
+    // Arrange
+    runner =
+      ConsumerRunner
+        .builder(mockConsumer)
+        .withMetricsReporters(List.of()) // Empty list
+        .withMetricsInterval(100)
+        .build();
+
+    // Act
+    runner.start();
+    // Assert - No exceptions means thread didn't start
+    // This is primarily a coverage test
+  }
+
+  @Test
+  void shouldNotStartMetricsThreadWithNegativeInterval() {
+    // Arrange
+    runner =
+      ConsumerRunner
+        .builder(mockConsumer)
+        .withMetricsReporters(List.of(mockReporter))
+        .withMetricsInterval(-1) // Negative interval
+        .build();
+
+    // Act
+    runner.start();
+
+    // Assert - No metrics reporting should happen
+    verifyNoInteractions(mockReporter);
+  }
+
+  @Test
+  void shouldStopMetricsThreadOnShutdown() throws Exception {
+    // Arrange
+    final long metricsInterval = 100;
+    runner =
+      ConsumerRunner
+        .builder(mockConsumer)
+        .withMetricsReporters(List.of(mockReporter))
+        .withMetricsInterval(metricsInterval)
+        .build();
+
+    runner.start();
+
+    // Wait to ensure metrics thread is running
+    Thread.sleep(metricsInterval * 2);
+
+    // Reset to clear previous interactions
+    reset(mockReporter);
+
+    // Act
+    runner.close();
+
+    // Wait to ensure the metrics thread would have reported if still running
+    Thread.sleep(metricsInterval * 2);
+
+    // Assert - No more metrics reports after close
+    verifyNoInteractions(mockReporter);
+  }
+
+  @Test
+  void shouldHandleErrorsInMetricsReporting() throws Exception {
+    // Arrange
+    final long metricsInterval = 100;
+    doThrow(new RuntimeException("Metrics error")).when(mockReporter).reportMetrics();
+
+    runner =
+      ConsumerRunner
+        .builder(mockConsumer)
+        .withMetricsReporters(List.of(mockReporter))
+        .withMetricsInterval(metricsInterval)
+        .build();
+
+    // Act
+    runner.start();
+
+    // Wait to ensure metrics thread executes
+    Thread.sleep(metricsInterval * 2);
+
+    // Assert - The thread should continue running despite errors
+    verify(mockReporter, atLeastOnce()).reportMetrics();
+
+    // Cleanup
+    runner.close();
+  }
+
+  @Test
+  void shouldSupportCustomConfigurationThroughWithMethod() {
+    // Arrange
+    final var configFunctionCalled = new AtomicBoolean(false);
+
+    // Act
+    runner =
+      ConsumerRunner
+        .builder(mockConsumer)
+        .with(builder -> {
+          configFunctionCalled.set(true);
+          return builder.withShutdownTimeout(2000);
+        })
+        .build();
+
+    // Assert
+    assertTrue(configFunctionCalled.get());
+  }
+
+  @Test
+  void shouldUseDefaultHealthCheckWhenNotSpecified() {
+    // Arrange
+    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner.start();
+
+    // Act & Assert
+    assertTrue(runner.isHealthy());
+  }
+
+  @Test
+  void shouldNotBeHealthyWhenNotStarted() {
+    // Arrange
+    runner = ConsumerRunner.builder(mockConsumer).build();
+
+    // Act & Assert - Consumer not started
+    assertFalse(runner.isHealthy());
   }
 }

@@ -6,7 +6,10 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -69,13 +72,12 @@ public class OffsetManager<K, V> implements AutoCloseable {
   private final AtomicReference<OffsetState> state = new AtomicReference<>(OffsetState.CREATED);
   private final Queue<ConsumerCommand> commandQueue;
   private final Map<String, CompletableFuture<Boolean>> commitFutures = new ConcurrentHashMap<>();
-
-  // Tracking data structures
   private final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets = new ConcurrentHashMap<>();
   private final Map<TopicPartition, Long> nextOffsetsToCommit = new ConcurrentHashMap<>();
   private final Map<TopicPartition, Long> highestProcessedOffsets = new ConcurrentHashMap<>();
-
-  // Fields for periodic commits
+  private final Function<ConsumerRecord<K, V>, TopicPartition> toTopicPartition = record ->
+    new TopicPartition(record.topic(), record.partition());
+  private final Function<ConsumerRecord<K, V>, Long> toNextOffset = record -> record.offset() + 1;
   private final Duration commitInterval;
   private ScheduledExecutorService scheduler;
   private ScheduledFuture<?> scheduledCommitTask;
@@ -209,20 +211,22 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * transformation is handled automatically. This method initializes the next offset to commit
    * using the raw record offset, which is appropriate for the first record in a partition.
    *
-   * @param record The consumer record to track
+   * @param record The consumer records to track
    */
   public void trackOffset(final ConsumerRecord<K, V> record) {
-    final var partition = new TopicPartition(record.topic(), record.partition());
-    final long offset = record.offset();
     if (state.get() == OffsetState.STOPPED) {
       return;
     }
 
+    final var partition = toTopicPartition.apply(record);
+    final long nextOffset = toNextOffset.apply(record);
+    final long rawOffset = nextOffset - 1;
+
     // Add to pending offsets (we use offset+1 as the next offset)
-    pendingOffsets.computeIfAbsent(partition, k -> new ConcurrentSkipListSet<>()).add(offset + 1);
+    pendingOffsets.computeIfAbsent(partition, k -> new ConcurrentSkipListSet<>()).add(nextOffset);
 
     // Initialize the next offset to commit if not already set
-    nextOffsetsToCommit.computeIfAbsent(partition, k -> offset);
+    nextOffsetsToCommit.computeIfAbsent(partition, k -> rawOffset);
   }
 
   /**
@@ -265,7 +269,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @param record The consumer record that was processed
    */
   public void markOffsetProcessed(final ConsumerRecord<K, V> record) {
-    markOffsetProcessed(new TopicPartition(record.topic(), record.partition()), record.offset() + 1);
+    markOffsetProcessed(toTopicPartition.apply(record), toNextOffset.apply(record));
   }
 
   /**
@@ -384,27 +388,21 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @return Map of partition to offset metadata ready for committing
    */
   private Map<TopicPartition, OffsetAndMetadata> prepareOffsetsToCommit() {
-    final var committableOffsets = new HashMap<TopicPartition, OffsetAndMetadata>();
-    final var allPartitions = new HashSet<TopicPartition>();
-    allPartitions.addAll(pendingOffsets.keySet());
-    allPartitions.addAll(highestProcessedOffsets.keySet());
-
-    // Use lowest pending offset if available
-    allPartitions.forEach(partition -> {
-      final var pending = pendingOffsets.get(partition);
-      if (pending != null && !pending.isEmpty()) {
-        committableOffsets.put(partition, new OffsetAndMetadata(pending.first()));
-      }
-      // Otherwise use the highest processed + 1
-      else {
-        final var highestProcessed = highestProcessedOffsets.get(partition);
-        if (highestProcessed != null) {
-          committableOffsets.put(partition, new OffsetAndMetadata(highestProcessed + 1));
+    return Stream
+      .concat(pendingOffsets.keySet().stream(), highestProcessedOffsets.keySet().stream())
+      .distinct()
+      .flatMap(partition -> {
+        final var pending = pendingOffsets.get(partition);
+        if (pending != null && !pending.isEmpty()) {
+          return Stream.of(Map.entry(partition, new OffsetAndMetadata(pending.first())));
+        } else {
+          final var highestProcessed = highestProcessedOffsets.get(partition);
+          return highestProcessed != null
+            ? Stream.of(Map.entry(partition, new OffsetAndMetadata(highestProcessed + 1)))
+            : Stream.empty();
         }
-      }
-    });
-
-    return committableOffsets;
+      })
+      .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
   private boolean performCommitAndCleanup(Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, int timeoutSeconds)
@@ -465,30 +463,24 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @param partition The partition to update
    */
   public void updateCommittableOffset(final TopicPartition partition) {
-    final var currentPosition = nextOffsetsToCommit.get(partition);
-    if (currentPosition == null) {
-      return;
-    }
-
-    final var pending = pendingOffsets.get(partition);
-    if (pending == null || pending.isEmpty()) {
-      // All offsets are processed - use highest processed offset
-      final var highestProcessed = highestProcessedOffsets.get(partition);
-      if (highestProcessed != null) {
-        nextOffsetsToCommit.put(partition, highestProcessed + 1);
-      }
-      return;
-    }
-
-    // Find the lowest pending offset
-    final var lowestPending = pending.first();
-
-    // Check if we can move the committable offset forward
-    if (lowestPending > currentPosition) {
-      // We can commit up to the lowest pending offset
-      nextOffsetsToCommit.put(partition, lowestPending);
-    }
-    // Otherwise, maintain the current position as we have pending offsets before it
+    Optional
+      .ofNullable(nextOffsetsToCommit.get(partition))
+      .ifPresent(currentPosition -> {
+        Optional
+          .ofNullable(pendingOffsets.get(partition))
+          .filter(pending -> !pending.isEmpty())
+          .map(SortedSet::first)
+          .filter(lowestPending -> lowestPending > currentPosition)
+          .ifPresentOrElse(
+            // If we have a valid lowest pending offset greater than the current position
+            lowestPending -> nextOffsetsToCommit.put(partition, lowestPending),
+            // Otherwise check if we can use the highest processed offset
+            () ->
+              Optional
+                .ofNullable(highestProcessedOffsets.get(partition))
+                .ifPresent(highestProcessed -> nextOffsetsToCommit.put(partition, highestProcessed + 1))
+          );
+      });
   }
 
   /**
@@ -504,15 +496,18 @@ public class OffsetManager<K, V> implements AutoCloseable {
     state.put("highestProcessedOffset", highestProcessedOffsets.getOrDefault(partition, -1L));
     state.put("managerState", this.state.get().name());
 
-    if (pendingOffsets.containsKey(partition)) {
-      state.put("pendingCount", pendingOffsets.get(partition).size());
-      if (!pendingOffsets.get(partition).isEmpty()) {
-        state.put("lowestPendingOffset", pendingOffsets.get(partition).first());
-        state.put("highestPendingOffset", pendingOffsets.get(partition).last());
-      }
-    } else {
-      state.put("pendingCount", 0);
-    }
+    Optional
+      .ofNullable(pendingOffsets.get(partition))
+      .ifPresentOrElse(
+        pending -> {
+          state.put("pendingCount", pending.size());
+          if (!pending.isEmpty()) {
+            state.put("lowestPendingOffset", pending.first());
+            state.put("highestPendingOffset", pending.last());
+          }
+        },
+        () -> state.put("pendingCount", 0)
+      );
 
     return state;
   }

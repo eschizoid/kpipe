@@ -103,9 +103,12 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
    */
   public void start() {
     if (started.compareAndSet(false, true)) {
-      try {
+      final Runnable performStart = () -> {
         startAction.accept(consumer);
         startMetricsThread();
+      };
+      try {
+        performStart.run();
       } catch (final Exception e) {
         started.set(false);
         LOGGER.log(Level.ERROR, "Failed to start consumer", e);
@@ -115,12 +118,24 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
   }
 
   /**
-   * Checks if the consumer is healthy according to the configured health check.
+   * Checks if the consumer is healthy, according to the configured health check.
+   *
+   * <p>This method uses a functional approach by composing predicates to determine health status.
+   * It checks three conditions:
+   *
+   * <ol>
+   *   <li>The consumer is not closed
+   *   <li>The consumer has been started
+   *   <li>The consumer passes the configured health check
+   * </ol>
    *
    * @return true if the consumer is healthy, false otherwise
    */
   public boolean isHealthy() {
-    return !closed.get() && started.get() && healthCheck.test(consumer);
+    final Predicate<T> isNotClosed = c -> !closed.get();
+    final Predicate<T> isStarted = c -> started.get();
+    final Predicate<T> isHealthyPredicate = isNotClosed.and(isStarted).and(healthCheck);
+    return isHealthyPredicate.test(consumer);
   }
 
   /**
@@ -130,20 +145,25 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
    * @return true if shutdown completed successfully, false if it timed out
    */
   public boolean shutdownGracefully(final long timeoutMs) {
-    if (closed.compareAndSet(false, true)) {
+    final Function<T, Boolean> performShutdown = c -> {
       stopMetricsThread();
       try {
-        return gracefulShutdown.apply(consumer, timeoutMs);
+        return gracefulShutdown.apply(c, timeoutMs);
       } finally {
         shutdownLatch.countDown();
       }
-    }
-    return true;
+    };
+
+    // Only perform shutdown if not already closed
+    return closed.compareAndSet(false, true) ? performShutdown.apply(consumer) : true;
   }
 
   /**
    * Waits for the consumer to be shutdown, either by this thread or another thread calling {@link
    * #close()} or {@link #shutdownGracefully(long)}.
+   *
+   * <p>This is a convenience method that delegates to {@link #awaitShutdown(long)} with a timeout
+   * of 0, meaning it will wait indefinitely.
    *
    * @return true if the shutdown completed normally, false if the wait was interrupted
    */
@@ -158,16 +178,25 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
    * @return true if the shutdown completed normally within the timeout, false otherwise
    */
   public boolean awaitShutdown(final long timeoutMs) {
-    try {
-      return timeoutMs > 0
-        ? shutdownLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
-        : shutdownLatch.await(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      return false;
-    }
+    final Function<Long, Boolean> waitOnLatch = timeout -> {
+      try {
+        return timeout > 0
+          ? shutdownLatch.await(timeout, TimeUnit.MILLISECONDS)
+          : shutdownLatch.await(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return false;
+      }
+    };
+    return waitOnLatch.apply(timeoutMs);
   }
 
+  /**
+   * Closes this consumer runner, performing a graceful shutdown.
+   *
+   * <p>This implementation delegates to {@link #shutdownGracefully(long)} with the configured
+   * timeout. It follows functional programming principles by using a declarative approach.
+   */
   @Override
   public void close() {
     shutdownGracefully(shutdownTimeoutMs);
@@ -204,19 +233,23 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     final T consumer,
     final long timeoutMs
   ) {
+    // Pause the consumer first to prevent receiving new messages
     consumer.pause();
 
     return Optional
       .ofNullable(consumer.createMessageTracker())
       .map(tracker -> {
         try {
+          // First check for in-flight messages
           long inFlightCount = tracker.getInFlightMessageCount();
 
           if (inFlightCount == 0) {
+            // No in-flight messages, close immediately
             consumer.close();
             return true;
           }
 
+          // Log and wait for in-flight messages
           LOGGER.log(Level.INFO, "Waiting for %s in-flight messages to be processed".formatted(inFlightCount));
 
           var completed = false;
@@ -226,8 +259,9 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
             LOGGER.log(Level.WARNING, "Error while waiting for message completion", e);
           }
 
+          // Second check to determine the final state
           inFlightCount = tracker.getInFlightMessageCount();
-          final boolean allProcessed = completed && inFlightCount == 0;
+          final var allProcessed = completed && inFlightCount == 0;
 
           if (allProcessed) {
             LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down");
@@ -247,53 +281,72 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
         }
       })
       .orElseGet(() -> {
+        // No message tracker available
         LOGGER.log(Level.WARNING, "No message tracker available, closing consumer immediately");
         consumer.close();
         return true;
       });
   }
 
+  /**
+   * Starts a metrics reporting thread if metrics reporters are configured. Uses functional
+   * programming to handle the metrics reporting loop.
+   */
   private void startMetricsThread() {
     if (metricsReporters.isEmpty() || metricsInterval <= 0) {
       return;
     }
 
+    // Function to report metrics for all reporters
+    final Runnable reportAllMetrics = () ->
+      metricsReporters.forEach(reporter -> {
+        try {
+          reporter.reportMetrics();
+        } catch (Exception e) {
+          LOGGER.log(Level.WARNING, "Error reporting metrics", e);
+        }
+      });
+
+    // Predicate to check if the thread should continue running
+    final Predicate<Thread> shouldContinue = thread -> !closed.get() && !thread.isInterrupted();
+
     metricsThread =
-      new Thread(
-        () -> {
-          while (!closed.get() && !Thread.currentThread().isInterrupted()) {
+      Thread
+        .ofPlatform()
+        .name("metrics-reporter")
+        .daemon(true)
+        .start(() -> {
+          final var currentThread = Thread.currentThread();
+          while (shouldContinue.test(currentThread)) {
             try {
-              for (final var reporter : metricsReporters) {
-                reporter.reportMetrics();
-              }
+              reportAllMetrics.run();
               Thread.sleep(metricsInterval);
             } catch (final InterruptedException e) {
               Thread.currentThread().interrupt();
               break;
-            } catch (Exception e) {
-              LOGGER.log(Level.WARNING, "Error reporting metrics", e);
             }
           }
-        },
-        "metrics-reporter"
-      );
-
-    metricsThread.setDaemon(true);
-    metricsThread.start();
+        });
   }
 
+  /**
+   * Stops the metrics reporting thread if it's running. Uses Optional to handle the thread
+   * reference in a functional way.
+   */
   private void stopMetricsThread() {
-    final var thread = metricsThread;
-    if (thread != null) {
-      thread.interrupt();
-      try {
-        thread.join(1000); // Wait up to 1 second for thread to terminate
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        LOGGER.log(Level.WARNING, "Interrupted while stopping metrics thread");
-      }
-      metricsThread = null;
-    }
+    Optional
+      .ofNullable(metricsThread)
+      .ifPresent(thread -> {
+        thread.interrupt();
+        try {
+          thread.join(1000); // Wait up to 1 second for thread to terminate
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+          LOGGER.log(Level.WARNING, "Interrupted while stopping metrics thread");
+        } finally {
+          metricsThread = null;
+        }
+      });
   }
 
   /**

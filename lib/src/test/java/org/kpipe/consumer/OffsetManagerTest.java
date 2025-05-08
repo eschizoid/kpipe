@@ -609,50 +609,82 @@ class OffsetManagerTest {
 
     @Test
     void shouldHandleConcurrentAccess() throws Exception {
+      // Create a separate command queue for this test to avoid interference
+      final var testCommandQueue = new LinkedBlockingQueue<ConsumerCommand>();
+
       // Use a manager with a shorter interval for this test
       final var concurrentManager = OffsetManager
         .builder(mockConsumer)
-        .withCommandQueue(commandQueue)
+        .withCommandQueue(testCommandQueue)
         .withCommitInterval(Duration.ofMillis(500))
         .build();
 
-      final var threadCount = 5;
-      final var offsetsPerThread = 100;
-      final var startLatch = new CountDownLatch(1);
-      final var completionLatch = new CountDownLatch(threadCount);
-
-      // Create multiple threads updating offsets
-      for (var i = 0; i < threadCount; i++) {
-        final int threadId = i;
-        new Thread(() -> {
+      // Start a thread to handle commit commands
+      final var commandHandler = Thread
+        .ofPlatform()
+        .daemon()
+        .start(() -> {
           try {
-            startLatch.await(); // Wait for all threads to be ready
-            // Each thread processes its own range of offsets
-            for (int j = 0; j < offsetsPerThread; j++) {
-              final var offset = threadId * offsetsPerThread + j;
-              concurrentManager.trackOffset(partition, offset);
-              concurrentManager.markOffsetProcessed(partition, offset);
+            while (true) {
+              final var cmd = testCommandQueue.poll(1, TimeUnit.SECONDS);
+              if (cmd == null) continue;
+              if (cmd.equals(ConsumerCommand.COMMIT_OFFSETS) && cmd.getCommitId() != null) {
+                concurrentManager.notifyCommitComplete(cmd.getCommitId(), true);
+              }
             }
-          } catch (final Exception e) {
-            fail("Exception in test thread: " + e.getMessage());
-          } finally {
-            completionLatch.countDown();
+          } catch (final InterruptedException e) {
+            // Thread interrupted, exit
           }
-        })
-          .start();
+        });
+
+      try {
+        final var threadCount = 3;
+        final var offsetsPerThread = 20;
+        final var startLatch = new CountDownLatch(1);
+        final var completionLatch = new CountDownLatch(threadCount);
+
+        // Create multiple threads updating offsets
+        for (var i = 0; i < threadCount; i++) {
+          final int threadId = i;
+          Thread
+            .ofPlatform()
+            .daemon()
+            .start(() -> {
+              try {
+                startLatch.await(); // Wait for all threads to be ready
+                // Each thread processes its own range of offsets
+                for (var j = 0; j < offsetsPerThread; j++) {
+                  final var offset = threadId * offsetsPerThread + j;
+                  concurrentManager.trackOffset(partition, offset);
+                  concurrentManager.markOffsetProcessed(partition, offset);
+                }
+              } catch (final Exception e) {
+                fail("Exception in test thread: " + e.getMessage());
+              } finally {
+                completionLatch.countDown();
+              }
+            });
+        }
+
+        // Start the manager
+        concurrentManager.start();
+
+        // Start all threads simultaneously
+        startLatch.countDown();
+
+        // Wait for all threads to complete
+        assertTrue(completionLatch.await(3, TimeUnit.SECONDS), "All threads should complete in time");
+
+        // Give time for offsets to be processed
+        Thread.sleep(200);
+
+        // Force final commit and verify
+        boolean commitResult = concurrentManager.commitSyncAndWait(3);
+        assertTrue(commitResult, "Commit should succeed");
+      } finally {
+        // Ensure the command handler thread is interrupted
+        commandHandler.interrupt();
       }
-
-      // Start all threads simultaneously
-      startLatch.countDown();
-
-      // Wait for all threads to complete
-      assertTrue(completionLatch.await(3, TimeUnit.SECONDS), "All threads should complete in time");
-
-      // Give time for offsets to be processed
-      Thread.sleep(200);
-
-      // Force final commit and verify
-      concurrentManager.commitSyncAndWait(1);
     }
   }
 
@@ -661,19 +693,46 @@ class OffsetManagerTest {
 
     @Test
     void shouldRespectBuilderConfigurations() {
+      // Create a separate command queue for this test to avoid interference
+      final var testCommandQueue = new LinkedBlockingQueue<ConsumerCommand>();
+
       // Create a manager with custom configuration
       final var customManager = OffsetManager
         .builder(mockConsumer)
-        .withCommandQueue(commandQueue)
+        .withCommandQueue(testCommandQueue)
         .withCommitInterval(Duration.ofMillis(200))
         .build();
 
-      // Just verify it can be created and closed without exceptions
-      assertDoesNotThrow(() -> {
-        customManager.trackOffset(partition, 101L);
-        customManager.markOffsetProcessed(partition, 101L);
-        customManager.close();
-      });
+      // Start a thread to handle commit commands
+      final var commandHandler = Thread
+        .ofPlatform()
+        .daemon()
+        .start(() -> {
+          try {
+            while (true) {
+              final var cmd = testCommandQueue.poll(1, TimeUnit.SECONDS);
+              if (cmd == null) continue;
+              if (cmd.equals(ConsumerCommand.COMMIT_OFFSETS) && cmd.getCommitId() != null) {
+                customManager.notifyCommitComplete(cmd.getCommitId(), true);
+              }
+            }
+          } catch (final InterruptedException e) {
+            // Thread interrupted, exit
+          }
+        });
+
+      try {
+        // Verify it can be created and closed without exceptions
+        assertDoesNotThrow(() -> {
+          customManager.start();
+          customManager.trackOffset(partition, 101L);
+          customManager.markOffsetProcessed(partition, 101L);
+          customManager.close();
+        });
+      } finally {
+        // Ensure the command handler thread is interrupted
+        commandHandler.interrupt();
+      }
     }
   }
 

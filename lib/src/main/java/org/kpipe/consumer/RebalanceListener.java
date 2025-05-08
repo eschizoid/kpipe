@@ -103,9 +103,9 @@ public class RebalanceListener implements ConsumerRebalanceListener {
       return;
     }
 
-    for (final var partition : assignedPartitions) {
+    assignedPartitions.forEach(partition -> {
       pendingOffsets.remove(partition);
       nextOffsetsToCommit.remove(partition);
-    }
+    });
   }
 }
