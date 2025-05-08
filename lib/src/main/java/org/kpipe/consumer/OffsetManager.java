@@ -422,18 +422,11 @@ public class OffsetManager<K, V> implements AutoCloseable {
     try {
       final var result = future.get(timeoutSeconds, TimeUnit.SECONDS);
       if (result) {
-        // Clean up committed offsets
+        // Update the next offsets to commit based on the committed offsets
         offsetsToCommit.forEach((partition, metadata) -> {
           long committedOffset = metadata.offset();
-          final var pending = pendingOffsets.get(partition);
-
-          // Remove all pending offsets less than the committed offset
-          if (pending != null) {
-            pending.removeIf(offset -> offset < committedOffset);
-            if (pending.isEmpty()) {
-              pendingOffsets.remove(partition);
-            }
-          }
+          // Update the next offset to commit to the committed offset
+          nextOffsetsToCommit.put(partition, committedOffset);
         });
 
         // Update the next offsets to commit based on highest processed and pending offsets
