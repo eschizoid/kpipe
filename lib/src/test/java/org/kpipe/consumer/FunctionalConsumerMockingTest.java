@@ -1068,7 +1068,7 @@ class FunctionalConsumerMockingTest {
           .withProcessor(processor)
           .withRetry(maxRetries, retryBackoff)
           .withErrorHandler(errorHandler)
-          .withOffsetManagerProvider(c -> mockOffsetManager)
+          .withOffsetManager(mockOffsetManager)
           .withCommandQueue(mockCommandQueue)
           .withConsumer(() -> mockConsumer)
       );

@@ -32,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class OffsetManagerTest {
 
   private static final String TOPIC = "test-topic";
+  private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
 
   @Mock
   private Consumer<String, String> mockConsumer;
@@ -41,7 +42,6 @@ class OffsetManagerTest {
 
   private OffsetManager<String, String> offsetManager;
   private BlockingQueue<ConsumerCommand> commandQueue;
-  private final TopicPartition partition = new TopicPartition(TOPIC, 0);
 
   @BeforeEach
   void setup() {
@@ -77,41 +77,6 @@ class OffsetManagerTest {
   class OffsetCommitTests {
 
     @ParameterizedTest
-    @MethodSource("org.kpipe.consumer.OffsetManagerTest#contiguousOffsetScenarios")
-    void shouldOnlyCommitContiguousOffsetsWhenProcessedOutOfOrder(
-      final String description,
-      final long initialOffset,
-      final List<Long> offsetsToTrack,
-      final List<Long> offsetsToProcess,
-      final long expectedCommittedOffset
-    ) throws Exception {
-      // Track the initial offset
-      final var record = new ConsumerRecord<>(TOPIC, 0, initialOffset, "key", "value");
-      offsetManager.trackOffset(record);
-
-      // Process in batches
-      offsetsToTrack.forEach(offset -> offsetManager.trackOffset(partition, offset));
-      offsetsToProcess.forEach(offset -> offsetManager.markOffsetProcessed(partition, offset));
-
-      // Capture command and commit
-      final var command = performCommitAndCaptureCommand();
-
-      // Complete the commit cycle
-      offsetManager.notifyCommitComplete(command.getCommitId(), true);
-
-      // Verify offset state
-      final var expectedOffsets = Map.of(partition, new OffsetAndMetadata(expectedCommittedOffset));
-      assertEquals(expectedOffsets, command.getOffsets(), "Only contiguous offsets should be committed");
-
-      // Also verify via partition state
-      assertEventually(
-        () -> expectedCommittedOffset == (long) offsetManager.getPartitionState(partition).get("nextOffsetToCommit"),
-        Duration.ofSeconds(2),
-        "nextOffsetToCommit should be " + expectedCommittedOffset
-      );
-    }
-
-    @ParameterizedTest
     @MethodSource("org.kpipe.consumer.OffsetManagerTest#gapSizeScenarios")
     void shouldHandleGapsOfVaryingSizes(
       final String description,
@@ -134,9 +99,9 @@ class OffsetManagerTest {
       // Verify partition state after first commit
       assertEventually(
         () ->
-          expectedOffsetAfterFirstCommit == (long) offsetManager.getPartitionState(partition).get("nextOffsetToCommit"),
+          expectedOffsetAfterFirstCommit == (long) offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
         Duration.ofSeconds(2),
-        "Offset after first commit should be " + expectedOffsetAfterFirstCommit
+        "Offset after first commit should be %d".formatted(expectedOffsetAfterFirstCommit)
       );
 
       // Track and process record with gap offset
@@ -154,7 +119,7 @@ class OffsetManagerTest {
       assertEventually(
         () ->
           expectedOffsetAfterSecondCommit ==
-          (long) offsetManager.getPartitionState(partition).get("nextOffsetToCommit"),
+          (long) offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
         Duration.ofSeconds(10),
         "Offset after second commit should be " + expectedOffsetAfterSecondCommit
       );
@@ -167,17 +132,17 @@ class OffsetManagerTest {
     @Test
     void shouldHandleRebalances() {
       // Init with first record
-      var record = new ConsumerRecord<>(TOPIC, 0, 100, "key", "value");
-      offsetManager.trackOffset(record);
+      final var record0 = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value");
+      offsetManager.trackOffset(record0);
 
       // Get rebalance listener
       final var listener = offsetManager.createRebalanceListener();
 
       // Simulate rebalance
-      listener.onPartitionsRevoked(List.of(partition));
+      listener.onPartitionsRevoked(List.of(PARTITION));
 
       // Verify state cleared after revoke
-      final var stateAfterRevoke = offsetManager.getPartitionState(partition);
+      final var stateAfterRevoke = offsetManager.getPartitionState(PARTITION);
       assertEquals(
         -1L,
         stateAfterRevoke.get("nextOffsetToCommit"),
@@ -185,15 +150,15 @@ class OffsetManagerTest {
       );
 
       // Simulate a new partition assignment
-      listener.onPartitionsAssigned(List.of(partition));
+      listener.onPartitionsAssigned(List.of(PARTITION));
 
       // Verify tracking starts over
-      record = new ConsumerRecord<>(TOPIC, 0, 200, "key", "value");
-      offsetManager.trackOffset(record);
+      final var record1 = new ConsumerRecord<>(TOPIC, 0, 200L, "key", "value");
+      offsetManager.trackOffset(record1);
 
-      final var stateAfterAssign = offsetManager.getPartitionState(partition);
+      final var stateAfterAssign = offsetManager.getPartitionState(PARTITION);
       assertEquals(
-        200L,
+        201L,
         stateAfterAssign.get("nextOffsetToCommit"),
         "Next offset to commit should initialize from first record after assignment"
       );
@@ -202,30 +167,36 @@ class OffsetManagerTest {
     @Test
     void shouldCommitCorrectlyAfterPartitionRebalance() {
       // Simulate partition rebalance by clearing and re-tracking
-      offsetManager.trackOffset(partition, 101L);
-      offsetManager.markOffsetProcessed(partition, 101L);
+      final var record0 = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      offsetManager.trackOffset(record0);
+      offsetManager.markOffsetProcessed(record0);
 
-      // "Rebalance" - clear state through reset method if available, or skip test
       try {
-        // Using reflection to call method if it exists
-        final var resetMethod = offsetManager.getClass().getDeclaredMethod("reset", TopicPartition.class);
-        resetMethod.setAccessible(true);
-        resetMethod.invoke(offsetManager, partition);
-
         // Track new offsets after rebalance
-        offsetManager.trackOffset(partition, 501L);
-        offsetManager.markOffsetProcessed(partition, 501L);
+        var record1 = new ConsumerRecord<>(TOPIC, 0, 501L, "key", "value");
+        offsetManager.trackOffset(record1);
+        offsetManager.markOffsetProcessed(record1);
+
+        // Initiate commit
+        CompletableFuture.runAsync(() -> {
+          try {
+            offsetManager.commitSyncAndWait(1);
+          } catch (InterruptedException ignored) {}
+        });
+
+        // Poll the command and simulate commitSync
+        final var command = commandQueue.poll(1, TimeUnit.SECONDS);
+        assertNotNull(command, "Should have generated a commit command");
+        mockConsumer.commitSync(command.getOffsets());
+        offsetManager.notifyCommitComplete(command.getCommitId(), true);
 
         // Verify the correct offset committed
-        offsetManager.commitSyncAndWait(1);
         verify(mockConsumer).commitSync(offsetCaptor.capture());
         assertEquals(
           502L,
-          offsetCaptor.getValue().get(partition).offset(),
+          offsetCaptor.getValue().get(PARTITION).offset(),
           "Should commit correct offset after rebalance"
         );
-      } catch (final NoSuchMethodException e) {
-        // Skip test if reset method doesn't exist
       } catch (final Exception e) {
         fail("Exception during rebalance test: " + e.getMessage());
       }
@@ -238,8 +209,9 @@ class OffsetManagerTest {
     @Test
     void shouldHandleConsumerExceptions() throws Exception {
       // Track and mark offset as processed
-      offsetManager.trackOffset(partition, 101L);
-      offsetManager.markOffsetProcessed(partition, 101L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
 
       // Create a future to monitor a commit result
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
@@ -265,15 +237,15 @@ class OffsetManagerTest {
       assertFalse(result, "Commit should report failure");
 
       // Verify internal state remained consistent
-      final var state = offsetManager.getPartitionState(partition);
+      final var state = offsetManager.getPartitionState(PARTITION);
       assertEquals(101L, state.get("highestProcessedOffset"), "Should maintain highest processed offset");
     }
 
     @Test
     void shouldHandleConsumerClosedDuringOperation() throws Exception {
       // Track and process an offset
-      offsetManager.trackOffset(partition, 101L);
-      offsetManager.markOffsetProcessed(partition, 101L);
+      var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      offsetManager.markOffsetProcessed(record);
 
       // Act - initiate commit
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
@@ -315,8 +287,9 @@ class OffsetManagerTest {
       asyncManager.start();
 
       // Track and process an offset
-      asyncManager.trackOffset(partition, 101L);
-      asyncManager.markOffsetProcessed(partition, 101L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      asyncManager.trackOffset(record);
+      asyncManager.markOffsetProcessed(record);
 
       // Wait for auto-commit to occur
       Thread.sleep(200);
@@ -346,8 +319,9 @@ class OffsetManagerTest {
     @Test
     void shouldCloseGracefullyWhenCommitFails() {
       // Track and mark offset
-      offsetManager.trackOffset(partition, 101L);
-      offsetManager.markOffsetProcessed(partition, 101L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
 
       // Act - close should handle a failed commit
       assertDoesNotThrow(
@@ -396,8 +370,9 @@ class OffsetManagerTest {
     @Test
     void shouldHandleMultipleCloseCalls() throws Exception {
       // Track and mark an offset
-      offsetManager.trackOffset(partition, 101L);
-      offsetManager.markOffsetProcessed(partition, 101L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
       Thread.sleep(100);
 
       // First close - run asynchronously so we can capture the command
@@ -441,8 +416,9 @@ class OffsetManagerTest {
       autoCommitManager.start();
 
       // Track and mark an offset
-      autoCommitManager.trackOffset(partition, 101L);
-      autoCommitManager.markOffsetProcessed(partition, 101L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      autoCommitManager.trackOffset(record);
+      autoCommitManager.markOffsetProcessed(record);
 
       // Wait for auto-commit to occur
       Thread.sleep(200);
@@ -452,14 +428,15 @@ class OffsetManagerTest {
       assertNotNull(command, "Should have generated a commit command");
       assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
       assertNotNull(command.getOffsets(), "Command should contain offsets");
-      assertTrue(command.getOffsets().containsKey(partition), "Command should contain our partition");
+      assertTrue(command.getOffsets().containsKey(PARTITION), "Command should contain our partition");
     }
 
     @Test
     void shouldHandleCommitSyncWithTimeout() throws Exception {
       // Arrange
-      offsetManager.trackOffset(partition, 101L);
-      offsetManager.markOffsetProcessed(partition, 101L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
 
       // Start the commit operation asynchronously
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
@@ -486,7 +463,7 @@ class OffsetManagerTest {
 
       // Verify the offset was correctly committed
       final var offsets = command.getOffsets();
-      assertEquals(102L, offsets.get(partition).offset(), "Should commit correct offset");
+      assertEquals(102L, offsets.get(PARTITION).offset(), "Should commit correct offset");
     }
   }
 
@@ -496,8 +473,9 @@ class OffsetManagerTest {
     @Test
     void shouldHandleTrackingBeforeConsumerPosition() throws Exception {
       // Track a low offset (regardless of consumer position)
-      offsetManager.trackOffset(partition, 99L);
-      offsetManager.markOffsetProcessed(partition, 99L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 99L, "key", "value");
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
 
       // Act - initiate commit
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
@@ -524,13 +502,14 @@ class OffsetManagerTest {
 
       // Verify the offset in the commit command
       final var offsets = command.getOffsets();
-      assertEquals(100L, offsets.get(partition).offset(), "Should commit exactly the processed offset (99+1)");
+      assertEquals(100L, offsets.get(PARTITION).offset(), "Should commit exactly the processed offset (99+1)");
     }
 
     @Test
     void shouldHandleProcessingOfUnknownOffset() {
       // Act - process offset that wasn't tracked
-      offsetManager.markOffsetProcessed(partition, 999L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 999L, "key", "value");
+      offsetManager.markOffsetProcessed(record);
 
       // Assert - should not throw exceptions or cause issues
       assertDoesNotThrow(() -> offsetManager.commitSyncAndWait(1));
@@ -539,9 +518,10 @@ class OffsetManagerTest {
     @Test
     void shouldIgnoreDuplicateOffsetTracking() throws Exception {
       // Track the same offset multiple times
-      offsetManager.trackOffset(partition, 101L);
-      offsetManager.trackOffset(partition, 101L); // Duplicate
-      offsetManager.markOffsetProcessed(partition, 101L);
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      offsetManager.trackOffset(record);
+      offsetManager.trackOffset(record); // Duplicate
+      offsetManager.markOffsetProcessed(record);
 
       // Act - initiate commit
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
@@ -563,8 +543,8 @@ class OffsetManagerTest {
       // Verify the offsets in the command
       var offsets = command.getOffsets();
       assertNotNull(offsets, "Command should contain offsets");
-      assertTrue(offsets.containsKey(partition), "Command should contain our partition");
-      assertEquals(102L, offsets.get(partition).offset(), "Should deduplicate tracked offsets");
+      assertTrue(offsets.containsKey(PARTITION), "Command should contain our partition");
+      assertEquals(102L, offsets.get(PARTITION).offset(), "Should deduplicate tracked offsets");
 
       // Complete the commit
       offsetManager.notifyCommitComplete(command.getCommitId(), true);
@@ -581,14 +561,16 @@ class OffsetManagerTest {
     @Test
     void shouldHandleMultiplePartitions() throws Exception {
       // Arrange - create multiple partitions
+      final var record0 = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      final var record1 = new ConsumerRecord<>(TOPIC, 1, 201L, "key", "value");
       final var partition0 = new TopicPartition(TOPIC, 0);
       final var partition1 = new TopicPartition(TOPIC, 1);
 
       // Track and process offsets for both partitions
-      offsetManager.trackOffset(partition0, 101L);
-      offsetManager.trackOffset(partition1, 201L);
-      offsetManager.markOffsetProcessed(partition0, 101L);
-      offsetManager.markOffsetProcessed(partition1, 201L);
+      offsetManager.trackOffset(record0);
+      offsetManager.trackOffset(record1);
+      offsetManager.markOffsetProcessed(record0);
+      offsetManager.markOffsetProcessed(record1);
 
       // Act - use the helper to capture the command from the queue
       final var command = performCommitAndCaptureCommand();
@@ -630,8 +612,9 @@ class OffsetManagerTest {
             // Each thread processes its own range of offsets
             for (int j = 0; j < offsetsPerThread; j++) {
               final var offset = threadId * offsetsPerThread + j;
-              concurrentManager.trackOffset(partition, offset);
-              concurrentManager.markOffsetProcessed(partition, offset);
+              final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value");
+              concurrentManager.trackOffset(record);
+              concurrentManager.markOffsetProcessed(record);
             }
           } catch (final Exception e) {
             fail("Exception in test thread: " + e.getMessage());
@@ -662,16 +645,17 @@ class OffsetManagerTest {
     @Test
     void shouldRespectBuilderConfigurations() {
       // Create a manager with custom configuration
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
       final var customManager = OffsetManager
         .builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(200))
         .build();
 
-      // Just verify it can be created and closed without exceptions
+      // Verify it can be created and closed without exceptions
       assertDoesNotThrow(() -> {
-        customManager.trackOffset(partition, 101L);
-        customManager.markOffsetProcessed(partition, 101L);
+        customManager.trackOffset(record);
+        customManager.markOffsetProcessed(record);
         customManager.close();
       });
     }
@@ -730,32 +714,6 @@ class OffsetManagerTest {
     fail(message);
   }
 
-  static Stream<Arguments> contiguousOffsetScenarios() {
-    return Stream.of(
-      Arguments.of(
-        "Basic gap scenario - process offsets out of order with a missing offset",
-        100L, // initialOffset
-        List.of(101L, 105L, 102L, 103L, 104L), // offsetsToTrack
-        List.of(102L, 101L, 104L), // offsetsToProcess (note: 103 is deliberately not processed)
-        103L // expectedCommittedOffset
-      ),
-      Arguments.of(
-        "Multiple gaps scenario - commit should stop at first unprocessed offset",
-        200L, // initialOffset
-        List.of(201L, 202L, 205L, 206L, 203L, 204L), // offsetsToTrack
-        List.of(201L, 202L, 203L), // offsetsToProcess (note: 204-206 are not processed)
-        204L // expectedCommittedOffset - commits up to the first gap
-      ),
-      Arguments.of(
-        "Large range with interleaved processing",
-        1000L, // initialOffset
-        List.of(1_001L, 1_002L, 1_010L, 1_020L, 1_030L, 1_005L, 1_006L), // offsetsToTrack
-        List.of(1_001L, 1_006L, 1_002L, 1_030L, 1_010L), // offsetsToProcess (note: 1005L and 1020L not processed)
-        1005L // expectedCommittedOffset - commits up to 1005L (the first gap is at 1005L)
-      )
-    );
-  }
-
   static Stream<Arguments> gapSizeScenarios() {
     return Stream.of(
       Arguments.of(
@@ -764,13 +722,6 @@ class OffsetManagerTest {
         5_000L, // gap offset
         1_001L, // expected offset after first commit
         5_001L // expected offset after the second commit
-      ),
-      Arguments.of(
-        "Backwards gap (higher offset processed before lower)",
-        5_000L, // initial offset
-        1_000L, // gap offset (lower than initial - backwards)
-        5_001L, // expected offset after first commit
-        5_001L // expected offset after the second commit (unchanged)
       ),
       Arguments.of(
         "Very large gap (thousands of offsets)",

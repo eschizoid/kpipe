@@ -574,14 +574,16 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
           }
           case TRACK_OFFSET -> {
             if (offsetManager != null && command.getRecord() != null) {
-              var typedRecord = (ConsumerRecord<K, V>) command.getRecord();
-              offsetManager.trackOffset(typedRecord);
+              @SuppressWarnings("unchecked")
+              final var record = (ConsumerRecord<K, V>) command.getRecord();
+              offsetManager.trackOffset(record);
             }
           }
           case MARK_OFFSET_PROCESSED -> {
             if (offsetManager != null && command.getRecord() != null) {
-              final ConsumerRecord typedRecord = command.getRecord();
-              offsetManager.markOffsetProcessed(typedRecord);
+              @SuppressWarnings("unchecked")
+              final var record = (ConsumerRecord<K, V>) command.getRecord();
+              offsetManager.markOffsetProcessed(record);
             }
           }
           case COMMIT_OFFSETS -> {
