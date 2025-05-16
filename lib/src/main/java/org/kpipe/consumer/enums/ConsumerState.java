@@ -1,4 +1,4 @@
-package org.kpipe.consumer;
+package org.kpipe.consumer.enums;
 
 /**
  * Represents the operational states of the consumer.
