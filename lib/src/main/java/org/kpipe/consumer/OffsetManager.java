@@ -387,7 +387,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
 
     // Determine nextOffsetToCommit
     if (pending != null && !pending.isEmpty()) {
-      state.put("nextOffsetToCommit", pending.first() + 1);
+      state.put("nextOffsetToCommit", pending.first());
     } else if (highestProcessed != null) {
       state.put("nextOffsetToCommit", highestProcessed + 1);
     } else {
