@@ -124,6 +124,62 @@ class OffsetManagerTest {
         "Offset after second commit should be " + expectedOffsetAfterSecondCommit
       );
     }
+
+    @Test
+    void shouldHandleCommitByPendingOffsets() throws Exception {
+      final var offsetsPending = List.of(1L, 2L, 5L, 6L);
+      final var offsetsProcessed = List.of(1L, 2L);
+      final var expectedOffsetAfterCommit = 5L;
+
+      offsetsPending.forEach(offset -> {
+        final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value");
+        offsetManager.trackOffset(record);
+        if (offsetsProcessed.contains(offset)) {
+          offsetManager.markOffsetProcessed(record);
+        }
+      });
+
+      // commit
+      final var firstCommand = performCommitAndCaptureCommand();
+
+      // Verify the commit completed successfully
+      offsetManager.notifyCommitComplete(firstCommand.getCommitId(), true);
+
+      // Verify the partition state after commit
+      assertEventually(
+        () -> expectedOffsetAfterCommit == (long) offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+        Duration.ofSeconds(2),
+        "Offset after commit should be %d".formatted(expectedOffsetAfterCommit)
+      );
+    }
+
+    @Test
+    void shouldHandleCommitByHighestProcessed() throws Exception {
+      final var offsetsPending = List.of(1L, 2L, 3L);
+      final var offsetsProcessed = List.of(1L, 2L, 3L);
+      final var expectedOffsetAfterCommit = 4L;
+
+      offsetsPending.forEach(offset -> {
+        final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value");
+        offsetManager.trackOffset(record);
+        if (offsetsProcessed.contains(offset)) {
+          offsetManager.markOffsetProcessed(record);
+        }
+      });
+
+      // commit
+      final var firstCommand = performCommitAndCaptureCommand();
+
+      // Verify the commit completed successfully
+      offsetManager.notifyCommitComplete(firstCommand.getCommitId(), true);
+
+      // Verify the partition state after commit
+      assertEventually(
+        () -> expectedOffsetAfterCommit == (long) offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+        Duration.ofSeconds(2),
+        "Offset after commit should be %d".formatted(expectedOffsetAfterCommit)
+      );
+    }
   }
 
   @Nested
@@ -158,7 +214,7 @@ class OffsetManagerTest {
 
       final var stateAfterAssign = offsetManager.getPartitionState(PARTITION);
       assertEquals(
-        201L,
+        200L,
         stateAfterAssign.get("nextOffsetToCommit"),
         "Next offset to commit should initialize from first record after assignment"
       );

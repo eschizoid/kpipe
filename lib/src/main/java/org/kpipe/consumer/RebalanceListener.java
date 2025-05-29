@@ -1,12 +1,15 @@
 package org.kpipe.consumer;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.kpipe.consumer.enums.OffsetState;
 
@@ -63,10 +66,30 @@ public class RebalanceListener implements ConsumerRebalanceListener {
       return;
     }
     LOGGER.info("Partitions revoked: %s".formatted(partitions));
+    final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
+
     partitions.forEach(partition -> {
+      final var pending = pendingOffsets.get(partition);
+      if (pending != null && !pending.isEmpty()) {
+        offsetsToCommit.put(partition, new OffsetAndMetadata(pending.first()));
+      } else {
+        final var highestProcessed = highestProcessedOffsets.get(partition);
+        if (highestProcessed != null) {
+          offsetsToCommit.put(partition, new OffsetAndMetadata(highestProcessed + 1));
+        }
+      }
       pendingOffsets.remove(partition);
       highestProcessedOffsets.remove(partition);
     });
+
+    if (!offsetsToCommit.isEmpty()) {
+      try {
+        consumer.commitSync(offsetsToCommit);
+        LOGGER.info("Committed offsets for revoked partitions: %s".formatted(offsetsToCommit));
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Failed to commit offsets during partition revocation", e);
+      }
+    }
   }
 
   @Override
@@ -78,8 +101,6 @@ public class RebalanceListener implements ConsumerRebalanceListener {
     partitions.forEach(partition -> {
       pendingOffsets.remove(partition);
       highestProcessedOffsets.remove(partition);
-      final var position = consumer.position(partition);
-      highestProcessedOffsets.put(partition, position);
     });
   }
 

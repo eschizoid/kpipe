@@ -9,11 +9,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.kpipe.consumer.enums.OffsetState;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -22,6 +25,9 @@ class RebalanceListenerTest {
 
   @Mock
   private Consumer<String, String> mockConsumer;
+
+  @Captor
+  private ArgumentCaptor<Map<TopicPartition, OffsetAndMetadata>> offsetCaptor;
 
   private RebalanceListener listener;
   private AtomicReference<OffsetState> state;
@@ -42,13 +48,28 @@ class RebalanceListenerTest {
 
   @Test
   void shouldCommitOffsetsWhenPartitionsRevoked() {
+    // Arrange
+    final var pendingSet = new ConcurrentSkipListSet<Long>();
+    pendingSet.add(105L);
+    pendingOffsets.put(partition0, pendingSet);
+
+    // Set up highest processed offsets
+    highestProcessedOffsets.put(partition1, 200L);
+
     // Act
     listener.onPartitionsRevoked(List.of(partition0, partition1));
 
     // Assert
+    verify(mockConsumer).commitSync(offsetCaptor.capture());
+
+    // Verify the offsets in the captured map
+    final var committedOffsets = offsetCaptor.getValue();
+    assertEquals(105L, committedOffsets.get(partition0).offset());
+    assertEquals(201L, committedOffsets.get(partition1).offset());
+
+    // Also verify maps are cleaned up
     assertFalse(pendingOffsets.containsKey(partition0));
     assertFalse(pendingOffsets.containsKey(partition1));
-
     assertFalse(highestProcessedOffsets.containsKey(partition0));
     assertFalse(highestProcessedOffsets.containsKey(partition1));
   }
@@ -94,16 +115,12 @@ class RebalanceListenerTest {
     pendingOffsets.put(partition0, new ConcurrentSkipListSet<>());
     highestProcessedOffsets.put(partition0, 104L);
 
-    // Mock the consumer position
-    when(mockConsumer.position(partition0)).thenReturn(200L);
-
     // Act
     listener.onPartitionsAssigned(List.of(partition0));
 
     // Assert
     assertFalse(pendingOffsets.containsKey(partition0));
-    assertTrue(highestProcessedOffsets.containsKey(partition0));
-    assertEquals(200L, highestProcessedOffsets.get(partition0));
+    assertFalse(highestProcessedOffsets.containsKey(partition0));
   }
 
   @Test
