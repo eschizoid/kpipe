@@ -37,75 +37,75 @@ public class RebalanceListener implements ConsumerRebalanceListener {
 
   private final AtomicReference<OffsetState> state;
   private final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets;
-  private final Map<TopicPartition, Long> nextOffsetsToCommit;
   private final Map<TopicPartition, Long> highestProcessedOffsets;
-  private final Consumer<?, ?> kafkaConsumer;
+  private final Consumer<?, ?> consumer;
 
   /**
    * Constructs a new RebalanceListener.
    *
    * @param state The current offset state reference
    * @param pendingOffsets A map of pending offsets for each partition
-   * @param nextOffsetsToCommit A map of the next offsets to commit for each partition
    * @param highestProcessedOffsets A map of the highest processed offsets for each partition
-   * @param kafkaConsumer The Kafka consumer instance
+   * @param consumer The Kafka consumer to manage offsets for
    */
   public RebalanceListener(
     final AtomicReference<OffsetState> state,
     final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets,
-    final Map<TopicPartition, Long> nextOffsetsToCommit,
     final Map<TopicPartition, Long> highestProcessedOffsets,
-    final Consumer<?, ?> kafkaConsumer
+    final Consumer<?, ?> consumer
   ) {
     this.state = state;
     this.pendingOffsets = pendingOffsets;
-    this.nextOffsetsToCommit = nextOffsetsToCommit;
     this.highestProcessedOffsets = highestProcessedOffsets;
-    this.kafkaConsumer = kafkaConsumer;
+    this.consumer = consumer;
   }
 
   @Override
-  public void onPartitionsRevoked(Collection<TopicPartition> revokedPartitions) {
+  public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
     if (state.get() == OffsetState.STOPPED) {
       return;
     }
-
+    LOGGER.info("Partitions revoked: %s".formatted(partitions));
     final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
 
-    revokedPartitions
-      .stream()
-      .filter(partition -> nextOffsetsToCommit.get(partition) != null)
-      .forEach(partition -> {
-        final var offsetToCommit = nextOffsetsToCommit.get(partition);
-        offsetsToCommit.put(partition, new OffsetAndMetadata(offsetToCommit));
-      });
+    partitions.forEach(partition -> {
+      final var pending = pendingOffsets.get(partition);
+      if (pending != null && !pending.isEmpty()) {
+        offsetsToCommit.put(partition, new OffsetAndMetadata(pending.first()));
+      } else {
+        final var highestProcessed = highestProcessedOffsets.get(partition);
+        if (highestProcessed != null) {
+          offsetsToCommit.put(partition, new OffsetAndMetadata(highestProcessed + 1));
+        }
+      }
+      pendingOffsets.remove(partition);
+      highestProcessedOffsets.remove(partition);
+    });
 
     if (!offsetsToCommit.isEmpty()) {
       try {
-        kafkaConsumer.commitSync(offsetsToCommit);
+        consumer.commitSync(offsetsToCommit);
         LOGGER.info("Committed offsets for revoked partitions: %s".formatted(offsetsToCommit));
       } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Failed to commit offsets for revoked partitions", e);
+        LOGGER.log(Level.WARNING, "Failed to commit offsets during partition revocation", e);
       }
     }
+  }
 
-    // Clear state for revoked partitions
-    revokedPartitions.forEach(partition -> {
+  @Override
+  public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
+    if (state.get() == OffsetState.STOPPED) {
+      return;
+    }
+    LOGGER.info("Partitions assigned: %s".formatted(partitions));
+    partitions.forEach(partition -> {
       pendingOffsets.remove(partition);
-      nextOffsetsToCommit.remove(partition);
       highestProcessedOffsets.remove(partition);
     });
   }
 
   @Override
-  public void onPartitionsAssigned(final Collection<TopicPartition> assignedPartitions) {
-    if (state.get() == OffsetState.STOPPED) {
-      return;
-    }
-
-    assignedPartitions.forEach(partition -> {
-      pendingOffsets.remove(partition);
-      nextOffsetsToCommit.remove(partition);
-    });
+  public void onPartitionsLost(final Collection<TopicPartition> partitions) {
+    onPartitionsRevoked(partitions);
   }
 }
