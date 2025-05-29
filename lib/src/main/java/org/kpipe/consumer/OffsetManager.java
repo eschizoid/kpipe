@@ -340,7 +340,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
     allPartitions.forEach(partition -> {
       final var pending = pendingOffsets.get(partition);
       if (pending != null && !pending.isEmpty()) {
-        committableOffsets.put(partition, new OffsetAndMetadata(pending.first() + 1));
+        committableOffsets.put(partition, new OffsetAndMetadata(pending.first()));
       } else {
         final var highestProcessed = highestProcessedOffsets.get(partition);
         if (highestProcessed != null) {
