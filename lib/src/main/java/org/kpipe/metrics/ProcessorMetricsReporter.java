@@ -71,7 +71,7 @@ public class ProcessorMetricsReporter implements MetricsReporter {
   /**
    * Creates a processor metrics reporter with the specified registry and custom reporter.
    *
-   * <p>Example with custom reporter:
+   * <p>Example with a custom reporter:
    *
    * <pre>{@code
    * // Send metrics to database

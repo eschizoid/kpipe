@@ -7,6 +7,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -69,12 +71,8 @@ public class OffsetManager<K, V> implements AutoCloseable {
   private final AtomicReference<OffsetState> state = new AtomicReference<>(OffsetState.CREATED);
   private final Queue<ConsumerCommand> commandQueue;
   private final Map<String, CompletableFuture<Boolean>> commitFutures = new ConcurrentHashMap<>();
-
-  // Tracking data structures
   private final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets = new ConcurrentHashMap<>();
   private final Map<TopicPartition, Long> highestProcessedOffsets = new ConcurrentHashMap<>();
-
-  // Fields for periodic commits
   private final Duration commitInterval;
   private ScheduledExecutorService scheduler;
   private ScheduledFuture<?> scheduledCommitTask;
@@ -332,24 +330,21 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @return Map of partition to offset metadata ready for committing
    */
   private Map<TopicPartition, OffsetAndMetadata> prepareOffsetsToCommit() {
-    final var committableOffsets = new HashMap<TopicPartition, OffsetAndMetadata>();
-    final var allPartitions = new HashSet<TopicPartition>();
-    allPartitions.addAll(pendingOffsets.keySet());
-    allPartitions.addAll(highestProcessedOffsets.keySet());
-
-    allPartitions.forEach(partition -> {
-      final var pending = pendingOffsets.get(partition);
-      if (pending != null && !pending.isEmpty()) {
-        committableOffsets.put(partition, new OffsetAndMetadata(pending.first()));
-      } else {
-        final var highestProcessed = highestProcessedOffsets.get(partition);
-        if (highestProcessed != null) {
-          committableOffsets.put(partition, new OffsetAndMetadata(highestProcessed + 1));
+    return Stream
+      .concat(pendingOffsets.keySet().stream(), highestProcessedOffsets.keySet().stream())
+      .distinct()
+      .flatMap(partition -> {
+        final var pending = pendingOffsets.get(partition);
+        if (pending != null && !pending.isEmpty()) {
+          return Stream.of(Map.entry(partition, new OffsetAndMetadata(pending.first())));
+        } else {
+          final var highestProcessed = highestProcessedOffsets.get(partition);
+          return highestProcessed != null
+            ? Stream.of(Map.entry(partition, new OffsetAndMetadata(highestProcessed + 1)))
+            : Stream.empty();
         }
-      }
-    });
-
-    return committableOffsets;
+      })
+      .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
   private boolean performCommit(final Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, final int timeoutSeconds)

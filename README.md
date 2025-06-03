@@ -1,12 +1,13 @@
-[![GitHub release](https://img.shields.io/github/release/eschizoid/kpipe.svg?style=flat-square)](https://github.com/eschizoid/kpipe/releases/latest)
-[![Codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
-[![Build Status](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
-
-# <img src="img/kpipe.png" width="200" height="200">
+# <img src="img/kpipe_1.png" width="200" height="200">
 
 # ☕ KPipe - A Modern Kafka Consumer
 
-A **modern, functional, and high-performance Kafka consumer** built using **Java 21** features like **virtual threads**,
+[![GitHub release](https://img.shields.io/github/release/eschizoid/kpipe.svg?style=flat-square)](https://github.com/eschizoid/kpipe/releases/latest)
+[![Codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
+[![Build Status](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+A **modern, functional, and high-performance Kafka consumer** built using **Java 24** features like **virtual threads**,
 **composable message processors**, and **DslJson** for JSON processing. Features robust error handling, configurable
 retries, built-in metrics, and support for both parallel and sequential processing. Ideal for large-scale systems.
 
@@ -14,10 +15,11 @@ retries, built-in metrics, and support for both parallel and sequential processi
 
 ## 🚀 Why This Library?
 
-### ✅ Modern Java 21 Features
+### ✅ Modern Java Features
 
-- **Virtual Threads** for massive concurrency with minimal overhead.
-- **ScopedValue** for clean, immutable trace propagation (Coming!)
+- **Virtual Threads** for massive concurrency with minimal overhead
+- **Functional programming** patterns for clean, maintainable code
+- **High-performance JSON processing** with DslJson
 
 ### 🧩 Functional Processing Pipeline
 
@@ -30,14 +32,14 @@ retries, built-in metrics, and support for both parallel and sequential processi
   ```java
   // Register team-specific processors
   MessageProcessorRegistry.register("sanitizeData",
-      DslJsonMessageProcessors.removeFields("password", "ssn"));
-  
+      JsonMessageProcessor.removeFields("password", "ssn"));
+
   // Create pipelines from registered processors
   final var pipeline = MessageProcessorRegistry.pipeline(
       "parseJson", "validateSchema", "sanitizeData", "addMetadata");
-  
+
   // Apply transformations with built-in error handling and retry logic
-  final var consumer = new FunctionalConsumer.<byte[], byte[]>build()
+  final var consumer = new FunctionalConsumer.<byte[], byte[]>builder()
     .withProcessor(pipeline)
     .withRetry(3, Duration.ofSeconds(1))
     .build();
@@ -50,11 +52,11 @@ retries, built-in metrics, and support for both parallel and sequential processi
     // Custom extraction logic here
     return processedMessage;
   });
-  
+
   // Load processors from configuration
   String[] configuredProcessors = config.getStringArray("message.processors");
   Function<byte[], byte[]> pipeline = MessageProcessorRegistry.pipeline(configuredProcessors);
-  
+
   // Create a consumer with team-specific processing pipeline
   final var consumer = new FunctionalConsumer.<byte[], byte[]>builder()
     .withProperties(kafkaProps)
@@ -67,7 +69,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
   .withErrorHandler(error -> publishToErrorTopic(error))
   .withRetry(3, Duration.ofSeconds(1))
   .build();
-  
+
   // Use the consumer
   consumer.start();
   ```
@@ -82,65 +84,79 @@ retries, built-in metrics, and support for both parallel and sequential processi
   <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe</artifactId>
-      <version>0.1.0</version>
+      <version>0.2.0</version>
   </dependency>
   ```
 
 ### Gradle (Groovy)
 
-  ```grovy
-  implementation 'io.github.eschizoid:kpipe:0.1.0'
+  ```groovy
+  implementation 'io.github.eschizoid:kpipe:0.2.0'
   ```
 
 ### Gradle (Kotlin)
 
   ```kotlin
-  implementation("io.github.eschizoid:kpipe:0.1.0")
+  implementation("io.github.eschizoid:kpipe:0.2.0")
   ```
 
 ### SBT
 
   ```sbt
-  libraryDependencies += "io.github.eschizoid" % "kpipe" % "0.1.0"
+  libraryDependencies += "io.github.eschizoid" % "kpipe" % "0.2.0"
   ```
 
 ---
 
 ## 📁 Project Structure
 
+KPipe is organized into two main modules:
+
+### Library Module (lib)
+
+The core library that provides the Kafka consumer functionality:
+
 ```
 ├── src/main/java/org/kpipe/
-│   ├── App.java                          # Main application class
-│   │
-│   ├── config/                           # Configuration components
-│   │   ├── AppConfig.java                # Application configuration
-│   │   └── KafkaConsumerConfig.java      # Kafka consumer configuration
-│   │
 │   ├── consumer/                         # Core consumer components
-│   │   ├── ConsumerCommand.java          # Command pattern for consumer operations
-│   │   ├── ConsumerRunner.java           # Runner implementation for consumers
-│   │   ├── ConsumerState.java            # State management for consumers
-│   │   ├── FunctionalConsumer.java       # Base functional consumer interface
-│   │   ├── FunctionalConsumer.java       # Functional consumer implementation
-│   │   └── MessageTracker.java           # Tracks message processing state
-│   │
-│   ├── metrics/                          # Metrics components
-│   │   ├── ConsumerMetricsReporter.java  # Reports consumer metrics
-│   │   ├── MetricsReporter.java          # Metrics reporting interface
-│   │   └── ProcessorMetricsReporter.java # Reports processor metrics
+│   │   ├── FunctionalConsumer.java       # Main functional consumer implementation
+│   │   ├── OffsetManager.java            # Manages Kafka offsets for reliable processing
+│   │   ├── MessageTracker.java           # Tracks message processing state
+│   │   ├── RebalanceListener.java        # Handles Kafka consumer rebalancing
+│   │   └── enums/                        # Enums for consumer states and commands
 │   │
 │   ├── processor/                        # Message processors
-│   │   └── JsonMessageProcessors.java    # JSON processing with DslJson
+│   │   └── JsonMessageProcessor.java     # JSON processing with DslJson
 │   │
 │   ├── registry/                         # Registry components
 │   │   ├── MessageProcessorRegistry.java # Registry for processor functions
 │   │   ├── MessageSinkRegistry.java      # Registry for message sinks
 │   │   └── RegistryFunctions.java        # Shared utilities for registries
 │   │
-│   └── sink/                             # Message sink implementations
-│       ├── ConsoleSink.java              # Console sink implementation
-│       └── MessageSink.java              # Message sink interface
+│   ├── sink/                             # Message sink implementations
+│   │   ├── ConsoleSink.java              # Console sink implementation
+│   │   └── MessageSink.java              # Message sink interface
+│   │
+│   ├── config/                           # Configuration components
+│   │   ├── AppConfig.java                # Application configuration
+│   │   └── KafkaConsumerConfig.java      # Kafka consumer configuration
+│   │
+│   └── metrics/                          # Metrics components
+│       ├── ConsumerMetricsReporter.java  # Reports consumer metrics
+│       ├── MetricsReporter.java          # Metrics reporting interface
+│       └── ProcessorMetricsReporter.java # Reports processor metrics
 ```
+
+### Application Module (app)
+
+A ready-to-use application that demonstrates the library:
+
+```
+├── src/main/java/org/kpipe/
+│   └── App.java                          # Main application class
+```
+
+---
 
 ## ⚙️ Example: Add Custom Processor
 
@@ -149,31 +165,31 @@ Extend the registry like this:
   ```java
   // Register a processor for JSON field transformations
   MessageProcessorRegistry.register("uppercase", bytes ->
-      DslJsonMessageProcessors.transformField("text", value -> {
+      JsonMessageProcessor.transformField("text", value -> {
           if (value instanceof String text) {
               return text.toUpperCase();
           }
           return value;
       }).apply(bytes)
   );
-  
+
   // Register a processor that adds environment information
   MessageProcessorRegistry.register("addEnvironment",
-      DslJsonMessageProcessors.addField("environment", "production"));
-  
+      JsonMessageProcessor.addField("environment", "production"));
+
   // Create a reusable processor pipeline
   final var pipeline = MessageProcessorRegistry.pipeline(
       "parseJson", "validateSchema", "addEnvironment", "uppercase", "addTimestamp"
   );
-  
+
   // Use the pipeline with a consumer
-  final var consumer = new FunctionalConsumer.<byte[], byte[]>build()
+  final var consumer = new FunctionalConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic("events")
       .withProcessor(pipeline)
       .withRetry(3, Duration.ofSeconds(1))
       .build();
-  
+
   // Start processing messages
   consumer.start();
   ```
@@ -213,7 +229,7 @@ The consumer supports graceful shutdown with in-flight message handling:
   } else {
     LOGGER.warning("Shutdown completed with some messages still in flight");
   }
-  
+
   // Register as JVM shutdown hook
   Runtime.getRuntime().addShutdownHook(
     new Thread(() -> app.shutdownGracefully(5000))
@@ -228,25 +244,25 @@ The JSON processors handle deserialization and transformation of JSON data:
 
   ```java
   // Add a timestamp field to messages
-  final var addTimestampProcessor = JsonMessageProcessors.addTimestamp("processedAt");
-  
+  final var addTimestampProcessor = JsonMessageProcessor.addTimestamp("processedAt");
+
   // Remove sensitive fields
-  final var sanitizeProcessor = JsonMessageProcessors.removeFields("password", "ssn", "creditCard");
-  
+  final var sanitizeProcessor = JsonMessageProcessor.removeFields("password", "ssn", "creditCard");
+
   // Transform specific fields
-  final var uppercaseSubjectProcessor = JsonMessageProcessors.transformField("subject", value -> {
+  final var uppercaseSubjectProcessor = JsonMessageProcessor.transformField("subject", value -> {
       if (value instanceof String text) {
           return text.toUpperCase();
       }
       return value;
   });
-  
+
   // Add metadata to messages
-  Map<String, Object> metadata = new HashMap<>();
+  final var metadata = new HashMap<String, Object>();
   metadata.put("version", "1.0");
   metadata.put("environment", "production");
-  var addMetadataProcessor = DslJsonMessageProcessors.mergeWith(metadata);
-  
+  var addMetadataProcessor = JsonMessageProcessor.mergeWith(metadata);
+
   // Combine processors into a pipeline
   Function<byte[], byte[]> pipeline = message -> addMetadataProcessor.apply(
       uppercaseSubjectProcessor.apply(
@@ -255,7 +271,7 @@ The JSON processors handle deserialization and transformation of JSON data:
           )
       )
   );
-  
+
   // Or use the registry to build pipelines
   final var registryPipeline = MessageProcessorRegistry.pipeline(
       "sanitize", "addTimestamp", "uppercaseSubject", "addMetadata"
@@ -264,10 +280,88 @@ The JSON processors handle deserialization and transformation of JSON data:
 
 ---
 
+## 🔍 Application Example
+
+Here's a concise example of a KPipe application:
+
+```java
+public class KPipeApp implements AutoCloseable {
+  private final ConsumerRunner<FunctionalConsumer<byte[], byte[]>> runner;
+  
+  public static void main(final String[] args) {
+    // Load configuration from environment variables
+    final var config = AppConfig.fromEnv();
+
+    try (final var app = new MyKafkaApp(config)) {
+      app.start();
+      app.awaitShutdown();
+    } catch (final Exception e) {
+      System.getLogger(MyKafkaApp.class.getName())
+        .log(System.Logger.Level.ERROR, "Fatal error in application", e);
+      System.exit(1);
+    }
+  }
+
+  public MyKafkaApp(final AppConfig config) {
+    // Create processor and sink registries
+    final var processorRegistry = new MessageProcessorRegistry(config.appName());
+    final var sinkRegistry = new MessageSinkRegistry();
+    
+    // Create the functional consumer
+    final var functionalConsumer = FunctionalConsumer.<byte[], byte[]>builder()
+      .withProperties(KafkaConsumerConfig.createConsumerConfig(
+        config.bootstrapServers(), config.consumerGroup()))
+      .withTopic(config.topic())
+      .withProcessor(processorRegistry.pipeline(
+        "parseJson", "addSource", "markProcessed", "addTimestamp"))
+      .withMessageSink(sinkRegistry.<byte[], byte[]>pipeline("logging"))
+      .withOffsetManagerProvider(consumer -> 
+        OffsetManager.builder(consumer)
+          .withCommitInterval(Duration.ofSeconds(30))
+          .build())
+      .withMetrics(true)
+      .build();
+    
+    // Set up the consumer runner with metrics and shutdown hooks
+    runner = ConsumerRunner.builder(functionalConsumer)
+      .withMetricsInterval(config.metricsInterval().toMillis())
+      .withShutdownTimeout(config.shutdownTimeout().toMillis())
+      .withShutdownHook(true)
+      .build();
+  }
+  
+  public void start() { runner.start(); }
+  public boolean awaitShutdown() { return runner.awaitShutdown(); }
+  public void close() { runner.close(); }
+}
+```
+
+**Key Components:**
+- Configuration from environment variables
+- Processor and sink registries for message handling
+- Processing pipeline with error handling
+- Metrics reporting and graceful shutdown
+
+**To Run:**
+```bash
+# Set configuration
+export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+export KAFKA_CONSUMER_GROUP=my-group
+export KAFKA_TOPIC=json-events
+
+# Run the application
+./gradlew run
+
+# Test with a sample message
+echo '{"message":"Hello from KPipe!"}' | kcat -P -b localhost:9092 -t json-events
+```
+
+---
+
 ## 🛠️ Requirements
 
 - Java 24+
-- gradle (for building the project)
+- Gradle (for building the project)
 - [kcat](https://github.com/edenhill/kcat) (for testing)
 - Docker (for local Kafka setup)
 
@@ -302,13 +396,13 @@ Follow these steps to test the KPipe Kafka Consumer:
   docker compose build --no-cache
   docker compose down -v
   docker compose up -d
-  
+
   # Publish a simple JSON message to the json-topic
   echo '{"message":"Hello world"}' | kcat -P -b kafka:9092 -t json-topic
-  
+
   # For complex JSON messages, use a file
   cat test-message.json | kcat -P -b kafka:9092 -t json-topic
-  
+
   # Publish multiple test messages
   for i in {1..10}; do echo "{\"id\":$i,\"message\":\"Test message $i\"}" | \
     kcat -P -b kafka:9092 -t json-topic; done
@@ -333,14 +427,14 @@ For maintainable pipelines, group related processors:
   // Create focused processor groups
   final var securityProcessors = MessageProcessorRegistry.pipeline(
       "sanitizeData", "encryptSensitiveFields", "addAuditTrail");
-      
+
   final var enrichmentProcessors = MessageProcessorRegistry.pipeline(
       "addMetadata", "addTimestamp", "addEnvironment");
-      
+
   // Compose them into a master pipeline
   final var fullPipeline = message -> enrichmentProcessors.apply(
       securityProcessors.apply(message));
-  
+
   // Or register the composed pipeline
   MessageProcessorRegistry.register("standardProcessing", fullPipeline);
   ```
@@ -353,20 +447,20 @@ The library provides a built-in `when()` method for conditional processing:
   // Create a predicate that checks message type
   Predicate<byte[]> isOrderMessage = message -> {
       try {
-          Map<String, Object> parsed = DslJsonMessageProcessors.parseJson().apply(message);
+          Map<String, Object> parsed = JsonMessageProcessor.parseJson().apply(message);
           return "ORDER".equals(parsed.get("type"));
       } catch (Exception e) {
           return false;
       }
   };
-  
+
   // Use the built-in conditional processor
   Function<byte[], byte[]> conditionalProcessor = MessageProcessorRegistry.when(
       isOrderMessage,
       MessageProcessorRegistry.get("orderEnrichment"),
       MessageProcessorRegistry.get("defaultEnrichment")
   );
-  
+
   // Register the conditional pipeline
   MessageProcessorRegistry.register("smartProcessing", conditionalProcessor);
   ```
@@ -397,7 +491,7 @@ The library provides a built-in `when()` method for conditional processing:
 This library is inspired by the best practices from:
 
 - [Project Loom](https://openjdk.org/projects/loom/)
-- [High-performance JSON libraries (DslJson, Jsoniter)](https://github.com/ngs-doo/dsl-json)
+- [High-performance JSON libraries (DslJson)](https://github.com/ngs-doo/dsl-json)
 
 ---
 
@@ -411,6 +505,12 @@ If you're a team using this library, feel free to:
 
 ---
 
+## 📄 License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+---
+
 ## 🧠 Final Thoughts
 
 This Kafka consumer is:
@@ -419,4 +519,4 @@ This Kafka consumer is:
 - **Extensible**
 - **Future-proof**
 
-Use it to modernize your Kafka stack with **Java 21 elegance and performance**.
+Use it to modernize your Kafka stack with **Java 24 elegance and performance**.

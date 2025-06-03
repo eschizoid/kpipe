@@ -293,7 +293,7 @@ public final class KafkaConsumerConfig {
     /**
      * Applies a custom transformer function to the current properties.
      *
-     * @param customizer The transformer function to apply
+     * @param customizer The transformer function to be applied
      * @return This builder for chaining
      */
     public ConsumerConfigBuilder with(final UnaryOperator<Properties> customizer) {

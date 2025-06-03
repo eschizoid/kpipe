@@ -37,7 +37,7 @@ public interface MetricsReporter {
    * Starts the metrics reporter.
    *
    * <p>Implementations may use this method to initialize resources, schedule periodic reporting, or
-   * connect to external systems. Default implementation does nothing.
+   * connect to external systems. The default implementation does nothing.
    */
   default void start() {} // Optional operations with default implementations
 
@@ -45,7 +45,7 @@ public interface MetricsReporter {
    * Stops the metrics reporter.
    *
    * <p>Implementations may use this method to release resources, cancel scheduled tasks, or
-   * disconnect from external systems. Default implementation does nothing.
+   * disconnect from external systems. The default implementation does nothing.
    */
   default void stop() {}
 }
