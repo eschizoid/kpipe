@@ -4,23 +4,18 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kpipe.consumer.enums.ConsumerCommand;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -29,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class FunctionalConsumerMockingTest {
 
+  private static final int PARTITION = 0;
   private static final String TOPIC = "test-topic";
   private Properties properties;
 
@@ -40,6 +36,9 @@ class FunctionalConsumerMockingTest {
 
   @Mock
   private Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler;
+
+  @Mock
+  private OffsetManager<String, String> offsetManager;
 
   @Captor
   private ArgumentCaptor<List<String>> topicCaptor;
@@ -58,18 +57,20 @@ class FunctionalConsumerMockingTest {
 
   @Test
   void shouldSubscribeToTopic() {
-    final var props = new Properties();
-    final var consumer = new TestableFunctionalConsumer<>(
-      props,
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
-    consumer.start();
+    functionalConsumer.start();
 
     verify(mockConsumer).subscribe(topicCaptor.capture());
     assertEquals(List.of(TOPIC), topicCaptor.getValue());
@@ -77,23 +78,21 @@ class FunctionalConsumerMockingTest {
 
   @Test
   void shouldProcessRecordsWithProcessor() throws Exception {
-    // Setup
-    final var props = new Properties();
-
     // Create mock records
-    final var partition = new TopicPartition(TOPIC, 0);
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, 0, 0L, "test-key", "test-value"));
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key", "test-value"));
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
-
-    // Create consumer with mock
-    final var consumer = new TestableFunctionalConsumer<>(
-      props,
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Create a CountDownLatch to wait for async processing
@@ -105,21 +104,21 @@ class FunctionalConsumerMockingTest {
         return "processed-value";
       })
       .when(processor)
-      .apply("test-value");
+      .apply(anyString());
 
     // Test
-    consumer.executeProcessRecords(records);
+    functionalConsumer.executeProcessRecords(records);
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
-    // Verify processor was called with correct value
+    // Verify the processor was called with the correct value
     verify(processor).apply("test-value");
   }
 
   @Test
   void shouldHandleProcessorExceptions() throws Exception {
     // Setup
-    final var props = new Properties();
     final var latch = new CountDownLatch(1);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to throw exception and count down latch
     doAnswer(invocation -> {
@@ -127,26 +126,26 @@ class FunctionalConsumerMockingTest {
         throw new RuntimeException("Test exception");
       })
       .when(processor)
-      .apply("test-value");
+      .apply(anyString());
 
     // Create mock records
-    final var partition = new TopicPartition(TOPIC, 0);
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, 0, 0L, "test-key", "test-value"));
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key", "test-value"));
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
-
-    // Create consumer with mock
-    final var consumer = new TestableFunctionalConsumer<>(
-      props,
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Test - should not throw exception
-    assertDoesNotThrow(() -> consumer.executeProcessRecords(records));
+    assertDoesNotThrow(() -> functionalConsumer.executeProcessRecords(records));
 
     // Wait for async processing to complete
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
@@ -156,43 +155,36 @@ class FunctionalConsumerMockingTest {
   }
 
   @Test
-  void shouldCloseKafkaConsumerWhenClosed() throws Exception {
+  void shouldCloseKafkaConsumerWhenClosed() {
     // Setup
-    final var props = new Properties();
-    final var mockConsumer = mock(KafkaConsumer.class);
-    Function<String, String> processor = value -> value;
-
-    final var consumer = new TestableFunctionalConsumer<>(
-      props,
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
-    consumer.start();
+    functionalConsumer.start();
 
     // Test
-    consumer.close();
+    functionalConsumer.close();
 
     // Verify
     verify(mockConsumer).wakeup();
-
-    // Use atLeastOnce() instead of the default times(1)
-    verify(mockConsumer, atLeastOnce()).close();
-
-    // Or, to be more specific about the exact number of times:
-    // verify(mockConsumer, times(2)).close();
-
-    assertFalse(consumer.isRunning());
+    verify(mockConsumer, times(1)).close();
+    assertFalse(functionalConsumer.isRunning());
   }
 
   @Test
   void shouldRetryProcessingOnFailureUpToMaxRetries() throws Exception {
     // Setup
-    final var props = new Properties();
     final var latch = new CountDownLatch(3); // Expect 3 calls (initial + 2 retries)
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to always fail and count down latch
     doAnswer(inv -> {
@@ -202,25 +194,25 @@ class FunctionalConsumerMockingTest {
       .when(processor)
       .apply(anyString());
 
-    // Create mock record
-    final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "key", "value");
-    final var partition = new TopicPartition(TOPIC, 0);
+    // Create a mock record
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value");
+    final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(record);
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
-
-    // Create consumer with retry config
-    var consumer = new TestableFunctionalConsumer<>(
-      props,
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       2,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Process records
-    consumer.executeProcessRecords(records);
+    functionalConsumer.executeProcessRecords(records);
 
     // Wait for all attempts to complete
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
@@ -241,8 +233,8 @@ class FunctionalConsumerMockingTest {
   @Test
   void shouldNotRetryWhenMaxRetriesIsZero() throws Exception {
     // Setup
-    final var props = new Properties();
     final var latch = new CountDownLatch(1);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to fail and count down latch
     doAnswer(inv -> {
@@ -253,24 +245,26 @@ class FunctionalConsumerMockingTest {
       .apply(anyString());
 
     // Create mock records
-    final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "key", "value");
-    final var partition = new TopicPartition(TOPIC, 0);
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value");
+    final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(record);
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
-    // Create consumer with no retries
-    final var consumer = new TestableFunctionalConsumer<>(
-      props,
+    // Create a consumer with no retries
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Process records
-    consumer.executeProcessRecords(records);
+    functionalConsumer.executeProcessRecords(records);
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
@@ -288,24 +282,26 @@ class FunctionalConsumerMockingTest {
   @Test
   void shouldPauseConsumerWhenPauseCalled() {
     // Setup
-    final var mockConsumer = mock(KafkaConsumer.class);
-    final var partition = new TopicPartition("test-topic", 0);
-    final var partitions = Set.of(partition);
+    final var partitions = Set.of(new TopicPartition(TOPIC, PARTITION));
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var consumer = new TestableFunctionalConsumer<>(
-      new Properties(),
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Action
-    consumer.pause();
-    consumer.processCommands(); // Process the command
+    functionalConsumer.pause();
+    functionalConsumer.processCommands();
 
     // Verification
     verify(mockConsumer).pause(partitions);
@@ -314,32 +310,35 @@ class FunctionalConsumerMockingTest {
   @Test
   void shouldResumeConsumerWhenResumeCalled() {
     // Setup
-    final var mockConsumer = mock(KafkaConsumer.class);
-    final var partition = new TopicPartition("test-topic", 0);
+    final var partition = new TopicPartition(TOPIC, PARTITION);
     final var partitions = Set.of(partition);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var consumer = new TestableFunctionalConsumer<>(
-      new Properties(),
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
-    // Set up paused state
-    consumer.pause();
-    consumer.processCommands(); // Process pause command
+    // Set up a paused state
+    functionalConsumer.pause();
+    functionalConsumer.processCommands(); // Process pause command
 
     // Clear any previous interactions with the mock
     reset(mockConsumer);
     when(mockConsumer.assignment()).thenReturn(partitions);
 
     // Action
-    consumer.resume();
-    consumer.processCommands(); // Process resume command
+    functionalConsumer.resume();
+    functionalConsumer.processCommands(); // Process resume command
 
     // Verification
     verify(mockConsumer).resume(partitions);
@@ -348,26 +347,27 @@ class FunctionalConsumerMockingTest {
   @Test
   void pauseAndResumeShouldBeIdempotent() {
     // Setup
-    final var mockConsumer = mock(KafkaConsumer.class);
-    final var partition = new TopicPartition("test-topic", 0);
-    final var partitions = Set.of(partition);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var partitions = Set.of(new TopicPartition(TOPIC, PARTITION));
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var consumer = new TestableFunctionalConsumer<>(
-      new Properties(),
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Action
-    consumer.pause();
-    consumer.processCommands(); // Process the pause command
-    consumer.pause(); // Second call should be idempotent
-    consumer.processCommands(); // Process second command (should do nothing)
+    functionalConsumer.pause();
+    functionalConsumer.processCommands(); // Process the pause command
+    functionalConsumer.pause(); // The second call should be idempotent
+    functionalConsumer.processCommands(); // Process the second command (should do nothing)
 
     // Verify
     verify(mockConsumer, times(1)).pause(any());
@@ -376,8 +376,8 @@ class FunctionalConsumerMockingTest {
   @Test
   void shouldUpdateMetricsOnSuccessfulProcessing() throws Exception {
     // Setup
-    final var props = new Properties();
     final var latch = new CountDownLatch(1);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to return success and count down latch
     doAnswer(inv -> {
@@ -388,23 +388,24 @@ class FunctionalConsumerMockingTest {
       .apply(anyString());
 
     // Create mock records
-    var partition = new TopicPartition(TOPIC, 0);
-    var recordsList = List.of(new ConsumerRecord<>(TOPIC, 0, 0L, "key", "value"));
+    var partition = new TopicPartition(TOPIC, PARTITION);
+    var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value"));
     var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
-    // Create test consumer
-    final var consumer = new TestableFunctionalConsumer<>(
-      props,
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Process records
-    consumer.executeProcessRecords(records);
+    functionalConsumer.executeProcessRecords(records);
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
@@ -412,17 +413,18 @@ class FunctionalConsumerMockingTest {
     Thread.sleep(500);
 
     // Verify metrics
-    final var metrics = consumer.getMetrics();
+    final var metrics = functionalConsumer.getMetrics();
     assertEquals(1L, metrics.get("messagesReceived"));
     assertEquals(1L, metrics.get("messagesProcessed"));
     assertEquals(0L, metrics.get("processingErrors"));
     assertEquals(0L, metrics.get("retries"));
   }
 
+  @Test
   void shouldUpdateMetricsOnProcessingError() throws Exception {
     // Setup
-    final var props = new Properties();
     final var latch = new CountDownLatch(1);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to throw exception and count down latch
     doAnswer(inv -> {
@@ -433,28 +435,28 @@ class FunctionalConsumerMockingTest {
       .apply(anyString());
 
     // Create mock records
-    final var partition = new TopicPartition(TOPIC, 0);
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, 0, 0L, "key", "value"));
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value"));
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
-
-    // Create test consumer
-    final var consumer = new TestableFunctionalConsumer<>(
-      props,
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Process records
-    consumer.executeProcessRecords(records);
+    functionalConsumer.executeProcessRecords(records);
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
     // Verify metrics
-    final var metrics = consumer.getMetrics();
+    final var metrics = functionalConsumer.getMetrics();
     assertEquals(1L, metrics.get("messagesReceived"));
     assertEquals(0L, metrics.get("messagesProcessed"));
     assertEquals(1L, metrics.get("processingErrors"));
@@ -462,48 +464,35 @@ class FunctionalConsumerMockingTest {
 
   @Test
   void shouldNotCollectMetricsWhenDisabled() {
-    // Setup
-    final var props = new Properties();
-    props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-    props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-    props.put("bootstrap.servers", "localhost:9092"); // Can be any value since we just test metrics
-
     // Create consumer with disabled metrics
     try (
       final var consumer = FunctionalConsumer
         .<String, String>builder()
-        .withProperties(props)
+        .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(processor)
+        .withProcessor(s -> s)
         .withMetrics(false)
         .build()
     ) {
-      // Verify metrics are empty
-      assertTrue(consumer.getMetrics().isEmpty());
+      assertTrue(consumer.getMetrics().isEmpty(), "Metrics should be empty when disabled");
+      assertNull(consumer.createMessageTracker(), "MessageTracker should be null when metrics are disabled");
     }
   }
 
   @Test
   void builderShouldRespectAllOptions() {
     // Setup
-    final var props = new Properties();
-    props.put("bootstrap.servers", "localhost:9092");
-    props.put("group.id", "test-group");
-    // Add missing required deserializers
-    props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-    props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-
     final var pollTimeout = Duration.ofMillis(200);
     final Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler = error -> {};
     final var maxRetries = 3;
     final var retryBackoff = Duration.ofMillis(100);
     final var enableMetrics = true;
 
-    // Create consumer with all options
+    // Create a consumer with all options
     final var consumer = FunctionalConsumer
       .<String, String>builder()
-      .withProperties(props)
-      .withTopic("test-topic")
+      .withProperties(properties)
+      .withTopic(TOPIC)
       .withProcessor(s -> s)
       .withPollTimeout(pollTimeout)
       .withErrorHandler(errorHandler)
@@ -535,27 +524,30 @@ class FunctionalConsumerMockingTest {
   @Test
   void shouldHandleEmptyRecordBatch() {
     // Setup
-    final var consumer = new FunctionalConsumerMockingTest.TestableFunctionalConsumer<>(
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
       properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Create empty records
     final var records = new ConsumerRecords<String, String>(Map.of());
 
     // Process records
-    consumer.executeProcessRecords(records);
+    functionalConsumer.executeProcessRecords(records);
 
     // Verify processor was never called
     verifyNoInteractions(processor);
 
     // Verify metrics
-    final var metrics = consumer.getMetrics();
+    final var metrics = functionalConsumer.getMetrics();
     assertEquals(0L, metrics.get("messagesReceived"));
   }
 
@@ -563,6 +555,7 @@ class FunctionalConsumerMockingTest {
   void shouldHandleNullValueInRecord() throws Exception {
     // Setup
     final var latch = new CountDownLatch(1);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     doAnswer(inv -> {
         latch.countDown();
@@ -571,27 +564,29 @@ class FunctionalConsumerMockingTest {
       .when(processor)
       .apply(null);
 
-    final var consumer = new FunctionalConsumerMockingTest.TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
       properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Create record with null value
-    final var partition = new TopicPartition(TOPIC, 0);
-    final var recordsList = List.of(new ConsumerRecord<String, String>(TOPIC, 0, 0L, "key", null));
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var recordsList = List.of(new ConsumerRecord<String, String>(TOPIC, PARTITION, 0L, "key", null));
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Process records
-    consumer.executeProcessRecords(records);
+    functionalConsumer.executeProcessRecords(records);
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
-    // Verify processor was called with null
+    // Verify the processor was called with null
     verify(processor).apply(null);
   }
 
@@ -600,6 +595,7 @@ class FunctionalConsumerMockingTest {
     // Setup - create a processor that takes time
     final var processingStarted = new CountDownLatch(1);
     final var processingBlocked = new AtomicBoolean(true);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     Function<String, String> slowProcessor = value -> {
       processingStarted.countDown();
@@ -607,60 +603,86 @@ class FunctionalConsumerMockingTest {
         try {
           Thread.sleep(10);
         } catch (InterruptedException e) {
-          // Ignore
+          Thread.currentThread().interrupt();
         }
       }
       return value;
     };
 
-    // Create a custom consumer that lets us track processing state
-    final var consumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
       properties,
       TOPIC,
       slowProcessor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
-    // Manually simulate processing in progress
-    consumer.incrementProcessingCount(); // Use the custom method
-
     // Initiate close in a separate thread
-    final var closeFuture = CompletableFuture.runAsync(consumer::close);
+    final var closeFuture = CompletableFuture.runAsync(functionalConsumer::close);
 
     // Verify close doesn't complete immediately
     assertFalse(closeFuture.isDone(), "Close should wait for in-flight messages");
-
-    // Allow processing to complete
-    consumer.decrementProcessingCount(); // Use the custom method
 
     // Verify close completes
     closeFuture.get(1, TimeUnit.SECONDS);
   }
 
   @Test
-  void shouldTrackInFlightMessagesCorrectly() throws Exception {
-    // Create custom consumer with tracking methods
-    final var consumer = new TestableFunctionalConsumer<>(
+  void processCommandsShouldHandlePauseAndResume() {
+    // Arrange
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
       properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
+    );
+
+    commandQueue.offer(ConsumerCommand.PAUSE);
+    commandQueue.offer(ConsumerCommand.RESUME);
+
+    // Act
+    functionalConsumer.processCommands();
+
+    // Assert
+    verify(mockConsumer, atLeastOnce()).pause(any());
+    verify(mockConsumer, atLeastOnce()).resume(any());
+  }
+
+  @Test
+  void shouldTrackInFlightMessagesCorrectly() throws Exception {
+    // Create a custom consumer with tracking methods
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
     // Check initial state
-    assertEquals(0, consumer.getProcessingCount(), "Initially no in-flight messages");
+    assertEquals(0, functionalConsumer.getProcessingCount(), "Initially no in-flight messages");
 
     // Create records
-    final var partition = new TopicPartition(TOPIC, 0);
+    final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(
-      new ConsumerRecord<>(TOPIC, 0, 0L, "key1", "value1"),
-      new ConsumerRecord<>(TOPIC, 0, 1L, "key2", "value2")
+      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key1", "value1"),
+      new ConsumerRecord<>(TOPIC, PARTITION, 1L, "key2", "value2")
     );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
@@ -672,18 +694,18 @@ class FunctionalConsumerMockingTest {
     when(processor.apply(anyString()))
       .thenAnswer(inv -> {
         startLatch.countDown();
-        completeLatch.await(1, TimeUnit.SECONDS);
+        completeLatch.await(5, TimeUnit.SECONDS);
         return inv.getArgument(0);
       });
 
     // Process records
-    CompletableFuture.runAsync(() -> consumer.executeProcessRecords(records));
+    CompletableFuture.runAsync(() -> functionalConsumer.executeProcessRecords(records));
 
     // Wait for processing to start
     assertTrue(startLatch.await(1, TimeUnit.SECONDS), "Processing did not start in time");
 
-    // Verify processing count
-    assertEquals(2, consumer.getProcessingCount(), "Should have 2 in-flight messages");
+    // Verify the processing count
+    assertEquals(2, functionalConsumer.getProcessingCount(), "Should have 2 in-flight messages");
 
     // Allow processing to complete
     completeLatch.countDown();
@@ -692,41 +714,45 @@ class FunctionalConsumerMockingTest {
     Thread.sleep(300);
 
     // Verify count returns to 0
-    assertEquals(0, consumer.getProcessingCount(), "Should have no in-flight messages after completion");
+    assertEquals(0, functionalConsumer.getProcessingCount(), "Should have no in-flight messages after completion");
   }
 
   @Test
   void shouldHandleInterruptedPollOperation() throws Exception {
     // Setup - mock the behavior to first throw exception, then simulate wakeup
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+
     when(mockConsumer.poll(any(Duration.class)))
       .thenThrow(new RuntimeException("Poll interrupted"))
       .thenThrow(new RuntimeException("Poll interrupted again"));
 
-    final var consumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
       properties,
       TOPIC,
       processor,
       mockConsumer,
       0,
       Duration.ofMillis(10),
-      errorHandler
+      errorHandler,
+      commandQueue,
+      offsetManager
     );
 
-    // Start in separate thread
+    // Start in a separate thread
     final var executor = Executors.newSingleThreadExecutor();
-    final var future = executor.submit(consumer::start);
+    final var future = executor.submit(functionalConsumer::start);
 
-    // Allow time for poll to be called
+    // Allow time for a poll to be called
     Thread.sleep(100);
 
     // Force stop the consumer
-    consumer.close();
+    functionalConsumer.close();
 
-    // Wait for thread to complete
+    // Wait for the thread to complete
     future.get(1, TimeUnit.SECONDS);
 
     // Verify consumer is no longer running
-    assertFalse(consumer.isRunning(), "Consumer should stop after close");
+    assertFalse(functionalConsumer.isRunning(), "Consumer should stop after close");
 
     // Cleanup
     executor.shutdownNow();
@@ -735,7 +761,7 @@ class FunctionalConsumerMockingTest {
   @Test
   void stateShouldTransitionCorrectlyDuringLifecycle() throws InterruptedException {
     // Create consumer
-    final var consumer = FunctionalConsumer
+    final var functionalConsumer = FunctionalConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -743,45 +769,278 @@ class FunctionalConsumerMockingTest {
       .build();
 
     // Initial state
-    assertFalse(consumer.isRunning(), "Should not be running initially");
-    assertFalse(consumer.isPaused(), "Should not be paused initially");
+    assertFalse(functionalConsumer.isRunning(), "Should not be running initially");
+    assertFalse(functionalConsumer.isPaused(), "Should not be paused initially");
 
     // Start consumer
     final var executor = Executors.newSingleThreadExecutor();
-    executor.submit(consumer::start);
+    executor.submit(functionalConsumer::start);
 
     // Wait for consumer to start
     Thread.sleep(100);
 
-    // Check running state
-    assertTrue(consumer.isRunning(), "Should be running after start");
-    assertFalse(consumer.isPaused(), "Should not be paused after start");
+    // Check the running state
+    assertTrue(functionalConsumer.isRunning(), "Should be running after start");
+    assertFalse(functionalConsumer.isPaused(), "Should not be paused after start");
 
     // Pause consumer
-    consumer.pause();
+    functionalConsumer.pause();
     Thread.sleep(50);
 
     // Check paused state
-    assertTrue(consumer.isRunning(), "Should still be running when paused");
-    assertTrue(consumer.isPaused(), "Should be paused after pause");
+    assertTrue(functionalConsumer.isRunning(), "Should still be running when paused");
+    assertTrue(functionalConsumer.isPaused(), "Should be paused after pause");
 
     // Resume consumer
-    consumer.resume();
+    functionalConsumer.resume();
     Thread.sleep(50);
 
     // Check resumed state
-    assertTrue(consumer.isRunning(), "Should be running after resume");
-    assertFalse(consumer.isPaused(), "Should not be paused after resume");
+    assertTrue(functionalConsumer.isRunning(), "Should be running after resume");
+    assertFalse(functionalConsumer.isPaused(), "Should not be paused after resume");
 
     // Close consumer
-    consumer.close();
+    functionalConsumer.close();
     Thread.sleep(50);
 
     // Check closed state
-    assertFalse(consumer.isRunning(), "Should not be running after close");
+    assertFalse(functionalConsumer.isRunning(), "Should not be running after close");
 
     // Cleanup
     executor.shutdownNow();
+  }
+
+  @Test
+  void shouldMarkOffsetAsProcessedEvenWhenProcessingFails() throws Exception {
+    // Setup
+    final var latch = new CountDownLatch(1);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+
+    // Configure the processor to always fail
+    doAnswer(inv -> {
+        latch.countDown();
+        throw new RuntimeException("Expected test exception");
+      })
+      .when(processor)
+      .apply(anyString());
+
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      2,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      offsetManager
+    );
+
+    // Create a record that will fail processing
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)));
+
+    // Process record
+    functionalConsumer.executeProcessRecords(records);
+
+    // Wait for processing to complete
+    assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
+
+    Thread.sleep(200);
+
+    // Process the commands in the queue
+    functionalConsumer.processCommands();
+
+    // Verify offset manager interactions
+    verify(offsetManager, times(1)).markOffsetProcessed(record);
+    verify(offsetManager).markOffsetProcessed(record);
+
+    // Verify error handler was called with the right retry count
+    verify(errorHandler, timeout(500)).accept(errorCaptor.capture());
+    assertEquals(2, errorCaptor.getValue().retryCount());
+  }
+
+  @Test
+  void shouldIntegrateWithOffsetManager() {
+    // Setup - create a consumer with offset manager
+    when(offsetManager.createRebalanceListener()).thenReturn(mock(ConsumerRebalanceListener.class));
+
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    properties.put("enable.auto.commit", "false");
+
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      String::toUpperCase,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      offsetManager
+    );
+
+    // Start consumer
+    functionalConsumer.start();
+
+    // Verify offset manager is started
+    verify(offsetManager).start();
+
+    // Simulate a command to track offset
+    var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
+    commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+
+    // Process commands
+    functionalConsumer.processCommands();
+
+    // Verify offset is tracked
+    verify(offsetManager).trackOffset(record);
+
+    // Simulate processing completion
+    commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+
+    // Process commands
+    functionalConsumer.processCommands();
+
+    // Verify offset is marked as processed
+    verify(offsetManager).markOffsetProcessed(record);
+  }
+
+  @Test
+  void shouldCommitOffsetsViaCommandQueue() {
+    // Setup - create consumer with offset manager
+    when(offsetManager.createRebalanceListener()).thenReturn(mock(ConsumerRebalanceListener.class));
+
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      String::toUpperCase,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      offsetManager
+    );
+
+    // Create an offset map to commit
+    final var offsets = new HashMap<TopicPartition, OffsetAndMetadata>();
+    final var commitId = "test-commit-id";
+    offsets.put(new TopicPartition(TOPIC, PARTITION), new OffsetAndMetadata(123));
+
+    // Send commit command
+    commandQueue.offer(ConsumerCommand.COMMIT_OFFSETS.withOffsets(offsets).withCommitId(commitId));
+
+    // Process commands
+    functionalConsumer.processCommands();
+
+    // Verify the commit was performed
+    verify(mockConsumer).commitSync(offsets);
+
+    // Verify notification of commit completion
+    verify(offsetManager).notifyCommitComplete(commitId, true);
+  }
+
+  @Test
+  void shouldHandleCommitFailure() {
+    // Setup - create consumer with offset manager
+    when(offsetManager.createRebalanceListener()).thenReturn(mock(ConsumerRebalanceListener.class));
+
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      String::toUpperCase,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      offsetManager
+    );
+
+    // Configure mock to throw an exception on commit
+    doThrow(new CommitFailedException("Commit failed")).when(mockConsumer).commitSync(anyMap());
+
+    // Create an offset map to commit
+    final var offsets = new HashMap<TopicPartition, OffsetAndMetadata>();
+    final var commitId = "test-commit-id";
+    offsets.put(new TopicPartition(TOPIC, PARTITION), new OffsetAndMetadata(123));
+
+    // Send commit command
+    commandQueue.offer(ConsumerCommand.COMMIT_OFFSETS.withOffsets(offsets).withCommitId(commitId));
+
+    // Process commands
+    functionalConsumer.processCommands();
+
+    // Verify notification of commit failure
+    verify(offsetManager).notifyCommitComplete(commitId, false);
+  }
+
+  @Test
+  void shouldProcessRecordsConcurrently() throws Exception {
+    // Setup - track concurrent execution
+    final var startLatch = new CountDownLatch(3);
+    final var completionLatch = new CountDownLatch(3);
+    final var maxConcurrent = new AtomicInteger(0);
+    final var currentConcurrent = new AtomicInteger(0);
+
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+
+    // Create a processor function separately
+    Function<String, String> concurrentProcessor = value -> {
+      // Count concurrent executions
+      int current = currentConcurrent.incrementAndGet();
+      maxConcurrent.updateAndGet(max -> Math.max(max, current));
+      startLatch.countDown();
+
+      try {
+        // Wait for all processors to start to ensure they overlap
+        startLatch.await(1, TimeUnit.SECONDS);
+        Thread.sleep(100); // Ensure overlap
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      } finally {
+        currentConcurrent.decrementAndGet();
+        completionLatch.countDown();
+      }
+      return value.toUpperCase();
+    };
+
+    final var functionalConsumer = new TestableFunctionalConsumer<>(
+      properties,
+      TOPIC,
+      concurrentProcessor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      offsetManager
+    );
+
+    // Create test records
+    final var records = Arrays.asList(
+      new ConsumerRecord<>(TOPIC, PARTITION, 1L, "key1", "value1"),
+      new ConsumerRecord<>(TOPIC, PARTITION, 2L, "key2", "value2"),
+      new ConsumerRecord<>(TOPIC, PARTITION, 3L, "key3", "value3")
+    );
+
+    // Create consumer records
+    final var recordsMap = Map.of(new TopicPartition(TOPIC, PARTITION), records);
+    final var consumerRecords = new ConsumerRecords<>(recordsMap);
+
+    // Process records
+    functionalConsumer.executeProcessRecords(consumerRecords);
+
+    // Wait for all records to be processed
+    assertTrue(completionLatch.await(3, TimeUnit.SECONDS), "Records processing timed out");
+
+    // Verify concurrent execution
+    assertTrue(maxConcurrent.get() > 1, "Records should be processed concurrently");
   }
 
   public static class TestableFunctionalConsumer<K, V> extends FunctionalConsumer<K, V> {
@@ -789,82 +1048,43 @@ class FunctionalConsumerMockingTest {
     private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
     private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
     private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
-    private static final String METRIC_RETRIES = "retries";
-    private final KafkaConsumer<K, V> mockConsumer;
 
     public TestableFunctionalConsumer(
-      final Properties kafkaProps,
+      final Properties props,
       final String topic,
       final Function<V, V> processor,
       final KafkaConsumer<K, V> mockConsumer,
       final int maxRetries,
       final Duration retryBackoff,
-      final Consumer<ProcessingError<K, V>> errorHandler
+      final Consumer<ProcessingError<K, V>> errorHandler,
+      final Queue<ConsumerCommand> mockCommandQueue,
+      final OffsetManager<K, V> mockOffsetManager
     ) {
       super(
         FunctionalConsumer
           .<K, V>builder()
-          .withProperties(kafkaProps)
+          .withProperties(props)
           .withTopic(topic)
           .withProcessor(processor)
           .withRetry(maxRetries, retryBackoff)
           .withErrorHandler(errorHandler)
+          .withOffsetManager(mockOffsetManager)
+          .withCommandQueue(mockCommandQueue)
+          .withConsumer(() -> mockConsumer)
       );
-      this.mockConsumer = mockConsumer;
-      setMockConsumer();
     }
 
-    private void setMockConsumer() {
-      try {
-        final var consumerField = FunctionalConsumer.class.getDeclaredField("consumer");
-        consumerField.setAccessible(true);
-        consumerField.set(this, mockConsumer);
-      } catch (Exception e) {
-        throw new RuntimeException("Failed to set mock consumer", e);
-      }
-    }
-
-    @Override
-    protected KafkaConsumer<K, V> createConsumer(final Properties kafkaProps) {
-      return mockConsumer;
-    }
-
-    public void executeProcessRecords(final ConsumerRecords<K, V> records) {
+    private void executeProcessRecords(final ConsumerRecords<K, V> records) {
       processRecords(records);
+      processCommands();
     }
 
-    public int getProcessingCount() {
-      // In-flight count is the difference between received and processed
+    private int getProcessingCount() {
       final var metrics = getMetrics();
       final var received = metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L);
       final var processed = metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L);
-      return (int) (received - processed);
-    }
-
-    public void incrementProcessingCount() {
-      // Simulate an in-flight message by incrementing the received count
-      try {
-        final var metricsField = FunctionalConsumer.class.getDeclaredField("metrics");
-        metricsField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        final var metricsMap = (Map<String, AtomicLong>) metricsField.get(this);
-        metricsMap.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
-      } catch (Exception e) {
-        throw new RuntimeException("Failed to increment processing count", e);
-      }
-    }
-
-    public void decrementProcessingCount() {
-      // Simulate completing an in-flight message by incrementing the processed count
-      try {
-        final var metricsField = FunctionalConsumer.class.getDeclaredField("metrics");
-        metricsField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        final var metricsMap = (Map<String, AtomicLong>) metricsField.get(this);
-        metricsMap.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-      } catch (Exception e) {
-        throw new RuntimeException("Failed to decrement processing count", e);
-      }
+      final var errors = metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L);
+      return (int) (received - processed - errors);
     }
   }
 }

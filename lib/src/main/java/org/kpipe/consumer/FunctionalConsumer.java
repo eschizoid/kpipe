@@ -7,54 +7,62 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.config.AppConfig;
+import org.kpipe.consumer.enums.ConsumerCommand;
+import org.kpipe.consumer.enums.ConsumerState;
 import org.kpipe.sink.ConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /**
- * A high-performance Kafka consumer that processes messages through virtual threads.
+ * A functional-style Kafka consumer that processes records using a provided function.
  *
- * <p>This class provides a simplified interface for consuming Kafka messages and processing them
- * using a functional approach. Each record is processed asynchronously in a dedicated virtual
- * thread, allowing for high throughput and efficient resource utilization.
- *
- * <p>Features include:
+ * <p>This consumer provides:
  *
  * <ul>
- *   <li>Functional processing with a simple {@code Function<V, V>} interface
- *   <li>Asynchronous processing using virtual threads
- *   <li>Configurable error handling and retry mechanisms
- *   <li>Pause/resume capabilities for flow control
- *   <li>Built-in metrics collection
- *   <li>Graceful shutdown with in-flight message tracking
- *   <li>Optional sequential processing mode for order-sensitive workloads
- *   <li>Configurable message sink for processed record handling
- *   <li>Flexible timeout configurations for graceful shutdown stages
+ *   <li>A simple functional interface for message processing
+ *   <li>Built-in retry logic with configurable backoff
+ *   <li>Support for sequential or parallel message processing
+ *   <li>Thread-safe offset management for concurrent processing scenarios
+ *   <li>Customizable error handling
+ *   <li>Message sink support for processed records
+ *   <li>Built-in metrics tracking
+ *   <li>Graceful shutdown handling
  * </ul>
+ *
+ * <p>The offset management features:
+ *
+ * <ul>
+ *   <li>Thread-safe tracking of offsets for concurrent processing
+ *   <li>Ensures only contiguous completed offsets are committed
+ *   <li>Commits offsets periodically at a configurable interval
+ *   <li>Properly handles consumer rebalancing events
+ *   <li>Prevents data loss during parallel processing
+ *   <li>Handles non-sequential offset completion safely
+ * </ul>
+ *
+ * <p>When using an OffsetManager, auto-commit is automatically disabled since offset commits are
+ * managed explicitly.
  *
  * <p>Example usage:
  *
  * <pre>{@code
- * var props = new Properties();
- * props.put("bootstrap.servers", "localhost:9092");
- * props.put("group.id", "my-group");
- * props.put("key.deserializer", StringDeserializer.class.getName());
- * props.put("value.deserializer", StringDeserializer.class.getName());
- *
- * var consumer = new FunctionalConsumer.Builder<String, String>()
- *     .withProperties(props)
- *     .withTopic("my-topic")
- *     .withProcessor(value -> value.toUpperCase())
+ * var consumer = FunctionalConsumer.<String, String>builder()
+ *     .withProperties(kafkaProps)
+ *     .withTopic("example-topic")
+ *     .withProcessor(value -> processValue(value))
  *     .withRetry(3, Duration.ofSeconds(1))
+ *     .withSequentialProcessing(false) // Set to true for ordered processing
+ *     .withOffsetManagerProvider(consumer -> OffsetManager.builder(consumer)
+ *         .withCommitInterval(Duration.ofSeconds(30))
+ *         .withCommandQueue(commandQueue)
+ *         .build())
  *     .build();
  *
  * consumer.start();
@@ -75,9 +83,8 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
   private static final String METRIC_RETRIES = "retries";
 
-  private final Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
-
-  private final KafkaConsumer<K, V> consumer;
+  private final Queue<ConsumerCommand> commandQueue;
+  private final Consumer<K, V> kafkaConsumer;
   private final String topic;
   private final Function<V, V> processor;
   private final ExecutorService virtualThreadExecutor;
@@ -87,25 +94,12 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   private final Duration waitForMessagesTimeout;
   private final Duration threadTerminationTimeout;
   private final Duration executorTerminationTimeout;
-
-  private Consumer<ProcessingError<K, V>> errorHandler = error -> {
-    LOGGER.log(
-      Level.WARNING,
-      "Processing failed for record (topic=%s, partition=%d, offset=%d) after %d retries: %s".formatted(
-          error.record().topic(),
-          error.record().partition(),
-          error.record().offset(),
-          error.retryCount(),
-          error.exception().getMessage()
-        ),
-      error.exception()
-    );
-  };
+  private final OffsetManager<K, V> offsetManager;
+  private final ConsumerRebalanceListener rebalanceListener;
+  private final java.util.function.Consumer<ProcessingError<K, V>> errorHandler;
   private final int maxRetries;
   private final Duration retryBackoff;
-
   private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.CREATED);
-
   private final boolean enableMetrics;
   private final boolean sequentialProcessing;
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
@@ -147,7 +141,19 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     private String topic;
     private Function<V, V> processor;
     private Duration pollTimeout = Duration.ofMillis(100);
-    private Consumer<ProcessingError<K, V>> errorHandler;
+    private java.util.function.Consumer<ProcessingError<K, V>> errorHandler = error -> {
+      LOGGER.log(
+        Level.WARNING,
+        "Processing failed for record (topic=%s, partition=%d, offset=%d) after %d retries: %s".formatted(
+            error.record().topic(),
+            error.record().partition(),
+            error.record().offset(),
+            error.retryCount(),
+            error.exception().getMessage()
+          ),
+        error.exception()
+      );
+    };
     private int maxRetries = 0;
     private Duration retryBackoff = Duration.ofMillis(500);
     private boolean enableMetrics = true;
@@ -156,6 +162,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
     private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
+    private OffsetManager<K, V> offsetManager;
+    private Function<Consumer<K, V>, OffsetManager<K, V>> offsetManagerProvider;
+    private Supplier<Consumer<K, V>> consumerProvider;
+    private Queue<ConsumerCommand> commandQueue;
+    private ConsumerRebalanceListener rebalanceListener;
 
     /**
      * Sets the properties for the Kafka consumer.
@@ -207,7 +218,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
      * @param handler The consumer function that handles processing errors
      * @return This builder instance for method chaining
      */
-    public Builder<K, V> withErrorHandler(final Consumer<ProcessingError<K, V>> handler) {
+    public Builder<K, V> withErrorHandler(final java.util.function.Consumer<ProcessingError<K, V>> handler) {
       this.errorHandler = handler;
       return this;
     }
@@ -228,7 +239,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     /**
      * Enables or disables metrics collection.
      *
-     * @param enable Whether to enable metrics collection
+     * @param enable Whether to enable a metrics collection
      * @return This builder instance for method chaining
      */
     public Builder<K, V> withMetrics(final boolean enable) {
@@ -282,13 +293,55 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     }
 
     /**
-     * Sets the timeout for waiting for the executor to terminate during shutdown.
+     * Sets a function to create a custom OffsetManager once the consumer is available. This
+     * automatically disables auto-commit.
      *
-     * @param timeout Maximum time to wait for in-progress tasks to complete
+     * @param provider A function that creates an OffsetManager given the consumer instance
      * @return This builder instance for method chaining
      */
-    public Builder<K, V> withExecutorTerminationTimeout(final Duration timeout) {
-      this.executorTerminationTimeout = Objects.requireNonNull(timeout);
+    public Builder<K, V> withOffsetManagerProvider(final Function<Consumer<K, V>, OffsetManager<K, V>> provider) {
+      this.offsetManagerProvider =
+        consumer -> {
+          final var offsetManager = Objects.requireNonNull(provider.apply(consumer), "OffsetManager cannot be null");
+          this.rebalanceListener = offsetManager.createRebalanceListener();
+          return offsetManager;
+        };
+      return this;
+    }
+
+    /**
+     * Enables offset management with a custom offset manager implementation. This automatically
+     * disables auto-commit.
+     *
+     * @param manager The custom offset manager to use
+     * @return This builder instance for method chaining
+     */
+    public Builder<K, V> withOffsetManager(final OffsetManager<K, V> manager) {
+      this.offsetManager = Objects.requireNonNull(manager, "OffsetManager cannot be null");
+      this.rebalanceListener = manager.createRebalanceListener();
+      return this;
+    }
+
+    /**
+     * Sets a custom command queue for the consumer.
+     *
+     * @param commandQueue the queue to use for consumer commands
+     * @return this Builder instance for method chaining
+     */
+    public Builder<K, V> withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
+      this.commandQueue = Objects.requireNonNull(commandQueue, "Command queue cannot be null");
+      return this;
+    }
+
+    /**
+     * Sets the supplier for providing a consumer instance.
+     *
+     * @param provider A supplier that returns a Consumer instance configured for processing
+     *     messages
+     * @return This builder instance for method chaining
+     */
+    public Builder<K, V> withConsumer(final Supplier<Consumer<K, V>> provider) {
+      this.consumerProvider = provider;
       return this;
     }
 
@@ -312,6 +365,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         throw new IllegalArgumentException("Poll timeout must be positive");
       }
 
+      if (offsetManager != null || offsetManagerProvider != null) {
+        kafkaProps.setProperty("enable.auto.commit", "false");
+      }
+
       return new FunctionalConsumer<>(this);
     }
   }
@@ -322,7 +379,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * @param builder the builder containing the consumer configuration
    */
   public FunctionalConsumer(final Builder<K, V> builder) {
-    this.consumer = createConsumer(Objects.requireNonNull(builder.kafkaProps));
+    this.kafkaConsumer =
+      builder.consumerProvider != null
+        ? builder.consumerProvider.get()
+        : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
     this.topic = Objects.requireNonNull(builder.topic);
     this.processor = Objects.requireNonNull(builder.processor);
     this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
@@ -339,6 +399,13 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
     this.executorTerminationTimeout = builder.executorTerminationTimeout;
     this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    this.offsetManager =
+      builder.offsetManager != null
+        ? builder.offsetManager
+        : builder.offsetManagerProvider != null ? builder.offsetManagerProvider.apply(this.kafkaConsumer) : null;
+    this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
+    this.rebalanceListener = builder.rebalanceListener != null ? builder.rebalanceListener : null;
+
     initializeMetrics();
   }
 
@@ -388,7 +455,15 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       return;
     }
 
-    consumer.subscribe(List.of(topic));
+    if (offsetManager != null) {
+      offsetManager.start();
+    }
+
+    if (rebalanceListener != null) {
+      kafkaConsumer.subscribe(List.of(topic), rebalanceListener);
+    } else {
+      kafkaConsumer.subscribe(List.of(topic));
+    }
 
     Thread.UncaughtExceptionHandler exceptionHandler = (thread, throwable) -> {
       LOGGER.log(Level.ERROR, "Uncaught exception in consumer thread: " + thread.getName(), throwable);
@@ -426,7 +501,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
           throw e;
         } finally {
           try {
-            consumer.close();
+            kafkaConsumer.close();
             state.set(ConsumerState.CLOSED);
             LOGGER.log(Level.INFO, "Consumer closed for topic {0}", topic);
           } catch (final Exception e) {
@@ -448,13 +523,13 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   public void pause() {
     final var currentState = state.get();
 
-    // Don't send pause command if already paused or closed
+    // Don't send a pause command if already paused or closed
     if (currentState == ConsumerState.PAUSED || currentState == ConsumerState.CLOSED) {
       LOGGER.log(Level.INFO, "Consumer already paused or closed for topic {0}", topic);
       return;
     }
 
-    // Always add command to queue for proper test verification
+    // Always add command to the queue for proper test verification
     commandQueue.offer(ConsumerCommand.PAUSE);
     LOGGER.log(Level.INFO, "Consumer pause requested for topic {0}", topic);
 
@@ -486,16 +561,45 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       try {
         switch (command) {
           case PAUSE -> {
-            consumer.pause(consumer.assignment());
+            kafkaConsumer.pause(kafkaConsumer.assignment());
             LOGGER.log(Level.INFO, "Consumer paused for topic {0}", topic);
           }
           case RESUME -> {
-            consumer.resume(consumer.assignment());
+            kafkaConsumer.resume(kafkaConsumer.assignment());
             LOGGER.log(Level.INFO, "Consumer resumed for topic {0}", topic);
           }
           case CLOSE -> {
             state.set(ConsumerState.CLOSING);
             LOGGER.log(Level.INFO, "Consumer shutdown initiated for topic {0}", topic);
+          }
+          case TRACK_OFFSET -> {
+            if (offsetManager != null && command.getRecord() != null) {
+              @SuppressWarnings("unchecked")
+              final var record = (ConsumerRecord<K, V>) command.getRecord();
+              offsetManager.trackOffset(record);
+            }
+          }
+          case MARK_OFFSET_PROCESSED -> {
+            if (offsetManager != null && command.getRecord() != null) {
+              @SuppressWarnings("unchecked")
+              final var record = (ConsumerRecord<K, V>) command.getRecord();
+              offsetManager.markOffsetProcessed(record);
+            }
+          }
+          case COMMIT_OFFSETS -> {
+            if (command.getOffsets() != null) {
+              try {
+                kafkaConsumer.commitSync(command.getOffsets());
+                if (offsetManager != null && command.getCommitId() != null) {
+                  offsetManager.notifyCommitComplete(command.getCommitId(), true);
+                }
+              } catch (final Exception e) {
+                LOGGER.log(Level.WARNING, "Failed to commit offsets", e);
+                if (offsetManager != null && command.getCommitId() != null) {
+                  offsetManager.notifyCommitComplete(command.getCommitId(), false);
+                }
+              }
+            }
           }
         }
       } catch (final Exception e) {
@@ -518,13 +622,13 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       throw new IllegalStateException("Cannot resume a closed consumer");
     }
 
-    // Don't send resume command if already running
+    // Don't send a resume command if already running
     if (currentState == ConsumerState.RUNNING) {
       LOGGER.log(Level.INFO, "Consumer already running for topic {0}", topic);
       return;
     }
 
-    // Always add command to queue for proper test verification
+    // Always add command to the queue for proper test verification
     commandQueue.offer(ConsumerCommand.RESUME);
     LOGGER.log(Level.INFO, "Consumer resume requested for topic {0}", topic);
 
@@ -581,12 +685,14 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * <p>This method performs a graceful shutdown by:
    *
    * <ol>
-   *   <li>Setting the running flag to false to stop the main loop
-   *   <li>Pausing consumption to prevent new records from being processed
-   *   <li>Using a MessageTracker to wait for in-flight messages to complete
-   *   <li>Waking up the consumer to unblock any polling operation
-   *   <li>Waiting for the consumer thread to finish
-   *   <li>Shutting down the executor and waiting for processing tasks to complete
+   *   <li>Setting the state to CLOSING to prevent new operations
+   *   <li>Creating a message tracker to monitor in-flight messages
+   *   <li>Signaling shutdown to stop accepting new messages
+   *   <li>Waiting for all in-flight messages to complete processing
+   *   <li>Waking up the consumer thread and waiting for its termination
+   *   <li>Shutting down the virtual thread executor
+   *   <li>Closing the offset manager to ensure final offsets are committed
+   *   <li>Setting the state to CLOSED
    * </ol>
    *
    * <p>This method is idempotent - calling it multiple times has no additional effect.
@@ -601,7 +707,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       return; // Already closed or closing
     }
 
-    // Create tracker first to avoid missing in-flight messages
+    // Create a tracker first to avoid missing in-flight messages
     final var tracker = createTrackerIfEnabled(waitForMessagesTimeout.toMillis());
 
     // Signal shutdown
@@ -616,19 +722,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     // Shutdown executor
     shutdownExecutor(executorTerminationTimeout.toMillis());
 
-    // Ensure state is set to CLOSED
-    state.set(ConsumerState.CLOSED);
-  }
+    // Shutdown offset manager if enabled
+    closeOffsetManager();
 
-  /**
-   * Creates a Kafka consumer with the provided properties. Protected for testing purposes to allow
-   * mock consumers.
-   *
-   * @param kafkaProps the Kafka client properties
-   * @return a new KafkaConsumer instance
-   */
-  protected KafkaConsumer<K, V> createConsumer(final Properties kafkaProps) {
-    return new KafkaConsumer<>(kafkaProps);
+    // Ensure the state is set to CLOSED
+    state.set(ConsumerState.CLOSED);
   }
 
   /**
@@ -640,6 +738,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     if (sequentialProcessing) {
       // Process sequentially for cases where order matters
       for (final var record : records.records(topic)) {
+        // Track offset before processing
+        if (offsetManager != null) {
+          commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+        }
         processRecord(record);
       }
     } else {
@@ -647,8 +749,14 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       StreamSupport
         .stream(records.records(topic).spliterator(), false)
         .forEach(record -> {
+          // Track offset before submitting to virtual thread
+          if (offsetManager != null) {
+            commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+          }
           try {
-            virtualThreadExecutor.submit(() -> processRecord(record));
+            virtualThreadExecutor.submit(() -> {
+              processRecord(record);
+            });
           } catch (final RejectedExecutionException e) {
             // Handle task rejection (typically during shutdown)
             if (isRunning()) {
@@ -697,6 +805,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         V processed = processor.apply(record.value());
         messageSink.send(record, processed);
 
+        // Mark offset as processed after successful processing
+        if (offsetManager != null) {
+          commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+        }
+
         if (enableMetrics) {
           metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
         }
@@ -718,6 +831,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
               ),
             e
           );
+
+          if (offsetManager != null) {
+            commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+          }
+
           errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
           break;
         }
@@ -739,7 +857,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
   private ConsumerRecords<K, V> pollRecords() {
     try {
-      return consumer.poll(pollTimeout);
+      return kafkaConsumer.poll(pollTimeout);
     } catch (final WakeupException e) {
       // Expected during shutdown, no need to log
       return null;
@@ -784,7 +902,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
   private void wakeupAndWaitForConsumerThread(final long threadTerminationMs) {
     // Safe wakeup of the consumer
-    final var consumerRef = consumer;
+    final var consumerRef = kafkaConsumer;
     if (consumerRef != null) {
       try {
         consumerRef.wakeup();
@@ -818,5 +936,24 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       virtualThreadExecutor.shutdownNow();
       LOGGER.log(Level.WARNING, "Interrupted while waiting for executor termination");
     }
+  }
+
+  private void closeOffsetManager() {
+    if (offsetManager != null) {
+      try {
+        offsetManager.close();
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error closing offset manager", e);
+      }
+    }
+  }
+
+  /**
+   * Returns the current state of the consumer.
+   *
+   * @return the current consumer state
+   */
+  public ConsumerState getState() {
+    return state.get();
   }
 }
