@@ -1,0 +1,83 @@
+{
+  "type": "record",
+  "name": "Customer",
+  "namespace": "com.kpipe.customer",
+  "doc": "Customer record",
+  "fields": [
+    {
+      "name": "id",
+      "type": "long",
+      "doc": "Customer unique identifier"
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "doc": "Customer full name"
+    },
+    {
+      "name": "email",
+      "type": [
+        "null",
+        "string"
+      ],
+      "default": null,
+      "doc": "Optional email address"
+    },
+    {
+      "name": "active",
+      "type": "boolean",
+      "default": true,
+      "doc": "Whether customer is active"
+    },
+    {
+      "name": "registrationDate",
+      "type": "long",
+      "doc": "Registration timestamp in milliseconds"
+    },
+    {
+      "name": "address",
+      "type": [
+        "null",
+        {
+          "type": "record",
+          "name": "Address",
+          "fields": [
+            {
+              "name": "street",
+              "type": "string"
+            },
+            {
+              "name": "city",
+              "type": "string"
+            },
+            {
+              "name": "zipCode",
+              "type": "string"
+            },
+            {
+              "name": "country",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "default": null
+    },
+    {
+      "name": "tags",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "default": []
+    },
+    {
+      "name": "preferences",
+      "type": {
+        "type": "map",
+        "values": "string"
+      },
+      "default": {}
+    }
+  ]
+}

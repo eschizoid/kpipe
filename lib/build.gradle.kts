@@ -1,5 +1,5 @@
-import org.jreleaser.model.Active.NEVER
 import org.jreleaser.model.Active.ALWAYS
+import org.jreleaser.model.Active.NEVER
 
 plugins {
     java
@@ -39,14 +39,20 @@ dependencies {
     // DSL-JSON
     implementation("com.dslplatform:dsl-json:2.0.2")
 
+    // Avro
+    implementation("org.apache.avro:avro:1.12.0")
+
     // SLF4J API only
     implementation("org.slf4j:slf4j-api:2.0.9")
 
     // Testing
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+
     testImplementation("org.mockito:mockito-core:5.17.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.17.0")
+
+    testImplementation("org.slf4j:slf4j-simple:2.0.9")
 }
 
 tasks.test {

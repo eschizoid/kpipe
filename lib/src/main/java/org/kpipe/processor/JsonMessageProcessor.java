@@ -269,7 +269,7 @@ public class JsonMessageProcessor {
   /**
    * Helper method that applies a processing function to parsed JSON data.
    *
-   * @param jsonBytes The raw JSON data as byte array
+   * @param jsonBytes The raw JSON data as a byte array
    * @param processor Function to transform the parsed JSON object
    * @return Serialized JSON bytes after processing
    */
@@ -285,6 +285,7 @@ public class JsonMessageProcessor {
       if (parsed == null) {
         return EMPTY_JSON;
       }
+      @SuppressWarnings("unchecked")
       final var processed = processor.apply(parsed);
       if (processed == null) {
         return EMPTY_JSON;

@@ -295,11 +295,14 @@ Follow these steps to test the KPipe Kafka Consumer:
 ### Build and Run
 
   ```bash
-  # Format code and build the application
-  ./gradlew clean spotlessApply build
+  # Format code and build the library module
+  ./gradlew clean :lib:spotlessApply :lib:build
+  
+  # Format code and build the applications module
+  ./gradlew :app:clean :app:spotlessApply :app:build
 
   # Build the consumer app container and start all services
-  docker compose build --no-cache
+  docker compose build --no-cache --build-arg MESSAGE_FORMAT=<json|avro|protobuf>
   docker compose down -v
   docker compose up -d
   
@@ -312,6 +315,31 @@ Follow these steps to test the KPipe Kafka Consumer:
   # Publish multiple test messages
   for i in {1..10}; do echo "{\"id\":$i,\"message\":\"Test message $i\"}" | \
     kcat -P -b kafka:9092 -t json-topic; done
+  ```
+
+### Working with the Schema Registry and Avro
+
+If you want to use Avro with a schema registry, follow these steps:
+
+  ```bash
+  # Register an Avro schema
+  curl -X POST \
+    -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+    --data "{\"schema\": $(cat lib/src/test/resources/avro/customer.avsc | jq tostring)}" \
+    http://localhost:8081/subjects/com.kpipe.customer/versions
+  
+  # Read registered schema 
+  curl -s http://localhost:8081/subjects/com.kpipe.customer/versions/latest | jq
+  
+  # Produce an Avro message using kafka-avro-console-producer
+  docker run -it --rm --network=host confluentinc/cp-schema-registry:latest kafka-avro-console-producer \
+    --broker-list localhost:9092 \
+    --topic avro-topic \
+    --property schema.registry.url=http://localhost:8081 \
+    --property value.schema.id=1
+    
+  # Enter the message:
+  {"id": 1, "name": "Mariano Gonzalez", "email": "mariano@example.com", "active": true, "registrationDate": 1635724800000, "address": {"street": "123 Main St", "city": "Chicago", "zipCode": "00000", "country": "USA"}, "tags": ["premium", "verified"], "preferences": {"notifications": "email"}}
   ```
 
 Kafka consumer will:
