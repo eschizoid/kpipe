@@ -20,6 +20,7 @@ import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
+import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.sink.MessageSink;
@@ -65,7 +66,7 @@ public class App implements AutoCloseable {
    * @param config The application configuration
    */
   public App(final AppConfig config) {
-    this.processorRegistry = new MessageProcessorRegistry(config.appName());
+    this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
     this.sinkRegistry = new MessageSinkRegistry();
 
     this.functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry);
@@ -122,7 +123,7 @@ public class App implements AutoCloseable {
       .<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createProcessorPipeline(processorRegistry))
+      .withProcessor(createJsonProcessorPipeline(processorRegistry))
       .withPollTimeout(config.pollTimeout())
       .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
@@ -163,7 +164,7 @@ public class App implements AutoCloseable {
    * @param registry the message processor registry
    * @return a function that processes messages through the pipeline
    */
-  private static Function<byte[], byte[]> createProcessorPipeline(final MessageProcessorRegistry registry) {
+  private static Function<byte[], byte[]> createJsonProcessorPipeline(final MessageProcessorRegistry registry) {
     final var pipeline = registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp");
     return MessageProcessorRegistry.withErrorHandling(pipeline, null);
   }

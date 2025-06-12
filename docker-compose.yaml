@@ -34,17 +34,6 @@ services:
       - zookeeper
     restart: on-failure
 
-  kafka-consumer-app:
-    build: .
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - KAFKA_CONSUMER_GROUP=kpipe-group
-      - KAFKA_TOPIC=json-topic
-      - APP_NAME=kafka-consumer-app
-    depends_on:
-      - kafka
-    restart: unless-stopped
-
   kafka-init:
     image: bitnami/kafka:3.4.1
     depends_on:
@@ -53,10 +42,51 @@ services:
       sh -c "
         echo 'Waiting for Kafka to be ready...' &&
         sleep 30 &&
-        kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1 --topic json-topic &&
-        echo 'Topic created successfully'
+        kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic json-topic &&
+        kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic avro-topic &&
+        kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic proto-topic &&
+        echo 'Topics created successfully'
       "
     restart: on-failure
+
+  schema-registry:
+    image: bitnami/schema-registry:latest
+    container_name: schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      - SCHEMA_REGISTRY_DEBUG=true
+      - SCHEMA_REGISTRY_LISTENERS=http://0.0.0.0:8081
+      - SCHEMA_REGISTRY_KAFKA_BROKERS=PLAINTEXT://kafka:9092
+      - SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=PLAINTEXT://kafka:9092
+      - SCHEMA_REGISTRY_KAFKASTORE_TOPIC=_schemas
+      - SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR=1
+      - SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL=backward
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/subjects" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      kafka:
+        condition: service_started
+    restart: unless-stopped
+
+  kafka-consumer-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MESSAGE_FORMAT: ${MESSAGE_FORMAT:-json}
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_CONSUMER_GROUP=kpipe-group
+      - KAFKA_TOPIC=json-topic
+      - APP_NAME=kafka-consumer-app
+    depends_on:
+      - kafka
+    restart: unless-stopped
 
 volumes:
   zookeeper_data:
