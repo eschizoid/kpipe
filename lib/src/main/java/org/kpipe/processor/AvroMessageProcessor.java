@@ -135,9 +135,7 @@ public class AvroMessageProcessor {
    */
   public static Function<byte[], byte[]> parseAvro(final String schemaName) {
     final var schema = getSchema(schemaName);
-    if (schema == null) {
-      throw new IllegalArgumentException("Schema not registered: %s".formatted(schemaName));
-    }
+    if (schema == null) throw new IllegalArgumentException("Schema not registered: %s".formatted(schemaName));
     return parseAvro(schema);
   }
 
@@ -716,17 +714,11 @@ public class AvroMessageProcessor {
       DECODER_CACHE.set(decoder);
       final var record = reader.read(null, decoder);
 
-      if (record == null) {
-        return EMPTY_AVRO;
-      }
-
       // Apply the processor function to make a copy with transformations
+      if (record == null) return EMPTY_AVRO;
       final var processed = processor.apply(record);
 
-      if (processed == null) {
-        return EMPTY_AVRO;
-      }
-
+      if (processed == null) return EMPTY_AVRO;
       LOGGER.log(Level.DEBUG, "Processed record: %s".formatted(processed));
 
       // Reuse output stream for better performance

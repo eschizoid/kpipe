@@ -20,6 +20,7 @@ import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
+import org.kpipe.processor.AvroMessageProcessor;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
@@ -48,12 +49,10 @@ public class App implements AutoCloseable {
   public static void main(final String[] args) {
     final var config = AppConfig.fromEnv();
 
-    try (final App app = new App(config)) {
+    try (final var app = new App(config)) {
       app.start();
       final var normalShutdown = app.awaitShutdown();
-      if (!normalShutdown) {
-        LOGGER.log(Level.WARNING, "Application didn't shut down cleanly");
-      }
+      if (!normalShutdown) LOGGER.log(Level.WARNING, "Application didn't shut down cleanly");
     } catch (final Exception e) {
       LOGGER.log(Level.ERROR, "Fatal error in Kafka consumer application", e);
       System.exit(1);
@@ -66,10 +65,9 @@ public class App implements AutoCloseable {
    * @param config The application configuration
    */
   public App(final AppConfig config) {
-    this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
-    this.sinkRegistry = new MessageSinkRegistry();
-
-    this.functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry);
+    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
+    sinkRegistry = new MessageSinkRegistry();
+    functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry);
 
     final var consumerMetricsReporter = new ConsumerMetricsReporter(
       functionalConsumer::getMetrics,
@@ -78,8 +76,7 @@ public class App implements AutoCloseable {
     );
 
     final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
-
-    this.runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
+    runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
   }
 
   /** Creates the consumer runner with appropriate lifecycle hooks. */
@@ -123,7 +120,7 @@ public class App implements AutoCloseable {
       .<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createJsonProcessorPipeline(processorRegistry))
+      .withProcessor(createAvroProcessorPipeline(processorRegistry))
       .withPollTimeout(config.pollTimeout())
       .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
@@ -154,7 +151,7 @@ public class App implements AutoCloseable {
    * @return a message sink that processes messages through the pipeline
    */
   private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    final var pipeline = registry.<byte[], byte[]>pipeline("logging");
+    final var pipeline = registry.<byte[], byte[]>pipeline("avroLogging");
     return MessageSinkRegistry.withErrorHandling(pipeline);
   }
 
@@ -164,8 +161,18 @@ public class App implements AutoCloseable {
    * @param registry the message processor registry
    * @return a function that processes messages through the pipeline
    */
-  private static Function<byte[], byte[]> createJsonProcessorPipeline(final MessageProcessorRegistry registry) {
-    final var pipeline = registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp");
+  private static Function<byte[], byte[]> createAvroProcessorPipeline(final MessageProcessorRegistry registry) {
+    MessageFormat.AVRO.addSchema(
+      "1",
+      "com.kpipe.customer",
+      "http://schema-registry:8081/subjects/com.kpipe.customer/versions/latest"
+    );
+    registry.register(
+      "parseAvro_CustomerConfluentSchemaRegistry",
+      AvroMessageProcessor.parseAvroWithMagicBytes("1", 5)
+    );
+
+    final var pipeline = registry.pipeline("parseAvro_CustomerConfluentSchemaRegistry");
     return MessageProcessorRegistry.withErrorHandling(pipeline, null);
   }
 

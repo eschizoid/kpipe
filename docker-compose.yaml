@@ -31,7 +31,8 @@ services:
       - ./scripts:/scripts
     command: [ "/scripts/wait-for-it.sh", "zookeeper:2181", "-t", "60", "--", "/opt/bitnami/scripts/kafka/entrypoint.sh", "/opt/bitnami/scripts/kafka/run.sh" ]
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     restart: on-failure
 
   kafka-init:
@@ -73,20 +74,23 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  kafka-consumer-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        MESSAGE_FORMAT: ${MESSAGE_FORMAT:-json}
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - KAFKA_CONSUMER_GROUP=kpipe-group
-      - KAFKA_TOPIC=json-topic
-      - APP_NAME=kafka-consumer-app
-    depends_on:
-      - kafka
-    restart: unless-stopped
+#  kpipe:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#      args:
+#        MESSAGE_FORMAT: ${MESSAGE_FORMAT:-avro}
+#    environment:
+#      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+#      - KAFKA_CONSUMER_GROUP=kpipe-group
+#      - KAFKA_TOPIC=${MESSAGE_FORMAT:-avro}-topic
+#      - APP_NAME=kafka-consumer-app
+#    depends_on:
+#      kafka:
+#        condition: service_started
+#      schema-registry:
+#        condition: service_healthy
+#    restart: unless-stopped
 
 volumes:
   zookeeper_data:
