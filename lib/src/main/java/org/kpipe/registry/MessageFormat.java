@@ -207,9 +207,7 @@ public enum MessageFormat {
         else if (location.startsWith("classpath:")) {
           final var resourcePath = location.substring("classpath:".length());
           try (final var inputStream = MessageFormat.class.getResourceAsStream(resourcePath)) {
-            if (inputStream == null) {
-              throw new IOException("Classpath resource not found: %s".formatted(resourcePath));
-            }
+            if (inputStream == null) throw new IOException("Classpath resource not found: %s".formatted(resourcePath));
             return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
           }
         }
