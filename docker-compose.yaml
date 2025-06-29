@@ -79,14 +79,15 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        MESSAGE_FORMAT: ${MESSAGE_FORMAT:-json}
+        MESSAGE_FORMAT: ${MESSAGE_FORMAT:-avro}
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_CONSUMER_GROUP=kpipe-group
-      - KAFKA_TOPIC=json-topic
+      - KAFKA_TOPIC=${MESSAGE_FORMAT:-avro}-topic
       - APP_NAME=kafka-consumer-app
     depends_on:
-      - kafka
+      schema-registry:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
