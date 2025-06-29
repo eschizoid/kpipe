@@ -10,6 +10,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.kpipe.sink.AvroConsoleSink;
+import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /**
@@ -99,8 +100,7 @@ public class MessageSinkRegistry {
    * }</pre>
    */
   public MessageSinkRegistry() {
-    // register("jsonLogging", new
-    // JsonConsoleSink<>(System.getLogger(JsonConsoleSink.class.getName()), Level.INFO));
+    register("jsonLogging", new JsonConsoleSink<>(System.getLogger(JsonConsoleSink.class.getName()), Level.INFO));
     register("avroLogging", new AvroConsoleSink<>(System.getLogger(AvroConsoleSink.class.getName()), Level.INFO));
   }
 

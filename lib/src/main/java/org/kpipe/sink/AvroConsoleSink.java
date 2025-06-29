@@ -28,9 +28,6 @@ public class AvroConsoleSink<K, V> implements MessageSink<K, V> {
   private final Level logLevel;
   private final Logger logger;
 
-  // Magic byte that indicates Confluent Avro serialization format
-  private static final byte MAGIC_BYTE = 0x0;
-
   /**
    * Creates an AvroConsoleSink with the specified log level and Schema Registry URL.
    *
