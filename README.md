@@ -423,23 +423,22 @@ If you want to use Avro with a schema registry, follow these steps:
     http://localhost:8081/subjects/com.kpipe.customer/versions
   
   # Read registered schema 
-  curl -s http://localhost:8081/subjects/com.kpipe.customer/versions/latest | jq
+  curl -s http://localhost:8081/subjects/com.kpipe.customer/versions/latest | jq -r '.schema' | jq --indent 2 '.'
   
   # Produce an Avro message using kafka-avro-console-producer
-  docker run -it --rm --network=host confluentinc/cp-schema-registry:latest kafka-avro-console-producer \
-    --broker-list localhost:9092 \
-    --topic avro-topic \
-    --property schema.registry.url=http://localhost:8081 \
-    --property value.schema.id=1
-    
-  # Enter the message:
-  {"id": 1, "name": "Mariano Gonzalez", "email": "mariano@example.com", "active": true, "registrationDate": 1635724800000, "address": {"street": "123 Main St", "city": "Chicago", "zipCode": "00000", "country": "USA"}, "tags": ["premium", "verified"], "preferences": {"notifications": "email"}}
+  echo '{"id":1,"name":"Mariano Gonzalez","email":{"string":"mariano@example.com"},"active":true,"registrationDate":1635724800000,"address":{"com.kpipe.customer.Address":{"street":"123 Main St","city":"Chicago","zipCode":"00000","country":"USA"}},"tags":["premium","verified"],"preferences":{"notifications":"email"}}' \
+  | docker run -i --rm --network=host confluentinc/cp-schema-registry:latest \
+      kafka-avro-console-producer \
+      --broker-list localhost:9092 \
+      --topic avro-topic \
+      --property schema.registry.url=http://localhost:8081 \
+      --property value.schema.id=1
   ```
 
 Kafka consumer will:
 
 - Connect to `localhost:9092`
-- Subscribe to `json-topic`
+- Subscribe to `avro-topic|json-topic|protobuf-topic`
 - Compose the processing pipeline from configured processors
 - Process each message concurrently using virtual threads
 

@@ -48,12 +48,10 @@ public class App implements AutoCloseable {
   public static void main(final String[] args) {
     final var config = AppConfig.fromEnv();
 
-    try (final App app = new App(config)) {
+    try (final var app = new App(config)) {
       app.start();
       final var normalShutdown = app.awaitShutdown();
-      if (!normalShutdown) {
-        LOGGER.log(Level.WARNING, "Application didn't shut down cleanly");
-      }
+      if (!normalShutdown) LOGGER.log(Level.WARNING, "Application didn't shut down cleanly");
     } catch (final Exception e) {
       LOGGER.log(Level.ERROR, "Fatal error in Kafka consumer application", e);
       System.exit(1);
@@ -66,10 +64,9 @@ public class App implements AutoCloseable {
    * @param config The application configuration
    */
   public App(final AppConfig config) {
-    this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
-    this.sinkRegistry = new MessageSinkRegistry();
-
-    this.functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry);
+    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.PROTOBUF);
+    sinkRegistry = new MessageSinkRegistry();
+    functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry);
 
     final var consumerMetricsReporter = new ConsumerMetricsReporter(
       functionalConsumer::getMetrics,
@@ -78,8 +75,7 @@ public class App implements AutoCloseable {
     );
 
     final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
-
-    this.runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
+    runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
   }
 
   /** Creates the consumer runner with appropriate lifecycle hooks. */

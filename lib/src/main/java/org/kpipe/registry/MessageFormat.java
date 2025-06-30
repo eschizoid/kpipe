@@ -1,5 +1,7 @@
 package org.kpipe.registry;
 
+import com.dslplatform.json.DslJson;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -177,7 +179,26 @@ public enum MessageFormat {
           }
 
           if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            return response.body();
+            final var responseBody = response.body();
+            if (responseBody == null || responseBody.isEmpty()) throw new IOException(
+              "Empty response from schema registry"
+            );
+
+            try {
+              final var dslJson = new DslJson<>();
+              final var bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+              final var result = dslJson.deserialize(Map.class, new ByteArrayInputStream(bytes));
+              if (result == null) throw new IOException("Failed to deserialize schema registry response");
+              if (result.containsKey("schema")) return (String) result.get("schema"); else throw new IOException(
+                "Schema field not found in response"
+              );
+            } catch (final Exception e) {
+              throw new IOException(
+                "Error parsing schema registry response: " +
+                responseBody.substring(0, Math.min(100, responseBody.length())),
+                e
+              );
+            }
           } else {
             throw new IOException("Failed to fetch schema: HTTP %d".formatted(response.statusCode()));
           }
@@ -186,9 +207,7 @@ public enum MessageFormat {
         else if (location.startsWith("classpath:")) {
           final var resourcePath = location.substring("classpath:".length());
           try (final var inputStream = MessageFormat.class.getResourceAsStream(resourcePath)) {
-            if (inputStream == null) {
-              throw new IOException("Classpath resource not found: " + resourcePath);
-            }
+            if (inputStream == null) throw new IOException("Classpath resource not found: %s".formatted(resourcePath));
             return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
           }
         }
@@ -205,8 +224,8 @@ public enum MessageFormat {
         }
         // Treat as inline schema
         return location;
-      } catch (Exception e) {
-        throw new RuntimeException("Failed to read schema from location: " + location, e);
+      } catch (final Exception e) {
+        throw new RuntimeException("Failed to read schema from location: %s".formatted(location), e);
       }
     }
   ) {
@@ -221,10 +240,7 @@ public enum MessageFormat {
       final String sourceAppName
     ) {
       final var schemaInfo = schemas.get(schemaKey);
-      if (schemaInfo == null) {
-        return Collections.emptyMap();
-      }
-
+      if (schemaInfo == null) return Collections.emptyMap();
       final var processors = new HashMap<String, Function<byte[], byte[]>>();
 
       processors.put("parseAvro_%s".formatted(schemaKey), AvroMessageProcessor.parseAvro(schemaKey));
@@ -277,12 +293,12 @@ public enum MessageFormat {
   }
 
   /**
-   * Returns the default processors for this message format that don't depend on schemas.
+   * Finds a schema by its key.
    *
-   * @param key The schema key to look up
-   * @return Optional containing the schema info if found, or empty if not found
+   * @param key The schema key to search for
+   * @return An Optional containing the SchemaInfo if found, or empty if not found
    */
-  public Optional<SchemaInfo> findSchema(String key) {
+  public Optional<SchemaInfo> findSchema(final String key) {
     return Optional.ofNullable(schemas.get(key));
   }
 

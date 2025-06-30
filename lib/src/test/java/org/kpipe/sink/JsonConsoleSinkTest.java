@@ -18,9 +18,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class ConsoleSinkTest {
+class JsonConsoleSinkTest {
 
-  private ConsoleSink<Object, Object> sink;
+  private JsonConsoleSink<Object, Object> sink;
 
   @Mock
   private Logger mockLogger;
@@ -31,7 +31,7 @@ class ConsoleSinkTest {
   @BeforeEach
   void setUp() {
     // Remove the global stubbing from here and move to individual tests
-    sink = new ConsoleSink<>(mockLogger, Level.INFO);
+    sink = new JsonConsoleSink<>(mockLogger, Level.INFO);
   }
 
   @Test
@@ -141,7 +141,7 @@ class ConsoleSinkTest {
   void shouldUseCustomLogLevel() {
     // Arrange
     when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var customSink = new ConsoleSink<>(mockLogger, Level.WARNING);
+    final var customSink = new JsonConsoleSink<>(mockLogger, Level.WARNING);
     final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "value");
 
     // Act

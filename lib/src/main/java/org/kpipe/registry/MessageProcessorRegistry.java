@@ -294,7 +294,7 @@ public class MessageProcessorRegistry {
    * @param location The schema location or content
    * @return This registry instance for chaining
    */
-  public MessageProcessorRegistry addSchema(String key, String fullyQualifiedName, String location) {
+  public MessageProcessorRegistry addSchema(final String key, final String fullyQualifiedName, final String location) {
     if (messageFormat == MessageFormat.AVRO) {
       // Register the schema with MessageFormat
       messageFormat.addSchema(key, fullyQualifiedName, location);
@@ -342,7 +342,11 @@ public class MessageProcessorRegistry {
    * @param schemaJson The schema content in JSON format
    * @return This registry for method chaining
    */
-  public MessageProcessorRegistry registerAvroSchema(String key, String fullyQualifiedName, String schemaJson) {
+  public MessageProcessorRegistry registerAvroSchema(
+    final String key,
+    final String fullyQualifiedName,
+    final String schemaJson
+  ) {
     if (messageFormat == MessageFormat.AVRO) {
       // Pass the schema content directly
       return addSchema(key, fullyQualifiedName, schemaJson);

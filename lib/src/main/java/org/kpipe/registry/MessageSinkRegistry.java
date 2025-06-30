@@ -9,7 +9,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.kpipe.sink.ConsoleSink;
+import org.kpipe.sink.AvroConsoleSink;
+import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /**
@@ -99,7 +100,8 @@ public class MessageSinkRegistry {
    * }</pre>
    */
   public MessageSinkRegistry() {
-    register("logging", new ConsoleSink<>(System.getLogger(ConsoleSink.class.getName()), Level.INFO));
+    register("jsonLogging", new JsonConsoleSink<>(System.getLogger(JsonConsoleSink.class.getName()), Level.INFO));
+    register("avroLogging", new AvroConsoleSink<>(System.getLogger(AvroConsoleSink.class.getName()), Level.INFO));
   }
 
   /**
@@ -122,9 +124,7 @@ public class MessageSinkRegistry {
   public <K, V> void register(final String name, final MessageSink<K, V> sink) {
     Objects.requireNonNull(name, "Sink name cannot be null");
     Objects.requireNonNull(sink, "Sink function cannot be null");
-    if (name.trim().isEmpty()) {
-      throw new IllegalArgumentException("Processor name cannot be empty");
-    }
+    if (name.trim().isEmpty()) throw new IllegalArgumentException("Processor name cannot be empty");
     final var entry = new SinkEntry<>(sink);
     registry.put(name, entry);
   }
@@ -184,10 +184,7 @@ public class MessageSinkRegistry {
   @SuppressWarnings("unchecked")
   public <K, V> MessageSink<K, V> get(final String name) {
     final var entry = (SinkEntry<K, V>) registry.get(name);
-    if (entry == null) {
-      return null;
-    }
-
+    if (entry == null) return null;
     return entry::send;
   }
 
@@ -268,10 +265,7 @@ public class MessageSinkRegistry {
    */
   public Map<String, Object> getMetrics(final String name) {
     final var entry = registry.get(name);
-    if (entry == null) {
-      return Map.of();
-    }
-
+    if (entry == null) return Map.of();
     return RegistryFunctions.createMetrics(entry.messageCount, entry.errorCount, entry.totalProcessingTimeMs);
   }
 

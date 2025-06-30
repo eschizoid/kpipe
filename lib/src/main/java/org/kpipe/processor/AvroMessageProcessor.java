@@ -135,9 +135,7 @@ public class AvroMessageProcessor {
    */
   public static Function<byte[], byte[]> parseAvro(final String schemaName) {
     final var schema = getSchema(schemaName);
-    if (schema == null) {
-      throw new IllegalArgumentException("Schema not registered: %s".formatted(schemaName));
-    }
+    if (schema == null) throw new IllegalArgumentException("Schema not registered: %s".formatted(schemaName));
     return parseAvro(schema);
   }
 
@@ -148,6 +146,30 @@ public class AvroMessageProcessor {
    *
    * <p>The function skips the first `magicByte` bytes (typically 5 for Confluent: 1 magic byte +
    * 4-byte schema ID).
+   *
+   * <p>Example:
+   *
+   * <pre>{@code
+   * // Register schema with the registry
+   * MessageFormat.AVRO.addSchema(
+   *   "customerSchema",
+   *   "com.example.Customer",
+   *   "http://schema-registry:8081/subjects/com.example.Customer/versions/latest"
+   * );
+   *
+   * // Register an Avro processor that handles Confluent Schema Registry wire format
+   * registry.register(
+   *   "parseAvroCustomer",
+   *   AvroMessageProcessor.parseAvroWithMagicBytes("customerSchema", 5)
+   * );
+   *
+   * // Use it in a processing pipeline
+   * final var pipeline = registry.pipeline("parseAvroCustomer", "addMetadata");
+   * final var processedValue = pipeline.apply(confluentAvroBytes);
+   *
+   * // Now you can work with the parsed Avro record as a byte array with the
+   * // original Avro content but without the magic byte header
+   * }</pre>
    *
    * @param schemaName The name of the registered schema to use for parsing
    * @param magicByte The number of bytes to skip at the start (e.g., 5 for Confluent-encoded Avro)
@@ -716,17 +738,11 @@ public class AvroMessageProcessor {
       DECODER_CACHE.set(decoder);
       final var record = reader.read(null, decoder);
 
-      if (record == null) {
-        return EMPTY_AVRO;
-      }
-
       // Apply the processor function to make a copy with transformations
+      if (record == null) return EMPTY_AVRO;
       final var processed = processor.apply(record);
 
-      if (processed == null) {
-        return EMPTY_AVRO;
-      }
-
+      if (processed == null) return EMPTY_AVRO;
       LOGGER.log(Level.DEBUG, "Processed record: %s".formatted(processed));
 
       // Reuse output stream for better performance

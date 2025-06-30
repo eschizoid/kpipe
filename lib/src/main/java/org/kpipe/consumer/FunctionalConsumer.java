@@ -18,7 +18,7 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.config.AppConfig;
 import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.consumer.enums.ConsumerState;
-import org.kpipe.sink.ConsoleSink;
+import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /**
@@ -395,7 +395,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     this.messageSink =
       builder.messageSink != null
         ? builder.messageSink
-        : new ConsoleSink<>(System.getLogger(ConsoleSink.class.getName()), Level.INFO);
+        : new JsonConsoleSink<>(System.getLogger(JsonConsoleSink.class.getName()), Level.INFO);
     this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
     this.executorTerminationTimeout = builder.executorTerminationTimeout;

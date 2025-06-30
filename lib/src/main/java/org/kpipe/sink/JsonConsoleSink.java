@@ -31,7 +31,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @param <K> The type of message key
  * @param <V> The type of message value
  */
-public class ConsoleSink<K, V> implements MessageSink<K, V> {
+public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
 
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private final Level logLevel;
@@ -43,7 +43,7 @@ public class ConsoleSink<K, V> implements MessageSink<K, V> {
    * @param logger The logger to use for logging messages
    * @param logLevel The log level to use for logging messages
    */
-  public ConsoleSink(final System.Logger logger, final Level logLevel) {
+  public JsonConsoleSink(final System.Logger logger, final Level logLevel) {
     this.logLevel = logLevel;
     this.logger = logger;
   }
@@ -58,11 +58,7 @@ public class ConsoleSink<K, V> implements MessageSink<K, V> {
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {
       // Skip if the logging level doesn't require it
-      if (!logger.isLoggable(logLevel)) {
-        return;
-      }
-
-      // Create log data structure
+      if (!logger.isLoggable(logLevel)) return;
       final var logData = LinkedHashMap.newLinkedHashMap(5);
       logData.put("topic", record.topic());
       logData.put("partition", record.partition());
@@ -95,18 +91,11 @@ public class ConsoleSink<K, V> implements MessageSink<K, V> {
    * @return A string representation of the value suitable for logging
    */
   private String formatValue(final V value) {
-    if (value == null) {
-      return "null";
-    }
-
+    if (value == null) return "null";
     if (value instanceof byte[] bytes) {
-      if (bytes.length == 0) {
-        return "empty";
-      }
-
+      if (bytes.length == 0) return "empty";
       return formatByteArray(bytes);
     }
-
     return String.valueOf(value);
   }
 

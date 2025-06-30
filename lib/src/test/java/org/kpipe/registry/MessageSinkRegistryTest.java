@@ -23,8 +23,10 @@ class MessageSinkRegistryTest {
   void shouldHaveDefaultConsoleSink() {
     // Assert
     final var allSinks = registry.getAll();
-    assertTrue(allSinks.containsKey("logging"));
-    assertEquals("ConsoleSink", allSinks.get("logging"));
+    assertTrue(allSinks.containsKey("avroLogging"));
+    assertTrue(allSinks.containsKey("jsonLogging"));
+    assertEquals("AvroConsoleSink", allSinks.get("avroLogging"));
+    assertEquals("JsonConsoleSink", allSinks.get("jsonLogging"));
   }
 
   @Test
