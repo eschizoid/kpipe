@@ -93,8 +93,8 @@ public class AvroConsoleSink<K, V> implements MessageSink<K, V> {
 
       return outputStream.toString(StandardCharsets.UTF_8);
     } catch (final Exception e) {
-      logger.log(Level.DEBUG, "Failed to parse Avro data", e);
-      return "Failed to parse Avro data: %s".formatted(e.getMessage());
+      logger.log(Level.ERROR, "Failed to parse Avro data", e);
+      return "";
     }
   }
 }

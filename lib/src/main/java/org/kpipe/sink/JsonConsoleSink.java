@@ -110,12 +110,12 @@ public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
           DSL_JSON.serialize(json, out);
           return out.toString(StandardCharsets.UTF_8);
         } catch (final Exception e) {
-          logger.log(Level.DEBUG, "Failed to parse/format JSON content, falling back to raw string", e);
+          logger.log(Level.ERROR, "Failed to parse/format JSON content, falling back to raw string", e);
         }
       }
       return strValue;
     } catch (final Exception e) {
-      logger.log(Level.DEBUG, "Failed to parse/format as JSON", e);
+      logger.log(Level.ERROR, "Failed to parse/format as JSON", e);
       return "";
     }
   }

@@ -104,7 +104,7 @@ class JsonConsoleSinkTest {
 
     // Assert
     verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    String logMessage = messageCaptor.getValue();
+    final var logMessage = messageCaptor.getValue();
     assertTrue(logMessage.contains("processedMessage"));
     assertTrue(logMessage.contains("Hello, world!"));
   }

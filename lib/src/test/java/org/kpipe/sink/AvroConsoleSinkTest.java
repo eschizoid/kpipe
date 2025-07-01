@@ -1,5 +1,6 @@
 package org.kpipe.sink;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -52,11 +53,10 @@ class AvroConsoleSinkTest {
     // Assert
     verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
     final var logMessage = messageCaptor.getValue();
-    assertTrue(logMessage.contains("\"topic\":\"test-topic\""));
-    assertTrue(logMessage.contains("\"partition\":0"));
-    assertTrue(logMessage.contains("\"offset\":123"));
-    assertTrue(logMessage.contains("\"key\":\"test-key\""));
-    assertTrue(logMessage.contains("\"processedMessage\":\"processed-value\""));
+    final var expectedJson =
+      """
+                  {"topic":"test-topic","partition":0,"offset":123,"key":"test-key","processedMessage":"processed-value"}""";
+    assertEquals(expectedJson, logMessage);
   }
 
   @Test
@@ -121,7 +121,10 @@ class AvroConsoleSinkTest {
     // Assert
     verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
     final var logMessage = messageCaptor.getValue();
-    assertTrue(logMessage.contains("Failed to parse Avro data"));
+
+    assertTrue(logMessage.contains("\"topic\":\"test-topic\""));
+    assertTrue(logMessage.contains("\"key\":\"test-key\""));
+    assertTrue(logMessage.contains("\"processedMessage\":\"\""));
   }
 
   @Test
