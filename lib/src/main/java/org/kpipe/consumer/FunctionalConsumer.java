@@ -591,9 +591,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
             if (command.getOffsets() != null) {
               try {
                 kafkaConsumer.commitSync(command.getOffsets());
-                if (offsetManager != null && command.getCommitId() != null) {
-                  offsetManager.notifyCommitComplete(command.getCommitId(), true);
-                }
+                if (offsetManager != null && command.getCommitId() != null) offsetManager.notifyCommitComplete(
+                  command.getCommitId(),
+                  true
+                );
               } catch (final Exception e) {
                 LOGGER.log(Level.WARNING, "Failed to commit offsets", e);
                 if (offsetManager != null && command.getCommitId() != null) {
@@ -619,9 +620,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   public void resume() {
     final var currentState = state.get();
 
-    if (currentState == ConsumerState.CLOSED) {
-      throw new IllegalStateException("Cannot resume a closed consumer");
-    }
+    if (currentState == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
 
     // Don't send a resume command if already running
     if (currentState == ConsumerState.RUNNING) {
@@ -634,9 +633,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     LOGGER.log(Level.INFO, "Consumer resume requested for topic {0}", topic);
 
     // Update state if not closing or closed
-    if (currentState != ConsumerState.CLOSING) {
-      state.set(ConsumerState.RUNNING);
-    }
+    if (currentState != ConsumerState.CLOSING) state.set(ConsumerState.RUNNING);
   }
 
   /**
@@ -677,7 +674,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    *     started
    */
   public boolean isRunning() {
-    return state.get() == ConsumerState.RUNNING || state.get() == ConsumerState.PAUSED;
+    return (state.get() == ConsumerState.RUNNING || state.get() == ConsumerState.PAUSED);
   }
 
   /**
@@ -740,9 +737,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       // Process sequentially for cases where order matters
       for (final var record : records.records(topic)) {
         // Track offset before processing
-        if (offsetManager != null) {
-          commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
-        }
+        if (offsetManager != null) commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
         processRecord(record);
       }
     } else {
@@ -755,16 +750,12 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
             commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
           }
           try {
-            virtualThreadExecutor.submit(() -> {
-              processRecord(record);
-            });
+            virtualThreadExecutor.submit(() -> processRecord(record));
           } catch (final RejectedExecutionException e) {
             // Handle task rejection (typically during shutdown)
             if (isRunning()) {
               LOGGER.log(Level.WARNING, "Task submission rejected, likely during shutdown", e);
-              if (enableMetrics) {
-                metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-              }
+              if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
               errorHandler.accept(new ProcessingError<>(record, e, 0));
             }
           }
@@ -800,10 +791,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       public V apply(final Integer attempt, final Exception previousException) {
         // If we've exceeded max retries, handle the error and return null
         if (attempt > maxRetries) {
-          if (enableMetrics) {
-            metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-          }
-
+          if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
           LOGGER.log(
             Level.WARNING,
             "Failed to process message at offset %d after %d attempts: %s".formatted(
@@ -820,9 +808,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
         // If this is a retry attempt, log and increment metrics
         if (attempt > 0) {
-          if (enableMetrics) {
-            metrics.get(METRIC_RETRIES).incrementAndGet();
-          }
+          if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
 
           LOGGER.log(
             Level.INFO,
@@ -854,16 +840,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     // If processing was successful, send to sink and update metrics
     if (processedValue != null) {
       messageSink.send(record, processedValue);
-
-      if (enableMetrics) {
-        metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-      }
+      if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
     }
 
     // Mark offset as processed regardless of success or failure
-    if (offsetManager != null) {
-      commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
-    }
+    if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
   }
 
   private ConsumerRecords<K, V> pollRecords() {

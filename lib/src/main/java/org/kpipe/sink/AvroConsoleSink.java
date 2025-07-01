@@ -82,12 +82,13 @@ public class AvroConsoleSink<K, V> implements MessageSink<K, V> {
       final var inputStream = new ByteArrayInputStream(bytes);
       final var outputStream = new ByteArrayOutputStream();
       final var schema = AvroMessageProcessor.getSchema("1");
+      final var writer = new GenericDatumWriter<GenericRecord>(schema);
 
       final var decoder = DecoderFactory.get().binaryDecoder(inputStream, null);
       final var encoder = EncoderFactory.get().jsonEncoder(schema, outputStream);
 
       final var record = new GenericDatumReader<GenericRecord>(schema).read(null, decoder);
-      new GenericDatumWriter<GenericRecord>(schema).write(record, encoder);
+      writer.write(record, encoder);
       encoder.flush();
 
       return outputStream.toString(StandardCharsets.UTF_8);

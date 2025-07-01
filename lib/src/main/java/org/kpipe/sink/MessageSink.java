@@ -16,5 +16,5 @@ public interface MessageSink<K, V> {
    * @param record The original Kafka record
    * @param processedValue The result of processing the record value
    */
-  void send(final ConsumerRecord<K, V> record, V processedValue);
+  void send(final ConsumerRecord<K, V> record, final V processedValue);
 }

@@ -124,9 +124,9 @@ public class OffsetManager<K, V> implements AutoCloseable {
      */
     public Builder<K, V> withCommitInterval(final Duration interval) {
       this.commitInterval = Objects.requireNonNull(interval, "Commit interval cannot be null");
-      if (interval.isNegative() || interval.isZero()) {
-        throw new IllegalArgumentException("Commit interval must be positive");
-      }
+      if (interval.isNegative() || interval.isZero()) throw new IllegalArgumentException(
+        "Commit interval must be positive"
+      );
       return this;
     }
 
@@ -136,9 +136,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
      * @return A new OffsetManager instance
      */
     public OffsetManager<K, V> build() {
-      if (commandQueue == null) {
-        throw new IllegalStateException("Command queue must be provided");
-      }
+      if (commandQueue == null) throw new IllegalStateException("Command queue must be provided");
       return new OffsetManager<>(this);
     }
   }
@@ -158,9 +156,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @throws IllegalStateException if the OffsetManager is already closed
    */
   public OffsetManager<K, V> start() {
-    if (state.get() == OffsetState.STOPPED) {
-      throw new IllegalStateException("Cannot restart a stopped OffsetManager");
-    }
+    if (state.get() == OffsetState.STOPPED) throw new IllegalStateException("Cannot restart a stopped OffsetManager");
 
     if (state.compareAndSet(OffsetState.CREATED, OffsetState.RUNNING)) {
       scheduler =
@@ -190,9 +186,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
    */
   public void notifyCommitComplete(final String commitId, final boolean success) {
     var future = commitFutures.remove(commitId);
-    if (future != null) {
-      future.complete(success);
-    }
+    if (future != null) future.complete(success);
   }
 
   /**
@@ -209,9 +203,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @param record The consumer record to track
    */
   public void trackOffset(final ConsumerRecord<K, V> record) {
-    if (state.get() == OffsetState.STOPPED) {
-      return;
-    }
+    if (state.get() == OffsetState.STOPPED) return;
     final var partition = new TopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
     pendingOffsets.computeIfAbsent(partition, k -> new ConcurrentSkipListSet<>()).add(offset);
@@ -268,9 +260,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @return this instance for method chaining
    */
   public OffsetManager<K, V> stop() {
-    if (!state.compareAndSet(OffsetState.RUNNING, OffsetState.STOPPING)) {
-      return this; // Not running, nothing to stop
-    }
+    if (!state.compareAndSet(OffsetState.RUNNING, OffsetState.STOPPING)) return this; // Not running, nothing to stop
 
     try {
       stopScheduler();
@@ -292,9 +282,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
     if (scheduler != null) {
       scheduler.shutdown();
       try {
-        if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-          scheduler.shutdownNow();
-        }
+        if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) scheduler.shutdownNow();
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
         scheduler.shutdownNow();
@@ -311,14 +299,10 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @throws InterruptedException if the thread is interrupted while waiting
    */
   public boolean commitSyncAndWait(final int timeoutSeconds) throws InterruptedException {
-    if (state.get() == OffsetState.STOPPED) {
-      return true;
-    }
+    if (state.get() == OffsetState.STOPPED) return true;
 
     final var offsetsToCommit = prepareOffsetsToCommit();
-    if (offsetsToCommit.isEmpty()) {
-      return true;
-    }
+    if (offsetsToCommit.isEmpty()) return true;
 
     return performCommit(offsetsToCommit, timeoutSeconds);
   }
@@ -349,9 +333,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
 
   private boolean performCommit(final Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, final int timeoutSeconds)
     throws InterruptedException {
-    if (offsetsToCommit.isEmpty()) {
-      return true;
-    }
+    if (offsetsToCommit.isEmpty()) return true;
 
     final var commitId = UUID.randomUUID().toString();
     final var future = new CompletableFuture<Boolean>();
@@ -499,9 +481,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
 
     executorService.shutdown();
     try {
-      if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-        executorService.shutdownNow();
-      }
+      if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) executorService.shutdownNow();
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       LOGGER.log(WARNING, "Interrupted while waiting for executor shutdown", e);

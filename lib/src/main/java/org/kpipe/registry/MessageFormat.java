@@ -188,7 +188,9 @@ public enum MessageFormat {
               final var dslJson = new DslJson<>();
               final var bytes = responseBody.getBytes(StandardCharsets.UTF_8);
               final var result = dslJson.deserialize(Map.class, new ByteArrayInputStream(bytes));
+
               if (result == null) throw new IOException("Failed to deserialize schema registry response");
+
               if (result.containsKey("schema")) return (String) result.get("schema"); else throw new IOException(
                 "Schema field not found in response"
               );
