@@ -611,9 +611,7 @@ public class AvroMessageProcessor {
     final String fieldName,
     final Function<Object, Object> transformer
   ) {
-    if (schema == null) {
-      return bytes -> bytes;
-    }
+    if (schema == null) return bytes -> bytes;
     return avroBytes ->
       processAvro(
         avroBytes,
@@ -723,9 +721,7 @@ public class AvroMessageProcessor {
     final Schema schema,
     final Function<GenericRecord, GenericRecord> processor
   ) {
-    if (avroBytes == null || avroBytes.length == 0) {
-      return EMPTY_AVRO;
-    }
+    if (avroBytes == null || avroBytes.length == 0) return EMPTY_AVRO;
 
     try {
       // Create a reader and writer
@@ -840,9 +836,7 @@ public class AvroMessageProcessor {
   ) {
     try {
       final var schema = getSchema(schemaName);
-      if (schema == null) {
-        return new AvroResult(EMPTY_AVRO, false, "Schema not found: %s".formatted(schemaName));
-      }
+      if (schema == null) return new AvroResult(EMPTY_AVRO, false, "Schema not found: %s".formatted(schemaName));
 
       final var result = processAvro(avroBytes, schema, processor);
       return new AvroResult(result, true, null);

@@ -347,10 +347,7 @@ public class MessageProcessorRegistry {
     final String fullyQualifiedName,
     final String schemaJson
   ) {
-    if (messageFormat == MessageFormat.AVRO) {
-      // Pass the schema content directly
-      return addSchema(key, fullyQualifiedName, schemaJson);
-    }
+    if (messageFormat == MessageFormat.AVRO) return addSchema(key, fullyQualifiedName, schemaJson);
     return this;
   }
 
@@ -628,10 +625,7 @@ public class MessageProcessorRegistry {
    */
   public Map<String, Object> getMetrics(final String name) {
     final var entry = registry.get(name);
-    if (entry == null) {
-      return Map.of();
-    }
-
+    if (entry == null) return Map.of();
     return RegistryFunctions.createMetrics(entry.invocationCount, entry.errorCount, entry.totalProcessingTimeMs);
   }
 

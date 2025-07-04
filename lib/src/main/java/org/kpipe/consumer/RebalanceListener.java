@@ -62,9 +62,7 @@ public class RebalanceListener implements ConsumerRebalanceListener {
 
   @Override
   public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
-    if (state.get() == OffsetState.STOPPED) {
-      return;
-    }
+    if (state.get() == OffsetState.STOPPED) return;
     LOGGER.info("Partitions revoked: %s".formatted(partitions));
     final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
 
@@ -74,9 +72,7 @@ public class RebalanceListener implements ConsumerRebalanceListener {
         offsetsToCommit.put(partition, new OffsetAndMetadata(pending.first()));
       } else {
         final var highestProcessed = highestProcessedOffsets.get(partition);
-        if (highestProcessed != null) {
-          offsetsToCommit.put(partition, new OffsetAndMetadata(highestProcessed + 1));
-        }
+        if (highestProcessed != null) offsetsToCommit.put(partition, new OffsetAndMetadata(highestProcessed + 1));
       }
       pendingOffsets.remove(partition);
       highestProcessedOffsets.remove(partition);
@@ -94,9 +90,7 @@ public class RebalanceListener implements ConsumerRebalanceListener {
 
   @Override
   public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
-    if (state.get() == OffsetState.STOPPED) {
-      return;
-    }
+    if (state.get() == OffsetState.STOPPED) return;
     LOGGER.info("Partitions assigned: %s".formatted(partitions));
     partitions.forEach(partition -> {
       pendingOffsets.remove(partition);

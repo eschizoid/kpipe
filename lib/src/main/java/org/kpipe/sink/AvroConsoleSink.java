@@ -82,18 +82,19 @@ public class AvroConsoleSink<K, V> implements MessageSink<K, V> {
       final var inputStream = new ByteArrayInputStream(bytes);
       final var outputStream = new ByteArrayOutputStream();
       final var schema = AvroMessageProcessor.getSchema("1");
+      final var writer = new GenericDatumWriter<GenericRecord>(schema);
 
       final var decoder = DecoderFactory.get().binaryDecoder(inputStream, null);
       final var encoder = EncoderFactory.get().jsonEncoder(schema, outputStream);
 
       final var record = new GenericDatumReader<GenericRecord>(schema).read(null, decoder);
-      new GenericDatumWriter<GenericRecord>(schema).write(record, encoder);
+      writer.write(record, encoder);
       encoder.flush();
 
       return outputStream.toString(StandardCharsets.UTF_8);
     } catch (final Exception e) {
-      logger.log(Level.DEBUG, "Failed to parse Avro data", e);
-      return "Failed to parse Avro data: %s".formatted(e.getMessage());
+      logger.log(Level.ERROR, "Failed to parse Avro data", e);
+      return "";
     }
   }
 }

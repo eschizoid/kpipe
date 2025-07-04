@@ -277,19 +277,13 @@ public class JsonMessageProcessor {
     final byte[] jsonBytes,
     final Function<Map<String, Object>, Map<String, Object>> processor
   ) {
-    if (jsonBytes == null || jsonBytes.length == 0) {
-      return EMPTY_JSON;
-    }
+    if (jsonBytes == null || jsonBytes.length == 0) return EMPTY_JSON;
     try (final var input = new ByteArrayInputStream(jsonBytes); final var output = new ByteArrayOutputStream()) {
       final var parsed = DSL_JSON.deserialize(Map.class, input);
-      if (parsed == null) {
-        return EMPTY_JSON;
-      }
+      if (parsed == null) return EMPTY_JSON;
       @SuppressWarnings("unchecked")
       final var processed = processor.apply(parsed);
-      if (processed == null) {
-        return EMPTY_JSON;
-      }
+      if (processed == null) return EMPTY_JSON;
       DSL_JSON.serialize(processed, output);
       return output.toByteArray();
     } catch (final Exception e) {
