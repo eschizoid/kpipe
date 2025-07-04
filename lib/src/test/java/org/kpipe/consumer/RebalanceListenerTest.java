@@ -167,7 +167,7 @@ class RebalanceListenerTest {
     when(consumerCommand.withOffsets(Map.of(partition1, new OffsetAndMetadata(200L)))).thenReturn(consumerCommand);
 
     when(commandQueue.isEmpty()).thenReturn(false);
-    when(commandQueue.size()).thenReturn(1, 0);
+    when(commandQueue.size()).thenReturn(1);
     when(commandQueue.poll()).thenReturn(consumerCommand);
 
     // Act
