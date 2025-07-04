@@ -3,8 +3,10 @@ package org.kpipe.consumer;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicReference;
@@ -14,6 +16,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.consumer.enums.OffsetState;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
@@ -25,6 +28,12 @@ class RebalanceListenerTest {
 
   @Mock
   private Consumer<String, String> mockConsumer;
+
+  @Mock
+  private Queue<ConsumerCommand> commandQueue;
+
+  @Mock
+  private ConsumerCommand consumerCommand;
 
   @Captor
   private ArgumentCaptor<Map<TopicPartition, OffsetAndMetadata>> offsetCaptor;
@@ -43,7 +52,7 @@ class RebalanceListenerTest {
     state = new AtomicReference<>(OffsetState.RUNNING);
     pendingOffsets = new ConcurrentHashMap<>();
     highestProcessedOffsets = new ConcurrentHashMap<>();
-    listener = new RebalanceListener(state, pendingOffsets, highestProcessedOffsets, mockConsumer);
+    listener = new RebalanceListener(state, pendingOffsets, highestProcessedOffsets, mockConsumer, commandQueue);
   }
 
   @Test
@@ -147,5 +156,84 @@ class RebalanceListenerTest {
 
     // State should still be cleared despite the exception
     assertFalse(pendingOffsets.containsKey(partition0));
+  }
+
+  @Test
+  void shouldDrainCommandQueueForRevokedPartitions() {
+    // Arrange
+    final var offsets = Map.of(partition0, new OffsetAndMetadata(100L), partition1, new OffsetAndMetadata(200L));
+    when(consumerCommand.getOffsets()).thenReturn(offsets);
+
+    when(consumerCommand.withOffsets(Map.of(partition1, new OffsetAndMetadata(200L)))).thenReturn(consumerCommand);
+
+    when(commandQueue.isEmpty()).thenReturn(false);
+    when(commandQueue.size()).thenReturn(1, 0);
+    when(commandQueue.poll()).thenReturn(consumerCommand);
+
+    // Act
+    listener.onPartitionsRevoked(List.of(partition0));
+
+    // Assert
+    verify(commandQueue).addAll(argThat(commands -> commands.size() == 1 && commands.contains(consumerCommand)));
+  }
+
+  @Test
+  void shouldPreserveCommandsWithoutOffsets() {
+    // Arrange
+    when(consumerCommand.getOffsets()).thenReturn(null);
+
+    when(commandQueue.isEmpty()).thenReturn(false);
+    when(commandQueue.size()).thenReturn(1, 0);
+    when(commandQueue.poll()).thenReturn(consumerCommand);
+
+    // Act
+    listener.onPartitionsRevoked(List.of(partition0));
+
+    // Assert
+    verify(commandQueue).addAll(argThat(commands -> commands.size() == 1 && commands.contains(consumerCommand)));
+  }
+
+  @Test
+  void shouldCompletelyRemoveCommandsForAllRevokedPartitions() {
+    // Arrange
+    final var cmd = mock(ConsumerCommand.class);
+    final var offsets = Map.of(partition0, new OffsetAndMetadata(100L));
+    when(cmd.getOffsets()).thenReturn(offsets);
+
+    when(commandQueue.isEmpty()).thenReturn(false);
+    when(commandQueue.size()).thenReturn(1, 0);
+    when(commandQueue.poll()).thenReturn(cmd);
+
+    // Act
+    listener.onPartitionsRevoked(List.of(partition0));
+
+    // Assert
+    verify(commandQueue).addAll(argThat(Collection::isEmpty));
+  }
+
+  @Test
+  void shouldDoNothingWhenCommandQueueIsEmpty() {
+    // Arrange
+    when(commandQueue.isEmpty()).thenReturn(true);
+
+    // Act
+    listener.onPartitionsRevoked(List.of(partition0));
+
+    // Assert
+    verify(commandQueue, never()).addAll(anyList());
+    verify(commandQueue, never()).poll();
+  }
+
+  @Test
+  void shouldSkipDrainingCommandQueueWhenStopped() {
+    // Arrange
+    state.set(OffsetState.STOPPED);
+
+    // Act
+    listener.onPartitionsRevoked(List.of(partition0));
+
+    // Assert
+    verify(commandQueue, never()).addAll(anyList());
+    verify(commandQueue, never()).poll();
   }
 }
