@@ -471,7 +471,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
    * @return A ConsumerRebalanceListener instance
    */
   public ConsumerRebalanceListener createRebalanceListener() {
-    return new RebalanceListener(state, pendingOffsets, highestProcessedOffsets, kafkaConsumer);
+    return new RebalanceListener(state, pendingOffsets, highestProcessedOffsets, kafkaConsumer, commandQueue);
   }
 
   /** Cleans up resources. */
