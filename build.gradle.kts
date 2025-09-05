@@ -1,6 +1,6 @@
 plugins {
-    id("com.diffplug.spotless") version "7.0.3"
-    id("pl.allegro.tech.build.axion-release") version "1.18.7"
+    id("com.diffplug.spotless") version "7.2.1"
+    id("pl.allegro.tech.build.axion-release") version "1.20.1"
 }
 
 scmVersion {
@@ -14,7 +14,14 @@ scmVersion {
             "main" to "simple"
         )
     )
-    versionIncrementer("incrementMinor")
+    val incrementType =
+        when (project.findProperty("release.incrementer")?.toString()) {
+            "patch" -> "incrementPatch"
+            "minor" -> "incrementMinor"
+            "major" -> "incrementMajor"
+            else -> "incrementMinor"
+        }
+    versionIncrementer(incrementType)
     branchVersionIncrementer.set(
         mapOf(
             "feature/.*" to "incrementMinor", "bugfix/.*" to "incrementPatch"
