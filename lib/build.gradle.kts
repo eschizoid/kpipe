@@ -6,7 +6,7 @@ plugins {
     `maven-publish`
     signing
     jacoco
-    id("org.jreleaser") version "1.17.0"
+    id("org.jreleaser") version "1.19.0"
 }
 
 description = "KPipe - Functional Kafka Consumer Library"
@@ -168,6 +168,7 @@ jreleaser {
                     stagingRepository("build/staging-deploy")
                     enabled.set(true)
                     sign.set(false)
+                    maxRetries.set(180)
                 }
             }
         }

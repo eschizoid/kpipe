@@ -8,20 +8,16 @@ scmVersion {
     tag {
         prefix.set("v")
     }
-
     versionCreator("versionWithBranch")
     branchVersionCreator.set(
         mapOf(
             "main" to "simple"
         )
     )
-
     versionIncrementer("incrementMinor")
-
     branchVersionIncrementer.set(
         mapOf(
-            "feature/.*" to "incrementMinor",
-            "bugfix/.*" to "incrementPatch"
+            "feature/.*" to "incrementMinor", "bugfix/.*" to "incrementPatch"
         )
     )
 }
