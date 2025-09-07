@@ -7,14 +7,14 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.MessageSinkRegistry;
 
 /**
- * Reports metrics for message processors, allowing flexible composition of:
+ * Reports metrics for message sinks, allowing flexible composition of:
  *
  * <ul>
- *   <li>How processor names are retrieved (via a {@link Supplier})
- *   <li>How metrics are fetched for each processor (via a {@link Function})
+ *   <li>How sink names are retrieved (via a {@link Supplier})
+ *   <li>How metrics are fetched for each sink (via a {@link Function})
  *   <li>How metrics are reported (via a {@link Consumer})
  * </ul>
  *
@@ -22,7 +22,7 @@ import org.kpipe.registry.MessageProcessorRegistry;
  *
  * <pre>{@code
  * // Creates reporter with default logging behavior
- * ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(registry);
+ * SinkMetricsReporter reporter = new SinkMetricsReporter(registry);
  * reporter.reportMetrics();
  * }</pre>
  *
@@ -31,9 +31,9 @@ import org.kpipe.registry.MessageProcessorRegistry;
  * <pre>{@code
  * // Report metrics to a monitoring system
  * Consumer<String> prometheusReporter = metric ->
- *     PrometheusClient.pushMetric("processor_stats", metric);
+ *     PrometheusClient.pushMetric("sink_stats", metric);
  *
- * ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(
+ * SinkMetricsReporter reporter = new SinkMetricsReporter(
  *     registry, prometheusReporter);
  * reporter.reportMetrics();
  * }</pre>
@@ -42,36 +42,36 @@ import org.kpipe.registry.MessageProcessorRegistry;
  *
  * <pre>{@code
  * // Custom suppliers and reporting
- * ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(
- *     () -> Set.of("processor1", "processor2"),
+ * SinkMetricsReporter reporter = new SinkMetricsReporter(
+ *     () -> Set.of("sink1", "sink2"),
  *     name -> metricsService.fetchMetricsFor(name),
  *     metric -> slackNotifier.send("METRICS", metric));
  * reporter.reportMetrics();
  * }</pre>
  *
- * @param processorNamesSupplier supplier of processor names
- * @param metricsFetcher function to fetch metrics for a processor name
+ * @param sinkNamesSupplier supplier of sink names
+ * @param metricsFetcher function to fetch metrics for a sink name
  * @param reporter consumer for reporting metrics (defaults to logger if null)
  */
-public record ProcessorMetricsReporter(
-  Supplier<Set<String>> processorNamesSupplier,
+public record SinkMetricsReporter(
+  Supplier<Set<String>> sinkNamesSupplier,
   Function<String, Map<String, Object>> metricsFetcher,
   Consumer<String> reporter
 )
   implements MetricsReporter {
-  private static final Logger LOGGER = System.getLogger(ProcessorMetricsReporter.class.getName());
+  private static final Logger LOGGER = System.getLogger(SinkMetricsReporter.class.getName());
 
   /**
-   * Creates a processor metrics reporter with the specified registry and default logging.
+   * Creates a sink metrics reporter with the specified registry and default logging.
    *
-   * @param registry the message processor registry
+   * @param registry the message sink registry
    */
-  public ProcessorMetricsReporter(final MessageProcessorRegistry registry) {
+  public SinkMetricsReporter(final MessageSinkRegistry registry) {
     this(registry, null);
   }
 
   /**
-   * Creates a processor metrics reporter with the specified registry and custom reporter.
+   * Creates a sink metrics reporter with the specified registry and custom reporter.
    *
    * <p>Example with a custom reporter:
    *
@@ -80,26 +80,26 @@ public record ProcessorMetricsReporter(
    * Consumer<String> dbReporter = metric ->
    *     jdbcTemplate.update("INSERT INTO metrics VALUES(?)", metric);
    *
-   * var reporter = new ProcessorMetricsReporter(registry, dbReporter);
+   * var reporter = new SinkMetricsReporter(registry, dbReporter);
    * }</pre>
    *
-   * @param registry the message processor registry
+   * @param registry the message sink registry
    * @param reporter consumer for reporting metrics (defaults to logger if null)
    */
-  public ProcessorMetricsReporter(final MessageProcessorRegistry registry, final Consumer<String> reporter) {
+  public SinkMetricsReporter(final MessageSinkRegistry registry, final Consumer<String> reporter) {
     this(() -> registry.getAll().keySet(), registry::getMetrics, reporter);
   }
 
   /**
-   * Creates a processor metrics reporter with custom suppliers and reporter.
+   * Creates a sink metrics reporter with custom suppliers and reporter.
    *
    * <p>This constructor offers maximum flexibility for customizing behavior.
    *
    * <p>Example:
    *
    * <pre>{@code
-   * // Custom implementation with filtered processors
-   * var reporter = new ProcessorMetricsReporter(
+   * // Custom implementation with filtered sinks
+   * var reporter = new SinkMetricsReporter(
    *     () -> registry.getAll().keySet().stream()
    *              .filter(name -> name.startsWith("critical-"))
    *              .collect(Collectors.toSet()),
@@ -111,27 +111,27 @@ public record ProcessorMetricsReporter(
    * );
    * }</pre>
    *
-   * @param processorNamesSupplier supplier of processor names
-   * @param metricsFetcher function to fetch metrics for a processor name
+   * @param sinkNamesSupplier supplier of sink names
+   * @param metricsFetcher function to fetch metrics for a sink name
    * @param reporter consumer for reporting metrics (defaults to logger if null)
    */
-  public ProcessorMetricsReporter(
-    final Supplier<Set<String>> processorNamesSupplier,
+  public SinkMetricsReporter(
+    final Supplier<Set<String>> sinkNamesSupplier,
     final Function<String, Map<String, Object>> metricsFetcher,
     final Consumer<String> reporter
   ) {
-    this.processorNamesSupplier = processorNamesSupplier;
+    this.sinkNamesSupplier = sinkNamesSupplier;
     this.metricsFetcher = metricsFetcher;
     this.reporter = reporter != null ? reporter : this::logMetrics;
   }
 
   /**
-   * Reports metrics for all processors.
+   * Reports metrics for all sinks.
    *
    * <p>The reporting process:
    *
    * <ol>
-   *   <li>Retrieves all processor names from the supplier
+   *   <li>Retrieves all sink names from the supplier
    *   <li>For each name, fetches its metrics using the metrics fetcher
    *   <li>Reports non-empty metrics using the configured reporter
    * </ol>
@@ -140,18 +140,18 @@ public record ProcessorMetricsReporter(
    */
   public void reportMetrics() {
     try {
-      processorNamesSupplier
+      sinkNamesSupplier
         .get()
-        .forEach(processorName -> {
+        .forEach(sinkName -> {
           try {
-            final var metrics = metricsFetcher.apply(processorName);
-            if (!metrics.isEmpty()) reporter.accept("Processor '%s' metrics: %s".formatted(processorName, metrics));
+            final var metrics = metricsFetcher.apply(sinkName);
+            if (!metrics.isEmpty()) reporter.accept("Sink '%s' metrics: %s".formatted(sinkName, metrics));
           } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Error retrieving metrics for processor: %s".formatted(processorName), e);
+            LOGGER.log(Level.WARNING, "Error retrieving metrics for sink: %s".formatted(sinkName), e);
           }
         });
     } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error retrieving processor registry", e);
+      LOGGER.log(Level.WARNING, "Error retrieving sink registry", e);
     }
   }
 

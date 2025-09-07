@@ -28,14 +28,13 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  *   <li>Robust error handling that logs exceptions without disrupting the main processing flow
  * </ul>
  *
+ * @param logger The logger to use for logging messages
+ * @param logLevel The log level to use for logging messages
  * @param <K> The type of message key
  * @param <V> The type of message value
  */
-public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
-
+public record JsonConsoleSink<K, V>(Logger logger, Level logLevel) implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
-  private final Level logLevel;
-  private final Logger logger;
 
   /**
    * Creates a ConsoleSink with the specified log level.
@@ -43,10 +42,7 @@ public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
    * @param logger The logger to use for logging messages
    * @param logLevel The log level to use for logging messages
    */
-  public JsonConsoleSink(final System.Logger logger, final Level logLevel) {
-    this.logLevel = logLevel;
-    this.logger = logger;
-  }
+  public JsonConsoleSink {}
 
   /**
    * Logs a message with its key and value.

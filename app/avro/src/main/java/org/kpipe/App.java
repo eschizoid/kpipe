@@ -20,6 +20,7 @@ import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
+import org.kpipe.metrics.SinkMetricsReporter;
 import org.kpipe.processor.AvroMessageProcessor;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
@@ -76,14 +77,16 @@ public class App implements AutoCloseable {
     );
 
     final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
-    runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
+    final var sinkMetricsReporter = new SinkMetricsReporter(sinkRegistry, null);
+    runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter);
   }
 
   /** Creates the consumer runner with appropriate lifecycle hooks. */
   private ConsumerRunner<FunctionalConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
     final MetricsReporter consumerMetricsReporter,
-    final MetricsReporter processorMetricsReporter
+    final MetricsReporter processorMetricsReporter,
+    final MetricsReporter sinkMetricsReporter
   ) {
     return ConsumerRunner
       .builder(functionalConsumer)
@@ -93,7 +96,7 @@ public class App implements AutoCloseable {
       })
       .withHealthCheck(FunctionalConsumer::isRunning)
       .withGracefulShutdown(ConsumerRunner::performGracefulConsumerShutdown)
-      .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter))
+      .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter))
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())
       .withShutdownHook(true)
