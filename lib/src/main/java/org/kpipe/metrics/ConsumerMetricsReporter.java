@@ -9,14 +9,6 @@ import java.util.function.Supplier;
 /**
  * Functional service for reporting Kafka consumer metrics.
  *
- * <p>This class follows a functional approach using suppliers and consumers:
- *
- * <ul>
- *   <li>A supplier provides the current metrics as a map
- *   <li>A supplier provides the current application uptime
- *   <li>A consumer handles the reporting of formatted metrics
- * </ul>
- *
  * <p><strong>Example 1:</strong> Basic usage with default logging:
  *
  * <pre>{@code
@@ -60,30 +52,21 @@ import java.util.function.Supplier;
  *     }
  * );
  * }</pre>
+ *
+ * @param metricsSupplier supplier of consumer metrics
+ * @param uptimeSupplier supplier of application uptime in ms
+ * @param reporter consumer for reporting metrics (defaults to logger if null)
  */
-public class ConsumerMetricsReporter implements MetricsReporter {
-
+public record ConsumerMetricsReporter(
+  Supplier<Map<String, Long>> metricsSupplier,
+  Supplier<Long> uptimeSupplier,
+  Consumer<String> reporter
+)
+  implements MetricsReporter {
   private static final Logger LOGGER = System.getLogger(ConsumerMetricsReporter.class.getName());
   private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
   private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
-
-  private final Supplier<Map<String, Long>> metricsSupplier;
-  private final Supplier<Long> uptimeSupplier;
-  private final Consumer<String> reporter;
-
-  /**
-   * Creates a consumer metrics reporter with default logging behavior.
-   *
-   * @param metricsSupplier supplier of consumer metrics
-   * @param uptimeSupplier supplier of application uptime in ms
-   */
-  public ConsumerMetricsReporter(
-    final Supplier<Map<String, Long>> metricsSupplier,
-    final Supplier<Long> uptimeSupplier
-  ) {
-    this(metricsSupplier, uptimeSupplier, null);
-  }
 
   /**
    * Creates a consumer metrics reporter with the specified metrics supplier and reporter.

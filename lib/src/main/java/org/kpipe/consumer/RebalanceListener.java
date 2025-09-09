@@ -31,39 +31,22 @@ import org.kpipe.consumer.enums.OffsetState;
  * <p>The listener coordinates with the OffsetManager to maintain accurate offset tracking during
  * consumer group rebalancing operations, preventing duplicate message processing or data loss when
  * partitions are reassigned between consumer instances.
+ *
+ * @param state The current offset state reference
+ * @param pendingOffsets A map of pending offsets for each partition
+ * @param highestProcessedOffsets A map of the highest processed offsets for each partition
+ * @param consumer The Kafka consumer to manage offsets for
+ * @param commandQueue The command queue used for managing offset commit operations
  */
-public class RebalanceListener implements ConsumerRebalanceListener {
-
+public record RebalanceListener(
+  AtomicReference<OffsetState> state,
+  Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets,
+  Map<TopicPartition, Long> highestProcessedOffsets,
+  Consumer<?, ?> consumer,
+  Queue<ConsumerCommand> commandQueue
+)
+  implements ConsumerRebalanceListener {
   private static final Logger LOGGER = Logger.getLogger(RebalanceListener.class.getName());
-
-  private final AtomicReference<OffsetState> state;
-  private final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets;
-  private final Map<TopicPartition, Long> highestProcessedOffsets;
-  private final Consumer<?, ?> consumer;
-  private final Queue<ConsumerCommand> commandQueue;
-
-  /**
-   * Constructs a new RebalanceListener.
-   *
-   * @param state The current offset state reference
-   * @param pendingOffsets A map of pending offsets for each partition
-   * @param highestProcessedOffsets A map of the highest processed offsets for each partition
-   * @param consumer The Kafka consumer to manage offsets for
-   * @param commandQueue The command queue used for managing offset commit operations
-   */
-  public RebalanceListener(
-    final AtomicReference<OffsetState> state,
-    final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets,
-    final Map<TopicPartition, Long> highestProcessedOffsets,
-    final Consumer<?, ?> consumer,
-    final Queue<ConsumerCommand> commandQueue
-  ) {
-    this.state = state;
-    this.pendingOffsets = pendingOffsets;
-    this.highestProcessedOffsets = highestProcessedOffsets;
-    this.consumer = consumer;
-    this.commandQueue = commandQueue;
-  }
 
   @Override
   public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {

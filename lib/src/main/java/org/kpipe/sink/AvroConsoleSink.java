@@ -19,25 +19,13 @@ import org.kpipe.processor.AvroMessageProcessor;
 /**
  * A sink that logs processed Kafka messages with Avro formatting.
  *
+ * @param logger The logger to use for logging messages
+ * @param logLevel The log level to use for logging messages
  * @param <K> The type of message key
  * @param <V> The type of message value
  */
-public class AvroConsoleSink<K, V> implements MessageSink<K, V> {
-
+public record AvroConsoleSink<K, V>(Logger logger, Level logLevel) implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
-  private final Level logLevel;
-  private final Logger logger;
-
-  /**
-   * Creates an AvroConsoleSink with the specified log level and Schema Registry URL.
-   *
-   * @param logger The logger to use for logging messages
-   * @param logLevel The log level to use for logging messages
-   */
-  public AvroConsoleSink(final Logger logger, final Level logLevel) {
-    this.logLevel = logLevel;
-    this.logger = logger;
-  }
 
   @Override
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
