@@ -48,17 +48,6 @@ public record RebalanceListener(
   implements ConsumerRebalanceListener {
   private static final Logger LOGGER = Logger.getLogger(RebalanceListener.class.getName());
 
-  /**
-   * Constructs a new RebalanceListener.
-   *
-   * @param state The current offset state reference
-   * @param pendingOffsets A map of pending offsets for each partition
-   * @param highestProcessedOffsets A map of the highest processed offsets for each partition
-   * @param consumer The Kafka consumer to manage offsets for
-   * @param commandQueue The command queue used for managing offset commit operations
-   */
-  public RebalanceListener {}
-
   @Override
   public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
     if (state.get() == OffsetState.STOPPED) return;

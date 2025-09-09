@@ -27,14 +27,6 @@ import org.kpipe.processor.AvroMessageProcessor;
 public record AvroConsoleSink<K, V>(Logger logger, Level logLevel) implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
 
-  /**
-   * Creates an AvroConsoleSink with the specified log level and Schema Registry URL.
-   *
-   * @param logger The logger to use for logging messages
-   * @param logLevel The log level to use for logging messages
-   */
-  public AvroConsoleSink {}
-
   @Override
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {

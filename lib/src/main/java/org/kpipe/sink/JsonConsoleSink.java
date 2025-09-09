@@ -37,14 +37,6 @@ public record JsonConsoleSink<K, V>(Logger logger, Level logLevel) implements Me
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
 
   /**
-   * Creates a ConsoleSink with the specified log level.
-   *
-   * @param logger The logger to use for logging messages
-   * @param logLevel The log level to use for logging messages
-   */
-  public JsonConsoleSink {}
-
-  /**
    * Logs a message with its key and value.
    *
    * @param record The original Kafka consumer record
