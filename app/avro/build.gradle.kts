@@ -1,9 +1,13 @@
-description = "KPipe - Kafka Consumer Application Using Avro"
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
-application {
-    mainClass.set("org.kpipe.App")
+tasks.named<ShadowJar>("shadowJar") {
+    manifest {
+        attributes["Main-Class"] = "org.kpipe.Main"
+    }
 }
 
+description = "KPipe - Kafka Consumer Application Using Avro"
+
 dependencies {
-    implementation("org.apache.avro:avro:1.12.0")
+    implementation("org.apache.avro:avro:1.12.1")
 }

@@ -53,7 +53,7 @@ subprojects {
     spotless {
         java {
             target("src/**/*.java")
-            googleJavaFormat("1.26.0")
+            googleJavaFormat("1.27.0")
             toggleOffOn()
             importOrder()
             removeUnusedImports()
@@ -71,6 +71,6 @@ subprojects {
     }
 
     tasks.withType<JavaCompile> {
-        options.release.set(24)
+        options.release.set(25)
     }
 }

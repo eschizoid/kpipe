@@ -1,5 +1,9 @@
-description = "KPipe - Kafka Consumer Application Using Protocol Buffers"
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
-application {
-    mainClass.set("org.kpipe.App")
+tasks.named<ShadowJar>("shadowJar") {
+    manifest {
+        attributes["Main-Class"] = "org.kpipe.Main"
+    }
 }
+
+description = "KPipe - Kafka Consumer Application Using Protobuf"
