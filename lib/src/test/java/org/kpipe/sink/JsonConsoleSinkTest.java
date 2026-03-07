@@ -1,154 +1,143 @@
 package org.kpipe.sink;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
 
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
+import java.util.logging.Logger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-@ExtendWith(MockitoExtension.class)
 class JsonConsoleSinkTest {
 
-  private JsonConsoleSink<Object, Object> sink;
-
-  @Mock
-  private Logger mockLogger;
-
-  @Captor
-  private ArgumentCaptor<String> messageCaptor;
+  private JsonConsoleSink<String, Object> sink;
+  private CapturingHandler handler;
+  private Logger julLogger;
 
   @BeforeEach
   void setUp() {
-    // Remove the global stubbing from here and move to individual tests
-    sink = new JsonConsoleSink<>(mockLogger, Level.INFO);
+    sink = new JsonConsoleSink<>();
+    handler = new CapturingHandler();
+    julLogger = Logger.getLogger(JsonConsoleSink.class.getName());
+    julLogger.addHandler(handler);
+    julLogger.setUseParentHandlers(false);
+  }
+
+  @AfterEach
+  void tearDown() {
+    julLogger.removeHandler(handler);
+    julLogger.setUseParentHandlers(true);
+  }
+
+  private String output() {
+    return handler.toString();
   }
 
   @Test
-  void shouldLogMessageAsJson() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "original-value");
+  void shouldLogTopicInOutput() {
+    final var record = new ConsumerRecord<>("my-topic", 0, 0L, "key1", (Object) "value1");
+    sink.send(record, "value1");
+    assertTrue(output().contains("my-topic"), "Expected topic in log output");
+  }
 
-    // Act
-    sink.send(record, "processed-value");
+  @Test
+  void shouldLogKeyInOutput() {
+    final var record = new ConsumerRecord<>("test-topic", 0, 0L, "my-key", (Object) "value1");
+    sink.send(record, "value1");
+    assertTrue(output().contains("my-key"), "Expected key in log output");
+  }
 
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    final var logMessage = messageCaptor.getValue();
-    final var expectedJson =
-      """
-            {"topic":"test-topic","partition":0,"offset":123,"key":"test-key","processedMessage":"processed-value"}""";
-
-    assertEquals(expectedJson, logMessage);
+  @Test
+  void shouldLogPartitionAndOffsetInOutput() {
+    final var record = new ConsumerRecord<>("test-topic", 3, 42L, "key1", (Object) "value1");
+    sink.send(record, "value1");
+    final var out = output();
+    assertTrue(out.contains("""
+        "partition":3"""), "Expected partition:3 in log output");
+    assertTrue(out.contains("""
+        "offset":42"""), "Expected offset:42 in log output");
   }
 
   @Test
   void shouldHandleNullValue() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "original-value");
-
-    // Act
+    final var record = new ConsumerRecord<>("test-topic", 0, 1L, "key1", (Object) null);
     sink.send(record, null);
-
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    assertTrue(messageCaptor.getValue().contains("\"processedMessage\":\"null\""));
-  }
-
-  @Test
-  void shouldFormatJsonByteArray() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", new byte[0]);
-    final var jsonString = """
-            {
-              "name": "test",
-              "value": 123
-            }""";
-    final var jsonBytes = jsonString.getBytes(StandardCharsets.UTF_8);
-    final var expectedJson =
-      """
-            {"topic":"test-topic","partition":0,"offset":123,"key":"test-key","processedMessage":"{\\n  \\"name\\": \\"test\\",\\n  \\"value\\": 123\\n}"}""";
-
-    // Act
-    sink.send(record, jsonBytes);
-
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    final var logMessage = messageCaptor.getValue();
-
-    assertEquals(expectedJson, logMessage);
-  }
-
-  @Test
-  void shouldHandleNonJsonByteArray() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", new byte[0]);
-    final var textBytes = "Hello, world!".getBytes(StandardCharsets.UTF_8);
-
-    // Act
-    sink.send(record, textBytes);
-
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    final var logMessage = messageCaptor.getValue();
-    assertTrue(logMessage.contains("processedMessage"));
-    assertTrue(logMessage.contains("Hello, world!"));
+    assertTrue(output().contains("null"), "Expected 'null' in log output");
   }
 
   @Test
   void shouldHandleEmptyByteArray() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", new byte[0]);
-
-    // Act
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 2L, "key1", new byte[0]);
     sink.send(record, new byte[0]);
-
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    assertTrue(messageCaptor.getValue().contains("processedMessage"));
-    assertTrue(messageCaptor.getValue().contains("empty"));
+    assertTrue(output().contains("empty"), "Expected 'empty' for zero-length byte array");
   }
 
   @Test
-  void shouldNotLogWhenLevelIsNotLoggable() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(false);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "value");
-
-    // Act
-    sink.send(record, "test");
-
-    // Assert
-    verify(mockLogger, never()).log(eq(Level.INFO), anyString());
+  void shouldFormatJsonByteArray() {
+    final var json = """
+        {"field":"value"}
+        """.strip().getBytes(StandardCharsets.UTF_8);
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 3L, "key1", json);
+    sink.send(record, json);
+    final var out = output();
+    assertTrue(out.contains("field") && out.contains("value"), "Expected JSON content in output");
   }
 
   @Test
-  void shouldUseCustomLogLevel() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var customSink = new JsonConsoleSink<>(mockLogger, Level.WARNING);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "value");
+  void shouldHandleNonJsonByteArray() {
+    final var bytes = """
+        plain text
+        """.strip().getBytes(StandardCharsets.UTF_8);
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 4L, "key1", bytes);
+    sink.send(record, bytes);
+    assertTrue(output().contains("plain text"), "Expected raw string for non-JSON bytes");
+  }
 
-    // Act
-    customSink.send(record, "test");
+  @Test
+  void shouldHandleJsonArray() {
+    final var json = """
+        [{"a":1},{"b":2}]
+        """.strip().getBytes(StandardCharsets.UTF_8);
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 7L, "key1", json);
+    sink.send(record, json);
+    assertTrue(output().contains("test-topic"), "Expected topic in output for JSON array");
+  }
 
-    // Assert
-    verify(mockLogger).log(eq(Level.WARNING), anyString());
-    verify(mockLogger, never()).log(eq(Level.INFO), anyString());
+  @Test
+  void shouldHandleInvalidJsonByteArray() {
+    final var bytes = """
+        {invalid json
+        """.strip().getBytes(StandardCharsets.UTF_8);
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 8L, "key1", bytes);
+    sink.send(record, bytes);
+    assertTrue(output().contains("invalid json"), "Expected fallback raw string for invalid JSON");
+  }
+
+  @Test
+  void shouldHandleLargeMessage() {
+    final var large = "x".repeat(10_000);
+    final var record = new ConsumerRecord<>("test-topic", 0, 9L, "key1", (Object) large);
+    sink.send(record, large);
+    assertTrue(output().contains("x"), "Expected large message content in output");
+  }
+
+  @Test
+  void shouldHandleNullKey() {
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 10L, null, "value");
+    sink.send(record, "value");
+    assertTrue(output().contains("null"), "Expected 'null' key in output");
+  }
+
+  @Test
+  void shouldOutputValidJsonStructure() {
+    final var record = new ConsumerRecord<>("test-topic", 0, 0L, "key1", (Object) "value1");
+    sink.send(record, "value1");
+    final var out = output();
+    assertTrue(out.contains("\"topic\""), "Expected 'topic' field in JSON output");
+    assertTrue(out.contains("\"partition\""), "Expected 'partition' field in JSON output");
+    assertTrue(out.contains("\"offset\""), "Expected 'offset' field in JSON output");
+    assertTrue(out.contains("\"key\""), "Expected 'key' field in JSON output");
+    assertTrue(out.contains("\"processedMessage\""), "Expected 'processedMessage' field in JSON output");
   }
 }

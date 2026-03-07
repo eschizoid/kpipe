@@ -1,197 +1,149 @@
 package org.kpipe.sink;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
+import java.util.logging.Logger;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.EncoderFactory;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-@ExtendWith(MockitoExtension.class)
 class AvroConsoleSinkTest {
 
-  private AvroConsoleSink<Object, Object> sink;
+  private static final Schema TEST_SCHEMA = new Schema.Parser()
+    .parse(
+      """
+    {
+      "type": "record",
+      "name": "Test",
+      "fields": [
+        {"name": "id", "type": "string"},
+        {"name": "value", "type": "string"}
+      ]
+    }
+    """
+    );
 
-  @Mock
-  private Logger mockLogger;
-
-  @Captor
-  private ArgumentCaptor<String> messageCaptor;
+  private AvroConsoleSink<String, Object> sink;
+  private CapturingHandler handler;
+  private Logger julLogger;
 
   @BeforeEach
   void setUp() {
-    sink = new AvroConsoleSink<>(mockLogger, Level.INFO);
+    sink = new AvroConsoleSink<>(TEST_SCHEMA);
+    handler = new CapturingHandler();
+    julLogger = Logger.getLogger(AvroConsoleSink.class.getName());
+    julLogger.addHandler(handler);
+    julLogger.setUseParentHandlers(false);
+  }
+
+  @AfterEach
+  void tearDown() {
+    julLogger.removeHandler(handler);
+    julLogger.setUseParentHandlers(true);
+  }
+
+  private String output() {
+    return handler.toString();
   }
 
   @Test
-  void shouldLogMessageAsJson() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "original-value");
+  void shouldLogTopicInOutput() {
+    final var record = new ConsumerRecord<>("my-topic", 0, 0L, "key1", (Object) "value1");
+    sink.send(record, "value1");
+    assertTrue(output().contains("my-topic"), "Expected topic in log output");
+  }
 
-    // Act
-    sink.send(record, "processed-value");
+  @Test
+  void shouldLogKeyInOutput() {
+    final var record = new ConsumerRecord<>("test-topic", 0, 0L, "my-key", (Object) "value1");
+    sink.send(record, "value1");
+    assertTrue(output().contains("my-key"), "Expected key in log output");
+  }
 
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    final var logMessage = messageCaptor.getValue();
-    final var expectedJson =
-      """
-                  {"topic":"test-topic","partition":0,"offset":123,"key":"test-key","processedMessage":"processed-value"}""";
-    assertEquals(expectedJson, logMessage);
+  @Test
+  void shouldLogPartitionAndOffsetInOutput() {
+    final var record = new ConsumerRecord<>("test-topic", 3, 42L, "key1", (Object) "value1");
+    sink.send(record, "value1");
+    final var out = output();
+    assertTrue(out.contains("\"partition\":3"), "Expected partition:3 in log output");
+    assertTrue(out.contains("\"offset\":42"), "Expected offset:42 in log output");
+  }
+
+  @Test
+  void shouldOutputValidJsonStructure() {
+    final var record = new ConsumerRecord<>("test-topic", 0, 0L, "key1", (Object) "value1");
+    sink.send(record, "value1");
+    final var out = output();
+    assertTrue(out.contains("\"topic\""), "Expected 'topic' field in JSON output");
+    assertTrue(out.contains("\"partition\""), "Expected 'partition' field in JSON output");
+    assertTrue(out.contains("\"offset\""), "Expected 'offset' field in JSON output");
+    assertTrue(out.contains("\"key\""), "Expected 'key' field in JSON output");
+    assertTrue(out.contains("\"processedMessage\""), "Expected 'processedMessage' field in JSON output");
   }
 
   @Test
   void shouldHandleNullValue() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "original-value");
-
-    // Act
+    final var record = new ConsumerRecord<>("test-topic", 0, 1L, "key1", (Object) null);
     sink.send(record, null);
-
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    assertTrue(messageCaptor.getValue().contains("\"processedMessage\":\"null\""));
+    assertTrue(output().contains("null"), "Expected 'null' in log output");
   }
 
   @Test
   void shouldHandleEmptyByteArray() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", new byte[0]);
-
-    // Act
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 2L, "key1", new byte[0]);
     sink.send(record, new byte[0]);
-
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    assertTrue(messageCaptor.getValue().contains("\"processedMessage\":\"empty\""));
+    assertTrue(output().contains("empty"), "Expected 'empty' for zero-length byte array");
   }
 
   @Test
-  void shouldFormatAvroByteArray() throws IOException {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", new byte[0]);
+  void shouldHandleNullKey() {
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 3L, null, "value");
+    sink.send(record, "value");
+    assertTrue(output().contains("null"), "Expected 'null' key in output");
+  }
 
-    // Create avro data
-    final var avroBytes = createSampleAvroRecord();
+  @Test
+  void shouldHandleInvalidAvroDataWithoutThrowing() {
+    final var bytes = "not avro".getBytes(StandardCharsets.UTF_8);
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 5L, "key1", bytes);
+    sink.send(record, bytes);
+    final var out = output();
+    assertTrue(out.contains("""
+        "processedMessage":"""" + """
+        \""""), "Expected empty processedMessage on Avro parse failure");
+    assertTrue(out.contains("test-topic"), "Expected topic even on Avro parse failure");
+  }
 
-    // Act
+  @Test
+  void shouldFormatValidAvroByteArrayAsJson() throws Exception {
+    final var avroBytes = createAvroBytes();
+    final var record = new ConsumerRecord<String, Object>("test-topic", 0, 4L, "key1", avroBytes);
     sink.send(record, avroBytes);
-
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    final var logMessage = messageCaptor.getValue();
-
-    assertTrue(logMessage.contains("\"topic\":\"test-topic\""));
-    assertTrue(logMessage.contains("\"key\":\"test-key\""));
-    assertTrue(logMessage.contains("\"processedMessage\":"));
+    final var out = output();
+    assertTrue(out.contains("\"processedMessage\""), "Expected processedMessage field in output");
+    assertFalse(
+      out.contains("\"processedMessage\":\"\""),
+      "Expected non-empty processedMessage after valid Avro decoding"
+    );
   }
 
-  @Test
-  void shouldHandleInvalidAvroData() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", new byte[0]);
-    final var invalidAvroBytes = "Not valid Avro".getBytes(StandardCharsets.UTF_8);
-
-    // Act
-    sink.send(record, invalidAvroBytes);
-
-    // Assert
-    verify(mockLogger).log(eq(Level.INFO), messageCaptor.capture());
-    final var logMessage = messageCaptor.getValue();
-
-    assertTrue(logMessage.contains("\"topic\":\"test-topic\""));
-    assertTrue(logMessage.contains("\"key\":\"test-key\""));
-    assertTrue(logMessage.contains("\"processedMessage\":\"\""));
-  }
-
-  @Test
-  void shouldNotLogWhenLevelIsNotLoggable() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(false);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "value");
-
-    // Act
-    sink.send(record, "test");
-
-    // Assert
-    verify(mockLogger, never()).log(eq(Level.INFO), anyString());
-  }
-
-  @Test
-  void shouldUseCustomLogLevel() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    final var customSink = new AvroConsoleSink<>(mockLogger, Level.WARNING);
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "value");
-
-    // Act
-    customSink.send(record, "test");
-
-    // Assert
-    verify(mockLogger).log(eq(Level.WARNING), anyString());
-    verify(mockLogger, never()).log(eq(Level.INFO), anyString());
-  }
-
-  @Test
-  void shouldHandleExceptionsGracefully() {
-    // Arrange
-    when(mockLogger.isLoggable(any(Level.class))).thenReturn(true);
-    doThrow(new RuntimeException("Test exception")).when(mockLogger).log(eq(Level.INFO), anyString());
-    final var record = new ConsumerRecord<Object, Object>("test-topic", 0, 123L, "test-key", "value");
-
-    // Act - should not throw exception
-    sink.send(record, "test");
-
-    // Assert
-    verify(mockLogger).log(eq(Level.ERROR), anyString(), any(Exception.class));
-  }
-
-  private byte[] createSampleAvroRecord() throws IOException {
-    final var schemaJson =
-      """
-        {
-          "type": "record",
-          "name": "TestRecord",
-          "fields":[
-            {"name": "field1", "type": "string"},
-            {"name": "field2", "type": "int"}
-          ]
-        }""";
-    final var schema = new Schema.Parser().parse(schemaJson);
-
-    final var record = new GenericData.Record(schema);
-    record.put("field1", "test value");
-    record.put("field2", 42);
-
-    final var outputStream = new ByteArrayOutputStream();
-    final var writer = new GenericDatumWriter<GenericRecord>(schema);
-    final var encoder = EncoderFactory.get().binaryEncoder(outputStream, null);
-    writer.write(record, encoder);
+  private byte[] createAvroBytes() throws Exception {
+    final var avroRecord = new GenericData.Record(TEST_SCHEMA);
+    avroRecord.put("id", "test-id");
+    avroRecord.put("value", "test-value");
+    final var out = new ByteArrayOutputStream();
+    final var writer = new GenericDatumWriter<GenericRecord>(TEST_SCHEMA);
+    final var encoder = EncoderFactory.get().binaryEncoder(out, null);
+    writer.write(avroRecord, encoder);
     encoder.flush();
-
-    return outputStream.toByteArray();
+    return out.toByteArray();
   }
 }

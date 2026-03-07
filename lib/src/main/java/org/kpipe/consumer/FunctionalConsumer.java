@@ -392,10 +392,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     this.retryBackoff = builder.retryBackoff;
     this.enableMetrics = builder.enableMetrics;
     this.sequentialProcessing = builder.sequentialProcessing;
-    this.messageSink =
-      builder.messageSink != null
-        ? builder.messageSink
-        : new JsonConsoleSink<>(System.getLogger(JsonConsoleSink.class.getName()), Level.INFO);
+    this.messageSink = builder.messageSink != null ? builder.messageSink : new JsonConsoleSink<>();
     this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
     this.executorTerminationTimeout = builder.executorTerminationTimeout;

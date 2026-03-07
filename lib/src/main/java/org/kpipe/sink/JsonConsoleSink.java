@@ -4,7 +4,6 @@ import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -28,13 +27,13 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  *   <li>Robust error handling that logs exceptions without disrupting the main processing flow
  * </ul>
  *
- * @param logger The logger to use for logging messages
- * @param logLevel The log level to use for logging messages
  * @param <K> The type of message key
  * @param <V> The type of message value
  */
-public record JsonConsoleSink<K, V>(java.lang.System.Logger logger, java.lang.System.Logger.Level logLevel) implements MessageSink<K, V> {
+public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
+  private static final System.Logger LOGGER = System.getLogger(JsonConsoleSink.class.getName());
+  private static final System.Logger.Level LOG_LEVEL = System.Logger.Level.INFO;
 
   /**
    * Logs a message with its key and value.
@@ -46,7 +45,7 @@ public record JsonConsoleSink<K, V>(java.lang.System.Logger logger, java.lang.Sy
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {
       // Skip if the logging level doesn't require it
-      if (!logger.isLoggable(logLevel)) return;
+      if (!LOGGER.isLoggable(LOG_LEVEL)) return;
       final var logData = LinkedHashMap.newLinkedHashMap(5);
       logData.put("topic", record.topic());
       logData.put("partition", record.partition());
@@ -56,9 +55,9 @@ public record JsonConsoleSink<K, V>(java.lang.System.Logger logger, java.lang.Sy
 
       try (final var out = new ByteArrayOutputStream()) {
         DSL_JSON.serialize(logData, out);
-        logger.log(logLevel, out.toString(StandardCharsets.UTF_8));
+        LOGGER.log(LOG_LEVEL, out.toString(StandardCharsets.UTF_8));
       } catch (final IOException e) {
-        logger.log(
+        LOGGER.log(
           Level.WARNING,
           "Failed to processed message (topic=%s, partition=%d, offset=%d)".formatted(
               record.topic(),
@@ -68,7 +67,7 @@ public record JsonConsoleSink<K, V>(java.lang.System.Logger logger, java.lang.Sy
         );
       }
     } catch (final Exception e) {
-      logger.log(Level.ERROR, "Error in ConsoleSink while processing message", e);
+      LOGGER.log(Level.ERROR, "Error in ConsoleSink while processing message", e);
     }
   }
 
@@ -98,12 +97,12 @@ public record JsonConsoleSink<K, V>(java.lang.System.Logger logger, java.lang.Sy
           DSL_JSON.serialize(json, out);
           return out.toString(StandardCharsets.UTF_8);
         } catch (final Exception e) {
-          logger.log(Level.ERROR, "Failed to parse/format JSON content, falling back to raw string", e);
+          LOGGER.log(Level.ERROR, "Failed to parse/format JSON content, falling back to raw string", e);
         }
       }
       return strValue;
     } catch (final Exception e) {
-      logger.log(Level.ERROR, "Failed to parse/format as JSON", e);
+      LOGGER.log(Level.ERROR, "Failed to parse/format as JSON", e);
       return "";
     }
   }
