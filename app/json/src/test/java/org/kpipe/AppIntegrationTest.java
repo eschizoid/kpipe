@@ -34,7 +34,8 @@ class AppIntegrationTest {
   @Container
   static KafkaContainer kafka = new KafkaContainer(
     DockerImageName.parse("confluentinc/cp-kafka:7.7.1").asCompatibleSubstituteFor("apache/kafka")
-  );
+  )
+    .waitingFor(org.testcontainers.containers.wait.strategy.Wait.forListeningPort());
 
   @Test
   void testJsonAppEndToEnd() throws Exception {

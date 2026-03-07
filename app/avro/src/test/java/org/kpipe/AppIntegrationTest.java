@@ -49,18 +49,22 @@ class AppIntegrationTest {
     DockerImageName.parse("confluentinc/cp-kafka:7.7.1").asCompatibleSubstituteFor("apache/kafka")
   )
     .withNetwork(network)
-    .withNetworkAliases("kafka");
+    .withNetworkAliases("kafka")
+    .waitingFor(Wait.forListeningPort());
 
   @Container
   static GenericContainer<?> schemaRegistry = new GenericContainer<>(
-    DockerImageName.parse("confluentinc/cp-schema-registry:7.7.1").asCompatibleSubstituteFor("confluentinc/cp-schema-registry")
+    DockerImageName
+      .parse("confluentinc/cp-schema-registry:7.7.1")
+      .asCompatibleSubstituteFor("confluentinc/cp-schema-registry")
   )
     .withNetwork(network)
     .withNetworkAliases("schema-registry")
     .withExposedPorts(8081)
     .withEnv("SCHEMA_REGISTRY_HOST_NAME", "schema-registry")
     .withEnv("SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS", "PLAINTEXT://kafka:9092")
-    .waitingFor(Wait.forHttp("/subjects").forStatusCode(200));
+    .dependsOn(kafka)
+    .waitingFor(Wait.forHttp("/subjects").forStatusCode(200).withStartupTimeout(Duration.ofMinutes(2)));
 
   @Test
   void testAvroAppEndToEnd() throws Exception {

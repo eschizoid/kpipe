@@ -19,6 +19,7 @@ dependencies {
     // JMH dependencies
     jmh("org.openjdk.jmh:jmh-core:1.37")
     jmh("org.openjdk.jmh:jmh-generator-annprocess:1.37")
+    jmh("org.slf4j:slf4j-simple:2.0.9")
     
     // Testcontainers for integration-style benchmarks
     implementation("org.testcontainers:testcontainers:1.20.4")
