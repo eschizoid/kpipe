@@ -100,8 +100,8 @@ public class MessageSinkRegistry {
    * }</pre>
    */
   public MessageSinkRegistry() {
-    register("jsonLogging", new JsonConsoleSink<>(System.getLogger(JsonConsoleSink.class.getName()), Level.INFO));
-    register("avroLogging", new AvroConsoleSink<>(System.getLogger(AvroConsoleSink.class.getName()), Level.INFO));
+    register("jsonLogging", new JsonConsoleSink<>());
+    register("avroLogging", new AvroConsoleSink<>());
   }
 
   /**

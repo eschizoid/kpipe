@@ -67,7 +67,7 @@ public record AppConfig(
    * @param topic Kafka topic to consume from
    * @param appName Application name for metrics and logging
    * @param pollTimeout Duration to wait in poll operations
-   * @param shutdownTimeout Maximum duration to wait during graceful shutdown
+   * @param shutdownTimeout Maximum duration to wait during a graceful shutdown
    * @param metricsInterval Interval between metrics reporting
    * @param processors List of processor names to use in the processing pipeline
    */
@@ -104,16 +104,14 @@ public record AppConfig(
    */
   private Duration validateDuration(final Duration duration, final Duration defaultValue, final String name) {
     final var result = duration != null ? duration : defaultValue;
-    if (result.isNegative()) {
-      throw new IllegalArgumentException(name + " cannot be negative");
-    }
+    if (result.isNegative()) throw new IllegalArgumentException(name + " cannot be negative");
     return result;
   }
 
   /**
    * Creates a configuration from environment variables with sensible defaults.
    *
-   * @return A new KafkaConfig instance configured from environment
+   * @return A new KafkaConfig instance configured from the environment
    */
   public static AppConfig fromEnv() {
     return new AppConfig(
@@ -152,11 +150,11 @@ public record AppConfig(
    * Gets environment variable or returns default if not set.
    *
    * @param name Environment variable name
-   * @param defaultValue Default value if environment variable is not set
+   * @param defaultValue Default value if the environment variable is not set
    * @return Value from environment or default
    */
   public static String getEnvOrDefault(final String name, final String defaultValue) {
-    final String value = System.getenv(name);
+    final var value = System.getenv(name);
     return value != null && !value.isEmpty() ? value : defaultValue;
   }
 }

@@ -31,22 +31,10 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @param <K> The type of message key
  * @param <V> The type of message value
  */
-public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
-
+public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
-  private final Level logLevel;
-  private final Logger logger;
-
-  /**
-   * Creates a ConsoleSink with the specified log level.
-   *
-   * @param logger The logger to use for logging messages
-   * @param logLevel The log level to use for logging messages
-   */
-  public JsonConsoleSink(final System.Logger logger, final Level logLevel) {
-    this.logLevel = logLevel;
-    this.logger = logger;
-  }
+  private static final Logger LOGGER = System.getLogger(JsonConsoleSink.class.getName());
+  private static final Level LOG_LEVEL = Level.INFO;
 
   /**
    * Logs a message with its key and value.
@@ -58,7 +46,7 @@ public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {
       // Skip if the logging level doesn't require it
-      if (!logger.isLoggable(logLevel)) return;
+      if (!LOGGER.isLoggable(LOG_LEVEL)) return;
       final var logData = LinkedHashMap.newLinkedHashMap(5);
       logData.put("topic", record.topic());
       logData.put("partition", record.partition());
@@ -68,9 +56,9 @@ public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
 
       try (final var out = new ByteArrayOutputStream()) {
         DSL_JSON.serialize(logData, out);
-        logger.log(logLevel, out.toString(StandardCharsets.UTF_8));
+        LOGGER.log(LOG_LEVEL, out.toString(StandardCharsets.UTF_8));
       } catch (final IOException e) {
-        logger.log(
+        LOGGER.log(
           Level.WARNING,
           "Failed to processed message (topic=%s, partition=%d, offset=%d)".formatted(
               record.topic(),
@@ -80,7 +68,7 @@ public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
         );
       }
     } catch (final Exception e) {
-      logger.log(Level.ERROR, "Error in ConsoleSink while processing message", e);
+      LOGGER.log(Level.ERROR, "Error in ConsoleSink while processing message", e);
     }
   }
 
@@ -110,12 +98,12 @@ public class JsonConsoleSink<K, V> implements MessageSink<K, V> {
           DSL_JSON.serialize(json, out);
           return out.toString(StandardCharsets.UTF_8);
         } catch (final Exception e) {
-          logger.log(Level.ERROR, "Failed to parse/format JSON content, falling back to raw string", e);
+          LOGGER.log(Level.ERROR, "Failed to parse/format JSON content, falling back to raw string", e);
         }
       }
       return strValue;
     } catch (final Exception e) {
-      logger.log(Level.ERROR, "Failed to parse/format as JSON", e);
+      LOGGER.log(Level.ERROR, "Failed to parse/format as JSON", e);
       return "";
     }
   }

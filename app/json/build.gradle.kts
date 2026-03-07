@@ -1,5 +1,11 @@
-description = "KPipe - Kafka Consumer Application Using JSON"
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
-application {
-    mainClass.set("org.kpipe.App")
+tasks.named<ShadowJar>("shadowJar") {
+    manifest {
+        attributes(
+            "Main-Class" to "org.kpipe.App"
+        )
+    }
 }
+
+description = "KPipe - Kafka Consumer Application Using JSON"

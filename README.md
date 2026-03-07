@@ -632,7 +632,7 @@ echo '{"message":"Hello from KPipe!"}' | kcat -P -b localhost:9092 -t json-event
 
 ## 🛠️ Requirements
 
-- Java 24+
+- Java 25+
 - Gradle (for building the project)
 - [kcat](https://github.com/edenhill/kcat) (for testing)
 - Docker (for local Kafka setup)
@@ -699,9 +699,9 @@ If you want to use Avro with a schema registry, follow these steps:
 
   # Produce an Avro message using kafka-avro-console-producer
   echo '{"id":1,"name":"Mariano Gonzalez","email":{"string":"mariano@example.com"},"active":true,"registrationDate":1635724800000,"address":{"com.kpipe.customer.Address":{"street":"123 Main St","city":"Chicago","zipCode":"00000","country":"USA"}},"tags":["premium","verified"],"preferences":{"notifications":"email"}}' \
-  | docker run -i --rm --network=host confluentinc/cp-schema-registry:latest \
+  | docker run -i --rm --network=host confluentinc/cp-schema-registry:7.7.1 \
       kafka-avro-console-producer \
-      --broker-list localhost:9092 \
+      --bootstrap-server localhost:9092 \
       --topic avro-topic \
       --property schema.registry.url=http://localhost:8081 \
       --property value.schema.id=1

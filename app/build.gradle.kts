@@ -2,13 +2,12 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
     java
-    application
-    id("com.github.johnrengelman.shadow") version "8.1.1" apply false
+    id("com.gradleup.shadow") version "8.3.5" apply false
 }
 
 subprojects {
-    apply(plugin = "application")
-    apply(plugin = "com.github.johnrengelman.shadow")
+    apply(plugin = "java")
+    apply(plugin = "com.gradleup.shadow")
 
     dependencies {
         "implementation"(project(":lib"))
@@ -17,7 +16,7 @@ subprojects {
     }
 
     tasks.withType<JavaCompile> {
-        options.release.set(24)
+        options.release.set(25)
     }
 
     tasks.named("jar") {
@@ -28,15 +27,6 @@ subprojects {
         archiveBaseName.set("kpipe-${project.name}")
         archiveClassifier.set("")
         archiveVersion.set(version.toString())
-        manifest {
-            attributes(
-                mapOf(
-                    "Main-Class" to application.mainClass.get(),
-                    "Implementation-Title" to project.name,
-                    "Implementation-Version" to project.version
-                )
-            )
-        }
         mergeServiceFiles()
     }
 

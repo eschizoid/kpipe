@@ -31,12 +31,12 @@ import org.kpipe.metrics.MetricsReporter;
  * <p>Example usage:
  *
  * <pre>{@code
- * FunctionalConsumer<String, String> consumer = new FunctionalConsumer.Builder<>()
+ * final var consumer = new FunctionalConsumer.Builder<>()
  *     .withTopic("my-topic")
  *     .withProcessor(message -> processMessage(message))
  *     .build();
  *
- * ConsumerRunner<FunctionalConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
+ * final var runner = ConsumerRunner.builder(consumer)
  *     .withHealthCheck(FunctionalConsumer::isRunning)
  *     .withShutdownHook(true)
  *     .withShutdownTimeout(5000)
@@ -263,14 +263,10 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
           inFlightCount = tracker.getInFlightMessageCount();
           final var allProcessed = completed && inFlightCount == 0;
 
-          if (allProcessed) {
-            LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down");
-          } else {
-            LOGGER.log(
-              Level.WARNING,
-              "Shutdown timeout reached with %s messages still in flight".formatted(inFlightCount)
-            );
-          }
+          if (allProcessed) LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down"); else LOGGER.log(
+            Level.WARNING,
+            "Shutdown timeout reached with %s messages still in flight".formatted(inFlightCount)
+          );
 
           consumer.close();
           return allProcessed;
@@ -288,10 +284,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
       });
   }
 
-  /**
-   * Starts a metrics reporting thread if metrics reporters are configured. Uses functional
-   * programming to handle the metrics reporting loop.
-   */
+  /** Starts a metrics reporting thread if metrics reporters are configured. */
   private void startMetricsThread() {
     if (metricsReporters.isEmpty() || metricsInterval <= 0) {
       return;
@@ -329,17 +322,14 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
         });
   }
 
-  /**
-   * Stops the metrics reporting thread if it's running. Uses Optional to handle the thread
-   * reference in a functional way.
-   */
+  /** Stops the metrics reporting thread if it's running. */
   private void stopMetricsThread() {
     Optional
       .ofNullable(metricsThread)
       .ifPresent(thread -> {
         thread.interrupt();
         try {
-          thread.join(1000); // Wait up to 1 second for thread to terminate
+          thread.join(1_000); // Wait up to 1 second for the thread to terminate
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
           LOGGER.log(Level.WARNING, "Interrupted while stopping metrics thread");

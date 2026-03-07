@@ -392,10 +392,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     this.retryBackoff = builder.retryBackoff;
     this.enableMetrics = builder.enableMetrics;
     this.sequentialProcessing = builder.sequentialProcessing;
-    this.messageSink =
-      builder.messageSink != null
-        ? builder.messageSink
-        : new JsonConsoleSink<>(System.getLogger(JsonConsoleSink.class.getName()), Level.INFO);
+    this.messageSink = builder.messageSink != null ? builder.messageSink : new JsonConsoleSink<>();
     this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
     this.executorTerminationTimeout = builder.executorTerminationTimeout;
@@ -447,24 +444,19 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * @throws IllegalStateException if the consumer has already been started or was previously closed
    */
   public void start() {
-    if (state.get() == ConsumerState.CLOSED) {
-      throw new IllegalStateException("Cannot restart a closed consumer");
-    }
+    if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot restart a closed consumer");
 
     if (!state.compareAndSet(ConsumerState.CREATED, ConsumerState.RUNNING)) {
       LOGGER.log(Level.WARNING, "Consumer already running for topic {0}", topic);
       return;
     }
 
-    if (offsetManager != null) {
-      offsetManager.start();
-    }
+    if (offsetManager != null) offsetManager.start();
 
-    if (rebalanceListener != null) {
-      kafkaConsumer.subscribe(List.of(topic), rebalanceListener);
-    } else {
-      kafkaConsumer.subscribe(List.of(topic));
-    }
+    if (rebalanceListener != null) kafkaConsumer.subscribe(
+      List.of(topic),
+      rebalanceListener
+    ); else kafkaConsumer.subscribe(List.of(topic));
 
     Thread.UncaughtExceptionHandler exceptionHandler = (thread, throwable) -> {
       LOGGER.log(Level.ERROR, "Uncaught exception in consumer thread: " + thread.getName(), throwable);
@@ -480,9 +472,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
           while (isRunning()) {
             processCommands();
 
-            if (!isRunning()) {
-              break;
-            }
+            if (!isRunning()) break;
 
             if (isPaused()) {
               Thread.sleep(100);
@@ -490,9 +480,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
             }
 
             final var records = pollRecords();
-            if (records != null && !records.isEmpty()) {
-              processRecords(records);
-            }
+            if (records != null && !records.isEmpty()) processRecords(records);
           }
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
@@ -660,10 +648,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * @return a map of metric names to their current values, or an empty map if metrics are disabled
    */
   public Map<String, Long> getMetrics() {
-    if (!enableMetrics) {
-      return Map.of();
-    }
-
+    if (!enableMetrics) return Map.of();
     return metrics.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
   }
 
@@ -746,9 +731,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         .stream(records.records(topic).spliterator(), false)
         .forEach(record -> {
           // Track offset before submitting to virtual thread
-          if (offsetManager != null) {
-            commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
-          }
+          if (offsetManager != null) commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
           try {
             virtualThreadExecutor.submit(() -> processRecord(record));
           } catch (final RejectedExecutionException e) {
@@ -775,16 +758,14 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * <ul>
    *   <li>messagesReceived - Incremented when a record is received
    *   <li>messagesProcessed - Incremented for successful processing
-   *   <li>retries - Incremented for each retry attempt (not counting initial attempt)
+   *   <li>retries - Incremented for each retry attempt (not counting an initial attempt)
    *   <li>processingErrors - Incremented when processing fails after all retries
    * </ul>
    *
    * @param record The Kafka consumer record to process
    */
   protected void processRecord(final ConsumerRecord<K, V> record) {
-    if (enableMetrics) {
-      metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
-    }
+    if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
 
     final var retryProcessor = new BiFunction<Integer, Exception, V>() {
       @Override

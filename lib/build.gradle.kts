@@ -15,7 +15,7 @@ java {
     withSourcesJar()
     withJavadocJar()
     toolchain {
-        languageVersion = JavaLanguageVersion.of(24)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -34,13 +34,13 @@ repositories {
 
 dependencies {
     // Kafka
-    implementation("org.apache.kafka:kafka-clients:3.9.0")
+    implementation("org.apache.kafka:kafka-clients:3.9.1")
 
     // DSL-JSON
     implementation("com.dslplatform:dsl-json:2.0.2")
 
     // Avro
-    implementation("org.apache.avro:avro:1.12.0")
+    implementation("org.apache.avro:avro:1.12.1")
 
     // SLF4J API only
     implementation("org.slf4j:slf4j-api:2.0.9")
@@ -48,9 +48,10 @@ dependencies {
     // Testing
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    testImplementation("org.mockito:mockito-core:5.17.0")
-    testImplementation("org.mockito:mockito-junit-jupiter:5.17.0")
+    testImplementation("org.mockito:mockito-core:5.18.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.18.0")
 
     testImplementation("org.slf4j:slf4j-simple:2.0.9")
 }

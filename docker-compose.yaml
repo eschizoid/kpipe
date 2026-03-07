@@ -1,18 +1,25 @@
 services:
 
   zookeeper:
-    image: bitnami/zookeeper:latest
+    image: confluentinc/cp-zookeeper:7.7.1
     ports:
       - "2181:2181"
+      - "2888:2888"
+      - "3888:3888"
     environment:
-      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+      - ZOOKEEPER_4LW_COMMANDS_WHITELIST=srvr,ruok
+      - ZOOKEEPER_SERVER_ID=1
+      - ZOOKEEPER_SERVERS=zookeeper:2888:3888
     volumes:
-      - zookeeper_data:/bitnami/zookeeper
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
     healthcheck:
-      test: [ "CMD", "zkServer.sh", "status" ]
+      test: ["CMD-SHELL", "echo srvr | nc -w 2 localhost 2181 | grep -q 'Mode:'"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 8
 
   kafka:
     image: soldevelo/kafka:3.9.0
@@ -51,20 +58,17 @@ services:
     restart: on-failure
 
   schema-registry:
-    image: bitnami/schema-registry:latest
+    image: confluentinc/cp-schema-registry:7.7.1
     container_name: schema-registry
     ports:
       - "8081:8081"
     environment:
-      - SCHEMA_REGISTRY_DEBUG=true
+      - SCHEMA_REGISTRY_HOST_NAME=schema-registry
       - SCHEMA_REGISTRY_LISTENERS=http://0.0.0.0:8081
-      - SCHEMA_REGISTRY_KAFKA_BROKERS=PLAINTEXT://kafka:9092
       - SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=PLAINTEXT://kafka:9092
       - SCHEMA_REGISTRY_KAFKASTORE_TOPIC=_schemas
-      - SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR=1
-      - SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL=backward
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8081/subjects" ]
+      test: [ "CMD-SHELL", "curl -fsS http://localhost:8081/subjects >/dev/null || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,4 +96,5 @@ services:
 
 volumes:
   zookeeper_data:
+  zookeeper_log:
   kafka_data:

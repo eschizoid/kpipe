@@ -44,7 +44,7 @@ import org.kpipe.consumer.enums.OffsetState;
  *
  * <pre>{@code
  * // Create offset manager with default settings
- * var offsetManager = OffsetManager.builder(consumer).build();
+ * final var offsetManager = OffsetManager.builder(consumer).build();
  * offsetManager.start();
  *
  * // Track and process records
@@ -53,7 +53,7 @@ import org.kpipe.consumer.enums.OffsetState;
  * offsetManager.markOffsetProcessed(record);
  *
  * // Commit offsets explicitly
- * boolean success = offsetManager.commitSyncAndWait(5000); // 5 second timeout
+ * final var success = offsetManager.commitSyncAndWait(5000); // 5 second timeout
  *
  * // Clean up resources when done
  * offsetManager.close();
@@ -232,9 +232,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
     final var offsets = pendingOffsets.get(partition);
     if (offsets != null) {
       offsets.remove(offset);
-      if (offsets.isEmpty()) {
-        pendingOffsets.remove(partition);
-      }
+      if (offsets.isEmpty()) pendingOffsets.remove(partition);
     }
   }
 
