@@ -53,10 +53,8 @@ class JsonConsoleSinkTest {
     final var record = new ConsumerRecord<>("test-topic", 3, 42L, "key1", (Object) "value1");
     sink.send(record, "value1");
     final var out = output();
-    assertTrue(out.contains("""
-        "partition":3"""), "Expected partition:3 in log output");
-    assertTrue(out.contains("""
-        "offset":42"""), "Expected offset:42 in log output");
+    assertTrue(out.contains("\"partition\":3"), "Expected partition:3 in log output");
+    assertTrue(out.contains("\"offset\":42"), "Expected offset:42 in log output");
   }
 
   @Test
@@ -131,13 +129,13 @@ class JsonConsoleSinkTest {
 
   @Test
   void shouldOutputValidJsonStructure() {
-    final var record = new ConsumerRecord<>("test-topic", 0, 0L, "key1", (Object) "value1");
-    sink.send(record, "value1");
+    final var record = new ConsumerRecord<>("test-topic", 2, 7L, "my-key", (Object) "my-value");
+    sink.send(record, "my-value");
     final var out = output();
-    assertTrue(out.contains("\"topic\""), "Expected 'topic' field in JSON output");
-    assertTrue(out.contains("\"partition\""), "Expected 'partition' field in JSON output");
-    assertTrue(out.contains("\"offset\""), "Expected 'offset' field in JSON output");
-    assertTrue(out.contains("\"key\""), "Expected 'key' field in JSON output");
-    assertTrue(out.contains("\"processedMessage\""), "Expected 'processedMessage' field in JSON output");
+    assertTrue(out.contains("\"topic\":\"test-topic\""), "Expected topic value");
+    assertTrue(out.contains("\"partition\":2"), "Expected partition value");
+    assertTrue(out.contains("\"offset\":7"), "Expected offset value");
+    assertTrue(out.contains("\"key\":\"my-key\""), "Expected key value");
+    assertTrue(out.contains("\"processedMessage\":\"my-value\""), "Expected processedMessage value");
   }
 }

@@ -79,14 +79,14 @@ class AvroConsoleSinkTest {
 
   @Test
   void shouldOutputValidJsonStructure() {
-    final var record = new ConsumerRecord<>("test-topic", 0, 0L, "key1", (Object) "value1");
-    sink.send(record, "value1");
+    final var record = new ConsumerRecord<>("test-topic", 2, 7L, "my-key", (Object) "my-value");
+    sink.send(record, "my-value");
     final var out = output();
-    assertTrue(out.contains("\"topic\""), "Expected 'topic' field in JSON output");
-    assertTrue(out.contains("\"partition\""), "Expected 'partition' field in JSON output");
-    assertTrue(out.contains("\"offset\""), "Expected 'offset' field in JSON output");
-    assertTrue(out.contains("\"key\""), "Expected 'key' field in JSON output");
-    assertTrue(out.contains("\"processedMessage\""), "Expected 'processedMessage' field in JSON output");
+    assertTrue(out.contains("\"topic\":\"test-topic\""), "Expected topic value");
+    assertTrue(out.contains("\"partition\":2"), "Expected partition value");
+    assertTrue(out.contains("\"offset\":7"), "Expected offset value");
+    assertTrue(out.contains("\"key\":\"my-key\""), "Expected key value");
+    assertTrue(out.contains("\"processedMessage\":\"my-value\""), "Expected processedMessage value");
   }
 
   @Test
@@ -116,10 +116,8 @@ class AvroConsoleSinkTest {
     final var record = new ConsumerRecord<String, Object>("test-topic", 0, 5L, "key1", bytes);
     sink.send(record, bytes);
     final var out = output();
-    assertTrue(out.contains("""
-        "processedMessage":"""" + """
-        \""""), "Expected empty processedMessage on Avro parse failure");
-    assertTrue(out.contains("test-topic"), "Expected topic even on Avro parse failure");
+    assertTrue(out.contains("\"topic\":\"test-topic\""), "Expected topic value");
+    assertTrue(out.contains("\"processedMessage\":\"\""), "Expected empty processedMessage on Avro parse failure");
   }
 
   @Test
@@ -128,11 +126,11 @@ class AvroConsoleSinkTest {
     final var record = new ConsumerRecord<String, Object>("test-topic", 0, 4L, "key1", avroBytes);
     sink.send(record, avroBytes);
     final var out = output();
-    assertTrue(out.contains("\"processedMessage\""), "Expected processedMessage field in output");
-    assertFalse(
-      out.contains("\"processedMessage\":\"\""),
-      "Expected non-empty processedMessage after valid Avro decoding"
-    );
+    assertTrue(out.contains("\"topic\":\"test-topic\""), "Expected topic value");
+    assertTrue(out.contains("\"key\":\"key1\""), "Expected key value");
+    // Avro JSON encoder encodes string fields as {"string":"value"}
+    assertTrue(out.contains("test-id"), "Expected decoded Avro 'id' value");
+    assertTrue(out.contains("test-value"), "Expected decoded Avro 'value' value");
   }
 
   private byte[] createAvroBytes() throws Exception {
