@@ -53,6 +53,8 @@ public class ParallelProcessingBenchmark {
 
   @Setup(Level.Trial)
   public void setup() throws Exception {
+    System.setProperty("DOCKER_API_VERSION", "1.44");
+    System.setProperty("TESTCONTAINERS_RYUK_DISABLED", "true");
     final var imageName = DockerImageName
       .parse("confluentinc/cp-kafka:7.7.1")
       .asCompatibleSubstituteFor("apache/kafka");
