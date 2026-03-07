@@ -480,9 +480,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
             }
 
             final var records = pollRecords();
-            if (records != null && !records.isEmpty()) {
-              processRecords(records);
-            }
+            if (records != null && !records.isEmpty()) processRecords(records);
           }
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
@@ -760,7 +758,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
    * <ul>
    *   <li>messagesReceived - Incremented when a record is received
    *   <li>messagesProcessed - Incremented for successful processing
-   *   <li>retries - Incremented for each retry attempt (not counting initial attempt)
+   *   <li>retries - Incremented for each retry attempt (not counting an initial attempt)
    *   <li>processingErrors - Incremented when processing fails after all retries
    * </ul>
    *

@@ -4,6 +4,7 @@ import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -25,8 +26,8 @@ import org.kpipe.processor.AvroMessageProcessor;
  */
 public record AvroConsoleSink<K, V>(Schema schema) implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
-  private static final System.Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());
-  private static final System.Logger.Level LOG_LEVEL = System.Logger.Level.INFO;
+  private static final Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());
+  private static final Level LOG_LEVEL = Level.INFO;
 
   /** Creates an {@code AvroConsoleSink} using the default schema version "1". */
   public AvroConsoleSink() {
