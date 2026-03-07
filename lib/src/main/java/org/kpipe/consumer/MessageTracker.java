@@ -29,7 +29,7 @@ import java.util.function.Supplier;
  *
  * <pre>{@code
  * // Create a tracker for consumer metrics
- * MessageTracker tracker = MessageTracker.builder()
+ * final var tracker = MessageTracker.builder()
  *     .withMetricsSupplier(consumer::getMetrics)
  *     .withReceivedMetricKey("messagesReceived")
  *     .withProcessedMetricKey("messagesProcessed")
@@ -162,9 +162,7 @@ public class MessageTracker {
     final Supplier<Boolean> completionPredicate
   ) throws InterruptedException {
     while (Instant.now().isBefore(deadline)) {
-      if (completionPredicate.get()) {
-        return Optional.of(true);
-      }
+      if (completionPredicate.get()) return Optional.of(true);
       Thread.sleep(checkInterval.toMillis());
     }
     return Optional.of(false);

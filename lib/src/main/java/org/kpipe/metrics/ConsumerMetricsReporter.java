@@ -71,14 +71,14 @@ public record ConsumerMetricsReporter(
   /**
    * Creates a consumer metrics reporter with the specified metrics supplier and reporter.
    *
-   * <p>Example with custom reporter:
+   * <p>Example with a custom reporter:
    *
    * <pre>{@code
    * // Send metrics to Slack
    * Consumer<String> slackReporter = metric ->
    *     slackClient.sendMessage("#metrics-channel", metric);
    *
-   * var reporter = new ConsumerMetricsReporter(
+   * final var reporter = new ConsumerMetricsReporter(
    *     consumer::getMetrics,
    *     () -> System.currentTimeMillis() - startTime,
    *     slackReporter

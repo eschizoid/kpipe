@@ -1,5 +1,4 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.gradle.jvm.toolchain.JavaLanguageVersion
 
 plugins {
     java
@@ -9,12 +8,6 @@ plugins {
 subprojects {
     apply(plugin = "java")
     apply(plugin = "com.gradleup.shadow")
-
-    java {
-        toolchain {
-            languageVersion.set(JavaLanguageVersion.of(25))
-        }
-    }
 
     dependencies {
         "implementation"(project(":lib"))

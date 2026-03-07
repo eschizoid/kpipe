@@ -33,7 +33,7 @@ import org.kpipe.registry.MessageSinkRegistry;
  * Consumer<String> prometheusReporter = metric ->
  *     PrometheusClient.pushMetric("sink_stats", metric);
  *
- * SinkMetricsReporter reporter = new SinkMetricsReporter(
+ * final var reporter = new SinkMetricsReporter(
  *     registry, prometheusReporter);
  * reporter.reportMetrics();
  * }</pre>
@@ -42,7 +42,7 @@ import org.kpipe.registry.MessageSinkRegistry;
  *
  * <pre>{@code
  * // Custom suppliers and reporting
- * SinkMetricsReporter reporter = new SinkMetricsReporter(
+ * final var reporter = new SinkMetricsReporter(
  *     () -> Set.of("sink1", "sink2"),
  *     name -> metricsService.fetchMetricsFor(name),
  *     metric -> slackNotifier.send("METRICS", metric));

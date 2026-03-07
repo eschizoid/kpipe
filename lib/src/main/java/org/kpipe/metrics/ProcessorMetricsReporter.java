@@ -80,7 +80,7 @@ public record ProcessorMetricsReporter(
    * Consumer<String> dbReporter = metric ->
    *     jdbcTemplate.update("INSERT INTO metrics VALUES(?)", metric);
    *
-   * var reporter = new ProcessorMetricsReporter(registry, dbReporter);
+   * final var reporter = new ProcessorMetricsReporter(registry, dbReporter);
    * }</pre>
    *
    * @param registry the message processor registry

@@ -1,5 +1,4 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.gradle.jvm.tasks.Jar
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
@@ -8,10 +7,6 @@ tasks.named<ShadowJar>("shadowJar") {
             "Main-Class" to "org.kpipe.App"
         )
     }
-}
-
-tasks.named<Jar>("jar") {
-    enabled = false
 }
 
 description = "KPipe - Kafka Consumer Application Using Avro"
