@@ -14,30 +14,28 @@ import org.apache.kafka.common.TopicPartition;
 import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.consumer.enums.OffsetState;
 
-/**
- * Implementation of Kafka's ConsumerRebalanceListener that handles partition rebalance events for
- * the OffsetManager.
- *
- * <p>This listener manages offset tracking state during partition assignments and revocations,
- * ensuring that:
- *
- * <ul>
- *   <li>Tracked offsets are properly committed during revocation events
- *   <li>Internal data structures are updated to reflect the current assignment
- *   <li>Offset state is preserved for persistent consumer groups
- *   <li>Memory is reclaimed for partitions no longer assigned
- * </ul>
- *
- * <p>The listener coordinates with the OffsetManager to maintain accurate offset tracking during
- * consumer group rebalancing operations, preventing duplicate message processing or data loss when
- * partitions are reassigned between consumer instances.
- *
- * @param state The current offset state reference
- * @param pendingOffsets A map of pending offsets for each partition
- * @param highestProcessedOffsets A map of the highest processed offsets for each partition
- * @param consumer The Kafka consumer to manage offsets for
- * @param commandQueue The command queue used for managing offset commit operations
- */
+/// Implementation of Kafka's ConsumerRebalanceListener that handles partition rebalance events for
+/// the OffsetManager.
+///
+/// <p>This listener manages offset tracking state during partition assignments and revocations,
+/// ensuring that:
+///
+/// <ul>
+///   <li>Tracked offsets are properly committed during revocation events
+///   <li>Internal data structures are updated to reflect the current assignment
+///   <li>Offset state is preserved for persistent consumer groups
+///   <li>Memory is reclaimed for partitions no longer assigned
+/// </ul>
+///
+/// <p>The listener coordinates with the OffsetManager to maintain accurate offset tracking during
+/// consumer group rebalancing operations, preventing duplicate message processing or data loss when
+/// partitions are reassigned between consumer instances.
+///
+/// @param state The current offset state reference
+/// @param pendingOffsets A map of pending offsets for each partition
+/// @param highestProcessedOffsets A map of the highest processed offsets for each partition
+/// @param consumer The Kafka consumer to manage offsets for
+/// @param commandQueue The command queue used for managing offset commit operations
 public record RebalanceListener(
   AtomicReference<OffsetState> state,
   Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets,
@@ -94,16 +92,15 @@ public record RebalanceListener(
     onPartitionsRevoked(partitions);
   }
 
-  /**
-   * Processes the command queue when partitions are being revoked from this consumer.
-   *
-   * <p>This method iterates through all commands in the queue and filters out any references to
-   * revoked partitions. For offset commit commands, it preserves the command if it contains offsets
-   * for partitions still assigned to this consumer, while removing references to revoked
-   * partitions.
-   *
-   * @param partitions partitions being revoked from this consumer
-   */
+  /// Processes the command queue when partitions are being revoked from this consumer.
+  ///
+  /// <p>This method iterates through all commands in the queue and filters out any references to
+  /// revoked partitions. For offset commit commands, it preserves the command if it contains
+  // offsets
+  /// for partitions still assigned to this consumer, while removing references to revoked
+  /// partitions.
+  ///
+  /// @param partitions partitions being revoked from this consumer
   private void drainCommandQueue(Collection<TopicPartition> partitions) {
     if (commandQueue == null || commandQueue.isEmpty()) return;
 

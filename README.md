@@ -23,10 +23,12 @@ retries, built-in metrics, and support for both parallel and sequential processi
 
 ### Functional Processing Pipeline
 
-- Message processors are **pure functions** (e.g., `UnaryOperator<Map<String, Object>>` for JSON or `UnaryOperator<GenericRecord>` for Avro) that transform data without side effects.
+- Message processors are **pure functions** (e.g., `UnaryOperator<Map<String, Object>>` for JSON or
+  `UnaryOperator<GenericRecord>` for Avro) that transform data without side effects.
 - Build complex, high-performance pipelines that minimize serialization/deserialization cycles.
 - **Declarative processing** lets you describe *what* to do, not *how* to do it.
-- **Optimized Pipelines**: Deserialization happens once at the start, and serialization happens once at the end, regardless of the number of transformations.
+- **Optimized Pipelines**: Deserialization happens once at the start, and serialization happens once at the end,
+  regardless of the number of transformations.
 - Teams can **register their own operators** in a central registry via:
 
   ```java
@@ -257,7 +259,8 @@ The consumer supports graceful shutdown with in-flight message handling:
 
 ### JSON Processing
 
-The JSON processors provide operators (`UnaryOperator<Map<String, Object>>`) that can be composed into high-performance pipelines:
+The JSON processors provide operators (`UnaryOperator<Map<String, Object>>`) that can be composed into high-performance
+pipelines:
 
   ```java
   final var registry = new MessageProcessorRegistry("myApp");
@@ -414,7 +417,8 @@ final var safePipeline = registry.<String, byte[]>pipelineWithErrorHandling(
 
 ## Consumer Runner
 
-The `ConsumerRunner` provides a high-level management layer for Kafka consumers, handling lifecycle, metrics, and graceful shutdown:
+The `ConsumerRunner` provides a high-level management layer for Kafka consumers, handling lifecycle, metrics, and
+graceful shutdown:
 
 ```java
 // Create a consumer runner with default settings
@@ -519,7 +523,7 @@ Here's a concise example of a KPipe application:
 public class KPipeApp implements AutoCloseable {
   private final ConsumerRunner<FunctionalConsumer<byte[], byte[]>> runner;
 
-  public static void main(final String[] args) {
+  static void main() {
     // Load configuration from environment variables
     final var config = AppConfig.fromEnv();
 
@@ -574,6 +578,7 @@ public class KPipeApp implements AutoCloseable {
 - Metrics reporting and graceful shutdown
 
 **To Run:**
+
 ```bash
 # Set configuration
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
@@ -729,13 +734,66 @@ The library provides a built-in `when()` method for conditional processing:
 
 ## Performance Notes
 
-- **Single SerDe Cycle**: Unlike traditional pipelines that reserialize data at every step, KPipe's optimized pipelines
-  deserialize once, apply any number of transformations on the object, and serialize once at the end.
-- **Zero-Copy Magic Byte Handling**: Built-in support for skipping magic byte prefixes (common in Confluent Wire Format)
-  without creating intermediate byte array copies.
-- **Virtual Threads**: Every Kafka record is processed in its own virtual thread, enabling massive concurrency (100k+
-  messages/sec) with minimal memory footprint.
-- **Zero-GC JSON Processing**: Leveraging DslJson for maximum throughput and minimum garbage collection pressure.
+### High-Performance Architecture
+
+KPipe is designed to beat traditional Kafka consumers (and even heavy libraries like Confluent Parallel Consumer) by
+leveraging modern Java features and aggressive optimizations:
+
+- **Single SerDe Cycle**: Traditional pipelines often perform `byte[] -> Object -> byte[]` at every step. KPipe's
+  optimized pipelines deserialize once at the entry, apply any number of `UnaryOperator` transformations on the object,
+  and serialize once at the exit.
+- **Zero-Copy Magic Byte Handling**: For Avro data (especially from Confluent Schema Registry), KPipe supports an
+  `offset` parameter that allows skipping magic bytes and schema IDs without performing expensive `Arrays.copyOfRange`
+  operations.
+- **Virtual Threads (Project Loom)**: Every Kafka record can be processed in its own virtual thread. This allows for
+  massive concurrency (thousands of concurrent "threads") with almost zero memory overhead and no complex thread pool
+  management.
+- **DslJson Integration**: Uses one of the world's fastest JSON libraries for maximum throughput and minimum Garbage
+  Collection (GC) pressure.
+
+### Benchmarking
+
+KPipe includes a dedicated `benchmarks` module using JMH (Java Microbenchmark Harness) to compare its performance
+against manual implementations and other libraries like Confluent Parallel Consumer.
+
+For detailed information on benchmark scenarios and how to run them, see the [Benchmarks README](benchmarks/README.md).
+
+To run the benchmarks:
+
+```bash
+./gradlew :benchmarks:jmh
+```
+
+---
+
+## Ordering & Reliability
+
+KPipe provides configurable ordering guarantees to balance throughput and strictness.
+
+### 1. Sequential Processing (Strict Ordering)
+
+When `sequentialProcessing` is enabled (default in some configs), KPipe processes messages one by one in the order they
+were received from Kafka. This ensures **strict FIFO (First-In-First-Out) ordering** per partition.
+
+### 2. Parallel Processing (Virtual Threads)
+
+When `sequentialProcessing` is `false`, KPipe leverages Java 24's Virtual Threads to process multiple records
+concurrently.
+
+- **Execution Order**: Messages start in order but may finish out of order (e.g., a small message finishing before a
+  large one).
+- **No-Gap Offset Management**: Even with parallel processing, KPipe's `OffsetManager` uses a **Lowest Pending Offset**
+  strategy. It will never commit a higher offset until all lower offsets in that partition are successfully processed.
+  This ensures **at-least-once delivery** and prevents "holes" in your data if the application crashes.
+
+### 3. Key-Level Ordering for Critical Systems (e.g., Payments)
+
+For systems like **payment processors** where the order of operations (Authorize -> Capture) is vital:
+
+- **Consistent Partitioning**: Ensure your producer uses a consistent key (e.g., `transaction_id` or `customer_id`).
+  Kafka guarantees all messages with the same key land in the same partition.
+- **Safety**: KPipe manages each partition as an independent, ordered sequence of offsets. As long as related events
+  share a key, KPipe's commitment strategy ensures they are handled reliably without skipping steps.
 
 ---
 

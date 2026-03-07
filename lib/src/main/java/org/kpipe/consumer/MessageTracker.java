@@ -64,12 +64,10 @@ public class MessageTracker {
     this.errorsMetricKey = Objects.requireNonNull(builder.errorsMetricKey, "errorsMetricKey must not be null");
   }
 
-  /**
-   * Function to calculate in-flight message count from metrics.
-   *
-   * @param metrics the metrics map
-   * @return number of in-flight messages
-   */
+  /// Function to calculate in-flight message count from metrics.
+  ///
+  /// @param metrics the metrics map
+  /// @return number of in-flight messages
   public long calculateInFlightCount(final Map<String, Long> metrics) {
     long received = metrics.getOrDefault(receivedMetricKey, 0L);
     long processed = metrics.getOrDefault(processedMetricKey, 0L);
@@ -78,39 +76,31 @@ public class MessageTracker {
     return Math.max(0, received - processed - errors);
   }
 
-  /**
-   * Retrieves current metrics and calculates in-flight message count.
-   *
-   * @return number of in-flight messages
-   */
+  /// Retrieves current metrics and calculates in-flight message count.
+  ///
+  /// @return number of in-flight messages
   public long getInFlightMessageCount() {
     return calculateInFlightCount(metricsSupplier.get());
   }
 
-  /**
-   * Checks if there are currently any in-flight messages.
-   *
-   * @return true if there are in-flight messages, false otherwise
-   */
+  /// Checks if there are currently any in-flight messages.
+  ///
+  /// @return true if there are in-flight messages, false otherwise
   public boolean hasInFlightMessages() {
     return calculateInFlightCount(metricsSupplier.get()) > 0;
   }
 
-  /**
-   * Checks if all messages have been processed (no in-flight messages).
-   *
-   * @return true if all messages are processed, false if there are in-flight messages
-   */
+  /// Checks if all messages have been processed (no in-flight messages).
+  ///
+  /// @return true if all messages are processed, false if there are in-flight messages
   public boolean isProcessingComplete() {
     return !hasInFlightMessages();
   }
 
-  /**
-   * Function for waiting for in-flight messages to complete.
-   *
-   * @param timeoutMs maximum time to wait in milliseconds
-   * @return Optional containing success state, empty if interrupted
-   */
+  /// Function for waiting for in-flight messages to complete.
+  ///
+  /// @param timeoutMs maximum time to wait in milliseconds
+  /// @return Optional containing success state, empty if interrupted
   public Optional<Boolean> waitForCompletion(final long timeoutMs) {
     // Early exit if no messages in flight
     if (isProcessingComplete()) {
@@ -143,15 +133,13 @@ public class MessageTracker {
     }
   }
 
-  /**
-   * Wait pattern that polls a predicate until it returns true or deadline is reached.
-   *
-   * @param deadline when to stop waiting
-   * @param checkInterval how often to check the predicate
-   * @param completionPredicate function that determines if waiting should stop
-   * @return Optional with true if predicate was satisfied, false if deadline reached, empty if
-   *     interrupted
-   */
+  /// Wait pattern that polls a predicate until it returns true or deadline is reached.
+  ///
+  /// @param deadline when to stop waiting
+  /// @param checkInterval how often to check the predicate
+  /// @param completionPredicate function that determines if waiting should stop
+  /// @return Optional with true if predicate was satisfied, false if deadline reached, empty if
+  ///     interrupted
   private Optional<Boolean> waitUntil(
     final Instant deadline,
     final Duration checkInterval,
@@ -164,16 +152,14 @@ public class MessageTracker {
     return Optional.of(false);
   }
 
-  /**
-   * Creates a new Builder instance for constructing MessageTracker objects.
-   *
-   * @return a new Builder instance
-   */
+  /// Creates a new Builder instance for constructing MessageTracker objects.
+  ///
+  /// @return a new Builder instance
   public static Builder builder() {
     return new Builder();
   }
 
-  /** Constructs a new Builder object. */
+  /// Constructs a new Builder object.
   public static class Builder {
 
     private Builder() {}
@@ -183,55 +169,45 @@ public class MessageTracker {
     private String processedMetricKey;
     private String errorsMetricKey;
 
-    /**
-     * Sets the metrics supplier function.
-     *
-     * @param metricsSupplier the supplier that provides the metrics map
-     * @return this Builder instance for method chaining
-     */
+    /// Sets the metrics supplier function.
+    ///
+    /// @param metricsSupplier the supplier that provides the metrics map
+    /// @return this Builder instance for method chaining
     public Builder withMetrics(final Supplier<Map<String, Long>> metricsSupplier) {
       this.metricsSupplier = metricsSupplier;
       return this;
     }
 
-    /**
-     * Sets the key for received messages metric.
-     *
-     * @param receivedMetricKey the key for received messages metric
-     * @return this Builder instance for method chaining
-     */
+    /// Sets the key for received messages metric.
+    ///
+    /// @param receivedMetricKey the key for received messages metric
+    /// @return this Builder instance for method chaining
     public Builder withReceivedMetricKey(final String receivedMetricKey) {
       this.receivedMetricKey = receivedMetricKey;
       return this;
     }
 
-    /**
-     * Sets the key for processed messages metric.
-     *
-     * @param processedMetricKey the key for processed messages metric
-     * @return this Builder instance for method chaining
-     */
+    /// Sets the key for processed messages metric.
+    ///
+    /// @param processedMetricKey the key for processed messages metric
+    /// @return this Builder instance for method chaining
     public Builder withProcessedMetricKey(final String processedMetricKey) {
       this.processedMetricKey = processedMetricKey;
       return this;
     }
 
-    /**
-     * Sets the key for error messages metric.
-     *
-     * @param errorsMetricKey the key for error messages metric
-     * @return this Builder instance for method chaining
-     */
+    /// Sets the key for error messages metric.
+    ///
+    /// @param errorsMetricKey the key for error messages metric
+    /// @return this Builder instance for method chaining
     public Builder withErrorsMetricKey(final String errorsMetricKey) {
       this.errorsMetricKey = errorsMetricKey;
       return this;
     }
 
-    /**
-     * Builds a new MessageTracker instance with the configured parameters.
-     *
-     * @return a new MessageTracker instance
-     */
+    /// Builds a new MessageTracker instance with the configured parameters.
+    ///
+    /// @return a new MessageTracker instance
     public MessageTracker build() {
       return new MessageTracker(this);
     }

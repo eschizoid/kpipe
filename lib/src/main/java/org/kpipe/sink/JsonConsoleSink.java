@@ -10,38 +10,34 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-/**
- * A sink that logs processed Kafka messages with JSON formatting.
- *
- * <p>This implementation of {@link MessageSink} provides logging functionality for Kafka messages
- * and their processed values. It formats the message content as JSON for better readability and
- * debugging. The sink handles various message value types, with special treatment for byte arrays.
- *
- * <p>Features:
- *
- * <ul>
- *   <li>JSON formatting of message metadata and content
- *   <li>Special handling for byte arrays (attempts UTF-8 decoding)
- *   <li>Automatic detection of JSON content in byte arrays
- *   <li>Fallback to Base64 encoding for binary data
- *   <li>Performance optimization by checking log level before processing
- *   <li>Robust error handling that logs exceptions without disrupting the main processing flow
- * </ul>
- *
- * @param <K> The type of message key
- * @param <V> The type of message value
- */
+/// A sink that logs processed Kafka messages with JSON formatting.
+///
+/// <p>This implementation of {@link MessageSink} provides logging functionality for Kafka messages
+/// and their processed values. It formats the message content as JSON for better readability and
+/// debugging. The sink handles various message value types, with special treatment for byte arrays.
+///
+/// <p>Features:
+///
+/// <ul>
+///   <li>JSON formatting of message metadata and content
+///   <li>Special handling for byte arrays (attempts UTF-8 decoding)
+///   <li>Automatic detection of JSON content in byte arrays
+///   <li>Fallback to Base64 encoding for binary data
+///   <li>Performance optimization by checking log level before processing
+///   <li>Robust error handling that logs exceptions without disrupting the main processing flow
+/// </ul>
+///
+/// @param <K> The type of message key
+/// @param <V> The type of message value
 public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private static final Logger LOGGER = System.getLogger(JsonConsoleSink.class.getName());
   private static final Level LOG_LEVEL = Level.INFO;
 
-  /**
-   * Logs a message with its key and value.
-   *
-   * @param record The original Kafka consumer record
-   * @param processedValue The value after processing
-   */
+  /// Logs a message with its key and value.
+  ///
+  /// @param record The original Kafka consumer record
+  /// @param processedValue The value after processing
   @Override
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {
@@ -72,12 +68,10 @@ public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
     }
   }
 
-  /**
-   * Formats a value for logging with special handling for different types.
-   *
-   * @param value The value to format
-   * @return A string representation of the value suitable for logging
-   */
+  /// Formats a value for logging with special handling for different types.
+  ///
+  /// @param value The value to format
+  /// @return A string representation of the value suitable for logging
   private String formatValue(final V value) {
     if (value == null) return "null";
     if (value instanceof byte[] bytes) {

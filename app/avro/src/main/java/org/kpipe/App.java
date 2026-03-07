@@ -28,10 +28,8 @@ import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.sink.AvroConsoleSink;
 import org.kpipe.sink.MessageSink;
 
-/**
- * Application that consumes messages from a Kafka topic and processes them using a configurable
- * pipeline of message processors.
- */
+/// Application that consumes messages from a Kafka topic and processes them using a configurable
+/// pipeline of message processors.
 public class App implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(App.class.getName());
@@ -43,7 +41,7 @@ public class App implements AutoCloseable {
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
 
-  /** Main entry point for the Kafka consumer application. */
+  /// Main entry point for the Kafka consumer application.
   static void main() {
     final var config = AppConfig.fromEnv();
 
@@ -57,11 +55,9 @@ public class App implements AutoCloseable {
     }
   }
 
-  /**
-   * Creates a new KafkaConsumerApp with the specified configuration.
-   *
-   * @param config The application configuration
-   */
+  /// Creates a new KafkaConsumerApp with the specified configuration.
+  ///
+  /// @param config The application configuration
   public App(final AppConfig config) {
     processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
     sinkRegistry = new MessageSinkRegistry();
@@ -100,14 +96,12 @@ public class App implements AutoCloseable {
       .build();
   }
 
-  /**
-   * Creates a configured consumer for processing byte array messages.
-   *
-   * @param config The application configuration
-   * @param processorRegistry Map of processor functions
-   * @param sinkRegistry Map of sink functions
-   * @return A configured functional consumer
-   */
+  /// Creates a configured consumer for processing byte array messages.
+  ///
+  /// @param config The application configuration
+  /// @param processorRegistry Map of processor functions
+  /// @param sinkRegistry Map of sink functions
+  /// @return A configured functional consumer
   public static FunctionalConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
     final MessageProcessorRegistry processorRegistry,
@@ -120,7 +114,7 @@ public class App implements AutoCloseable {
       .<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createAvroProcessorPipeline(processorRegistry, sinkRegistry))
+      .withProcessor(createAvroProcessorPipeline(processorRegistry, config, sinkRegistry))
       .withPollTimeout(config.pollTimeout())
       .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
@@ -129,13 +123,11 @@ public class App implements AutoCloseable {
       .build();
   }
 
-  /**
-   * Creates an OffsetManager provider function that can be used with FunctionalConsumer builder
-   *
-   * @param commitInterval The interval at which to automatically commit offsets
-   * @param commandQueue The command queue
-   * @return A function that creates an OffsetManager when given a Consumer
-   */
+  /// Creates an OffsetManager provider function that can be used with FunctionalConsumer builder
+  ///
+  /// @param commitInterval The interval at which to automatically commit offsets
+  /// @param commandQueue The command queue
+  /// @return A function that creates an OffsetManager when given a Consumer
   private static Function<Consumer<byte[], byte[]>, OffsetManager<byte[], byte[]>> createOffsetManagerProvider(
     final Duration commitInterval,
     final Queue<ConsumerCommand> commandQueue
@@ -144,62 +136,57 @@ public class App implements AutoCloseable {
       OffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }
 
-  /**
-   * Creates a message sink pipeline using the provided registry.
-   *
-   * @param registry the message sink registry
-   * @return a message sink that processes messages through the pipeline
-   */
+  /// Creates a message sink pipeline using the provided registry.
+  ///
+  /// @param registry the message sink registry
+  /// @return a message sink that processes messages through the pipeline
   private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
     return registry.pipeline("avroLogging");
   }
 
-  /**
-   * Creates a processor pipeline using the provided registry.
-   *
-   * @param registry the message processor registry
-   * @return a function that processes messages through the pipeline
-   */
+  /// Creates a processor pipeline using the provided registry.
+  ///
+  /// @param registry the message processor registry
+  /// @param config the application configuration
+  /// @param sinkRegistry the message sink registry
+  /// @return a function that processes messages through the pipeline
   private static Function<byte[], byte[]> createAvroProcessorPipeline(
     final MessageProcessorRegistry registry,
+    final AppConfig config,
     final MessageSinkRegistry sinkRegistry
   ) {
-    registry.addSchema(
-      "1",
-      "com.kpipe.customer",
-      "http://schema-registry:8081/subjects/com.kpipe.customer/versions/latest"
+    final String srUrl = System.getProperty(
+      "SCHEMA_REGISTRY_URL",
+      System.getenv().getOrDefault("SCHEMA_REGISTRY_URL", "http://schema-registry:8081")
     );
+    registry.addSchema("1", "com.kpipe.customer", srUrl + "/subjects/com.kpipe.customer/versions/latest");
 
     // Register the sink
     final var schema = AvroMessageProcessor.getSchema("1");
     if (schema != null) sinkRegistry.register("avroLogging", new AvroConsoleSink<>(schema));
 
-    return registry.avroPipeline("1", 5);
+    return registry.avroPipeline("1", 5, config.processors().toArray(new String[0]));
   }
 
-  /**
-   * Gets the processor registry used by this application.
-   *
-   * @return the message processor registry
-   */
+  /// Gets the processor registry used by this application.
+  ///
+  /// @return the message processor registry
   public MessageProcessorRegistry getProcessorRegistry() {
     return processorRegistry;
   }
 
-  /**
-   * Gets the sink registry used by this application.
-   *
-   * @return the message sink registry
-   */
+  /// Gets the sink registry used by this application.
+  ///
+  /// @return the message sink registry
   public MessageSinkRegistry getSinkRegistry() {
     return sinkRegistry;
   }
 
-  private void start() {
+  void start() {
     runner.start();
   }
 
-  private boolean awaitShutdown() {
+  boolean awaitShutdown() {
     return runner.awaitShutdown();
   }
 
