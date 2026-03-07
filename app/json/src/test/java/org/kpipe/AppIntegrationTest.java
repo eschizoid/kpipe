@@ -32,7 +32,9 @@ class AppIntegrationTest {
   private static final Logger log = System.getLogger(AppIntegrationTest.class.getName());
 
   @Container
-  static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.7.1"));
+  static KafkaContainer kafka = new KafkaContainer(
+    DockerImageName.parse("confluentinc/cp-kafka:7.7.1").asCompatibleSubstituteFor("apache/kafka")
+  );
 
   @Test
   void testJsonAppEndToEnd() throws Exception {
