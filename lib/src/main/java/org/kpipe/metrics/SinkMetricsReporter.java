@@ -9,50 +9,46 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.kpipe.registry.MessageSinkRegistry;
 
-/**
- * Reports metrics for message sinks, allowing flexible composition of:
- *
- * <ul>
- *   <li>How sink names are retrieved (via a {@link Supplier})
- *   <li>How metrics are fetched for each sink (via a {@link Function})
- *   <li>How metrics are reported (via a {@link Consumer})
- * </ul>
- *
- * <p><strong>Example 1:</strong> Basic usage with default logging:
- *
- * <pre>{@code
- * // Creates reporter with default logging behavior
- * SinkMetricsReporter reporter = new SinkMetricsReporter(registry);
- * reporter.reportMetrics();
- * }</pre>
- *
- * <p><strong>Example 2:</strong> Custom metrics reporting:
- *
- * <pre>{@code
- * // Report metrics to a monitoring system
- * Consumer<String> prometheusReporter = metric ->
- *     PrometheusClient.pushMetric("sink_stats", metric);
- *
- * final var reporter = new SinkMetricsReporter(
- *     registry, prometheusReporter);
- * reporter.reportMetrics();
- * }</pre>
- *
- * <p><strong>Example 3:</strong> Customizing all components:
- *
- * <pre>{@code
- * // Custom suppliers and reporting
- * final var reporter = new SinkMetricsReporter(
- *     () -> Set.of("sink1", "sink2"),
- *     name -> metricsService.fetchMetricsFor(name),
- *     metric -> slackNotifier.send("METRICS", metric));
- * reporter.reportMetrics();
- * }</pre>
- *
- * @param sinkNamesSupplier supplier of sink names
- * @param metricsFetcher function to fetch metrics for a sink name
- * @param reporter consumer for reporting metrics (defaults to logger if null)
- */
+/// Reports metrics for the message sinks, allowing flexible composition of:
+///
+/// * How sink names are retrieved (via a {@link Supplier})
+/// * How metrics are fetched for each sink (via a {@link Function})
+/// * How metrics are reported (via a {@link Consumer})
+///
+/// **Example 1:** Basic usage with default logging:
+///
+/// ```java
+/// // Creates reporter with default logging behavior
+/// final var reporter = new SinkMetricsReporter(registry);
+/// reporter.reportMetrics();
+/// ```
+///
+/// **Example 2:** Custom metrics reporting:
+///
+/// ```java
+/// // Report metrics to a monitoring system
+/// Consumer<String> prometheusReporter = metric ->
+///     PrometheusClient.pushMetric("sink_stats", metric);
+///
+/// final var reporter = new SinkMetricsReporter(
+///     registry, prometheusReporter);
+/// reporter.reportMetrics();
+/// ```
+///
+/// **Example 3:** Customizing all components:
+///
+/// ```java
+/// // Custom suppliers and reporting
+/// final var reporter = new SinkMetricsReporter(
+///     () -> Set.of("sink1", "sink2"),
+///     name -> metricsService.fetchMetricsFor(name),
+///     metric -> slackNotifier.send("METRICS", metric));
+/// reporter.reportMetrics();
+/// ```
+///
+/// @param sinkNamesSupplier supplier of sink names
+/// @param metricsFetcher function to fetch metrics for a sink name
+/// @param reporter consumer for reporting metrics (defaults to logger if null)
 public record SinkMetricsReporter(
   Supplier<Set<String>> sinkNamesSupplier,
   Function<String, Map<String, Object>> metricsFetcher,
@@ -61,60 +57,54 @@ public record SinkMetricsReporter(
   implements MetricsReporter {
   private static final Logger LOGGER = System.getLogger(SinkMetricsReporter.class.getName());
 
-  /**
-   * Creates a sink metrics reporter with the specified registry and default logging.
-   *
-   * @param registry the message sink registry
-   */
+  /// Creates a sink metrics reporter with the specified registry and default logging.
+  ///
+  /// @param registry the message sink registry
   public SinkMetricsReporter(final MessageSinkRegistry registry) {
     this(registry, null);
   }
 
-  /**
-   * Creates a sink metrics reporter with the specified registry and custom reporter.
-   *
-   * <p>Example with a custom reporter:
-   *
-   * <pre>{@code
-   * // Send metrics to database
-   * Consumer<String> dbReporter = metric ->
-   *     jdbcTemplate.update("INSERT INTO metrics VALUES(?)", metric);
-   *
-   * var reporter = new SinkMetricsReporter(registry, dbReporter);
-   * }</pre>
-   *
-   * @param registry the message sink registry
-   * @param reporter consumer for reporting metrics (defaults to logger if null)
-   */
+  /// Creates a sink metrics reporter with the specified registry and custom reporter.
+  ///
+  /// Example with a custom reporter:
+  ///
+  /// ```java
+  /// // Send metrics to database
+  /// Consumer<String> dbReporter = metric ->
+  ///     jdbcTemplate.update("INSERT INTO metrics VALUES(?)", metric);
+  ///
+  /// var reporter = new SinkMetricsReporter(registry, dbReporter);
+  /// ```
+  ///
+  /// @param registry the message sink registry
+  /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public SinkMetricsReporter(final MessageSinkRegistry registry, final Consumer<String> reporter) {
     this(() -> registry.getAll().keySet(), registry::getMetrics, reporter);
   }
 
-  /**
-   * Creates a sink metrics reporter with custom suppliers and reporter.
-   *
-   * <p>This constructor offers maximum flexibility for customizing behavior.
-   *
-   * <p>Example:
-   *
-   * <pre>{@code
-   * // Custom implementation with filtered sinks
-   * var reporter = new SinkMetricsReporter(
-   *     () -> registry.getAll().keySet().stream()
-   *              .filter(name -> name.startsWith("critical-"))
-   *              .collect(Collectors.toSet()),
-   *     name -> registry.getMetrics(name),
-   *     metric -> {
-   *         logger.info(metric);
-   *         alertSystem.checkThresholds(metric);
-   *     }
-   * );
-   * }</pre>
-   *
-   * @param sinkNamesSupplier supplier of sink names
-   * @param metricsFetcher function to fetch metrics for a sink name
-   * @param reporter consumer for reporting metrics (defaults to logger if null)
-   */
+  /// Creates a sink metrics reporter with custom suppliers and reporter.
+  ///
+  /// This constructor offers maximum flexibility for customizing behavior.
+  ///
+  /// Example:
+  ///
+  /// ```java
+  /// // Custom implementation with filtered sinks
+  /// var reporter = new SinkMetricsReporter(
+  ///     () -> registry.getAll().keySet().stream()
+  ///              .filter(name -> name.startsWith("critical-"))
+  ///              .collect(Collectors.toSet()),
+  ///     name -> registry.getMetrics(name),
+  ///     metric -> {
+  ///         logger.info(metric);
+  ///         alertSystem.checkThresholds(metric);
+  ///     }
+  /// );
+  /// ```
+  ///
+  /// @param sinkNamesSupplier supplier of sink names
+  /// @param metricsFetcher function to fetch metrics for a sink name
+  /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public SinkMetricsReporter(
     final Supplier<Set<String>> sinkNamesSupplier,
     final Function<String, Map<String, Object>> metricsFetcher,
@@ -125,19 +115,15 @@ public record SinkMetricsReporter(
     this.reporter = reporter != null ? reporter : this::logMetrics;
   }
 
-  /**
-   * Reports metrics for all sinks.
-   *
-   * <p>The reporting process:
-   *
-   * <ol>
-   *   <li>Retrieves all sink names from the supplier
-   *   <li>For each name, fetches its metrics using the metrics fetcher
-   *   <li>Reports non-empty metrics using the configured reporter
-   * </ol>
-   *
-   * <p>Exceptions during processing are caught and logged but don't interrupt the reporting flow.
-   */
+  /// Reports metrics for all sinks.
+  ///
+  /// The reporting process:
+  ///
+  /// 1. Retrieves all sink names from the supplier
+  /// 2. For each name, fetches its metrics using the metrics fetcher
+  /// 3. Reports non-empty metrics using the configured reporter
+  ///
+  /// Exceptions during processing are caught and logged but don't interrupt the reporting flow.
   public void reportMetrics() {
     try {
       sinkNamesSupplier

@@ -36,10 +36,9 @@ class JsonMessageProcessorTest {
                       "key":"value"
                     }
                     """;
-    final var parseJson = JsonMessageProcessor.parseJson();
 
     // Act
-    final var result = parseJson.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(json.getBytes(StandardCharsets.UTF_8), obj -> obj);
 
     // Assert
     assertEquals(normalizeJson(json), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -49,10 +48,9 @@ class JsonMessageProcessorTest {
   void testParseJsonInvalidJson() {
     // Arrange
     final var invalidJson = "invalid json";
-    final var parseJson = JsonMessageProcessor.parseJson();
 
     // Act
-    final var result = parseJson.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(invalidJson.getBytes(StandardCharsets.UTF_8), obj -> obj);
 
     // Assert
     assertEquals("{}", new String(result, StandardCharsets.UTF_8));
@@ -73,10 +71,12 @@ class JsonMessageProcessorTest {
               "newKey":"newValue"
             }
           """;
-    final var addField = JsonMessageProcessor.addField("newKey", "newValue");
 
     // Act
-    final var result = addField.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.addFieldOperator("newKey", "newValue")
+    );
 
     // Assert
     assertEquals(normalizeJson(expectedJson), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -86,10 +86,12 @@ class JsonMessageProcessorTest {
   void testAddFieldInvalidJson() {
     // Arrange
     final var invalidJson = "invalid json";
-    final var addField = JsonMessageProcessor.addField("newKey", "newValue");
 
     // Act
-    final var result = addField.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      invalidJson.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.addFieldOperator("newKey", "newValue")
+    );
 
     // Assert
     assertEquals("{}", new String(result, StandardCharsets.UTF_8));
@@ -101,10 +103,12 @@ class JsonMessageProcessorTest {
     final var jsonArray = """
                     ["value1", "value2"]
                 """;
-    final var addField = JsonMessageProcessor.addField("newKey", "newValue");
 
     // Act
-    final var result = addField.apply(jsonArray.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      jsonArray.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.addFieldOperator("newKey", "newValue")
+    );
 
     // Assert
     assertEquals("{}", new String(result, StandardCharsets.UTF_8));
@@ -114,10 +118,9 @@ class JsonMessageProcessorTest {
   void testParseJsonEmptyJson() {
     // Arrange
     final var emptyJson = "{}";
-    final var parseJson = JsonMessageProcessor.parseJson();
 
     // Act
-    final var result = parseJson.apply(emptyJson.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(emptyJson.getBytes(StandardCharsets.UTF_8), obj -> obj);
 
     // Assert
     assertEquals(emptyJson, new String(result, StandardCharsets.UTF_8));
@@ -126,10 +129,8 @@ class JsonMessageProcessorTest {
   @Test
   void testParseJsonNullInput() {
     // Arrange
-    final var parseJson = JsonMessageProcessor.parseJson();
-
     // Act
-    final var result = parseJson.apply(null);
+    final var result = JsonMessageProcessor.processJson(null, obj -> obj);
 
     // Assert
     assertEquals("{}", new String(result, StandardCharsets.UTF_8));
@@ -145,10 +146,12 @@ class JsonMessageProcessorTest {
                         "newKey":"newValue"
                       }
                       """;
-    final var addField = JsonMessageProcessor.addField("newKey", "newValue");
 
     // Act
-    final var result = addField.apply(emptyJson.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      emptyJson.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.addFieldOperator("newKey", "newValue")
+    );
 
     // Assert
     assertEquals(normalizeJson(expectedJson), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -162,10 +165,12 @@ class JsonMessageProcessorTest {
               "key":"value"
             }
             """;
-    final var addTimestamp = JsonMessageProcessor.addTimestamp("timestamp");
 
     // Act
-    final var result = addTimestamp.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.addTimestampOperator("timestamp")
+    );
     final var resultMap = parseJsonToMap(result);
 
     // Assert
@@ -178,10 +183,12 @@ class JsonMessageProcessorTest {
   void testAddTimestampToInvalidJson() {
     // Arrange
     final var invalidJson = "invalid json";
-    final var addTimestamp = JsonMessageProcessor.addTimestamp("timestamp");
 
     // Act
-    final var result = addTimestamp.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      invalidJson.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.addTimestampOperator("timestamp")
+    );
 
     // Assert
     assertEquals("{}", new String(result, StandardCharsets.UTF_8));
@@ -198,7 +205,6 @@ class JsonMessageProcessorTest {
               "field3":"value3"
             }
             """;
-    final var removeFields = JsonMessageProcessor.removeFields("field1", "field3");
     final var expected = """
             {
               "field2":"value2"
@@ -206,7 +212,10 @@ class JsonMessageProcessorTest {
             """;
 
     // Act
-    final var result = removeFields.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.removeFieldsOperator("field1", "field3")
+    );
 
     // Assert
     assertEquals(normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -220,10 +229,12 @@ class JsonMessageProcessorTest {
               "field1":"value1"
             }
             """;
-    final var removeFields = JsonMessageProcessor.removeFields("field2");
 
     // Act
-    final var result = removeFields.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.removeFieldsOperator("field2")
+    );
 
     // Assert
     assertEquals(normalizeJson(json), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -239,10 +250,6 @@ class JsonMessageProcessorTest {
               "count":5
             }
             """;
-    final var transformField = JsonMessageProcessor.transformField(
-      "message",
-      value -> value instanceof String ? ((String) value).toUpperCase() : value
-    );
     final var expected =
       """
             {
@@ -252,7 +259,13 @@ class JsonMessageProcessorTest {
             """;
 
     // Act
-    final var result = transformField.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.transformFieldOperator(
+        "message",
+        value -> value instanceof String ? ((String) value).toUpperCase() : value
+      )
+    );
 
     // Assert
     assertEquals(normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -268,10 +281,6 @@ class JsonMessageProcessorTest {
               "count":5
             }
             """;
-    final var transformField = JsonMessageProcessor.transformField(
-      "count",
-      value -> value instanceof Number ? ((Number) value).intValue() * 2 : value
-    );
     final var expected =
       """
             {
@@ -281,7 +290,13 @@ class JsonMessageProcessorTest {
             """;
 
     // Act
-    final var result = transformField.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.transformFieldOperator(
+        "count",
+        value -> value instanceof Number ? ((Number) value).intValue() * 2 : value
+      )
+    );
 
     // Assert
     assertEquals(normalizeJson(expected), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -295,10 +310,12 @@ class JsonMessageProcessorTest {
               "message":"hello"
             }
             """;
-    final var transformField = JsonMessageProcessor.transformField("nonExisting", value -> "transformed");
 
     // Act
-    final var result = transformField.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.transformFieldOperator("nonExisting", value -> "transformed")
+    );
 
     // Assert
     assertEquals(normalizeJson(json), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -312,10 +329,12 @@ class JsonMessageProcessorTest {
               "original":"value"
             }
             """;
-    final var mergeWith = JsonMessageProcessor.mergeWith(Map.of("added1", "value1", "added2", 42));
 
     // Act
-    final var result = mergeWith.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.mergeWithOperator(Map.of("added1", "value1", "added2", 42))
+    );
     final var resultMap = parseJsonToMap(result);
 
     // Assert
@@ -332,10 +351,12 @@ class JsonMessageProcessorTest {
               "key":"originalValue"
             }
             """;
-    final var mergeWith = JsonMessageProcessor.mergeWith(Map.of("key", "newValue"));
 
     // Act
-    final var result = mergeWith.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = JsonMessageProcessor.processJson(
+      json.getBytes(StandardCharsets.UTF_8),
+      JsonMessageProcessor.mergeWithOperator(Map.of("key", "newValue"))
+    );
     final var resultMap = parseJsonToMap(result);
 
     // Assert

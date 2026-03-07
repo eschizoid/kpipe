@@ -87,65 +87,6 @@ class MessageFormatTest {
   }
 
   @Test
-  void shouldGetDefaultJSONProcessors() {
-    // Arrange
-    final var sourceAppName = "test-app";
-
-    // Act
-    final var processors = MessageFormat.JSON.getDefaultProcessors(sourceAppName);
-
-    // Assert
-    assertTrue(processors.containsKey("parseJson"));
-    assertTrue(processors.containsKey("addSource"));
-    assertTrue(processors.containsKey("markProcessed"));
-    assertTrue(processors.containsKey("addTimestamp"));
-  }
-
-  @Test
-  void shouldGetEmptyDefaultProcessorsForAVRO() {
-    // Arrange
-    final var sourceAppName = "test-app";
-
-    // Act
-    final var processors = MessageFormat.AVRO.getDefaultProcessors(sourceAppName);
-
-    // Assert
-    assertTrue(processors.isEmpty());
-  }
-
-  @Test
-  void shouldGetSchemaProcessorsForAVRO() throws Exception {
-    // Arrange
-    final var schemaKey = "user";
-    final var schemaName = "com.example.User";
-    final var sourceAppName = "test-app";
-    MessageFormat.AVRO.addSchema(schemaKey, schemaName, userSchemaJson);
-
-    // Act
-    final var processors = MessageFormat.AVRO.getSchemaProcessors(schemaKey, sourceAppName);
-
-    // Assert
-    assertFalse(processors.isEmpty());
-    assertTrue(processors.containsKey("parseAvro_user"));
-    assertTrue(processors.containsKey("addSource_user"));
-    assertTrue(processors.containsKey("markProcessed_user"));
-    assertTrue(processors.containsKey("addTimestamp_user"));
-  }
-
-  @Test
-  void shouldGetEmptySchemaProcessorsForMissingSchema() {
-    // Arrange
-    final var nonExistentKey = "nonExistent";
-    final var sourceAppName = "test-app";
-
-    // Act
-    final var processors = MessageFormat.AVRO.getSchemaProcessors(nonExistentKey, sourceAppName);
-
-    // Assert
-    assertTrue(processors.isEmpty());
-  }
-
-  @Test
   void shouldReadSchemaFromFile() throws Exception {
     // Arrange
     final var schemaFile = tempDir.resolve("user.avsc");

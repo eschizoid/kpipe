@@ -1,18 +1,14 @@
 package org.kpipe.consumer.enums;
 
-/**
- * Represents the operational states of the consumer.
- *
- * <p>The consumer transitions through these states during its lifecycle:
- *
- * <ul>
- *   <li>{@code CREATED} - Initial state after creation, before starting
- *   <li>{@code RUNNING} - Actively consuming messages from the topic
- *   <li>{@code PAUSED} - Consumption temporarily suspended
- *   <li>{@code CLOSING} - In the process of shutting down
- *   <li>{@code CLOSED} - Terminated with all resources released
- * </ul>
- */
+/// Represents the operational states of the consumer.
+///
+/// The consumer transitions through these states during its lifecycle:
+///
+/// * `CREATED` - Initial state after creation, before starting
+/// * `RUNNING` - Actively consuming messages from the topic
+/// * `PAUSED` - Consumption temporarily suspended
+/// * `CLOSING` - In the process of shutting down
+/// * `CLOSED` - Terminated with all resources released
 public enum ConsumerState {
   /** Consumer has been created but not started. */
   CREATED,

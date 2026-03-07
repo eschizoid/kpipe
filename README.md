@@ -1,6 +1,6 @@
 # <img src="img/kpipe_1.png" width="200" height="200">
 
-# ☕ KPipe - A Modern Kafka Consumer
+# KPipe - A Modern Kafka Consumer
 
 [![GitHub release](https://img.shields.io/github/release/eschizoid/kpipe.svg?style=flat-square)](https://github.com/eschizoid/kpipe/releases/latest)
 [![Codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
@@ -13,30 +13,33 @@ retries, built-in metrics, and support for both parallel and sequential processi
 
 ---
 
-## 🚀 Why This Library?
+## Why This Library?
 
-### ✅ Modern Java Features
+### Modern Java Features
 
 - **Virtual Threads** for massive concurrency with minimal overhead
 - **Functional programming** patterns for clean, maintainable code
 - **High-performance JSON processing** with DslJson
 
-### 🧩 Functional Processing Pipeline
+### Functional Processing Pipeline
 
-- Message processors are **pure functions** (`Function<V, V>`) that transform data without side effects
-- Build complex pipelines through **function composition** using `Function::andThen` or the registry
-- **Declarative processing** lets you describe *what* to do, not *how* to do it
-- **Higher-order functions** enable conditional processing, retry logic, and error handling
-- Teams can **register their own processors** in a central registry via:
+- Message processors are **pure functions** (e.g., `UnaryOperator<Map<String, Object>>` for JSON or `UnaryOperator<GenericRecord>` for Avro) that transform data without side effects.
+- Build complex, high-performance pipelines that minimize serialization/deserialization cycles.
+- **Declarative processing** lets you describe *what* to do, not *how* to do it.
+- **Optimized Pipelines**: Deserialization happens once at the start, and serialization happens once at the end, regardless of the number of transformations.
+- Teams can **register their own operators** in a central registry via:
 
   ```java
-  // Register team-specific processors
-  MessageProcessorRegistry.register("sanitizeData",
+  // Create a registry
+  final var registry = new MessageProcessorRegistry("myApp");
+
+  // Register team-specific JSON operators
+  registry.registerJsonOperator("sanitizeData",
       JsonMessageProcessor.removeFields("password", "ssn"));
 
-  // Create pipelines from registered processors
-  final var pipeline = MessageProcessorRegistry.pipeline(
-      "parseJson", "validateSchema", "sanitizeData", "addMetadata");
+  // Create an optimized JSON pipeline from registered operators
+  final var pipeline = registry.jsonPipeline(
+      "sanitizeData", "addTimestamp");
 
   // Apply transformations with built-in error handling and retry logic
   final var consumer = new FunctionalConsumer.<byte[], byte[]>builder()
@@ -47,25 +50,28 @@ retries, built-in metrics, and support for both parallel and sequential processi
   ```
 
   ```java
-  // Register custom processors for your team's needs
-  MessageProcessorRegistry.register("extractMetadata", message -> {
+  // Register custom Avro operators for your team's needs
+  registry.registerAvroOperator("extractMetadata", record -> {
     // Custom extraction logic here
-    return processedMessage;
+    return record;
   });
 
-  // Load processors from configuration
-  String[] configuredProcessors = config.getStringArray("message.processors");
-  Function<byte[], byte[]> pipeline = MessageProcessorRegistry.pipeline(configuredProcessors);
+  // Add a schema (automatically registers addSource_userSchema and addTimestamp_userSchema)
+  registry.addSchema("userSchema", "com.kpipe.User", "schemas/user.avsc");
 
-  // Create a consumer with team-specific processing pipeline
+  // Create an optimized Avro pipeline (stripping 5 magic bytes for Confluent format)
+  final var avroPipeline = registry.avroPipeline(
+      "userSchema",
+      5, // magic byte offset
+      "extractMetadata",
+      "addSource_userSchema",
+      "addTimestamp_userSchema");
+
+  // Create a consumer with the optimized pipeline
   final var consumer = new FunctionalConsumer.<byte[], byte[]>builder()
     .withProperties(kafkaProps)
     .withTopic("team-topic")
-    .withProcessor(MessageProcessorRegistry.pipeline(
-        "parseJson",
-        "validateSchema",
-        "extractMetadata",
-        "addTeamIdentifier"))
+    .withProcessor(avroPipeline)
   .withErrorHandler(error -> publishToErrorTopic(error))
   .withRetry(3, Duration.ofSeconds(1))
   .build();
@@ -165,28 +171,30 @@ A ready-to-use application that demonstrates the library:
 
 ---
 
-## ⚙️ Example: Add Custom Processor
+## Example: Add Custom Processor
 
 Extend the registry like this:
 
   ```java
-  // Register a processor for JSON field transformations
-  MessageProcessorRegistry.register("uppercase", bytes ->
-      JsonMessageProcessor.transformField("text", value -> {
-          if (value instanceof String text) {
-              return text.toUpperCase();
-          }
-          return value;
-      }).apply(bytes)
-  );
+  // Create a registry
+  final var registry = new MessageProcessorRegistry("myApp");
 
-  // Register a processor that adds environment information
-  MessageProcessorRegistry.register("addEnvironment",
+  // Register a custom JSON operator for field transformations
+  registry.registerJsonOperator("uppercase", map -> {
+      final var value = map.get("text");
+      if (value instanceof String text) {
+          map.put("text", text.toUpperCase());
+      }
+      return map;
+  });
+
+  // Built-in operators are also available
+  registry.registerJsonOperator("addEnvironment",
       JsonMessageProcessor.addField("environment", "production"));
 
-  // Create a reusable processor pipeline
-  final var pipeline = MessageProcessorRegistry.pipeline(
-      "parseJson", "validateSchema", "addEnvironment", "uppercase", "addTimestamp"
+  // Create a high-performance pipeline (single SerDe cycle)
+  final var pipeline = registry.jsonPipeline(
+      "addEnvironment", "uppercase", "addTimestamp"
   );
 
   // Use the pipeline with a consumer
@@ -203,7 +211,7 @@ Extend the registry like this:
 
 ---
 
-## 📊 Built-in Metrics
+## Built-in Metrics
 
 Monitor your consumer with built-in metrics:
 
@@ -225,7 +233,7 @@ Configure automatic metrics reporting:
 
 ---
 
-## 🛡️ Graceful Shutdown
+## Graceful Shutdown
 The consumer supports graceful shutdown with in-flight message handling:
 
   ```java
@@ -245,108 +253,59 @@ The consumer supports graceful shutdown with in-flight message handling:
 
 ---
 
-## 🔧 Working with Messages
+## Working with Messages
 
 ### JSON Processing
 
-The JSON processors handle deserialization and transformation of JSON data:
+The JSON processors provide operators (`UnaryOperator<Map<String, Object>>`) that can be composed into high-performance pipelines:
 
   ```java
-  // Add a timestamp field to messages
-  final var addTimestampProcessor = JsonMessageProcessor.addTimestamp("processedAt");
+  final var registry = new MessageProcessorRegistry("myApp");
 
-  // Remove sensitive fields
-  final var sanitizeProcessor = JsonMessageProcessor.removeFields("password", "ssn", "creditCard");
+  // Operators are pure functions that modify a Map
+  registry.registerJsonOperator("addTimestamp", JsonMessageProcessor.addTimestamp("processedAt"));
+  registry.registerJsonOperator("sanitize", JsonMessageProcessor.removeFields("password", "ssn"));
 
-  // Transform specific fields
-  final var uppercaseSubjectProcessor = JsonMessageProcessor.transformField("subject", value -> {
-      if (value instanceof String text) {
-          return text.toUpperCase();
-      }
-      return value;
-  });
+  // Metadata merging
+  final var metadata = Map.of("version", "1.0", "env", "prod");
+  registry.registerJsonOperator("addMetadata", JsonMessageProcessor.mergeWith(metadata));
 
-  // Add metadata to messages
-  final var metadata = new HashMap<String, Object>();
-  metadata.put("version", "1.0");
-  metadata.put("environment", "production");
-  var addMetadataProcessor = JsonMessageProcessor.mergeWith(metadata);
-
-  // Combine processors into a pipeline
-  Function<byte[], byte[]> pipeline = message -> addMetadataProcessor.apply(
-      uppercaseSubjectProcessor.apply(
-          sanitizeProcessor.apply(
-              addTimestampProcessor.apply(message)
-          )
-      )
-  );
-
-  // Or use the registry to build pipelines
-  final var registryPipeline = MessageProcessorRegistry.pipeline(
-      "sanitize", "addTimestamp", "uppercaseSubject", "addMetadata"
-  );
+  // Build an optimized pipeline (one deserialization -> many transformations -> one serialization)
+  final var pipeline = registry.jsonPipeline("sanitize", "addTimestamp", "addMetadata");
   ```
 
 ### Avro Processing
 
-The Avro processors handle deserialization and transformation of Avro data:
+The Avro processors provide operators (`UnaryOperator<GenericRecord>`) that work within optimized pipelines:
 
   ```java
-  // Register an Avro schema
-  AvroMessageProcessor.registerSchema("userSchema", userSchemaJson);
+  final var registry = new MessageProcessorRegistry("myApp");
 
-  // Parse Avro messages
-  final var parseProcessor = AvroMessageProcessor.parseAvro("userSchema");
+  // Add schema (automatically registers addSource_user and addTimestamp_user)
+  registry.addSchema("user", "com.kpipe.User", "schemas/user.avsc");
 
-  // Add a timestamp field to messages
-  final var addTimestampProcessor = AvroMessageProcessor.addTimestamp("userSchema", "processedAt");
+  // Register manual operators
+  registry.registerAvroOperator("sanitize", 
+      AvroMessageProcessor.removeFields("user", "password", "creditCard"));
 
-  // Remove sensitive fields
-  final var sanitizeProcessor = AvroMessageProcessor.removeFields("userSchema", "password", "creditCard");
+  // Transform fields
+  registry.registerAvroOperator("uppercaseName", 
+      AvroMessageProcessor.transformField("user", "name", value -> {
+          if (value instanceof String text) return text.toUpperCase();
+          return value;
+      }));
 
-  // Transform specific fields
-  final var uppercaseNameProcessor = AvroMessageProcessor.transformField(
-    "userSchema", 
-    "name", 
-    value -> {
-      if (value instanceof String text) {
-        return text.toUpperCase();
-      }
-      return value;
-    }
-  );
-
-  // Add multiple fields at once
-  final var fieldsToAdd = Map.of(
-    "version", "1.0",
-    "environment", "production"
-  );
-  final var addFieldsProcessor = AvroMessageProcessor.addFields("userSchema", fieldsToAdd);
-
-  // Compose processors into a pipeline
-  final var pipeline = AvroMessageProcessor.compose(
-    parseProcessor,
-    addTimestampProcessor,
-    sanitizeProcessor,
-    uppercaseNameProcessor,
-    addFieldsProcessor
-  );
-
-  // Or register in the registry and build pipelines
-  MessageProcessorRegistry.register("parseAvro", parseProcessor);
-  MessageProcessorRegistry.register("addTimestamp", addTimestampProcessor);
-  MessageProcessorRegistry.register("sanitize", sanitizeProcessor);
-  MessageProcessorRegistry.register("uppercaseName", uppercaseNameProcessor);
-  MessageProcessorRegistry.register("addFields", addFieldsProcessor);
-
-  final var registryPipeline = MessageProcessorRegistry.pipeline(
-    "parseAvro", "addTimestamp", "sanitize", "uppercaseName", "addFields"
-  );
+  // Build an optimized pipeline
+  // This pipeline handles deserialization, all operators, and serialization in one pass
+  final var pipeline = registry.avroPipeline("user", "sanitize", "uppercaseName", "addTimestamp_user");
+  
+  // For data with magic bytes (e.g., Confluent Wire Format), specify an offset:
+  final var confluentPipeline = registry.avroPipeline("user", 5, "sanitize", "addTimestamp_user");
   ```
 
 ---
 
-## 📤 Message Sinks
+## Message Sinks
 
 Message sinks provide destinations for processed messages. The `MessageSink` interface is a functional interface that
 defines a single method:
@@ -453,7 +412,7 @@ final var safePipeline = registry.<String, byte[]>pipelineWithErrorHandling(
 
 ---
 
-## 🔄 Consumer Runner
+## Consumer Runner
 
 The `ConsumerRunner` provides a high-level management layer for Kafka consumers, handling lifecycle, metrics, and graceful shutdown:
 
@@ -552,7 +511,7 @@ try (ConsumerRunner<FunctionalConsumer<String, String>> runner = ConsumerRunner.
 
 ---
 
-## 🔍 Application Example
+## Application Example
 
 Here's a concise example of a KPipe application:
 
@@ -584,8 +543,8 @@ public class KPipeApp implements AutoCloseable {
       .withProperties(KafkaConsumerConfig.createConsumerConfig(
         config.bootstrapServers(), config.consumerGroup()))
       .withTopic(config.topic())
-      .withProcessor(processorRegistry.pipeline(
-        "parseJson", "addSource", "markProcessed", "addTimestamp"))
+      .withProcessor(processorRegistry.jsonPipeline(
+        "addSource", "markProcessed", "addTimestamp"))
       .withMessageSink(sinkRegistry.<byte[], byte[]>pipeline("logging"))
       .withOffsetManagerProvider(consumer -> 
         OffsetManager.builder(consumer)
@@ -630,7 +589,7 @@ echo '{"message":"Hello from KPipe!"}' | kcat -P -b localhost:9092 -t json-event
 
 ---
 
-## 🛠️ Requirements
+## Requirements
 
 - Java 25+
 - Gradle (for building the project)
@@ -639,7 +598,7 @@ echo '{"message":"Hello from KPipe!"}' | kcat -P -b localhost:9092 -t json-event
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Configure via environment variables:
 
@@ -654,7 +613,7 @@ Configure via environment variables:
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Follow these steps to test the KPipe Kafka Consumer:
 
@@ -716,26 +675,24 @@ Kafka consumer will:
 
 ---
 
-## 🔍 Best Practices & Advanced Patterns
+## Best Practices & Advanced Patterns
 
 ### Composing Complex Processing Pipelines
 
-For maintainable pipelines, group related processors:
+For maintainable pipelines, you can compose multiple pipelines or operators:
 
   ```java
-  // Create focused processor groups
-  final var securityProcessors = MessageProcessorRegistry.pipeline(
-      "sanitizeData", "encryptSensitiveFields", "addAuditTrail");
+  final var registry = new MessageProcessorRegistry("myApp");
 
-  final var enrichmentProcessors = MessageProcessorRegistry.pipeline(
-      "addMetadata", "addTimestamp", "addEnvironment");
+  // Create focused operator groups
+  registry.registerJsonOperator("security", 
+      JsonMessageProcessor.removeFields("password", "creditCard"));
+  
+  registry.registerJsonOperator("enrichment",
+      JsonMessageProcessor.addTimestamp("processedAt"));
 
-  // Compose them into a master pipeline
-  final var fullPipeline = message -> enrichmentProcessors.apply(
-      securityProcessors.apply(message));
-
-  // Or register the composed pipeline
-  MessageProcessorRegistry.register("standardProcessing", fullPipeline);
+  // Compose them into an optimized pipeline
+  final var fullPipeline = registry.jsonPipeline("security", "enrichment");
   ```
 
 ### Conditional Processing
@@ -744,24 +701,17 @@ The library provides a built-in `when()` method for conditional processing:
 
   ```java
   // Create a predicate that checks message type
-  Predicate<byte[]> isOrderMessage = message -> {
-      try {
-          Map<String, Object> parsed = JsonMessageProcessor.parseJson().apply(message);
-          return "ORDER".equals(parsed.get("type"));
-      } catch (Exception e) {
-          return false;
-      }
+  Predicate<byte[]> isOrderMessage = bytes -> {
+      // Logic to check if it's an order
+      return true; 
   };
 
   // Use the built-in conditional processor
-  Function<byte[], byte[]> conditionalProcessor = MessageProcessorRegistry.when(
+  Function<byte[], byte[]> conditionalPipeline = MessageProcessorRegistry.when(
       isOrderMessage,
-      MessageProcessorRegistry.get("orderEnrichment"),
-      MessageProcessorRegistry.get("defaultEnrichment")
+      registry.jsonPipeline("orderProcessor"),
+      registry.jsonPipeline("defaultProcessor")
   );
-
-  // Register the conditional pipeline
-  MessageProcessorRegistry.register("smartProcessing", conditionalProcessor);
   ```
 
 ### Thread-Safety Considerations
@@ -777,15 +727,19 @@ The library provides a built-in `when()` method for conditional processing:
 
 ---
 
-## 📈 Performance Notes
+## Performance Notes
 
-- Virtual threads are **1:1 with Kafka records** — scales to 100k+ messages/sec
-- Zero-GC JSON processing
-- Safe and efficient memory model using modern Java features
+- **Single SerDe Cycle**: Unlike traditional pipelines that reserialize data at every step, KPipe's optimized pipelines
+  deserialize once, apply any number of transformations on the object, and serialize once at the end.
+- **Zero-Copy Magic Byte Handling**: Built-in support for skipping magic byte prefixes (common in Confluent Wire Format)
+  without creating intermediate byte array copies.
+- **Virtual Threads**: Every Kafka record is processed in its own virtual thread, enabling massive concurrency (100k+
+  messages/sec) with minimal memory footprint.
+- **Zero-GC JSON Processing**: Leveraging DslJson for maximum throughput and minimum garbage collection pressure.
 
 ---
 
-## 📚 Inspiration
+## Inspiration
 
 This library is inspired by the best practices from:
 
@@ -794,7 +748,7 @@ This library is inspired by the best practices from:
 
 ---
 
-## 💬 Contributing
+## Contributing
 
 If you're a team using this library, feel free to:
 
@@ -804,13 +758,13 @@ If you're a team using this library, feel free to:
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🧠 Final Thoughts
+## Final Thoughts
 
 This Kafka consumer is:
 

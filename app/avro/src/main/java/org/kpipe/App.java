@@ -43,12 +43,8 @@ public class App implements AutoCloseable {
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
 
-  /**
-   * Main entry point for the Kafka consumer application.
-   *
-   * @param args Command line arguments
-   */
-  public static void main(final String[] args) {
+  /** Main entry point for the Kafka consumer application. */
+  static void main() {
     final var config = AppConfig.fromEnv();
 
     try (final var app = new App(config)) {
@@ -155,8 +151,7 @@ public class App implements AutoCloseable {
    * @return a message sink that processes messages through the pipeline
    */
   private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    final var pipeline = registry.<byte[], byte[]>pipeline("avroLogging");
-    return MessageSinkRegistry.withErrorHandling(pipeline);
+    return registry.pipeline("avroLogging");
   }
 
   /**
@@ -169,27 +164,17 @@ public class App implements AutoCloseable {
     final MessageProcessorRegistry registry,
     final MessageSinkRegistry sinkRegistry
   ) {
-    try {
-      MessageFormat.AVRO.addSchema(
-        "1",
-        "com.kpipe.customer",
-        "http://schema-registry:8081/subjects/com.kpipe.customer/versions/latest"
-      );
+    registry.addSchema(
+      "1",
+      "com.kpipe.customer",
+      "http://schema-registry:8081/subjects/com.kpipe.customer/versions/latest"
+    );
 
-      // Re-register the sink now that the schema is definitely loaded!
-      final var schema = AvroMessageProcessor.getSchema("1");
-      if (schema != null) sinkRegistry.register("avroLogging", new AvroConsoleSink<>(schema));
+    // Register the sink
+    final var schema = AvroMessageProcessor.getSchema("1");
+    if (schema != null) sinkRegistry.register("avroLogging", new AvroConsoleSink<>(schema));
 
-      registry.register(
-        "parseAvro_CustomerConfluentSchemaRegistry",
-        AvroMessageProcessor.parseAvroWithMagicBytes("1", 5)
-      );
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to load Avro schema from registry, falling back to bytes[len] logging", e);
-    }
-
-    final var pipeline = registry.pipeline("parseAvro_CustomerConfluentSchemaRegistry");
-    return MessageProcessorRegistry.withErrorHandling(pipeline, null);
+    return registry.avroPipeline("1", 5);
   }
 
   /**

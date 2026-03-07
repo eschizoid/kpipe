@@ -6,57 +6,55 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/**
- * Functional service for reporting Kafka consumer metrics.
- *
- * <p><strong>Example 1:</strong> Basic usage with default logging:
- *
- * <pre>{@code
- * // Create with default logging
- * ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
- *     consumer::getMetrics,
- *     () -> System.currentTimeMillis() - startTime
- * );
- * reporter.reportMetrics(); // Will log to System logger
- * }</pre>
- *
- * <p><strong>Example 2:</strong> Custom metrics reporting:
- *
- * <pre>{@code
- * // Report metrics to Prometheus
- * Consumer<String> prometheusReporter = metric ->
- *     PrometheusClient.pushGauge("consumer_metrics", parseValues(metric));
- *
- * ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
- *     consumer::getMetrics,
- *     () -> System.currentTimeMillis() - startTime,
- *     prometheusReporter
- * );
- * }</pre>
- *
- * <p><strong>Example 3:</strong> Advanced usage with alerting:
- *
- * <pre>{@code
- * // Report and check thresholds
- * ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
- *     consumer::getMetrics,
- *     () -> System.currentTimeMillis() - startTime,
- *     metric -> {
- *         logger.info(metric);
- *
- *         // Extract error count and check threshold
- *         int errors = extractErrorCount(metric);
- *         if (errors > ERROR_THRESHOLD) {
- *             alertSystem.sendAlert("High error rate detected: " + errors);
- *         }
- *     }
- * );
- * }</pre>
- *
- * @param metricsSupplier supplier of consumer metrics
- * @param uptimeSupplier supplier of application uptime in ms
- * @param reporter consumer for reporting metrics (defaults to logger if null)
- */
+/// Functional service for reporting Kafka consumer metrics.
+///
+/// **Example 1:** Basic usage with default logging:
+///
+/// ```java
+/// // Create with default logging
+/// ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
+///     consumer::getMetrics,
+///     () -> System.currentTimeMillis() - startTime
+/// );
+/// reporter.reportMetrics(); // Will log to System logger
+/// ```
+///
+/// **Example 2:** Custom metrics reporting:
+///
+/// ```java
+/// // Report metrics to Prometheus
+/// Consumer<String> prometheusReporter = metric ->
+///     PrometheusClient.pushGauge("consumer_metrics", parseValues(metric));
+///
+/// ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
+///     consumer::getMetrics,
+///     () -> System.currentTimeMillis() - startTime,
+///     prometheusReporter
+/// );
+/// ```
+///
+/// **Example 3:** Advanced usage with alerting:
+///
+/// ```java
+/// // Report and check thresholds
+/// ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
+///     consumer::getMetrics,
+///     () -> System.currentTimeMillis() - startTime,
+///     metric -> {
+///         logger.info(metric);
+///
+///         // Extract error count and check threshold
+///         int errors = extractErrorCount(metric);
+///         if (errors > ERROR_THRESHOLD) {
+///             alertSystem.sendAlert("High error rate detected: " + errors);
+///         }
+///     }
+/// );
+/// ```
+///
+/// @param metricsSupplier supplier of consumer metrics
+/// @param uptimeSupplier supplier of application uptime in ms
+/// @param reporter consumer for reporting metrics (defaults to logger if null)
 public record ConsumerMetricsReporter(
   Supplier<Map<String, Long>> metricsSupplier,
   Supplier<Long> uptimeSupplier,
@@ -68,27 +66,25 @@ public record ConsumerMetricsReporter(
   private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
 
-  /**
-   * Creates a consumer metrics reporter with the specified metrics supplier and reporter.
-   *
-   * <p>Example with a custom reporter:
-   *
-   * <pre>{@code
-   * // Send metrics to Slack
-   * Consumer<String> slackReporter = metric ->
-   *     slackClient.sendMessage("#metrics-channel", metric);
-   *
-   * final var reporter = new ConsumerMetricsReporter(
-   *     consumer::getMetrics,
-   *     () -> System.currentTimeMillis() - startTime,
-   *     slackReporter
-   * );
-   * }</pre>
-   *
-   * @param metricsSupplier supplier of consumer metrics
-   * @param uptimeSupplier supplier of application uptime in ms
-   * @param reporter consumer for reporting metrics (defaults to logger if null)
-   */
+  /// Creates a consumer metrics reporter with the specified metrics supplier and reporter.
+  ///
+  /// Example with a custom reporter:
+  ///
+  /// ```java
+  /// // Send metrics to Slack
+  /// Consumer<String> slackReporter = metric ->
+  ///     slackClient.sendMessage("#metrics-channel", metric);
+  ///
+  /// final var reporter = new ConsumerMetricsReporter(
+  ///     consumer::getMetrics,
+  ///     () -> System.currentTimeMillis() - startTime,
+  ///     slackReporter
+  /// );
+  /// ```
+  ///
+  /// @param metricsSupplier supplier of consumer metrics
+  /// @param uptimeSupplier supplier of application uptime in ms
+  /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public ConsumerMetricsReporter(
     final Supplier<Map<String, Long>> metricsSupplier,
     final Supplier<Long> uptimeSupplier,
@@ -99,19 +95,15 @@ public record ConsumerMetricsReporter(
     this.reporter = reporter != null ? reporter : this::logMetrics;
   }
 
-  /**
-   * Reports consumer metrics.
-   *
-   * <p>The reporting process:
-   *
-   * <ol>
-   *   <li>Retrieves current metrics from the metrics supplier
-   *   <li>Formats key metrics (messages received/processed/errors) and uptime
-   *   <li>Passes the formatted report to the configured reporter
-   * </ol>
-   *
-   * <p>If metrics retrieval fails, the error is logged without interrupting application flow.
-   */
+  /// Reports consumer metrics.
+  ///
+  /// The reporting process:
+  ///
+  /// 1. Retrieves current metrics from the metrics supplier
+  /// 2. Formats key metrics (messages received/processed/errors) and uptime
+  /// 3. Passes the formatted report to the configured reporter
+  ///
+  /// If metrics retrieval fails, the error is logged without interrupting application flow.
   @Override
   public void reportMetrics() {
     try {

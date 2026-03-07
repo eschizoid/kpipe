@@ -40,12 +40,8 @@ public class App implements AutoCloseable {
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
 
-  /**
-   * Main entry point for the Kafka consumer application.
-   *
-   * @param args Command line arguments
-   */
-  public static void main(final String[] args) {
+  /** Main entry point for the Kafka consumer application. */
+  static void main() {
     final var config = AppConfig.fromEnv();
 
     try (final var app = new App(config)) {
@@ -152,8 +148,7 @@ public class App implements AutoCloseable {
    * @return a message sink that processes messages through the pipeline
    */
   private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    final var pipeline = registry.<byte[], byte[]>pipeline("jsonLogging");
-    return MessageSinkRegistry.withErrorHandling(pipeline);
+    return registry.pipeline("jsonLogging");
   }
 
   /**
@@ -163,8 +158,7 @@ public class App implements AutoCloseable {
    * @return a function that processes messages through the pipeline
    */
   private static Function<byte[], byte[]> createJsonProcessorPipeline(final MessageProcessorRegistry registry) {
-    final var pipeline = registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp");
-    return MessageProcessorRegistry.withErrorHandling(pipeline, null);
+    return registry.jsonPipeline("addSource", "markProcessed", "addTimestamp");
   }
 
   /**

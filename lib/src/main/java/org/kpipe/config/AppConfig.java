@@ -5,43 +5,41 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
-/**
- * Configuration class for Kafka consumer applications in the kpipe framework. Provides properties
- * and settings needed to configure a Kafka consumer application.
- *
- * <p>This class stores configuration parameters such as Kafka connection details, consumer group,
- * topic information, and timing settings.
- *
- * <p>Example usage with default values from environment:
- *
- * <pre>{@code
- * AppConfig config = AppConfig.fromEnv();
- * }</pre>
- *
- * <p>Example with custom configuration:
- *
- * <pre>{@code
- * AppConfig config = new AppConfig(
- *     "localhost:9092",
- *     "my-group",
- *     "my-topic",
- *     "my-app",
- *     Duration.ofMillis(100),
- *     Duration.ofSeconds(60),
- *     Duration.ofMinutes(1),
- *     List.of("parseJson", "addTimestamp")
- * );
- * }</pre>
- *
- * @param bootstrapServers The Kafka bootstrap servers connection string
- * @param consumerGroup The Kafka consumer group identifier
- * @param topic The Kafka topic to consume from
- * @param appName The name of the application
- * @param pollTimeout Timeout duration for polling messages
- * @param shutdownTimeout Timeout duration for graceful shutdown
- * @param metricsInterval Interval between metrics reporting
- * @param processors List of processor names to apply to messages
- */
+/// Configuration class for Kafka consumer applications in the kpipe framework. Provides properties
+/// and settings needed to configure a Kafka consumer application.
+///
+/// This class stores configuration parameters such as Kafka connection details, consumer group,
+/// topic information, and timing settings.
+///
+/// Example usage with default values from environment:
+///
+/// ```java
+/// final var config = AppConfig.fromEnv();
+/// ```
+///
+/// Example with custom configuration:
+///
+/// ```java
+/// final var config = new AppConfig(
+///     "localhost:9092",
+///     "my-group",
+///     "my-topic",
+///     "my-app",
+///     Duration.ofMillis(100),
+///     Duration.ofSeconds(60),
+///     Duration.ofMinutes(1),
+///     List.of("parseJson", "addTimestamp")
+/// );
+/// ```
+///
+/// @param bootstrapServers The Kafka bootstrap servers connection string
+/// @param consumerGroup The Kafka consumer group identifier
+/// @param topic The Kafka topic to consume from
+/// @param appName The name of the application
+/// @param pollTimeout Timeout duration for polling messages
+/// @param shutdownTimeout Timeout duration for graceful shutdown
+/// @param metricsInterval Interval between metrics reporting
+/// @param processors List of processor names to apply to messages
 public record AppConfig(
   String bootstrapServers,
   String consumerGroup,
@@ -59,18 +57,16 @@ public record AppConfig(
   public static final Duration DEFAULT_THREAD_TERMINATION = Duration.ofMillis(5000);
   public static final Duration DEFAULT_EXECUTOR_TERMINATION = Duration.ofMillis(10000);
 
-  /**
-   * Creates a new Kafka configuration with the specified parameters.
-   *
-   * @param bootstrapServers Kafka bootstrap servers (comma-separated list)
-   * @param consumerGroup Kafka consumer group ID
-   * @param topic Kafka topic to consume from
-   * @param appName Application name for metrics and logging
-   * @param pollTimeout Duration to wait in poll operations
-   * @param shutdownTimeout Maximum duration to wait during a graceful shutdown
-   * @param metricsInterval Interval between metrics reporting
-   * @param processors List of processor names to use in the processing pipeline
-   */
+  /// Creates a new Kafka configuration with the specified parameters.
+  ///
+  /// @param bootstrapServers Kafka bootstrap servers (comma-separated list)
+  /// @param consumerGroup Kafka consumer group ID
+  /// @param topic Kafka topic to consume from
+  /// @param appName Application name for metrics and logging
+  /// @param pollTimeout Duration to wait in poll operations
+  /// @param shutdownTimeout Maximum duration to wait during a graceful shutdown
+  /// @param metricsInterval Interval between metrics reporting
+  /// @param processors List of processor names to use in the processing pipeline
   public AppConfig(
     final String bootstrapServers,
     final String consumerGroup,
@@ -93,26 +89,22 @@ public record AppConfig(
     this.processors = processors != null ? List.copyOf(processors) : List.of();
   }
 
-  /**
-   * Validates that a duration is not null and not negative.
-   *
-   * @param duration The duration to validate
-   * @param defaultValue Default value to use if duration is null
-   * @param name Name of the duration parameter for error messages
-   * @return The validated duration or default value
-   * @throws IllegalArgumentException if duration is negative
-   */
+  /// Validates that a duration is not null and not negative.
+  ///
+  /// @param duration The duration to validate
+  /// @param defaultValue Default value to use if duration is null
+  /// @param name Name of the duration parameter for error messages
+  /// @return The validated duration or default value
+  /// @throws IllegalArgumentException if duration is negative
   private Duration validateDuration(final Duration duration, final Duration defaultValue, final String name) {
     final var result = duration != null ? duration : defaultValue;
     if (result.isNegative()) throw new IllegalArgumentException(name + " cannot be negative");
     return result;
   }
 
-  /**
-   * Creates a configuration from environment variables with sensible defaults.
-   *
-   * @return A new KafkaConfig instance configured from the environment
-   */
+  /// Creates a configuration from environment variables with sensible defaults.
+  ///
+  /// @return A new KafkaConfig instance configured from the environment
   public static AppConfig fromEnv() {
     return new AppConfig(
       getEnvOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092"),
@@ -126,14 +118,12 @@ public record AppConfig(
     );
   }
 
-  /**
-   * Parses a string to duration with error handling.
-   *
-   * @param value String value to parse
-   * @param defaultValue Default value to use if parsing fails
-   * @param converter Function to convert parsed long to Duration
-   * @return The resulting Duration
-   */
+  /// Parses a string to duration with error handling.
+  ///
+  /// @param value String value to parse
+  /// @param defaultValue Default value to use if parsing fails
+  /// @param converter Function to convert parsed long to Duration
+  /// @return The resulting Duration
   private static Duration parseDurationWithFallback(
     final String value,
     final String defaultValue,
@@ -146,13 +136,11 @@ public record AppConfig(
     }
   }
 
-  /**
-   * Gets environment variable or returns default if not set.
-   *
-   * @param name Environment variable name
-   * @param defaultValue Default value if the environment variable is not set
-   * @return Value from environment or default
-   */
+  /// Gets environment variable or returns default if not set.
+  ///
+  /// @param name Environment variable name
+  /// @param defaultValue Default value if the environment variable is not set
+  /// @return Value from environment or default
   public static String getEnvOrDefault(final String name, final String defaultValue) {
     final var value = System.getenv(name);
     return value != null && !value.isEmpty() ? value : defaultValue;

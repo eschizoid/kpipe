@@ -17,51 +17,47 @@ import org.apache.kafka.common.TopicPartition;
 import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.consumer.enums.OffsetState;
 
-/**
- * Manages Kafka consumer offsets for parallel processing scenarios.
- *
- * <p>This class provides safe offset commit management by tracking which offsets are being
- * processed and which have been completed, ensuring that only contiguous completed offsets are
- * committed to Kafka. This is particularly useful when records are processed in parallel or in a
- * non-sequential order.
- *
- * <p>Key features include:
- *
- * <ul>
- *   <li>Thread-safe tracking of offsets across multiple partitions
- *   <li>Contiguous commit strategy that prevents data loss during rebalancing
- *   <li>Explicit offset tracking with {@code trackOffset} and {@code markOffsetProcessed}
- *   <li>Support for both synchronous and asynchronous commit operations
- *   <li>Automatic periodic offset commits with configurable intervals
- *   <li>Proper rebalance handling with custom {@code ConsumerRebalanceListener}
- *   <li>Recovery from consumer failures and partition reassignments
- *   <li>Gap detection to ensure only fully processed offset ranges are committed
- *   <li>Diagnostic methods for monitoring offset state and troubleshooting
- *   <li>Virtual thread execution for non-blocking I/O operations
- * </ul>
- *
- * <p>Example usage:
- *
- * <pre>{@code
- * // Create offset manager with default settings
- * final var offsetManager = OffsetManager.builder(consumer).build();
- * offsetManager.start();
- *
- * // Track and process records
- * offsetManager.trackOffset(record);
- * // Process the record...
- * offsetManager.markOffsetProcessed(record);
- *
- * // Commit offsets explicitly
- * final var success = offsetManager.commitSyncAndWait(5000); // 5 second timeout
- *
- * // Clean up resources when done
- * offsetManager.close();
- * }</pre>
- *
- * @param <K> The type of the record key
- * @param <V> The type of the record value
- */
+/// Manages Kafka consumer offsets for parallel processing scenarios.
+///
+/// This class provides safe offset commit management by tracking which offsets are being
+/// processed and which have been completed, ensuring that only contiguous completed offsets are
+/// committed to Kafka. This is particularly useful when records are processed in parallel or in a
+/// non-sequential order.
+///
+/// Key features include:
+///
+/// * Thread-safe tracking of offsets across multiple partitions
+/// * Contiguous commit strategy that prevents data loss during rebalancing
+/// * Explicit offset tracking with `trackOffset` and `markOffsetProcessed`
+/// * Support for both synchronous and asynchronous commit operations
+/// * Automatic periodic offset commits with configurable intervals
+/// * Proper rebalance handling with custom `ConsumerRebalanceListener`
+/// * Recovery from consumer failures and partition reassignments
+/// * Gap detection to ensure only fully processed offset ranges are committed
+/// * Diagnostic methods for monitoring offset state and troubleshooting
+/// * Virtual thread execution for non-blocking I/O operations
+///
+/// Example usage:
+///
+/// ```java
+/// // Create offset manager with default settings
+/// final var offsetManager = OffsetManager.builder(consumer).build();
+/// offsetManager.start();
+///
+/// // Track and process records
+/// offsetManager.trackOffset(record);
+/// // Process the record...
+/// offsetManager.markOffsetProcessed(record);
+///
+/// // Commit offsets explicitly
+/// final var success = offsetManager.commitSyncAndWait(5000); // 5 second timeout
+///
+/// // Clean up resources when done
+/// offsetManager.close();
+/// ```
+///
+/// @param <K> The type of the record key
+/// @param <V> The type of the record value
 public class OffsetManager<K, V> implements AutoCloseable {
 
   private static final Logger LOGGER = Logger.getLogger(OffsetManager.class.getName());

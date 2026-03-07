@@ -161,8 +161,7 @@ public class App implements AutoCloseable {
    * @return a function that processes messages through the pipeline
    */
   private static Function<byte[], byte[]> createJsonProcessorPipeline(final MessageProcessorRegistry registry) {
-    final var pipeline = registry.pipeline("parseJson", "addSource", "markProcessed", "addTimestamp");
-    return MessageProcessorRegistry.withErrorHandling(pipeline, null);
+    return registry.jsonPipeline("addSource", "markProcessed", "addTimestamp");
   }
 
   /**
