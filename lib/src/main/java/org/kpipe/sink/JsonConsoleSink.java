@@ -33,7 +33,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
  * @param <K> The type of message key
  * @param <V> The type of message value
  */
-public record JsonConsoleSink<K, V>(Logger logger, Level logLevel) implements MessageSink<K, V> {
+public record JsonConsoleSink<K, V>(java.lang.System.Logger logger, java.lang.System.Logger.Level logLevel) implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
 
   /**

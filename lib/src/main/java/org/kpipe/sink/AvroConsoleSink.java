@@ -24,7 +24,7 @@ import org.kpipe.processor.AvroMessageProcessor;
  * @param <K> The type of message key
  * @param <V> The type of message value
  */
-public record AvroConsoleSink<K, V>(Logger logger, Level logLevel) implements MessageSink<K, V> {
+public record AvroConsoleSink<K, V>(java.lang.System.Logger logger, java.lang.System.Logger.Level logLevel) implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
 
   @Override
