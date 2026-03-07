@@ -15,39 +15,35 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import org.kpipe.metrics.MetricsReporter;
 
-/**
- * A thread-safe runner for {@link FunctionalConsumer} instances that manages the consumer
- * lifecycle.
- *
- * <p>The ConsumerRunner provides:
- *
- * <ul>
- *   <li>Controlled startup and shutdown
- *   <li>Health monitoring
- *   <li>Graceful shutdown with in-flight message handling
- *   <li>Metrics reporting at configurable intervals
- * </ul>
- *
- * <p>Example usage:
- *
- * <pre>{@code
- * final var consumer = new FunctionalConsumer.Builder<>()
- *     .withTopic("my-topic")
- *     .withProcessor(message -> processMessage(message))
- *     .build();
- *
- * final var runner = ConsumerRunner.builder(consumer)
- *     .withHealthCheck(FunctionalConsumer::isRunning)
- *     .withShutdownHook(true)
- *     .withShutdownTimeout(5000)
- *     .build();
- *
- * runner.start();
- * runner.awaitShutdown();
- * }</pre>
- *
- * @param <T> the type of consumer being managed, must extend FunctionalConsumer
- */
+/// A thread-safe runner for {@link FunctionalConsumer} instances that manages the consumer
+/// lifecycle.
+///
+/// The ConsumerRunner provides:
+///
+/// * Controlled startup and shutdown
+/// * Health monitoring
+/// * Graceful shutdown with in-flight message handling
+/// * Metrics reporting at configurable intervals
+///
+/// Example usage:
+///
+/// ```java
+/// final var consumer = new FunctionalConsumer.Builder<>()
+///     .withTopic("my-topic")
+///     .withProcessor(message -> processMessage(message))
+///     .build();
+///
+/// final var runner = ConsumerRunner.builder(consumer)
+///     .withHealthCheck(FunctionalConsumer::isRunning)
+///     .withShutdownHook(true)
+///     .withShutdownTimeout(5000)
+///     .build();
+///
+/// runner.start();
+/// runner.awaitShutdown();
+/// ```
+///
+/// @param <T> the type of consumer being managed, must extend FunctionalConsumer
 public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(ConsumerRunner.class.getName());
@@ -202,33 +198,27 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     shutdownGracefully(shutdownTimeoutMs);
   }
 
-  /**
-   * Performs a graceful shutdown of a FunctionalConsumer by handling in-flight messages.
-   *
-   * <p>This method follows these steps to ensure a clean shutdown:
-   *
-   * <ol>
-   *   <li>Pauses the consumer to prevent receiving new messages
-   *   <li>Obtains a message tracker from the consumer
-   *   <li>Checks for in-flight messages:
-   *       <ul>
-   *         <li>If no in-flight messages exist, closes the consumer immediately
-   *         <li>If in-flight messages exist, waits for their completion (up to timeout)
-   *       </ul>
-   *   <li>Verifies if all messages were processed
-   *   <li>Closes the consumer regardless of processing outcome
-   * </ol>
-   *
-   * <p>The method calls {@code getInFlightMessageCount()} twice - first to determine if any
-   * messages need processing, and then after the wait period to confirm the final state.
-   *
-   * @param <T> the type of consumer extending FunctionalConsumer
-   * @param consumer the consumer to shut down
-   * @param timeoutMs maximum time in milliseconds to wait for in-flight messages to complete
-   * @return {@code true} if all in-flight messages were successfully processed before shutdown,
-   *     {@code false} if the timeout was reached with messages still in-flight
-   * @throws RuntimeException if an exception occurs during the shutdown process
-   */
+  /// Performs a graceful shutdown of a FunctionalConsumer by handling in-flight messages.
+  ///
+  /// This method follows these steps to ensure a clean shutdown:
+  ///
+  /// 1. Pauses the consumer to prevent receiving new messages
+  /// 2. Obtains a message tracker from the consumer
+  /// 3. Checks for in-flight messages:
+  ///     * If no in-flight messages exist, closes the consumer immediately
+  ///     * If in-flight messages exist, waits for their completion (up to timeout)
+  /// 4. Verifies if all messages were processed
+  /// 5. Closes the consumer regardless of processing outcome
+  ///
+  /// The method calls `getInFlightMessageCount()` twice - first to determine if any
+  /// messages need processing, and then after the wait period to confirm the final state.
+  ///
+  /// @param <T> the type of consumer extending FunctionalConsumer
+  /// @param consumer the consumer to shut down
+  /// @param timeoutMs maximum time in milliseconds to wait for in-flight messages to complete
+  /// @return `true` if all in-flight messages were successfully processed before shutdown,
+  ///     `false` if the timeout was reached with messages still in-flight
+  /// @throws RuntimeException if an exception occurs during the shutdown process
   public static <T extends FunctionalConsumer<?, ?>> boolean performGracefulConsumerShutdown(
     final T consumer,
     final long timeoutMs

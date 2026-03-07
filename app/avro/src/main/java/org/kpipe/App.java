@@ -169,26 +169,19 @@ public class App implements AutoCloseable {
     final MessageProcessorRegistry registry,
     final MessageSinkRegistry sinkRegistry
   ) {
-    try {
-      MessageFormat.AVRO.addSchema(
-        "1",
-        "com.kpipe.customer",
-        "http://schema-registry:8081/subjects/com.kpipe.customer/versions/latest"
-      );
+    registry.addSchema(
+      "1",
+      "com.kpipe.customer",
+      "http://schema-registry:8081/subjects/com.kpipe.customer/versions/latest"
+    );
 
-      // Re-register the sink now that the schema is definitely loaded!
-      final var schema = AvroMessageProcessor.getSchema("1");
-      if (schema != null) sinkRegistry.register("avroLogging", new AvroConsoleSink<>(schema));
-
-      registry.register(
-        "parseAvro_CustomerConfluentSchemaRegistry",
-        AvroMessageProcessor.parseAvroWithMagicBytes("1", 5)
-      );
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to load Avro schema from registry, falling back to bytes[len] logging", e);
+    // Register the sink
+    final var schema = AvroMessageProcessor.getSchema("1");
+    if (schema != null) {
+      sinkRegistry.register("avroLogging", new AvroConsoleSink<>(schema));
     }
 
-    final var pipeline = registry.pipeline("parseAvro_CustomerConfluentSchemaRegistry");
+    final var pipeline = registry.avroPipeline("1", 5);
     return MessageProcessorRegistry.withErrorHandling(pipeline, null);
   }
 

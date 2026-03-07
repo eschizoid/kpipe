@@ -9,49 +9,45 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-/**
- * Tracks message processing state in message-based systems by monitoring metrics counts.
- *
- * <p>MessageTracker provides tools to calculate in-flight message counts and wait for message
- * processing completion, particularly useful during graceful shutdown procedures.
- *
- * <p>The tracker operates by comparing received, processed, and error message counts to determine
- * how many messages are currently being processed. This enables:
- *
- * <ul>
- *   <li>Monitoring in-flight messages during normal operation
- *   <li>Tracking processing backlog
- *   <li>Implementing graceful shutdown patterns that wait for in-flight messages to complete
- *   <li>Supporting high-availability scenarios requiring processing guarantees
- * </ul>
- *
- * <p>Example usage for graceful shutdown:
- *
- * <pre>{@code
- * // Create a tracker for consumer metrics
- * final var tracker = MessageTracker.builder()
- *     .withMetricsSupplier(consumer::getMetrics)
- *     .withReceivedMetricKey("messagesReceived")
- *     .withProcessedMetricKey("messagesProcessed")
- *     .withErrorsMetricKey("processingErrors")
- *     .build();
- *
- * // During shutdown
- * consumer.pause();  // Stop consuming new messages
- * boolean allProcessed = tracker.waitForCompletion(5000)
- *     .orElse(false);
- *
- * if (allProcessed) {
- *     logger.info("All messages processed successfully");
- * } else {
- *     logger.warning("Shutdown timeout with {} messages unprocessed",
- *         tracker.getInFlightMessageCount());
- * }
- * }</pre>
- *
- * <p>This class follows a functional design with clear separation between pure calculation logic
- * and side-effecting operations.
- */
+/// Tracks message processing state in message-based systems by monitoring metrics counts.
+///
+/// MessageTracker provides tools to calculate in-flight message counts and wait for message
+/// processing completion, particularly useful during graceful shutdown procedures.
+///
+/// The tracker operates by comparing received, processed, and error message counts to determine
+/// how many messages are currently being processed. This enables:
+///
+/// * Monitoring in-flight messages during normal operation
+/// * Tracking processing backlog
+/// * Implementing graceful shutdown patterns that wait for in-flight messages to complete
+/// * Supporting high-availability scenarios requiring processing guarantees
+///
+/// Example usage for graceful shutdown:
+///
+/// ```java
+/// // Create a tracker for consumer metrics
+/// final var tracker = MessageTracker.builder()
+///     .withMetricsSupplier(consumer::getMetrics)
+///     .withReceivedMetricKey("messagesReceived")
+///     .withProcessedMetricKey("messagesProcessed")
+///     .withErrorsMetricKey("processingErrors")
+///     .build();
+///
+/// // During shutdown
+/// consumer.pause();  // Stop consuming new messages
+/// boolean allProcessed = tracker.waitForCompletion(5000)
+///     .orElse(false);
+///
+/// if (allProcessed) {
+///     logger.info("All messages processed successfully");
+/// } else {
+///     logger.warning("Shutdown timeout with {} messages unprocessed",
+///         tracker.getInFlightMessageCount());
+/// }
+/// ```
+///
+/// This class follows a functional design with clear separation between pure calculation logic
+/// and side-effecting operations.
 public class MessageTracker {
 
   private static final Logger LOGGER = System.getLogger(MessageTracker.class.getName());

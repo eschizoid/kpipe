@@ -2,7 +2,6 @@ package org.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,92 +18,63 @@ class MessageProcessorRegistryTest {
   }
 
   @Test
-  void shouldContainDefaultProcessors() {
-    // Arrange
-    final var processors = registry.getAll();
-
+  void shouldContainDefaultOperators() {
     // Act
-    assertTrue(processors.containsKey("parseJson"));
-    assertTrue(processors.containsKey("addSource"));
-    assertTrue(processors.containsKey("markProcessed"));
-    assertTrue(processors.containsKey("addTimestamp"));
-  }
-
-  @Test
-  void shouldRegisterAndRetrieveProcessor() {
-    // Arrange
-    final var processorName = "testProcessor";
-    final var input = "input".getBytes();
-    final var output = "output".getBytes();
-    Function<byte[], byte[]> testProcessor = message -> output;
-
-    // Act
-    registry.register(processorName, testProcessor);
-    Function<byte[], byte[]> retrievedProcessor = registry.get(processorName);
+    var pipeline = registry.jsonPipeline("addSource", "addTimestamp", "markProcessed");
+    var input = "{}".getBytes();
+    var result = new String(pipeline.apply(input));
 
     // Assert
-    assertArrayEquals(output, retrievedProcessor.apply(input));
+    assertTrue(result.contains("\"source\":\"test-app\""));
+    assertTrue(result.contains("\"timestamp\":"));
+    assertTrue(result.contains("\"processed\":\"true\""));
   }
 
   @Test
-  void shouldReturnIdentityForMissingProcessor() {
+  void shouldRegisterAndRetrieveJsonOperator() {
     // Arrange
-    final var processor = registry.get("nonExistentProcessor");
-
-    // Act
-    final var input = "test".getBytes();
-
-    // Assert
-    assertArrayEquals(input, processor.apply(input));
-  }
-
-  @Test
-  void shouldComposeProcessorPipeline() {
-    // Arrange
-    registry.register(
-      "doubleKey",
-      message -> {
-        String json = new String(message);
-        return json.replace("key", "keykey").getBytes();
+    final var operatorName = "testOperator";
+    registry.registerJsonOperator(
+      operatorName,
+      obj -> {
+        obj.put("test", "value");
+        return obj;
       }
     );
 
     // Act
-    final var pipeline = registry.pipeline("parseJson", "doubleKey");
-
-    final var result = pipeline.apply(
-      """
-            {
-              "key":"value"
-            }
-            """.getBytes()
-    );
-    final var resultJson = new String(result);
+    var pipeline = registry.jsonPipeline(operatorName);
+    var result = new String(pipeline.apply("{}".getBytes()));
 
     // Assert
-    assertEquals("""
-            {"keykey":"value"}""", resultJson);
+    assertTrue(result.contains("\"test\":\"value\""));
   }
 
   @Test
-  void shouldCreatePipelineFromListOfProcessors() {
+  void shouldComposeJsonOperatorPipeline() {
     // Arrange
-    Function<byte[], byte[]> processor1 = message -> "test1-".getBytes();
-    Function<byte[], byte[]> processor2 = message -> {
-      byte[] suffix = "suffix".getBytes();
-      byte[] result = new byte[message.length + suffix.length];
-      System.arraycopy(message, 0, result, 0, message.length);
-      System.arraycopy(suffix, 0, result, message.length, suffix.length);
-      return result;
-    };
+    registry.registerJsonOperator(
+      "op1",
+      obj -> {
+        obj.put("op1", "val1");
+        return obj;
+      }
+    );
+    registry.registerJsonOperator(
+      "op2",
+      obj -> {
+        obj.put("op2", "val2");
+        return obj;
+      }
+    );
 
     // Act
-    final var pipeline = registry.pipeline(List.of(processor1, processor2));
-
-    final var result = pipeline.apply("input".getBytes());
+    final var pipeline = registry.jsonPipeline("op1", "op2");
+    final var result = new String(pipeline.apply("{}".getBytes()));
 
     // Assert
-    assertEquals("test1-suffix", new String(result));
+    assertTrue(result.contains("\"op1\":\"val1\""));
+    assertTrue(result.contains("\"op2\":\"val2\""));
   }
 
   @Test

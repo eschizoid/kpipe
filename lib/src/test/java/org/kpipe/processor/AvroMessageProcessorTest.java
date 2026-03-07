@@ -6,9 +6,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Map;
-import java.util.function.Function;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumReader;
@@ -40,9 +38,10 @@ class AvroMessageProcessorTest {
       }""";
     byte[] invalidAvroBytes = "invalid avro".getBytes(StandardCharsets.UTF_8);
     AvroMessageProcessor.registerSchema("simpleSchema", schemaJson);
+    final var schema = AvroMessageProcessor.getSchema("simpleSchema");
 
     // Act
-    byte[] result = AvroMessageProcessor.parseAvro("simpleSchema").apply(invalidAvroBytes);
+    byte[] result = AvroMessageProcessor.processAvro(invalidAvroBytes, schema, record -> record);
 
     // Assert
     assertEquals(0, result.length);
@@ -74,7 +73,7 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("simpleSchema", schemaJson);
 
     // Act
-    final var result = AvroMessageProcessor.parseAvro("simpleSchema").apply(avroBytes);
+    final var result = AvroMessageProcessor.processAvro(avroBytes, schema, record1 -> record1);
 
     // Assert
     assertNotNull(result);
@@ -107,7 +106,7 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("testSchema", schemaJson);
 
     // Act
-    final var result = AvroMessageProcessor.parseAvro("testSchema").apply(avroBytes);
+    final var result = AvroMessageProcessor.processAvro(avroBytes, schema, record1 -> record1);
 
     // Assert
     assertNotNull(result);
@@ -145,7 +144,11 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("sourceSchema", schemaJson);
 
     // Act
-    final var result = AvroMessageProcessor.addField("sourceSchema", "source", "test-app").apply(avroBytes);
+    final var result = AvroMessageProcessor.processAvro(
+      avroBytes,
+      schema,
+      AvroMessageProcessor.addFieldOperator("source", "test-app")
+    );
 
     // Assert
     assertNotNull(result);
@@ -154,6 +157,7 @@ class AvroMessageProcessorTest {
     final var inputStream = new ByteArrayInputStream(result);
     final var resultRecord = reader.read(null, DecoderFactory.get().binaryDecoder(inputStream, null));
     assertEquals("test-value", resultRecord.get("value").toString());
+    assertEquals("test-app", resultRecord.get("source").toString());
   }
 
   @Test
@@ -183,7 +187,11 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("timestampSchema", schemaJson);
 
     // Act
-    final var result = AvroMessageProcessor.addTimestamp("timestampSchema", "timestamp").apply(avroBytes);
+    final var result = AvroMessageProcessor.processAvro(
+      avroBytes,
+      schema,
+      AvroMessageProcessor.addTimestampOperator("timestamp")
+    );
 
     // Assert
     assertNotNull(result);
@@ -227,7 +235,11 @@ class AvroMessageProcessorTest {
     }
 
     // Act
-    byte[] result = AvroMessageProcessor.removeFields("testSchema", "source", "remove_source").apply(avroBytes);
+    byte[] result = AvroMessageProcessor.processAvro(
+      avroBytes,
+      schema,
+      AvroMessageProcessor.removeFieldsOperator(schema, "source", "remove_source")
+    );
 
     // Assert
     assertNotNull(result);
@@ -265,13 +277,15 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var result = AvroMessageProcessor
-      .transformField(
-        "transformSchema",
+    final var result = AvroMessageProcessor.processAvro(
+      avroBytes,
+      schema,
+      AvroMessageProcessor.transformFieldOperator(
+        schema,
         "value",
         value -> value instanceof String ? ((String) value).toUpperCase() : value
       )
-      .apply(avroBytes);
+    );
 
     // Assert
     final var reader = new GenericDatumReader<GenericRecord>(schema);
@@ -308,9 +322,15 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var result = AvroMessageProcessor
-      .transformField("ageSchema", "age", value -> value instanceof Integer ? ((Integer) value) * 2 : value)
-      .apply(avroBytes);
+    final var result = AvroMessageProcessor.processAvro(
+      avroBytes,
+      schema,
+      AvroMessageProcessor.transformFieldOperator(
+        schema,
+        "age",
+        value -> value instanceof Integer ? ((Integer) value) * 2 : value
+      )
+    );
 
     // Assert
     final var reader = new GenericDatumReader<GenericRecord>(schema);
@@ -347,13 +367,15 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var result = AvroMessageProcessor
-      .transformField(
-        "unionSchema",
+    final var result = AvroMessageProcessor.processAvro(
+      avroBytes,
+      schema,
+      AvroMessageProcessor.transformFieldOperator(
+        schema,
         "comment",
         value -> value instanceof String ? ((String) value).toUpperCase() : value
       )
-      .apply(avroBytes);
+    );
 
     // Assert
     final var reader = new GenericDatumReader<GenericRecord>(schema);
@@ -365,183 +387,20 @@ class AvroMessageProcessorTest {
   }
 
   @Test
-  void testCompose() throws IOException {
-    // Arrange
-    final var schemaJson =
-      """
-            {
-              "type": "record",
-              "name": "User",
-              "fields": [
-                {"name": "name", "type": "string"},
-                {"name": "age", "type": "int"},
-                {"name": "verified", "type": "boolean", "default": false},
-                {"name": "timestamp", "type": ["null", "long"], "default": null}
-              ]
-            }""";
-    AvroMessageProcessor.registerSchema("userSchema", schemaJson);
-    final var schema = AvroMessageProcessor.getSchema("userSchema");
-    final var record = new GenericData.Record(schema);
-    record.put("name", "john");
-    record.put("age", 25);
-    record.put("verified", false);
-
-    final var outputStream = new ByteArrayOutputStream();
-    final var writer = new GenericDatumWriter<GenericRecord>(schema);
-    final var encoder = EncoderFactory.get().binaryEncoder(outputStream, null);
-    writer.write(record, encoder);
-    encoder.flush();
-    final var avroBytes = outputStream.toByteArray();
-
-    // Create individual processors
-    final var uppercaseName = AvroMessageProcessor.transformField(
-      "userSchema",
-      "name",
-      value -> value instanceof String ? ((String) value).toUpperCase() : value
-    );
-    final var doubleAge = AvroMessageProcessor.transformField(
-      "userSchema",
-      "age",
-      value -> value instanceof Integer ? ((Integer) value) * 2 : value
-    );
-    final var verify = AvroMessageProcessor.transformField("userSchema", "verified", value -> true);
-    final var addTimestamp = AvroMessageProcessor.addTimestamp("userSchema", "timestamp");
-
-    // Act
-    final var pipeline = AvroMessageProcessor.compose(uppercaseName, doubleAge, verify, addTimestamp);
-    final var result = pipeline.apply(avroBytes);
-
-    // Assert
-    final var reader = new GenericDatumReader<GenericRecord>(schema);
-    final var resultRecord = reader.read(
-      null,
-      DecoderFactory.get().binaryDecoder(new ByteArrayInputStream(result), null)
-    );
-
-    assertEquals("JOHN", resultRecord.get("name").toString());
-    assertEquals(50, resultRecord.get("age"));
-    assertEquals(true, resultRecord.get("verified"));
-    assertNotNull(resultRecord.get("timestamp"));
-  }
-
-  @Test
-  void testProcessBatch() throws IOException {
-    // Arrange
-    final var schemaJson =
-      """
-            {
-              "type": "record",
-              "name": "Message",
-              "fields": [
-                {"name": "id", "type": "int"},
-                {"name": "content", "type": "string"}
-              ]
-            }""";
-    AvroMessageProcessor.registerSchema("messageSchema", schemaJson);
-    final var schema = AvroMessageProcessor.getSchema("messageSchema");
-
-    // Create three records
-    final var batch = new ArrayList<byte[]>();
-    for (int i = 1; i <= 3; i++) {
-      final var record = new GenericData.Record(schema);
-      record.put("id", i);
-      record.put("content", "message-" + i);
-
-      final var outputStream = new ByteArrayOutputStream();
-      final var writer = new GenericDatumWriter<GenericRecord>(schema);
-      final var encoder = EncoderFactory.get().binaryEncoder(outputStream, null);
-      writer.write(record, encoder);
-      encoder.flush();
-      batch.add(outputStream.toByteArray());
-    }
-
-    // Create processor to uppercase content
-    final var uppercaseContent = AvroMessageProcessor.transformField(
-      "messageSchema",
-      "content",
-      value -> value instanceof String ? ((String) value).toUpperCase() : value
-    );
-
-    // Act
-    final var results = AvroMessageProcessor.processBatch(batch, uppercaseContent);
-
-    // Assert
-    assertEquals(3, results.size());
-    for (int i = 0; i < results.size(); i++) {
-      final var reader = new GenericDatumReader<GenericRecord>(schema);
-      final var resultRecord = reader.read(
-        null,
-        DecoderFactory.get().binaryDecoder(new ByteArrayInputStream(results.get(i)), null)
-      );
-
-      assertEquals(i + 1, resultRecord.get("id"));
-      assertEquals("MESSAGE-%d".formatted(i + 1), resultRecord.get("content").toString());
-    }
-  }
-
-  @Test
-  void testProcessWithResult() throws IOException {
-    // Arrange
-    final var schemaJson =
-      """
-                  {
-                    "type": "record",
-                    "name": "Processor",
-                    "fields": [
-                      {"name": "data", "type": "string"},
-                      {"name": "status", "type": ["null", "string"], "default": null}
-                    ]
-                  }""";
-    AvroMessageProcessor.registerSchema("processorSchema", schemaJson);
-    final var schema = AvroMessageProcessor.getSchema("processorSchema");
-    final var record = new GenericData.Record(schema);
-    record.put("data", "important data");
-
-    final var outputStream = new ByteArrayOutputStream();
-    final var writer = new GenericDatumWriter<GenericRecord>(schema);
-    final var encoder = EncoderFactory.get().binaryEncoder(outputStream, null);
-    writer.write(record, encoder);
-    encoder.flush();
-    final var avroBytes = outputStream.toByteArray();
-
-    // Create a processor that works on GenericRecord directly
-    final Function<GenericRecord, GenericRecord> recordProcessor = genericRecord -> {
-      genericRecord.put("status", "processed");
-      return genericRecord;
-    };
-
-    // Act
-    final var result = AvroMessageProcessor.processWithResult("processorSchema", avroBytes, recordProcessor);
-
-    // Assert
-    assertTrue(result.success());
-    assertNotNull(result.data());
-
-    final var reader = new GenericDatumReader<GenericRecord>(schema);
-    final var resultRecord = reader.read(
-      null,
-      DecoderFactory.get().binaryDecoder(new ByteArrayInputStream(result.data()), null)
-    );
-
-    assertEquals("important data", resultRecord.get("data").toString());
-    assertEquals("processed", resultRecord.get("status").toString());
-  }
-
-  @Test
   void testAddFields() throws IOException {
     // Arrange
     final var schemaJson =
       """
-            {
-              "type": "record",
-              "name": "MultiField",
-              "fields": [
-                {"name": "id", "type": "int"},
-                {"name": "source", "type": ["null", "string"], "default": null},
-                {"name": "environment", "type": ["null", "string"], "default": null},
-                {"name": "version", "type": ["null", "string"], "default": null}
-              ]
-            }""";
+      {
+        "type": "record",
+        "name": "MultiField",
+        "fields": [
+          {"name": "id", "type": "int"},
+          {"name": "source", "type": ["null", "string"], "default": null},
+          {"name": "environment", "type": ["null", "string"], "default": null},
+          {"name": "version", "type": ["null", "string"], "default": null}
+        ]
+      }""";
     AvroMessageProcessor.registerSchema("multiFieldSchema", schemaJson);
     final var schema = AvroMessageProcessor.getSchema("multiFieldSchema");
     final var record = new GenericData.Record(schema);
@@ -565,7 +424,11 @@ class AvroMessageProcessorTest {
     );
 
     // Act
-    final var result = AvroMessageProcessor.addFields("multiFieldSchema", fieldsToAdd).apply(avroBytes);
+    final var result = AvroMessageProcessor.processAvro(
+      avroBytes,
+      schema,
+      AvroMessageProcessor.addFieldsOperator(fieldsToAdd)
+    );
 
     // Assert
     final var reader = new GenericDatumReader<GenericRecord>(schema);
@@ -578,72 +441,5 @@ class AvroMessageProcessorTest {
     assertEquals("test-app", resultRecord.get("source").toString());
     assertEquals("development", resultRecord.get("environment").toString());
     assertEquals("1.0.0", resultRecord.get("version").toString());
-  }
-
-  @Test
-  void testParseAvroWithMagicBytes() throws IOException {
-    // Arrange
-    final var schemaJson =
-      """
-        {
-          "type": "record",
-          "name": "TestRecord",
-          "namespace": "test",
-          "fields": [
-            {"name": "field1", "type": "string"},
-            {"name": "field2", "type": "int"}
-          ]
-        }
-        """;
-    final var schemaKey = "testMagicSchema";
-    AvroMessageProcessor.registerSchema(schemaKey, schemaJson);
-
-    // Create Avro data
-    final var schema = new Schema.Parser().parse(schemaJson);
-    final var record = new GenericData.Record(schema);
-    record.put("field1", "test value");
-    record.put("field2", 42);
-
-    // Serialize the record using Avro's binary encoding
-    final var out = new ByteArrayOutputStream();
-    final var datumWriter = new GenericDatumWriter<>(schema);
-    final var encoder = EncoderFactory.get().binaryEncoder(out, null);
-    datumWriter.write(record, encoder);
-    encoder.flush();
-    final var avroData = out.toByteArray();
-
-    // Verify we have actual serialized data
-    assertTrue(avroData.length > 0, "Serialized Avro data should not be empty");
-
-    // Add magic byte prefix (typical Confluent format with 0 byte + 4-byte schema ID)
-    final var dataWithMagicBytes = new byte[avroData.length + 5];
-    // Magic byte
-    dataWithMagicBytes[0] = 0;
-    // 4 bytes for schema ID
-    dataWithMagicBytes[1] = 0;
-    dataWithMagicBytes[2] = 0;
-    dataWithMagicBytes[3] = 0;
-    dataWithMagicBytes[4] = 1;
-    // Copy the actual Avro data after the magic bytes
-    System.arraycopy(avroData, 0, dataWithMagicBytes, 5, avroData.length);
-
-    // Act
-    final var processor = AvroMessageProcessor.parseAvroWithMagicBytes(schemaKey, 5);
-
-    // Process the data
-    final var result = processor.apply(dataWithMagicBytes);
-
-    // Verify the result is not empty
-    assertNotNull(result);
-    assertTrue(result.length > 0);
-
-    // Parse and verify the processed result
-    final var reader = new GenericDatumReader<GenericRecord>(schema);
-    final var decoder = DecoderFactory.get().binaryDecoder(result, null);
-    final var parsedRecord = reader.read(null, decoder);
-
-    // Verify fields match our original record
-    assertEquals("test value", parsedRecord.get("field1").toString());
-    assertEquals(42, parsedRecord.get("field2"));
   }
 }

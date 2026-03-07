@@ -9,50 +9,46 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.kpipe.registry.MessageProcessorRegistry;
 
-/**
- * Reports metrics for message processors, allowing flexible composition of:
- *
- * <ul>
- *   <li>How processor names are retrieved (via a {@link Supplier})
- *   <li>How metrics are fetched for each processor (via a {@link Function})
- *   <li>How metrics are reported (via a {@link Consumer})
- * </ul>
- *
- * <p><strong>Example 1:</strong> Basic usage with default logging:
- *
- * <pre>{@code
- * // Creates reporter with default logging behavior
- * ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(registry);
- * reporter.reportMetrics();
- * }</pre>
- *
- * <p><strong>Example 2:</strong> Custom metrics reporting:
- *
- * <pre>{@code
- * // Report metrics to a monitoring system
- * Consumer<String> prometheusReporter = metric ->
- *     PrometheusClient.pushMetric("processor_stats", metric);
- *
- * ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(
- *     registry, prometheusReporter);
- * reporter.reportMetrics();
- * }</pre>
- *
- * <p><strong>Example 3:</strong> Customizing all components:
- *
- * <pre>{@code
- * // Custom suppliers and reporting
- * ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(
- *     () -> Set.of("processor1", "processor2"),
- *     name -> metricsService.fetchMetricsFor(name),
- *     metric -> slackNotifier.send("METRICS", metric));
- * reporter.reportMetrics();
- * }</pre>
- *
- * @param processorNamesSupplier supplier of processor names
- * @param metricsFetcher function to fetch metrics for a processor name
- * @param reporter consumer for reporting metrics (defaults to logger if null)
- */
+/// Reports metrics for message processors, allowing flexible composition of:
+///
+/// * How processor names are retrieved (via a {@link Supplier})
+/// * How metrics are fetched for each processor (via a {@link Function})
+/// * How metrics are reported (via a {@link Consumer})
+///
+/// **Example 1:** Basic usage with default logging:
+///
+/// ```java
+/// // Creates reporter with default logging behavior
+/// ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(registry);
+/// reporter.reportMetrics();
+/// ```
+///
+/// **Example 2:** Custom metrics reporting:
+///
+/// ```java
+/// // Report metrics to a monitoring system
+/// Consumer<String> prometheusReporter = metric ->
+///     PrometheusClient.pushMetric("processor_stats", metric);
+///
+/// ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(
+///     registry, prometheusReporter);
+/// reporter.reportMetrics();
+/// ```
+///
+/// **Example 3:** Customizing all components:
+///
+/// ```java
+/// // Custom suppliers and reporting
+/// ProcessorMetricsReporter reporter = new ProcessorMetricsReporter(
+///     () -> Set.of("processor1", "processor2"),
+///     name -> metricsService.fetchMetricsFor(name),
+///     metric -> slackNotifier.send("METRICS", metric));
+/// reporter.reportMetrics();
+/// ```
+///
+/// @param processorNamesSupplier supplier of processor names
+/// @param metricsFetcher function to fetch metrics for a processor name
+/// @param reporter consumer for reporting metrics (defaults to logger if null)
 public record ProcessorMetricsReporter(
   Supplier<Set<String>> processorNamesSupplier,
   Function<String, Map<String, Object>> metricsFetcher,

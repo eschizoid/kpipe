@@ -29,7 +29,7 @@ public record AvroConsoleSink<K, V>(Schema schema) implements MessageSink<K, V> 
   private static final Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());
   private static final Level LOG_LEVEL = Level.INFO;
 
-  /** Creates an {@code AvroConsoleSink} using the default schema version "1". */
+  /// Creates an `AvroConsoleSink` using the default schema version "1".
   public AvroConsoleSink() {
     this(AvroMessageProcessor.getSchema("1"));
   }

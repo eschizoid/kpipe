@@ -21,59 +21,53 @@ import org.kpipe.consumer.enums.ConsumerState;
 import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
 
-/**
- * A functional-style Kafka consumer that processes records using a provided function.
- *
- * <p>This consumer provides:
- *
- * <ul>
- *   <li>A simple functional interface for message processing
- *   <li>Built-in retry logic with configurable backoff
- *   <li>Support for sequential or parallel message processing
- *   <li>Thread-safe offset management for concurrent processing scenarios
- *   <li>Customizable error handling
- *   <li>Message sink support for processed records
- *   <li>Built-in metrics tracking
- *   <li>Graceful shutdown handling
- * </ul>
- *
- * <p>The offset management features:
- *
- * <ul>
- *   <li>Thread-safe tracking of offsets for concurrent processing
- *   <li>Ensures only contiguous completed offsets are committed
- *   <li>Commits offsets periodically at a configurable interval
- *   <li>Properly handles consumer rebalancing events
- *   <li>Prevents data loss during parallel processing
- *   <li>Handles non-sequential offset completion safely
- * </ul>
- *
- * <p>When using an OffsetManager, auto-commit is automatically disabled since offset commits are
- * managed explicitly.
- *
- * <p>Example usage:
- *
- * <pre>{@code
- * var consumer = FunctionalConsumer.<String, String>builder()
- *     .withProperties(kafkaProps)
- *     .withTopic("example-topic")
- *     .withProcessor(value -> processValue(value))
- *     .withRetry(3, Duration.ofSeconds(1))
- *     .withSequentialProcessing(false) // Set to true for ordered processing
- *     .withOffsetManagerProvider(consumer -> OffsetManager.builder(consumer)
- *         .withCommitInterval(Duration.ofSeconds(30))
- *         .withCommandQueue(commandQueue)
- *         .build())
- *     .build();
- *
- * consumer.start();
- * // Later when finished
- * consumer.close();
- * }</pre>
- *
- * @param <K> the type of keys in the consumed records
- * @param <V> the type of values in the consumed records
- */
+/// A functional-style Kafka consumer that processes records using a provided function.
+///
+/// This consumer provides:
+///
+/// * A simple functional interface for message processing
+/// * Built-in retry logic with configurable backoff
+/// * Support for sequential or parallel message processing
+/// * Thread-safe offset management for concurrent processing scenarios
+/// * Customizable error handling
+/// * Message sink support for processed records
+/// * Built-in metrics tracking
+/// * Graceful shutdown handling
+///
+/// The offset management features:
+///
+/// * Thread-safe tracking of offsets for concurrent processing
+/// * Ensures only contiguous completed offsets are committed
+/// * Commits offsets periodically at a configurable interval
+/// * Properly handles consumer rebalancing events
+/// * Prevents data loss during parallel processing
+/// * Handles non-sequential offset completion safely
+///
+/// When using an OffsetManager, auto-commit is automatically disabled since offset commits are
+/// managed explicitly.
+///
+/// Example usage:
+///
+/// ```java
+/// var consumer = FunctionalConsumer.<String, String>builder()
+///     .withProperties(kafkaProps)
+///     .withTopic("example-topic")
+///     .withProcessor(value -> processValue(value))
+///     .withRetry(3, Duration.ofSeconds(1))
+///     .withSequentialProcessing(false) // Set to true for ordered processing
+///     .withOffsetManagerProvider(consumer -> OffsetManager.builder(consumer)
+///         .withCommitInterval(Duration.ofSeconds(30))
+///         .withCommandQueue(commandQueue)
+///         .build())
+///     .build();
+///
+/// consumer.start();
+/// // Later when finished
+/// consumer.close();
+/// ```
+///
+/// @param <K> the type of keys in the consumed records
+/// @param <V> the type of values in the consumed records
 public class FunctionalConsumer<K, V> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(FunctionalConsumer.class.getName());
@@ -105,35 +99,29 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   private final boolean sequentialProcessing;
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
 
-  /**
-   * Represents an error that occurred during record processing. Contains the original record, the
-   * exception that was thrown, and the number of retry attempts made.
-   *
-   * @param <K> the type of the record key
-   * @param <V> the type of the record value
-   * @param record the Kafka record that failed processing
-   * @param exception the exception that occurred during processing
-   * @param retryCount the number of retry attempts made
-   */
+  /// Represents an error that occurred during record processing. Contains the original record,
+  /// the exception that was thrown, and the number of retry attempts made.
+  ///
+  /// @param <K> the type of the record key
+  /// @param <V> the type of the record value
+  /// @param record the Kafka record that failed processing
+  /// @param exception the exception that occurred during processing
+  /// @param retryCount the number of retry attempts made
   public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
 
-  /**
-   * Creates a new builder for constructing {@link FunctionalConsumer} instances.
-   *
-   * @param <K> the type of keys in the consumed records
-   * @param <V> the type of values in the consumed records
-   * @return a new builder instance
-   */
+  /// Creates a new builder for constructing {@link FunctionalConsumer} instances.
+  ///
+  /// @param <K> the type of keys in the consumed records
+  /// @param <V> the type of values in the consumed records
+  /// @return a new builder instance
   public static <K, V> Builder<K, V> builder() {
     return new Builder<>();
   }
 
-  /**
-   * Builder for creating and configuring {@link FunctionalConsumer} instances.
-   *
-   * @param <K> the type of keys in the consumed records
-   * @param <V> the type of values in the consumed records
-   */
+  /// Builder for creating and configuring {@link FunctionalConsumer} instances.
+  ///
+  /// @param <K> the type of keys in the consumed records
+  /// @param <V> the type of values in the consumed records
   public static class Builder<K, V> {
 
     private Builder() {}
@@ -169,137 +157,113 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     private Queue<ConsumerCommand> commandQueue;
     private ConsumerRebalanceListener rebalanceListener;
 
-    /**
-     * Sets the properties for the Kafka consumer.
-     *
-     * @param props The Kafka consumer properties
-     * @return This builder instance for method chaining
-     */
+    /// Sets the properties for the Kafka consumer.
+    ///
+    /// @param props The Kafka consumer properties
+    /// @return This builder instance for method chaining
     public Builder<K, V> withProperties(final Properties props) {
       this.kafkaProps = props;
       return this;
     }
 
-    /**
-     * Sets the Kafka topic to consume from.
-     *
-     * @param topic The topic name
-     * @return This builder instance for method chaining
-     */
+    /// Sets the Kafka topic to consume from.
+    ///
+    /// @param topic The topic name
+    /// @return This builder instance for method chaining
     public Builder<K, V> withTopic(final String topic) {
       this.topic = topic;
       return this;
     }
 
-    /**
-     * Sets the function to process each consumed message value.
-     *
-     * @param processor The function that transforms message values
-     * @return This builder instance for method chaining
-     */
+    /// Sets the function to process each consumed message value.
+    ///
+    /// @param processor The function that transforms message values
+    /// @return This builder instance for method chaining
     public Builder<K, V> withProcessor(final Function<V, V> processor) {
       this.processor = processor;
       return this;
     }
 
-    /**
-     * Sets the timeout duration for the consumer's poll operation.
-     *
-     * @param timeout The maximum time to wait for messages in each poll
-     * @return This builder instance for method chaining
-     */
+    /// Sets the timeout duration for the consumer's poll operation.
+    ///
+    /// @param timeout The maximum time to wait for messages in each poll
+    /// @return This builder instance for method chaining
     public Builder<K, V> withPollTimeout(final Duration timeout) {
       this.pollTimeout = timeout;
       return this;
     }
 
-    /**
-     * Sets the handler for processing errors.
-     *
-     * @param handler The consumer function that handles processing errors
-     * @return This builder instance for method chaining
-     */
+    /// Sets the handler for processing errors.
+    ///
+    /// @param handler The consumer function that handles processing errors
+    /// @return This builder instance for method chaining
     public Builder<K, V> withErrorHandler(final java.util.function.Consumer<ProcessingError<K, V>> handler) {
       this.errorHandler = handler;
       return this;
     }
 
-    /**
-     * Configures retry behavior for failed message processing.
-     *
-     * @param maxRetries Maximum number of retry attempts
-     * @param backoff Duration to wait between retry attempts
-     * @return This builder instance for method chaining
-     */
+    /// Configures retry behavior for failed message processing.
+    ///
+    /// @param maxRetries Maximum number of retry attempts
+    /// @param backoff Duration to wait between retry attempts
+    /// @return This builder instance for method chaining
     public Builder<K, V> withRetry(final int maxRetries, final Duration backoff) {
       this.maxRetries = maxRetries;
       this.retryBackoff = backoff;
       return this;
     }
 
-    /**
-     * Enables or disables metrics collection.
-     *
-     * @param enable Whether to enable a metrics collection
-     * @return This builder instance for method chaining
-     */
+    /// Enables or disables metrics collection.
+    ///
+    /// @param enable Whether to enable a metrics collection
+    /// @return This builder instance for method chaining
     public Builder<K, V> withMetrics(final boolean enable) {
       this.enableMetrics = enable;
       return this;
     }
 
-    /**
-     * Configures whether messages should be processed sequentially.
-     *
-     * @param sequential If true, messages will be processed in order; if false, parallel processing
-     *     is used
-     * @return This builder instance for method chaining
-     */
+    /// Configures whether messages should be processed sequentially.
+    ///
+    /// @param sequential If true, messages will be processed in order; if false, parallel
+    ///     processing is used
+    /// @return This builder instance for method chaining
     public Builder<K, V> withSequentialProcessing(final boolean sequential) {
       this.sequentialProcessing = sequential;
       return this;
     }
 
-    /**
-     * Sets the message sink that receives processed messages.
-     *
-     * @param messageSink The sink that handles successfully processed messages
-     * @return This builder instance for method chaining
-     */
+    /// Sets the message sink that receives processed messages.
+    ///
+    /// @param messageSink The sink that handles successfully processed messages
+    /// @return This builder instance for method chaining
     public Builder<K, V> withMessageSink(final MessageSink<K, V> messageSink) {
       this.messageSink = messageSink;
       return this;
     }
 
-    /**
-     * Sets the timeout for waiting for in-flight messages during shutdown.
-     *
-     * @param timeout Maximum time to wait for in-flight messages to complete
-     * @return This builder instance for method chaining
-     */
+    /// Sets the timeout for waiting for in-flight messages during shutdown.
+    ///
+    /// @param timeout Maximum time to wait for in-flight messages to complete
+    /// @return This builder instance for method chaining
     public Builder<K, V> withWaitForMessagesTimeout(final Duration timeout) {
       this.waitForMessagesTimeout = Objects.requireNonNull(timeout);
       return this;
     }
 
-    /**
-     * Sets the timeout for waiting for the consumer thread to terminate during shutdown.
-     *
-     * @param timeout Maximum time to wait for the consumer thread to finish
-     * @return This builder instance for method chaining
-     */
+    /// Sets the timeout for waiting for the consumer thread to terminate during shutdown.
+    ///
+    /// @param timeout Maximum time to wait for the consumer thread to finish
+    /// @return This builder instance for method chaining
     public Builder<K, V> withThreadTerminationTimeout(final Duration timeout) {
       this.threadTerminationTimeout = Objects.requireNonNull(timeout);
       return this;
     }
 
-    /**
-     * Sets a function to create a custom OffsetManager once the consumer is available. This
-     * automatically disables auto-commit.
-     *
-     * @param provider A function that creates an OffsetManager given the consumer instance
-     * @return This builder instance for method chaining
-     */
+    /// Sets a function to create a custom OffsetManager once the consumer is available. This
+    /// automatically disables auto-commit.
+    ///
+    /// @param provider A function that creates an OffsetManager given the consumer instance
+    /// @return This builder instance for method chaining
     public Builder<K, V> withOffsetManagerProvider(final Function<Consumer<K, V>, OffsetManager<K, V>> provider) {
       this.offsetManagerProvider =
         consumer -> {
@@ -310,49 +274,41 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /**
-     * Enables offset management with a custom offset manager implementation. This automatically
-     * disables auto-commit.
-     *
-     * @param manager The custom offset manager to use
-     * @return This builder instance for method chaining
-     */
+    /// Enables offset management with a custom offset manager implementation. This
+    /// automatically disables auto-commit.
+    ///
+    /// @param manager The custom offset manager to use
+    /// @return This builder instance for method chaining
     public Builder<K, V> withOffsetManager(final OffsetManager<K, V> manager) {
       this.offsetManager = Objects.requireNonNull(manager, "OffsetManager cannot be null");
       this.rebalanceListener = manager.createRebalanceListener();
       return this;
     }
 
-    /**
-     * Sets a custom command queue for the consumer.
-     *
-     * @param commandQueue the queue to use for consumer commands
-     * @return this Builder instance for method chaining
-     */
+    /// Sets a custom command queue for the consumer.
+    ///
+    /// @param commandQueue the queue to use for consumer commands
+    /// @return this Builder instance for method chaining
     public Builder<K, V> withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
       this.commandQueue = Objects.requireNonNull(commandQueue, "Command queue cannot be null");
       return this;
     }
 
-    /**
-     * Sets the supplier for providing a consumer instance.
-     *
-     * @param provider A supplier that returns a Consumer instance configured for processing
-     *     messages
-     * @return This builder instance for method chaining
-     */
+    /// Sets the supplier for providing a consumer instance.
+    ///
+    /// @param provider A supplier that returns a Consumer instance configured for processing
+    ///     messages
+    /// @return This builder instance for method chaining
     public Builder<K, V> withConsumer(final Supplier<Consumer<K, V>> provider) {
       this.consumerProvider = provider;
       return this;
     }
 
-    /**
-     * Builds a new FunctionalConsumer with the configured settings.
-     *
-     * @return a new FunctionalConsumer instance
-     * @throws IllegalArgumentException if any required parameters are invalid
-     * @throws NullPointerException if any required parameters are null
-     */
+    /// Builds a new FunctionalConsumer with the configured settings.
+    ///
+    /// @return a new FunctionalConsumer instance
+    /// @throws IllegalArgumentException if any required parameters are invalid
+    /// @throws NullPointerException if any required parameters are null
     public FunctionalConsumer<K, V> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
       Objects.requireNonNull(topic, "Topic must be provided");
@@ -374,11 +330,9 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Creates a new FunctionalConsumer using the provided builder.
-   *
-   * @param builder the builder containing the consumer configuration
-   */
+  /// Creates a new FunctionalConsumer using the provided builder.
+  ///
+  /// @param builder the builder containing the consumer configuration
   public FunctionalConsumer(final Builder<K, V> builder) {
     this.kafkaConsumer =
       builder.consumerProvider != null
@@ -416,12 +370,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Creates a message tracker that can monitor the state of in-flight messages. The tracker uses
-   * the consumer's metrics to determine how many messages have been received versus processed.
-   *
-   * @return a new {@link MessageTracker} instance, or null if metrics are disabled
-   */
+  /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
+  /// uses the consumer's metrics to determine how many messages have been received versus
+  /// processed.
+  ///
+  /// @return a new {@link MessageTracker} instance, or null if metrics are disabled
   public MessageTracker createMessageTracker() {
     if (!enableMetrics) {
       LOGGER.log(Level.INFO, "Cannot create MessageTracker: metrics are disabled");
@@ -437,12 +390,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       .build();
   }
 
-  /**
-   * Starts the consumer thread and begins consuming messages from the configured topic. The
-   * consumer will poll for records and process them asynchronously in virtual threads.
-   *
-   * @throws IllegalStateException if the consumer has already been started or was previously closed
-   */
+  /// Starts the consumer thread and begins consuming messages from the configured topic. The
+  /// consumer will poll for records and process them asynchronously in virtual threads.
+  ///
+  /// @throws IllegalStateException if the consumer has already been started or was previously
+  ///     closed
   public void start() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot restart a closed consumer");
 
@@ -528,22 +480,18 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Processes pending commands from the command queue.
-   *
-   * <p>This method polls commands from the internal command queue and executes the corresponding
-   * actions:
-   *
-   * <ul>
-   *   <li>{@code PAUSE} - Pauses consumption by calling {@code consumer.pause()}
-   *   <li>{@code RESUME} - Resumes consumption by calling {@code consumer.resume()}
-   *   <li>{@code CLOSE} - Initiates shutdown by setting the running flag to false
-   * </ul>
-   *
-   * <p>Commands are processed in the order they were submitted to the queue. If an exception occurs
-   * while processing a command, it will be caught and logged, allowing subsequent commands to be
-   * processed.
-   */
+  /// Processes pending commands from the command queue.
+  ///
+  /// This method polls commands from the internal command queue and executes the corresponding
+  /// actions:
+  ///
+  /// * `PAUSE` - Pauses consumption by calling `consumer.pause()`
+  /// * `RESUME` - Resumes consumption by calling `consumer.resume()`
+  /// * `CLOSE` - Initiates shutdown by setting the running flag to false
+  ///
+  /// Commands are processed in the order they were submitted to the queue. If an exception occurs
+  /// while processing a command, it will be caught and logged, allowing subsequent commands to be
+  /// processed.
   public void processCommands() {
     ConsumerCommand command;
     while ((command = commandQueue.poll()) != null) {
@@ -624,40 +572,32 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     if (currentState != ConsumerState.CLOSING) state.set(ConsumerState.RUNNING);
   }
 
-  /**
-   * Returns whether the consumer is currently paused.
-   *
-   * @return {@code true} if the consumer is paused, {@code false} otherwise
-   */
+  /// Returns whether the consumer is currently paused.
+  ///
+  /// @return `true` if the consumer is paused, `false` otherwise
   public boolean isPaused() {
     return state.get() == ConsumerState.PAUSED;
   }
 
-  /**
-   * Returns a snapshot of the current metrics collected by this consumer.
-   *
-   * <p>Available metrics include:
-   *
-   * <ul>
-   *   <li>{@code messagesReceived} - count of records received from Kafka
-   *   <li>{@code messagesProcessed} - count of records successfully processed
-   *   <li>{@code processingErrors} - count of records that failed processing after all retries
-   *   <li>{@code retries} - count of retry attempts made for failed records
-   * </ul>
-   *
-   * @return a map of metric names to their current values, or an empty map if metrics are disabled
-   */
+  /// Returns a snapshot of the current metrics collected by this consumer.
+  ///
+  /// Available metrics include:
+  ///
+  /// * `messagesReceived` - count of records received from Kafka
+  /// * `messagesProcessed` - count of records successfully processed
+  /// * `processingErrors` - count of records that failed processing after all retries
+  /// * `retries` - count of retry attempts made for failed records
+  ///
+  /// @return a map of metric names to their current values, or an empty map if metrics are disabled
   public Map<String, Long> getMetrics() {
     if (!enableMetrics) return Map.of();
     return metrics.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
   }
 
-  /**
-   * Returns whether the consumer is running.
-   *
-   * @return {@code true} if the consumer is running, {@code false} if it has been closed or not
-   *     started
-   */
+  /// Returns whether the consumer is running.
+  ///
+  /// @return `true` if the consumer is running, `false` if it has been closed or not
+  ///     started
   public boolean isRunning() {
     return (state.get() == ConsumerState.RUNNING || state.get() == ConsumerState.PAUSED);
   }
