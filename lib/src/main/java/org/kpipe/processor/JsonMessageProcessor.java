@@ -17,8 +17,8 @@ import java.util.function.UnaryOperator;
 /// Example usage:
 ///
 /// ```java
-/// // Create a pipeline using these processors
-/// Function<byte[], byte[]> pipeline = MessageProcessorRegistry.jsonPipeline(
+/// // Create an optimized pipeline using these processors
+/// final var pipeline = registry.jsonPipeline(
 ///     "addTimestamp",
 ///     "sanitizeData"
 /// );

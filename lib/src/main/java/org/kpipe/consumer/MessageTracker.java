@@ -35,7 +35,7 @@ import java.util.function.Supplier;
 ///
 /// // During shutdown
 /// consumer.pause();  // Stop consuming new messages
-/// boolean allProcessed = tracker.waitForCompletion(5000)
+/// final var allProcessed = tracker.waitForCompletion(5000)
 ///     .orElse(false);
 ///
 /// if (allProcessed) {

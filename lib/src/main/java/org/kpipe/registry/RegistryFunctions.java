@@ -27,16 +27,9 @@ import java.util.function.*;
 ///
 /// ```java
 /// // Create an error-tolerant function that returns a default value on exception
-/// Function<byte[], byte[]> safeFunction = RegistryFunctions.withFunctionErrorHandling(
+/// var safeFunction = MessageProcessorRegistry.withErrorHandling(
 ///     riskyOperation,
-///     defaultValue,
-///     LOGGER
-/// );
-///
-/// // Create an error-tolerant consumer that swallows exceptions
-/// BiConsumer<Record, Value> safeConsumer = RegistryFunctions.withConsumerErrorHandling(
-///     riskyConsumer,
-///     LOGGER
+///     defaultValue
 /// );
 /// ```
 ///

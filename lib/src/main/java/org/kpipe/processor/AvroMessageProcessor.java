@@ -37,8 +37,8 @@ import org.apache.avro.util.Utf8;
 ///   """;
 /// AvroMessageProcessor.registerSchema("userSchema", userSchemaJson);
 ///
-/// // Create a pipeline using these processors
-/// Function<byte[], byte[]> pipeline = MessageProcessorRegistry.avroPipeline(
+/// // Create an optimized pipeline using these processors
+/// final var pipeline = registry.avroPipeline(
 ///     "userSchema",
 ///     "addTimestamp_userSchema"
 /// );
@@ -97,6 +97,15 @@ public class AvroMessageProcessor {
     return SCHEMA_REGISTRY.get(name);
   }
 
+  /// Creates an operator that adds a field with specified key and value to an Avro record.
+  ///
+  /// ```java
+  /// final var operator = AvroMessageProcessor.addFieldOperator("source", "my-app");
+  /// ```
+  ///
+  /// @param key The field name to add
+  /// @param value The value to associate with the field
+  /// @return UnaryOperator that adds a field to an Avro record
   public static UnaryOperator<GenericRecord> addFieldOperator(final String key, final Object value) {
     return record -> {
       record.put(key, value);

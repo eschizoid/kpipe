@@ -2,7 +2,6 @@ package org.kpipe.registry;
 
 import java.lang.System.Logger;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -317,36 +316,6 @@ public class MessageProcessorRegistry {
     return entry != null ? entry::execute : Function.identity();
   }
 
-  /// Creates a processor pipeline by chaining multiple named processors in sequence.
-  ///
-  /// @param processorNames Names of processors to chain in sequence
-  /// @return A function representing the processing pipeline
-  public Function<byte[], byte[]> pipeline(final String... processorNames) {
-    return message -> {
-      var result = message;
-      for (final var name : processorNames) {
-        result = get(name).apply(result);
-      }
-      return result;
-    };
-  }
-
-  /// Creates a pipeline from a list of processor functions.
-  ///
-  /// @param processors List of processor functions to chain
-  /// @return A function representing the processing pipeline
-  /// @throws NullPointerException if processors list is null
-  public Function<byte[], byte[]> pipeline(final List<Function<byte[], byte[]>> processors) {
-    Objects.requireNonNull(processors, "Processor list cannot be null");
-    return message -> {
-      byte[] result = message;
-      for (final var processor : processors) {
-        result = processor.apply(result);
-      }
-      return result;
-    };
-  }
-
   /// Adds error handling to a processor.
   ///
   /// When the processor throws an exception, this wrapper catches it, logs the error, and returns
@@ -372,7 +341,7 @@ public class MessageProcessorRegistry {
   /// // Wrap with error handling
   /// final var defaultValue = "{\"error\":true}".getBytes();
   /// final var safeProcessor = MessageProcessorRegistry.withErrorHandling(riskyProcessor,
-  // defaultValue);
+  ///     defaultValue);
   ///
   /// // Now it won't throw exceptions
   /// final var result = safeProcessor.apply(inputBytes);

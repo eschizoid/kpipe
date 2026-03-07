@@ -49,7 +49,7 @@ import org.kpipe.sink.MessageSink;
 /// Example usage:
 ///
 /// ```java
-/// var consumer = FunctionalConsumer.<String, String>builder()
+/// final var consumer = FunctionalConsumer.<String, String>builder()
 ///     .withProperties(kafkaProps)
 ///     .withTopic("example-topic")
 ///     .withProcessor(value -> processValue(value))

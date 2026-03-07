@@ -95,19 +95,15 @@ public record ConsumerMetricsReporter(
     this.reporter = reporter != null ? reporter : this::logMetrics;
   }
 
-  /**
-   * Reports consumer metrics.
-   *
-   * <p>The reporting process:
-   *
-   * <ol>
-   *   <li>Retrieves current metrics from the metrics supplier
-   *   <li>Formats key metrics (messages received/processed/errors) and uptime
-   *   <li>Passes the formatted report to the configured reporter
-   * </ol>
-   *
-   * <p>If metrics retrieval fails, the error is logged without interrupting application flow.
-   */
+  /// Reports consumer metrics.
+  ///
+  /// The reporting process:
+  ///
+  /// 1. Retrieves current metrics from the metrics supplier
+  /// 2. Formats key metrics (messages received/processed/errors) and uptime
+  /// 3. Passes the formatted report to the configured reporter
+  ///
+  /// If metrics retrieval fails, the error is logged without interrupting application flow.
   @Override
   public void reportMetrics() {
     try {

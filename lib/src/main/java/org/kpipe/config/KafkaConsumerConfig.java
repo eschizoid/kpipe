@@ -9,12 +9,12 @@ import java.util.function.UnaryOperator;
 ///
 /// ```java
 /// // Basic consumer configuration
-/// Properties consumerProps = KafkaConsumerConfig.createConsumerConfig(
+/// final var consumerProps = KafkaConsumerConfig.createConsumerConfig(
 ///     "localhost:9092",
 ///     "my-consumer-group");
 ///
 /// // Consumer with customization
-/// Properties customConsumerProps = KafkaConsumerConfig.createConsumerConfig(
+/// final var customConsumerProps = KafkaConsumerConfig.createConsumerConfig(
 ///     "localhost:9092",
 ///     "my-consumer-group",
 ///     props -> {
@@ -25,13 +25,13 @@ import java.util.function.UnaryOperator;
 ///     });
 ///
 /// // Using transformers
-/// Properties noAutoCommitConsumer = KafkaConsumerConfig.createConsumerConfig(
+/// final var noAutoCommitConsumer = KafkaConsumerConfig.createConsumerConfig(
 ///     "localhost:9092",
 ///     "my-consumer-group",
 ///     KafkaConsumerConfig.withAutoCommitDisabled());
 ///
 /// // Using builder pattern
-/// Properties builderProps = KafkaConsumerConfig.consumerBuilder()
+/// final var builderProps = KafkaConsumerConfig.consumerBuilder()
 ///     .withBootstrapServers("localhost:9092")
 ///     .withGroupId("my-consumer-group")
 ///     .withByteArrayDeserializers()
@@ -49,7 +49,7 @@ public final class KafkaConsumerConfig {
   ///
   /// ```java
   /// // Basic usage
-  /// Properties props = KafkaConsumerConfig.createConsumerConfig(
+  /// final var props = KafkaConsumerConfig.createConsumerConfig(
   ///     "localhost:9092",
   ///     "my-consumer-group",
   ///     p -> {
@@ -60,7 +60,7 @@ public final class KafkaConsumerConfig {
   ///     });
   ///
   /// // With transformer functions
-  /// Properties props = KafkaConsumerConfig.createConsumerConfig(
+  /// final var props = KafkaConsumerConfig.createConsumerConfig(
   ///     "localhost:9092",
   ///     "my-consumer-group",
   ///     KafkaConsumerConfig.withAutoCommitDisabled());
@@ -91,8 +91,8 @@ public final class KafkaConsumerConfig {
   /// Example usage:
   ///
   /// ```java
-  /// Properties props = KafkaConsumerConfig.createConsumerConfig("localhost:9092",
-  // "my-consumer-group");
+  /// final var props = KafkaConsumerConfig.createConsumerConfig("localhost:9092",
+  ///     "my-consumer-group");
   /// ```
   ///
   /// @param bootstrapServers Comma-separated list of host:port pairs for establishing the initial
@@ -108,7 +108,7 @@ public final class KafkaConsumerConfig {
   /// Example usage:
   ///
   /// ```java
-  /// Properties props = KafkaConsumerConfig.createConsumerConfig(
+  /// final var props = KafkaConsumerConfig.createConsumerConfig(
   ///     "localhost:9092",
   ///     "my-consumer-group",
   ///     KafkaConsumerConfig.withCustomDeserializers(
@@ -139,7 +139,7 @@ public final class KafkaConsumerConfig {
   ///
   /// ```java
   /// // Use directly with createConsumerConfig
-  /// Properties props = KafkaConsumerConfig.createConsumerConfig(
+  /// final var props = KafkaConsumerConfig.createConsumerConfig(
   ///     "localhost:9092",
   ///     "my-consumer-group",
   ///     KafkaConsumerConfig.withAutoCommitDisabled());
@@ -160,7 +160,7 @@ public final class KafkaConsumerConfig {
   /// Example usage:
   ///
   /// ```java
-  /// Properties props = KafkaConsumerConfig.createConsumerConfig(
+  /// final var props = KafkaConsumerConfig.createConsumerConfig(
   ///     "localhost:9092",
   ///     "my-consumer-group",
   ///     KafkaConsumerConfig.withProperty("max.poll.records", "100"));
@@ -183,7 +183,7 @@ public final class KafkaConsumerConfig {
   /// Example usage:
   ///
   /// ```java
-  /// Properties props = KafkaConsumerConfig.consumerBuilder()
+  /// final var props = KafkaConsumerConfig.consumerBuilder()
   ///     .withBootstrapServers("localhost:9092,localhost:9093")
   ///     .withGroupId("my-consumer-group")
   ///     .withByteArrayDeserializers()
@@ -206,7 +206,7 @@ public final class KafkaConsumerConfig {
   /// Example usage:
   ///
   /// ```java
-  /// Properties props = KafkaConsumerConfig.consumerBuilder()
+  /// final var props = KafkaConsumerConfig.consumerBuilder()
   ///     .withBootstrapServers("localhost:9092")
   ///     .withGroupId("my-consumer-group")
   ///     .withByteArrayDeserializers()

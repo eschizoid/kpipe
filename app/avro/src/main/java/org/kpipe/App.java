@@ -43,12 +43,8 @@ public class App implements AutoCloseable {
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
 
-  /**
-   * Main entry point for the Kafka consumer application.
-   *
-   * @param args Command line arguments
-   */
-  public static void main(final String[] args) {
+  /** Main entry point for the Kafka consumer application. */
+  static void main() {
     final var config = AppConfig.fromEnv();
 
     try (final var app = new App(config)) {
@@ -155,8 +151,7 @@ public class App implements AutoCloseable {
    * @return a message sink that processes messages through the pipeline
    */
   private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    final var pipeline = registry.<byte[], byte[]>pipeline("avroLogging");
-    return MessageSinkRegistry.withErrorHandling(pipeline);
+    return registry.pipeline("avroLogging");
   }
 
   /**
@@ -177,12 +172,9 @@ public class App implements AutoCloseable {
 
     // Register the sink
     final var schema = AvroMessageProcessor.getSchema("1");
-    if (schema != null) {
-      sinkRegistry.register("avroLogging", new AvroConsoleSink<>(schema));
-    }
+    if (schema != null) sinkRegistry.register("avroLogging", new AvroConsoleSink<>(schema));
 
-    final var pipeline = registry.avroPipeline("1", 5);
-    return MessageProcessorRegistry.withErrorHandling(pipeline, null);
+    return registry.avroPipeline("1", 5);
   }
 
   /**

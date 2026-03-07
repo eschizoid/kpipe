@@ -14,13 +14,13 @@ import java.util.function.Function;
 /// Example usage with default values from environment:
 ///
 /// ```java
-/// AppConfig config = AppConfig.fromEnv();
+/// final var config = AppConfig.fromEnv();
 /// ```
 ///
 /// Example with custom configuration:
 ///
 /// ```java
-/// AppConfig config = new AppConfig(
+/// final var config = new AppConfig(
 ///     "localhost:9092",
 ///     "my-group",
 ///     "my-topic",
