@@ -453,8 +453,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
 
     if (offsetManager != null) offsetManager.start();
 
-    if (rebalanceListener != null) kafkaConsumer.subscribe(List.of(topic), rebalanceListener);
-    else kafkaConsumer.subscribe(List.of(topic));
+    if (rebalanceListener != null) kafkaConsumer.subscribe(
+      List.of(topic),
+      rebalanceListener
+    ); else kafkaConsumer.subscribe(List.of(topic));
 
     Thread.UncaughtExceptionHandler exceptionHandler = (thread, throwable) -> {
       LOGGER.log(Level.ERROR, "Uncaught exception in consumer thread: " + thread.getName(), throwable);

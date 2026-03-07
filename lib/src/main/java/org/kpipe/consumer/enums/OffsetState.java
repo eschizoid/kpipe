@@ -28,8 +28,8 @@ public enum OffsetState {
   RUNNING,
 
   /**
-   * Transitional state during a shutdown process. Final commits may be performed, but no new offsets
-   * are accepted.
+   * Transitional state during a shutdown process. Final commits may be performed, but no new
+   * offsets are accepted.
    */
   STOPPING,
 

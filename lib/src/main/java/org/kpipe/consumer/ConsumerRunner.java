@@ -263,12 +263,10 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
           inFlightCount = tracker.getInFlightMessageCount();
           final var allProcessed = completed && inFlightCount == 0;
 
-          if (allProcessed)LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down");
-          else
-            LOGGER.log(
-              Level.WARNING,
-              "Shutdown timeout reached with %s messages still in flight".formatted(inFlightCount)
-            );
+          if (allProcessed) LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down"); else LOGGER.log(
+            Level.WARNING,
+            "Shutdown timeout reached with %s messages still in flight".formatted(inFlightCount)
+          );
 
           consumer.close();
           return allProcessed;
@@ -286,9 +284,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
       });
   }
 
-  /**
-   * Starts a metrics reporting thread if metrics reporters are configured.
-   */
+  /** Starts a metrics reporting thread if metrics reporters are configured. */
   private void startMetricsThread() {
     if (metricsReporters.isEmpty() || metricsInterval <= 0) {
       return;
@@ -326,9 +322,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
         });
   }
 
-  /**
-   * Stops the metrics reporting thread if it's running.
-   */
+  /** Stops the metrics reporting thread if it's running. */
   private void stopMetricsThread() {
     Optional
       .ofNullable(metricsThread)

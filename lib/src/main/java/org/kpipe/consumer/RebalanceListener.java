@@ -113,7 +113,7 @@ public record RebalanceListener(
 
     IntStream
       .iterate(commandQueue.size(), size -> size > 0, size -> size - 1)
-      .mapToObj(_ -> commandQueue.poll())
+      .mapToObj(x -> commandQueue.poll())
       .takeWhile(Objects::nonNull)
       .forEachOrdered(currentCmd -> {
         final var cmdOffsets = currentCmd.getOffsets();
