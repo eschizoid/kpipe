@@ -35,6 +35,15 @@ allprojects {
 
     repositories {
         mavenCentral()
+        maven {
+            credentials {
+                username = System.getenv("JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME")
+                    ?: project.properties["mavencentralSonatypeUsername"]?.toString()
+                password = System.getenv("JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD")
+                    ?: project.properties["mavencentralSonatypePassword"]?.toString()
+            }
+            url = uri("https://central.sonatype.com/")
+        }
         maven { url = uri("https://packages.confluent.io/maven/") }
     }
 }

@@ -40,6 +40,7 @@ jmh {
     timeUnit = "s"
     failOnError = true
     forceGC = true
+    jvmArgs = listOf("-Dtestcontainers.docker.client.strategy=org.testcontainers.dockerclient.UnixSocketClientProviderStrategy")
 }
 
 tasks.withType<JavaCompile> {

@@ -155,7 +155,7 @@ public class App implements AutoCloseable {
     final AppConfig config,
     final MessageSinkRegistry sinkRegistry
   ) {
-    final String srUrl = System.getProperty(
+    final var srUrl = System.getProperty(
       "SCHEMA_REGISTRY_URL",
       System.getenv().getOrDefault("SCHEMA_REGISTRY_URL", "http://schema-registry:8081")
     );

@@ -96,7 +96,7 @@ public record RebalanceListener(
   ///
   /// <p>This method iterates through all commands in the queue and filters out any references to
   /// revoked partitions. For offset commit commands, it preserves the command if it contains
-  // offsets
+  /// offsets
   /// for partitions still assigned to this consumer, while removing references to revoked
   /// partitions.
   ///
