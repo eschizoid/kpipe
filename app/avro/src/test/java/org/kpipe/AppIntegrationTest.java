@@ -2,6 +2,7 @@ package org.kpipe;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.dslplatform.json.DslJson;
 import java.io.ByteArrayOutputStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -168,9 +169,7 @@ class AppIntegrationTest {
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       while (System.nanoTime() < deadline) {
         producer.send(new ProducerRecord<>(topic, payload)).get();
-        if (sink.size() >= 1) {
-          return;
-        }
+        if (sink.size() >= 1) return;
         TimeUnit.MILLISECONDS.sleep(250);
       }
     }
@@ -179,17 +178,19 @@ class AppIntegrationTest {
 
   private static void registerSchema(final String schemaRegistryUrl, final String subject, final String schemaJson)
     throws Exception {
-    final var escapedSchema = schemaJson
-      .replace("\\", "\\\\")
-      .replace("\"", "\\\"")
-      .replace("\n", "\\n");
-    final var payload = "{\"schema\":\"%s\"}".formatted(escapedSchema);
+    final var json = new DslJson<>();
+    final var payloadMap = Collections.singletonMap("schema", schemaJson);
+    final byte[] payload;
+    try (final var out = new ByteArrayOutputStream()) {
+      json.serialize(payloadMap, out);
+      payload = out.toByteArray();
+    }
 
     final var request = HttpRequest
       .newBuilder()
       .uri(URI.create("%s/subjects/%s/versions".formatted(schemaRegistryUrl, subject)))
       .header("Content-Type", "application/vnd.schemaregistry.v1+json")
-      .POST(HttpRequest.BodyPublishers.ofString(payload))
+      .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
       .build();
 
     final var response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
