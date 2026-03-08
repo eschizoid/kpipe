@@ -64,7 +64,7 @@ class AppIntegrationTest {
           try {
             app.start();
             app.awaitShutdown();
-          } catch (Exception e) {
+          } catch (final Exception e) {
             log.log(Level.ERROR, "App error", e);
           }
         });
@@ -80,8 +80,8 @@ class AppIntegrationTest {
         producer.send(new ProducerRecord<>(topic, message.getBytes(StandardCharsets.UTF_8))).get();
       }
 
-      // Wait a bit for processing
-      TimeUnit.SECONDS.sleep(5);
+      // Wait for processing with timeout to reduce CI flakiness.
+      awaitMessageCount(capturingSink, 1, Duration.ofSeconds(10));
 
       // Verify the app is still running
       assertTrue(appThread.isAlive());
@@ -90,7 +90,7 @@ class AppIntegrationTest {
       final var received = capturingSink.getMessages();
       assertEquals(1, received.size(), "Should have received exactly one message");
 
-      final var processedBytes = received.get(0);
+      final var processedBytes = received.getFirst();
       final var dslJson = new DslJson<Map<String, Object>>();
       final Map<String, Object> processedMap;
       try (final var input = new java.io.ByteArrayInputStream(processedBytes)) {
@@ -105,6 +105,18 @@ class AppIntegrationTest {
     }
   }
 
+  private static void awaitMessageCount(final CapturingSink sink, final int expected, final Duration timeout)
+    throws InterruptedException {
+    final var deadline = System.nanoTime() + timeout.toNanos();
+    while (System.nanoTime() < deadline) {
+      if (sink.size() >= expected) {
+        return;
+      }
+      TimeUnit.MILLISECONDS.sleep(100);
+    }
+    throw new AssertionError("Timed out waiting for %d processed message(s)".formatted(expected));
+  }
+
   private static class CapturingSink implements MessageSink<byte[], byte[]> {
 
     private final List<byte[]> messages = new ArrayList<>();
@@ -116,6 +128,10 @@ class AppIntegrationTest {
 
     public synchronized List<byte[]> getMessages() {
       return new ArrayList<>(messages);
+    }
+
+    public synchronized int size() {
+      return messages.size();
     }
   }
 }

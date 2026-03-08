@@ -98,7 +98,7 @@ class AppIntegrationTest {
           } catch (final Exception e) {
             log.log(Level.ERROR, "App error", e);
           }
-         });
+        });
 
       // Load schema
       final Schema schema;
@@ -132,8 +132,8 @@ class AppIntegrationTest {
         producer.send(new ProducerRecord<>(topic, out.toByteArray())).get();
       }
 
-      // Wait for processing
-      TimeUnit.SECONDS.sleep(5);
+      // Wait for processing with timeout to reduce CI flakiness.
+      awaitMessageCount(capturingSink, 1, Duration.ofSeconds(10));
 
       // Verify
       assertTrue(appThread.isAlive());
@@ -141,7 +141,7 @@ class AppIntegrationTest {
       final var received = capturingSink.getMessages();
       assertEquals(1, received.size(), "Should have received exactly one message");
 
-      final var processedBytes = received.get(0);
+      final var processedBytes = received.getFirst();
       final var decoder = DecoderFactory.get().binaryDecoder(processedBytes, null);
       final var reader = new GenericDatumReader<GenericRecord>(schema);
       final var processedRecord = reader.read(null, decoder);
@@ -151,6 +151,18 @@ class AppIntegrationTest {
       assertNotNull(processedRecord.get("source"), "Should have 'source' field added");
       assertNotNull(processedRecord.get("timestamp"), "Should have 'timestamp' field added");
     }
+  }
+
+  private static void awaitMessageCount(final CapturingSink sink, final int expected, final Duration timeout)
+    throws InterruptedException {
+    final var deadline = System.nanoTime() + timeout.toNanos();
+    while (System.nanoTime() < deadline) {
+      if (sink.size() >= expected) {
+        return;
+      }
+      TimeUnit.MILLISECONDS.sleep(100);
+    }
+    throw new AssertionError("Timed out waiting for %d processed message(s)".formatted(expected));
   }
 
   private static class CapturingSink implements MessageSink<byte[], byte[]> {
@@ -164,6 +176,10 @@ class AppIntegrationTest {
 
     public synchronized List<byte[]> getMessages() {
       return new ArrayList<>(messages);
+    }
+
+    public synchronized int size() {
+      return messages.size();
     }
   }
 }

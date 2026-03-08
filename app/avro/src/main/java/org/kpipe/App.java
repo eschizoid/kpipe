@@ -90,7 +90,7 @@ public class App implements AutoCloseable {
     );
   }
 
-  /** Creates the consumer runner with appropriate lifecycle hooks. */
+  /// Creates the consumer runner with appropriate lifecycle hooks.
   private ConsumerRunner<FunctionalConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
     final MetricsReporter consumerMetricsReporter,

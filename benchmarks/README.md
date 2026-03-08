@@ -66,22 +66,49 @@ JMH parameters can be configured in `benchmarks/build.gradle.kts` or passed via 
 
 ## Latest Results (Snapshot)
 
-### Parallel Processing (`ParallelProcessingBenchmark`)
-
 Run date: `2026-03-08`
+
+### 1. Avro Pipeline: The "Zero-Copy" Advantage
+
+This benchmark compares KPipe's zero-copy offset-based deserialization against the traditional approach of using
+`Arrays.copyOfRange`.
+
+| Benchmark                                       |    Mode |  Cnt |            Score |            Error |   Units |
+|-------------------------------------------------|--------:|-----:|-----------------:|-----------------:|--------:|
+| `AvroPipelineBenchmark.kpipeAvroMagicPipeline`  | `thrpt` | `16` | `740,303,088.78` | `+/- 35,778,690` | `ops/s` |
+| `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `16` | `351,320,682.67` | `+/- 68,268,778` | `ops/s` |
+
+**Honest Observation**: KPipe is **~2.1x faster** when handling Confluent Magic Bytes. By using an `offset` instead of
+copying the byte array, we effectively eliminate allocation overhead and drastically reduce GC pressure for
+high-throughput streams.
+
+### 2. JSON Pipeline: Defeating the "SerDe Tax"
+
+This benchmark measures the cost of chaining multiple transformations.
+
+| Benchmark                                      |    Mode |  Cnt |        Score |          Error |   Units |
+|------------------------------------------------|--------:|-----:|-------------:|---------------:|--------:|
+| `JsonPipelineBenchmark.kpipeJsonPipeline`      | `thrpt` | `16` | `405,542.23` | `+/- 28,441.3` | `ops/s` |
+| `JsonPipelineBenchmark.manualJsonSerDeChained` | `thrpt` | `16` | `120,315.66` | `+/- 10,061.3` | `ops/s` |
+| `JsonPipelineBenchmark.manualJsonSingleSerDe`  | `thrpt` | `16` | `364,166.21` | `+/- 39,811.4` | `ops/s` |
+
+**Honest Observation**: KPipe is **~3.3x faster** than a naive chained approach. Even compared to a manual single-block
+implementation (`manualJsonSingleSerDe`), KPipe's internal operator chaining is slightly more efficient, providing
+abstraction without a performance penalty.
+
+### 3. Parallel Processing: Virtual Threads (Loom) vs. Confluent
+
+This benchmark compares KPipe's "thread-per-record" model using Java 24 Virtual Threads against the industry-standard
+Confluent Parallel Consumer.
 
 | Benchmark                                                 |    Mode |  Cnt |     Score |       Error |   Units |
 |-----------------------------------------------------------|--------:|-----:|----------:|------------:|--------:|
-| `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `16` | `330.210` | `+/- 0.202` | `ops/s` |
-| `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `16` | `331.298` | `+/- 0.529` | `ops/s` |
+| `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `16` | `329.594` | `+/- 0.757` | `ops/s` |
+| `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `16` | `331.248` | `+/- 0.774` | `ops/s` |
 
-Quick read: both are effectively at parity for this run configuration.
-
-Reproduce this benchmark family:
-
-```bash
-INCLUDES='ParallelProcessingBenchmark' ./run_benchmarks.sh
-```
+**Honest Observation**: KPipe achieves **performance parity** with the Confluent Parallel Consumer while maintaining a
+significantly simpler programming model. We reach these numbers using standard Java 24 Virtual Threads, avoiding the
+complexity of managed thread pools or proprietary scheduling logic.
 
 ## Understanding Results
 

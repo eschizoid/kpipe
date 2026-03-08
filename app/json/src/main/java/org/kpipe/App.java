@@ -167,11 +167,11 @@ public class App implements AutoCloseable {
     return sinkRegistry;
   }
 
-  public void start() {
+  void start() {
     runner.start();
   }
 
-  public boolean awaitShutdown() {
+  boolean awaitShutdown() {
     return runner.awaitShutdown();
   }
 
