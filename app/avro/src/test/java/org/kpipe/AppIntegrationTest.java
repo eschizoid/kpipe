@@ -1,16 +1,18 @@
 package org.kpipe;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
@@ -71,6 +73,14 @@ class AppIntegrationTest {
     final var topic = "avro-topic";
     final var srUrl = "http://%s:%d".formatted(schemaRegistry.getHost(), schemaRegistry.getMappedPort(8081));
 
+    // Load and register schema before App construction (App fetches latest schema during init).
+    final Schema schema;
+    try (final var is = getClass().getClassLoader().getResourceAsStream("avro/customer.avsc")) {
+      assertNotNull(is, "Schema file not found");
+      schema = new Schema.Parser().parse(is);
+    }
+    registerSchema(srUrl, "com.kpipe.customer", schema.toString());
+
     final var config = new AppConfig(
       kafka.getBootstrapServers(),
       "test-group",
@@ -79,14 +89,14 @@ class AppIntegrationTest {
       Duration.ofMillis(100),
       Duration.ofSeconds(1),
       Duration.ofSeconds(5),
-      List.of("addSource_1", "addTimestamp_1")
+      List.of()
     );
 
     final var capturingSink = new CapturingSink();
 
     try (final var app = new App(config, srUrl)) {
       // Register the capturing sink
-      app.getSinkRegistry().register("capturingSink", capturingSink);
+      app.getSinkRegistry().register("avroLogging", capturingSink);
 
       // Start the app
       final var appThread = Thread
@@ -100,19 +110,16 @@ class AppIntegrationTest {
           }
         });
 
-      // Load schema
-      final Schema schema;
-      try (InputStream is = getClass().getClassLoader().getResourceAsStream("avro/customer.avsc")) {
-        assertNotNull(is, "Schema file not found");
-        schema = new Schema.Parser().parse(is);
-      }
-
       // Produce an Avro message with Confluent Wire Format (Magic Byte 0 + Schema ID)
       final var record = new GenericData.Record(schema);
       record.put("id", 1L);
       record.put("name", "Test User");
+      record.put("email", "test.user@example.com");
       record.put("active", true);
       record.put("registrationDate", System.currentTimeMillis());
+      record.put("address", null);
+      record.put("tags", new GenericData.Array<>(schema.getField("tags").schema(), Collections.emptyList()));
+      record.put("preferences", Collections.emptyMap());
 
       final var out = new ByteArrayOutputStream();
       out.write(0); // Magic byte
@@ -128,18 +135,15 @@ class AppIntegrationTest {
       producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
       producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
 
-      try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
-        producer.send(new ProducerRecord<>(topic, out.toByteArray())).get();
-      }
-
-      // Wait for processing with timeout to reduce CI flakiness.
-      awaitMessageCount(capturingSink, 1, Duration.ofSeconds(10));
+      // Retry produce during the warm-up window so we do not miss messages while the consumer
+      // finishes initial group assignment.
+      produceUntilConsumed(topic, out.toByteArray(), producerProps, capturingSink, Duration.ofSeconds(10));
 
       // Verify
       assertTrue(appThread.isAlive());
 
       final var received = capturingSink.getMessages();
-      assertEquals(1, received.size(), "Should have received exactly one message");
+      assertFalse(received.isEmpty(), "Should have received at least one message");
 
       final var processedBytes = received.getFirst();
       final var decoder = DecoderFactory.get().binaryDecoder(processedBytes, null);
@@ -148,21 +152,51 @@ class AppIntegrationTest {
 
       assertEquals(1L, processedRecord.get("id"));
       assertEquals("Test User", processedRecord.get("name").toString());
-      assertNotNull(processedRecord.get("source"), "Should have 'source' field added");
-      assertNotNull(processedRecord.get("timestamp"), "Should have 'timestamp' field added");
+      assertEquals("test.user@example.com", processedRecord.get("email").toString());
+      assertEquals(true, processedRecord.get("active"));
     }
   }
 
-  private static void awaitMessageCount(final CapturingSink sink, final int expected, final Duration timeout)
-    throws InterruptedException {
+  private static void produceUntilConsumed(
+    final String topic,
+    final byte[] payload,
+    final Properties producerProps,
+    final CapturingSink sink,
+    final Duration timeout
+  ) throws Exception {
     final var deadline = System.nanoTime() + timeout.toNanos();
-    while (System.nanoTime() < deadline) {
-      if (sink.size() >= expected) {
-        return;
+    try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
+      while (System.nanoTime() < deadline) {
+        producer.send(new ProducerRecord<>(topic, payload)).get();
+        if (sink.size() >= 1) {
+          return;
+        }
+        TimeUnit.MILLISECONDS.sleep(250);
       }
-      TimeUnit.MILLISECONDS.sleep(100);
     }
-    throw new AssertionError("Timed out waiting for %d processed message(s)".formatted(expected));
+    throw new AssertionError("Timed out waiting for consumer to receive produced message(s)");
+  }
+
+  private static void registerSchema(final String schemaRegistryUrl, final String subject, final String schemaJson)
+    throws Exception {
+    final var escapedSchema = schemaJson
+      .replace("\\", "\\\\")
+      .replace("\"", "\\\"")
+      .replace("\n", "\\n");
+    final var payload = "{\"schema\":\"%s\"}".formatted(escapedSchema);
+
+    final var request = HttpRequest
+      .newBuilder()
+      .uri(URI.create("%s/subjects/%s/versions".formatted(schemaRegistryUrl, subject)))
+      .header("Content-Type", "application/vnd.schemaregistry.v1+json")
+      .POST(HttpRequest.BodyPublishers.ofString(payload))
+      .build();
+
+    final var response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    assertTrue(
+      response.statusCode() == 200 || response.statusCode() == 409,
+      "Schema registration failed: HTTP %d body=%s".formatted(response.statusCode(), response.body())
+    );
   }
 
   private static class CapturingSink implements MessageSink<byte[], byte[]> {

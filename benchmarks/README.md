@@ -42,7 +42,7 @@ To run all benchmarks with default JMH settings:
 
 ### Running Specific Benchmarks
 
-You can use regex to target specific benchmark classes:
+You can use regex to target specific benchmark classes using the `jmh.includes` property:
 
 ```bash
 # Run only JSON benchmarks
@@ -79,7 +79,7 @@ This benchmark compares KPipe's zero-copy offset-based deserialization against t
 | `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `16` | `351,320,682.67` | `+/- 68,268,778` | `ops/s` |
 
 **Observation**: KPipe is **~2.1x faster** when handling Confluent Magic Bytes. By using an `offset` instead of
-copying the byte array, effectively eliminate allocation overhead and drastically reduce GC pressure for high-throughput
+copying the byte array, we effectively eliminate allocation overhead and drastically reduce GC pressure for high-throughput
 streams.
 
 ### 2. JSON Pipeline: Defeating the "SerDe Tax"
@@ -113,6 +113,20 @@ complexity of managed thread pools or proprietary scheduling logic.
 ## Understanding Results
 
 The benchmarks typically run in `Throughput` mode (`ops/s`). Higher numbers are better.
+
+### Projecting "Messages Per Second"
+
+Based on the latest snapshot results, we can derive the following throughput expectations:
+
+- **Avro (In-Memory)**: Up to **~740 million records/s**. This represents the upper limit of the transformation logic
+  when Kafka I/O is excluded.
+- **JSON (In-Memory)**: Up to **~405,000 records/s**. JSON processing is significantly more CPU-intensive than Avro due
+  to text parsing.
+- **End-to-End Parallel Processing**: **~331,000 messages/s**. This is the most realistic metric as it includes a real
+  Kafka broker (embedded), network polling, and Virtual Thread scheduling.
+
+> **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(1000)`, so the reported `331.248 ops/s` is
+> normalized to reflect **331,248 messages per second**.
 
 Key performance indicators to watch for:
 

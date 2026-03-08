@@ -16,9 +16,9 @@ subprojects {
         "implementation"("org.slf4j:slf4j-simple:2.0.9")
 
         "testImplementation"("org.junit.jupiter:junit-jupiter:5.10.0")
-        "testImplementation"("org.testcontainers:testcontainers:1.20.4")
-        "testImplementation"("org.testcontainers:junit-jupiter:1.20.4")
-        "testImplementation"("org.testcontainers:kafka:1.20.4")
+        "testImplementation"("org.testcontainers:testcontainers:2.0.3")
+        "testImplementation"("org.testcontainers:testcontainers-junit-jupiter:2.0.3")
+        testImplementation("org.testcontainers:testcontainers-kafka:2.0.3")
         "testImplementation"("com.dslplatform:dsl-json:2.0.2")
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     }
