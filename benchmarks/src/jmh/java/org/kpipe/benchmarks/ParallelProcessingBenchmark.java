@@ -1,4 +1,4 @@
-package org.kpipe.consumer;
+package org.kpipe.benchmarks;
 
 import io.confluent.parallelconsumer.ParallelConsumerOptions;
 import io.confluent.parallelconsumer.ParallelStreamProcessor;
@@ -16,6 +16,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.kpipe.config.KafkaConsumerConfig;
+import org.kpipe.consumer.FunctionalConsumer;
 import org.openjdk.jmh.annotations.*;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -49,53 +50,60 @@ import org.testcontainers.utility.DockerImageName;
 public class ParallelProcessingBenchmark {
 
   private static final String TOPIC = "benchmark-topic";
-  private KafkaContainer kafka;
+  @State(Scope.Benchmark)
+  public static class DockerContext {
+    private KafkaContainer kafka;
 
-  @Setup(Level.Trial)
-  public void setup() throws Exception {
-    System.setProperty("DOCKER_API_VERSION", "1.44");
-    System.setProperty("TESTCONTAINERS_RYUK_DISABLED", "true");
-    final var imageName = DockerImageName
-      .parse("confluentinc/cp-kafka:7.7.1")
-      .asCompatibleSubstituteFor("apache/kafka");
-    kafka = new KafkaContainer(imageName);
-    kafka.start();
+    @Setup(Level.Trial)
+    public void setup() throws Exception {
+      System.setProperty("DOCKER_API_VERSION", "1.44");
+      System.setProperty("TESTCONTAINERS_RYUK_DISABLED", "true");
+      final var imageName = DockerImageName
+        .parse("confluentinc/cp-kafka:7.7.1")
+        .asCompatibleSubstituteFor("apache/kafka");
+      kafka = new KafkaContainer(imageName);
+      kafka.start();
 
-    final var bootstrapServers = kafka.getBootstrapServers();
+      final var bootstrapServers = kafka.getBootstrapServers();
 
-    // Seed some data
-    final var producerProps = new Properties();
-    producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-    producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
-    producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+      // Seed some data
+      final var producerProps = new Properties();
+      producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+      producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+      producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
 
-    try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
-      final var value =
-        """
-                {
-                  "id": 12345,
-                  "message": "Benchmark message"
-                }
-                """.getBytes(
-            StandardCharsets.UTF_8
-          );
+      try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
+        final var value =
+          """
+                  {
+                    "id": 12345,
+                    "message": "Benchmark message"
+                  }
+                  """.getBytes(
+              StandardCharsets.UTF_8
+            );
 
-      for (int i = 0; i < 1000; i++) {
-        producer.send(new ProducerRecord<>(TOPIC, value));
+        for (int i = 0; i < 1000; i++) {
+          producer.send(new ProducerRecord<>(TOPIC, value));
+        }
+        producer.flush();
       }
-      producer.flush();
+    }
+
+    @TearDown(Level.Trial)
+    public void tearDown() {
+      if (kafka != null) kafka.stop();
+    }
+
+    public String getBootstrapServers() {
+      return kafka.getBootstrapServers();
     }
   }
 
-  @TearDown(Level.Trial)
-  public void tearDown() {
-    if (kafka != null) kafka.stop();
-  }
-
   @Benchmark
-  public void kpipeParallelProcessing() throws Exception {
+  public void kpipeParallelProcessing(final DockerContext context) throws Exception {
     final var currentProcessedCount = new AtomicInteger(0);
-    final var bootstrapServers = kafka.getBootstrapServers();
+    final var bootstrapServers = context.getBootstrapServers();
 
     final var kpipeProps = KafkaConsumerConfig
       .consumerBuilder()
@@ -126,9 +134,9 @@ public class ParallelProcessingBenchmark {
   }
 
   @Benchmark
-  public void confluentParallelProcessing() throws Exception {
+  public void confluentParallelProcessing(final DockerContext context) throws Exception {
     final var currentProcessedCount = new AtomicInteger(0);
-    final var bootstrapServers = kafka.getBootstrapServers();
+    final var bootstrapServers = context.getBootstrapServers();
 
     final var consumerProps = new Properties();
     consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
