@@ -64,6 +64,25 @@ JMH parameters can be configured in `benchmarks/build.gradle.kts` or passed via 
 ./gradlew :benchmarks:jmh -Pjmh.iterations=1 -Pjmh.warmupIterations=1 -Pjmh.fork=1
 ```
 
+## Latest Results (Snapshot)
+
+### Parallel Processing (`ParallelProcessingBenchmark`)
+
+Run date: `2026-03-08`
+
+| Benchmark                                                 |    Mode |  Cnt |     Score |       Error |   Units |
+|-----------------------------------------------------------|--------:|-----:|----------:|------------:|--------:|
+| `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `16` | `330.210` | `+/- 0.202` | `ops/s` |
+| `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `16` | `331.298` | `+/- 0.529` | `ops/s` |
+
+Quick read: both are effectively at parity for this run configuration.
+
+Reproduce this benchmark family:
+
+```bash
+INCLUDES='ParallelProcessingBenchmark' ./run_benchmarks.sh
+```
+
 ## Understanding Results
 
 The benchmarks typically run in `Throughput` mode (`ops/s`). Higher numbers are better.
@@ -78,6 +97,9 @@ Key performance indicators to watch for:
   processing.
 - **Real Infrastructure vs. Mocks**: This suite favors repeatable local microbenchmarks by using an embedded Kafka
   broker.
+- **Parallel timing fairness**: both `kpipeParallelProcessing` and `confluentParallelProcessing` start
+  their processing loops inside benchmark methods (not in setup), so measured time includes comparable
+  startup-to-completion behavior for each invocation.
 - **Parallel throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(1000)`, so its
   reported throughput is normalized per processed message rather than per full benchmark invocation.
 - **Logging noise control**: KPipe parallel benchmark uses a no-op sink in benchmark runs to avoid console I/O from

@@ -1,9 +1,6 @@
 package org.kpipe.benchmarks;
 
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.kpipe.consumer.FunctionalConsumer;
 import org.openjdk.jmh.annotations.*;
 
 /// JMH Benchmark for comparing KPipe's parallel processing engine against the
@@ -33,33 +30,16 @@ import org.openjdk.jmh.annotations.*;
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class ParallelProcessingBenchmark {
 
-  private static final String TOPIC = ParallelProcessingBenchmarkInfrastructure.TOPIC;
   private static final int TARGET_MESSAGES = ParallelProcessingBenchmarkInfrastructure.TARGET_MESSAGES;
 
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)
-  public void kpipeParallelProcessing(final ParallelProcessingBenchmarkInfrastructure.KafkaContext context) {
-    final var currentProcessedCount = new AtomicInteger(0);
-
-    final var kpipeProps = context.consumerProps("kpipe-group");
-    kpipeProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-
-    try (
-      final var consumer = FunctionalConsumer
-        .<byte[], byte[]>builder()
-        .withProperties(kpipeProps)
-        .withTopic(TOPIC)
-        .withMessageSink((_, __) -> {})
-        .withProcessor(val -> {
-          currentProcessedCount.incrementAndGet();
-          return val;
-        })
-        .withSequentialProcessing(false)
-        .build()
-    ) {
-      consumer.start();
-      ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("kpipeParallelProcessing", currentProcessedCount);
-    }
+  public void kpipeParallelProcessing(final ParallelProcessingBenchmarkInfrastructure.KpipeInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages(
+      "kpipeParallelProcessing",
+      context.processedCount()
+    );
   }
 
   @Benchmark
@@ -67,6 +47,7 @@ public class ParallelProcessingBenchmark {
   public void confluentParallelProcessing(
     final ParallelProcessingBenchmarkInfrastructure.ConfluentInvocationContext context
   ) {
+    context.start();
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages(
       "confluentParallelProcessing",
       context.processedCount()

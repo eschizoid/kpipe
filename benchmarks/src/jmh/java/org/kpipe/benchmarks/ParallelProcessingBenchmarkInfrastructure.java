@@ -21,6 +21,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.kpipe.consumer.FunctionalConsumer;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
@@ -36,7 +37,7 @@ import org.openjdk.jmh.annotations.TearDown;
 /// - Embedded Kafka lifecycle (startup/shutdown)
 /// - Topic creation and seed-data publishing
 /// - Common consumer property construction
-/// - Confluent Parallel Consumer invocation-scoped setup/teardown
+/// - KPipe and Confluent invocation-scoped setup/teardown
 /// - Shared wait/timeout utility used by benchmark methods
 ///
 /// ### Why this split exists
@@ -179,6 +180,50 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
   }
 
+  /// Invocation-scoped KPipe runtime.
+  ///
+  /// The consumer is built in setup and started in the benchmark method so processing begins
+  /// inside measured time (same timing model as Confluent path).
+  @State(Scope.Thread)
+  public static class KpipeInvocationContext {
+    private AtomicInteger processedCount;
+    private FunctionalConsumer<byte[], byte[]> consumer;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext) {
+      processedCount = new AtomicInteger(0);
+      final var kpipeProps = kafkaContext.consumerProps("kpipe-group");
+      kpipeProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+
+      consumer = FunctionalConsumer
+        .<byte[], byte[]>builder()
+        .withProperties(kpipeProps)
+        .withTopic(TOPIC)
+        .withMessageSink((_, __) -> {})
+        .withProcessor(val -> {
+          processedCount.incrementAndGet();
+          return val;
+        })
+        .withSequentialProcessing(false)
+        .build();
+    }
+
+    void start() {
+      consumer.start();
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      if (consumer != null) {
+        consumer.close();
+      }
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
   /// Invocation-scoped Confluent Parallel Consumer runtime.
   ///
   /// `Scope.Thread` + `Level.Invocation` ensures each measured invocation receives fresh Confluent
@@ -189,7 +234,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     private KafkaConsumer<byte[], byte[]> kafkaConsumer;
     private ParallelStreamProcessor<byte[], byte[]> processor;
 
-    /// Creates and starts Confluent polling for one invocation.
+    /// Creates Confluent runtime for one invocation.
     @Setup(Level.Invocation)
     public void setup(final KafkaContext kafkaContext) {
       processedCount = new AtomicInteger(0);
@@ -209,6 +254,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       );
 
       processor.subscribe(Collections.singletonList(TOPIC));
+    }
+
+    /// Starts Confluent polling inside measured benchmark time.
+    void start() {
       processor.poll(_ -> processedCount.incrementAndGet());
     }
 
@@ -268,9 +317,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     /// Stops the embedded cluster and releases file/network resources.
     @Override
     public void close() throws Exception {
-      if (cluster != null) {
-        cluster.close();
-      }
+      if (cluster != null) cluster.close();
     }
   }
 }

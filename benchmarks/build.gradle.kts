@@ -3,61 +3,45 @@ plugins {
     id("me.champeau.jmh") version "0.7.3"
 }
 
+val kafkaVersion = "3.9.1"
+val slf4jVersion = "2.0.9"
+val junitVersion = "5.10.0"
+
 dependencies {
+    // Benchmarks consume public API from :lib
     implementation(project(":lib"))
-    implementation("org.apache.kafka:kafka-clients:3.9.1")
+
+    // Benchmark targets
+    implementation("org.apache.kafka:kafka-clients:$kafkaVersion")
     implementation("io.confluent.parallelconsumer:parallel-consumer-core:0.5.3.0")
-
-    // SLF4J implementation for JMH runs
-    implementation("org.slf4j:slf4j-simple:2.0.9")
-
     implementation("org.apache.avro:avro:1.12.1")
     implementation("com.dslplatform:dsl-json:2.0.2")
-    implementation("org.openjdk.jmh:jmh-core:1.37")
-    annotationProcessor("org.openjdk.jmh:jmh-generator-annprocess:1.37")
 
-    // JMH dependencies
-    jmh("org.openjdk.jmh:jmh-core:1.37")
-    jmh("org.openjdk.jmh:jmh-generator-annprocess:1.37")
-    jmh("org.slf4j:slf4j-simple:2.0.9")
+    // Logging for JMH forks
+    implementation("org.slf4j:slf4j-simple:$slf4jVersion")
 
     // Apache Kafka test-kit for embedded benchmark broker
-    implementation("org.apache.kafka:kafka_2.13:3.9.1")
-    implementation("org.apache.kafka:kafka_2.13:3.9.1:test")
-    implementation("org.apache.kafka:kafka-clients:3.9.1:test")
-    implementation("org.apache.kafka:kafka-server-common:3.9.1:test")
-    implementation("org.junit.jupiter:junit-jupiter-api:5.10.0")
-    jmh("org.apache.kafka:kafka_2.13:3.9.1")
-    jmh("org.apache.kafka:kafka_2.13:3.9.1:test")
-    jmh("org.apache.kafka:kafka-clients:3.9.1:test")
-    jmh("org.apache.kafka:kafka-server-common:3.9.1:test")
-    jmh("org.junit.jupiter:junit-jupiter-api:5.10.0")
-}
-
-fun intGradleProp(name: String, defaultValue: Int): Int {
-    return providers.gradleProperty(name).orNull?.toIntOrNull() ?: defaultValue
-}
-
-fun listGradleProp(name: String): List<String> {
-    return providers
-        .gradleProperty(name)
-        .orNull
-        ?.split(',')
-        ?.map { it.trim() }
-        ?.filter { it.isNotEmpty() }
-        ?: emptyList()
+    implementation("org.apache.kafka:kafka_2.13:$kafkaVersion")
+    implementation("org.apache.kafka:kafka_2.13:$kafkaVersion:test")
+    implementation("org.apache.kafka:kafka-clients:$kafkaVersion:test")
+    implementation("org.apache.kafka:kafka-server-common:$kafkaVersion:test")
+    implementation("org.junit.jupiter:junit-jupiter-api:$junitVersion")
 }
 
 jmh {
-    warmupIterations = intGradleProp("jmh.warmupIterations", 3)
-    iterations = intGradleProp("jmh.iterations", 5)
-    fork = intGradleProp("jmh.fork", 1)
-    threads = intGradleProp("jmh.threads", 1)
+    warmupIterations = providers.gradleProperty("jmh.warmupIterations").orNull?.toIntOrNull() ?: 3
+    iterations = providers.gradleProperty("jmh.iterations").orNull?.toIntOrNull() ?: 5
+    fork = providers.gradleProperty("jmh.fork").orNull?.toIntOrNull() ?: 1
+    threads = providers.gradleProperty("jmh.threads").orNull?.toIntOrNull() ?: 1
 
-    val includePatterns = listGradleProp("jmh.includes")
-    if (includePatterns.isNotEmpty()) {
-        includes = includePatterns
-    }
+    providers
+        .gradleProperty("jmh.includes")
+        .orNull
+        ?.split(',')
+        ?.map(String::trim)
+        ?.filter(String::isNotEmpty)
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { includes = it }
 
     val jmhTmpDir = layout.buildDirectory.dir("tmp/jmh").get().asFile.absolutePath
 
