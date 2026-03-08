@@ -78,9 +78,9 @@ This benchmark compares KPipe's zero-copy offset-based deserialization against t
 | `AvroPipelineBenchmark.kpipeAvroMagicPipeline`  | `thrpt` | `16` | `740,303,088.78` | `+/- 35,778,690` | `ops/s` |
 | `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `16` | `351,320,682.67` | `+/- 68,268,778` | `ops/s` |
 
-**Honest Observation**: KPipe is **~2.1x faster** when handling Confluent Magic Bytes. By using an `offset` instead of
-copying the byte array, we effectively eliminate allocation overhead and drastically reduce GC pressure for
-high-throughput streams.
+**Observation**: KPipe is **~2.1x faster** when handling Confluent Magic Bytes. By using an `offset` instead of
+copying the byte array, effectively eliminate allocation overhead and drastically reduce GC pressure for high-throughput
+streams.
 
 ### 2. JSON Pipeline: Defeating the "SerDe Tax"
 
@@ -92,7 +92,7 @@ This benchmark measures the cost of chaining multiple transformations.
 | `JsonPipelineBenchmark.manualJsonSerDeChained` | `thrpt` | `16` | `120,315.66` | `+/- 10,061.3` | `ops/s` |
 | `JsonPipelineBenchmark.manualJsonSingleSerDe`  | `thrpt` | `16` | `364,166.21` | `+/- 39,811.4` | `ops/s` |
 
-**Honest Observation**: KPipe is **~3.3x faster** than a naive chained approach. Even compared to a manual single-block
+**Observation**: KPipe is **~3.3x faster** than a naive chained approach. Even compared to a manual single-block
 implementation (`manualJsonSingleSerDe`), KPipe's internal operator chaining is slightly more efficient, providing
 abstraction without a performance penalty.
 
@@ -106,7 +106,7 @@ Confluent Parallel Consumer.
 | `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `16` | `329.594` | `+/- 0.757` | `ops/s` |
 | `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `16` | `331.248` | `+/- 0.774` | `ops/s` |
 
-**Honest Observation**: KPipe achieves **performance parity** with the Confluent Parallel Consumer while maintaining a
+**Observation**: KPipe achieves **performance parity** with the Confluent Parallel Consumer while maintaining a
 significantly simpler programming model. We reach these numbers using standard Java 24 Virtual Threads, avoiding the
 complexity of managed thread pools or proprietary scheduling logic.
 
