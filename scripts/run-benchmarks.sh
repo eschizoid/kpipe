@@ -15,7 +15,8 @@ echo "Results will be saved to $LOG_FILE"
 echo "Run config: warmup=$WARMUP iterations=$ITERATIONS fork=$FORK threads=$THREADS includes=${INCLUDES:-<all>}"
 
 # Create stable temp directory for JMH
-mkdir -p benchmarks/build/tmp/jmh
+mkdir -p benchmarks/build/tmp/jmh &&
+cd ..
 
 # Clean and run all benchmarks
 GRADLE_CMD=(./gradlew :benchmarks:clean :benchmarks:jmh \

@@ -81,10 +81,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       if (System.nanoTime() >= deadline) {
         throw new IllegalStateException(
           "%s timed out waiting for %d messages; processed=%d".formatted(
-            benchmarkName,
-            TARGET_MESSAGES,
-            processedCount.get()
-          )
+              benchmarkName,
+              TARGET_MESSAGES,
+              processedCount.get()
+            )
         );
       }
       Thread.onSpinWait();
@@ -97,6 +97,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// measured invocation path.
   @State(Scope.Benchmark)
   public static class KafkaContext {
+
     private AutoCloseable backend;
     private String bootstrapServers;
     private Properties clientProperties;
@@ -186,6 +187,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// inside measured time (same timing model as Confluent path).
   @State(Scope.Thread)
   public static class KpipeInvocationContext {
+
     private AtomicInteger processedCount;
     private FunctionalConsumer<byte[], byte[]> consumer;
 
@@ -195,17 +197,18 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       final var kpipeProps = kafkaContext.consumerProps("kpipe-group");
       kpipeProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
-      consumer = FunctionalConsumer
-        .<byte[], byte[]>builder()
-        .withProperties(kpipeProps)
-        .withTopic(TOPIC)
-        .withMessageSink((_, __) -> {})
-        .withProcessor(val -> {
-          processedCount.incrementAndGet();
-          return val;
-        })
-        .withSequentialProcessing(false)
-        .build();
+      consumer =
+        FunctionalConsumer
+          .<byte[], byte[]>builder()
+          .withProperties(kpipeProps)
+          .withTopic(TOPIC)
+          .withMessageSink((record, processedValue) -> {})
+          .withProcessor(val -> {
+            processedCount.incrementAndGet();
+            return val;
+          })
+          .withSequentialProcessing(false)
+          .build();
     }
 
     void start() {
@@ -230,6 +233,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// runtime state and deterministic shutdown.
   @State(Scope.Thread)
   public static class ConfluentInvocationContext {
+
     private AtomicInteger processedCount;
     private KafkaConsumer<byte[], byte[]> kafkaConsumer;
     private ParallelStreamProcessor<byte[], byte[]> processor;
@@ -243,22 +247,23 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       consumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
       kafkaConsumer = new KafkaConsumer<>(consumerProps);
-      processor = ParallelStreamProcessor.createEosStreamProcessor(
-        ParallelConsumerOptions
-          .<byte[], byte[]>builder()
-          .ordering(ParallelConsumerOptions.ProcessingOrder.UNORDERED)
-          .maxConcurrency(100)
-          .ignoreReflectiveAccessExceptionsForAutoCommitDisabledCheck(true)
-          .consumer(kafkaConsumer)
-          .build()
-      );
+      processor =
+        ParallelStreamProcessor.createEosStreamProcessor(
+          ParallelConsumerOptions
+            .<byte[], byte[]>builder()
+            .ordering(ParallelConsumerOptions.ProcessingOrder.UNORDERED)
+            .maxConcurrency(100)
+            .ignoreReflectiveAccessExceptionsForAutoCommitDisabledCheck(true)
+            .consumer(kafkaConsumer)
+            .build()
+        );
 
       processor.subscribe(Collections.singletonList(TOPIC));
     }
 
     /// Starts Confluent polling inside measured benchmark time.
     void start() {
-      processor.poll(_ -> processedCount.incrementAndGet());
+      processor.poll(pollContext -> processedCount.incrementAndGet());
     }
 
     /// Deterministically tears down Confluent resources for one invocation.
@@ -291,13 +296,14 @@ public final class ParallelProcessingBenchmarkInfrastructure {
           .setNumControllerNodes(1)
           .build();
 
-        cluster = new KafkaClusterTestKit.Builder(nodes)
-          .setConfigProp("auto.create.topics.enable", "true")
-          .setConfigProp("offsets.topic.replication.factor", "1")
-          .setConfigProp("transaction.state.log.replication.factor", "1")
-          .setConfigProp("transaction.state.log.min.isr", "1")
-          .setConfigProp("min.insync.replicas", "1")
-          .build();
+        cluster =
+          new KafkaClusterTestKit.Builder(nodes)
+            .setConfigProp("auto.create.topics.enable", "true")
+            .setConfigProp("offsets.topic.replication.factor", "1")
+            .setConfigProp("transaction.state.log.replication.factor", "1")
+            .setConfigProp("transaction.state.log.min.isr", "1")
+            .setConfigProp("min.insync.replicas", "1")
+            .build();
 
         cluster.format();
         cluster.startup();

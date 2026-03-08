@@ -120,9 +120,6 @@ public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
 
   private boolean isLikelyJson(final String value) {
     final var trimmed = value.trim();
-    return (
-      (trimmed.startsWith("{") || trimmed.startsWith("[")) &&
-      (trimmed.endsWith("}") || trimmed.endsWith("]"))
-    );
+    return ((trimmed.startsWith("{") || trimmed.startsWith("[")) && (trimmed.endsWith("}") || trimmed.endsWith("]")));
   }
 }
