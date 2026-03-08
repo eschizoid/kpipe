@@ -18,7 +18,6 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.kpipe.consumer.FunctionalConsumer;
@@ -48,30 +47,20 @@ import org.openjdk.jmh.annotations.TearDown;
 public final class ParallelProcessingBenchmarkInfrastructure {
 
   /// Topic used by both benchmark implementations.
-  ///
-  /// Keeping this in one place guarantees both implementations read from the same source.
   static final String TOPIC = "benchmark-topic";
 
   /// Number of records seeded and awaited per invocation.
-  ///
-  /// This is reused by `@OperationsPerInvocation` and waiting logic to keep accounting aligned.
   static final int TARGET_MESSAGES = 1000;
 
   /// Safety timeout for per-invocation message completion checks.
-  ///
-  /// A timeout turns a silent stall into a deterministic benchmark failure.
   private static final long MAX_WAIT_NANOS = TimeUnit.SECONDS.toNanos(30);
 
   /// Bounded close timeout for Confluent resources.
-  ///
-  /// Prevents JMH from hanging on lingering background threads (`pc-control`, `pc-broker-poll`).
   private static final Duration PC_CLOSE_TIMEOUT = Duration.ofSeconds(5);
 
   private ParallelProcessingBenchmarkInfrastructure() {}
 
   /// Waits until `TARGET_MESSAGES` are observed for the current invocation.
-  ///
-  /// This helper is shared by both benchmark methods so timeout behavior is identical.
   ///
   /// @param benchmarkName name used in timeout diagnostics
   /// @param processedCount invocation-scoped progress counter
@@ -116,9 +105,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     /// Stops embedded Kafka once the trial completes.
     @TearDown(Level.Trial)
     public void tearDown() throws Exception {
-      if (backend != null) {
-        backend.close();
-      }
+      if (backend != null) backend.close();
     }
 
     /// Builds baseline consumer properties for benchmark consumers.
@@ -174,9 +161,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       try (final var admin = Admin.create(adminProps)) {
         admin.createTopics(Collections.singletonList(new NewTopic(TOPIC, 1, (short) 1))).all().get();
       } catch (final Exception e) {
-        if (!(e.getCause() instanceof TopicExistsException) && !(e instanceof TopicExistsException)) {
-          throw new IllegalStateException("Unable to create benchmark topic", e);
-        }
+        throw new IllegalStateException("Unable to create benchmark topic", e);
       }
     }
   }
@@ -217,9 +202,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
     @TearDown(Level.Invocation)
     public void tearDown() {
-      if (consumer != null) {
-        consumer.close();
-      }
+      if (consumer != null) consumer.close();
     }
 
     AtomicInteger processedCount() {
