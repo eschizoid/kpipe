@@ -84,7 +84,7 @@ class AppIntegrationTest {
 
     final var capturingSink = new CapturingSink();
 
-    try (final var app = new App(config)) {
+    try (final var app = new App(config, srUrl)) {
       // Register the capturing sink
       app.getSinkRegistry().register("capturingSink", capturingSink);
 
@@ -93,13 +93,12 @@ class AppIntegrationTest {
         .ofVirtual()
         .start(() -> {
           try {
-            System.setProperty("SCHEMA_REGISTRY_URL", srUrl);
             app.start();
             app.awaitShutdown();
-          } catch (Exception e) {
+          } catch (final Exception e) {
             log.log(Level.ERROR, "App error", e);
           }
-        });
+         });
 
       // Load schema
       final Schema schema;

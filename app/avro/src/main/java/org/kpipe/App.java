@@ -33,6 +33,7 @@ import org.kpipe.sink.MessageSink;
 public class App implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(App.class.getName());
+  private static final String DEFAULT_SCHEMA_REGISTRY_URL = "http://schema-registry:8081";
 
   private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final FunctionalConsumer<byte[], byte[]> functionalConsumer;
@@ -59,9 +60,17 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
+    this(config, resolveSchemaRegistryUrl());
+  }
+
+  /// Creates a new KafkaConsumerApp with an explicit schema registry URL.
+  ///
+  /// @param config The application configuration
+  /// @param schemaRegistryUrl Schema Registry base URL
+  public App(final AppConfig config, final String schemaRegistryUrl) {
     processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
     sinkRegistry = new MessageSinkRegistry();
-    functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry);
+    functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry, schemaRegistryUrl);
 
     final var consumerMetricsReporter = new ConsumerMetricsReporter(
       functionalConsumer::getMetrics,
@@ -72,6 +81,13 @@ public class App implements AutoCloseable {
     final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
     final var sinkMetricsReporter = new SinkMetricsReporter(sinkRegistry, null);
     runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter);
+  }
+
+  private static String resolveSchemaRegistryUrl() {
+    return System.getProperty(
+      "SCHEMA_REGISTRY_URL",
+      System.getenv().getOrDefault("SCHEMA_REGISTRY_URL", DEFAULT_SCHEMA_REGISTRY_URL)
+    );
   }
 
   /** Creates the consumer runner with appropriate lifecycle hooks. */
@@ -105,7 +121,8 @@ public class App implements AutoCloseable {
   public static FunctionalConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
     final MessageProcessorRegistry processorRegistry,
-    final MessageSinkRegistry sinkRegistry
+    final MessageSinkRegistry sinkRegistry,
+    final String schemaRegistryUrl
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
@@ -114,7 +131,7 @@ public class App implements AutoCloseable {
       .<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createAvroProcessorPipeline(processorRegistry, config, sinkRegistry))
+      .withProcessor(createAvroProcessorPipeline(processorRegistry, config, sinkRegistry, schemaRegistryUrl))
       .withPollTimeout(config.pollTimeout())
       .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
@@ -153,13 +170,10 @@ public class App implements AutoCloseable {
   private static Function<byte[], byte[]> createAvroProcessorPipeline(
     final MessageProcessorRegistry registry,
     final AppConfig config,
-    final MessageSinkRegistry sinkRegistry
+    final MessageSinkRegistry sinkRegistry,
+    final String schemaRegistryUrl
   ) {
-    final var srUrl = System.getProperty(
-      "SCHEMA_REGISTRY_URL",
-      System.getenv().getOrDefault("SCHEMA_REGISTRY_URL", "http://schema-registry:8081")
-    );
-    registry.addSchema("1", "com.kpipe.customer", srUrl + "/subjects/com.kpipe.customer/versions/latest");
+    registry.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
 
     // Register the sink
     final var schema = AvroMessageProcessor.getSchema("1");
