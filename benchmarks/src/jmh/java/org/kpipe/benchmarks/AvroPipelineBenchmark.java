@@ -2,12 +2,12 @@ package org.kpipe.benchmarks;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
-import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.EncoderFactory;
 import org.kpipe.processor.AvroMessageProcessor;
 import org.kpipe.registry.MessageProcessorRegistry;
@@ -56,14 +56,14 @@ public class AvroPipelineBenchmark {
             """;
     schema = new Schema.Parser().parse(schemaJson);
 
-    GenericRecord record = new GenericData.Record(schema);
+    final var record = new GenericData.Record(schema);
     record.put("id", 123L);
     record.put("name", "Jane Doe");
     record.put("email", "jane.doe@example.com");
     record.put("processed", false);
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    GenericDatumWriter<GenericRecord> writer = new GenericDatumWriter<>(schema);
+    final var out = new ByteArrayOutputStream();
+    final var writer = new GenericDatumWriter<>(schema);
     writer.write(record, EncoderFactory.get().binaryEncoder(out, null));
     avroBytes = out.toByteArray();
 
@@ -102,7 +102,7 @@ public class AvroPipelineBenchmark {
   @Benchmark
   public void manualAvroMagicHandling(final Blackhole bh) {
     // This mimics the manual way of handling magic bytes with copying
-    final var stripped = java.util.Arrays.copyOfRange(avroWithMagicBytes, 5, avroWithMagicBytes.length);
+    final var stripped = Arrays.copyOfRange(avroWithMagicBytes, 5, avroWithMagicBytes.length);
     final var result = AvroMessageProcessor.processAvro(
       stripped,
       schema,

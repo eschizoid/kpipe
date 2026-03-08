@@ -28,13 +28,11 @@ Evaluates the throughput of KPipe's Java 24 Virtual Thread-based parallel proces
 Parallel Consumer.
 
 - **KPipe Parallel Mode**: Leverages a thread-per-record model using Loom to process message batches concurrently with
-  minimal overhead. Uses real Kafka integration via Testcontainers for accuracy.
+  minimal overhead.
 - **Confluent Parallel Consumer**: Industry-standard library for parallel processing, used as a baseline for comparison.
+- **Kafka backend**: Uses an in-process embedded Kafka broker powered by Apache Kafka test kit.
 
 ## Running Benchmarks
-
-**Note**: Benchmarks involving `ParallelProcessingBenchmark` require a working **Docker** environment to spin up Kafka
-via Testcontainers.
 
 To run all benchmarks with default JMH settings:
 
@@ -53,7 +51,7 @@ You can use regex to target specific benchmark classes:
 # Run only Avro benchmarks
 ./gradlew :benchmarks:jmh -Pjmh.includes='AvroPipelineBenchmark'
 
-# Run only Parallel Processing benchmarks (Requires Docker)
+# Run only Parallel Processing benchmarks
 ./gradlew :benchmarks:jmh -Pjmh.includes='ParallelProcessingBenchmark'
 ```
 
@@ -78,11 +76,14 @@ Key performance indicators to watch for:
   memory allocation and garbage collection overhead.
 - **Concurrency Scaling**: How the parallel processing benchmark handles large batches compared to sequential
   processing.
-- **Real Infrastructure vs. Mocks**: Using Testcontainers ensures that the benchmarks account for real network and
-  broker-side latency, providing a more realistic comparison between KPipe and Confluent.
+- **Real Infrastructure vs. Mocks**: This suite favors repeatable local microbenchmarks by using an embedded Kafka
+  broker.
+- **Parallel throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(1000)`, so its
+  reported throughput is normalized per processed message rather than per full benchmark invocation.
+- **Logging noise control**: KPipe parallel benchmark uses a no-op sink in benchmark runs to avoid console I/O from
+  distorting throughput numbers.
 
 ## Requirements
 
 - **Java 24+**: Required for Virtual Threads (Project Loom).
 - **Gradle**: Used to compile and execute the benchmark harness.
-- **Docker**: Required for benchmarks that use real Kafka instances (e.g., `ParallelProcessingBenchmark`).

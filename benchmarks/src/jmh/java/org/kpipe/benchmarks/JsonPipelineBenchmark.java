@@ -28,6 +28,8 @@ import org.openjdk.jmh.infra.Blackhole;
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class JsonPipelineBenchmark {
 
+  private static final long BENCHMARK_TIMESTAMP = 1_700_000_000_000L;
+
   private byte[] jsonBytes;
   private Function<byte[], byte[]> kpipePipeline;
 
@@ -51,7 +53,7 @@ public class JsonPipelineBenchmark {
           StandardCharsets.UTF_8
         );
 
-    MessageProcessorRegistry registry = new MessageProcessorRegistry("benchmark-app");
+    final var registry = new MessageProcessorRegistry("benchmark-app");
     // Register some operators
     registry.registerJsonOperator(
       "op1",
@@ -63,7 +65,7 @@ public class JsonPipelineBenchmark {
     registry.registerJsonOperator(
       "op2",
       map -> {
-        map.put("timestamp", System.currentTimeMillis());
+        map.put("timestamp", BENCHMARK_TIMESTAMP);
         return map;
       }
     );
@@ -96,7 +98,7 @@ public class JsonPipelineBenchmark {
     final var step2 = JsonMessageProcessor.processJson(
       step1,
       map -> {
-        map.put("timestamp", System.currentTimeMillis());
+        map.put("timestamp", BENCHMARK_TIMESTAMP);
         return map;
       }
     );
@@ -124,7 +126,7 @@ public class JsonPipelineBenchmark {
       jsonBytes,
       map -> {
         map.put("processed_by", "manual");
-        map.put("timestamp", System.currentTimeMillis());
+        map.put("timestamp", BENCHMARK_TIMESTAMP);
         map.remove("email");
         return map;
       }
