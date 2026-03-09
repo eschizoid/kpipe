@@ -10,18 +10,18 @@ package org.kpipe.consumer.enums;
 /// * `CLOSING` - In the process of shutting down
 /// * `CLOSED` - Terminated with all resources released
 public enum ConsumerState {
-  /** Consumer has been created but not started. */
+  /// Consumer has been created but not started.
   CREATED,
 
-  /** Consumer is actively processing messages. */
+  /// Consumer is actively processing messages.
   RUNNING,
 
-  /** Consumer is temporarily paused. */
+  /// Consumer is temporarily paused.
   PAUSED,
 
-  /** Consumer is in the process of shutting down. */
+  /// Consumer is in the process of shutting down.
   CLOSING,
 
-  /** Consumer has completed shutdown and can't be restarted. */
+  /// Consumer has completed shutdown and can't be restarted.
   CLOSED,
 }

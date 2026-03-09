@@ -455,12 +455,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     LOGGER.log(Level.INFO, "Consumer started for topic {0}", topic);
   }
 
-  /**
-   * Pauses consumption from the topic. Any in-flight messages will continue processing, but no new
-   * messages will be consumed until {@link #resume()} is called.
-   *
-   * <p>This method is idempotent - calling it multiple times has no additional effect.
-   */
+  /// Pauses consumption from the topic. Any in-flight messages will continue processing, but no new
+  /// messages will be consumed until {@link #resume()} is called.
+  ///
+  /// <p>This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
     final var currentState = state.get();
 
@@ -546,13 +544,11 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Resumes consumption from the topic after being paused.
-   *
-   * <p>This method is idempotent - calling it multiple times has no additional effect.
-   *
-   * @throws IllegalStateException if the consumer has been closed
-   */
+  /// Resumes consumption from the topic after being paused.
+  ///
+  /// <p>This method is idempotent - calling it multiple times has no additional effect.
+  ///
+  /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
     final var currentState = state.get();
 
@@ -602,24 +598,22 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     return (state.get() == ConsumerState.RUNNING || state.get() == ConsumerState.PAUSED);
   }
 
-  /**
-   * Closes this consumer, stopping message consumption and processing.
-   *
-   * <p>This method performs a graceful shutdown by:
-   *
-   * <ol>
-   *   <li>Setting the state to CLOSING to prevent new operations
-   *   <li>Creating a message tracker to monitor in-flight messages
-   *   <li>Signaling shutdown to stop accepting new messages
-   *   <li>Waiting for all in-flight messages to complete processing
-   *   <li>Waking up the consumer thread and waiting for its termination
-   *   <li>Shutting down the virtual thread executor
-   *   <li>Closing the offset manager to ensure final offsets are committed
-   *   <li>Setting the state to CLOSED
-   * </ol>
-   *
-   * <p>This method is idempotent - calling it multiple times has no additional effect.
-   */
+  /// Closes this consumer, stopping message consumption and processing.
+  ///
+  /// <p>This method performs a graceful shutdown by:
+  ///
+  /// <ol>
+  ///   <li>Setting the state to CLOSING to prevent new operations
+  ///   <li>Creating a message tracker to monitor in-flight messages
+  ///   <li>Signaling shutdown to stop accepting new messages
+  ///   <li>Waiting for all in-flight messages to complete processing
+  ///   <li>Waking up the consumer thread and waiting for its termination
+  ///   <li>Shutting down the virtual thread executor
+  ///   <li>Closing the offset manager to ensure final offsets are committed
+  ///   <li>Setting the state to CLOSED
+  /// </ol>
+  ///
+  /// <p>This method is idempotent - calling it multiple times has no additional effect.
   @Override
   public void close() {
     // Only proceed if not already closed or closing
@@ -652,11 +646,9 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     state.set(ConsumerState.CLOSED);
   }
 
-  /**
-   * Processes multiple Kafka records by submitting each one to the virtual thread executor.
-   *
-   * @param records the batch of records to process
-   */
+  /// Processes multiple Kafka records by submitting each one to the virtual thread executor.
+  ///
+  /// @param records the batch of records to process
   protected void processRecords(final ConsumerRecords<K, V> records) {
     if (sequentialProcessing) {
       // Process sequentially for cases where order matters
@@ -686,24 +678,22 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Processes a single Kafka consumer record using the configured processor function.
-   *
-   * <p>This method applies the processor function to transform the record value while handling
-   * exceptions with configurable retry logic. Processing occurs in the current virtual thread
-   * without blocking operations that would impact carrier thread performance.
-   *
-   * <p>Metrics tracked during processing:
-   *
-   * <ul>
-   *   <li>messagesReceived - Incremented when a record is received
-   *   <li>messagesProcessed - Incremented for successful processing
-   *   <li>retries - Incremented for each retry attempt (not counting an initial attempt)
-   *   <li>processingErrors - Incremented when processing fails after all retries
-   * </ul>
-   *
-   * @param record The Kafka consumer record to process
-   */
+  /// Processes a single Kafka consumer record using the configured processor function.
+  ///
+  /// <p>This method applies the processor function to transform the record value while handling
+  /// exceptions with configurable retry logic. Processing occurs in the current virtual thread
+  /// without blocking operations that would impact carrier thread performance.
+  ///
+  /// <p>Metrics tracked during processing:
+  ///
+  /// <ul>
+  ///   <li>messagesReceived - Incremented when a record is received
+  ///   <li>messagesProcessed - Incremented for successful processing
+  ///   <li>retries - Incremented for each retry attempt (not counting an initial attempt)
+  ///   <li>processingErrors - Incremented when processing fails after all retries
+  /// </ul>
+  ///
+  /// @param record The Kafka consumer record to process
   protected void processRecord(final ConsumerRecord<K, V> record) {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
 

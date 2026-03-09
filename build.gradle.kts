@@ -44,6 +44,7 @@ allprojects {
             }
             url = uri("https://central.sonatype.com/")
         }
+        maven { url = uri("https://packages.confluent.io/maven/") }
     }
 }
 

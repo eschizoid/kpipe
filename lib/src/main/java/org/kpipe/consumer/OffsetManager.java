@@ -73,24 +73,20 @@ public class OffsetManager<K, V> implements AutoCloseable {
   private ScheduledExecutorService scheduler;
   private ScheduledFuture<?> scheduledCommitTask;
 
-  /**
-   * Creates a new OffsetManager instance.
-   *
-   * @param consumer The Kafka consumer to manage offsets for
-   * @param <K> Type parameter for the key of the consumer
-   * @param <V> Type parameter for the value of the consumer
-   * @return A builder to construct the OffsetManager
-   */
+  /// Creates a new OffsetManager instance.
+  ///
+  /// @param consumer The Kafka consumer to manage offsets for
+  /// @param <K> Type parameter for the key of the consumer
+  /// @param <V> Type parameter for the value of the consumer
+  /// @return A builder to construct the OffsetManager
   public static <K, V> Builder<K, V> builder(final Consumer<K, V> consumer) {
     return new Builder<>(consumer);
   }
 
-  /**
-   * Builder class for OffsetManager.
-   *
-   * @param <K> The type of the key
-   * @param <V> The type of the value
-   */
+  /// Builder class for OffsetManager.
+  ///
+  /// @param <K> The type of the key
+  /// @param <V> The type of the value
   public static class Builder<K, V> {
 
     private final Consumer<K, V> kafkaConsumer;
@@ -101,23 +97,19 @@ public class OffsetManager<K, V> implements AutoCloseable {
       this.kafkaConsumer = Objects.requireNonNull(consumer, "Consumer cannot be null");
     }
 
-    /**
-     * Shared command queue for the FunctionalConsumer and OffsetManager.
-     *
-     * @param commandQueue The command queue to use
-     * @return This builder instance
-     */
+    /// Shared command queue for the FunctionalConsumer and OffsetManager.
+    ///
+    /// @param commandQueue The command queue to use
+    /// @return This builder instance
     public Builder<K, V> withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
       this.commandQueue = Objects.requireNonNull(commandQueue, "Command queue cannot be null");
       return this;
     }
 
-    /**
-     * Sets the commit interval for periodic offset commits.
-     *
-     * @param interval The duration between commits
-     * @return This builder instance
-     */
+    /// Sets the commit interval for periodic offset commits.
+    ///
+    /// @param interval The duration between commits
+    /// @return This builder instance
     public Builder<K, V> withCommitInterval(final Duration interval) {
       this.commitInterval = Objects.requireNonNull(interval, "Commit interval cannot be null");
       if (interval.isNegative() || interval.isZero()) throw new IllegalArgumentException(
@@ -126,11 +118,9 @@ public class OffsetManager<K, V> implements AutoCloseable {
       return this;
     }
 
-    /**
-     * Builds the OffsetManager instance.
-     *
-     * @return A new OffsetManager instance
-     */
+    /// Builds the OffsetManager instance.
+    ///
+    /// @return A new OffsetManager instance
     public OffsetManager<K, V> build() {
       if (commandQueue == null) throw new IllegalStateException("Command queue must be provided");
       return new OffsetManager<>(this);
@@ -144,13 +134,11 @@ public class OffsetManager<K, V> implements AutoCloseable {
     this.commandQueue = builder.commandQueue;
   }
 
-  /**
-   * Starts the OffsetManager and begins periodic offset commits. This method is idempotent -
-   * calling it multiple times has no effect if the manager is already started.
-   *
-   * @return this instance for method chaining
-   * @throws IllegalStateException if the OffsetManager is already closed
-   */
+  /// Starts the OffsetManager and begins periodic offset commits. This method is idempotent -
+  /// calling it multiple times has no effect if the manager is already started.
+  ///
+  /// @return this instance for method chaining
+  /// @throws IllegalStateException if the OffsetManager is already closed
   public OffsetManager<K, V> start() {
     if (state.get() == OffsetState.STOPPED) throw new IllegalStateException("Cannot restart a stopped OffsetManager");
 
@@ -174,30 +162,26 @@ public class OffsetManager<K, V> implements AutoCloseable {
     return this;
   }
 
-  /**
-   * Notifies the OffsetManager that a commit operation has completed.
-   *
-   * @param commitId The ID of the commit operation
-   * @param success True if the commit was successful, false otherwise
-   */
+  /// Notifies the OffsetManager that a commit operation has completed.
+  ///
+  /// @param commitId The ID of the commit operation
+  /// @param success True if the commit was successful, false otherwise
   public void notifyCommitComplete(final String commitId, final boolean success) {
     var future = commitFutures.remove(commitId);
     if (future != null) future.complete(success);
   }
 
-  /**
-   * Tracks an offset that is about to be processed using a ConsumerRecord.
-   *
-   * <p>This method extracts the topic, partition, and offset from the consumer record and adds the
-   * offset+1 to the pending offsets. In Kafka's offset model, committing offset N means you've
-   * processed through offset N-1 and expect to receive N next.
-   *
-   * <p>When using this method with {@link #markOffsetProcessed(ConsumerRecord)}, the offset
-   * transformation is handled automatically. This method initializes the next offset to commit
-   * using the raw record offset, which is appropriate for the first record in a partition.
-   *
-   * @param record The consumer record to track
-   */
+  /// Tracks an offset that is about to be processed using a ConsumerRecord.
+  ///
+  /// <p>This method extracts the topic, partition, and offset from the consumer record and adds the
+  /// offset+1 to the pending offsets. In Kafka's offset model, committing offset N means you've
+  /// processed through offset N-1 and expect to receive N next.
+  ///
+  /// <p>When using this method with {@link #markOffsetProcessed(ConsumerRecord)}, the offset
+  /// transformation is handled automatically. This method initializes the next offset to commit
+  /// using the raw record offset, which is appropriate for the first record in a partition.
+  ///
+  /// @param record The consumer record to track
   public void trackOffset(final ConsumerRecord<K, V> record) {
     if (state.get() == OffsetState.STOPPED) return;
     final var partition = new TopicPartition(record.topic(), record.partition());
@@ -205,17 +189,15 @@ public class OffsetManager<K, V> implements AutoCloseable {
     pendingOffsets.computeIfAbsent(partition, k -> new ConcurrentSkipListSet<>()).add(offset);
   }
 
-  /**
-   * Marks an offset as successfully processed using a ConsumerRecord.
-   *
-   * <p>This method extracts the topic, partition, and offset from the consumer record, increments
-   * the offset by 1 to match Kafka's "next offset" semantics.
-   *
-   * <p>The +1 adjustment ensures that when this record's offset is committed, Kafka will begin
-   * delivering messages from the next offset after this one.
-   *
-   * @param record The consumer record that was processed
-   */
+  /// Marks an offset as successfully processed using a ConsumerRecord.
+  ///
+  /// <p>This method extracts the topic, partition, and offset from the consumer record, increments
+  /// the offset by 1 to match Kafka's "next offset" semantics.
+  ///
+  /// <p>The +1 adjustment ensures that when this record's offset is committed, Kafka will begin
+  /// delivering messages from the next offset after this one.
+  ///
+  /// @param record The consumer record that was processed
   public void markOffsetProcessed(final ConsumerRecord<K, V> record) {
     if (state.get() == OffsetState.STOPPED) {
       return;
@@ -232,12 +214,10 @@ public class OffsetManager<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Commits offsets that are safe to commit based on the current processing state.
-   *
-   * <p>This method is called periodically to ensure that offsets are committed in a timely manner
-   * without losing any unprocessed messages.
-   */
+  /// Commits offsets that are safe to commit based on the current processing state.
+  ///
+  /// <p>This method is called periodically to ensure that offsets are committed in a timely manner
+  /// without losing any unprocessed messages.
   public void commitSafeOffsets() {
     try {
       commitSyncAndWait(60);
@@ -247,12 +227,10 @@ public class OffsetManager<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Stops the periodic offset commit task but doesn't close resources. This can be used to
-   * temporarily pause offset management.
-   *
-   * @return this instance for method chaining
-   */
+  /// Stops the periodic offset commit task but doesn't close resources. This can be used to
+  /// temporarily pause offset management.
+  ///
+  /// @return this instance for method chaining
   public OffsetManager<K, V> stop() {
     if (!state.compareAndSet(OffsetState.RUNNING, OffsetState.STOPPING)) return this; // Not running, nothing to stop
 
@@ -266,7 +244,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
     return this;
   }
 
-  /** Stops the scheduler if it's running. */
+  //  Stops the scheduler if it's running.
   private void stopScheduler() {
     if (scheduledCommitTask != null) {
       scheduledCommitTask.cancel(false);
@@ -285,13 +263,11 @@ public class OffsetManager<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Commits offsets synchronously and waits for the specified timeout.
-   *
-   * @param timeoutSeconds Time to wait for a commit in seconds
-   * @return true if the commit was successful
-   * @throws InterruptedException if the thread is interrupted while waiting
-   */
+  /// Commits offsets synchronously and waits for the specified timeout.
+  ///
+  /// @param timeoutSeconds Time to wait for a commit in seconds
+  /// @return true if the commit was successful
+  /// @throws InterruptedException if the thread is interrupted while waiting
   public boolean commitSyncAndWait(final int timeoutSeconds) throws InterruptedException {
     if (state.get() == OffsetState.STOPPED) return true;
 
@@ -301,12 +277,10 @@ public class OffsetManager<K, V> implements AutoCloseable {
     return performCommit(offsetsToCommit, timeoutSeconds);
   }
 
-  /**
-   * Prepares offsets for commit based on the current processing state. This method calculates the
-   * offsets to commit at the time of commit, rather than maintaining them continuously.
-   *
-   * @return Map of partition to offset metadata ready for committing
-   */
+  /// Prepares offsets for commit based on the current processing state. This method calculates the
+  /// offsets to commit at the time of commit, rather than maintaining them continuously.
+  ///
+  /// @return Map of partition to offset metadata ready for committing
   private Map<TopicPartition, OffsetAndMetadata> prepareOffsetsToCommit() {
     return Stream
       .concat(pendingOffsets.keySet().stream(), highestProcessedOffsets.keySet().stream())
@@ -345,12 +319,10 @@ public class OffsetManager<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Returns a snapshot of the current processing state for a partition.
-   *
-   * @param partition The partition to get state for
-   * @return Map containing state information
-   */
+  /// Returns a snapshot of the current processing state for a partition.
+  ///
+  /// @param partition The partition to get state for
+  /// @return Map containing state information
   public Map<String, Object> getPartitionState(final TopicPartition partition) {
     final var state = new HashMap<String, Object>();
     final var pending = pendingOffsets.get(partition);
@@ -385,11 +357,9 @@ public class OffsetManager<K, V> implements AutoCloseable {
     return state;
   }
 
-  /**
-   * Returns overall statistics about all partitions being managed.
-   *
-   * @return Map containing statistics for all partitions
-   */
+  /// Returns overall statistics about all partitions being managed.
+  ///
+  /// @return Map containing statistics for all partitions
   public Map<String, Object> getStatistics() {
     final var stats = new HashMap<String, Object>();
     final var allPartitions = new HashSet<>();
@@ -415,20 +385,16 @@ public class OffsetManager<K, V> implements AutoCloseable {
     return stats;
   }
 
-  /**
-   * Gets the current state of the OffsetManager.
-   *
-   * @return The current state
-   */
+  /// Gets the current state of the OffsetManager.
+  ///
+  /// @return The current state
   public OffsetState getState() {
     return state.get();
   }
 
-  /**
-   * Checks if the OffsetManager is running.
-   *
-   * @return true if running, false otherwise
-   */
+  /// Checks if the OffsetManager is running.
+  ///
+  /// @return true if running, false otherwise
   public boolean isRunning() {
     return state.get() == OffsetState.RUNNING;
   }
@@ -459,16 +425,14 @@ public class OffsetManager<K, V> implements AutoCloseable {
     }
   }
 
-  /**
-   * Creates a rebalance listener for the Kafka consumer.
-   *
-   * @return A ConsumerRebalanceListener instance
-   */
+  /// Creates a rebalance listener for the Kafka consumer.
+  ///
+  /// @return A ConsumerRebalanceListener instance
   public ConsumerRebalanceListener createRebalanceListener() {
     return new RebalanceListener(state, pendingOffsets, highestProcessedOffsets, kafkaConsumer, commandQueue);
   }
 
-  /** Cleans up resources. */
+  /// Cleans up resources.
   private void cleanup() {
     pendingOffsets.clear();
     highestProcessedOffsets.clear();

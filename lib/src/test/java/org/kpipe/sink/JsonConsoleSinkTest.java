@@ -80,6 +80,7 @@ class JsonConsoleSinkTest {
     sink.send(record, json);
     final var out = output();
     assertTrue(out.contains("field") && out.contains("value"), "Expected JSON content in output");
+    assertFalse(out.contains("Failed to parse/format JSON content"), "Did not expect JSON parse error logs");
   }
 
   @Test
@@ -99,7 +100,9 @@ class JsonConsoleSinkTest {
         """.strip().getBytes(StandardCharsets.UTF_8);
     final var record = new ConsumerRecord<String, Object>("test-topic", 0, 7L, "key1", json);
     sink.send(record, json);
-    assertTrue(output().contains("test-topic"), "Expected topic in output for JSON array");
+    final var out = output();
+    assertTrue(out.contains("test-topic"), "Expected topic in output for JSON array");
+    assertFalse(out.contains("Failed to parse/format JSON content"), "Did not expect JSON parse error logs");
   }
 
   @Test

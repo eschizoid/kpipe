@@ -15,6 +15,10 @@
 .idea/misc.xml
 .idea/vcs.xml
 .idea/codeStyles/
+.idea/compiler.xml
+.idea/copilot.data.migration.ask2agent.xml
+.idea/google-java-format.xml
+.idea/jsLibraryMappings.xml
 
 # AWS User-specific
 .idea/**/aws.xml
@@ -224,3 +228,9 @@ gradle-app.setting
 *.hprof
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,intellij,visualstudiocode,java,gradle
+
+### Junie ###
+.junie
+
+### Jenv ###
+.java-version

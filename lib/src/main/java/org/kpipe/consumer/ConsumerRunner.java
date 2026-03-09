@@ -79,24 +79,20 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     }
   }
 
-  /**
-   * Creates a new builder for configuring a ConsumerRunner.
-   *
-   * @param <T> the type of consumer to run
-   * @param consumer the consumer instance to manage
-   * @return a new builder instance
-   */
+  /// Creates a new builder for configuring a ConsumerRunner.
+  ///
+  /// @param <T> the type of consumer to run
+  /// @param consumer the consumer instance to manage
+  /// @return a new builder instance
   public static <T extends FunctionalConsumer<?, ?>> Builder<T> builder(final T consumer) {
     return new Builder<>(consumer);
   }
 
-  /**
-   * Starts the consumer if it hasn't been started already.
-   *
-   * <p>This method is idempotent - calling it multiple times has no effect after the first call.
-   *
-   * @throws RuntimeException if the consumer fails to start
-   */
+  /// Starts the consumer if it hasn't been started already.
+  ///
+  /// <p>This method is idempotent - calling it multiple times has no effect after the first call.
+  ///
+  /// @throws RuntimeException if the consumer fails to start
   public void start() {
     if (started.compareAndSet(false, true)) {
       final Runnable performStart = () -> {
@@ -113,20 +109,18 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     }
   }
 
-  /**
-   * Checks if the consumer is healthy, according to the configured health check.
-   *
-   * <p>This method uses a functional approach by composing predicates to determine health status.
-   * It checks three conditions:
-   *
-   * <ol>
-   *   <li>The consumer is not closed
-   *   <li>The consumer has been started
-   *   <li>The consumer passes the configured health check
-   * </ol>
-   *
-   * @return true if the consumer is healthy, false otherwise
-   */
+  /// Checks if the consumer is healthy, according to the configured health check.
+  ///
+  /// <p>This method uses a functional approach by composing predicates to determine health status.
+  /// It checks three conditions:
+  ///
+  /// <ol>
+  ///   <li>The consumer is not closed
+  ///   <li>The consumer has been started
+  ///   <li>The consumer passes the configured health check
+  /// </ol>
+  ///
+  /// @return true if the consumer is healthy, false otherwise
   public boolean isHealthy() {
     final Predicate<T> isNotClosed = c -> !closed.get();
     final Predicate<T> isStarted = c -> started.get();
@@ -134,12 +128,10 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     return isHealthyPredicate.test(consumer);
   }
 
-  /**
-   * Initiates a graceful shutdown of the consumer, waiting for in-flight messages to complete.
-   *
-   * @param timeoutMs maximum time in milliseconds to wait for in-flight messages
-   * @return true if shutdown completed successfully, false if it timed out
-   */
+  /// Initiates a graceful shutdown of the consumer, waiting for in-flight messages to complete.
+  ///
+  /// @param timeoutMs maximum time in milliseconds to wait for in-flight messages
+  /// @return true if shutdown completed successfully, false if it timed out
   public boolean shutdownGracefully(final long timeoutMs) {
     final Function<T, Boolean> performShutdown = c -> {
       stopMetricsThread();
@@ -154,25 +146,21 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     return closed.compareAndSet(false, true) ? performShutdown.apply(consumer) : true;
   }
 
-  /**
-   * Waits for the consumer to be shutdown, either by this thread or another thread calling {@link
-   * #close()} or {@link #shutdownGracefully(long)}.
-   *
-   * <p>This is a convenience method that delegates to {@link #awaitShutdown(long)} with a timeout
-   * of 0, meaning it will wait indefinitely.
-   *
-   * @return true if the shutdown completed normally, false if the wait was interrupted
-   */
+  /// Waits for the consumer to be shutdown, either by this thread or another thread calling {@link
+  /// #close()} or {@link #shutdownGracefully(long)}.
+  ///
+  /// <p>This is a convenience method that delegates to {@link #awaitShutdown(long)} with a timeout
+  /// of 0, meaning it will wait indefinitely.
+  ///
+  /// @return true if the shutdown completed normally, false if the wait was interrupted
   public boolean awaitShutdown() {
     return awaitShutdown(0);
   }
 
-  /**
-   * Waits up to the specified timeout for the consumer to be shutdown.
-   *
-   * @param timeoutMs maximum time in milliseconds to wait, 0 means wait indefinitely
-   * @return true if the shutdown completed normally within the timeout, false otherwise
-   */
+  /// Waits up to the specified timeout for the consumer to be shutdown.
+  ///
+  /// @param timeoutMs maximum time in milliseconds to wait, 0 means wait indefinitely
+  /// @return true if the shutdown completed normally within the timeout, false otherwise
   public boolean awaitShutdown(final long timeoutMs) {
     final Function<Long, Boolean> waitOnLatch = timeout -> {
       try {
@@ -187,12 +175,10 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     return waitOnLatch.apply(timeoutMs);
   }
 
-  /**
-   * Closes this consumer runner, performing a graceful shutdown.
-   *
-   * <p>This implementation delegates to {@link #shutdownGracefully(long)} with the configured
-   * timeout. It follows functional programming principles by using a declarative approach.
-   */
+  /// Closes this consumer runner, performing a graceful shutdown.
+  ///
+  /// <p>This implementation delegates to {@link #shutdownGracefully(long)} with the configured
+  /// timeout. It follows functional programming principles by using a declarative approach.
   @Override
   public void close() {
     shutdownGracefully(shutdownTimeoutMs);
@@ -274,7 +260,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
       });
   }
 
-  /** Starts a metrics reporting thread if metrics reporters are configured. */
+  /// Starts a metrics reporting thread if metrics reporters are configured.
   private void startMetricsThread() {
     if (metricsReporters.isEmpty() || metricsInterval <= 0) {
       return;
@@ -312,7 +298,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
         });
   }
 
-  /** Stops the metrics reporting thread if it's running. */
+  /// Stops the metrics reporting thread if it's running.
   private void stopMetricsThread() {
     Optional
       .ofNullable(metricsThread)
@@ -329,11 +315,9 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
       });
   }
 
-  /**
-   * Builder for creating ConsumerRunner instances with custom configuration.
-   *
-   * @param <T> the type of consumer being managed
-   */
+  /// Builder for creating ConsumerRunner instances with custom configuration.
+  ///
+  /// @param <T> the type of consumer being managed
   public static class Builder<T extends FunctionalConsumer<?, ?>> {
 
     private final T consumer;
@@ -352,100 +336,82 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
       this.gracefulShutdown = ConsumerRunner::performGracefulConsumerShutdown;
     }
 
-    /**
-     * Sets a custom action to perform when starting the consumer.
-     *
-     * @param startAction the action to execute on consumer start
-     * @return this builder instance
-     */
+    /// Sets a custom action to perform when starting the consumer.
+    ///
+    /// @param startAction the action to execute on consumer start
+    /// @return this builder instance
     public Builder<T> withStartAction(final Consumer<T> startAction) {
       this.startAction = startAction;
       return this;
     }
 
-    /**
-     * Sets a predicate that determines if the consumer is healthy.
-     *
-     * @param healthCheck the predicate to use for health checks
-     * @return this builder instance
-     */
+    /// Sets a predicate that determines if the consumer is healthy.
+    ///
+    /// @param healthCheck the predicate to use for health checks
+    /// @return this builder instance
     public Builder<T> withHealthCheck(final Predicate<T> healthCheck) {
       this.healthCheck = healthCheck;
       return this;
     }
 
-    /**
-     * Sets a custom function to handle graceful shutdown of the consumer.
-     *
-     * @param gracefulShutdown the function to use for graceful shutdown
-     * @return this builder instance
-     */
+    /// Sets a custom function to handle graceful shutdown of the consumer.
+    ///
+    /// @param gracefulShutdown the function to use for graceful shutdown
+    /// @return this builder instance
     public Builder<T> withGracefulShutdown(final BiFunction<T, Long, Boolean> gracefulShutdown) {
       this.gracefulShutdown = gracefulShutdown;
       return this;
     }
 
-    /**
-     * Sets the shutdown timeout in milliseconds.
-     *
-     * @param shutdownTimeout maximum time to wait during shutdown
-     * @return this builder instance
-     */
+    /// Sets the shutdown timeout in milliseconds.
+    ///
+    /// @param shutdownTimeout maximum time to wait during shutdown
+    /// @return this builder instance
     public Builder<T> withShutdownTimeout(final long shutdownTimeout) {
       this.shutdownTimeout = shutdownTimeout;
       return this;
     }
 
-    /**
-     * Configures whether to register a JVM shutdown hook that calls close().
-     *
-     * @param useShutdownHook true to register a shutdown hook, false otherwise
-     * @return this builder instance
-     */
+    /// Configures whether to register a JVM shutdown hook that calls close().
+    ///
+    /// @param useShutdownHook true to register a shutdown hook, false otherwise
+    /// @return this builder instance
     public Builder<T> withShutdownHook(final boolean useShutdownHook) {
       this.useShutdownHook = useShutdownHook;
       return this;
     }
 
-    /**
-     * Adds multiple metrics reporters to run periodically.
-     *
-     * @param reporters the collection of metrics reporters to add
-     * @return this builder instance
-     */
+    /// Adds multiple metrics reporters to run periodically.
+    ///
+    /// @param reporters the collection of metrics reporters to add
+    /// @return this builder instance
     public Builder<T> withMetricsReporters(final Collection<MetricsReporter> reporters) {
       this.metricsReporters.addAll(reporters);
       return this;
     }
 
-    /**
-     * Sets the interval in milliseconds between metrics reports.
-     *
-     * @param metricsInterval the reporting interval in milliseconds
-     * @return this builder instance
-     */
+    /// Sets the interval in milliseconds between metrics reports.
+    ///
+    /// @param metricsInterval the reporting interval in milliseconds
+    /// @return this builder instance
     public Builder<T> withMetricsInterval(final long metricsInterval) {
       this.metricsInterval = metricsInterval;
       return this;
     }
 
-    /**
-     * Applies a custom configuration function to this builder.
-     *
-     * <p>This method allows for composing multiple configuration steps.
-     *
-     * @param configurer a function that applies configuration to this builder
-     * @return this builder instance
-     */
+    /// Applies a custom configuration function to this builder.
+    ///
+    /// <p>This method allows for composing multiple configuration steps.
+    ///
+    /// @param configurer a function that applies configuration to this builder
+    /// @return this builder instance
     public Builder<T> with(final Function<Builder<T>, Builder<T>> configurer) {
       return configurer.apply(this);
     }
 
-    /**
-     * Builds a new ConsumerRunner with the configured settings.
-     *
-     * @return a new ConsumerRunner instance
-     */
+    /// Builds a new ConsumerRunner with the configured settings.
+    ///
+    /// @return a new ConsumerRunner instance
     public ConsumerRunner<T> build() {
       return new ConsumerRunner<>(this);
     }

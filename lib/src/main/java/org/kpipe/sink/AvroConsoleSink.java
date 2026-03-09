@@ -17,13 +17,11 @@ import org.apache.avro.io.EncoderFactory;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.kpipe.processor.AvroMessageProcessor;
 
-/**
- * A sink that logs processed Kafka messages with Avro formatting.
- *
- * @param <K> The type of message key
- * @param <V> The type of message value
- * @param schema The Avro schema used to decode byte array messages
- */
+/// A sink that logs processed Kafka messages with Avro formatting.
+///
+/// @param <K> The type of message key
+/// @param <V> The type of message value
+/// @param schema The Avro schema used to decode byte array messages
 public record AvroConsoleSink<K, V>(Schema schema) implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private static final Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());

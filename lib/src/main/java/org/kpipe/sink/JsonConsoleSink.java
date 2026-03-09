@@ -8,40 +8,40 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-/**
- * A sink that logs processed Kafka messages with JSON formatting.
- *
- * <p>This implementation of {@link MessageSink} provides logging functionality for Kafka messages
- * and their processed values. It formats the message content as JSON for better readability and
- * debugging. The sink handles various message value types, with special treatment for byte arrays.
- *
- * <p>Features:
- *
- * <ul>
- *   <li>JSON formatting of message metadata and content
- *   <li>Special handling for byte arrays (attempts UTF-8 decoding)
- *   <li>Automatic detection of JSON content in byte arrays
- *   <li>Fallback to Base64 encoding for binary data
- *   <li>Performance optimization by checking log level before processing
- *   <li>Robust error handling that logs exceptions without disrupting the main processing flow
- * </ul>
- *
- * @param <K> The type of message key
- * @param <V> The type of message value
- */
+/// A sink that logs processed Kafka messages with JSON formatting.
+///
+/// <p>This implementation of {@link MessageSink} provides logging functionality for Kafka messages
+/// and their processed values. It formats the message content as JSON for better readability and
+/// debugging. The sink handles various message value types, with special treatment for byte arrays.
+///
+/// <p>Features:
+///
+/// <ul>
+///   <li>JSON formatting of message metadata and content
+///   <li>Special handling for byte arrays (attempts UTF-8 decoding)
+///   <li>Automatic detection of JSON-looking content in byte arrays
+///   <li>For JSON objects, parse + reserialize into normalized JSON output
+///   <li>For JSON arrays, parse + reserialize into normalized JSON output
+///   <li>Fallback to raw UTF-8 string when JSON parsing fails
+///   <li>Performance optimization by checking log level before processing
+///   <li>Robust error handling that logs exceptions without disrupting the main processing flow
+/// </ul>
+///
+/// @param <K> The type of message key
+/// @param <V> The type of message value
 public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private static final Logger LOGGER = System.getLogger(JsonConsoleSink.class.getName());
   private static final Level LOG_LEVEL = Level.INFO;
 
-  /**
-   * Logs a message with its key and value.
-   *
-   * @param record The original Kafka consumer record
-   * @param processedValue The value after processing
-   */
+  /// Logs a message with its key and value.
+  ///
+  /// @param record The original Kafka consumer record
+  /// @param processedValue The value after processing
   @Override
   public void send(final ConsumerRecord<K, V> record, final V processedValue) {
     try {
@@ -72,12 +72,19 @@ public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
     }
   }
 
-  /**
-   * Formats a value for logging with special handling for different types.
-   *
-   * @param value The value to format
-   * @return A string representation of the value suitable for logging
-   */
+  /// Formats a value for logging with special handling for different types.
+  ///
+  /// <p>Byte array behavior:
+  ///
+  /// <ul>
+  ///   <li>empty arrays -> `"empty"`
+  ///   <li>JSON objects -> parsed and reserialized for stable JSON formatting
+  ///   <li>JSON arrays -> parsed and reserialized for stable JSON formatting
+  ///   <li>invalid JSON / non-JSON text -> returned as decoded UTF-8 text
+  /// </ul>
+  ///
+  /// @param value The value to format
+  /// @return A string representation of the value suitable for logging
   private String formatValue(final V value) {
     if (value == null) return "null";
     if (value instanceof byte[] bytes) {
@@ -87,30 +94,37 @@ public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
     return String.valueOf(value);
   }
 
+  /// Attempts to produce a log-friendly representation of UTF-8 bytes.
+  ///
+  /// <p>This method intentionally does not throw; it falls back to a best-effort string so sink
+  /// logging never breaks the consumer processing path.
   private String formatByteArray(final byte[] bytes) {
     try {
       final var strValue = new String(bytes, StandardCharsets.UTF_8);
-
       if (isLikelyJson(strValue)) {
         try {
-          final var json = DSL_JSON.deserialize(Object.class, new ByteArrayInputStream(bytes));
-          final var out = new ByteArrayOutputStream();
-          DSL_JSON.serialize(json, out);
-          return out.toString(StandardCharsets.UTF_8);
+          final var trimmed = strValue.trim();
+          final var json = trimmed.startsWith("[")
+            ? DSL_JSON.deserialize(List.class, new ByteArrayInputStream(bytes))
+            : DSL_JSON.deserialize(Map.class, new ByteArrayInputStream(bytes));
+          try (final var out = new ByteArrayOutputStream()) {
+            DSL_JSON.serialize(json, out);
+            return out.toString(StandardCharsets.UTF_8);
+          }
         } catch (final Exception e) {
-          LOGGER.log(Level.ERROR, "Failed to parse/format JSON content, falling back to raw string", e);
+          LOGGER.log(Level.ERROR, "Failed to parse/format as JSON, falling back to raw string", e);
+          return strValue;
         }
       }
       return strValue;
     } catch (final Exception e) {
-      LOGGER.log(Level.ERROR, "Failed to parse/format as JSON", e);
+      LOGGER.log(Level.ERROR, "Failed to decode byte[] as UTF-8", e);
       return "";
     }
   }
 
-  private boolean isLikelyJson(String value) {
-    return (
-      (value.startsWith("{") || value.startsWith("[")) && (value.trim().endsWith("}") || value.trim().endsWith("]"))
-    );
+  private boolean isLikelyJson(final String value) {
+    final var trimmed = value.trim();
+    return ((trimmed.startsWith("{") || trimmed.startsWith("[")) && (trimmed.endsWith("}") || trimmed.endsWith("]")));
   }
 }
