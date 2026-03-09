@@ -206,10 +206,10 @@ public enum MessageFormat {
   PROTOBUF(new HashMap<>(), location -> location);
 
   /// Map of schema keys to schema information, maintained by each format.
-  protected final Map<String, SchemaInfo> schemas;
+  private final Map<String, SchemaInfo> schemas;
 
   /// Function to read schema content from various locations
-  protected final Function<String, String> schemaReader;
+  private final Function<String, String> schemaReader;
 
   /// Constructs a message format with a schema information map and schema reader function.
   ///

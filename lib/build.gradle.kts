@@ -64,8 +64,10 @@ tasks.test {
         exclude("**/${excludePattern.replace(".", "/")}.class")
     }
 
-    minHeapSize = "6g"
-    maxHeapSize = "6g"
+    minHeapSize = "7g"
+    maxHeapSize = "7g"
+    maxParallelForks = 1
+    forkEvery = 200
 }
 
 tasks.jacocoTestReport {

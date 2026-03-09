@@ -28,7 +28,7 @@ jobs:
         run: |
           ./gradlew clean
           ./gradlew spotlessApply
-          ./gradlew build test --stacktrace
+          ./gradlew build test --stacktrace --no-daemon --max-workers=2
 
       - name: Jacoco
         run: ./gradlew :lib:jacocoTestReport

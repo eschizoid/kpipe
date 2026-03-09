@@ -20,10 +20,10 @@ cd ..
 
 # Clean and run all benchmarks
 GRADLE_CMD=(./gradlew :benchmarks:clean :benchmarks:jmh \
-  -Pjmh.warmupIterations=$WARMUP \
-  -Pjmh.iterations=$ITERATIONS \
-  -Pjmh.fork=$FORK \
-  -Pjmh.threads=$THREADS)
+  -Pjmh.warmupIterations="$WARMUP" \
+  -Pjmh.iterations="$ITERATIONS" \
+  -Pjmh.fork="$FORK" \
+  -Pjmh.threads="$THREADS")
 
 if [ -n "$INCLUDES" ]; then
   GRADLE_CMD+=("-Pjmh.includes=$INCLUDES")
