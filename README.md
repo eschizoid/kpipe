@@ -84,7 +84,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Maven
 
