@@ -31,22 +31,22 @@ import org.kpipe.sink.MessageSink;
 ///
 /// ```java
 /// // Create a registry with default sinks
-/// MessageSinkRegistry registry = new MessageSinkRegistry();
+/// final var registry = new MessageSinkRegistry();
 ///
 /// // Register custom sinks
 /// registry.register("database", new DatabaseSink<String, JsonNode>());
 /// registry.register("metrics", new MetricsSink<String, JsonNode>());
 ///
 /// // Create a pipeline of multiple sinks
-/// MessageSink<String, JsonNode> pipeline = registry.pipeline("logging", "database", "metrics");
+/// final var pipeline = registry.pipeline("logging", "database", "metrics");
 ///
 /// // Use the pipeline with a Kafka consumer
-/// ConsumerRecord<String, JsonNode> record = consumer.poll();
-/// JsonNode processedValue = processor.apply(record.value());
+/// final var record = consumer.poll();
+/// final var processedValue = processor.apply(record.value());
 /// pipeline.send(record, processedValue);
 ///
 /// // Get metrics for a specific sink
-/// Map<String, Object> metrics = registry.getMetrics("database");
+/// final var metrics = registry.getMetrics("database");
 /// ```
 public class MessageSinkRegistry {
 
@@ -91,7 +91,7 @@ public class MessageSinkRegistry {
   ///
   /// ```java
   /// // Create a new registry with the default logging sink
-  /// MessageSinkRegistry registry = new MessageSinkRegistry();
+  /// final var registry = new MessageSinkRegistry();
   /// ```
   public MessageSinkRegistry() {
     register("jsonLogging", new JsonConsoleSink<>());

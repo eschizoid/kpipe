@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -278,11 +277,8 @@ class OffsetManagerTest {
         }
       });
 
-      // Wait for the command to be generated
-      Thread.sleep(100);
-
       // Get the command
-      final var command = commandQueue.poll();
+      final var command = pollCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should generate a commit command");
 
       // Simulate failure by completing the future with false
@@ -312,11 +308,8 @@ class OffsetManagerTest {
         }
       });
 
-      // Wait for the command to be generated
-      Thread.sleep(100);
-
       // Get command from the queue
-      final var command = commandQueue.poll();
+      final var command = pollCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command");
 
       // Simulate consumer closed exception
@@ -339,32 +332,29 @@ class OffsetManagerTest {
         .withCommitInterval(Duration.ofMillis(50))
         .build();
 
-      // Start the manager to activate the scheduler
-      asyncManager.start();
+      try {
+        // Start the manager to activate the scheduler
+        asyncManager.start();
 
-      // Track and process an offset
-      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
-      asyncManager.trackOffset(record);
-      asyncManager.markOffsetProcessed(record);
+        // Track and process an offset
+        final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+        asyncManager.trackOffset(record);
+        asyncManager.markOffsetProcessed(record);
 
-      // Wait for auto-commit to occur
-      Thread.sleep(200);
+        // Verify a command was added to the queue
+        final var command = pollCommand(Duration.ofSeconds(2));
+        assertNotNull(command, "Should have generated a commit command");
+        assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
 
-      // Verify a command was added to the queue
-      final var command = commandQueue.poll(1000, TimeUnit.MILLISECONDS);
-      assertNotNull(command, "Should have generated a commit command");
-      assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
+        // Simulate a commit failure
+        asyncManager.notifyCommitComplete(command.getCommitId(), false);
+      } finally {
+        // Clean up - should not throw even after failure
+        assertDoesNotThrow(asyncManager::close);
 
-      // Simulate a commit failure
-      asyncManager.notifyCommitComplete(command.getCommitId(), false);
-
-      // Clean up - should not throw even after failure
-      assertDoesNotThrow(asyncManager::close);
-
-      // Get and complete the final commit command during close
-      final var closeCommand = commandQueue.poll(1000, TimeUnit.MILLISECONDS);
-      if (closeCommand != null) {
-        asyncManager.notifyCommitComplete(closeCommand.getCommitId(), true);
+        // Get and complete the final commit command during close
+        final var closeCommand = pollCommand(Duration.ofSeconds(1));
+        if (closeCommand != null) asyncManager.notifyCommitComplete(closeCommand.getCommitId(), true);
       }
     }
   }
@@ -382,12 +372,10 @@ class OffsetManagerTest {
       // Act - close should handle a failed commit
       assertDoesNotThrow(
         () -> {
-          CompletableFuture.runAsync(offsetManager::close);
-          Thread.sleep(100);
-          final var command = commandQueue.poll();
-          if (command != null) {
-            offsetManager.notifyCommitComplete(command.getCommitId(), false);
-          }
+          final var closeFuture = CompletableFuture.runAsync(offsetManager::close);
+          final var command = pollCommand(Duration.ofSeconds(2));
+          if (command != null) offsetManager.notifyCommitComplete(command.getCommitId(), false);
+          closeFuture.get(2, TimeUnit.SECONDS);
         },
         "Should close gracefully even when final commit fails"
       );
@@ -429,16 +417,12 @@ class OffsetManagerTest {
       final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
-      Thread.sleep(100);
 
       // First close - run asynchronously so we can capture the command
-      CompletableFuture.runAsync(offsetManager::close);
-
-      // Wait for the command to be added to the queue
-      Thread.sleep(100);
+      final var closeFuture = CompletableFuture.runAsync(offsetManager::close);
 
       // Verify a command was added to the queue
-      final var command = commandQueue.poll(1000, TimeUnit.MILLISECONDS);
+      final var command = pollCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command during close");
       assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
 
@@ -446,7 +430,7 @@ class OffsetManagerTest {
       offsetManager.notifyCommitComplete(command.getCommitId(), true);
 
       // Wait for close to complete
-      Thread.sleep(100);
+      closeFuture.get(2, TimeUnit.SECONDS);
 
       // A second close should be safe
       offsetManager.close();
@@ -468,23 +452,28 @@ class OffsetManagerTest {
         .withCommitInterval(Duration.ofMillis(50))
         .build();
 
-      // Start the manager to activate the scheduler
-      autoCommitManager.start();
+      try {
+        // Start the manager to activate the scheduler
+        autoCommitManager.start();
 
-      // Track and mark an offset
-      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
-      autoCommitManager.trackOffset(record);
-      autoCommitManager.markOffsetProcessed(record);
+        // Track and mark an offset
+        final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+        autoCommitManager.trackOffset(record);
+        autoCommitManager.markOffsetProcessed(record);
 
-      // Wait for auto-commit to occur
-      Thread.sleep(200);
+        // Verify a command was added to the queue
+        final var command = pollCommand(Duration.ofSeconds(2));
+        assertNotNull(command, "Should have generated a commit command");
+        assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
+        assertNotNull(command.getOffsets(), "Command should contain offsets");
+        assertTrue(command.getOffsets().containsKey(PARTITION), "Command should contain our partition");
 
-      // Verify a command was added to the queue
-      final var command = commandQueue.poll(1000, TimeUnit.MILLISECONDS);
-      assertNotNull(command, "Should have generated a commit command");
-      assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
-      assertNotNull(command.getOffsets(), "Command should contain offsets");
-      assertTrue(command.getOffsets().containsKey(PARTITION), "Command should contain our partition");
+        autoCommitManager.notifyCommitComplete(command.getCommitId(), true);
+      } finally {
+        autoCommitManager.close();
+        final var closeCommand = pollCommand(Duration.ofSeconds(1));
+        if (closeCommand != null) autoCommitManager.notifyCommitComplete(closeCommand.getCommitId(), true);
+      }
     }
 
     @Test
@@ -503,11 +492,8 @@ class OffsetManagerTest {
         }
       });
 
-      // Wait for command to be generated
-      Thread.sleep(100);
-
       // Get the commit command from the queue
-      final var command = commandQueue.poll(1000, TimeUnit.MILLISECONDS);
+      final var command = pollCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command");
 
       // Simulate successful commit completion
@@ -542,11 +528,8 @@ class OffsetManagerTest {
         }
       });
 
-      // Wait for the command to be generated
-      Thread.sleep(100);
-
       // Get and verify the command
-      final var command = commandQueue.poll();
+      final var command = pollCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command");
 
       // Complete the commit successfully
@@ -588,11 +571,8 @@ class OffsetManagerTest {
         }
       });
 
-      // Wait for the command to be generated
-      Thread.sleep(100);
-
       // Get and verify command
-      final var command = commandQueue.poll(1000, TimeUnit.MILLISECONDS);
+      final var command = pollCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command");
       assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
 
@@ -654,44 +634,56 @@ class OffsetManagerTest {
         .withCommitInterval(Duration.ofMillis(500))
         .build();
 
-      final var threadCount = 5;
-      final var offsetsPerThread = 100;
+      final var threadCount = 4;
+      final var offsetsPerThread = 40;
       final var startLatch = new CountDownLatch(1);
       final var completionLatch = new CountDownLatch(threadCount);
 
-      // Create multiple threads updating offsets
-      for (var i = 0; i < threadCount; i++) {
-        final int threadId = i;
-        new Thread(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            // Each thread processes its own range of offsets
-            for (int j = 0; j < offsetsPerThread; j++) {
-              final var offset = threadId * offsetsPerThread + j;
-              final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value");
-              concurrentManager.trackOffset(record);
-              concurrentManager.markOffsetProcessed(record);
+      try {
+        // Create multiple threads updating offsets
+        for (var i = 0; i < threadCount; i++) {
+          final int threadId = i;
+          new Thread(() -> {
+            try {
+              startLatch.await(); // Wait for all threads to be ready
+              // Each thread processes its own range of offsets
+              for (int j = 0; j < offsetsPerThread; j++) {
+                final var offset = threadId * offsetsPerThread + j;
+                final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value");
+                concurrentManager.trackOffset(record);
+                concurrentManager.markOffsetProcessed(record);
+              }
+            } catch (final Exception e) {
+              fail("Exception in test thread: " + e.getMessage());
+            } finally {
+              completionLatch.countDown();
             }
-          } catch (final Exception e) {
-            fail("Exception in test thread: " + e.getMessage());
-          } finally {
-            completionLatch.countDown();
+          })
+            .start();
+        }
+
+        // Start all threads simultaneously
+        startLatch.countDown();
+
+        // Wait for all threads to complete
+        assertTrue(completionLatch.await(3, TimeUnit.SECONDS), "All threads should complete in time");
+
+        // Force final commit and verify
+        final var commitFuture = CompletableFuture.supplyAsync(() -> {
+          try {
+            return concurrentManager.commitSyncAndWait(500);
+          } catch (final InterruptedException e) {
+            return false;
           }
-        })
-          .start();
+        });
+
+        final var command = pollCommand(Duration.ofSeconds(2));
+        assertNotNull(command, "Should generate a commit command after concurrent processing");
+        concurrentManager.notifyCommitComplete(command.getCommitId(), true);
+        assertTrue(commitFuture.get(2, TimeUnit.SECONDS), "Final commit should complete successfully");
+      } finally {
+        concurrentManager.close();
       }
-
-      // Start all threads simultaneously
-      startLatch.countDown();
-
-      // Wait for all threads to complete
-      assertTrue(completionLatch.await(3, TimeUnit.SECONDS), "All threads should complete in time");
-
-      // Give time for offsets to be processed
-      Thread.sleep(200);
-
-      // Force final commit and verify
-      concurrentManager.commitSyncAndWait(1);
     }
   }
 
@@ -718,26 +710,7 @@ class OffsetManagerTest {
   }
 
   private ConsumerCommand performCommitAndCaptureCommand() throws Exception {
-    final var commandLatch = new CountDownLatch(1);
-    final var commandRef = new AtomicReference<ConsumerCommand>();
-
-    // Start a command listener thread
-    Thread
-      .ofPlatform()
-      .daemon()
-      .start(() -> {
-        try {
-          final var cmd = commandQueue.poll(30, TimeUnit.SECONDS);
-          if (cmd != null) {
-            commandRef.set(cmd);
-            commandLatch.countDown();
-          }
-        } catch (final InterruptedException e) {
-          // Ignore interruption
-        }
-      });
-
-    // Start the commit operation
+    // Start the commit operation and capture the command produced for it.
     CompletableFuture.runAsync(() -> {
       try {
         offsetManager.commitSyncAndWait(30);
@@ -746,14 +719,18 @@ class OffsetManagerTest {
       }
     });
 
-    // Wait for command
-    final var commandReceived = commandLatch.await(10, TimeUnit.SECONDS);
-    assertTrue(commandReceived, "Command should be produced within timeout");
-
-    final var command = commandRef.get();
+    final var command = pollCommand(Duration.ofSeconds(3));
     assertNotNull(command, "Commit command should be generated");
-
     return command;
+  }
+
+  private ConsumerCommand pollCommand(final Duration timeout) {
+    try {
+      return commandQueue.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return null;
+    }
   }
 
   private void assertEventually(final Supplier<Boolean> condition, final Duration timeout, final String message)

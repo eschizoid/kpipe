@@ -96,7 +96,7 @@ public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
 
   /// Attempts to produce a log-friendly representation of UTF-8 bytes.
   ///
-  /// <p>This method intentionally does not throw; it falls back to a best-effort string so sink
+  /// This method intentionally does not throw; it falls back to a best-effort string so sink
   /// logging never breaks the consumer processing path.
   private String formatByteArray(final byte[] bytes) {
     try {

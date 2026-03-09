@@ -16,8 +16,7 @@ import org.kpipe.processor.JsonMessageProcessor;
 ///
 /// The registry supports different message formats (JSON, AVRO, PROTOBUF) and provides
 /// integration with schema-based processors. Each processor is registered with a unique name and
-// can
-/// be composed into processing pipelines.
+/// can be composed into processing pipelines.
 ///
 /// Example usage:
 ///
@@ -263,11 +262,10 @@ public class MessageProcessorRegistry {
 
   /// Adds a schema and registers its processors.
   ///
-  /// @param key The schema key
+  /// @param key                The schema key
   /// @param fullyQualifiedName The fully qualified name of the schema
-  /// @param location The schema location or content
-  /// @return This registry instance for chaining
-  public MessageProcessorRegistry addSchema(final String key, final String fullyQualifiedName, final String location) {
+  /// @param location           The schema location or content
+  public void addSchema(final String key, final String fullyQualifiedName, final String location) {
     if (messageFormat == MessageFormat.AVRO) {
       // Register the schema with MessageFormat
       messageFormat.addSchema(key, fullyQualifiedName, location);
@@ -275,22 +273,15 @@ public class MessageProcessorRegistry {
       // Register schema-specific processors
       registerSchemaProcessors(key);
     }
-    return this;
   }
 
   /// Registers an Avro schema and its corresponding processors.
   ///
-  /// @param key Schema identification key
+  /// @param key                Schema identification key
   /// @param fullyQualifiedName Fully qualified schema name
-  /// @param schemaJson The schema content in JSON format
-  /// @return This registry for method chaining
-  public MessageProcessorRegistry registerAvroSchema(
-    final String key,
-    final String fullyQualifiedName,
-    final String schemaJson
-  ) {
-    if (messageFormat == MessageFormat.AVRO) return addSchema(key, fullyQualifiedName, schemaJson);
-    return this;
+  /// @param schemaJson         The schema content in JSON format
+  public void registerAvroSchema(final String key, final String fullyQualifiedName, final String schemaJson) {
+    if (messageFormat == MessageFormat.AVRO) addSchema(key, fullyQualifiedName, schemaJson);
   }
 
   /// Unregisters a processor.

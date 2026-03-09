@@ -27,7 +27,7 @@ import java.util.function.*;
 ///
 /// ```java
 /// // Create an error-tolerant function that returns a default value on exception
-/// var safeFunction = MessageProcessorRegistry.withErrorHandling(
+/// final var safeFunction = MessageProcessorRegistry.withErrorHandling(
 ///     riskyOperation,
 ///     defaultValue
 /// );
@@ -45,10 +45,10 @@ import java.util.function.*;
 ///     );
 ///
 /// // Execute an operation with timing
-/// Output result = timedExec.apply(input, operation);
+/// final var result = timedExec.apply(input, operation);
 ///
 /// // Get metrics
-/// Map<String, Object> metrics = RegistryFunctions.createMetrics(
+/// final var metrics = RegistryFunctions.createMetrics(
 ///     counter.get(),
 ///     errorCounter.get(),
 ///     totalTimeNs.get()

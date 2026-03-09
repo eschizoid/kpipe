@@ -84,7 +84,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Maven
 
@@ -92,26 +92,26 @@ retries, built-in metrics, and support for both parallel and sequential processi
   <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe</artifactId>
-      <version>0.2.0</version>
+      <version>1.0.0</version>
   </dependency>
   ```
 
 ### Gradle (Groovy)
 
   ```groovy
-  implementation 'io.github.eschizoid:kpipe:0.2.0'
+  implementation 'io.github.eschizoid:kpipe:1.0.0'
   ```
 
 ### Gradle (Kotlin)
 
   ```kotlin
-  implementation("io.github.eschizoid:kpipe:0.2.0")
+  implementation("io.github.eschizoid:kpipe:1.0.0")
   ```
 
 ### SBT
 
   ```sbt
-  libraryDependencies += "io.github.eschizoid" % "kpipe" % "0.2.0"
+  libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.0.0"
   ```
 
 ---
