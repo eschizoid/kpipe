@@ -57,9 +57,7 @@ class AppIntegrationTest {
 
   @Container
   static GenericContainer<?> schemaRegistry = new GenericContainer<>(
-    DockerImageName
-      .parse("confluentinc/cp-schema-registry:7.7.1")
-      .asCompatibleSubstituteFor("confluentinc/cp-schema-registry")
+    DockerImageName.parse("confluentinc/cp-schema-registry:7.8.7")
   )
     .withNetwork(network)
     .withNetworkAliases("schema-registry")
