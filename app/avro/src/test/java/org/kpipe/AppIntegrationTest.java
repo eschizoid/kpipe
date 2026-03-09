@@ -138,7 +138,7 @@ class AppIntegrationTest {
 
       // Retry produce during the warm-up window so we do not miss messages while the consumer
       // finishes initial group assignment.
-      produceUntilConsumed(topic, out.toByteArray(), producerProps, capturingSink, Duration.ofSeconds(10));
+      produceUntilConsumed(out.toByteArray(), producerProps, capturingSink, Duration.ofSeconds(10));
 
       // Verify
       assertTrue(appThread.isAlive());
@@ -159,7 +159,6 @@ class AppIntegrationTest {
   }
 
   private static void produceUntilConsumed(
-    final String topic,
     final byte[] payload,
     final Properties producerProps,
     final CapturingSink sink,
@@ -168,7 +167,7 @@ class AppIntegrationTest {
     final var deadline = System.nanoTime() + timeout.toNanos();
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       while (System.nanoTime() < deadline) {
-        producer.send(new ProducerRecord<>(topic, payload)).get();
+        producer.send(new ProducerRecord<>("avro-topic", payload)).get();
         if (sink.size() >= 1) return;
         TimeUnit.MILLISECONDS.sleep(250);
       }
@@ -205,7 +204,7 @@ class AppIntegrationTest {
     private final List<byte[]> messages = new ArrayList<>();
 
     @Override
-    public synchronized void send(ConsumerRecord<byte[], byte[]> record, byte[] processedValue) {
+    public synchronized void send(final ConsumerRecord<byte[], byte[]> record, byte[] processedValue) {
       messages.add(processedValue);
     }
 
