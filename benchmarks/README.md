@@ -79,8 +79,8 @@ This benchmark compares KPipe's zero-copy offset-based deserialization against t
 | `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `16` | `351,320,682.67` | `+/- 68,268,778` | `ops/s` |
 
 **Observation**: KPipe is **~2.1x faster** when handling Confluent Magic Bytes. By using an `offset` instead of
-copying the byte array, we effectively eliminate allocation overhead and drastically reduce GC pressure for high-throughput
-streams.
+copying the byte array, we effectively eliminate allocation overhead and drastically reduce GC pressure for
+high-throughput streams.
 
 ### 2. JSON Pipeline: Defeating the "SerDe Tax"
 

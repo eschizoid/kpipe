@@ -6,20 +6,26 @@ plugins {
     id("com.gradleup.shadow") version "8.3.5" apply false
 }
 
+val kafkaVersion = "3.9.0"
+val slf4jVersion = "2.0.9"
+val junitVersion = "5.10.0"
+val testcontainersVersion = "2.0.3"
+val dslJsonVersion = "2.0.2"
+
 subprojects {
     apply(plugin = "java")
     apply(plugin = "com.gradleup.shadow")
 
     dependencies {
         "implementation"(project(":lib"))
-        "implementation"("org.apache.kafka:kafka-clients:3.9.0")
-        "implementation"("org.slf4j:slf4j-simple:2.0.9")
+        "implementation"("org.apache.kafka:kafka-clients:$kafkaVersion")
+        "implementation"("org.slf4j:slf4j-simple:$slf4jVersion")
 
-        "testImplementation"("org.junit.jupiter:junit-jupiter:5.10.0")
-        "testImplementation"("org.testcontainers:testcontainers:2.0.3")
-        "testImplementation"("org.testcontainers:testcontainers-junit-jupiter:2.0.3")
-        testImplementation("org.testcontainers:testcontainers-kafka:2.0.3")
-        "testImplementation"("com.dslplatform:dsl-json:2.0.2")
+        "testImplementation"("org.junit.jupiter:junit-jupiter:$junitVersion")
+        "testImplementation"("org.testcontainers:testcontainers:$testcontainersVersion")
+        "testImplementation"("org.testcontainers:testcontainers-junit-jupiter:$testcontainersVersion")
+        "testImplementation"("org.testcontainers:testcontainers-kafka:$testcontainersVersion")
+        "testImplementation"("com.dslplatform:dsl-json:$dslJsonVersion")
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     }
 
