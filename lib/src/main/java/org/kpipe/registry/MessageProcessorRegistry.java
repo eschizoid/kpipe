@@ -280,11 +280,7 @@ public class MessageProcessorRegistry {
   /// @param key                Schema identification key
   /// @param fullyQualifiedName Fully qualified schema name
   /// @param schemaJson         The schema content in JSON format
-  public void registerAvroSchema(
-    final String key,
-    final String fullyQualifiedName,
-    final String schemaJson
-  ) {
+  public void registerAvroSchema(final String key, final String fullyQualifiedName, final String schemaJson) {
     if (messageFormat == MessageFormat.AVRO) addSchema(key, fullyQualifiedName, schemaJson);
   }
 
