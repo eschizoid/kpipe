@@ -14,7 +14,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
 import org.kpipe.consumer.ConsumerRunner;
-import org.kpipe.consumer.FunctionalConsumer;
+import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.OffsetManager;
 import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.metrics.ConsumerMetricsReporter;
@@ -36,8 +36,8 @@ public class App implements AutoCloseable {
   private static final String DEFAULT_SCHEMA_REGISTRY_URL = "http://schema-registry:8081";
 
   private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
-  private final FunctionalConsumer<byte[], byte[]> functionalConsumer;
-  private final ConsumerRunner<FunctionalConsumer<byte[], byte[]>> runner;
+  private final KPipeConsumer<byte[], byte[]> functionalConsumer;
+  private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
@@ -91,7 +91,7 @@ public class App implements AutoCloseable {
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.
-  private ConsumerRunner<FunctionalConsumer<byte[], byte[]>> createConsumerRunner(
+  private ConsumerRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
     final MetricsReporter consumerMetricsReporter,
     final MetricsReporter processorMetricsReporter,
@@ -103,7 +103,7 @@ public class App implements AutoCloseable {
         c.start();
         LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
       })
-      .withHealthCheck(FunctionalConsumer::isRunning)
+      .withHealthCheck(KPipeConsumer::isRunning)
       .withGracefulShutdown(ConsumerRunner::performGracefulConsumerShutdown)
       .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter))
       .withMetricsInterval(config.metricsInterval().toMillis())
@@ -118,7 +118,7 @@ public class App implements AutoCloseable {
   /// @param processorRegistry Map of processor functions
   /// @param sinkRegistry Map of sink functions
   /// @return A configured functional consumer
-  public static FunctionalConsumer<byte[], byte[]> createConsumer(
+  public static KPipeConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
     final MessageProcessorRegistry processorRegistry,
     final MessageSinkRegistry sinkRegistry,
@@ -127,7 +127,7 @@ public class App implements AutoCloseable {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    return FunctionalConsumer
+    return KPipeConsumer
       .<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
@@ -140,7 +140,7 @@ public class App implements AutoCloseable {
       .build();
   }
 
-  /// Creates an OffsetManager provider function that can be used with FunctionalConsumer builder
+  /// Creates an OffsetManager provider function that can be used with KPipeConsumer builder
   ///
   /// @param commitInterval The interval at which to automatically commit offsets
   /// @param commandQueue The command queue
