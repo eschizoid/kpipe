@@ -23,11 +23,11 @@
   <text x="28" y="40" class="title">ParallelProcessingBenchmark: KPipe vs Confluent (Latest Baseline)</text>
   <text x="28" y="62" class="subtitle">JMH Throughput + gc profiler (16 samples), TARGET_MESSAGES=10,000, partitions=8</text>
 
-  <!-- Throughput heading inside panel -->
-  <text x="48" y="144" class="h2">Throughput (ops/s)</text>
-
-  <!-- Headline KPI panel -->
+  <!-- Headline panel -->
   <rect x="28" y="112" width="1104" height="176" class="panel"/>
+
+  <!-- Throughput title (inside panel) -->
+  <text x="48" y="144" class="h2">Throughput (ops/s)</text>
 
   <!-- top-panel legend inside white area -->
   <rect x="920" y="126" width="10" height="10" class="confluent"/>
@@ -36,11 +36,11 @@
   <text x="1024" y="135" class="small">KPipe</text>
 
   <!-- Throughput axis (0..3400) -->
-  <line x1="150" y1="258" x2="790" y2="258" class="axis"/>
-  <line x1="150" y1="156" x2="150" y2="258" class="axis"/>
-  <line x1="150" y1="232" x2="790" y2="232" class="grid"/>
-  <line x1="150" y1="206" x2="790" y2="206" class="grid"/>
-  <line x1="150" y1="180" x2="790" y2="180" class="grid"/>
+  <line x1="110" y1="258" x2="790" y2="258" class="axis"/>
+  <line x1="110" y1="156" x2="110" y2="258" class="axis"/>
+  <line x1="110" y1="232" x2="790" y2="232" class="grid"/>
+  <line x1="110" y1="206" x2="790" y2="206" class="grid"/>
+  <line x1="110" y1="180" x2="790" y2="180" class="grid"/>
 
   <rect x="190" y="178" width="533" height="24" class="confluent"/>
   <rect x="190" y="214" width="545" height="24" class="kpipe"/>
@@ -52,7 +52,6 @@
   <text x="900" y="188" class="h2">Readout</text>
   <text x="900" y="212" class="label">Delta: +2.20% (KPipe over Confluent)</text>
   <text x="900" y="234" class="label">Gap: +71.317 ops/s</text>
-  <text x="900" y="256" class="small">Interpret with error bars and repeated runs.</text>
 
   <!-- Cost profile -->
   <text x="28" y="328" class="h2">Cost Profile (allocation and GC behavior)</text>
