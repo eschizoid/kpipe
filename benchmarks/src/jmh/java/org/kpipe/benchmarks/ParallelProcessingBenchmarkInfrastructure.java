@@ -9,8 +9,6 @@ import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import kafka.testkit.KafkaClusterTestKit;
-import kafka.testkit.TestKitNodes;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -20,6 +18,8 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.test.KafkaClusterTestKit;
+import org.apache.kafka.common.test.TestKitNodes;
 import org.kpipe.consumer.FunctionalConsumer;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
@@ -50,7 +50,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   static final String TOPIC = "benchmark-topic";
 
   /// Number of records seeded and awaited per invocation.
-  static final int TARGET_MESSAGES = 1000;
+  static final int TARGET_MESSAGES = 10_000;
+
+  /// Topic partitions used to expose parallel scheduler behavior.
+  static final int TOPIC_PARTITIONS = 8;
 
   /// Safety timeout for per-invocation message completion checks.
   private static final long MAX_WAIT_NANOS = TimeUnit.SECONDS.toNanos(30);
@@ -159,7 +162,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       adminProps.putAll(clientProperties);
 
       try (final var admin = Admin.create(adminProps)) {
-        admin.createTopics(Collections.singletonList(new NewTopic(TOPIC, 1, (short) 1))).all().get();
+        admin.createTopics(Collections.singletonList(new NewTopic(TOPIC, TOPIC_PARTITIONS, (short) 1))).all().get();
       } catch (final Exception e) {
         throw new IllegalStateException("Unable to create benchmark topic", e);
       }
