@@ -385,7 +385,8 @@ class KPipeConsumerTest {
       Map.of(
         new TopicPartition(TOPIC, 0),
         List.of(createRecord(0, "k1", "v1"), createRecord(1, "k2", "v2"), createRecord(2, "k3", "v3"))
-      )
+      ),
+      Map.of()
     );
 
     // Act
