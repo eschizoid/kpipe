@@ -31,7 +31,7 @@ class AppIntegrationTest {
   private static final Logger log = System.getLogger(AppIntegrationTest.class.getName());
 
   @Container
-  static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.7.1"))
+  static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:8.2.0"))
     .waitingFor(org.testcontainers.containers.wait.strategy.Wait.forListeningPort());
 
   @Test

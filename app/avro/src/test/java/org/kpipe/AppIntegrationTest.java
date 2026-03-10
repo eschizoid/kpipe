@@ -49,7 +49,7 @@ class AppIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("confluentinc/cp-kafka:7.7.1").asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("confluentinc/cp-kafka:8.2.0").asCompatibleSubstituteFor("apache/kafka")
   )
     .withNetwork(network)
     .withNetworkAliases("kafka")
@@ -57,7 +57,7 @@ class AppIntegrationTest {
 
   @Container
   static GenericContainer<?> schemaRegistry = new GenericContainer<>(
-    DockerImageName.parse("confluentinc/cp-schema-registry:7.8.7")
+    DockerImageName.parse("confluentinc/cp-schema-registry:8.2.0")
   )
     .withNetwork(network)
     .withNetworkAliases("schema-registry")
