@@ -20,7 +20,7 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.test.KafkaClusterTestKit;
 import org.apache.kafka.common.test.TestKitNodes;
-import org.kpipe.consumer.FunctionalConsumer;
+import org.kpipe.consumer.KPipeConsumer;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
@@ -177,7 +177,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   public static class KpipeInvocationContext {
 
     private AtomicInteger processedCount;
-    private FunctionalConsumer<byte[], byte[]> consumer;
+    private KPipeConsumer<byte[], byte[]> consumer;
 
     @Setup(Level.Invocation)
     public void setup(final KafkaContext kafkaContext) {
@@ -186,7 +186,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       kpipeProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
       consumer =
-        FunctionalConsumer
+        KPipeConsumer
           .<byte[], byte[]>builder()
           .withProperties(kpipeProps)
           .withTopic(TOPIC)

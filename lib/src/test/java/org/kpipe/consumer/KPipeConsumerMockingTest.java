@@ -22,7 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class FunctionalConsumerMockingTest {
+class KPipeConsumerMockingTest {
 
   private static final int PARTITION = 0;
   private static final String TOPIC = "test-topic";
@@ -35,7 +35,7 @@ class FunctionalConsumerMockingTest {
   private KafkaConsumer<String, String> mockConsumer;
 
   @Mock
-  private Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler;
+  private Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler;
 
   @Mock
   private OffsetManager<String, String> offsetManager;
@@ -44,7 +44,7 @@ class FunctionalConsumerMockingTest {
   private ArgumentCaptor<List<String>> topicCaptor;
 
   @Captor
-  private ArgumentCaptor<FunctionalConsumer.ProcessingError<String, String>> errorCaptor;
+  private ArgumentCaptor<KPipeConsumer.ProcessingError<String, String>> errorCaptor;
 
   @BeforeEach
   void setUp() {
@@ -58,7 +58,7 @@ class FunctionalConsumerMockingTest {
   @Test
   void shouldSubscribeToTopic() {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -84,7 +84,7 @@ class FunctionalConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
     final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key", "test-value"));
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -133,7 +133,7 @@ class FunctionalConsumerMockingTest {
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key", "test-value"));
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -159,7 +159,7 @@ class FunctionalConsumerMockingTest {
   void shouldCloseKafkaConsumerWhenClosed() {
     // Setup
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -200,7 +200,7 @@ class FunctionalConsumerMockingTest {
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(record);
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -252,7 +252,7 @@ class FunctionalConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
     // Create a consumer with no retries
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -288,7 +288,7 @@ class FunctionalConsumerMockingTest {
 
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -317,7 +317,7 @@ class FunctionalConsumerMockingTest {
 
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -352,7 +352,7 @@ class FunctionalConsumerMockingTest {
     final var partitions = Set.of(new TopicPartition(TOPIC, PARTITION));
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -393,7 +393,7 @@ class FunctionalConsumerMockingTest {
     var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value"));
     var records = new ConsumerRecords<>(Map.of(partition, recordsList));
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -439,7 +439,7 @@ class FunctionalConsumerMockingTest {
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value"));
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList));
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -467,7 +467,7 @@ class FunctionalConsumerMockingTest {
   void shouldNotCollectMetricsWhenDisabled() {
     // Create consumer with disabled metrics
     try (
-      final var consumer = FunctionalConsumer
+      final var consumer = KPipeConsumer
         .<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
@@ -484,13 +484,13 @@ class FunctionalConsumerMockingTest {
   void builderShouldRespectAllOptions() {
     // Setup
     final var pollTimeout = Duration.ofMillis(200);
-    final Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler = error -> {};
+    final Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler = error -> {};
     final var maxRetries = 3;
     final var retryBackoff = Duration.ofMillis(100);
     final var enableMetrics = true;
 
     // Create a consumer with all options
-    final var consumer = FunctionalConsumer
+    final var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -511,7 +511,7 @@ class FunctionalConsumerMockingTest {
 
   @Test
   void builderShouldThrowNullPointerExceptionWhenMissingRequiredFields() {
-    final var builder = FunctionalConsumer.<String, String>builder();
+    final var builder = KPipeConsumer.<String, String>builder();
 
     assertThrows(NullPointerException.class, builder::build);
 
@@ -526,7 +526,7 @@ class FunctionalConsumerMockingTest {
   void shouldHandleEmptyRecordBatch() {
     // Setup
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -565,7 +565,7 @@ class FunctionalConsumerMockingTest {
       .when(processor)
       .apply(null);
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -610,7 +610,7 @@ class FunctionalConsumerMockingTest {
       return value;
     };
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       slowProcessor,
@@ -637,7 +637,7 @@ class FunctionalConsumerMockingTest {
     // Arrange
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -664,7 +664,7 @@ class FunctionalConsumerMockingTest {
   void shouldTrackInFlightMessagesCorrectly() throws Exception {
     // Create a custom consumer with tracking methods
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -727,7 +727,7 @@ class FunctionalConsumerMockingTest {
       .thenThrow(new RuntimeException("Poll interrupted"))
       .thenThrow(new RuntimeException("Poll interrupted again"));
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -762,7 +762,7 @@ class FunctionalConsumerMockingTest {
   @Test
   void stateShouldTransitionCorrectlyDuringLifecycle() throws InterruptedException {
     // Create consumer
-    final var functionalConsumer = FunctionalConsumer
+    final var functionalConsumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -825,7 +825,7 @@ class FunctionalConsumerMockingTest {
       .when(processor)
       .apply(anyString());
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       processor,
@@ -870,7 +870,7 @@ class FunctionalConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
     properties.put("enable.auto.commit", "false");
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       String::toUpperCase,
@@ -919,7 +919,7 @@ class FunctionalConsumerMockingTest {
 
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       String::toUpperCase,
@@ -955,7 +955,7 @@ class FunctionalConsumerMockingTest {
     when(offsetManager.createRebalanceListener()).thenReturn(mock(ConsumerRebalanceListener.class));
 
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       String::toUpperCase,
@@ -1015,7 +1015,7 @@ class FunctionalConsumerMockingTest {
       return value.toUpperCase();
     };
 
-    final var functionalConsumer = new TestableFunctionalConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
       concurrentProcessor,
@@ -1048,25 +1048,25 @@ class FunctionalConsumerMockingTest {
     assertTrue(maxConcurrent.get() > 1, "Records should be processed concurrently");
   }
 
-  public static class TestableFunctionalConsumer<K, V> extends FunctionalConsumer<K, V> {
+  public static class TestableKPipeConsumer<K, V> extends KPipeConsumer<K, V> {
 
     private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
     private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
     private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
 
-    public TestableFunctionalConsumer(
+    public TestableKPipeConsumer(
       final Properties props,
       final String topic,
       final Function<V, V> processor,
       final KafkaConsumer<K, V> mockConsumer,
       final int maxRetries,
       final Duration retryBackoff,
-      final Consumer<ProcessingError<K, V>> errorHandler,
+      final Consumer<KPipeConsumer.ProcessingError<K, V>> errorHandler,
       final Queue<ConsumerCommand> mockCommandQueue,
       final OffsetManager<K, V> mockOffsetManager
     ) {
       super(
-        FunctionalConsumer
+        KPipeConsumer
           .<K, V>builder()
           .withProperties(props)
           .withTopic(topic)

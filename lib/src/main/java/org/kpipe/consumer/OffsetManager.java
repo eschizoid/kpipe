@@ -97,7 +97,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
       this.kafkaConsumer = Objects.requireNonNull(consumer, "Consumer cannot be null");
     }
 
-    /// Shared command queue for the FunctionalConsumer and OffsetManager.
+    /// Shared command queue for the KPipeConsumer and OffsetManager.
     ///
     /// @param commandQueue The command queue to use
     /// @return This builder instance

@@ -24,8 +24,8 @@ Measures the efficiency of KPipe's magic byte offset handling vs. traditional by
 
 ### 3. Parallel Processing Overhead (`ParallelProcessingBenchmark`)
 
-Evaluates the throughput of KPipe's Java 24 Virtual Thread-based parallel processing engine against the Confluent
-Parallel Consumer.
+Evaluates the throughput of KPipe's Java Virtual Thread-based parallel processing engine against the Confluent Parallel
+Consumer.
 
 - **KPipe Parallel Mode**: Leverages a thread-per-record model using Loom to process message batches concurrently with
   minimal overhead.
@@ -98,7 +98,7 @@ abstraction without a performance penalty.
 
 ### 3. Parallel Processing: Virtual Threads (Loom) vs. Confluent
 
-This benchmark compares KPipe's "thread-per-record" model using Java 24 Virtual Threads against the industry-standard
+This benchmark compares KPipe's "thread-per-record" model using Java Virtual Threads against the industry-standard
 Confluent Parallel Consumer.
 
 | Benchmark                                                 |    Mode |  Cnt |       Score |        Error |   Units |
@@ -130,7 +130,7 @@ Based on the latest snapshot results, we can derive the following throughput exp
 
 Key performance indicators to watch for:
 
-- **SerDe Tax**: The drop in throughput as more transformation steps are added in the manual vs. optimized KPipe
+- **SerDe Tax**: The drop-in throughput as more transformation steps are added in the manual vs. optimized KPipe
   pipeline.
 - **GC Pressure**: While not explicitly measured by throughput, the zero-copy Avro benchmark significantly reduces
   memory allocation and garbage collection overhead.
@@ -152,12 +152,12 @@ Key performance indicators to watch for:
 
 ## Requirements
 
-- **Java 24+**: Required for Virtual Threads (Project Loom).
+- **Java 25+**
 - **Gradle**: Used to compile and execute the benchmark harness.
 
 ### CPU/CPI Profiling For Parallel Benchmark
 
-For KPipe vs Confluent parallel processing, keep benchmark target fixed and enable a profiler:
+For KPipe vs Confluent parallel processing, keep the benchmark target fixed and enable a profiler:
 
 ```bash
 # Linux: collect normalized hardware counters (includes CPI)

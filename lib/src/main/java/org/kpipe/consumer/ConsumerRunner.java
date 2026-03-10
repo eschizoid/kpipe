@@ -15,7 +15,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import org.kpipe.metrics.MetricsReporter;
 
-/// A thread-safe runner for {@link FunctionalConsumer} instances that manages the consumer
+/// A thread-safe runner for {@link KPipeConsumer} instances that manages the consumer
 /// lifecycle.
 ///
 /// The ConsumerRunner provides:
@@ -28,13 +28,13 @@ import org.kpipe.metrics.MetricsReporter;
 /// Example usage:
 ///
 /// ```java
-/// final var consumer = new FunctionalConsumer.Builder<>()
+/// final var consumer = new KPipeConsumer.Builder<>()
 ///     .withTopic("my-topic")
 ///     .withProcessor(message -> processMessage(message))
 ///     .build();
 ///
 /// final var runner = ConsumerRunner.builder(consumer)
-///     .withHealthCheck(FunctionalConsumer::isRunning)
+///     .withHealthCheck(KPipeConsumer::isRunning)
 ///     .withShutdownHook(true)
 ///     .withShutdownTimeout(5000)
 ///     .build();
@@ -43,8 +43,8 @@ import org.kpipe.metrics.MetricsReporter;
 /// runner.awaitShutdown();
 /// ```
 ///
-/// @param <T> the type of consumer being managed, must extend FunctionalConsumer
-public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoCloseable {
+/// @param <T> the type of consumer being managed, must extend KPipeConsumer
+public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(ConsumerRunner.class.getName());
 
@@ -84,7 +84,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
   /// @param <T> the type of consumer to run
   /// @param consumer the consumer instance to manage
   /// @return a new builder instance
-  public static <T extends FunctionalConsumer<?, ?>> Builder<T> builder(final T consumer) {
+  public static <T extends KPipeConsumer<?, ?>> Builder<T> builder(final T consumer) {
     return new Builder<>(consumer);
   }
 
@@ -184,7 +184,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
     shutdownGracefully(shutdownTimeoutMs);
   }
 
-  /// Performs a graceful shutdown of a FunctionalConsumer by handling in-flight messages.
+  /// Performs a graceful shutdown of a KPipeConsumer by handling in-flight messages.
   ///
   /// This method follows these steps to ensure a clean shutdown:
   ///
@@ -199,13 +199,13 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
   /// The method calls `getInFlightMessageCount()` twice - first to determine if any
   /// messages need processing, and then after the wait period to confirm the final state.
   ///
-  /// @param <T> the type of consumer extending FunctionalConsumer
+  /// @param <T> the type of consumer extending KPipeConsumer
   /// @param consumer the consumer to shut down
   /// @param timeoutMs maximum time in milliseconds to wait for in-flight messages to complete
   /// @return `true` if all in-flight messages were successfully processed before shutdown,
   ///     `false` if the timeout was reached with messages still in-flight
   /// @throws RuntimeException if an exception occurs during the shutdown process
-  public static <T extends FunctionalConsumer<?, ?>> boolean performGracefulConsumerShutdown(
+  public static <T extends KPipeConsumer<?, ?>> boolean performGracefulConsumerShutdown(
     final T consumer,
     final long timeoutMs
   ) {
@@ -318,7 +318,7 @@ public class ConsumerRunner<T extends FunctionalConsumer<?, ?>> implements AutoC
   /// Builder for creating ConsumerRunner instances with custom configuration.
   ///
   /// @param <T> the type of consumer being managed
-  public static class Builder<T extends FunctionalConsumer<?, ?>> {
+  public static class Builder<T extends KPipeConsumer<?, ?>> {
 
     private final T consumer;
     private Consumer<T> startAction;

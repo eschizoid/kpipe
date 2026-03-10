@@ -11,7 +11,7 @@ import org.openjdk.jmh.annotations.*;
 /// Kafka broker powered by Apache Kafka's test kit.
 ///
 /// ### Scenarios:
-/// 1. **KPipe Parallel Mode**: Leverages Java 24 Virtual Threads (Project Loom) for
+/// 1. **KPipe Parallel Mode**: Leverages Java Virtual Threads (Project Loom) for
 ///    record-level parallelism with minimal overhead.
 /// 2. **Confluent Parallel Consumer**: Industry-standard library for parallel
 ///    processing, using traditional platform thread pools.

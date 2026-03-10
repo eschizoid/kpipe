@@ -25,7 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class FunctionalConsumerTest {
+class KPipeConsumerTest {
 
   private static final String TOPIC = "test-topic";
   private static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
@@ -45,8 +45,8 @@ class FunctionalConsumerTest {
     properties.put("enable.auto.commit", "true");
   }
 
-  private FunctionalConsumer<String, String> createConsumer(Function<String, String> processor) {
-    return FunctionalConsumer
+  private KPipeConsumer<String, String> createConsumer(Function<String, String> processor) {
+    return KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -63,7 +63,7 @@ class FunctionalConsumerTest {
     // Arrange & Act & Assert
     assertDoesNotThrow(() -> createConsumer(mockProcessor));
     assertDoesNotThrow(() ->
-      FunctionalConsumer
+      KPipeConsumer
         .<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
@@ -76,11 +76,11 @@ class FunctionalConsumerTest {
   @Test
   void constructorWithNullParametersShouldThrowNullPointerException() {
     // Arrange & Act & Assert
-    assertThrows(NullPointerException.class, () -> FunctionalConsumer.<String, String>builder().build());
+    assertThrows(NullPointerException.class, () -> KPipeConsumer.<String, String>builder().build());
     assertThrows(
       NullPointerException.class,
       () ->
-        FunctionalConsumer
+        KPipeConsumer
           .<String, String>builder()
           .withProperties(null)
           .withTopic(TOPIC)
@@ -90,7 +90,7 @@ class FunctionalConsumerTest {
     assertThrows(
       NullPointerException.class,
       () ->
-        FunctionalConsumer
+        KPipeConsumer
           .<String, String>builder()
           .withProperties(properties)
           .withTopic(null)
@@ -100,12 +100,7 @@ class FunctionalConsumerTest {
     assertThrows(
       NullPointerException.class,
       () ->
-        FunctionalConsumer
-          .<String, String>builder()
-          .withProperties(properties)
-          .withTopic(TOPIC)
-          .withProcessor(null)
-          .build()
+        KPipeConsumer.<String, String>builder().withProperties(properties).withTopic(TOPIC).withProcessor(null).build()
     );
   }
 
@@ -163,7 +158,7 @@ class FunctionalConsumerTest {
       if (attempts.getAndIncrement() == 0) throw new RuntimeException("First attempt failure");
       return value.toUpperCase();
     };
-    var consumer = FunctionalConsumer
+    var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -192,8 +187,8 @@ class FunctionalConsumerTest {
     final Function<String, String> failingProcessor = value -> {
       throw new RuntimeException("Always failing");
     };
-    Consumer<FunctionalConsumer.ProcessingError<String, String>> errorHandler = mock(Consumer.class);
-    var consumer = FunctionalConsumer
+    Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler = mock(Consumer.class);
+    var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -209,7 +204,7 @@ class FunctionalConsumerTest {
     Thread.sleep(100);
 
     // Assert
-    final var errorCaptor = ArgumentCaptor.forClass(FunctionalConsumer.ProcessingError.class);
+    final var errorCaptor = ArgumentCaptor.forClass(KPipeConsumer.ProcessingError.class);
     verify(errorHandler).accept(errorCaptor.capture());
     final var error = errorCaptor.getValue();
     assertEquals(record, error.record());
@@ -231,7 +226,7 @@ class FunctionalConsumerTest {
       if (count % 3 != 0) throw new RuntimeException("Intermittent failure #" + count);
       return value.toUpperCase();
     };
-    var consumer = FunctionalConsumer
+    var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -260,7 +255,7 @@ class FunctionalConsumerTest {
   void pauseShouldChangeStateAndEnqueuePauseCommand() {
     // Arrange
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var consumer = FunctionalConsumer
+    final var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -280,7 +275,7 @@ class FunctionalConsumerTest {
   void resumeShouldChangeStateAndEnqueueResumeCommand() {
     // Arrange
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var consumer = FunctionalConsumer
+    final var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -301,7 +296,7 @@ class FunctionalConsumerTest {
   void closeShouldEnqueueCloseCommand() {
     // Arrange
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var consumer = FunctionalConsumer
+    final var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -334,7 +329,7 @@ class FunctionalConsumerTest {
     // Arrange
     @SuppressWarnings("unchecked")
     final var sink = mock(MessageSink.class);
-    var consumer = FunctionalConsumer
+    var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -354,7 +349,7 @@ class FunctionalConsumerTest {
   @Test
   void metricsShouldBeEmptyWhenDisabled() {
     // Arrange
-    final var consumer = FunctionalConsumer
+    final var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -375,7 +370,7 @@ class FunctionalConsumerTest {
   void sequentialProcessingShouldProcessInOrder() {
     // Arrange
     final var processed = new ArrayList<>();
-    var consumer = FunctionalConsumer
+    var consumer = KPipeConsumer
       .<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)

@@ -49,7 +49,7 @@ import org.kpipe.sink.MessageSink;
 /// Example usage:
 ///
 /// ```java
-/// final var consumer = FunctionalConsumer.<String, String>builder()
+/// final var consumer = KPipeConsumer.<String, String>builder()
 ///     .withProperties(kafkaProps)
 ///     .withTopic("example-topic")
 ///     .withProcessor(value -> processValue(value))
@@ -68,9 +68,9 @@ import org.kpipe.sink.MessageSink;
 ///
 /// @param <K> the type of keys in the consumed records
 /// @param <V> the type of values in the consumed records
-public class FunctionalConsumer<K, V> implements AutoCloseable {
+public class KPipeConsumer<K, V> implements AutoCloseable {
 
-  private static final Logger LOGGER = System.getLogger(FunctionalConsumer.class.getName());
+  private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
 
   // Metric key constants
   private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
@@ -109,7 +109,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
   /// @param retryCount the number of retry attempts made
   public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
 
-  /// Creates a new builder for constructing {@link FunctionalConsumer} instances.
+  /// Creates a new builder for constructing {@link KPipeConsumer} instances.
   ///
   /// @param <K> the type of keys in the consumed records
   /// @param <V> the type of values in the consumed records
@@ -118,7 +118,7 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
     return new Builder<>();
   }
 
-  /// Builder for creating and configuring {@link FunctionalConsumer} instances.
+  /// Builder for creating and configuring {@link KPipeConsumer} instances.
   ///
   /// @param <K> the type of keys in the consumed records
   /// @param <V> the type of values in the consumed records
@@ -304,12 +304,10 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /// Builds a new FunctionalConsumer with the configured settings.
+    /// Builds a new KPipeConsumer with the configured settings.
     ///
-    /// @return a new FunctionalConsumer instance
-    /// @throws IllegalArgumentException if any required parameters are invalid
-    /// @throws NullPointerException if any required parameters are null
-    public FunctionalConsumer<K, V> build() {
+    /// @return a new KPipeConsumer instance
+    public KPipeConsumer<K, V> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
       Objects.requireNonNull(topic, "Topic must be provided");
       Objects.requireNonNull(processor, "Processor function must be provided");
@@ -326,14 +324,14 @@ public class FunctionalConsumer<K, V> implements AutoCloseable {
         kafkaProps.setProperty("enable.auto.commit", "false");
       }
 
-      return new FunctionalConsumer<>(this);
+      return new KPipeConsumer<>(this);
     }
   }
 
-  /// Creates a new FunctionalConsumer using the provided builder.
+  /// Creates a new KPipeConsumer using the provided builder.
   ///
   /// @param builder the builder containing the consumer configuration
-  public FunctionalConsumer(final Builder<K, V> builder) {
+  public KPipeConsumer(final Builder<K, V> builder) {
     this.kafkaConsumer =
       builder.consumerProvider != null
         ? builder.consumerProvider.get()

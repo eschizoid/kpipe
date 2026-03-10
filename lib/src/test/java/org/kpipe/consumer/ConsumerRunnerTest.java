@@ -18,7 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ConsumerRunnerTest {
 
   @Mock
-  private FunctionalConsumer<String, String> mockConsumer;
+  private KPipeConsumer<String, String> mockConsumer;
 
   @Mock
   private MessageTracker mockTracker;
@@ -26,7 +26,7 @@ class ConsumerRunnerTest {
   @Mock
   private MetricsReporter mockReporter;
 
-  private ConsumerRunner<FunctionalConsumer<String, String>> runner;
+  private ConsumerRunner<KPipeConsumer<String, String>> runner;
 
   @Test
   void shouldStartConsumer() {
@@ -35,7 +35,7 @@ class ConsumerRunnerTest {
     runner =
       ConsumerRunner
         .builder(mockConsumer)
-        .withHealthCheck(FunctionalConsumer::isRunning) // Use the isRunning method in health check
+        .withHealthCheck(KPipeConsumer::isRunning) // Use the isRunning method in health check
         .build();
 
     // Act
@@ -127,7 +127,7 @@ class ConsumerRunnerTest {
   void shouldUseCustomGracefulShutdown() {
     // Arrange
     final var customShutdownCalled = new AtomicBoolean(false);
-    final BiFunction<FunctionalConsumer<String, String>, Long, Boolean> customShutdown = (consumer, timeout) -> {
+    final BiFunction<KPipeConsumer<String, String>, Long, Boolean> customShutdown = (consumer, timeout) -> {
       customShutdownCalled.set(true);
       return true;
     };
@@ -231,10 +231,7 @@ class ConsumerRunnerTest {
     // Arrange
     final var customTimeout = 5000L;
     final var timeoutCaptured = new AtomicBoolean(false);
-    final BiFunction<FunctionalConsumer<String, String>, Long, Boolean> timeoutCapturingShutdown = (
-      consumer,
-      timeout
-    ) -> {
+    final BiFunction<KPipeConsumer<String, String>, Long, Boolean> timeoutCapturingShutdown = (consumer, timeout) -> {
       timeoutCaptured.set(timeout == customTimeout);
       return true;
     };
@@ -353,7 +350,7 @@ class ConsumerRunnerTest {
   void shouldUseCustomStartAction() {
     // Arrange
     final var customStartActionCalled = new AtomicBoolean(false);
-    final Consumer<FunctionalConsumer<String, String>> customStartAction = consumer -> {
+    final Consumer<KPipeConsumer<String, String>> customStartAction = consumer -> {
       customStartActionCalled.set(true);
       consumer.start();
     };
