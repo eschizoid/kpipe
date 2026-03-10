@@ -66,7 +66,7 @@ JMH parameters can be configured in `benchmarks/build.gradle.kts` or passed via 
 
 ## Latest Results (Snapshot)
 
-Run date: `2026-03-08`
+Run date: `2026-03-10`
 
 ### 1. Avro Pipeline: The "Zero-Copy" Advantage
 
@@ -101,14 +101,14 @@ abstraction without a performance penalty.
 This benchmark compares KPipe's "thread-per-record" model using Java 24 Virtual Threads against the industry-standard
 Confluent Parallel Consumer.
 
-| Benchmark                                                 |    Mode |  Cnt |     Score |       Error |   Units |
-|-----------------------------------------------------------|--------:|-----:|----------:|------------:|--------:|
-| `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `16` | `329.594` | `+/- 0.757` | `ops/s` |
-| `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `16` | `331.248` | `+/- 0.774` | `ops/s` |
+| Benchmark                                                 |    Mode |  Cnt |       Score |        Error |   Units |
+|-----------------------------------------------------------|--------:|-----:|------------:|-------------:|--------:|
+| `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `16` | `3,235.415` | `+/- 14.876` | `ops/s` |
+| `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `16` | `3,306.732` |  `+/- 3.368` | `ops/s` |
 
-**Observation**: KPipe achieves **performance parity** with the Confluent Parallel Consumer while maintaining a
-significantly simpler programming model. We reach these numbers using standard Java 24 Virtual Threads, avoiding the
-complexity of managed thread pools or proprietary scheduling logic.
+**Observation**: With `10,000` messages per invocation and `8` partitions, this run shows a measurable throughput edge
+for KPipe (**~2.2%** over Confluent). At the same time, Confluent shows lower allocation per operation in this profile (
+`275.078 B/op` vs `1457.324 B/op`), so this is a throughput-vs-allocation tradeoff rather than a one-dimensional win.
 
 ## Understanding Results
 
@@ -122,11 +122,11 @@ Based on the latest snapshot results, we can derive the following throughput exp
   when Kafka I/O is excluded.
 - **JSON (In-Memory)**: Up to **~405,000 records/s**. JSON processing is significantly more CPU-intensive than Avro due
   to text parsing.
-- **End-to-End Parallel Processing**: **~331,000 messages/s**. This is the most realistic metric as it includes a real
-  Kafka broker (embedded), network polling, and Virtual Thread scheduling.
+- **End-to-End Parallel Processing**: **~32.3M to ~33.1M messages/s**. For this run, use `score * 10,000`
+  because `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`.
 
-> **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(1000)`, so the reported `331.248 ops/s` is
-> normalized to reflect **331,248 messages per second**.
+> **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`. For this benchmark,
+> derive message rate as `ops/s * 10,000`.
 
 Key performance indicators to watch for:
 
@@ -141,12 +141,85 @@ Key performance indicators to watch for:
 - **Parallel timing fairness**: both `kpipeParallelProcessing` and `confluentParallelProcessing` start
   their processing loops inside benchmark methods (not in setup), so measured time includes comparable
   startup-to-completion behavior for each invocation.
-- **Parallel throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(1000)`, so its
+- **Parallel throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`, so its
   reported throughput is normalized per processed message rather than per full benchmark invocation.
 - **Logging noise control**: KPipe parallel benchmark uses a no-op sink in benchmark runs to avoid console I/O from
   distorting throughput numbers.
+- **CPU efficiency (Linux only)**: compare CPI and related normalized counters from `perfnorm` for
+  `kpipeParallelProcessing` vs `confluentParallelProcessing`.
+- **Platform caveat for CPI**: macOS runs can still compare throughput and GC behavior, but CPI should be
+  collected/reported only from Linux perf-enabled runs.
 
 ## Requirements
 
 - **Java 24+**: Required for Virtual Threads (Project Loom).
 - **Gradle**: Used to compile and execute the benchmark harness.
+
+### CPU/CPI Profiling For Parallel Benchmark
+
+For KPipe vs Confluent parallel processing, keep benchmark target fixed and enable a profiler:
+
+```bash
+# Linux: collect normalized hardware counters (includes CPI)
+./gradlew :benchmarks:jmh \
+  -Pjmh.includes='ParallelProcessingBenchmark' \
+  -Pjmh.profilers='perfnorm' \
+  -Pjmh.resultFormat=TEXT
+
+# macOS: CPI is not available via perf counters in JMH; use GC/CPU-adjacent signal instead
+./gradlew :benchmarks:jmh \
+  -Pjmh.includes='ParallelProcessingBenchmark' \
+  -Pjmh.profilers='gc' \
+  -Pjmh.resultFormat=TEXT
+```
+
+You can also use the helper script:
+
+```bash
+# Linux (CPI mode)
+PROFILE_MODE=cpi INCLUDES='ParallelProcessingBenchmark' ./scripts/run-benchmarks.sh
+
+# macOS (falls back from cpi -> gc with a warning)
+PROFILE_MODE=cpi INCLUDES='ParallelProcessingBenchmark' ./scripts/run-benchmarks.sh
+
+# Heap/allocation view (portable)
+PROFILE_MODE=heap INCLUDES='ParallelProcessingBenchmark' ./scripts/run-benchmarks.sh
+
+# Thread/runtime view (HotSpot)
+PROFILE_MODE=threads INCLUDES='ParallelProcessingBenchmark' ./scripts/run-benchmarks.sh
+```
+
+Supported `PROFILE_MODE` values in `scripts/run-benchmarks.sh`:
+
+- `none`: no JMH profiler
+- `gc`: allocation and GC counters (`gc`)
+- `heap`: allocation/GC plus HotSpot GC internals (`gc,hs_gc`)
+- `threads`: HotSpot thread/runtime signal (`hs_thr,hs_rt`)
+- `cpi`: Linux `perfnorm` (falls back to `gc` on macOS)
+
+Interpretation guidance for KPipe vs Confluent:
+
+- Throughput (`ops/s`) remains the primary metric.
+- On Linux, `perfnorm` adds normalized counters; compare CPI (`cycles`/`instructions`) between both benchmarks.
+- Lower CPI at similar throughput usually indicates better instruction-path efficiency.
+- On macOS, use throughput plus GC metrics; do not claim CPI without Linux perf counters.
+
+### Parallel Comparison Graph
+
+The latest visual comparison for KPipe vs Confluent parallel processing is at:
+
+- `benchmarks/graphs/parallel_processing_gc_comparison.svg`
+
+![KPipe vs Confluent Parallel Benchmark](graphs/parallel_processing_gc_comparison.svg)
+
+To regenerate source benchmark results before producing/refreshing the graph:
+
+```bash
+./gradlew :benchmarks:jmh \
+  -Pjmh.includes='ParallelProcessingBenchmark' \
+  -Pjmh.profilers='gc' \
+  -Pjmh.resultFormat=TEXT
+```
+
+> Note: JMH output is written to `benchmarks/build/results/jmh/results.<resultFormat lowercase>`.
+> For `TEXT`, the file is typically `benchmarks/build/results/jmh/results.text`.

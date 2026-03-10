@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="760" viewBox="0 0 1100 760" role="img" aria-label="KPipe vs Confluent Parallel Benchmark GC and Throughput comparison">
+  <defs>
+    <style>
+      .bg { fill: none; }
+      .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1; }
+      .title { fill: #111827; font: 700 24px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+      .subtitle { fill: #4b5563; font: 500 14px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+      .h2 { fill: #111827; font: 700 16px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+      .axis { stroke: #9ca3af; stroke-width: 1; }
+      .grid { stroke: #e5e7eb; stroke-width: 1; stroke-dasharray: 4 4; }
+      .label { fill: #374151; font: 12px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+      .small { fill: #4b5563; font: 11px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+      .value { fill: #111827; font: 700 12px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+      .legend { fill: #374151; font: 12px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+      .note { fill: #4b5563; font: 12px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+      .kpipe { fill: #22c55e; }
+      .confluent { fill: #3b82f6; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1100" height="760"/>
+
+  <text x="28" y="40" class="title">ParallelProcessingBenchmark: KPipe vs Confluent</text>
+  <text x="28" y="62" class="subtitle">JMH Throughput + GC profiler (16 samples). Throughput is the primary KPI; GC panels show memory-cost profile.</text>
+
+  <!-- Legend -->
+  <rect x="28" y="78" width="14" height="14" class="confluent"/>
+  <text x="48" y="89" class="label">Confluent Parallel Consumer</text>
+  <rect x="255" y="78" width="14" height="14" class="kpipe"/>
+  <text x="275" y="89" class="label">KPipe Parallel Processing</text>
+
+  <!-- Headline KPI panel -->
+  <rect x="28" y="108" width="1044" height="180" class="panel"/>
+  <text x="48" y="136" class="h2">Primary KPI: Throughput (ops/s)</text>
+
+  <!-- Throughput axis (0..360) -->
+  <line x1="48" y1="258" x2="700" y2="258" class="axis"/>
+  <line x1="48" y1="156" x2="48" y2="258" class="axis"/>
+  <line x1="48" y1="232" x2="700" y2="232" class="grid"/>
+  <line x1="48" y1="206" x2="700" y2="206" class="grid"/>
+  <line x1="48" y1="180" x2="700" y2="180" class="grid"/>
+
+  <!-- bar max width scale: 560 for 360 -->
+  <rect x="90" y="178" width="513" height="24" class="confluent"/>
+  <rect x="90" y="214" width="515" height="24" class="kpipe"/>
+  <text x="48" y="195" class="label">Confluent</text>
+  <text x="48" y="231" class="label">KPipe</text>
+  <text x="610" y="195" class="small">330.063 +/- 0.596</text>
+  <text x="610" y="231" class="small">331.418 +/- 0.494</text>
+
+  <text x="740" y="178" class="h2">Readout</text>
+  <text x="740" y="202" class="label">Delta: +0.41% (KPipe over Confluent)</text>
+  <text x="740" y="224" class="label">Result: throughput parity in this run</text>
+  <text x="740" y="246" class="small">(difference is small relative to benchmark variance)</text>
+
+  <!-- Memory/GC cost profile -->
+  <text x="28" y="328" class="h2">Cost Profile (not headline winner metric)</text>
+
+  <!-- Panel A: alloc.rate MB/s -->
+  <rect x="28" y="344" width="360" height="180" class="panel"/>
+  <text x="44" y="368" class="label">gc.alloc.rate (MB/sec)</text>
+  <line x1="44" y1="500" x2="372" y2="500" class="axis"/>
+  <line x1="44" y1="390" x2="44" y2="500" class="axis"/>
+  <rect x="86" y="414" width="72" height="86" class="confluent"/>
+  <rect x="206" y="390" width="72" height="110" class="kpipe"/>
+  <text x="84" y="516" class="small">Confluent</text>
+  <text x="214" y="516" class="small">KPipe</text>
+  <text x="88" y="406" class="small">0.881</text>
+  <text x="208" y="382" class="small">1.121</text>
+
+  <!-- Panel B: alloc.rate.norm B/op -->
+  <rect x="410" y="344" width="360" height="180" class="panel"/>
+  <text x="426" y="368" class="label">gc.alloc.rate.norm (B/op)</text>
+  <line x1="426" y1="500" x2="754" y2="500" class="axis"/>
+  <line x1="426" y1="390" x2="426" y2="500" class="axis"/>
+  <rect x="468" y="415" width="72" height="85" class="confluent"/>
+  <rect x="588" y="390" width="72" height="110" class="kpipe"/>
+  <text x="466" y="516" class="small">Confluent</text>
+  <text x="596" y="516" class="small">KPipe</text>
+  <text x="470" y="407" class="small">3298</text>
+  <text x="590" y="382" class="small">4246</text>
+
+  <!-- Panel C: GC count/time -->
+  <rect x="792" y="344" width="360" height="180" class="panel"/>
+  <text x="808" y="368" class="label">GC activity</text>
+  <line x1="808" y1="500" x2="1136" y2="500" class="axis"/>
+  <line x1="808" y1="390" x2="808" y2="500" class="axis"/>
+  <!-- count bars -->
+  <rect x="838" y="410" width="48" height="90" class="confluent"/>
+  <rect x="898" y="444" width="48" height="56" class="kpipe"/>
+  <!-- time bars -->
+  <rect x="988" y="438" width="48" height="62" class="confluent"/>
+  <rect x="1048" y="400" width="48" height="100" class="kpipe"/>
+  <text x="834" y="382" class="small">count</text>
+  <text x="986" y="382" class="small">time (ms)</text>
+  <text x="846" y="404" class="small">24</text>
+  <text x="906" y="438" class="small">15</text>
+  <text x="996" y="432" class="small">54</text>
+  <text x="1056" y="394" class="small">87</text>
+
+  <!-- Summary box -->
+  <rect x="28" y="548" width="1044" height="182" class="panel"/>
+  <text x="48" y="576" class="h2">Summary</text>
+  <text x="48" y="602" class="label">- Throughput is effectively at parity in this run.</text>
+  <text x="48" y="624" class="label">- KPipe shows higher allocation pressure (MB/sec and B/op).</text>
+  <text x="48" y="646" class="label">- KPipe triggers fewer GC events but with higher total GC time.</text>
+  <text x="48" y="668" class="small">Interpret throughput first; use GC metrics as tuning guidance, not standalone score.</text>
+  <text x="48" y="694" class="small">Source values: ParallelProcessingBenchmark.* + gc profiler output from shared run log.</text>
+</svg>
+

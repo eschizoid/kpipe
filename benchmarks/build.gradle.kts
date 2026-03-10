@@ -1,5 +1,3 @@
-import org.gradle.api.artifacts.VersionCatalogsExtension
-
 plugins {
     java
     id("me.champeau.jmh") version "0.7.3"
@@ -20,36 +18,43 @@ dependencies {
     // Logging for JMH forks
     implementation(libsCatalog.findLibrary("slf4jSimple").get())
 
-    // Apache Kafka test-kit for embedded benchmark broker
-    val kafkaVersion = libsCatalog.findVersion("kafka").get().requiredVersion
-    implementation(libsCatalog.findLibrary("kafkaScala213").get())
-    implementation("org.apache.kafka:kafka_2.13:$kafkaVersion:test")
-    implementation("org.apache.kafka:kafka-clients:$kafkaVersion:test")
-    implementation("org.apache.kafka:kafka-server-common:$kafkaVersion:test")
+    implementation(libsCatalog.findLibrary("kafkaTestCommonRuntime").get())
+
     implementation(libsCatalog.findLibrary("junitJupiterApi").get())
 }
 
 jmh {
-    warmupIterations = providers.gradleProperty("jmh.warmupIterations").orNull?.toIntOrNull() ?: 3
-    iterations = providers.gradleProperty("jmh.iterations").orNull?.toIntOrNull() ?: 5
-    fork = providers.gradleProperty("jmh.fork").orNull?.toIntOrNull() ?: 1
-    threads = providers.gradleProperty("jmh.threads").orNull?.toIntOrNull() ?: 1
+    fun intProp(name: String, default: Int): Int {
+        return providers.gradleProperty(name).orNull?.toIntOrNull() ?: default
+    }
 
-    providers
-        .gradleProperty("jmh.includes")
-        .orNull
-        ?.split(',')
-        ?.map(String::trim)
-        ?.filter(String::isNotEmpty)
-        ?.takeIf { it.isNotEmpty() }
-        ?.let { includes = it }
+    fun stringProp(name: String, default: String): String {
+        return providers.gradleProperty(name).orNull?.trim()?.takeIf { it.isNotEmpty() } ?: default
+    }
 
+    fun csvProp(name: String): List<String>? {
+        return providers.gradleProperty(name).orNull?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    warmupIterations = intProp("jmh.warmupIterations", 3)
+    iterations = intProp("jmh.iterations", 5)
+    fork = intProp("jmh.fork", 1)
+    threads = intProp("jmh.threads", 1)
+
+    csvProp("jmh.includes")?.let { includes = it }
+    csvProp("jmh.profilers")?.let { profilers = it }
+
+    val jmhResultFormat = stringProp("jmh.resultFormat", "TEXT")
     val jmhTmpDir = layout.buildDirectory.dir("tmp/jmh").get().asFile.absolutePath
+    val jmhResultFile = layout.buildDirectory.file("results/jmh/results.${jmhResultFormat.lowercase()}").get().asFile
 
     benchmarkMode = listOf("thrpt")
     timeUnit = "s"
     failOnError = true
     forceGC = true
+    resultFormat = jmhResultFormat
+    resultsFile = jmhResultFile
 
     jvmArgs = listOf("-Djava.io.tmpdir=$jmhTmpDir")
 }

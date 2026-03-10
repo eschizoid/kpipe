@@ -13,6 +13,7 @@ parallelConsumer = "0.5.3.0"
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
 kafkaScala213 = { module = "org.apache.kafka:kafka_2.13", version.ref = "kafka" }
 kafkaServerCommon = { module = "org.apache.kafka:kafka-server-common", version.ref = "kafka" }
+kafkaTestCommonRuntime = { module = "org.apache.kafka:kafka-test-common-runtime", version.ref = "kafka" }
 
 avro = { module = "org.apache.avro:avro", version.ref = "avro" }
 dslJson = { module = "com.dslplatform:dsl-json", version.ref = "dslJson" }
@@ -33,4 +34,3 @@ testcontainersJunitJupiter = { module = "org.testcontainers:testcontainers-junit
 testcontainersKafka = { module = "org.testcontainers:testcontainers-kafka", version.ref = "testcontainers" }
 
 parallelConsumerCore = { module = "io.confluent.parallelconsumer:parallel-consumer-core", version.ref = "parallelConsumer" }
-
