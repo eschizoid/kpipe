@@ -20,19 +20,22 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.config.AppConfig;
 import org.kpipe.sink.MessageSink;
-import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
 class AppIntegrationTest {
 
   private static final Logger log = System.getLogger(AppIntegrationTest.class.getName());
+  private static final String CONFLUENT_PLATFORM_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
 
   @Container
-  static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:8.2.0"))
-    .waitingFor(org.testcontainers.containers.wait.strategy.Wait.forListeningPort());
+  static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
+    DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_PLATFORM_VERSION))
+  )
+    .withStartupAttempts(3);
 
   @Test
   void testJsonAppEndToEnd() throws Exception {
@@ -106,9 +109,7 @@ class AppIntegrationTest {
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       while (System.nanoTime() < deadline) {
         producer.send(new ProducerRecord<>("json-topic", payload)).get();
-        if (sink.size() >= 1) {
-          return;
-        }
+        if (sink.size() >= 1) return;
         TimeUnit.MILLISECONDS.sleep(250);
       }
     }
