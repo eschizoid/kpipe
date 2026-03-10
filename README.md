@@ -662,13 +662,16 @@ If you want to use Avro with a schema registry, follow these steps:
   curl -s http://localhost:8081/subjects/com.kpipe.customer/versions/latest | jq -r '.schema' | jq --indent 2 '.'
 
   # Produce an Avro message using kafka-avro-console-producer
-  echo '{"id":1,"name":"Mariano Gonzalez","email":{"string":"mariano@example.com"},"active":true,"registrationDate":1635724800000,"address":{"com.kpipe.customer.Address":{"street":"123 Main St","city":"Chicago","zipCode":"00000","country":"USA"}},"tags":["premium","verified"],"preferences":{"notifications":"email"}}' \
-  | docker run -i --rm --network=host confluentinc/cp-schema-registry:7.7.1 \
-      kafka-avro-console-producer \
-      --bootstrap-server localhost:9092 \
-      --topic avro-topic \
-      --property schema.registry.url=http://localhost:8081 \
-      --property value.schema.id=1
+  cat <<'JSON' | docker run -i --rm --network kpipe_default \
+  -v "$PWD/lib/src/test/resources/avro/customer.avsc:/tmp/customer.avsc:ro" \
+  confluentinc/cp-schema-registry:8.2.0 \
+  sh -ec 'kafka-avro-console-producer \
+    --bootstrap-server kafka:9092 \
+    --topic avro-topic \
+    --property schema.registry.url=http://schema-registry:8081 \
+    --property value.schema="$(cat /tmp/customer.avsc)"'
+{"id":1,"name":"Mariano Gonzalez","email":{"string":"mariano@example.com"},"active":true,"registrationDate":1635724800000,"address":{"com.kpipe.customer.Address":{"street":"123 Main St","city":"Chicago","zipCode":"00000","country":"USA"}},"tags":["premium","verified"],"preferences":{"notifications":"email"}}
+JSON
   ```
 
 Kafka consumer will:

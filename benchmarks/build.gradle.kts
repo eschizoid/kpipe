@@ -1,31 +1,32 @@
+import org.gradle.api.artifacts.VersionCatalogsExtension
+
 plugins {
     java
     id("me.champeau.jmh") version "0.7.3"
 }
 
-val kafkaVersion = "3.9.1"
-val slf4jVersion = "2.0.9"
-val junitVersion = "5.10.0"
+val libsCatalog = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
 
 dependencies {
     // Benchmarks consume public API from :lib
     implementation(project(":lib"))
 
     // Benchmark targets
-    implementation("org.apache.kafka:kafka-clients:$kafkaVersion")
-    implementation("io.confluent.parallelconsumer:parallel-consumer-core:0.5.3.0")
-    implementation("org.apache.avro:avro:1.12.1")
-    implementation("com.dslplatform:dsl-json:2.0.2")
+    implementation(libsCatalog.findLibrary("kafkaClients").get())
+    implementation(libsCatalog.findLibrary("parallelConsumerCore").get())
+    implementation(libsCatalog.findLibrary("avro").get())
+    implementation(libsCatalog.findLibrary("dslJson").get())
 
     // Logging for JMH forks
-    implementation("org.slf4j:slf4j-simple:$slf4jVersion")
+    implementation(libsCatalog.findLibrary("slf4jSimple").get())
 
     // Apache Kafka test-kit for embedded benchmark broker
-    implementation("org.apache.kafka:kafka_2.13:$kafkaVersion")
+    val kafkaVersion = libsCatalog.findVersion("kafka").get().requiredVersion
+    implementation(libsCatalog.findLibrary("kafkaScala213").get())
     implementation("org.apache.kafka:kafka_2.13:$kafkaVersion:test")
     implementation("org.apache.kafka:kafka-clients:$kafkaVersion:test")
     implementation("org.apache.kafka:kafka-server-common:$kafkaVersion:test")
-    implementation("org.junit.jupiter:junit-jupiter-api:$junitVersion")
+    implementation(libsCatalog.findLibrary("junitJupiterApi").get())
 }
 
 jmh {

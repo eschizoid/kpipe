@@ -1,4 +1,5 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.gradle.api.artifacts.VersionCatalogsExtension
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveClassifier.set("all")
@@ -9,8 +10,10 @@ tasks.named<ShadowJar>("shadowJar") {
     }
 }
 
+val libsCatalog = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
+
 description = "KPipe - Kafka Consumer Application Using Avro"
 
 dependencies {
-    implementation("org.apache.avro:avro:1.12.1")
+    implementation(libsCatalog.findLibrary("avro").get())
 }

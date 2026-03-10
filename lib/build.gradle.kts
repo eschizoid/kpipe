@@ -1,3 +1,4 @@
+import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.jreleaser.model.Active.ALWAYS
 import org.jreleaser.model.Active.NEVER
 
@@ -8,6 +9,8 @@ plugins {
     jacoco
     id("org.jreleaser") version "1.19.0"
 }
+
+val libsCatalog = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
 
 description = "KPipe - Functional Kafka Consumer Library"
 
@@ -34,26 +37,26 @@ repositories {
 
 dependencies {
     // Kafka
-    implementation("org.apache.kafka:kafka-clients:3.9.1")
+    implementation(libsCatalog.findLibrary("kafkaClients").get())
 
     // DSL-JSON
-    implementation("com.dslplatform:dsl-json:2.0.2")
+    implementation(libsCatalog.findLibrary("dslJson").get())
 
     // Avro
-    implementation("org.apache.avro:avro:1.12.1")
+    implementation(libsCatalog.findLibrary("avro").get())
 
     // SLF4J API only
-    implementation("org.slf4j:slf4j-api:2.0.9")
+    implementation(libsCatalog.findLibrary("slf4jApi").get())
 
     // Testing
-    testImplementation(platform("org.junit:junit-bom:5.10.0"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation(platform(libsCatalog.findLibrary("junitBom").get()))
+    testImplementation(libsCatalog.findLibrary("junitJupiter").get())
+    testRuntimeOnly(libsCatalog.findLibrary("junitPlatformLauncher").get())
 
-    testImplementation("org.mockito:mockito-core:5.18.0")
-    testImplementation("org.mockito:mockito-junit-jupiter:5.18.0")
+    testImplementation(libsCatalog.findLibrary("mockitoCore").get())
+    testImplementation(libsCatalog.findLibrary("mockitoJunitJupiter").get())
 
-    testImplementation("org.slf4j:slf4j-simple:2.0.9")
+    testImplementation(libsCatalog.findLibrary("slf4jSimple").get())
 }
 
 tasks.test {

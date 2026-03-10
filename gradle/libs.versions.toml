@@ -1,0 +1,36 @@
+[versions]
+kafka = "4.2.0"
+avro = "1.12.1"
+dslJson = "2.0.2"
+slf4j = "2.0.9"
+junit = "5.10.0"
+junitPlatform = "1.10.0"
+mockito = "5.18.0"
+testcontainers = "2.0.3"
+parallelConsumer = "0.5.3.0"
+
+[libraries]
+kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
+kafkaScala213 = { module = "org.apache.kafka:kafka_2.13", version.ref = "kafka" }
+kafkaServerCommon = { module = "org.apache.kafka:kafka-server-common", version.ref = "kafka" }
+
+avro = { module = "org.apache.avro:avro", version.ref = "avro" }
+dslJson = { module = "com.dslplatform:dsl-json", version.ref = "dslJson" }
+
+slf4jApi = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+slf4jSimple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+
+junitBom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junitJupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junitJupiterApi = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
+junitPlatformLauncher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
+
+mockitoCore = { module = "org.mockito:mockito-core", version.ref = "mockito" }
+mockitoJunitJupiter = { module = "org.mockito:mockito-junit-jupiter", version.ref = "mockito" }
+
+testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
+testcontainersJunitJupiter = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
+testcontainersKafka = { module = "org.testcontainers:testcontainers-kafka", version.ref = "testcontainers" }
+
+parallelConsumerCore = { module = "io.confluent.parallelconsumer:parallel-consumer-core", version.ref = "parallelConsumer" }
+

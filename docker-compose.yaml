@@ -1,64 +1,50 @@
 services:
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.7.1
-    ports:
-      - "2181:2181"
-      - "2888:2888"
-      - "3888:3888"
-    environment:
-      - ZOOKEEPER_CLIENT_PORT=2181
-      - ZOOKEEPER_TICK_TIME=2000
-      - ZOOKEEPER_4LW_COMMANDS_WHITELIST=srvr,ruok
-      - ZOOKEEPER_SERVER_ID=1
-      - ZOOKEEPER_SERVERS=zookeeper:2888:3888
-    volumes:
-      - zookeeper_data:/var/lib/zookeeper/data
-      - zookeeper_log:/var/lib/zookeeper/log
-    healthcheck:
-      test: ["CMD-SHELL", "echo srvr | nc -w 2 localhost 2181 | grep -q 'Mode:'"]
-      interval: 10s
-      timeout: 5s
-      retries: 8
-
   kafka:
-    image: soldevelo/kafka:3.9.0
+    image: confluentinc/cp-kafka:8.2.0
     ports:
       - "9092:9092"
     environment:
-      - KAFKA_BROKER_ID=1
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
-      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
-      - ALLOW_PLAINTEXT_LISTENER=yes
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
-      - KAFKA_CFG_ZOOKEEPER_CONNECTION_TIMEOUT_MS=60000
+      - CLUSTER_ID=kpipe-cluster
+      - KAFKA_NODE_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
     volumes:
-      - kafka_data:/bitnami/kafka
-      - ./scripts:/scripts
-    command: [ "/scripts/wait-for-it.sh", "zookeeper:2181", "-t", "60", "--", "/opt/bitnami/scripts/kafka/entrypoint.sh", "/opt/bitnami/scripts/kafka/run.sh" ]
-    depends_on:
-      zookeeper:
-        condition: service_healthy
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: on-failure
 
   kafka-init:
-    image: soldevelo/kafka:3.9.0
+    image: confluentinc/cp-kafka:8.2.0
     depends_on:
-      - kafka
-    command: >
-      sh -c "
-        echo 'Waiting for Kafka to be ready...' &&
-        sleep 30 &&
-        kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic json-topic &&
-        kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic avro-topic &&
-        kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic proto-topic &&
+      kafka:
+        condition: service_healthy
+    command:
+      - sh
+      - -ec
+      - |
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic json-topic
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic avro-topic
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 --topic proto-topic
         echo 'Topics created successfully'
-      "
     restart: on-failure
 
   schema-registry:
-    image: confluentinc/cp-schema-registry:7.7.1
+    image: confluentinc/cp-schema-registry:8.2.0
     container_name: schema-registry
     ports:
       - "8081:8081"
@@ -68,15 +54,33 @@ services:
       - SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=PLAINTEXT://kafka:9092
       - SCHEMA_REGISTRY_KAFKASTORE_TOPIC=_schemas
     healthcheck:
-      test: [ "CMD-SHELL", "curl -fsS http://localhost:8081/subjects >/dev/null || exit 1" ]
+      test: [ "CMD-SHELL", "curl -fsS http://localhost:8081/subjects >/dev/null" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
+
+  schema-init:
+    image: alpine:3.22
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      schema-registry:
+        condition: service_healthy
+    volumes:
+      - ./scripts/register-schema.sh:/scripts/register-schema.sh:ro
+      - ./lib/src/test/resources/avro/customer.avsc:/schemas/customer.avsc:ro
+    command:
+      - sh
+      - -ec
+      - |
+        apk add --no-cache curl jq
+        sh /scripts/register-schema.sh /schemas/customer.avsc com.kpipe.customer http://schema-registry:8081
+    restart: "no"
 
   kafka-consumer-app:
     build:
@@ -92,9 +96,9 @@ services:
     depends_on:
       schema-registry:
         condition: service_healthy
+      schema-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
-  zookeeper_data:
-  zookeeper_log:
   kafka_data:

@@ -70,10 +70,11 @@ class FunctionalConsumerMockingTest {
       offsetManager
     );
 
-    functionalConsumer.start();
-
-    verify(mockConsumer).subscribe(topicCaptor.capture());
-    assertEquals(List.of(TOPIC), topicCaptor.getValue());
+    try (functionalConsumer) {
+      functionalConsumer.start();
+      verify(mockConsumer).subscribe(topicCaptor.capture());
+      assertEquals(List.of(TOPIC), topicCaptor.getValue());
+    }
   }
 
   @Test
@@ -884,27 +885,31 @@ class FunctionalConsumerMockingTest {
     // Start consumer
     functionalConsumer.start();
 
-    // Verify offset manager is started
-    verify(offsetManager).start();
+    try {
+      // Verify offset manager is started
+      verify(offsetManager).start();
 
-    // Simulate a command to track offset
-    var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
-    commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+      // Simulate a command to track offset
+      var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
+      commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
 
-    // Process commands
-    functionalConsumer.processCommands();
+      // Process commands
+      functionalConsumer.processCommands();
 
-    // Verify offset is tracked
-    verify(offsetManager).trackOffset(record);
+      // Verify offset is tracked
+      verify(offsetManager).trackOffset(record);
 
-    // Simulate processing completion
-    commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+      // Simulate processing completion
+      commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
 
-    // Process commands
-    functionalConsumer.processCommands();
+      // Process commands
+      functionalConsumer.processCommands();
 
-    // Verify offset is marked as processed
-    verify(offsetManager).markOffsetProcessed(record);
+      // Verify offset is marked as processed
+      verify(offsetManager, timeout(500)).markOffsetProcessed(record);
+    } finally {
+      functionalConsumer.close();
+    }
   }
 
   @Test
