@@ -35,12 +35,10 @@ retries, built-in metrics, and support for both parallel and sequential processi
   final var registry = new MessageProcessorRegistry("myApp");
 
   // Register team-specific JSON operators
-  registry.registerJsonOperator("sanitizeData",
-      JsonMessageProcessor.removeFields("password", "ssn"));
+  registry.registerJsonOperator("sanitizeData", JsonMessageProcessor.removeFields("password", "ssn"));
 
   // Create an optimized JSON pipeline from registered operators
-  final var pipeline = registry.jsonPipeline(
-      "sanitizeData", "addTimestamp");
+  final var pipeline = registry.jsonPipeline("sanitizeData", "addTimestamp");
 
   // Apply transformations with built-in error handling and retry logic
   final var consumer = new KPipeConsumer.<byte[], byte[]>builder()
@@ -287,9 +285,12 @@ Monitor your consumer with built-in metrics:
 Configure automatic metrics reporting:
 
   ```java
-  new App(config)
-    .withMetricsInterval(Duration.ofSeconds(30))
-    .start();
+  final var runner = ConsumerRunner.builder(consumer)
+    .withMetricsReporters(List.of(new ConsumerMetricsReporter(consumer::getMetrics, () -> uptimeMs, null)))
+    .withMetricsInterval(30_000)
+    .build();
+
+  runner.start();
   ```
 
 ---
@@ -298,14 +299,16 @@ Configure automatic metrics reporting:
 The consumer supports graceful shutdown with in-flight message handling:
 
   ```java
+  final var log = System.getLogger("org.kpipe.app.Shutdown");
+
   // Initiate graceful shutdown with 5-second timeout
-  boolean allProcessed = kafkaApp.shutdownGracefully(5000);
+  boolean allProcessed = runner.shutdownGracefully(5000);
   if (allProcessed) log.log(Level.INFO, "All messages processed successfully before shutdown");
   else log.log(Level.WARNING, "Shutdown completed with some messages still in flight");
 
   // Register as JVM shutdown hook
   Runtime.getRuntime().addShutdownHook(
-    new Thread(() -> app.shutdownGracefully(5000))
+    new Thread(() -> runner.close())
   );
   ```
 
@@ -451,16 +454,11 @@ The registry provides utilities for adding error handling to sinks:
 
 ```java
 // Create a sink with error handling
-final var safeSink = MessageSinkRegistry.withErrorHandling(
-  riskySink,
-  (record, value, error) -> log.log(Level.ERROR, "Error in sink: " + error.getMessage())
-);
+final var safeSink = MessageSinkRegistry.withErrorHandling(riskySink);
 
-// Or use the registry's error handling
-final var safePipeline = registry.<String, byte[]>pipelineWithErrorHandling(
-  "console", "database", "metrics",
-  (record, value, error) -> errorService.reportError(record.topic(), error)
-);
+// Register and use the wrapped sink
+registry.register("safeDatabase", safeSink);
+final var safePipeline = registry.<String, byte[]>pipeline("console", "safeDatabase", "metrics");
 ```
 
 ---
@@ -488,33 +486,27 @@ The `ConsumerRunner` supports extensive configuration options:
 
 ```java
 // Create a consumer runner with advanced configuration
-ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
+final var runner = ConsumerRunner.builder(consumer)
   // Configure metrics reporting
-  .withMetricsReporter(new ConsumerMetricsReporter(
-    consumer::getMetrics,
-    () -> System.currentTimeMillis() - startTime
+  .withMetricsReporters(List.of(
+    new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime, null)
   ))
   .withMetricsInterval(30000) // Report metrics every 30 seconds
-
   // Configure health checks
-  .withHealthCheck(c -> c.getState() == ConsumerState.RUNNING)
-
+  .withHealthCheck(KPipeConsumer::isRunning)
   // Configure graceful shutdown
   .withShutdownTimeout(10000) // 10 seconds timeout for shutdown
   .withShutdownHook(true) // Register JVM shutdown hook
-
   // Configure custom start action
   .withStartAction(c -> {
-    log.log(Level.INFO, "Starting consumer for topic: " + c.getTopic());
+    log.log(Level.INFO, "Starting consumer");
     c.start();
   })
-
   // Configure custom graceful shutdown
   .withGracefulShutdown((c, timeoutMs) -> {
       log.log(Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
-      return c.shutdownGracefully(timeoutMs);
+      return ConsumerRunner.performGracefulConsumerShutdown(c, timeoutMs);
   })
-
   .build();
 ```
 
@@ -544,7 +536,7 @@ The `ConsumerRunner` integrates with metrics reporting:
 // Add multiple metrics reporters
 ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
   .withMetricsReporters(List.of(
-    new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime),
+    new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime, null),
     new ProcessorMetricsReporter(registry)
   ))
   .withMetricsInterval(60000) // Report every minute
@@ -571,26 +563,27 @@ Here's a concise example of a KPipe application:
 
 ```java
 public class KPipeApp implements AutoCloseable {
+  private static final System.Logger LOGGER = System.getLogger(KPipeApp.class.getName());
   private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
 
   static void main() {
     // Load configuration from environment variables
     final var config = AppConfig.fromEnv();
 
-    try (final var app = new MyKafkaApp(config)) {
+    try (final var app = new KPipeApp(config)) {
       app.start();
       app.awaitShutdown();
     } catch (final Exception e) {
-      System.getLogger(MyKafkaApp.class.getName())
-        .log(System.Logger.Level.ERROR, "Fatal error in application", e);
+      LOGGER.log(Level.ERROR, "Fatal error in application", e);
       System.exit(1);
     }
   }
 
-  public MyKafkaApp(final AppConfig config) {
+  public KPipeApp(final AppConfig config) {
     // Create processor and sink registries
     final var processorRegistry = new MessageProcessorRegistry(config.appName());
     final var sinkRegistry = new MessageSinkRegistry();
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Create the functional consumer
     final var functionalConsumer = KPipeConsumer.<byte[], byte[]>builder()
@@ -599,11 +592,13 @@ public class KPipeApp implements AutoCloseable {
       .withTopic(config.topic())
       .withProcessor(processorRegistry.jsonPipeline(
         "addSource", "markProcessed", "addTimestamp"))
-      .withMessageSink(sinkRegistry.<byte[], byte[]>pipeline("logging"))
+      .withMessageSink(sinkRegistry.<byte[], byte[]>pipeline("jsonLogging"))
+      .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(consumer -> 
-        OffsetManager.builder(consumer)
-          .withCommitInterval(Duration.ofSeconds(30))
-          .build())
+         OffsetManager.builder(consumer)
+          .withCommandQueue(commandQueue)
+           .withCommitInterval(Duration.ofSeconds(30))
+           .build())
       .withMetrics(true)
       .build();
 
@@ -634,12 +629,9 @@ public class KPipeApp implements AutoCloseable {
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 export KAFKA_CONSUMER_GROUP=my-group
 export KAFKA_TOPIC=json-events
-
-# Run the application
-./gradlew run
-
-# Test with a sample message
-echo '{"message":"Hello from KPipe!"}' | kcat -P -b localhost:9092 -t json-events
+export KAFKA_PROCESSORS=parseJson,validateSchema,addTimestamp
+export METRICS_INTERVAL_MS=30000
+export SHUTDOWN_TIMEOUT_MS=5000
 ```
 
 ---
