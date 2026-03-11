@@ -26,8 +26,7 @@ retries, built-in metrics, and support for both parallel and sequential processi
 - Message processors are **pure functions** (e.g., `UnaryOperator<Map<String, Object>>` for JSON or
   `UnaryOperator<GenericRecord>` for Avro) that transform data without side effects.
 - Build complex, high-performance pipelines that minimize serialization/deserialization cycles.
-- **Declarative processing** lets you describe *what* to do, not *how* to do it.
-- **Optimized Pipelines**: Deserialization happens once at the start, and serialization happens once at the end,
+- **Single SerDe Cycle**: Deserialization happens once at the start, and serialization happens once at the end,
   regardless of the number of transformations.
 - Teams can **register their own operators** in a central registry via:
 
@@ -113,6 +112,65 @@ retries, built-in metrics, and support for both parallel and sequential processi
   ```sbt
   libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.0.0"
   ```
+
+---
+
+## Architecture and Reliability
+
+KPipe is designed to be a lightweight, high-performance alternative to existing Kafka consumer libraries, focusing on
+modern Java 25+ features and predictable behavior.
+
+### 1. The "Single SerDe Cycle" Strategy
+
+Unlike traditional pipelines that often perform `byte[] -> Object -> byte[]` at every transformation step, KPipe
+optimizes for throughput:
+
+- **Single Deserialization**: Messages are deserialized **once** into a mutable representation (e.g., `Map` for JSON,
+  `GenericRecord` for Avro).
+- **In-Place Transformations**: A chain of `UnaryOperator` functions is applied to the same object.
+- **Single Serialization**: The final object is serialized back to `byte[]` only once before being sent to the sink.
+
+This approach significantly reduces CPU overhead and GC pressure.
+
+### 2. Virtual Threads
+
+By default, KPipe uses **Java Virtual Threads** (Project Loom) to process messages. This provides a "thread-per-record"
+model that excels at I/O-bound tasks (e.g., enrichment via REST/DB).
+
+- **I/O Bound**: Use the default parallel mode with virtual threads for maximum concurrency.
+- **Sequential**: Use `.withSequentialProcessing(true)` for stateful operations where strict FIFO ordering per
+  partition is required.
+
+### 3. Reliable "At-Least-Once" Delivery
+
+KPipe implements a **Lowest Pending Offset** strategy to ensure reliability even with parallel processing:
+
+- **In-Flight Tracking**: Every record's offset is tracked in a `ConcurrentSkipListSet` per partition.
+- **No-Gap Commits**: Even if message 102 finishes before 101, offset 102 will **not** be committed until 101 is
+  successfully processed.
+- **Crash Recovery**: If the consumer crashes, it will resume from the last committed "safe" offset. While this may
+  result in some records being re-processed (standard "at-least-once" behavior), it guarantees no message is ever
+  skipped.
+
+### 4. Error Handling & Retries
+
+KPipe provides a robust, multi-layered error handling mechanism:
+
+- **Built-in Retries**: Configure `.withRetry(maxRetries, backoff)` to automatically retry transient failures.
+- **Dead Letter Handling**: Provide a `.withErrorHandler()` to redirect messages that fail after all retries to an
+  error topic or database.
+- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors with default
+  values or logging, preventing a single malformed message from blocking the partition.
+
+### 5. Graceful Shutdown & Interrupt Handling
+
+KPipe respects JVM signals and ensures timely shutdown without data loss:
+
+- **Interrupt Awareness**: Interrupts trigger a coordinated shutdown sequence. They do **not** cause records to be
+  skipped.
+- **Reliable Redelivery**: If a record's processing is interrupted (e.g., during retry backoff or transformation),
+  the offset is NOT marked as processed. This ensures it will be safely picked up by the next consumer instance,
+  guaranteeing "at-least-once" delivery even during shutdown.
 
 ---
 
@@ -219,10 +277,11 @@ Monitor your consumer with built-in metrics:
 
   ```java
   // Access consumer metrics
-  Map<String, Long> metrics = consumer.getMetrics();
-  System.out.println("Messages received: " + metrics.get("messagesReceived"));
-  System.out.println("Successfully processed: " + metrics.get("messagesProcessed"));
-  System.out.println("Processing errors: " + metrics.get("processingErrors"));
+  final var metrics = consumer.getMetrics();
+  final var log = System.getLogger("org.kpipe.metrics");
+  log.log(Level.INFO, "Messages received: " + metrics.get("messagesReceived"));
+  log.log(Level.INFO, "Successfully processed: " + metrics.get("messagesProcessed"));
+  log.log(Level.INFO, "Processing errors: " + metrics.get("processingErrors"));
   ```
 
 Configure automatic metrics reporting:
@@ -241,11 +300,8 @@ The consumer supports graceful shutdown with in-flight message handling:
   ```java
   // Initiate graceful shutdown with 5-second timeout
   boolean allProcessed = kafkaApp.shutdownGracefully(5000);
-  if (allProcessed) {
-    LOGGER.info("All messages processed successfully before shutdown");
-  } else {
-    LOGGER.warning("Shutdown completed with some messages still in flight");
-  }
+  if (allProcessed) log.log(Level.INFO, "All messages processed successfully before shutdown");
+  else log.log(Level.WARNING, "Shutdown completed with some messages still in flight");
 
   // Register as JVM shutdown hook
   Runtime.getRuntime().addShutdownHook(
@@ -325,17 +381,11 @@ public interface MessageSink<K, V> {
 KPipe provides several built-in sinks:
 
 ```java
-// Create a JSON console sink that logs messages at INFO level
-final var jsonConsoleSink = new JsonConsoleSink<>(
-  System.getLogger("org.kpipe.sink.JsonConsoleSink"), 
-  Level.INFO
-);
+// Create a JSON console sink
+final var jsonConsoleSink = new JsonConsoleSink<>();
 
-// Create an Avro console sink that logs messages at INFO level
-final var avroConsoleSink = new AvroConsoleSink<>(
-  System.getLogger("org.kpipe.sink.AvroConsoleSink"), 
-  Level.INFO
-);
+// Create an Avro console sink
+final var avroConsoleSink = new AvroConsoleSink<>();
 
 // Use a sink with a consumer
 final var consumer = new KPipeConsumer.<String, byte[]>builder()
@@ -355,15 +405,15 @@ You can create custom sinks using lambda expressions:
 MessageSink<String, byte[]> databaseSink = (record, processedValue) -> {
   try {
     // Parse the processed value
-    Map<String, Object> data = JsonMessageProcessor.parseJson().apply(processedValue);
+    final var data = JsonMessageProcessor.parseJson().apply(processedValue);
 
     // Write to database
     databaseService.insert(data);
 
     // Log success
-    logger.info("Successfully wrote message to database: " + record.key());
+    log.log(Level.INFO, "Successfully wrote message to database: " + record.key());
   } catch (Exception e) {
-    logger.error("Failed to write message to database", e);
+    log.log(Level.ERROR, "Failed to write message to database", e);
   }
 };
 
@@ -382,7 +432,7 @@ The `MessageSinkRegistry` provides a centralized repository for registering and 
 final var registry = new MessageSinkRegistry();
 
 // Register sinks
-registry.register("console", new JsonConsoleSink<>(logger, Level.INFO));
+registry.register("console", new JsonConsoleSink<>());
 registry.register("database", databaseSink);
 registry.register("metrics", (record, value) -> metricsService.recordMessage(record.topic(), value.length));
 
@@ -403,7 +453,7 @@ The registry provides utilities for adding error handling to sinks:
 // Create a sink with error handling
 final var safeSink = MessageSinkRegistry.withErrorHandling(
   riskySink,
-  (record, value, error) -> logger.error("Error in sink: " + error.getMessage())
+  (record, value, error) -> log.log(Level.ERROR, "Error in sink: " + error.getMessage())
 );
 
 // Or use the registry's error handling
@@ -455,13 +505,13 @@ ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(co
 
   // Configure custom start action
   .withStartAction(c -> {
-    logger.info("Starting consumer for topic: " + c.getTopic());
+    log.log(Level.INFO, "Starting consumer for topic: " + c.getTopic());
     c.start();
   })
 
   // Configure custom graceful shutdown
   .withGracefulShutdown((c, timeoutMs) -> {
-      logger.info("Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
+      log.log(Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
       return c.shutdownGracefully(timeoutMs);
   })
 
@@ -774,9 +824,9 @@ multiple records concurrently.
 
 - **Execution Order**: Messages start in order but may finish out of order (e.g., a small message finishing before a
   large one).
-- **No-Gap Offset Management**: Even with parallel processing, KPipe's `OffsetManager` uses a **Lowest Pending Offset**
+- **At-Least-Once Delivery**: Even with parallel processing, KPipe's `OffsetManager` uses a **Lowest Pending Offset**
   strategy. It will never commit a higher offset until all lower offsets in that partition are successfully processed.
-  This ensures **at-least-once delivery** and prevents "holes" in your data if the application crashes.
+  This ensures **no gaps** in your committed data.
 
 ### 3. Key-Level Ordering for Critical Systems (e.g., Payments)
 

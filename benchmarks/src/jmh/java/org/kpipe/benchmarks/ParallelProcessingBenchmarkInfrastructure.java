@@ -259,7 +259,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     @TearDown(Level.Invocation)
     public void tearDown() {
       if (processor != null) processor.closeDontDrainFirst(PC_CLOSE_TIMEOUT);
-      if (kafkaConsumer != null) kafkaConsumer.close(PC_CLOSE_TIMEOUT);
+      if (kafkaConsumer != null) kafkaConsumer.close();
     }
 
     /// @return invocation-scoped processed message counter
