@@ -18,7 +18,7 @@ import org.openjdk.jmh.annotations.*;
 ///
 /// ### Design Integrity:
 /// - Both frameworks start from the beginning of the topic (`earliest`) for each iteration.
-/// - Both process exactly **1,000 messages** per iteration.
+/// - Both process exactly **10,000 messages** per iteration.
 /// - KPipe uses Loom; Confluent uses a max concurrency of **100**.
 ///
 /// ### Running the Benchmark:

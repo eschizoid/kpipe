@@ -83,7 +83,7 @@ class KPipeConsumerMockingTest {
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
     final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key", "test-value"));
-    final var records = consumerRecords(Map.of(partition, recordsList));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
     final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
@@ -132,7 +132,7 @@ class KPipeConsumerMockingTest {
     // Create mock records
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key", "test-value"));
-    final var records = consumerRecords(Map.of(partition, recordsList));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
     final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
@@ -199,7 +199,7 @@ class KPipeConsumerMockingTest {
     final var record = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value");
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(record);
-    final var records = consumerRecords(Map.of(partition, recordsList));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
     final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
@@ -249,7 +249,7 @@ class KPipeConsumerMockingTest {
     final var record = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value");
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(record);
-    final var records = consumerRecords(Map.of(partition, recordsList));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
     // Create a consumer with no retries
     final var functionalConsumer = new TestableKPipeConsumer<>(
@@ -391,7 +391,7 @@ class KPipeConsumerMockingTest {
     // Create mock records
     var partition = new TopicPartition(TOPIC, PARTITION);
     var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value"));
-    var records = consumerRecords(Map.of(partition, recordsList));
+    var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
     final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
@@ -438,7 +438,7 @@ class KPipeConsumerMockingTest {
     // Create mock records
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value"));
-    final var records = consumerRecords(Map.of(partition, recordsList));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
     final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
       TOPIC,
@@ -583,7 +583,7 @@ class KPipeConsumerMockingTest {
     // Create record with null value
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(new ConsumerRecord<String, String>(TOPIC, PARTITION, 0L, "key", null));
-    final var records = consumerRecords(Map.of(partition, recordsList));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
     // Process records
     functionalConsumer.executeProcessRecords(records);
@@ -688,7 +688,7 @@ class KPipeConsumerMockingTest {
       new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key1", "value1"),
       new ConsumerRecord<>(TOPIC, PARTITION, 1L, "key2", "value2")
     );
-    final var records = consumerRecords(Map.of(partition, recordsList));
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
     // Use CountDownLatch to control when processing completes
     final var startLatch = new CountDownLatch(2);
@@ -843,7 +843,7 @@ class KPipeConsumerMockingTest {
     // Create a record that will fail processing
     final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var records = consumerRecords(Map.of(partition, List.of(record)));
+    final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
 
     // Process record
     functionalConsumer.executeProcessRecords(records);
@@ -1039,23 +1039,16 @@ class KPipeConsumerMockingTest {
 
     // Create consumer records
     final var recordsMap = Map.of(new TopicPartition(TOPIC, PARTITION), records);
-    final var consumerRecords = consumerRecords(recordsMap);
+    final var recordsBatch = new ConsumerRecords<>(recordsMap, Map.of());
 
     // Process records
-    functionalConsumer.executeProcessRecords(consumerRecords);
+    functionalConsumer.executeProcessRecords(recordsBatch);
 
     // Wait for all records to be processed
     assertTrue(completionLatch.await(3, TimeUnit.SECONDS), "Records processing timed out");
 
     // Verify concurrent execution
     assertTrue(maxConcurrent.get() > 1, "Records should be processed concurrently");
-  }
-
-  private static <K, V> ConsumerRecords<K, V> consumerRecords(
-    final Map<TopicPartition, List<ConsumerRecord<K, V>>> records
-  ) {
-    // Kafka 4.2 deprecates the single-arg constructor; provide explicit nextOffsets.
-    return new ConsumerRecords<>(records, Map.of());
   }
 
   public static class TestableKPipeConsumer<K, V> extends KPipeConsumer<K, V> {

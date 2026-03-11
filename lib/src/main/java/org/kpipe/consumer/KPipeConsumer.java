@@ -2,12 +2,12 @@ package org.kpipe.consumer;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -695,65 +695,60 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   protected void processRecord(final ConsumerRecord<K, V> record) {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
 
-    final var retryProcessor = new BiFunction<Integer, Exception, V>() {
-      @Override
-      public V apply(final Integer attempt, final Exception previousException) {
-        // If we've exceeded max retries, handle the error and return null
-        if (attempt > maxRetries) {
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
+        LOGGER.log(
+          Level.INFO,
+          "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempt, maxRetries)
+        );
+
+        try {
+          Thread.sleep(retryBackoff.toMillis());
+        } catch (final InterruptedException ie) {
+          Thread.currentThread().interrupt();
+          return; // Interrupts must not mark the record as processed.
+        }
+      }
+
+      try {
+        final var processedValue = processor.apply(record.value());
+        messageSink.send(record, processedValue);
+        if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+        if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+        return;
+      } catch (final Exception e) {
+        if (isInterruptionRelated(e)) {
+          Thread.currentThread().interrupt();
+          return; // Interrupt-like failures should be retried after restart/rebalance.
+        }
+
+        if (attempt == maxRetries) {
           if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
           LOGGER.log(
             Level.WARNING,
             "Failed to process message at offset %d after %d attempts: %s".formatted(
                 record.offset(),
-                attempt,
-                previousException.getMessage()
+                maxRetries + 1,
+                e.getMessage()
               ),
-            previousException
+            e
           );
-
-          errorHandler.accept(new ProcessingError<>(record, previousException, maxRetries));
-          return null;
-        }
-
-        // If this is a retry attempt, log and increment metrics
-        if (attempt > 0) {
-          if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
-
-          LOGGER.log(
-            Level.INFO,
-            "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempt, maxRetries)
-          );
-
-          // Wait before retry
-          try {
-            Thread.sleep(retryBackoff.toMillis());
-          } catch (final InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            return null;
-          }
-        }
-
-        // Attempt to process the record
-        try {
-          return processor.apply(record.value());
-        } catch (final Exception e) {
-          // If processing fails, retry with an incremented attempt count
-          return apply(attempt + 1, e);
+          errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
+          if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+          return;
         }
       }
-    };
-
-    // Process the record with retry logic starting at attempt 0
-    final V processedValue = retryProcessor.apply(0, null);
-
-    // If processing was successful, send to sink and update metrics
-    if (processedValue != null) {
-      messageSink.send(record, processedValue);
-      if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
     }
+  }
 
-    // Mark offset as processed regardless of success or failure
-    if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+  private static boolean isInterruptionRelated(final Throwable error) {
+    Throwable current = error;
+    while (current != null) {
+      if (current instanceof InterruptedException || current instanceof ClosedByInterruptException) return true;
+      current = current.getCause();
+    }
+    return false;
   }
 
   private ConsumerRecords<K, V> pollRecords() {
