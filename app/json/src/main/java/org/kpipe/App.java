@@ -17,6 +17,7 @@ import org.kpipe.consumer.ConsumerRunner;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.OffsetManager;
 import org.kpipe.consumer.enums.ConsumerCommand;
+import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
@@ -34,6 +35,7 @@ public class App implements AutoCloseable {
   private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final KPipeConsumer<byte[], byte[]> kpipeConsumer;
   private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
+  private final HttpHealthServer healthServer;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
@@ -70,6 +72,7 @@ public class App implements AutoCloseable {
     final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
 
     runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
+    healthServer = HttpHealthServer.fromEnv(runner::isHealthy, config.appName()).orElse(null);
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.
@@ -168,6 +171,7 @@ public class App implements AutoCloseable {
   }
 
   void start() {
+    if (healthServer != null) healthServer.start();
     runner.start();
   }
 
@@ -181,6 +185,7 @@ public class App implements AutoCloseable {
 
   @Override
   public void close() {
+    if (healthServer != null) healthServer.close();
     runner.close();
   }
 }

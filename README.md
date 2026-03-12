@@ -632,6 +632,10 @@ export KAFKA_TOPIC=json-events
 export KAFKA_PROCESSORS=parseJson,validateSchema,addTimestamp
 export METRICS_INTERVAL_MS=30000
 export SHUTDOWN_TIMEOUT_MS=5000
+export HEALTH_HTTP_ENABLED=true
+export HEALTH_HTTP_HOST=0.0.0.0
+export HEALTH_HTTP_PORT=8080
+export HEALTH_HTTP_PATH=/health
 ```
 
 ---
@@ -656,6 +660,10 @@ Configure via environment variables:
   export KAFKA_PROCESSORS=parseJson,validateSchema,addTimestamp
   export METRICS_INTERVAL_MS=30000
   export SHUTDOWN_TIMEOUT_MS=5000
+  export HEALTH_HTTP_ENABLED=true
+  export HEALTH_HTTP_HOST=0.0.0.0
+  export HEALTH_HTTP_PORT=8080
+  export HEALTH_HTTP_PATH=/health
   ```
 
 ---
