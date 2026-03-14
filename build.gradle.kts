@@ -58,6 +58,8 @@ subprojects {
             toggleOffOn()
             importOrder()
             removeUnusedImports()
+            trimTrailingWhitespace()
+            endWithNewline()
             ratchetFrom("origin/main")
             prettier(
                 mapOf(

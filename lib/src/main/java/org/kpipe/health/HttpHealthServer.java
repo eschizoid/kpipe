@@ -11,7 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Supplier;
+import java.util.function.BooleanSupplier;
 import org.kpipe.config.AppConfig;
 
 /// Lightweight HTTP health check server using the JDK built-in HttpServer.
@@ -29,16 +29,16 @@ public final class HttpHealthServer implements AutoCloseable {
   private static final Logger LOGGER = System.getLogger(HttpHealthServer.class.getName());
 
   private final HttpServer server;
-  private final Supplier<Boolean> healthSupplier;
+  private final BooleanSupplier healthSupplier;
   private final String path;
   private final String appName;
   private final AtomicBoolean started = new AtomicBoolean(false);
 
-  private HttpHealthServer(
+  public HttpHealthServer(
     final String host,
     final int port,
     final String path,
-    final Supplier<Boolean> healthSupplier,
+    final BooleanSupplier healthSupplier,
     final String appName
   ) throws IOException {
     this.healthSupplier = Objects.requireNonNull(healthSupplier, "Health supplier cannot be null");
@@ -48,15 +48,8 @@ public final class HttpHealthServer implements AutoCloseable {
     this.server.createContext(this.path, this::handleHealth);
   }
 
-  public static Optional<HttpHealthServer> fromEnv(
-    final Supplier<Boolean> healthSupplier,
-    final String appName
-  ) {
-    final var enabled =
-      !"false".equalsIgnoreCase(AppConfig.getEnvOrDefault(ENV_ENABLED, "true"));
-    if (!enabled) {
-      return Optional.empty();
-    }
+  public static Optional<HttpHealthServer> fromEnv(final BooleanSupplier healthSupplier, final String appName) {
+    if ("false".equalsIgnoreCase(AppConfig.getEnvOrDefault(ENV_ENABLED, "true"))) return Optional.empty();
 
     final var host = AppConfig.getEnvOrDefault(ENV_HOST, DEFAULT_HOST);
     final var path = AppConfig.getEnvOrDefault(ENV_PATH, DEFAULT_PATH);
@@ -93,18 +86,14 @@ public final class HttpHealthServer implements AutoCloseable {
 
     final boolean healthy;
     try {
-      healthy = Boolean.TRUE.equals(healthSupplier.get());
+      healthy = healthSupplier.getAsBoolean();
     } catch (final Exception e) {
       LOGGER.log(Level.WARNING, "Health check failed for %s".formatted(appName), e);
       sendResponse(exchange, 503, "UNHEALTHY");
       return;
     }
 
-    if (healthy) {
-      sendResponse(exchange, 200, "OK");
-    } else {
-      sendResponse(exchange, 503, "UNHEALTHY");
-    }
+    if (healthy) sendResponse(exchange, 200, "OK"); else sendResponse(exchange, 503, "UNHEALTHY");
   }
 
   private static void sendResponse(final HttpExchange exchange, final int status, final String body)
@@ -130,5 +119,10 @@ public final class HttpHealthServer implements AutoCloseable {
     } catch (final NumberFormatException e) {
       return DEFAULT_PORT;
     }
+  }
+
+  /// Returns the actual bind address of the underlying HttpServer.
+  public InetSocketAddress getAddress() {
+    return server.getAddress();
   }
 }

@@ -1,77 +1,47 @@
 # <img src="img/kpipe_1.png" width="200" height="200">
 
-# KPipe - A Modern Kafka Consumer
+# KPipe
+
+**KPipe is a lightweight Kafka processing library for modern Java that lets you build safe, high‑performance message
+pipelines using virtual threads and a functional API.**
 
 [![GitHub release](https://img.shields.io/github/release/eschizoid/kpipe.svg?style=flat-square)](https://github.com/eschizoid/kpipe/releases/latest)
 [![Codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
 [![Build Status](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A **modern, functional, and high-performance Kafka consumer** built using **Java 25** features like **virtual threads**,
-**composable message processors**, and **DslJson** for JSON processing. Features robust error handling, configurable
-retries, built-in metrics, and support for both parallel and sequential processing. Ideal for large-scale systems.
+- **Modern Java concurrency** (virtual threads)
+- **Composable functional pipelines**
+- **Safe at-least-once processing**
+- **High throughput with minimal framework overhead**
+
+It is designed for Kafka consumer services performing transformations, enrichment, or routing.
 
 ---
 
-## Why This Library?
+# Quick Example
 
-### Modern Java Features
+Create a pipeline and start a Kafka consumer in a few lines:
 
-- **Virtual Threads** for massive concurrency with minimal overhead
-- **Functional programming** patterns for clean, maintainable code
-- **High-performance JSON processing** with DslJson
+```java
+final var registry = new MessageProcessorRegistry("demo");
 
-### Functional Processing Pipeline
+registry.registerJsonOperator(
+    "sanitize",
+    JsonMessageProcessor.removeFields("password")
+);
 
-- Message processors are **pure functions** (e.g., `UnaryOperator<Map<String, Object>>` for JSON or
-  `UnaryOperator<GenericRecord>` for Avro) that transform data without side effects.
-- Build complex, high-performance pipelines that minimize serialization/deserialization cycles.
-- **Single SerDe Cycle**: Deserialization happens once at the start, and serialization happens once at the end,
-  regardless of the number of transformations.
-- Teams can **register their own operators** in a central registry via:
+registry.registerJsonOperator(
+    "stamp",
+    JsonMessageProcessor.addTimestamp("processedAt")
+);
 
-  ```java
-  // Create a registry
-  final var registry = new MessageProcessorRegistry("myApp");
+final var pipeline = registry.jsonPipeline("sanitize", "stamp");
 
-  // Register team-specific JSON operators
-  registry.registerJsonOperator("sanitizeData", JsonMessageProcessor.removeFields("password", "ssn"));
-
-  // Create an optimized JSON pipeline from registered operators
-  final var pipeline = registry.jsonPipeline("sanitizeData", "addTimestamp");
-
-  // Apply transformations with built-in error handling and retry logic
-  final var consumer = new KPipeConsumer.<byte[], byte[]>builder()
-    .withProcessor(pipeline)
-    .withRetry(3, Duration.ofSeconds(1))
-    .build();
-  consumer.start();
-  ```
-
-  ```java
-  // Register custom Avro operators for your team's needs
-  registry.registerAvroOperator("extractMetadata", record -> {
-    // Custom extraction logic here
-    return record;
-  });
-
-  // Add a schema (automatically registers addSource_userSchema and addTimestamp_userSchema)
-  registry.addSchema("userSchema", "com.kpipe.User", "schemas/user.avsc");
-
-  // Create an optimized Avro pipeline (stripping 5 magic bytes for Confluent format)
-  final var avroPipeline = registry.avroPipeline(
-      "userSchema",
-      5, // magic byte offset
-      "extractMetadata",
-      "addSource_userSchema",
-      "addTimestamp_userSchema");
-
-  // Create a consumer with the optimized pipeline
-  final var consumer = new KPipeConsumer.<byte[], byte[]>builder()
-    .withProperties(kafkaProps)
-    .withTopic("team-topic")
-    .withProcessor(avroPipeline)
-  .withErrorHandler(error -> publishToErrorTopic(error))
+final var consumer = new KPipeConsumer.<byte[], byte[]>builder()
+  .withProperties(kafkaProps)
+  .withTopic("users")
+  .withProcessor(pipeline)
   .withRetry(3, Duration.ofSeconds(1))
   .build();
 
@@ -79,8 +49,101 @@ retries, built-in metrics, and support for both parallel and sequential processi
   consumer.start();
   ```
 
+KPipe handles:
+
+- record processing
+- retries
+- metrics
+- offset tracking
+- safe commits
+
 ---
 
+# When to Use KPipe
+
+KPipe works well for:
+
+- Kafka consumer microservices
+- event enrichment pipelines
+- lightweight transformation services
+- I/O-bound processing (REST calls, database lookups)
+- teams adopting **modern Java concurrency**
+
+KPipe is not intended to replace large streaming frameworks. It focuses on **simple, composable Kafka consumer pipelines.**
+
+---
+
+# Why Not Just Use Kafka Streams?
+
+Kafka Streams is powerful but introduces a full topology framework and state management layer that many services do not need.
+
+KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
+
+| Capability                       | Kafka Streams | Reactor Kafka | KPipe |
+|----------------------------------|---------------|---------------|-------|
+| Full stream processing framework | Yes           | No            | No    |
+| Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
+| Virtual-thread friendly          | No            | No            | Yes   |
+| Functional pipeline API          | Yes           | Yes           | Yes   |
+| Minimal dependencies             | No            | Yes           | Yes   |
+
+KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
+
+---
+
+# Core Design
+
+### Single SerDe Cycle
+
+KPipe optimizes transformation pipelines by avoiding repeated serialization.
+
+Messages are:
+
+1. Deserialized once
+2. Processed through a chain of operators
+3. Serialized once before output
+
+This significantly reduces CPU overhead and GC pressure.
+
+---
+
+### Virtual Thread Processing
+
+KPipe uses **Java Virtual Threads (Project Loom)** for record processing.
+
+This allows:
+
+- massive concurrency
+- simpler code
+- efficient I/O-bound workloads
+
+Processing can run:
+
+- sequentially (strict ordering)
+- in parallel (high throughput)
+
+---
+
+### Safe Offset Management
+
+KPipe guarantees safe offset commits using a **lowest pending offset strategy**.
+
+Even if messages finish out of order:
+
+```
+message 101 -> still processing
+message 102 -> finished
+```
+
+offset **102 will NOT be committed** until **101 completes**.
+
+This ensures:
+
+- no gaps
+- safe recovery
+- at-least-once delivery
+
+---
 ## Installation
 
 ### Maven
