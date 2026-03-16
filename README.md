@@ -235,48 +235,6 @@ KPipe respects JVM signals and ensures timely shutdown without data loss:
 
 ---
 
-## 📁 Project Structure
-
-KPipe is organized into two main modules:
-
-### Library Module (lib)
-
-The core library that provides the Kafka consumer functionality:
-
-```
-├── src/main/java/org/kpipe/
-│   ├── consumer/                         # Core consumer components
-│   │   ├── KPipeConsumer.java            # Main functional consumer implementation
-│   │   ├── OffsetManager.java            # Manages Kafka offsets for reliable processing
-│   │   ├── MessageTracker.java           # Tracks message processing state
-│   │   ├── RebalanceListener.java        # Handles Kafka consumer rebalancing
-│   │   └── enums/                        # Enums for consumer states and commands
-│   │
-│   ├── processor/                        # Message processors
-│   │   ├── JsonMessageProcessor.java     # JSON processing with DslJson
-│   │   └── AvroMessageProcessor.java     # Avro processing with Apache Avro
-│   │
-│   ├── registry/                         # Registry components
-│   │   ├── MessageProcessorRegistry.java # Registry for processor functions
-│   │   ├── MessageSinkRegistry.java      # Registry for message sinks
-│   │   ├── MessageFormat.java            # Enum for message format types
-│   │   └── RegistryFunctions.java        # Shared utilities for registries
-│   │
-│   ├── sink/                             # Message sink implementations
-│   │   ├── JsonConsoleSink.java          # Console sink for JSON messages
-│   │   ├── AvroConsoleSink.java          # Console sink for Avro messages
-│   │   └── MessageSink.java              # Message sink interface
-│   │
-│   ├── config/                           # Configuration components
-│   │   ├── AppConfig.java                # Application configuration
-│   │   └── KafkaConsumerConfig.java      # Kafka consumer configuration
-│   │
-│   └── metrics/                          # Metrics components
-│       ├── ConsumerMetricsReporter.java  # Reports consumer metrics
-│       ├── MetricsReporter.java          # Metrics reporting interface
-│       └── ProcessorMetricsReporter.java # Reports processor metrics
-```
-
 ### Application Module (app)
 
 A ready-to-use application that demonstrates the library:
@@ -689,16 +647,16 @@ public class KPipeApp implements AutoCloseable {
 
 ```bash
 # Set configuration
+export HEALTH_HTTP_ENABLED=true
+export HEALTH_HTTP_HOST=0.0.0.0
+export HEALTH_HTTP_PORT=8080
+export HEALTH_HTTP_PATH=/health
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 export KAFKA_CONSUMER_GROUP=my-group
 export KAFKA_TOPIC=json-events
 export KAFKA_PROCESSORS=parseJson,validateSchema,addTimestamp
 export METRICS_INTERVAL_MS=30000
 export SHUTDOWN_TIMEOUT_MS=5000
-export HEALTH_HTTP_ENABLED=true
-export HEALTH_HTTP_HOST=0.0.0.0
-export HEALTH_HTTP_PORT=8080
-export HEALTH_HTTP_PATH=/health
 ```
 
 ---
@@ -709,25 +667,6 @@ export HEALTH_HTTP_PATH=/health
 - Gradle (for building the project)
 - [kcat](https://github.com/edenhill/kcat) (for testing)
 - Docker (for local Kafka setup)
-
----
-
-## Configuration
-
-Configure via environment variables:
-
-  ```bash
-  export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-  export KAFKA_CONSUMER_GROUP=my-consumer-group
-  export KAFKA_TOPIC=json-events
-  export KAFKA_PROCESSORS=parseJson,validateSchema,addTimestamp
-  export METRICS_INTERVAL_MS=30000
-  export SHUTDOWN_TIMEOUT_MS=5000
-  export HEALTH_HTTP_ENABLED=true
-  export HEALTH_HTTP_HOST=0.0.0.0
-  export HEALTH_HTTP_PORT=8080
-  export HEALTH_HTTP_PATH=/health
-  ```
 
 ---
 
@@ -926,13 +865,3 @@ If you're a team using this library, feel free to:
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
-
-## Final Thoughts
-
-This Kafka consumer is:
-
-- **Functional**
-- **Extensible**
-- **Future-proof**
-
-Use it to modernize your Kafka stack with **Java 25 elegance and performance**.
