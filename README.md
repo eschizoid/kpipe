@@ -235,21 +235,6 @@ KPipe respects JVM signals and ensures timely shutdown without data loss:
 
 ---
 
-### Application Module (app)
-
-A ready-to-use application that demonstrates the library:
-
-```
-├── src/main/java/org/kpipe/
-│   |── json/
-│   │   └── App.java # Main application class to demonostrate JSON integration
-|   |
-│   └── avro/
-│       └── App.java # Main application class to demonostrate Avro integration
-```
-
----
-
 ## Example: Add Custom Processor
 
 Extend the registry like this:
