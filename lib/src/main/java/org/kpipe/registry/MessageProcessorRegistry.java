@@ -133,16 +133,12 @@ public class MessageProcessorRegistry {
     final String... operatorNames
   ) {
     final var schema = AvroMessageProcessor.getSchema(schemaKey);
-    if (schema == null) {
-      throw new IllegalArgumentException("Schema not found: " + schemaKey);
-    }
+    if (schema == null) throw new IllegalArgumentException("Schema not found: %s".formatted(schemaKey));
 
     UnaryOperator<GenericRecord> combined = record -> record;
     for (final var name : operatorNames) {
       final var operator = avroOperators.get(name);
-      if (operator != null) {
-        combined = compose(combined, operator);
-      }
+      if (operator != null) combined = compose(combined, operator);
     }
     final var finalCombined = combined;
     return bytes -> AvroMessageProcessor.processAvro(bytes, offset, schema, finalCombined);
@@ -252,9 +248,7 @@ public class MessageProcessorRegistry {
     Objects.requireNonNull(name, "Processor name cannot be null");
     Objects.requireNonNull(processor, "Processor function cannot be null");
 
-    if (name.trim().isEmpty()) {
-      throw new IllegalArgumentException("Processor name cannot be empty");
-    }
+    if (name.trim().isEmpty()) throw new IllegalArgumentException("Processor name cannot be empty");
 
     final var entry = new ProcessorEntry(withErrorHandling(processor, defaultErrorValue));
     registry.put(name, entry);
@@ -369,8 +363,8 @@ public class MessageProcessorRegistry {
   /// ```
   ///
   /// @param condition Predicate to evaluate messages
-  /// @param ifTrue Processor to use when condition is true
-  /// @param ifFalse Processor to use when condition is false
+  /// @param ifTrue Processor to use when the condition is true
+  /// @param ifFalse Processor to use when the condition is false
   /// @return A function that conditionally processes messages
   /// @throws NullPointerException if any argument is null
   public static Function<byte[], byte[]> when(

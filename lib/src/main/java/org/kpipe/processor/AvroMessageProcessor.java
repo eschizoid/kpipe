@@ -162,20 +162,20 @@ public class AvroMessageProcessor {
         .forEach(field -> {
           final var fieldName = field.name();
           if (fieldsToRemove.contains(fieldName)) {
-            // Handle removal based on a field type
-            if (field.schema().getType() == Schema.Type.STRING) {
-              newRecord.put(fieldName, "");
-            } else if (field.schema().getType() == Schema.Type.UNION) {
-              // For union types, check if null is allowed
-              if (field.schema().getTypes().stream().anyMatch(s -> s.getType() == Schema.Type.NULL)) {
-                newRecord.put(fieldName, null);
-              } else {
-                // Use default value if provided
+            final Schema fieldSchema = field.schema();
+            switch (fieldSchema.getType()) {
+              case STRING:
+                newRecord.put(fieldName, "");
+                break;
+              case UNION:
+                final boolean allowsNull = fieldSchema
+                  .getTypes()
+                  .stream()
+                  .anyMatch(s -> s.getType() == Schema.Type.NULL);
+                newRecord.put(fieldName, allowsNull ? null : field.defaultVal());
+                break;
+              default:
                 newRecord.put(fieldName, field.defaultVal());
-              }
-            } else {
-              // Use default value for other types
-              newRecord.put(fieldName, field.defaultVal());
             }
           } else {
             // Copy existing value
@@ -213,55 +213,63 @@ public class AvroMessageProcessor {
         .forEach(field -> {
           final var currentFieldName = field.name();
           final var value = record.get(currentFieldName);
-
           if (currentFieldName.equals(fieldName)) {
-            // Field to transform
-            if (field.schema().getType() == Schema.Type.UNION) {
-              // Handle union types
-              var transformedValue = value;
-              if (value != null) {
-                // Apply transformation
-                transformedValue = transformer.apply(value instanceof Utf8 ? value.toString() : value);
+            final Schema fieldSchema = field.schema();
+            switch (fieldSchema.getType()) {
+              case UNION:
+                {
+                  // Handle union types: try transform, then validate against union member
+                  // types
+                  var transformedValue = value;
+                  if (value != null) {
+                    transformedValue = transformer.apply(value instanceof Utf8 ? value.toString() : value);
 
-                // Validate transformed value against the union schema
-                var isValid = false;
-                for (final var typeSchema : field.schema().getTypes()) {
-                  // Skip null schema
-                  if (typeSchema.getType() == Schema.Type.NULL) {
-                    if (transformedValue == null) {
-                      isValid = true;
-                      break;
+                    // Validate transformed value against the union schema
+                    var isValid = false;
+                    for (final var typeSchema : fieldSchema.getTypes()) {
+                      if (typeSchema.getType() == Schema.Type.NULL) {
+                        if (transformedValue == null) {
+                          isValid = true;
+                          break;
+                        }
+                        continue;
+                      }
+                      if (isCompatibleWithSchema(transformedValue, typeSchema)) {
+                        isValid = true;
+                        break;
+                      }
                     }
-                    continue;
-                  }
 
-                  // Check if a transformation result matches a valid type
-                  if (isCompatibleWithSchema(transformedValue, typeSchema)) {
-                    isValid = true;
-                    break;
+                    if (!isValid) {
+                      LOGGER.log(
+                        Level.WARNING,
+                        "Transformed value %s is not compatible with union schema for field %s, keeping original".formatted(
+                            transformedValue,
+                            fieldName
+                          )
+                      );
+                      transformedValue = value; // Revert to original if invalid
+                    }
                   }
+                  newRecord.put(currentFieldName, transformedValue);
+                  break;
                 }
-
-                if (!isValid) {
-                  LOGGER.log(
-                    Level.WARNING,
-                    "Transformed value %s is not compatible with union schema for field %s, keeping original".formatted(
-                        transformedValue,
-                        fieldName
-                      )
-                  );
-                  transformedValue = value; // Revert to original if invalid
+              case STRING:
+                {
+                  // Handle Avro's Utf8 and Strings consistently
+                  final var inputAsString = value instanceof Utf8
+                    ? value.toString()
+                    : (value == null ? null : value.toString());
+                  final var transformedValue = transformer.apply(inputAsString);
+                  newRecord.put(currentFieldName, transformedValue);
+                  break;
                 }
-              }
-              newRecord.put(currentFieldName, transformedValue);
-            } else if (value instanceof Utf8) {
-              // Handle Avro's Utf8 type
-              final var stringValue = value.toString();
-              final var transformedValue = transformer.apply(stringValue);
-              newRecord.put(currentFieldName, transformedValue);
-            } else {
-              // Apply transformer to other value types
-              newRecord.put(currentFieldName, transformer.apply(value));
+              default:
+                {
+                  // Apply transformer to other value types
+                  newRecord.put(currentFieldName, transformer.apply(value));
+                  break;
+                }
             }
           } else {
             // Copy value unchanged
