@@ -102,6 +102,41 @@ class ConsumerMetricsReporterTest {
   }
 
   @Test
+  void shouldIncludeBackpressureMetricsInReportWhenPresent() {
+    // Arrange
+    testMetrics.put("backpressurePauseCount", 3L);
+    testMetrics.put("backpressureTimeMs", 1500L);
+    when(metricsSupplier.get()).thenReturn(testMetrics);
+    when(uptimeSupplier.get()).thenReturn(60000L);
+    metricsReporter = new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, reporter);
+
+    // Act
+    metricsReporter.reportMetrics();
+
+    // Assert
+    verify(reporter).accept(reportCaptor.capture());
+    final var report = reportCaptor.getValue();
+    assertTrue(report.contains("backpressure pauses: 3"));
+    assertTrue(report.contains("backpressure time: 1500 ms"));
+  }
+
+  @Test
+  void shouldNotIncludeBackpressureMetricsInReportWhenAbsent() {
+    // Arrange: testMetrics has no backpressure keys
+    when(metricsSupplier.get()).thenReturn(testMetrics);
+    when(uptimeSupplier.get()).thenReturn(60000L);
+    metricsReporter = new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, reporter);
+
+    // Act
+    metricsReporter.reportMetrics();
+
+    // Assert
+    verify(reporter).accept(reportCaptor.capture());
+    final var report = reportCaptor.getValue();
+    assertFalse(report.contains("backpressure"));
+  }
+
+  @Test
   void shouldHandleExceptionInMetricsSupplier() {
     // Arrange
     when(metricsSupplier.get()).thenThrow(new RuntimeException("Test exception"));

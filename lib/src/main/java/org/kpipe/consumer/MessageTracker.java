@@ -80,14 +80,16 @@ public class MessageTracker {
   ///
   /// @return number of in-flight messages
   public long getInFlightMessageCount() {
-    return calculateInFlightCount(metricsSupplier.get());
+    final var metrics = metricsSupplier.get();
+    if (metrics.containsKey("inFlight")) return metrics.get("inFlight");
+    return calculateInFlightCount(metrics);
   }
 
   /// Checks if there are currently any in-flight messages.
   ///
   /// @return true if there are in-flight messages, false otherwise
   public boolean hasInFlightMessages() {
-    return calculateInFlightCount(metricsSupplier.get()) > 0;
+    return getInFlightMessageCount() > 0;
   }
 
   /// Checks if all messages have been processed (no in-flight messages).

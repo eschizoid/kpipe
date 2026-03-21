@@ -77,6 +77,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
   private static final String METRIC_RETRIES = "retries";
+  static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
+  static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
 
   private final Queue<ConsumerCommand> commandQueue;
   private final Consumer<K, V> kafkaConsumer;
@@ -98,6 +100,9 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final boolean enableMetrics;
   private final boolean sequentialProcessing;
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
+  private final BackpressureController backpressureController;
+  private final AtomicLong inFlightCount = new AtomicLong(0);
+  private long backpressurePauseStartTime;
 
   /// Represents an error that occurred during record processing. Contains the original record,
   /// the exception that was thrown, and the number of retry attempts made.
@@ -156,6 +161,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private Supplier<Consumer<K, V>> consumerProvider;
     private Queue<ConsumerCommand> commandQueue;
     private ConsumerRebalanceListener rebalanceListener;
+    private BackpressureController backpressureController;
 
     /// Sets the properties for the Kafka consumer.
     ///
@@ -304,6 +310,32 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
+    /// Enables backpressure control using the default watermarks: high = 10,000 (pause) and
+    /// low = 7,000 (resume). Use {@link #withBackpressure(long, long)} to configure custom values.
+    ///
+    /// <p>Backpressure is disabled by default. Calling this method enables it.
+    ///
+    /// @return This builder instance for method chaining
+    public Builder<K, V> withBackpressure() {
+      return withBackpressure(10_000, 7_000);
+    }
+
+    /// Enables backpressure control using the given high and low watermarks. When the number of
+    /// in-flight messages reaches the high watermark, the consumer pauses Kafka polling. It
+    /// resumes when the count drops to or below the low watermark (hysteresis).
+    ///
+    /// <p>Backpressure is disabled by default. Calling this method enables it.
+    ///
+    /// @param highWatermark pause consumption when in-flight count reaches this value (must be
+    ///     positive)
+    /// @param lowWatermark  resume consumption when in-flight count drops to this value (must be
+    ///     less than highWatermark)
+    /// @return This builder instance for method chaining
+    public Builder<K, V> withBackpressure(final long highWatermark, final long lowWatermark) {
+      this.backpressureController = new BackpressureController(highWatermark, lowWatermark);
+      return this;
+    }
+
     /// Builds a new KPipeConsumer with the configured settings.
     ///
     /// @return a new KPipeConsumer instance
@@ -311,19 +343,14 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
       Objects.requireNonNull(topic, "Topic must be provided");
       Objects.requireNonNull(processor, "Processor function must be provided");
-
-      if (maxRetries < 0) {
-        throw new IllegalArgumentException("Max retries cannot be negative");
-      }
-
-      if (pollTimeout.isNegative() || pollTimeout.isZero()) {
-        throw new IllegalArgumentException("Poll timeout must be positive");
-      }
-
-      if (offsetManager != null || offsetManagerProvider != null) {
-        kafkaProps.setProperty("enable.auto.commit", "false");
-      }
-
+      if (maxRetries < 0) throw new IllegalArgumentException("Max retries cannot be negative");
+      if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
+        "Poll timeout must be positive"
+      );
+      if (offsetManager != null || offsetManagerProvider != null) kafkaProps.setProperty("enable.auto.commit", "false");
+      if (backpressureController != null && sequentialProcessing) throw new IllegalStateException(
+        "Backpressure is not compatible with sequential processing: in sequential mode in-flight count is always ≤ 1"
+      );
       return new KPipeConsumer<>(this);
     }
   }
@@ -355,6 +382,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         : builder.offsetManagerProvider != null ? builder.offsetManagerProvider.apply(this.kafkaConsumer) : null;
     this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
     this.rebalanceListener = builder.rebalanceListener != null ? builder.rebalanceListener : null;
+    this.backpressureController = builder.backpressureController;
 
     initializeMetrics();
   }
@@ -365,6 +393,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       metrics.put(METRIC_MESSAGES_PROCESSED, new AtomicLong(0));
       metrics.put(METRIC_PROCESSING_ERRORS, new AtomicLong(0));
       metrics.put(METRIC_RETRIES, new AtomicLong(0));
+      if (backpressureController != null) {
+        metrics.put(METRIC_BACKPRESSURE_PAUSE_COUNT, new AtomicLong(0));
+        metrics.put(METRIC_BACKPRESSURE_TIME_MS, new AtomicLong(0));
+      }
     }
   }
 
@@ -421,6 +453,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         try {
           while (isRunning()) {
             processCommands();
+            checkBackpressure();
 
             if (!isRunning()) break;
 
@@ -581,11 +614,14 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// * `messagesProcessed` - count of records successfully processed
   /// * `processingErrors` - count of records that failed processing after all retries
   /// * `retries` - count of retry attempts made for failed records
+  /// * `inFlight` - current number of messages being processed
   ///
   /// @return a map of metric names to their current values, or an empty map if metrics are disabled
   public Map<String, Long> getMetrics() {
     if (!enableMetrics) return Map.of();
-    return metrics.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
+    final var snapshot = metrics.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
+    snapshot.put("inFlight", inFlightCount.get());
+    return snapshot;
   }
 
   /// Returns whether the consumer is running.
@@ -653,26 +689,28 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       for (final var record : records.records(topic)) {
         // Track offset before processing
         if (offsetManager != null) commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+        inFlightCount.incrementAndGet();
         processRecord(record);
       }
     } else {
       // Process in parallel using virtual threads
-      StreamSupport
-        .stream(records.records(topic).spliterator(), false)
-        .forEach(record -> {
-          // Track offset before submitting to virtual thread
-          if (offsetManager != null) commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
-          try {
-            virtualThreadExecutor.submit(() -> processRecord(record));
-          } catch (final RejectedExecutionException e) {
-            // Handle task rejection (typically during shutdown)
-            if (isRunning()) {
-              LOGGER.log(Level.WARNING, "Task submission rejected, likely during shutdown", e);
-              if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-              errorHandler.accept(new ProcessingError<>(record, e, 0));
-            }
+      final var topicRecords = records.records(topic);
+      for (final var record : topicRecords) {
+        // Track offset before submitting to virtual thread
+        if (offsetManager != null) commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+        inFlightCount.incrementAndGet();
+        try {
+          virtualThreadExecutor.submit(() -> processRecord(record));
+        } catch (final RejectedExecutionException e) {
+          // Handle task rejection (typically during shutdown)
+          inFlightCount.decrementAndGet();
+          if (isRunning()) {
+            LOGGER.log(Level.WARNING, "Task submission rejected, likely during shutdown", e);
+            if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+            errorHandler.accept(new ProcessingError<>(record, e, 0));
           }
-        });
+        }
+      }
     }
   }
 
@@ -695,50 +733,89 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   protected void processRecord(final ConsumerRecord<K, V> record) {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
 
-    for (int attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) {
-        if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
-        LOGGER.log(
-          Level.INFO,
-          "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempt, maxRetries)
-        );
+    try {
+      for (int attempt = 0; attempt <= maxRetries; attempt++) {
+        if (attempt > 0) {
+          if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
+          LOGGER.log(
+            Level.INFO,
+            "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempt, maxRetries)
+          );
+
+          try {
+            Thread.sleep(retryBackoff.toMillis());
+          } catch (final InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return; // Interrupts must not mark the record as processed.
+          }
+        }
 
         try {
-          Thread.sleep(retryBackoff.toMillis());
-        } catch (final InterruptedException ie) {
-          Thread.currentThread().interrupt();
-          return; // Interrupts must not mark the record as processed.
-        }
-      }
-
-      try {
-        final var processedValue = processor.apply(record.value());
-        messageSink.send(record, processedValue);
-        if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-        if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
-        return;
-      } catch (final Exception e) {
-        if (isInterruptionRelated(e)) {
-          Thread.currentThread().interrupt();
-          return; // Interrupt-like failures should be retried after restart/rebalance.
-        }
-
-        if (attempt == maxRetries) {
-          if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-          LOGGER.log(
-            Level.WARNING,
-            "Failed to process message at offset %d after %d attempts: %s".formatted(
-                record.offset(),
-                maxRetries + 1,
-                e.getMessage()
-              ),
-            e
-          );
-          errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
+          final var processedValue = processor.apply(record.value());
+          messageSink.send(record, processedValue);
+          if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
           if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
           return;
+        } catch (final Exception e) {
+          if (isInterruptionRelated(e)) {
+            Thread.currentThread().interrupt();
+            return; // Interrupt-like failures should be retried after restart/rebalance.
+          }
+
+          if (attempt == maxRetries) {
+            if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+            LOGGER.log(
+              Level.WARNING,
+              "Failed to process message at offset %d after %d attempts: %s".formatted(
+                  record.offset(),
+                  maxRetries + 1,
+                  e.getMessage()
+                ),
+              e
+            );
+            errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
+            if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+            return;
+          }
         }
       }
+    } finally {
+      inFlightCount.decrementAndGet();
+    }
+  }
+
+  private void checkBackpressure() {
+    if (backpressureController == null) return;
+    final long inFlight = inFlightCount.get();
+
+    switch (backpressureController.check(inFlight, isPaused())) {
+      case PAUSE -> {
+        LOGGER.log(
+          Level.WARNING,
+          "Backpressure triggered: pausing consumer (in-flight=%d, highWatermark=%d) for topic %s".formatted(
+              inFlight,
+              backpressureController.highWatermark(),
+              topic
+            )
+        );
+        if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
+        backpressurePauseStartTime = System.currentTimeMillis();
+        pause();
+      }
+      case RESUME -> {
+        final long pauseDurationMs = System.currentTimeMillis() - backpressurePauseStartTime;
+        if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(pauseDurationMs);
+        LOGGER.log(
+          Level.INFO,
+          "Backpressure resolved: resuming consumer (paused for %d ms, in-flight=%d) for topic %s".formatted(
+              pauseDurationMs,
+              inFlight,
+              topic
+            )
+        );
+        resume();
+      }
+      case NONE -> {}
     }
   }
 
@@ -766,9 +843,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           return null;
         } catch (final Exception e) {
           // Only log if we're not shutting down
-          if (isRunning()) {
-            LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
-          }
+          if (isRunning()) LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
           return null;
         }
       })

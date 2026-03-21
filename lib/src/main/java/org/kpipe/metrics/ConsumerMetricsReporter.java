@@ -65,6 +65,8 @@ public record ConsumerMetricsReporter(
   private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
   private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
+  private static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
+  private static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
 
   /// Creates a consumer metrics reporter with the specified metrics supplier and reporter.
   ///
@@ -109,15 +111,25 @@ public record ConsumerMetricsReporter(
     try {
       final var metrics = metricsSupplier.get();
       if (metrics != null && !metrics.isEmpty()) {
-        final var report =
+        final var sb = new StringBuilder(
           "Consumer metrics: messages received: %d, messages processed: %d, errors: %d, uptime: %d ms".formatted(
               metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L),
               metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L),
               metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L),
               uptimeSupplier.get()
-            );
+            )
+        );
 
-        reporter.accept(report);
+        if (metrics.containsKey(METRIC_BACKPRESSURE_PAUSE_COUNT)) {
+          sb.append(
+            ", backpressure pauses: %d, backpressure time: %d ms".formatted(
+                metrics.getOrDefault(METRIC_BACKPRESSURE_PAUSE_COUNT, 0L),
+                metrics.getOrDefault(METRIC_BACKPRESSURE_TIME_MS, 0L)
+              )
+          );
+        }
+
+        reporter.accept(sb.toString());
       }
     } catch (final Exception e) {
       LOGGER.log(Level.WARNING, "Error reporting consumer metrics", e);

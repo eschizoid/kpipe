@@ -13,6 +13,7 @@ pipelines using virtual threads and a functional API.**
 - **Modern Java concurrency** (virtual threads)
 - **Composable functional pipelines**
 - **Safe at-least-once processing**
+- **Backpressure** to protect downstream systems
 - **High throughput with minimal framework overhead**
 
 It is designed for Kafka consumer services performing transformations, enrichment, or routing.
@@ -38,7 +39,7 @@ registry.registerJsonOperator(
 
 final var pipeline = registry.jsonPipeline("sanitize", "stamp");
 
-final var consumer = new KPipeConsumer.<byte[], byte[]>builder()
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("users")
   .withProcessor(pipeline)
@@ -91,59 +92,6 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 
 ---
 
-# Core Design
-
-### Single SerDe Cycle
-
-KPipe optimizes transformation pipelines by avoiding repeated serialization.
-
-Messages are:
-
-1. Deserialized once
-2. Processed through a chain of operators
-3. Serialized once before output
-
-This significantly reduces CPU overhead and GC pressure.
-
----
-
-### Virtual Thread Processing
-
-KPipe uses **Java Virtual Threads (Project Loom)** for record processing.
-
-This allows:
-
-- massive concurrency
-- simpler code
-- efficient I/O-bound workloads
-
-Processing can run:
-
-- sequentially (strict ordering)
-- in parallel (high throughput)
-
----
-
-### Safe Offset Management
-
-KPipe guarantees safe offset commits using a **lowest pending offset strategy**.
-
-Even if messages finish out of order:
-
-```
-message 101 -> still processing
-message 102 -> finished
-```
-
-offset **102 will NOT be committed** until **101 completes**.
-
-This ensures:
-
-- no gaps
-- safe recovery
-- at-least-once delivery
-
----
 ## Installation
 
 ### Maven
@@ -223,7 +171,37 @@ KPipe provides a robust, multi-layered error handling mechanism:
 - **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors with default
   values or logging, preventing a single malformed message from blocking the partition.
 
-### 5. Graceful Shutdown & Interrupt Handling
+### 5. Backpressure
+
+When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe can automatically
+pause Kafka polling to prevent unbounded in-flight message growth.
+
+Backpressure uses **two configurable watermarks** (hysteresis) to avoid rapid pause/resume oscillation:
+
+- **High watermark** — pause Kafka polling when in-flight messages reach this count
+- **Low watermark** — resume Kafka polling when in-flight drops to or below this count (hysteresis)
+
+```java
+final var consumer = KPipeConsumer.<String, String>builder()
+  .withProperties(kafkaProps)
+  .withTopic("events")
+  .withProcessor(pipeline)
+  // Pause at 10,000 in-flight; resume at 7,000 (defaults)
+  .withBackpressure()
+  // Or configure explicit watermarks:
+  // .withBackpressure(5_000, 3_000)
+  .build();
+```
+
+**Backpressure is disabled by default** and opt-in via `.withBackpressure()`.
+
+**Constraints:**
+- Not compatible with sequential processing mode (in-flight is always ≤ 1 in that mode)
+
+**Observability:** backpressure events are logged (WARNING on pause, INFO on resume) and tracked
+via two dedicated metrics: `backpressurePauseCount` and `backpressureTimeMs`.
+
+### 6. Graceful Shutdown & Interrupt Handling
 
 KPipe respects JVM signals and ensures timely shutdown without data loss:
 
@@ -286,6 +264,10 @@ Monitor your consumer with built-in metrics:
   log.log(Level.INFO, "Messages received: " + metrics.get("messagesReceived"));
   log.log(Level.INFO, "Successfully processed: " + metrics.get("messagesProcessed"));
   log.log(Level.INFO, "Processing errors: " + metrics.get("processingErrors"));
+  log.log(Level.INFO, "Messages in-flight: " + metrics.get("inFlight"));
+  // Backpressure metrics (present only when withBackpressure() is configured)
+  log.log(Level.INFO, "Backpressure pauses: " + metrics.get("backpressurePauseCount"));
+  log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs"));
   ```
 
 Configure automatic metrics reporting:
@@ -779,14 +761,9 @@ The library provides a built-in `when()` method for conditional processing:
 KPipe is designed for high-throughput, low-overhead Kafka processing using modern Java features and pipeline
 optimizations. Performance depends on workload shape (I/O vs CPU bound), partitioning, and message size.
 
-- **Single SerDe Cycle**: Traditional pipelines often perform `byte[] -> Object -> byte[]` at every step. KPipe's
-  optimized pipelines deserialize once at the entry, apply any number of `UnaryOperator` transformations on the object,
-  and serialize once at the exit.
 - **Zero-Copy Magic Byte Handling**: For Avro data (especially from Confluent Schema Registry), KPipe supports an
   `offset` parameter that allows skipping magic bytes and schema IDs without performing expensive `Arrays.copyOfRange`
   operations.
-- **Virtual Threads (Project Loom)**: Every Kafka record can be processed in its own virtual thread. This allows for
-  massive concurrency with simpler coordination than large platform-thread pools.
 - **DslJson Integration**: Uses a high-performance JSON library to reduce parsing overhead and GC pressure.
 
 Latest parallel benchmark snapshot (see `benchmarks/README.md`) shows a throughput edge for KPipe in that scenario,
@@ -795,29 +772,9 @@ universal guarantees.
 
 ---
 
-## Ordering & Reliability
+## Key-Level Ordering for Critical Systems (e.g., Payments)
 
-KPipe provides configurable ordering guarantees to balance throughput and strictness.
-
-### 1. Sequential Processing (Strict Ordering)
-
-When `sequentialProcessing` is enabled, KPipe processes messages one by one in the order they
-were received from Kafka. This ensures **strict FIFO (First-In-First-Out) ordering** per partition.
-
-### 2. Parallel Processing (Virtual Threads)
-
-When `sequentialProcessing` is `false` (the builder default), KPipe leverages Java 25 Virtual Threads to process
-multiple records concurrently.
-
-- **Execution Order**: Messages start in order but may finish out of order (e.g., a small message finishing before a
-  large one).
-- **At-Least-Once Delivery**: Even with parallel processing, KPipe's `OffsetManager` uses a **Lowest Pending Offset**
-  strategy. It will never commit a higher offset until all lower offsets in that partition are successfully processed.
-  This ensures **no gaps** in your committed data.
-
-### 3. Key-Level Ordering for Critical Systems (e.g., Payments)
-
-For systems like **payment processors** where the order of operations (Authorize -> Capture) is vital:
+For systems like **payment processors** where the order of operations (Authorize → Capture) is vital:
 
 - **Consistent Partitioning**: Ensure your producer uses a consistent key (e.g., `transaction_id` or `customer_id`).
   Kafka guarantees all messages with the same key land in the same partition.
