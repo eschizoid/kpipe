@@ -29,11 +29,14 @@ class OptimizedPipelineTest {
   @Test
   void testOptimizedJsonPipeline() {
     // Register operators
-    registry.registerJsonOperator("addSource", JsonMessageProcessor.addFieldOperator("source", SOURCE_APP));
-    registry.registerJsonOperator("addStatus", JsonMessageProcessor.addFieldOperator("status", "processed"));
+    final var addSource = RegistryKey.json("addSource");
+    final var addStatus = RegistryKey.json("addStatus");
+
+    registry.registerOperator(addSource, JsonMessageProcessor.addFieldOperator("source", SOURCE_APP));
+    registry.registerOperator(addStatus, JsonMessageProcessor.addFieldOperator("status", "processed"));
 
     // Create optimized pipeline
-    var pipeline = registry.jsonPipeline("addSource", "addStatus");
+    var pipeline = registry.jsonPipelineBuilder().add(addSource).add(addStatus).build();
 
     // Process message
     byte[] input = "{\"id\":\"123\"}".getBytes(StandardCharsets.UTF_8);
@@ -63,11 +66,14 @@ class OptimizedPipelineTest {
     Schema schema = AvroMessageProcessor.getSchema("user");
 
     // Register operators
-    registry.registerAvroOperator("addSource", AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
-    registry.registerAvroOperator("addStatus", AvroMessageProcessor.addFieldOperator("status", "processed"));
+    final var addSource = RegistryKey.avro("addSource");
+    final var addStatus = RegistryKey.avro("addStatus");
+
+    registry.registerOperator(addSource, AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
+    registry.registerOperator(addStatus, AvroMessageProcessor.addFieldOperator("status", "processed"));
 
     // Create optimized pipeline
-    var pipeline = registry.avroPipeline("user", "addSource", "addStatus");
+    var pipeline = registry.avroPipelineBuilder("user", 0).add(addSource).add(addStatus).build();
 
     // Create input record
     GenericRecord record = new GenericData.Record(schema);
@@ -100,7 +106,12 @@ class OptimizedPipelineTest {
   @Test
   void testOptimizedJsonPipelineDefaultOperators() {
     // Create optimized pipeline using default operators
-    var pipeline = registry.jsonPipeline("addSource", "addTimestamp", "markProcessed");
+    var pipeline = registry
+      .jsonPipelineBuilder()
+      .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
+      .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
+      .add(MessageProcessorRegistry.JSON_MARK_PROCESSED)
+      .build();
 
     // Process message
     byte[] input = "{\"id\":\"123\"}".getBytes(StandardCharsets.UTF_8);
@@ -129,11 +140,16 @@ class OptimizedPipelineTest {
       }
       """;
     registry = new MessageProcessorRegistry(SOURCE_APP, MessageFormat.AVRO);
-    registry.registerAvroSchema("user", "com.example.User", schemaJson);
+    registry.addSchema("user", "com.example.User", schemaJson);
     Schema schema = AvroMessageProcessor.getSchema("user");
 
     // Create optimized pipeline using default operators
-    var pipeline = registry.avroPipeline("user", "addSource_user", "addTimestamp_user", "markProcessed_user");
+    var pipeline = registry
+      .avroPipelineBuilder("user", 0)
+      .add(RegistryKey.avro("addSource_user"))
+      .add(RegistryKey.avro("addTimestamp_user"))
+      .add(RegistryKey.avro("markProcessed_user"))
+      .build();
 
     // Create input record
     GenericRecord record = new GenericData.Record(schema);
@@ -181,10 +197,11 @@ class OptimizedPipelineTest {
     Schema schema = AvroMessageProcessor.getSchema("userOffset");
 
     // Register operators
-    registry.registerAvroOperator("addSource", AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
+    final var addSource = RegistryKey.avro("addSource");
+    registry.registerOperator(addSource, AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
 
     // Create optimized pipeline with offset 5 (simulating magic bytes)
-    var pipeline = registry.avroPipeline("userOffset", 5, "addSource");
+    var pipeline = registry.avroPipelineBuilder("userOffset", 5).add(addSource).build();
 
     // Create input record
     GenericRecord record = new GenericData.Record(schema);

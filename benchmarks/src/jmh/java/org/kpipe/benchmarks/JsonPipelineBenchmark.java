@@ -5,6 +5,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.kpipe.processor.JsonMessageProcessor;
 import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.RegistryKey;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -55,29 +56,33 @@ public class JsonPipelineBenchmark {
 
     final var registry = new MessageProcessorRegistry("benchmark-app");
     // Register some operators
-    registry.registerJsonOperator(
-      "op1",
+    final var op1 = RegistryKey.json("op1");
+    final var op2 = RegistryKey.json("op2");
+    final var op3 = RegistryKey.json("op3");
+
+    registry.registerOperator(
+      op1,
       map -> {
         map.put("processed_by", "kpipe");
         return map;
       }
     );
-    registry.registerJsonOperator(
-      "op2",
+    registry.registerOperator(
+      op2,
       map -> {
         map.put("timestamp", BENCHMARK_TIMESTAMP);
         return map;
       }
     );
-    registry.registerJsonOperator(
-      "op3",
+    registry.registerOperator(
+      op3,
       map -> {
         map.remove("email");
         return map;
       }
     );
 
-    kpipePipeline = registry.jsonPipeline("op1", "op2", "op3");
+    kpipePipeline = registry.jsonPipelineBuilder().add(op1).add(op2).add(op3).build();
   }
 
   @Benchmark

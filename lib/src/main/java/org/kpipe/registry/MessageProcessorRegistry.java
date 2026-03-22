@@ -1,7 +1,10 @@
 package org.kpipe.registry;
 
 import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,162 +13,53 @@ import org.apache.avro.generic.GenericRecord;
 import org.kpipe.processor.AvroMessageProcessor;
 import org.kpipe.processor.JsonMessageProcessor;
 
-/// A registry for managing and composing byte array message processors. This registry allows
-/// registering, retrieving, and composing functions that transform byte[] arrays, particularly
-/// useful for message processing pipelines.
+/// Registry for managing and composing message processors in KPipe.
 ///
-/// The registry supports different message formats (JSON, AVRO, PROTOBUF) and provides
-/// integration with schema-based processors. Each processor is registered with a unique name and
-/// can be composed into processing pipelines.
+/// This class allows registration, retrieval, and composition of byte array message processors for
+/// different formats (JSON, Avro, Protobuf). It supports schema-based and type-safe pipelines for
+/// Kafka message processing, and provides utilities for building and composing processing chains.
 ///
 /// Example usage:
-///
 /// ```java
-/// // Create a registry
 /// final var registry = new MessageProcessorRegistry("my-app");
-///
-/// // Create and use an optimized JSON pipeline
-/// final var pipeline = registry.jsonPipeline("addTimestamp", "sanitizeData");
-/// final var result = pipeline.apply(inputBytes);
-/// ```
-///
-/// For AVRO format with schemas:
-///
-/// ```java
-/// // Create a registry
-/// final var registry = new MessageProcessorRegistry("my-app");
-///
-/// // Add an Avro schema (automatically registers common operators)
-/// registry.addSchema("user", "com.example.User", "schemas/user.avsc");
-///
-/// // Create and use an optimized Avro pipeline
-/// final var pipeline = registry.avroPipeline("user", "addSource_user", "addTimestamp_user");
-/// final var result = pipeline.apply(inputBytes);
+/// registry.addSchema("user", "User", "schemas/user.avsc");
+/// var pipeline = registry.avroPipelineBuilder("user").build();
 /// ```
 public class MessageProcessorRegistry {
 
   private static final Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
-  private final ConcurrentHashMap<String, UnaryOperator<Map<String, Object>>> jsonOperators = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, UnaryOperator<GenericRecord>> avroOperators = new ConcurrentHashMap<>();
 
-  /// Registers an operator that transforms a JSON map.
-  ///
-  /// ```java
-  /// registry.registerJsonOperator("myTransform", map -> {
-  ///     map.put("processed", true);
-  ///     return map;
-  /// });
-  /// ```
-  ///
-  /// @param name The name to register the operator under
-  /// @param operator The operator to register
-  public void registerJsonOperator(final String name, final UnaryOperator<Map<String, Object>> operator) {
-    jsonOperators.put(name, operator);
-  }
+  /// Pre-defined key for adding a source field to JSON messages.
+  public static final RegistryKey<Map<String, Object>> JSON_ADD_SOURCE = RegistryKey.json("addSource");
+  /// Pre-defined key for adding a timestamp field to JSON messages.
+  public static final RegistryKey<Map<String, Object>> JSON_ADD_TIMESTAMP = RegistryKey.json("addTimestamp");
+  /// Pre-defined key for marking JSON messages as processed.
+  public static final RegistryKey<Map<String, Object>> JSON_MARK_PROCESSED = RegistryKey.json("markProcessed");
 
-  /// Registers an operator that transforms an Avro record.
-  ///
-  /// ```java
-  /// registry.registerAvroOperator("myTransform", record -> {
-  ///     record.put("processed", true);
-  ///     return record;
-  /// });
-  /// ```
-  ///
-  /// @param name The name to register the operator under
-  /// @param operator The operator to register
-  public void registerAvroOperator(final String name, final UnaryOperator<GenericRecord> operator) {
-    avroOperators.put(name, operator);
-  }
-
-  /// Creates an optimized JSON pipeline that deserializes once, applies all operators, and
-  /// serializes once.
-  ///
-  /// ```java
-  /// final var pipeline = registry.jsonPipeline("addTimestamp", "sanitizeData");
-  /// ```
-  ///
-  /// @param operatorNames Names of JSON operators to chain
-  /// @return A function representing the optimized JSON processing pipeline
-  public Function<byte[], byte[]> jsonPipeline(final String... operatorNames) {
-    UnaryOperator<Map<String, Object>> combined = obj -> obj;
-    for (final var name : operatorNames) {
-      final var operator = jsonOperators.get(name);
-      if (operator != null) {
-        combined = compose(combined, operator);
-      }
-    }
-    final var finalCombined = combined;
-    return bytes -> JsonMessageProcessor.processJson(bytes, finalCombined);
-  }
-
-  /// Creates an optimized Avro pipeline that deserializes once, applies all operators, and
-  /// serializes once.
-  ///
-  /// ```java
-  /// final var pipeline = registry.avroPipeline("user", "addSource_user", "addTimestamp_user");
-  /// ```
-  ///
-  /// @param schemaKey The key of the schema to use for all operations
-  /// @param operatorNames Names of Avro operators to chain
-  /// @return A function representing the optimized Avro processing pipeline
-  public Function<byte[], byte[]> avroPipeline(final String schemaKey, final String... operatorNames) {
-    return avroPipeline(schemaKey, 0, operatorNames);
-  }
-
-  /// Creates an optimized Avro pipeline that deserializes once from a given offset, applies all
-  /// operators, and serializes once.
-  ///
-  /// This is useful for handling Avro data with magic bytes (e.g., Confluent wire format).
-  ///
-  /// ```java
-  /// // Skip 5 magic bytes
-  /// final var pipeline = registry.avroPipeline("user", 5, "addSource_user");
-  /// ```
-  ///
-  /// @param schemaKey The key of the schema to use for all operations
-  /// @param offset The number of bytes to skip at the start of input
-  /// @param operatorNames Names of Avro operators to chain
-  /// @return A function representing the optimized Avro processing pipeline
-  public Function<byte[], byte[]> avroPipeline(
-    final String schemaKey,
-    final int offset,
-    final String... operatorNames
-  ) {
-    final var schema = AvroMessageProcessor.getSchema(schemaKey);
-    if (schema == null) throw new IllegalArgumentException("Schema not found: %s".formatted(schemaKey));
-
-    UnaryOperator<GenericRecord> combined = record -> record;
-    for (final var name : operatorNames) {
-      final var operator = avroOperators.get(name);
-      if (operator != null) combined = compose(combined, operator);
-    }
-    final var finalCombined = combined;
-    return bytes -> AvroMessageProcessor.processAvro(bytes, offset, schema, finalCombined);
-  }
-
-  private <T> UnaryOperator<T> compose(UnaryOperator<T> first, UnaryOperator<T> second) {
-    return t -> second.apply(first.apply(t));
-  }
-
-  private final ConcurrentHashMap<String, ProcessorEntry> registry = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> registry = new ConcurrentHashMap<>();
   private final byte[] defaultErrorValue;
   private final String sourceAppName;
-  private final MessageFormat messageFormat;
+  private final MessageFormat<?> messageFormat;
 
-  /// A processor entry in the registry that maintains execution statistics.
-  private static class ProcessorEntry {
+  /// A registry entry that maintains execution statistics.
+  private static class RegistryEntry<T> {
 
-    final Function<byte[], byte[]> processor;
+    final T value;
     long invocationCount = 0;
     long errorCount = 0;
     long totalProcessingTimeMs = 0;
 
-    ProcessorEntry(final Function<byte[], byte[]> processor) {
-      this.processor = processor;
+    RegistryEntry(final T value) {
+      this.value = value;
     }
 
+    @SuppressWarnings("unchecked")
     public byte[] execute(final byte[] input) {
+      if (!(value instanceof Function)) {
+        throw new UnsupportedOperationException("Entry value is not a Function<byte[], byte[]>");
+      }
+      final var processor = (Function<byte[], byte[]>) value;
+
       final Supplier<Long> counterIncrement = () -> invocationCount++;
       final Supplier<Long> errorIncrement = () -> errorCount++;
       final Consumer<Duration> timeAccumulator = duration -> totalProcessingTimeMs += duration.toNanos();
@@ -180,6 +74,239 @@ public class MessageProcessorRegistry {
     }
   }
 
+  /// Creates a fluent builder for JSON pipelines.
+  ///
+  /// @return A new JsonPipelineBuilder
+  public JsonPipelineBuilder jsonPipelineBuilder() {
+    return new JsonPipelineBuilder();
+  }
+
+  /// Creates a fluent builder for Avro pipelines.
+  ///
+  /// @param schemaKey The key of the schema to use
+  /// @return A new AvroPipelineBuilder
+  public AvroPipelineBuilder avroPipelineBuilder(final String schemaKey) {
+    return new AvroPipelineBuilder(schemaKey);
+  }
+
+  /// Creates a fluent builder for Avro pipelines with a custom schema offset.
+  ///
+  /// @param schemaKey The key of the schema to use
+  /// @param offset The schema offset in the byte array
+  /// @return A new AvroPipelineBuilder
+  public AvroPipelineBuilder avroPipelineBuilder(final String schemaKey, final int offset) {
+    return new AvroPipelineBuilder(schemaKey, offset);
+  }
+
+  /// Creates a fluent builder for POJO pipelines.
+  ///
+  /// @param <T> The POJO type
+  /// @param clazz The class of the POJO
+  /// @return A new PojoPipelineBuilder
+  public <T> PojoPipelineBuilder<T> pojoPipelineBuilder(final Class<T> clazz) {
+    return new PojoPipelineBuilder<>(clazz);
+  }
+
+  /// A fluent builder for creating type-safe JSON processing pipelines.
+  /// Fluent builder for creating type-safe JSON processing pipelines.
+  public class JsonPipelineBuilder {
+
+    private final List<UnaryOperator<Map<String, Object>>> operators = new ArrayList<>();
+
+    /// Constructs a new JsonPipelineBuilder.
+    public JsonPipelineBuilder() {}
+
+    /// Adds a JSON operator to the pipeline.
+    ///
+    /// @param operator the operator to add
+    /// @return this builder instance
+    public JsonPipelineBuilder add(final UnaryOperator<Map<String, Object>> operator) {
+      operators.add(operator);
+      return this;
+    }
+
+    /// Adds a pre-registered JSON operator by key.
+    ///
+    /// @param key the registry key for the operator
+    /// @return this builder instance
+    public JsonPipelineBuilder add(final RegistryKey<Map<String, Object>> key) {
+      final var operator = getOperator(key);
+      if (operator != null) operators.add(operator);
+      return this;
+    }
+
+    /// Builds the pipeline as a function from byte[] to byte[].
+    ///
+    /// @return the composed pipeline function
+    public Function<byte[], byte[]> build() {
+      UnaryOperator<Map<String, Object>> combined = obj -> obj;
+      for (final var op : operators) combined = compose(combined, op);
+      final var finalCombined = combined;
+      return bytes -> JsonMessageProcessor.processJson(bytes, finalCombined);
+    }
+  }
+
+  /// A fluent builder for creating type-safe Avro processing pipelines.
+  /// Fluent builder for creating type-safe Avro processing pipelines.
+  public class AvroPipelineBuilder {
+
+    private final String schemaKey;
+    private final int offset;
+    private final List<UnaryOperator<GenericRecord>> operators = new ArrayList<>();
+
+    /// Constructs an AvroPipelineBuilder with the given schema key and default offset.
+    ///
+    /// @param schemaKey the schema key to use
+    private AvroPipelineBuilder(final String schemaKey) {
+      this(schemaKey, 5); // Default Confluent offset
+    }
+
+    /// Constructs an AvroPipelineBuilder with the given schema key and offset.
+    ///
+    /// @param schemaKey the schema key to use
+    /// @param offset the offset in the byte array
+    private AvroPipelineBuilder(final String schemaKey, final int offset) {
+      this.schemaKey = schemaKey;
+      this.offset = offset;
+    }
+
+    /// Adds an Avro operator to the pipeline.
+    ///
+    /// @param operator the operator to add
+    /// @return this builder instance
+    public AvroPipelineBuilder add(final UnaryOperator<GenericRecord> operator) {
+      operators.add(operator);
+      return this;
+    }
+
+    /// Adds a pre-registered Avro operator by key.
+    ///
+    /// @param key the registry key for the operator
+    /// @return this builder instance
+    public AvroPipelineBuilder add(final RegistryKey<GenericRecord> key) {
+      final var operator = getOperator(key);
+      if (operator != null) operators.add(operator);
+      return this;
+    }
+
+    /// Builds the pipeline as a function from byte[] to byte[].
+    ///
+    /// @return the composed pipeline function
+    public Function<byte[], byte[]> build() {
+      final var schema = AvroMessageProcessor.getSchema(schemaKey);
+      if (schema == null) throw new IllegalArgumentException("Schema not found: " + schemaKey);
+
+      UnaryOperator<GenericRecord> combined = record -> record;
+      for (final var op : operators) {
+        combined = compose(combined, op);
+      }
+      final var finalCombined = combined;
+      return bytes -> AvroMessageProcessor.processAvro(bytes, offset, schema, finalCombined);
+    }
+  }
+
+  /// A fluent builder for creating type-safe POJO processing pipelines.
+  ///
+  /// @param <T> The POJO type
+  public class PojoPipelineBuilder<T> {
+
+    private final Class<T> clazz;
+    private final List<UnaryOperator<T>> operators = new ArrayList<>();
+
+    /// Constructs a new PojoPipelineBuilder for the specified class.
+    ///
+    /// @param clazz the POJO class
+    public PojoPipelineBuilder(final Class<T> clazz) {
+      this.clazz = Objects.requireNonNull(clazz, "Class cannot be null");
+    }
+
+    /// Adds a POJO operator to the pipeline.
+    ///
+    /// @param operator the operator to add
+    /// @return this builder instance
+    public PojoPipelineBuilder<T> add(final UnaryOperator<T> operator) {
+      operators.add(operator);
+      return this;
+    }
+
+    /// Adds a pre-registered POJO operator by key.
+    ///
+    /// @param key the registry key for the operator
+    /// @return this builder instance
+    public PojoPipelineBuilder<T> add(final RegistryKey<T> key) {
+      final var operator = getOperator(key);
+      if (operator != null) operators.add(operator);
+      return this;
+    }
+
+    /// Builds the pipeline as a function from byte[] to byte[].
+    ///
+    /// @return the composed pipeline function
+    public Function<byte[], byte[]> build() {
+      final MessageFormat<T> format = MessageFormat.pojo(clazz);
+
+      UnaryOperator<T> combined = obj -> obj;
+      for (final var op : operators) {
+        combined = compose(combined, op);
+      }
+      final var finalCombined = combined;
+
+      return bytes -> {
+        try {
+          if (bytes == null || bytes.length == 0) return bytes;
+          final T deserialized = format.deserialize(bytes);
+          if (deserialized == null) return bytes;
+          final T processed = finalCombined.apply(deserialized);
+          if (processed == null) return bytes;
+          return format.serialize(processed);
+        } catch (final Exception e) {
+          LOGGER.log(Level.WARNING, "Error in POJO pipeline execution", e);
+          return defaultErrorValue;
+        }
+      };
+    }
+  }
+
+  private <T> UnaryOperator<T> compose(UnaryOperator<T> first, UnaryOperator<T> second) {
+    return t -> second.apply(first.apply(t));
+  }
+
+  /// Registers a typed operator using a type-safe RegistryKey.
+  ///
+  /// @param <T> The type of data the operator processes
+  /// @param key The type-safe key to register under
+  /// @param operator The operator to register
+  public <T> void registerOperator(final RegistryKey<T> key, final UnaryOperator<T> operator) {
+    registry.put(key, new RegistryEntry<>(operator));
+  }
+
+  /// Registers all constants of an Enum that implements UnaryOperator<T>.
+  ///
+  /// Each constant's name is used as the key.
+  ///
+  /// @param <T> The type of data the operator processes
+  /// @param <E> The Enum type that implements UnaryOperator<T>
+  /// @param type The class representing the data type
+  /// @param enumClass The Enum class to register
+  public <T, E extends Enum<E> & UnaryOperator<T>> void registerEnum(final Class<T> type, final Class<E> enumClass) {
+    Objects.requireNonNull(type, "Type cannot be null");
+    Objects.requireNonNull(enumClass, "Enum class cannot be null");
+    for (final var constant : enumClass.getEnumConstants()) {
+      registerOperator(RegistryKey.of(constant.name(), type), constant);
+    }
+  }
+
+  /// Retrieves a typed operator using a type-safe RegistryKey.
+  ///
+  /// @param <T> The type of data the operator processes
+  /// @param key The type-safe key to retrieve
+  /// @return The registered operator, or null if not found
+  @SuppressWarnings("unchecked")
+  public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
+    final var entry = (RegistryEntry<UnaryOperator<T>>) registry.get(key);
+    return entry != null ? entry.value : null;
+  }
+
   /// Creates a new registry with JSON as the default message format.
   ///
   /// @param sourceAppName Application name to use as source identifier
@@ -191,7 +318,7 @@ public class MessageProcessorRegistry {
   ///
   /// @param sourceAppName Application name to use as source identifier
   /// @param messageFormat Message format to use (JSON, AVRO, PROTOBUF)
-  public MessageProcessorRegistry(final String sourceAppName, final MessageFormat messageFormat) {
+  public MessageProcessorRegistry(final String sourceAppName, final MessageFormat<?> messageFormat) {
     this(sourceAppName, messageFormat, "{}".getBytes());
   }
 
@@ -202,7 +329,7 @@ public class MessageProcessorRegistry {
   /// @param defaultErrorValue Value to return when processors throw exceptions
   public MessageProcessorRegistry(
     final String sourceAppName,
-    final MessageFormat messageFormat,
+    final MessageFormat<?> messageFormat,
     final byte[] defaultErrorValue
   ) {
     this.sourceAppName = Objects.requireNonNull(sourceAppName, "Source app name cannot be null");
@@ -216,9 +343,9 @@ public class MessageProcessorRegistry {
   private void registerDefaultProcessors() {
     // Register default operators for optimized pipelines
     if (messageFormat == MessageFormat.JSON) {
-      registerJsonOperator("addSource", JsonMessageProcessor.addFieldOperator("source", sourceAppName));
-      registerJsonOperator("addTimestamp", JsonMessageProcessor.addTimestampOperator("timestamp"));
-      registerJsonOperator("markProcessed", JsonMessageProcessor.addFieldOperator("processed", "true"));
+      registerOperator(JSON_ADD_SOURCE, JsonMessageProcessor.addFieldOperator("source", sourceAppName));
+      registerOperator(JSON_ADD_TIMESTAMP, JsonMessageProcessor.addTimestampOperator("timestamp"));
+      registerOperator(JSON_MARK_PROCESSED, JsonMessageProcessor.addFieldOperator("processed", "true"));
     }
   }
 
@@ -231,27 +358,33 @@ public class MessageProcessorRegistry {
     if (messageFormat == MessageFormat.AVRO) {
       final var schema = AvroMessageProcessor.getSchema(schemaKey);
       if (schema != null) {
-        registerAvroOperator("addSource_" + schemaKey, AvroMessageProcessor.addFieldOperator("source", sourceAppName));
-        registerAvroOperator("addTimestamp_" + schemaKey, AvroMessageProcessor.addTimestampOperator("timestamp"));
-        registerAvroOperator("markProcessed_" + schemaKey, AvroMessageProcessor.addFieldOperator("processed", "true"));
+        registerOperator(
+          RegistryKey.avro("addSource_" + schemaKey),
+          AvroMessageProcessor.addFieldOperator("source", sourceAppName)
+        );
+        registerOperator(
+          RegistryKey.avro("addTimestamp_" + schemaKey),
+          AvroMessageProcessor.addTimestampOperator("timestamp")
+        );
+        registerOperator(
+          RegistryKey.avro("markProcessed_" + schemaKey),
+          AvroMessageProcessor.addFieldOperator("processed", "true")
+        );
       }
     }
   }
 
-  /// Registers a processor function with a name.
+  /// Registers a processor function with a type-safe key.
   ///
-  /// @param name The unique name for the processor
+  /// @param key The type-safe key for the processor
   /// @param processor The function that processes byte arrays
-  /// @throws NullPointerException if name or processor is null
-  /// @throws IllegalArgumentException if name is empty
-  public void register(final String name, final Function<byte[], byte[]> processor) {
-    Objects.requireNonNull(name, "Processor name cannot be null");
+  /// @throws NullPointerException if key or processor is null
+  public void register(final RegistryKey<Function<byte[], byte[]>> key, final Function<byte[], byte[]> processor) {
+    Objects.requireNonNull(key, "Processor key cannot be null");
     Objects.requireNonNull(processor, "Processor function cannot be null");
 
-    if (name.trim().isEmpty()) throw new IllegalArgumentException("Processor name cannot be empty");
-
-    final var entry = new ProcessorEntry(withErrorHandling(processor, defaultErrorValue));
-    registry.put(name, entry);
+    final var entry = new RegistryEntry<>(withErrorHandling(processor, defaultErrorValue));
+    registry.put(key, entry);
   }
 
   /// Adds a schema and registers its processors.
@@ -269,21 +402,12 @@ public class MessageProcessorRegistry {
     }
   }
 
-  /// Registers an Avro schema and its corresponding processors.
-  ///
-  /// @param key                Schema identification key
-  /// @param fullyQualifiedName Fully qualified schema name
-  /// @param schemaJson         The schema content in JSON format
-  public void registerAvroSchema(final String key, final String fullyQualifiedName, final String schemaJson) {
-    if (messageFormat == MessageFormat.AVRO) addSchema(key, fullyQualifiedName, schemaJson);
-  }
-
   /// Unregisters a processor.
   ///
-  /// @param name The name of the processor to remove
+  /// @param key The key of the processor to remove
   /// @return true if the processor was removed, false if it wasn't found
-  public boolean unregister(final String name) {
-    return registry.remove(name) != null;
+  public boolean unregister(final RegistryKey<?> key) {
+    return registry.remove(key) != null;
   }
 
   /// Clears all processors from the registry.
@@ -291,13 +415,13 @@ public class MessageProcessorRegistry {
     registry.clear();
   }
 
-  /// Gets a processor by name. If no processor is found with the given name, returns the
-  /// identity function (which returns the input unchanged).
+  /// Gets a processor by key. If no processor is found, returns the identity function.
   ///
-  /// @param name The name of the processor to retrieve
+  /// @param key The key of the processor to retrieve
   /// @return The processor function, or identity function if not found
-  public Function<byte[], byte[]> get(final String name) {
-    final var entry = registry.get(name);
+  @SuppressWarnings("unchecked")
+  public Function<byte[], byte[]> get(final RegistryKey<Function<byte[], byte[]>> key) {
+    final var entry = (RegistryEntry<Function<byte[], byte[]>>) registry.get(key);
     return entry != null ? entry::execute : Function.identity();
   }
 
@@ -351,8 +475,8 @@ public class MessageProcessorRegistry {
   /// final var isEmpty = (Predicate<byte[]>) bytes -> bytes == null || bytes.length == 0;
   ///
   /// // Processors for each case
-  /// final var emptyHandler = bytes -> "{\"empty\":true}".getBytes();
-  /// final var normalProcessor = registry.get("parseJson");
+  /// final var emptyHandler = (Function<byte[], byte[]>) bytes -> "{\"empty\":true}".getBytes();
+  /// final var normalProcessor = registry.get(RegistryKey.of("parseJson", Function.class));
   ///
   /// // Create conditional processor
   /// final var conditionalProcessor =
@@ -381,86 +505,25 @@ public class MessageProcessorRegistry {
 
   /// Returns all registered processors.
   ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Get all registered processors
-  /// final var allProcessors = registry.getAll();
-  ///
-  /// // Print all processor names
-  /// allProcessors.keySet().forEach(System.out::println);
-  ///
-  /// // Use a specific processor
-  /// final var processor = allProcessors.get("addTimestamp");
-  /// final var result = processor.apply(inputBytes);
-  /// ```
-  ///
-  /// @return Unmodifiable map of all processor names and functions
-  public Map<String, Function<byte[], byte[]>> getAll() {
-    return RegistryFunctions.createUnmodifiableView(registry, entry -> ((ProcessorEntry) entry)::execute);
+  /// @return Unmodifiable map of all processor keys and functions
+  public Map<RegistryKey<?>, Function<byte[], byte[]>> getAll() {
+    return RegistryFunctions.createUnmodifiableView(
+      registry,
+      entry -> {
+        final var regEntry = (RegistryEntry<?>) entry;
+        if (regEntry.value instanceof Function) return regEntry::execute;
+        return null;
+      }
+    );
   }
 
-  /// Gets metrics for a processor including invocation count, error count, and processing time.
+  /// Gets metrics for a processor.
   ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Get metrics for a processor
-  /// final var metrics = registry.getMetrics("parseJson");
-  ///
-  /// // Print the metrics
-  /// System.out.println("Invocations: " + metrics.get("invocationCount"));
-  /// System.out.println("Errors: " + metrics.get("errorCount"));
-  /// System.out.println("Total processing time (ms): " + metrics.get("processingTimeMs"));
-  /// ```
-  ///
-  /// @param name The processor name
+  /// @param key The processor key
   /// @return Map containing metrics or empty map if processor not found
-  public Map<String, Object> getMetrics(final String name) {
-    final var entry = registry.get(name);
+  public Map<String, Object> getMetrics(final RegistryKey<?> key) {
+    final var entry = registry.get(key);
     if (entry == null) return Map.of();
     return RegistryFunctions.createMetrics(entry.invocationCount, entry.errorCount, entry.totalProcessingTimeMs);
-  }
-
-  /// Gets the source application name configured for this registry.
-  ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Get the configured source app name
-  /// final var appName = registry.getSourceAppName();
-  /// System.out.println("This registry is configured for: " + appName);
-  /// ```
-  ///
-  /// @return The source application name
-  public String getSourceAppName() {
-    return sourceAppName;
-  }
-
-  /// Gets the message format used by this registry.
-  ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Check if registry uses AVRO format
-  /// if (registry.getMessageFormat() == MessageFormat.AVRO) {
-  ///     // Register an AVRO schema
-  ///     final var eventSchema = """
-  ///       {
-  ///         "type": "record",
-  ///         "name": "Event",
-  ///         "fields": [
-  ///           {"name": "id", "type": "string"},
-  ///           {"name": "timestamp", "type": "long"}
-  ///         ]
-  ///       }
-  ///       """;
-  ///     registry.addSchema("event", "com.example.Event", eventSchema);
-  /// }
-  /// ```
-  ///
-  /// @return The message format
-  public MessageFormat getMessageFormat() {
-    return messageFormat;
   }
 }

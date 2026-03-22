@@ -24,6 +24,7 @@ import org.kpipe.metrics.ProcessorMetricsReporter;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
@@ -141,7 +142,7 @@ public class App implements AutoCloseable {
   /// @param registry the message sink registry
   /// @return a message sink that processes messages through the pipeline
   private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    return registry.pipeline("jsonLogging");
+    return registry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING);
   }
 
   /// Creates a processor pipeline using the provided registry.
@@ -153,7 +154,9 @@ public class App implements AutoCloseable {
     final MessageProcessorRegistry registry,
     final AppConfig config
   ) {
-    return registry.jsonPipeline(config.processors().toArray(new String[0]));
+    final var builder = registry.jsonPipelineBuilder();
+    for (final var name : config.processors()) builder.add(RegistryKey.json(name));
+    return builder.build();
   }
 
   /// Gets the processor registry used by this application.

@@ -18,10 +18,10 @@ import java.util.function.UnaryOperator;
 ///
 /// ```java
 /// // Create an optimized pipeline using these processors
-/// final var pipeline = registry.jsonPipeline(
-///     "addTimestamp",
-///     "sanitizeData"
-/// );
+/// final var pipeline = registry.jsonPipelineBuilder()
+///     .add(RegistryKey.json("addTimestamp"))
+///     .add(RegistryKey.json("sanitizeData"))
+///     .build();
 ///
 /// // Process a message
 /// byte[] result = pipeline.apply("{\"data\":\"value\"}".getBytes());

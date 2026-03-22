@@ -139,7 +139,7 @@ public class App implements AutoCloseable {
   /// @param registry the message sink registry
   /// @return a message sink that processes messages through the pipeline
   private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    final var pipeline = registry.<byte[], byte[]>pipeline("logging");
+    final var pipeline = registry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING);
     return MessageSinkRegistry.withErrorHandling(pipeline);
   }
 
@@ -148,7 +148,12 @@ public class App implements AutoCloseable {
   /// @param registry the message processor registry
   /// @return a function that processes messages through the pipeline
   private static Function<byte[], byte[]> createJsonProcessorPipeline(final MessageProcessorRegistry registry) {
-    return registry.jsonPipeline("addSource", "markProcessed", "addTimestamp");
+    return registry
+      .jsonPipelineBuilder()
+      .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
+      .add(MessageProcessorRegistry.JSON_MARK_PROCESSED)
+      .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
+      .build();
   }
 
   /// Gets the processor registry used by this application.

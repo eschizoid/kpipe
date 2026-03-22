@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,12 @@ class MessageProcessorRegistryTest {
   @Test
   void shouldContainDefaultOperators() {
     // Act
-    var pipeline = registry.jsonPipeline("addSource", "addTimestamp", "markProcessed");
+    var pipeline = registry
+      .jsonPipelineBuilder()
+      .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
+      .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
+      .add(MessageProcessorRegistry.JSON_MARK_PROCESSED)
+      .build();
     var input = "{}".getBytes();
     var result = new String(pipeline.apply(input));
 
@@ -33,9 +39,9 @@ class MessageProcessorRegistryTest {
   @Test
   void shouldRegisterAndRetrieveJsonOperator() {
     // Arrange
-    final var operatorName = "testOperator";
-    registry.registerJsonOperator(
-      operatorName,
+    final var key = RegistryKey.json("testOperator");
+    registry.registerOperator(
+      key,
       obj -> {
         obj.put("test", "value");
         return obj;
@@ -43,7 +49,7 @@ class MessageProcessorRegistryTest {
     );
 
     // Act
-    var pipeline = registry.jsonPipeline(operatorName);
+    var pipeline = registry.jsonPipelineBuilder().add(key).build();
     var result = new String(pipeline.apply("{}".getBytes()));
 
     // Assert
@@ -53,15 +59,18 @@ class MessageProcessorRegistryTest {
   @Test
   void shouldComposeJsonOperatorPipeline() {
     // Arrange
-    registry.registerJsonOperator(
-      "op1",
+    final var op1 = RegistryKey.json("op1");
+    final var op2 = RegistryKey.json("op2");
+
+    registry.registerOperator(
+      op1,
       obj -> {
         obj.put("op1", "val1");
         return obj;
       }
     );
-    registry.registerJsonOperator(
-      "op2",
+    registry.registerOperator(
+      op2,
       obj -> {
         obj.put("op2", "val2");
         return obj;
@@ -69,7 +78,7 @@ class MessageProcessorRegistryTest {
     );
 
     // Act
-    final var pipeline = registry.jsonPipeline("op1", "op2");
+    final var pipeline = registry.jsonPipelineBuilder().add(op1).add(op2).build();
     final var result = new String(pipeline.apply("{}".getBytes()));
 
     // Assert
@@ -118,50 +127,145 @@ class MessageProcessorRegistryTest {
   @Test
   void shouldTrackRegisteredProcessors() {
     // Arrange
-    final var uniqueName = "unique" + System.currentTimeMillis();
+    final var key = RegistryKey.<Function<byte[], byte[]>>of("unique" + System.currentTimeMillis(), Function.class);
     Function<byte[], byte[]> processor = message -> message;
 
     // Act
-    registry.register(uniqueName, processor);
-    Map<String, Function<byte[], byte[]>> allProcessors = registry.getAll();
+    registry.register(key, processor);
+    Map<RegistryKey<?>, Function<byte[], byte[]>> allProcessors = registry.getAll();
 
     // Assert
-    assertTrue(allProcessors.containsKey(uniqueName));
+    assertTrue(allProcessors.containsKey(key));
   }
 
   @Test
   void shouldUnregisterProcessor() {
     // Arrange
-    final var name = "processorToRemove";
+    final var key = RegistryKey.<Function<byte[], byte[]>>of("processorToRemove", Function.class);
 
     // Act
-    registry.register(name, msg -> msg);
+    registry.register(key, msg -> msg);
 
     // Assert
-    assertTrue(registry.getAll().containsKey(name));
+    assertTrue(registry.getAll().containsKey(key));
 
     // Act
-    boolean removed = registry.unregister(name);
+    boolean removed = registry.unregister(key);
 
     // Assert
     assertTrue(removed);
-    assertFalse(registry.getAll().containsKey(name));
+    assertFalse(registry.getAll().containsKey(key));
   }
 
   @Test
   void shouldTrackMetrics() {
     // Arrange
-    final var name = "metricsTest";
-    registry.register(name, msg -> msg);
+    final var key = RegistryKey.<Function<byte[], byte[]>>of("metricsTest", Function.class);
+    registry.register(key, msg -> msg);
 
     // Act
-    final var processor = registry.get(name);
+    final var processor = registry.get(key);
     processor.apply("test".getBytes());
     processor.apply("test2".getBytes());
 
     // Assert
-    final var metrics = registry.getMetrics(name);
+    final var metrics = registry.getMetrics(key);
     assertEquals(2L, metrics.get("invocationCount"));
     assertEquals(0L, metrics.get("errorCount"));
+  }
+
+  @Test
+  void shouldRegisterAndRetrieveTypedOperator() {
+    // Arrange
+    final var key = RegistryKey.json("typedOp");
+    registry.registerOperator(
+      key,
+      obj -> {
+        obj.put("typed", "success");
+        return obj;
+      }
+    );
+
+    // Act
+    final var retrieved = registry.getOperator(key);
+    final var pipeline = registry.jsonPipelineBuilder().add(key).build();
+    final var result = new String(pipeline.apply("{}".getBytes()));
+
+    // Assert
+    assertNotNull(retrieved);
+    assertTrue(result.contains("\"typed\":\"success\""));
+  }
+
+  @Test
+  void shouldComposePipelineUsingBuilder() {
+    // Arrange
+    final var key1 = RegistryKey.json("builderOp1");
+    registry.registerOperator(
+      key1,
+      obj -> {
+        obj.put("b1", "v1");
+        return obj;
+      }
+    );
+
+    // Act
+    final var pipeline = registry
+      .jsonPipelineBuilder()
+      .add(key1)
+      .add(obj -> {
+        obj.put("b2", "v2");
+        return obj;
+      })
+      .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
+      .build();
+
+    final var result = new String(pipeline.apply("{}".getBytes()));
+
+    // Assert
+    assertTrue(result.contains("\"b1\":\"v1\""));
+    assertTrue(result.contains("\"b2\":\"v2\""));
+    assertTrue(result.contains("\"source\":\"test-app\""));
+  }
+
+  private enum TestOperators implements UnaryOperator<Map<String, Object>> {
+    ENUM_OP1(obj -> {
+      obj.put("enum1", "v1");
+      return obj;
+    }),
+    ENUM_OP2(obj -> {
+      obj.put("enum2", "v2");
+      return obj;
+    });
+
+    private final UnaryOperator<Map<String, Object>> op;
+
+    TestOperators(UnaryOperator<Map<String, Object>> op) {
+      this.op = op;
+    }
+
+    @Override
+    public Map<String, Object> apply(Map<String, Object> t) {
+      return op.apply(t);
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void shouldRegisterOperatorsFromEnum() {
+    // Act
+    registry.registerEnum((Class<Map<String, Object>>) (Class<?>) Map.class, TestOperators.class);
+
+    // Assert
+    final var key1 = RegistryKey.json("ENUM_OP1");
+    final var key2 = RegistryKey.json("ENUM_OP2");
+
+    assertNotNull(registry.getOperator(key1));
+    assertNotNull(registry.getOperator(key2));
+
+    final var pipeline = registry.jsonPipelineBuilder().add(key1).add(key2).build();
+
+    final var result = new String(pipeline.apply("{}".getBytes()));
+    assertTrue(result.contains("\"enum1\":\"v1\""));
+    assertTrue(result.contains("\"enum2\":\"v2\""));
   }
 }

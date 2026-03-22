@@ -9,50 +9,16 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.*;
 
-/// Provides shared utility functions for registry implementations in the KPipe framework.
+/// Utility functions for registry implementations in KPipe.
 ///
-/// This class contains reusable methods that support the common patterns used across different
-/// registry types (message processors, sinks, etc.) including:
+/// This class provides reusable helpers for error handling, metrics, timing, and registry data
+/// access.
+/// It is used by registry classes to ensure consistent and efficient behavior across message
+/// processing pipelines.
 ///
-/// * Error handling and resilience wrappers
-/// * Performance metrics collection and reporting
-/// * Time measurement for operations
-/// * Registry data view transformations
-///
-/// These utilities help ensure consistent behavior across different registry implementations and
-/// reduce code duplication. They provide standardized approaches to common concerns like error
-/// handling, metrics, and data access patterns.
-///
-/// Example usage for error handling:
-///
+/// Example usage:
 /// ```java
-/// // Create an error-tolerant function that returns a default value on exception
-/// final var safeFunction = MessageProcessorRegistry.withErrorHandling(
-///     riskyOperation,
-///     defaultValue
-/// );
-/// ```
-///
-/// Example usage for metrics and timed execution:
-///
-/// ```java
-/// // Create a timed execution wrapper
-/// BiFunction<Input, Function<Input, Output>, Output> timedExec =
-///     RegistryFunctions.timedExecution(
-///         counter::incrementAndGet,
-///         errorCounter::incrementAndGet,
-///         (count, duration) -> totalTimeNs.addAndGet(duration.toNanos())
-///     );
-///
-/// // Execute an operation with timing
-/// final var result = timedExec.apply(input, operation);
-///
-/// // Get metrics
-/// final var metrics = RegistryFunctions.createMetrics(
-///     counter.get(),
-///     errorCounter.get(),
-///     totalTimeNs.get()
-/// );
+/// final var safeFn = RegistryFunctions.withErrorHandling(fn, defaultValue);
 /// ```
 public final class RegistryFunctions {
 
@@ -167,4 +133,4 @@ public final class RegistryFunctions {
     registry.forEach((key, value) -> result.put(key, valueMapper.apply(value)));
     return Collections.unmodifiableMap(result);
   }
-}
+} // end RegistryFunctions

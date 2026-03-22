@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.RegistryKey;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -24,10 +25,10 @@ class ProcessorMetricsReporterTest {
   private MessageProcessorRegistry registry;
 
   @Mock
-  private Supplier<Set<String>> processorNamesSupplier;
+  private Supplier<Set<RegistryKey<?>>> processorNamesSupplier;
 
   @Mock
-  private Function<String, Map<String, Object>> metricsFetcher;
+  private Function<RegistryKey<?>, Map<String, Object>> metricsFetcher;
 
   @Mock
   private Consumer<String> reporter;
@@ -36,13 +37,15 @@ class ProcessorMetricsReporterTest {
   private ArgumentCaptor<String> reportCaptor;
 
   private ProcessorMetricsReporter metricsReporter;
-  private Set<String> processorNames;
+  private Set<RegistryKey<?>> processorNames;
   private Map<String, Object> testMetrics;
 
   @BeforeEach
   void setUp() {
     // Setup processor names
-    processorNames = new HashSet<>(Arrays.asList("processor1", "processor2"));
+    processorNames = new HashSet<>(
+      Arrays.asList(RegistryKey.of("processor1", Object.class), RegistryKey.of("processor2", Object.class))
+    );
 
     // Setup test metrics
     testMetrics = new HashMap<>();
@@ -53,12 +56,12 @@ class ProcessorMetricsReporterTest {
   @Test
   void shouldCreateFromRegistryWithDefaultReporter() {
     // Arrange
-    final var processorMap = new HashMap<>();
-    for (String name : processorNames) {
+    final var processorMap = new HashMap<RegistryKey<?>, Object>();
+    for (RegistryKey<?> name : processorNames) {
       processorMap.put(name, new Object());
     }
     doReturn(processorMap).when(registry).getAll();
-    doReturn(testMetrics).when(registry).getMetrics(anyString());
+    doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
     metricsReporter = new ProcessorMetricsReporter(registry);
 
@@ -69,12 +72,12 @@ class ProcessorMetricsReporterTest {
   @Test
   void shouldCreateFromRegistryWithCustomReporter() {
     // Arrange
-    final var processorMap = new HashMap<>();
+    final var processorMap = new HashMap<RegistryKey<?>, Object>();
     for (final var name : processorNames) {
       processorMap.put(name, new Object());
     }
     doReturn(processorMap).when(registry).getAll();
-    doReturn(testMetrics).when(registry).getMetrics(anyString());
+    doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
     metricsReporter = new ProcessorMetricsReporter(registry, reporter);
 
@@ -95,7 +98,7 @@ class ProcessorMetricsReporterTest {
   void shouldCreateWithFullCustomization() {
     // Arrange
     when(processorNamesSupplier.get()).thenReturn(processorNames);
-    when(metricsFetcher.apply(anyString())).thenReturn(testMetrics);
+    when(metricsFetcher.apply(any(RegistryKey.class))).thenReturn(testMetrics);
 
     metricsReporter = new ProcessorMetricsReporter(processorNamesSupplier, metricsFetcher, reporter);
 
@@ -104,7 +107,7 @@ class ProcessorMetricsReporterTest {
 
     // Assert
     verify(processorNamesSupplier).get();
-    verify(metricsFetcher, times(processorNames.size())).apply(anyString());
+    verify(metricsFetcher, times(processorNames.size())).apply(any(RegistryKey.class));
     verify(reporter, times(processorNames.size())).accept(anyString());
   }
 
@@ -112,7 +115,7 @@ class ProcessorMetricsReporterTest {
   void shouldHandleEmptyMetricsGracefully() {
     // Arrange
     when(processorNamesSupplier.get()).thenReturn(processorNames);
-    when(metricsFetcher.apply(anyString())).thenReturn(Collections.emptyMap());
+    when(metricsFetcher.apply(any(RegistryKey.class))).thenReturn(Collections.emptyMap());
 
     metricsReporter = new ProcessorMetricsReporter(processorNamesSupplier, metricsFetcher, reporter);
 
@@ -141,8 +144,12 @@ class ProcessorMetricsReporterTest {
   void shouldHandleExceptionInMetricsFetcher() {
     // Arrange
     when(processorNamesSupplier.get()).thenReturn(processorNames);
-    when(metricsFetcher.apply("processor1")).thenThrow(new RuntimeException("Test exception"));
-    when(metricsFetcher.apply("processor2")).thenReturn(testMetrics);
+    final var it = processorNames.iterator();
+    final var p1 = it.next();
+    final var p2 = it.next();
+
+    when(metricsFetcher.apply(p1)).thenThrow(new RuntimeException("Test exception"));
+    when(metricsFetcher.apply(p2)).thenReturn(testMetrics);
 
     metricsReporter = new ProcessorMetricsReporter(processorNamesSupplier, metricsFetcher, reporter);
 

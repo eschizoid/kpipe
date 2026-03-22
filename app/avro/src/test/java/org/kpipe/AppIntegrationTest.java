@@ -40,6 +40,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.kpipe.config.AppConfig;
+import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -119,7 +120,7 @@ class AppIntegrationTest {
 
     try (final var app = new App(config, srUrl)) {
       // Register the capturing sink
-      app.getSinkRegistry().register("avroLogging", capturingSink);
+      app.getSinkRegistry().register(MessageSinkRegistry.AVRO_LOGGING, byte[].class, capturingSink);
 
       // Start the app
       final var appThread = Thread

@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.RegistryKey;
 
 /// Reports metrics for the message sinks, allowing flexible composition of:
 ///
@@ -50,8 +51,8 @@ import org.kpipe.registry.MessageSinkRegistry;
 /// @param metricsFetcher function to fetch metrics for a sink name
 /// @param reporter consumer for reporting metrics (defaults to logger if null)
 public record SinkMetricsReporter(
-  Supplier<Set<String>> sinkNamesSupplier,
-  Function<String, Map<String, Object>> metricsFetcher,
+  Supplier<Set<RegistryKey<?>>> sinkNamesSupplier,
+  Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,
   Consumer<String> reporter
 )
   implements MetricsReporter {
@@ -106,8 +107,8 @@ public record SinkMetricsReporter(
   /// @param metricsFetcher function to fetch metrics for a sink name
   /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public SinkMetricsReporter(
-    final Supplier<Set<String>> sinkNamesSupplier,
-    final Function<String, Map<String, Object>> metricsFetcher,
+    final Supplier<Set<RegistryKey<?>>> sinkNamesSupplier,
+    final Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,
     final Consumer<String> reporter
   ) {
     this.sinkNamesSupplier = sinkNamesSupplier;
@@ -128,12 +129,12 @@ public record SinkMetricsReporter(
     try {
       sinkNamesSupplier
         .get()
-        .forEach(sinkName -> {
+        .forEach(key -> {
           try {
-            final var metrics = metricsFetcher.apply(sinkName);
-            if (!metrics.isEmpty()) reporter.accept("Sink '%s' metrics: %s".formatted(sinkName, metrics));
+            final var metrics = metricsFetcher.apply(key);
+            if (!metrics.isEmpty()) reporter.accept("Sink '%s' metrics: %s".formatted(key.name(), metrics));
           } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Error retrieving metrics for sink: %s".formatted(sinkName), e);
+            LOGGER.log(Level.WARNING, "Error retrieving metrics for sink: %s".formatted(key.name()), e);
           }
         });
     } catch (final Exception e) {

@@ -27,17 +27,16 @@ Create a pipeline and start a Kafka consumer in a few lines:
 ```java
 final var registry = new MessageProcessorRegistry("demo");
 
-registry.registerJsonOperator(
-    "sanitize",
-    JsonMessageProcessor.removeFields("password")
-);
+final var sanitizeKey = RegistryKey.json("sanitize");
+registry.registerOperator(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password"));
 
-registry.registerJsonOperator(
-    "stamp",
-    JsonMessageProcessor.addTimestamp("processedAt")
-);
+final var stampKey = RegistryKey.json("stamp");
+registry.registerOperator(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
 
-final var pipeline = registry.jsonPipeline("sanitize", "stamp");
+final var pipeline = registry.jsonPipelineBuilder()
+  .add(sanitizeKey)
+  .add(stampKey)
+  .build();
 
 final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
@@ -100,26 +99,26 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
   <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe</artifactId>
-      <version>1.0.0</version>
+      <version>1.1.0</version>
   </dependency>
   ```
 
 ### Gradle (Groovy)
 
   ```groovy
-  implementation 'io.github.eschizoid:kpipe:1.0.0'
+  implementation 'io.github.eschizoid:kpipe:1.1.0'
   ```
 
 ### Gradle (Kotlin)
 
   ```kotlin
-  implementation("io.github.eschizoid:kpipe:1.0.0")
+  implementation("io.github.eschizoid:kpipe:1.1.0")
   ```
 
 ### SBT
 
   ```sbt
-  libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.0.0"
+  libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.1.0"
   ```
 
 ---
@@ -222,7 +221,8 @@ Extend the registry like this:
   final var registry = new MessageProcessorRegistry("myApp");
 
   // Register a custom JSON operator for field transformations
-  registry.registerJsonOperator("uppercase", map -> {
+  final var uppercaseKey = RegistryKey.json("uppercase");
+  registry.registerOperator(uppercaseKey, map -> {
       final var value = map.get("text");
       if (value instanceof String text) {
           map.put("text", text.toUpperCase());
@@ -231,16 +231,19 @@ Extend the registry like this:
   });
 
   // Built-in operators are also available
-  registry.registerJsonOperator("addEnvironment",
-      JsonMessageProcessor.addField("environment", "production"));
+  final var envKey = RegistryKey.json("addEnvironment");
+  registry.registerOperator(envKey,
+      JsonMessageProcessor.addFieldOperator("environment", "production"));
 
   // Create a high-performance pipeline (single SerDe cycle)
-  final var pipeline = registry.jsonPipeline(
-      "addEnvironment", "uppercase", "addTimestamp"
-  );
+  final var pipeline = registry.jsonPipelineBuilder()
+      .add(envKey)
+      .add(uppercaseKey)
+      .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
+      .build();
 
   // Use the pipeline with a consumer
-  final var consumer = new KPipeConsumer.<byte[], byte[]>builder()
+  final var consumer = KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic("events")
       .withProcessor(pipeline)
@@ -313,15 +316,23 @@ pipelines:
   final var registry = new MessageProcessorRegistry("myApp");
 
   // Operators are pure functions that modify a Map
-  registry.registerJsonOperator("addTimestamp", JsonMessageProcessor.addTimestamp("processedAt"));
-  registry.registerJsonOperator("sanitize", JsonMessageProcessor.removeFields("password", "ssn"));
+  final var stampKey = RegistryKey.json("addTimestamp");
+  registry.registerOperator(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
+
+  final var sanitizeKey = RegistryKey.json("sanitize");
+  registry.registerOperator(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password", "ssn"));
 
   // Metadata merging
   final var metadata = Map.of("version", "1.0", "env", "prod");
-  registry.registerJsonOperator("addMetadata", JsonMessageProcessor.mergeWith(metadata));
+  final var metaKey = RegistryKey.json("addMetadata");
+  registry.registerOperator(metaKey, JsonMessageProcessor.mergeWithOperator(metadata));
 
   // Build an optimized pipeline (one deserialization -> many transformations -> one serialization)
-  final var pipeline = registry.jsonPipeline("sanitize", "addTimestamp", "addMetadata");
+  final var pipeline = registry.jsonPipelineBuilder()
+      .add(sanitizeKey)
+      .add(stampKey)
+      .add(metaKey)
+      .build();
   ```
 
 ### Avro Processing
@@ -329,28 +340,55 @@ pipelines:
 The Avro processors provide operators (`UnaryOperator<GenericRecord>`) that work within optimized pipelines:
 
   ```java
-  final var registry = new MessageProcessorRegistry("myApp");
+  final var registry = new MessageProcessorRegistry("myApp", MessageFormat.AVRO);
 
   // Add schema (automatically registers addSource_user and addTimestamp_user)
   registry.addSchema("user", "com.kpipe.User", "schemas/user.avsc");
+  final var schema = AvroMessageProcessor.getSchema("user");
 
   // Register manual operators
-  registry.registerAvroOperator("sanitize", 
-      AvroMessageProcessor.removeFields("user", "password", "creditCard"));
+  final var sanitizeKey = RegistryKey.avro("sanitize");
+  registry.registerOperator(sanitizeKey,
+      AvroMessageProcessor.removeFieldsOperator(schema, "password", "creditCard"));
 
   // Transform fields
-  registry.registerAvroOperator("uppercaseName", 
-      AvroMessageProcessor.transformField("user", "name", value -> {
+  final var upperKey = RegistryKey.avro("uppercaseName");
+  registry.registerOperator(upperKey,
+      AvroMessageProcessor.transformFieldOperator(schema, "name", value -> {
           if (value instanceof String text) return text.toUpperCase();
           return value;
       }));
 
   // Build an optimized pipeline
   // This pipeline handles deserialization, all operators, and serialization in one pass
-  final var pipeline = registry.avroPipeline("user", "sanitize", "uppercaseName", "addTimestamp_user");
-  
+  final var pipeline = registry.avroPipelineBuilder("user")
+      .add(sanitizeKey)
+      .add(upperKey)
+      .add(RegistryKey.avro("addTimestamp_user"))
+      .build();
+
   // For data with magic bytes (e.g., Confluent Wire Format), specify an offset:
-  final var confluentPipeline = registry.avroPipeline("user", 5, "sanitize", "addTimestamp_user");
+  final var confluentPipeline = registry.avroPipelineBuilder("user", 5)
+      .add(sanitizeKey)
+      .add(RegistryKey.avro("addTimestamp_user"))
+      .build();
+  ```
+
+### POJO Processing
+
+For high-performance processing of Java records or POJOs, use the `PojoFormat` and `PojoPipelineBuilder`. This leverages DSL-JSON annotation processing for near-native performance.
+
+  ```java
+  final var registry = new MessageProcessorRegistry("myApp");
+
+  // Define a custom operator for your record
+  final var userKey = RegistryKey.of("userTransform", UserRecord.class);
+  registry.registerOperator(userKey, user -> new UserRecord(user.id(), user.name().toUpperCase(), user.email()));
+
+  // Build an optimized POJO pipeline
+  final var pipeline = registry.pojoPipelineBuilder(UserRecord.class)
+      .add(userKey)
+      .build();
   ```
 
 ---
@@ -379,7 +417,7 @@ final var jsonConsoleSink = new JsonConsoleSink<>();
 final var avroConsoleSink = new AvroConsoleSink<>();
 
 // Use a sink with a consumer
-final var consumer = new KPipeConsumer.<String, byte[]>builder()
+final var consumer = KPipeConsumer.<String, byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
   .withProcessor(pipeline)
@@ -396,7 +434,7 @@ You can create custom sinks using lambda expressions:
 MessageSink<String, byte[]> databaseSink = (record, processedValue) -> {
   try {
     // Parse the processed value
-    final var data = JsonMessageProcessor.parseJson().apply(processedValue);
+    final var data = new String(processedValue, StandardCharsets.UTF_8);
 
     // Write to database
     databaseService.insert(data);
@@ -409,7 +447,7 @@ MessageSink<String, byte[]> databaseSink = (record, processedValue) -> {
 };
 
 // Use the custom sink with a consumer
-final var consumer = new KPipeConsumer.<String, byte[]>builder()
+final var consumer = KPipeConsumer.<String, byte[]>builder()
   .withMessageSink(databaseSink)
   .build();
 ```
@@ -422,16 +460,16 @@ The `MessageSinkRegistry` provides a centralized repository for registering and 
 // Create a registry
 final var registry = new MessageSinkRegistry();
 
-// Register sinks
-registry.register("console", new JsonConsoleSink<>());
-registry.register("database", databaseSink);
-registry.register("metrics", (record, value) -> metricsService.recordMessage(record.topic(), value.length));
+// Register sinks with explicit types
+final var dbKey = RegistryKey.of("database", byte[].class);
+registry.register(MessageSinkRegistry.JSON_LOGGING, byte[].class, new JsonConsoleSink<>());
+registry.register(dbKey, byte[].class, databaseSink);
 
 // Create a pipeline of sinks
-final var sinkPipeline = registry.<String, byte[]>pipeline("console", "database", "metrics");
+final var sinkPipeline = registry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING, dbKey);
 
 // Use the sink pipeline with a consumer
-final var consumer = new KPipeConsumer.<String, byte[]>builder()
+final var consumer = KPipeConsumer.<String, byte[]>builder()
   .withMessageSink(sinkPipeline)
   .build();
 ```
@@ -445,8 +483,10 @@ The registry provides utilities for adding error handling to sinks:
 final var safeSink = MessageSinkRegistry.withErrorHandling(riskySink);
 
 // Register and use the wrapped sink
-registry.register("safeDatabase", safeSink);
-final var safePipeline = registry.<String, byte[]>pipeline("console", "safeDatabase", "metrics");
+final var safeKey = RegistryKey.of("safeDatabase", byte[].class);
+registry.register(safeKey, String.class, safeSink);
+
+final var safePipeline = registry.pipeline(String.class, MessageSinkRegistry.JSON_LOGGING, safeKey);
 ```
 
 ---
@@ -578,9 +618,12 @@ public class KPipeApp implements AutoCloseable {
       .withProperties(KafkaConsumerConfig.createConsumerConfig(
         config.bootstrapServers(), config.consumerGroup()))
       .withTopic(config.topic())
-      .withProcessor(processorRegistry.jsonPipeline(
-        "addSource", "markProcessed", "addTimestamp"))
-      .withMessageSink(sinkRegistry.<byte[], byte[]>pipeline("jsonLogging"))
+      .withProcessor(processorRegistry.jsonPipelineBuilder()
+        .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
+        .add(MessageProcessorRegistry.JSON_MARK_PROCESSED)
+        .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
+        .build())
+      .withMessageSink(sinkRegistry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(consumer -> 
          OffsetManager.builder(consumer)
@@ -621,9 +664,9 @@ export HEALTH_HTTP_PATH=/health
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 export KAFKA_CONSUMER_GROUP=my-group
 export KAFKA_TOPIC=json-events
-export KAFKA_PROCESSORS=parseJson,validateSchema,addTimestamp
-export METRICS_INTERVAL_MS=30000
-export SHUTDOWN_TIMEOUT_MS=5000
+export PROCESSOR_PIPELINE=addSource,markProcessed,addTimestamp
+export METRICS_INTERVAL_SEC=30
+export SHUTDOWN_TIMEOUT_SEC=5
 ```
 
 ---
@@ -712,14 +755,42 @@ For maintainable pipelines, you can compose multiple pipelines or operators:
   final var registry = new MessageProcessorRegistry("myApp");
 
   // Create focused operator groups
-  registry.registerJsonOperator("security", 
-      JsonMessageProcessor.removeFields("password", "creditCard"));
+  final var securityKey = RegistryKey.json("security");
+  registry.registerOperator(securityKey, 
+      JsonMessageProcessor.removeFieldsOperator("password", "creditCard"));
   
-  registry.registerJsonOperator("enrichment",
-      JsonMessageProcessor.addTimestamp("processedAt"));
+  final var enrichmentKey = RegistryKey.json("enrichment");
+  registry.registerOperator(enrichmentKey,
+      JsonMessageProcessor.addTimestampOperator("processedAt"));
 
   // Compose them into an optimized pipeline
-  final var fullPipeline = registry.jsonPipeline("security", "enrichment");
+  final var fullPipeline = registry.jsonPipelineBuilder()
+      .add(securityKey)
+      .add(enrichmentKey)
+      .build();
+  ```
+
+### Enum-Based Registry (Static Type Safety)
+
+For the highest level of type safety, you can define your operators as an `Enum` that implements `UnaryOperator<T>`. This allows for bulk registration and discoverability of standard processors:
+
+  ```java
+  public enum StandardProcessors implements UnaryOperator<Map<String, Object>> {
+      TIMESTAMP(JsonMessageProcessor.addTimestampOperator("ts")),
+      SOURCE(JsonMessageProcessor.addFieldOperator("src", "app"));
+
+      private final UnaryOperator<Map<String, Object>> op;
+      StandardProcessors(UnaryOperator<Map<String, Object>> op) { this.op = op; }
+
+      @Override
+      public Map<String, Object> apply(Map<String, Object> t) { return op.apply(t); }
+  }
+
+  // Bulk register all enum constants
+  registry.registerEnum(Map.class, StandardProcessors.class);
+
+  // Now they can be used by name in configuration
+  // PROCESSOR_PIPELINE=TIMESTAMP,SOURCE
   ```
 
 ### Conditional Processing
@@ -736,8 +807,8 @@ The library provides a built-in `when()` method for conditional processing:
   // Use the built-in conditional processor
   Function<byte[], byte[]> conditionalPipeline = MessageProcessorRegistry.when(
       isOrderMessage,
-      registry.jsonPipeline("orderProcessor"),
-      registry.jsonPipeline("defaultProcessor")
+      registry.jsonPipelineBuilder().add(RegistryKey.json("orderProcessor")).build(),
+      registry.jsonPipelineBuilder().add(RegistryKey.json("defaultProcessor")).build()
   );
   ```
 

@@ -19,6 +19,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.config.AppConfig;
+import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -55,7 +56,7 @@ class AppIntegrationTest {
 
     try (final var app = new App(config)) {
       // Register the capturing sink
-      app.getSinkRegistry().register("jsonLogging", capturingSink);
+      app.getSinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, byte[].class, capturingSink);
 
       // Start the app in a virtual thread
       final var appThread = Thread

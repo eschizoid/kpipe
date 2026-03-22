@@ -41,6 +41,8 @@ dependencies {
 
     // DSL-JSON
     implementation(libsCatalog.findLibrary("dslJson").get())
+    annotationProcessor(libsCatalog.findLibrary("dslJson").get())
+    testAnnotationProcessor(libsCatalog.findLibrary("dslJson").get())
 
     // Avro
     implementation(libsCatalog.findLibrary("avro").get())

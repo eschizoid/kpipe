@@ -38,10 +38,9 @@ import org.apache.avro.util.Utf8;
 /// AvroMessageProcessor.registerSchema("userSchema", userSchemaJson);
 ///
 /// // Create an optimized pipeline using these processors
-/// final var pipeline = registry.avroPipeline(
-///     "userSchema",
-///     "addTimestamp_userSchema"
-/// );
+/// final var pipeline = registry.avroPipelineBuilder("userSchema")
+///     .add(RegistryKey.avro("addTimestamp_userSchema"))
+///     .build();
 ///
 /// // Process a message
 /// byte[] result = pipeline.apply(avroBytes);

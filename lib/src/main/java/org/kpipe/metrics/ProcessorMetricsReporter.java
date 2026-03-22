@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.RegistryKey;
 
 /// Reports metrics for message processors, allowing flexible composition of:
 ///
@@ -50,8 +51,8 @@ import org.kpipe.registry.MessageProcessorRegistry;
 /// @param metricsFetcher function to fetch metrics for a processor name
 /// @param reporter consumer for reporting metrics (defaults to logger if null)
 public record ProcessorMetricsReporter(
-  Supplier<Set<String>> processorNamesSupplier,
-  Function<String, Map<String, Object>> metricsFetcher,
+  Supplier<Set<RegistryKey<?>>> processorNamesSupplier,
+  Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,
   Consumer<String> reporter
 )
   implements MetricsReporter {
@@ -106,8 +107,8 @@ public record ProcessorMetricsReporter(
   /// @param metricsFetcher function to fetch metrics for a processor name
   /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public ProcessorMetricsReporter(
-    final Supplier<Set<String>> processorNamesSupplier,
-    final Function<String, Map<String, Object>> metricsFetcher,
+    final Supplier<Set<RegistryKey<?>>> processorNamesSupplier,
+    final Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,
     final Consumer<String> reporter
   ) {
     this.processorNamesSupplier = processorNamesSupplier;
@@ -128,12 +129,12 @@ public record ProcessorMetricsReporter(
     try {
       processorNamesSupplier
         .get()
-        .forEach(processorName -> {
+        .forEach(key -> {
           try {
-            final var metrics = metricsFetcher.apply(processorName);
-            if (!metrics.isEmpty()) reporter.accept("Processor '%s' metrics: %s".formatted(processorName, metrics));
+            final var metrics = metricsFetcher.apply(key);
+            if (!metrics.isEmpty()) reporter.accept("Processor '%s' metrics: %s".formatted(key.name(), metrics));
           } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Error retrieving metrics for processor: %s".formatted(processorName), e);
+            LOGGER.log(Level.WARNING, "Error retrieving metrics for processor: %s".formatted(key.name()), e);
           }
         });
     } catch (final Exception e) {

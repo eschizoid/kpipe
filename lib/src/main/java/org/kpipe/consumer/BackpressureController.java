@@ -27,11 +27,18 @@ package org.kpipe.consumer;
 public record BackpressureController(long highWatermark, long lowWatermark) {
   /// The action that the consumer should take based on the current in-flight count.
   public enum Action {
+    /// Indicates the consumer should pause fetching new messages due to high in-flight count.
     PAUSE,
+    /// Indicates the consumer should resume fetching messages as in-flight count is low.
     RESUME,
+    /// Indicates no action is needed; the consumer should maintain its current state.
     NONE,
   }
 
+  /// Constructs a BackpressureController with the specified high and low watermarks.
+  ///
+  /// @param highWatermark the in-flight count at or above which the consumer should pause
+  /// @param lowWatermark the in-flight count at or below which the consumer should resume
   public BackpressureController {
     if (highWatermark <= 0) throw new IllegalArgumentException("highWatermark must be positive");
     if (lowWatermark < 0) throw new IllegalArgumentException("lowWatermark cannot be negative");

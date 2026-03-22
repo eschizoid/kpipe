@@ -26,6 +26,7 @@ import org.kpipe.processor.AvroMessageProcessor;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.AvroConsoleSink;
 import org.kpipe.sink.MessageSink;
 
@@ -161,7 +162,7 @@ public class App implements AutoCloseable {
   /// @param registry the message sink registry
   /// @return a message sink that processes messages through the pipeline
   private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    return registry.pipeline("avroLogging");
+    return registry.pipeline(byte[].class, MessageSinkRegistry.AVRO_LOGGING);
   }
 
   /// Creates a processor pipeline using the provided registry.
@@ -180,9 +181,15 @@ public class App implements AutoCloseable {
 
     // Register the sink
     final var schema = AvroMessageProcessor.getSchema("1");
-    if (schema != null) sinkRegistry.register("avroLogging", new AvroConsoleSink<>(schema));
+    if (schema != null) sinkRegistry.register(
+      MessageSinkRegistry.AVRO_LOGGING,
+      byte[].class,
+      new AvroConsoleSink<>(schema)
+    );
 
-    return registry.avroPipeline("1", 5, config.processors().toArray(new String[0]));
+    final var builder = registry.avroPipelineBuilder("1", 5);
+    for (final var name : config.processors()) builder.add(RegistryKey.avro(name));
+    return builder.build();
   }
 
   /// Gets the processor registry used by this application.

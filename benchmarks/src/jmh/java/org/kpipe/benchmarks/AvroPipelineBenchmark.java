@@ -11,6 +11,7 @@ import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.io.EncoderFactory;
 import org.kpipe.processor.AvroMessageProcessor;
 import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.RegistryKey;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -81,11 +82,14 @@ public class AvroPipelineBenchmark {
     registry.addSchema("user", "com.kpipe.User", schemaJson);
 
     // Register operators
-    registry.registerAvroOperator("op1", AvroMessageProcessor.addFieldOperator("processed", true));
-    registry.registerAvroOperator("op2", AvroMessageProcessor.addFieldOperator("name", "PROCESSED"));
+    final var op1 = RegistryKey.avro("op1");
+    final var op2 = RegistryKey.avro("op2");
 
-    kpipePipeline = registry.avroPipeline("user", "op1", "op2");
-    kpipeMagicPipeline = registry.avroPipeline("user", 5, "op1", "op2");
+    registry.registerOperator(op1, AvroMessageProcessor.addFieldOperator("processed", true));
+    registry.registerOperator(op2, AvroMessageProcessor.addFieldOperator("name", "PROCESSED"));
+
+    kpipePipeline = registry.avroPipelineBuilder("user").add(op1).add(op2).build();
+    kpipeMagicPipeline = registry.avroPipelineBuilder("user", 5).add(op1).add(op2).build();
   }
 
   @Benchmark
