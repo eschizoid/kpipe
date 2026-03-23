@@ -36,7 +36,7 @@ class OptimizedPipelineTest {
     registry.registerOperator(addStatus, JsonMessageProcessor.addFieldOperator("status", "processed"));
 
     // Create optimized pipeline
-    var pipeline = registry.jsonPipelineBuilder().add(addSource).add(addStatus).build();
+    final var pipeline = registry.jsonPipelineBuilder().add(addSource).add(addStatus).build();
 
     // Process message
     byte[] input = "{\"id\":\"123\"}".getBytes(StandardCharsets.UTF_8);

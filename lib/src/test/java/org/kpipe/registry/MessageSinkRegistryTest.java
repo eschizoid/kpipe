@@ -34,7 +34,6 @@ class MessageSinkRegistryTest {
   @Test
   void shouldRegisterAndRetrieveSink() {
     // Arrange
-    @SuppressWarnings("unchecked")
     final var testSink = mock(MessageSink.class);
     final var key = RegistryKey.<Object>of("testSink", Object.class);
 
@@ -54,7 +53,6 @@ class MessageSinkRegistryTest {
   @Test
   void shouldUnregisterSink() {
     // Arrange
-    @SuppressWarnings("unchecked")
     final var testSink = mock(MessageSink.class);
     final var key = RegistryKey.<Object>of("sinkToRemove", Object.class);
     registry.register(key, Object.class, testSink);
@@ -70,7 +68,6 @@ class MessageSinkRegistryTest {
   @Test
   void shouldClearAllSinks() {
     // Arrange
-    @SuppressWarnings("unchecked")
     final var testSink = mock(MessageSink.class);
     registry.register(RegistryKey.<Object>of("testSink", Object.class), Object.class, testSink);
 
@@ -84,9 +81,7 @@ class MessageSinkRegistryTest {
   @Test
   void shouldCreatePipelineThatSendsToMultipleSinks() {
     // Arrange
-    @SuppressWarnings("unchecked")
     final var sink1 = mock(MessageSink.class);
-    @SuppressWarnings("unchecked")
     final var sink2 = mock(MessageSink.class);
 
     final var key1 = RegistryKey.<Object>of("sink1", Object.class);
@@ -108,11 +103,9 @@ class MessageSinkRegistryTest {
   @Test
   void shouldContinuePipelineWhenOneSinkThrowsException() {
     // Arrange
-    @SuppressWarnings("unchecked")
     final var failingSink = mock(MessageSink.class);
     doThrow(new RuntimeException("Test failure")).when(failingSink).send(any(), any());
 
-    @SuppressWarnings("unchecked")
     final var workingSink = mock(MessageSink.class);
 
     final var keyFailing = RegistryKey.<Object>of("failingSink", Object.class);
@@ -204,7 +197,6 @@ class MessageSinkRegistryTest {
   @Test
   void shouldRejectNullOrEmptyName() {
     // Arrange
-    @SuppressWarnings("unchecked")
     final var testSink = mock(MessageSink.class);
 
     // Assert
