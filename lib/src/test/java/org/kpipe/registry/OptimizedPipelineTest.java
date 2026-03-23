@@ -36,13 +36,13 @@ class OptimizedPipelineTest {
     registry.registerOperator(addStatus, JsonMessageProcessor.addFieldOperator("status", "processed"));
 
     // Create optimized pipeline
-    var pipeline = registry.jsonPipelineBuilder().add(addSource).add(addStatus).build();
+    final var pipeline = registry.jsonPipelineBuilder().add(addSource).add(addStatus).build();
 
     // Process message
-    byte[] input = "{\"id\":\"123\"}".getBytes(StandardCharsets.UTF_8);
-    byte[] output = pipeline.apply(input);
+    final var input = "{\"id\":\"123\"}".getBytes(StandardCharsets.UTF_8);
+    final var output = pipeline.apply(input);
 
-    String result = new String(output, StandardCharsets.UTF_8);
+    final var result = new String(output, StandardCharsets.UTF_8);
     assertTrue(result.contains("\"source\":\"test-app\""));
     assertTrue(result.contains("\"status\":\"processed\""));
     assertTrue(result.contains("\"id\":\"123\""));
@@ -50,7 +50,7 @@ class OptimizedPipelineTest {
 
   @Test
   void testOptimizedAvroPipeline() throws java.io.IOException {
-    String schemaJson =
+    final var schemaJson =
       """
       {
         "type": "record",
@@ -63,7 +63,7 @@ class OptimizedPipelineTest {
       }
       """;
     AvroMessageProcessor.registerSchema("user", schemaJson);
-    Schema schema = AvroMessageProcessor.getSchema("user");
+    final var schema = AvroMessageProcessor.getSchema("user");
 
     // Register operators
     final var addSource = RegistryKey.avro("addSource");
@@ -73,22 +73,22 @@ class OptimizedPipelineTest {
     registry.registerOperator(addStatus, AvroMessageProcessor.addFieldOperator("status", "processed"));
 
     // Create optimized pipeline
-    var pipeline = registry.avroPipelineBuilder("user", 0).add(addSource).add(addStatus).build();
+    final var pipeline = registry.avroPipelineBuilder("user", 0).add(addSource).add(addStatus).build();
 
     // Create input record
-    GenericRecord record = new GenericData.Record(schema);
+    final var record = new GenericData.Record(schema);
     record.put("id", "123");
 
     // Serialize record
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    BinaryEncoder encoder = EncoderFactory.get().binaryEncoder(out, null);
-    GenericDatumWriter<GenericRecord> writer = new GenericDatumWriter<>(schema);
+    final var out = new ByteArrayOutputStream();
+    final var encoder = EncoderFactory.get().binaryEncoder(out, null);
+    final var writer = new GenericDatumWriter<>(schema);
     writer.write(record, encoder);
     encoder.flush();
-    byte[] input = out.toByteArray();
+    final var input = out.toByteArray();
 
     // Process message
-    byte[] output = pipeline.apply(input);
+    final var output = pipeline.apply(input);
 
     // Verify
     AvroMessageProcessor.processAvro(
@@ -106,7 +106,7 @@ class OptimizedPipelineTest {
   @Test
   void testOptimizedJsonPipelineDefaultOperators() {
     // Create optimized pipeline using default operators
-    var pipeline = registry
+    final var pipeline = registry
       .jsonPipelineBuilder()
       .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
       .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
@@ -114,10 +114,10 @@ class OptimizedPipelineTest {
       .build();
 
     // Process message
-    byte[] input = "{\"id\":\"123\"}".getBytes(StandardCharsets.UTF_8);
-    byte[] output = pipeline.apply(input);
+    final var input = "{\"id\":\"123\"}".getBytes(StandardCharsets.UTF_8);
+    final var output = pipeline.apply(input);
 
-    String result = new String(output, StandardCharsets.UTF_8);
+    final var result = new String(output, StandardCharsets.UTF_8);
     assertTrue(result.contains("\"source\":\"test-app\""));
     assertTrue(result.contains("\"processed\":\"true\""));
     assertTrue(result.contains("\"timestamp\":"));
@@ -126,7 +126,7 @@ class OptimizedPipelineTest {
 
   @Test
   void testOptimizedAvroPipelineDefaultOperators() throws java.io.IOException {
-    String schemaJson =
+    final var schemaJson =
       """
       {
         "type": "record",
@@ -141,10 +141,10 @@ class OptimizedPipelineTest {
       """;
     registry = new MessageProcessorRegistry(SOURCE_APP, MessageFormat.AVRO);
     registry.addSchema("user", "com.example.User", schemaJson);
-    Schema schema = AvroMessageProcessor.getSchema("user");
+    final var schema = AvroMessageProcessor.getSchema("user");
 
     // Create optimized pipeline using default operators
-    var pipeline = registry
+    final var pipeline = registry
       .avroPipelineBuilder("user", 0)
       .add(RegistryKey.avro("addSource_user"))
       .add(RegistryKey.avro("addTimestamp_user"))
@@ -152,19 +152,19 @@ class OptimizedPipelineTest {
       .build();
 
     // Create input record
-    GenericRecord record = new GenericData.Record(schema);
+    final var record = new GenericData.Record(schema);
     record.put("id", "123");
 
     // Serialize record
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    BinaryEncoder encoder = EncoderFactory.get().binaryEncoder(out, null);
-    GenericDatumWriter<GenericRecord> writer = new GenericDatumWriter<>(schema);
+    final var out = new ByteArrayOutputStream();
+    final var encoder = EncoderFactory.get().binaryEncoder(out, null);
+    final var writer = new GenericDatumWriter<>(schema);
     writer.write(record, encoder);
     encoder.flush();
-    byte[] input = out.toByteArray();
+    final var input = out.toByteArray();
 
     // Process message
-    byte[] output = pipeline.apply(input);
+    final var output = pipeline.apply(input);
 
     // Verify
     AvroMessageProcessor.processAvro(
@@ -182,7 +182,7 @@ class OptimizedPipelineTest {
 
   @Test
   void testOptimizedAvroPipelineWithOffset() throws java.io.IOException {
-    String schemaJson =
+    final var schemaJson =
       """
       {
         "type": "record",
@@ -194,31 +194,31 @@ class OptimizedPipelineTest {
       }
       """;
     AvroMessageProcessor.registerSchema("userOffset", schemaJson);
-    Schema schema = AvroMessageProcessor.getSchema("userOffset");
+    final var schema = AvroMessageProcessor.getSchema("userOffset");
 
     // Register operators
     final var addSource = RegistryKey.avro("addSource");
     registry.registerOperator(addSource, AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
 
     // Create optimized pipeline with offset 5 (simulating magic bytes)
-    var pipeline = registry.avroPipelineBuilder("userOffset", 5).add(addSource).build();
+    final var pipeline = registry.avroPipelineBuilder("userOffset", 5).add(addSource).build();
 
     // Create input record
-    GenericRecord record = new GenericData.Record(schema);
+    final var record = new GenericData.Record(schema);
     record.put("id", "123");
 
     // Serialize record
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    final var out = new ByteArrayOutputStream();
     // Add 5 magic bytes
     out.write(new byte[] { 0, 0, 0, 0, 1 });
-    BinaryEncoder encoder = EncoderFactory.get().binaryEncoder(out, null);
-    GenericDatumWriter<GenericRecord> writer = new GenericDatumWriter<>(schema);
+    final var encoder = EncoderFactory.get().binaryEncoder(out, null);
+    final var writer = new GenericDatumWriter<>(schema);
     writer.write(record, encoder);
     encoder.flush();
-    byte[] input = out.toByteArray();
+    final var input = out.toByteArray();
 
     // Process message
-    byte[] output = pipeline.apply(input);
+    final var output = pipeline.apply(input);
 
     // Verify
     AvroMessageProcessor.processAvro(

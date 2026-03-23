@@ -57,7 +57,7 @@ public enum ConsumerCommand {
   ///
   /// @param offsets the offsets to commit
   /// @return this command instance for method chaining
-  public ConsumerCommand withOffsets(Map<TopicPartition, OffsetAndMetadata> offsets) {
+  public ConsumerCommand withOffsets(final Map<TopicPartition, OffsetAndMetadata> offsets) {
     this.offsets = offsets;
     return this;
   }

@@ -114,4 +114,4 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   public GenericRecord deserialize(final byte[] data) {
     throw new UnsupportedOperationException("Avro deserialization requires a schema context. Use specialized methods.");
   }
-} // end AvroFormat
+}

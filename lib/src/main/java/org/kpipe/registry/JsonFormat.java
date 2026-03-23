@@ -102,4 +102,4 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
       throw new RuntimeException("Failed to deserialize JSON", e);
     }
   }
-} // end JsonFormat
+}

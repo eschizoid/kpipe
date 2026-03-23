@@ -78,13 +78,13 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
   ///
   /// @param data The data to serialize
   /// @return The serialized byte array
-  byte[] serialize(T data);
+  byte[] serialize(final T data);
 
   /// Deserializes the given byte array to data of type T.
   ///
   /// @param data The serialized byte array
   /// @return The deserialized data
-  T deserialize(byte[] data);
+  T deserialize(final byte[] data);
 
   /// Represents schema information with a fully qualified name and location.
   ///
@@ -102,7 +102,7 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
   }
 
   /// Internal helper to read Avro schema from various locations.
-  private static String readAvroSchema(String location) {
+  private static String readAvroSchema(final String location) {
     try {
       // Check if HTTP URL
       if (location.startsWith("http://") || location.startsWith("https://")) {

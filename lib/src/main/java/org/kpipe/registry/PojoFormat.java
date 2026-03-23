@@ -105,4 +105,4 @@ public final class PojoFormat<T> implements MessageFormat<T> {
       throw new RuntimeException("Failed to deserialize POJO", e);
     }
   }
-} // end PojoFormat
+}
