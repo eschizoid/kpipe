@@ -8,8 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.kpipe.sink.AvroConsoleSink;
-import org.kpipe.sink.JsonConsoleSink;
+
 import org.kpipe.sink.MessageSink;
 
 class MessageSinkRegistryTest {
@@ -35,7 +34,7 @@ class MessageSinkRegistryTest {
   void shouldRegisterAndRetrieveSink() {
     // Arrange
     final var testSink = mock(MessageSink.class);
-    final var key = RegistryKey.<Object>of("testSink", Object.class);
+    final var key = RegistryKey.of("testSink", Object.class);
 
     // Act
     registry.register(key, Object.class, testSink);
@@ -69,7 +68,7 @@ class MessageSinkRegistryTest {
   void shouldClearAllSinks() {
     // Arrange
     final var testSink = mock(MessageSink.class);
-    registry.register(RegistryKey.<Object>of("testSink", Object.class), Object.class, testSink);
+    registry.register(RegistryKey.of("testSink", Object.class), Object.class, testSink);
 
     // Act
     registry.clear();
@@ -84,8 +83,8 @@ class MessageSinkRegistryTest {
     final var sink1 = mock(MessageSink.class);
     final var sink2 = mock(MessageSink.class);
 
-    final var key1 = RegistryKey.<Object>of("sink1", Object.class);
-    final var key2 = RegistryKey.<Object>of("sink2", Object.class);
+    final var key1 = RegistryKey.of("sink1", Object.class);
+    final var key2 = RegistryKey.of("sink2", Object.class);
 
     registry.register(key1, Object.class, sink1);
     registry.register(key2, Object.class, sink2);
@@ -108,8 +107,8 @@ class MessageSinkRegistryTest {
 
     final var workingSink = mock(MessageSink.class);
 
-    final var keyFailing = RegistryKey.<Object>of("failingSink", Object.class);
-    final var keyWorking = RegistryKey.<Object>of("workingSink", Object.class);
+    final var keyFailing = RegistryKey.of("failingSink", Object.class);
+    final var keyWorking = RegistryKey.of("workingSink", Object.class);
 
     registry.register(keyFailing, Object.class, failingSink);
     registry.register(keyWorking, Object.class, workingSink);
@@ -129,7 +128,7 @@ class MessageSinkRegistryTest {
     final var callCount = new AtomicInteger(0);
     final MessageSink<Object, Object> countingSink = (record, value) -> callCount.incrementAndGet();
 
-    final var key = RegistryKey.<Object>of("countingSink", Object.class);
+    final var key = RegistryKey.of("countingSink", Object.class);
     registry.register(key, Object.class, countingSink);
     final var sink = registry.get(key, Object.class);
 
@@ -151,7 +150,7 @@ class MessageSinkRegistryTest {
       throw new RuntimeException("Test failure");
     };
 
-    final var key = RegistryKey.<Object>of("failingSink", Object.class);
+    final var key = RegistryKey.of("failingSink", Object.class);
     registry.register(key, Object.class, failingSink);
     final var sink = registry.get(key, Object.class);
 
@@ -219,7 +218,7 @@ class MessageSinkRegistryTest {
 
     // Act
     final var retrieved = registry.get(key, String.class);
-    final var record = new ConsumerRecord<String, String>("topic", 0, 0, "key", "value");
+    final var record = new ConsumerRecord<>("topic", 0, 0, "key", "value");
     retrieved.send(record, "processed");
 
     // Assert
