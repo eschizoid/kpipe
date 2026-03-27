@@ -551,7 +551,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           case ConsumerCommand.CommitOffsets cmd -> {
             try {
               kafkaConsumer.commitSync(cmd.offsets());
-              if (offsetManager != null)offsetManager.notifyCommitComplete(cmd.commitId(), true);
+              if (offsetManager != null) offsetManager.notifyCommitComplete(cmd.commitId(), true);
             } catch (Exception e) {
               LOGGER.log(Level.WARNING, "Failed to commit offsets", e);
               if (offsetManager != null) offsetManager.notifyCommitComplete(cmd.commitId(), false);

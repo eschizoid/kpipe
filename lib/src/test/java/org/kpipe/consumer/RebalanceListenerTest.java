@@ -25,11 +25,7 @@ class RebalanceListenerTest {
   @Mock
   private Consumer<String, String> mockConsumer;
 
-  @Mock
   private Queue<ConsumerCommand> commandQueue;
-
-  @Mock
-  private ConsumerCommand consumerCommand;
 
   @Captor
   private ArgumentCaptor<Map<TopicPartition, OffsetAndMetadata>> offsetCaptor;
@@ -48,6 +44,7 @@ class RebalanceListenerTest {
     state = new AtomicReference<>(OffsetState.RUNNING);
     pendingOffsets = new ConcurrentHashMap<>();
     highestProcessedOffsets = new ConcurrentHashMap<>();
+    commandQueue = new LinkedList<>();
     listener = new RebalanceListener(state, pendingOffsets, highestProcessedOffsets, mockConsumer, commandQueue);
   }
 
@@ -168,7 +165,7 @@ class RebalanceListenerTest {
     assertEquals(1, remaining.size());
     final var commitCmd = assertInstanceOf(ConsumerCommand.CommitOffsets.class, remaining.getFirst());
     assertFalse(commitCmd.offsets().containsKey(partition0), "partition0 should be filtered out");
-    assertTrue(commitCmd.offsets().containsKey(partition0), "partition1 should be filtered out");
+    assertTrue(commitCmd.offsets().containsKey(partition1), "partition1 should be present");
     assertEquals(200L, commitCmd.offsets().get(partition1).offset());
   }
 
