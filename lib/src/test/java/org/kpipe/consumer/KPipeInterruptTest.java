@@ -11,7 +11,6 @@ import java.util.function.Function;
 import org.apache.kafka.clients.consumer.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.sink.MessageSink;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -35,7 +34,6 @@ class KPipeInterruptTest {
   private OffsetManager<String, String> offsetManager;
 
   private KPipeConsumer<String, String> createConsumer(
-    final String topic,
     final Queue<ConsumerCommand> commandQueue,
     final int maxRetries,
     final Duration backoff
@@ -46,10 +44,9 @@ class KPipeInterruptTest {
     props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
     props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
 
-    return KPipeConsumer
-      .<String, String>builder()
+    return KPipeConsumer.<String, String>builder()
       .withProperties(props)
-      .withTopic(topic)
+      .withTopic("test-topic")
       .withProcessor(processor)
       .withMessageSink(messageSink)
       .withRetry(maxRetries, backoff)
@@ -63,8 +60,11 @@ class KPipeInterruptTest {
   private static boolean hasMarkOffsetProcessed(final Queue<ConsumerCommand> commandQueue, final long offset) {
     return commandQueue
       .stream()
-      .anyMatch(cmd ->
-        cmd == ConsumerCommand.MARK_OFFSET_PROCESSED && cmd.getRecord() != null && cmd.getRecord().offset() == offset
+      .anyMatch(
+        cmd ->
+          cmd instanceof ConsumerCommand.MarkOffsetProcessed(ConsumerRecord<?, ?> record) &&
+          record != null &&
+          record.offset() == offset
       );
   }
 
@@ -74,23 +74,21 @@ class KPipeInterruptTest {
     final var record = new ConsumerRecord<>(topic, 0, 123L, "key", "value");
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
 
-    final var consumer = createConsumer(topic, commandQueue, 1, Duration.ofMillis(1000));
+    final var consumer = createConsumer(commandQueue, 1, Duration.ofMillis(1000));
 
     when(processor.apply("value")).thenThrow(new RuntimeException("first failure"));
 
     final var threadStarted = new CountDownLatch(1);
     final var threadFinished = new CountDownLatch(1);
 
-    final var processingThread = Thread
-      .ofVirtual()
-      .start(() -> {
-        threadStarted.countDown();
-        try {
-          consumer.processRecord(record);
-        } finally {
-          threadFinished.countDown();
-        }
-      });
+    final var processingThread = Thread.ofVirtual().start(() -> {
+      threadStarted.countDown();
+      try {
+        consumer.processRecord(record);
+      } finally {
+        threadFinished.countDown();
+      }
+    });
 
     assertTrue(threadStarted.await(1, TimeUnit.SECONDS));
     Thread.sleep(100); // let retry sleep begin
@@ -107,25 +105,23 @@ class KPipeInterruptTest {
     final var topic = "test-topic";
     final var record = new ConsumerRecord<>(topic, 0, 456L, "key", "value");
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
-    final var consumer = createConsumer(topic, commandQueue, 0, Duration.ofMillis(1));
+    final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 
     when(processor.apply("value")).thenThrow(new RuntimeException(new InterruptedException("interrupted")));
 
     final var interruptedFlag = new CompletableFuture<Boolean>();
     final var done = new CountDownLatch(1);
 
-    Thread
-      .ofVirtual()
-      .start(() -> {
-        try {
-          consumer.processRecord(record);
-          interruptedFlag.complete(Thread.currentThread().isInterrupted());
-        } finally {
-          // clear interrupted status on this worker thread before it exits
-          Thread.interrupted();
-          done.countDown();
-        }
-      });
+    Thread.ofVirtual().start(() -> {
+      try {
+        consumer.processRecord(record);
+        interruptedFlag.complete(Thread.currentThread().isInterrupted());
+      } finally {
+        // clear interrupted status on this worker thread before it exits
+        Thread.interrupted();
+        done.countDown();
+      }
+    });
 
     assertTrue(done.await(1, TimeUnit.SECONDS));
     assertTrue(interruptedFlag.get(1, TimeUnit.SECONDS));
@@ -140,7 +136,7 @@ class KPipeInterruptTest {
     final var topic = "test-topic";
     final var record = new ConsumerRecord<>(topic, 0, 789L, "key", "value");
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
-    final var consumer = createConsumer(topic, commandQueue, 0, Duration.ofMillis(1));
+    final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 
     when(processor.apply("value")).thenThrow(new RuntimeException("boom"));
 
@@ -156,7 +152,7 @@ class KPipeInterruptTest {
     final var topic = "test-topic";
     final var record = new ConsumerRecord<>(topic, 0, 999L, "key", "value");
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
-    final var consumer = createConsumer(topic, commandQueue, 0, Duration.ofMillis(1));
+    final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 
     when(processor.apply("value")).thenReturn("processed");
 
