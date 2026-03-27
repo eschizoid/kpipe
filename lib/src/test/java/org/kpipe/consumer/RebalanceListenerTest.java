@@ -3,10 +3,7 @@ package org.kpipe.consumer;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicReference;
@@ -16,7 +13,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.consumer.enums.OffsetState;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
@@ -29,11 +25,7 @@ class RebalanceListenerTest {
   @Mock
   private Consumer<String, String> mockConsumer;
 
-  @Mock
   private Queue<ConsumerCommand> commandQueue;
-
-  @Mock
-  private ConsumerCommand consumerCommand;
 
   @Captor
   private ArgumentCaptor<Map<TopicPartition, OffsetAndMetadata>> offsetCaptor;
@@ -52,6 +44,7 @@ class RebalanceListenerTest {
     state = new AtomicReference<>(OffsetState.RUNNING);
     pendingOffsets = new ConcurrentHashMap<>();
     highestProcessedOffsets = new ConcurrentHashMap<>();
+    commandQueue = new LinkedList<>();
     listener = new RebalanceListener(state, pendingOffsets, highestProcessedOffsets, mockConsumer, commandQueue);
   }
 
@@ -160,80 +153,71 @@ class RebalanceListenerTest {
 
   @Test
   void shouldDrainCommandQueueForRevokedPartitions() {
-    // Arrange
+    // Arrange - a CommitOffset command with offsets for partition0 and partition1
     final var offsets = Map.of(partition0, new OffsetAndMetadata(100L), partition1, new OffsetAndMetadata(200L));
-    when(consumerCommand.getOffsets()).thenReturn(offsets);
+    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, "commit-1"));
 
-    when(consumerCommand.withOffsets(Map.of(partition1, new OffsetAndMetadata(200L)))).thenReturn(consumerCommand);
-
-    when(commandQueue.isEmpty()).thenReturn(false);
-    when(commandQueue.size()).thenReturn(1);
-    when(commandQueue.poll()).thenReturn(consumerCommand);
-
-    // Act
+    // Act - revoke partition0 only
     listener.onPartitionsRevoked(List.of(partition0));
 
-    // Assert
-    verify(commandQueue).addAll(argThat(commands -> commands.size() == 1 && commands.contains(consumerCommand)));
+    // Assert - the remaining command should only have partition1
+    final var remaining = new ArrayList<>(commandQueue);
+    assertEquals(1, remaining.size());
+    final var commitCmd = assertInstanceOf(ConsumerCommand.CommitOffsets.class, remaining.getFirst());
+    assertFalse(commitCmd.offsets().containsKey(partition0), "partition0 should be filtered out");
+    assertTrue(commitCmd.offsets().containsKey(partition1), "partition1 should be present");
+    assertEquals(200L, commitCmd.offsets().get(partition1).offset());
   }
 
   @Test
   void shouldPreserveCommandsWithoutOffsets() {
-    // Arrange
-    when(consumerCommand.getOffsets()).thenReturn(null);
-
-    when(commandQueue.isEmpty()).thenReturn(false);
-    when(commandQueue.size()).thenReturn(1, 0);
-    when(commandQueue.poll()).thenReturn(consumerCommand);
+    // Arrange - a non-CommitOffsets command
+    commandQueue.offer(new ConsumerCommand.Pause());
 
     // Act
     listener.onPartitionsRevoked(List.of(partition0));
 
-    // Assert
-    verify(commandQueue).addAll(argThat(commands -> commands.size() == 1 && commands.contains(consumerCommand)));
+    // Assert - Pause command should still be in the queue
+    final var remaining = new ArrayList<>(commandQueue);
+    assertEquals(1, remaining.size());
+    assertInstanceOf(ConsumerCommand.Pause.class, remaining.getFirst());
   }
 
   @Test
   void shouldCompletelyRemoveCommandsForAllRevokedPartitions() {
-    // Arrange
-    final var cmd = mock(ConsumerCommand.class);
+    // Arrange - a CommitOffsets command with offsets only for partition0
     final var offsets = Map.of(partition0, new OffsetAndMetadata(100L));
-    when(cmd.getOffsets()).thenReturn(offsets);
+    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, "commit-1"));
 
-    when(commandQueue.isEmpty()).thenReturn(false);
-    when(commandQueue.size()).thenReturn(1, 0);
-    when(commandQueue.poll()).thenReturn(cmd);
-
-    // Act
+    // Act - revoke partition0
     listener.onPartitionsRevoked(List.of(partition0));
 
-    // Assert
-    verify(commandQueue).addAll(argThat(Collection::isEmpty));
+    // Assert - the command should be completely removed (no remaining partitions)
+    final var remaining = new ArrayList<>(commandQueue);
+    assertTrue(remaining.isEmpty(), "Command with only revoked partitions should be removed entirely");
   }
 
   @Test
   void shouldDoNothingWhenCommandQueueIsEmpty() {
-    // Arrange
-    when(commandQueue.isEmpty()).thenReturn(true);
+    // Arrange  - empty command queue
 
     // Act
     listener.onPartitionsRevoked(List.of(partition0));
 
-    // Assert
-    verify(commandQueue, never()).addAll(anyList());
-    verify(commandQueue, never()).poll();
+    // Assert - queue should still be empty
+    assertTrue(commandQueue.isEmpty());
   }
 
   @Test
   void shouldSkipDrainingCommandQueueWhenStopped() {
     // Arrange
     state.set(OffsetState.STOPPED);
+    commandQueue.offer(new ConsumerCommand.Pause());
 
     // Act
     listener.onPartitionsRevoked(List.of(partition0));
 
-    // Assert
-    verify(commandQueue, never()).addAll(anyList());
-    verify(commandQueue, never()).poll();
+    // Assert - command should still be in the queue (not drain)
+    assertEquals(1, commandQueue.size());
   }
 }

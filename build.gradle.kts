@@ -1,6 +1,6 @@
 plugins {
-    id("com.diffplug.spotless") version "7.2.1"
-    id("pl.allegro.tech.build.axion-release") version "1.20.1"
+    id("com.diffplug.spotless") version "8.4.0"
+    id("pl.allegro.tech.build.axion-release") version "1.21.1"
 }
 
 scmVersion {
@@ -63,11 +63,14 @@ subprojects {
             ratchetFrom("origin/main")
             prettier(
                 mapOf(
-                    "prettier" to "2.8.8", "prettier-plugin-java" to "2.1.0"
+                    "prettier" to "3.8.1", "prettier-plugin-java" to "2.8.1"
                 )
             ).config(
                 mapOf(
-                    "parser" to "java", "tabWidth" to 2, "printWidth" to 120
+                    "plugins" to listOf("prettier-plugin-java"),
+                    "parser" to "java",
+                    "tabWidth" to 2,
+                    "printWidth" to 120
                 )
             )
         }
