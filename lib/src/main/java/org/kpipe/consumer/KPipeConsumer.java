@@ -11,12 +11,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.config.AppConfig;
-import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.consumer.enums.ConsumerState;
 import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
@@ -139,12 +137,12 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       LOGGER.log(
         Level.WARNING,
         "Processing failed for record (topic=%s, partition=%d, offset=%d) after %d retries: %s".formatted(
-            error.record().topic(),
-            error.record().partition(),
-            error.record().offset(),
-            error.retryCount(),
-            error.exception().getMessage()
-          ),
+          error.record().topic(),
+          error.record().partition(),
+          error.record().offset(),
+          error.retryCount(),
+          error.exception().getMessage()
+        ),
         error.exception()
       );
     };
@@ -271,12 +269,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// @param provider A function that creates an OffsetManager given the consumer instance
     /// @return This builder instance for method chaining
     public Builder<K, V> withOffsetManagerProvider(final Function<Consumer<K, V>, OffsetManager<K, V>> provider) {
-      this.offsetManagerProvider =
-        consumer -> {
-          final var offsetManager = Objects.requireNonNull(provider.apply(consumer), "OffsetManager cannot be null");
-          this.rebalanceListener = offsetManager.createRebalanceListener();
-          return offsetManager;
-        };
+      this.offsetManagerProvider = consumer -> {
+        final var offsetManager = Objects.requireNonNull(provider.apply(consumer), "OffsetManager cannot be null");
+        this.rebalanceListener = offsetManager.createRebalanceListener();
+        return offsetManager;
+      };
       return this;
     }
 
@@ -379,7 +376,9 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     this.offsetManager =
       builder.offsetManager != null
         ? builder.offsetManager
-        : builder.offsetManagerProvider != null ? builder.offsetManagerProvider.apply(this.kafkaConsumer) : null;
+        : builder.offsetManagerProvider != null
+          ? builder.offsetManagerProvider.apply(this.kafkaConsumer)
+          : null;
     this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
     this.rebalanceListener = builder.rebalanceListener != null ? builder.rebalanceListener : null;
     this.backpressureController = builder.backpressureController;
@@ -411,8 +410,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       return null;
     }
 
-    return MessageTracker
-      .builder()
+    return MessageTracker.builder()
       .withMetrics(this::getMetrics)
       .withReceivedMetricKey(METRIC_MESSAGES_RECEIVED)
       .withProcessedMetricKey(METRIC_MESSAGES_PROCESSED)
@@ -435,18 +433,15 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
     if (offsetManager != null) offsetManager.start();
 
-    if (rebalanceListener != null) kafkaConsumer.subscribe(
-      List.of(topic),
-      rebalanceListener
-    ); else kafkaConsumer.subscribe(List.of(topic));
+    if (rebalanceListener != null) kafkaConsumer.subscribe(List.of(topic), rebalanceListener);
+    else kafkaConsumer.subscribe(List.of(topic));
 
     Thread.UncaughtExceptionHandler exceptionHandler = (thread, throwable) -> {
-      LOGGER.log(Level.ERROR, "Uncaught exception in consumer thread: " + thread.getName(), throwable);
+      LOGGER.log(Level.ERROR, "Uncaught exception in consumer thread: %s".formatted(thread.getName()), throwable);
       state.set(ConsumerState.CLOSING);
     };
 
-    final var thread = Thread
-      .ofVirtual()
+    final var thread = Thread.ofVirtual()
       .name("kafka-consumer-%s-%s".formatted(topic, UUID.randomUUID().toString().substring(0, 8)))
       .uncaughtExceptionHandler(exceptionHandler)
       .start(() -> {
@@ -500,7 +495,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     }
 
     // Always add command to the queue for proper test verification
-    commandQueue.offer(ConsumerCommand.PAUSE);
+    commandQueue.offer(new ConsumerCommand.Pause());
     LOGGER.log(Level.INFO, "Consumer pause requested for topic {0}", topic);
 
     // Update state if not closed or closing
@@ -523,53 +518,47 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// processed.
   public void processCommands() {
     ConsumerCommand command;
+
     while ((command = commandQueue.poll()) != null) {
       try {
         switch (command) {
-          case PAUSE -> {
+          case ConsumerCommand.Pause _ -> {
             kafkaConsumer.pause(kafkaConsumer.assignment());
             LOGGER.log(Level.INFO, "Consumer paused for topic {0}", topic);
           }
-          case RESUME -> {
+          case ConsumerCommand.Resume _ -> {
             kafkaConsumer.resume(kafkaConsumer.assignment());
             LOGGER.log(Level.INFO, "Consumer resumed for topic {0}", topic);
           }
-          case CLOSE -> {
+          case ConsumerCommand.Close _ -> {
             state.set(ConsumerState.CLOSING);
             LOGGER.log(Level.INFO, "Consumer shutdown initiated for topic {0}", topic);
           }
-          case TRACK_OFFSET -> {
-            if (offsetManager != null && command.getRecord() != null) {
+          case ConsumerCommand.TrackOffset cmd -> {
+            if (offsetManager != null) {
               @SuppressWarnings("unchecked")
-              final var record = (ConsumerRecord<K, V>) command.getRecord();
+              final var record = (ConsumerRecord<K, V>) cmd.record();
               offsetManager.trackOffset(record);
             }
           }
-          case MARK_OFFSET_PROCESSED -> {
-            if (offsetManager != null && command.getRecord() != null) {
+          case ConsumerCommand.MarkOffsetProcessed cmd -> {
+            if (offsetManager != null) {
               @SuppressWarnings("unchecked")
-              final var record = (ConsumerRecord<K, V>) command.getRecord();
+              final var record = (ConsumerRecord<K, V>) cmd.record();
               offsetManager.markOffsetProcessed(record);
             }
           }
-          case COMMIT_OFFSETS -> {
-            if (command.getOffsets() != null) {
-              try {
-                kafkaConsumer.commitSync(command.getOffsets());
-                if (offsetManager != null && command.getCommitId() != null) offsetManager.notifyCommitComplete(
-                  command.getCommitId(),
-                  true
-                );
-              } catch (final Exception e) {
-                LOGGER.log(Level.WARNING, "Failed to commit offsets", e);
-                if (offsetManager != null && command.getCommitId() != null) {
-                  offsetManager.notifyCommitComplete(command.getCommitId(), false);
-                }
-              }
+          case ConsumerCommand.CommitOffsets cmd -> {
+            try {
+              kafkaConsumer.commitSync(cmd.offsets());
+              if (offsetManager != null) offsetManager.notifyCommitComplete(cmd.commitId(), true);
+            } catch (Exception e) {
+              LOGGER.log(Level.WARNING, "Failed to commit offsets", e);
+              if (offsetManager != null) offsetManager.notifyCommitComplete(cmd.commitId(), false);
             }
           }
         }
-      } catch (final Exception e) {
+      } catch (Exception e) {
         LOGGER.log(Level.WARNING, "Error processing consumer command: {0}", command);
       }
     }
@@ -592,7 +581,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     }
 
     // Always add command to the queue for proper test verification
-    commandQueue.offer(ConsumerCommand.RESUME);
+    commandQueue.offer(new ConsumerCommand.Resume());
     LOGGER.log(Level.INFO, "Consumer resume requested for topic {0}", topic);
 
     // Update state if not closing or closed
@@ -619,7 +608,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// @return a map of metric names to their current values, or an empty map if metrics are disabled
   public Map<String, Long> getMetrics() {
     if (!enableMetrics) return Map.of();
-    final var snapshot = metrics.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
+    final var snapshot = metrics
+      .entrySet()
+      .stream()
+      .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
     snapshot.put("inFlight", inFlightCount.get());
     return snapshot;
   }
@@ -688,7 +680,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       // Process sequentially for cases where order matters
       for (final var record : records.records(topic)) {
         // Track offset before processing
-        if (offsetManager != null) commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+        if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
         inFlightCount.incrementAndGet();
         processRecord(record);
       }
@@ -697,7 +689,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       final var topicRecords = records.records(topic);
       for (final var record : topicRecords) {
         // Track offset before submitting to virtual thread
-        if (offsetManager != null) commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+        if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
         inFlightCount.incrementAndGet();
         try {
           virtualThreadExecutor.submit(() -> processRecord(record));
@@ -754,7 +746,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           final var processedValue = processor.apply(record.value());
           messageSink.send(record, processedValue);
           if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-          if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+          if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
           return;
         } catch (final Exception e) {
           if (isInterruptionRelated(e)) {
@@ -767,14 +759,14 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
             LOGGER.log(
               Level.WARNING,
               "Failed to process message at offset %d after %d attempts: %s".formatted(
-                  record.offset(),
-                  maxRetries + 1,
-                  e.getMessage()
-                ),
+                record.offset(),
+                maxRetries + 1,
+                e.getMessage()
+              ),
               e
             );
             errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
-            if (offsetManager != null) commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+            if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
             return;
           }
         }
@@ -784,8 +776,26 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     }
   }
 
+  private static final long BACKPRESSURE_WARNING_THRESHOLD = 10_000;
+  private volatile boolean backpressureWarningLogged;
+
   private void checkBackpressure() {
-    if (backpressureController == null) return;
+    if (backpressureController == null) {
+      if (!backpressureWarningLogged && inFlightCount.get() > BACKPRESSURE_WARNING_THRESHOLD) {
+        LOGGER.log(
+          Level.WARNING,
+          "In-flight count(%d) exceeds %d but background is disable for topic%s. ".formatted(
+              inFlightCount.get(),
+              BACKPRESSURE_WARNING_THRESHOLD,
+              topic
+            ) +
+            "Consider enabling backpressure with withBackpressure to prevent memory exhaustion."
+        );
+        backpressureWarningLogged = true;
+      }
+      return;
+    }
+
     final long inFlight = inFlightCount.get();
 
     switch (backpressureController.check(inFlight, isPaused())) {
@@ -793,10 +803,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         LOGGER.log(
           Level.WARNING,
           "Backpressure triggered: pausing consumer (in-flight=%d, highWatermark=%d) for topic %s".formatted(
-              inFlight,
-              backpressureController.highWatermark(),
-              topic
-            )
+            inFlight,
+            backpressureController.highWatermark(),
+            topic
+          )
         );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
         backpressurePauseStartTime = System.currentTimeMillis();
@@ -808,14 +818,15 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         LOGGER.log(
           Level.INFO,
           "Backpressure resolved: resuming consumer (paused for %d ms, in-flight=%d) for topic %s".formatted(
-              pauseDurationMs,
-              inFlight,
-              topic
-            )
+            pauseDurationMs,
+            inFlight,
+            topic
+          )
         );
         resume();
       }
-      case NONE -> {}
+      case NONE -> {
+      }
     }
   }
 
@@ -829,8 +840,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   private ConsumerRecords<K, V> pollRecords() {
-    return Optional
-      .ofNullable(kafkaConsumer)
+    return Optional.ofNullable(kafkaConsumer)
       .map(consumer -> {
         try {
           return consumer.poll(pollTimeout);
@@ -856,40 +866,35 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
   private void signalShutdown() {
     pause();
-    commandQueue.offer(ConsumerCommand.CLOSE);
+    commandQueue.offer(new ConsumerCommand.Close());
   }
 
   private void waitForInFlightMessages(final MessageTracker tracker, final long waitForMessagesMs) {
-    Optional
-      .ofNullable(tracker)
-      .ifPresent(t -> {
-        try {
-          long inFlightCount = t.getInFlightMessageCount();
-          if (inFlightCount > 0) {
-            LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlightCount));
-            t.waitForCompletion(waitForMessagesMs);
-          }
-        } catch (Exception e) {
-          LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
+    Optional.ofNullable(tracker).ifPresent(t -> {
+      try {
+        long inFlightCount = t.getInFlightMessageCount();
+        if (inFlightCount > 0) {
+          LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlightCount));
+          t.waitForCompletion(waitForMessagesMs);
         }
-      });
+      } catch (Exception e) {
+        LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
+      }
+    });
   }
 
   private void wakeupAndWaitForConsumerThread(final long threadTerminationMs) {
     // Safe wakeup of the consumer
-    Optional
-      .ofNullable(kafkaConsumer)
-      .ifPresent(consumer -> {
-        try {
-          consumer.wakeup();
-        } catch (Exception e) {
-          LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
-        }
-      });
+    Optional.ofNullable(kafkaConsumer).ifPresent(consumer -> {
+      try {
+        consumer.wakeup();
+      } catch (Exception e) {
+        LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
+      }
+    });
 
     // Wait for thread termination
-    Optional
-      .ofNullable(consumerThread.get())
+    Optional.ofNullable(consumerThread.get())
       .filter(Thread::isAlive)
       .ifPresent(thread -> {
         try {

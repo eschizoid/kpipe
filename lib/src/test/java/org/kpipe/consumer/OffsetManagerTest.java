@@ -23,7 +23,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.kpipe.consumer.enums.ConsumerCommand;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -93,7 +92,7 @@ class OffsetManagerTest {
       final var firstCommand = performCommitAndCaptureCommand();
 
       // Verify the first commit completed successfully
-      offsetManager.notifyCommitComplete(firstCommand.getCommitId(), true);
+      offsetManager.notifyCommitComplete(firstCommand.commitId(), true);
 
       // Verify partition state after first commit
       assertEventually(
@@ -112,7 +111,7 @@ class OffsetManagerTest {
       final var secondCommand = performCommitAndCaptureCommand();
 
       // Complete the second commit
-      offsetManager.notifyCommitComplete(secondCommand.getCommitId(), true);
+      offsetManager.notifyCommitComplete(secondCommand.commitId(), true);
 
       // Verify partition state after second commit
       assertEventually(
@@ -142,7 +141,7 @@ class OffsetManagerTest {
       final var firstCommand = performCommitAndCaptureCommand();
 
       // Verify the commit completed successfully
-      offsetManager.notifyCommitComplete(firstCommand.getCommitId(), true);
+      offsetManager.notifyCommitComplete(firstCommand.commitId(), true);
 
       // Verify the partition state after commit
       assertEventually(
@@ -170,7 +169,7 @@ class OffsetManagerTest {
       final var firstCommand = performCommitAndCaptureCommand();
 
       // Verify the commit completed successfully
-      offsetManager.notifyCommitComplete(firstCommand.getCommitId(), true);
+      offsetManager.notifyCommitComplete(firstCommand.commitId(), true);
 
       // Verify the partition state after commit
       assertEventually(
@@ -242,8 +241,9 @@ class OffsetManagerTest {
         // Poll the command and simulate commitSync
         final var command = commandQueue.poll(1, TimeUnit.SECONDS);
         assertNotNull(command, "Should have generated a commit command");
-        mockConsumer.commitSync(command.getOffsets());
-        offsetManager.notifyCommitComplete(command.getCommitId(), true);
+        final var commitCmd = assertInstanceOf(ConsumerCommand.CommitOffsets.class, command);
+        mockConsumer.commitSync(commitCmd.offsets());
+        offsetManager.notifyCommitComplete(commitCmd.commitId(), true);
 
         // Verify the correct offset committed
         verify(mockConsumer).commitSync(offsetCaptor.capture());
@@ -278,11 +278,11 @@ class OffsetManagerTest {
       });
 
       // Get the command
-      final var command = pollCommand(Duration.ofSeconds(2));
+      final var command = pollCommitCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should generate a commit command");
 
       // Simulate failure by completing the future with false
-      offsetManager.notifyCommitComplete(command.getCommitId(), false);
+      offsetManager.notifyCommitComplete(command.commitId(), false);
 
       // Assert - the commit should return false but not throw
       final var result = commitFuture.get(2, TimeUnit.SECONDS);
@@ -309,11 +309,11 @@ class OffsetManagerTest {
       });
 
       // Get command from the queue
-      final var command = pollCommand(Duration.ofSeconds(2));
+      final var command = pollCommitCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command");
 
       // Simulate consumer closed exception
-      offsetManager.notifyCommitComplete(command.getCommitId(), false);
+      offsetManager.notifyCommitComplete(command.commitId(), false);
 
       // Assert - should handle gracefully
       final var result = commitFuture.get(2, TimeUnit.SECONDS);
@@ -326,8 +326,7 @@ class OffsetManagerTest {
     @Test
     void shouldHandleAsyncCommitFailures() throws Exception {
       // Create a manager with a very short commit interval
-      final var asyncManager = OffsetManager
-        .builder(mockConsumer)
+      final var asyncManager = OffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(50))
         .build();
@@ -342,19 +341,19 @@ class OffsetManagerTest {
         asyncManager.markOffsetProcessed(record);
 
         // Verify a command was added to the queue
-        final var command = pollCommand(Duration.ofSeconds(2));
+        final var command = pollCommitCommand(Duration.ofSeconds(2));
         assertNotNull(command, "Should have generated a commit command");
-        assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
+        assertInstanceOf(ConsumerCommand.CommitOffsets.class, command, "Command should be of type COMMIT_OFFSETS");
 
         // Simulate a commit failure
-        asyncManager.notifyCommitComplete(command.getCommitId(), false);
+        asyncManager.notifyCommitComplete(command.commitId(), false);
       } finally {
         // Clean up - should not throw even after failure
         assertDoesNotThrow(asyncManager::close);
 
         // Get and complete the final commit command during close
-        final var closeCommand = pollCommand(Duration.ofSeconds(1));
-        if (closeCommand != null) asyncManager.notifyCommitComplete(closeCommand.getCommitId(), true);
+        final var closeCommand = pollCommitCommand(Duration.ofSeconds(1));
+        if (closeCommand != null) asyncManager.notifyCommitComplete(closeCommand.commitId(), true);
       }
     }
   }
@@ -373,8 +372,8 @@ class OffsetManagerTest {
       assertDoesNotThrow(
         () -> {
           final var closeFuture = CompletableFuture.runAsync(offsetManager::close);
-          final var command = pollCommand(Duration.ofSeconds(2));
-          if (command != null) offsetManager.notifyCommitComplete(command.getCommitId(), false);
+          final var command = pollCommitCommand(Duration.ofSeconds(2));
+          if (command != null) offsetManager.notifyCommitComplete(command.commitId(), false);
           closeFuture.get(2, TimeUnit.SECONDS);
         },
         "Should close gracefully even when final commit fails"
@@ -422,12 +421,12 @@ class OffsetManagerTest {
       final var closeFuture = CompletableFuture.runAsync(offsetManager::close);
 
       // Verify a command was added to the queue
-      final var command = pollCommand(Duration.ofSeconds(2));
+      final var command = pollCommitCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command during close");
-      assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
+      assertInstanceOf(ConsumerCommand.CommitOffsets.class, command, "Command should be of type COMMIT_OFFSETS");
 
       // Simulate successful commit completion
-      offsetManager.notifyCommitComplete(command.getCommitId(), true);
+      offsetManager.notifyCommitComplete(command.commitId(), true);
 
       // Wait for close to complete
       closeFuture.get(2, TimeUnit.SECONDS);
@@ -446,8 +445,7 @@ class OffsetManagerTest {
     @Test
     void shouldAutomaticallyCommitAtInterval() throws Exception {
       // Create a manager with a short commit interval
-      final var autoCommitManager = OffsetManager
-        .builder(mockConsumer)
+      final var autoCommitManager = OffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(50))
         .build();
@@ -462,17 +460,17 @@ class OffsetManagerTest {
         autoCommitManager.markOffsetProcessed(record);
 
         // Verify a command was added to the queue
-        final var command = pollCommand(Duration.ofSeconds(2));
+        final var command = pollCommitCommand(Duration.ofSeconds(2));
         assertNotNull(command, "Should have generated a commit command");
-        assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
-        assertNotNull(command.getOffsets(), "Command should contain offsets");
-        assertTrue(command.getOffsets().containsKey(PARTITION), "Command should contain our partition");
+        assertInstanceOf(ConsumerCommand.CommitOffsets.class, command, "Command should be of type COMMIT_OFFSETS");
+        assertNotNull(command.offsets(), "Command should contain offsets");
+        assertTrue(command.offsets().containsKey(PARTITION), "Command should contain our partition");
 
-        autoCommitManager.notifyCommitComplete(command.getCommitId(), true);
+        autoCommitManager.notifyCommitComplete(command.commitId(), true);
       } finally {
         autoCommitManager.close();
-        final var closeCommand = pollCommand(Duration.ofSeconds(1));
-        if (closeCommand != null) autoCommitManager.notifyCommitComplete(closeCommand.getCommitId(), true);
+        final var closeCommand = pollCommitCommand(Duration.ofSeconds(1));
+        if (closeCommand != null) autoCommitManager.notifyCommitComplete(closeCommand.commitId(), true);
       }
     }
 
@@ -493,18 +491,18 @@ class OffsetManagerTest {
       });
 
       // Get the commit command from the queue
-      final var command = pollCommand(Duration.ofSeconds(2));
+      final var command = pollCommitCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command");
 
       // Simulate successful commit completion
-      offsetManager.notifyCommitComplete(command.getCommitId(), true);
+      offsetManager.notifyCommitComplete(command.commitId(), true);
 
       // Get the result and verify
       final var result = commitFuture.get(1, TimeUnit.SECONDS);
       assertTrue(result, "Commit should succeed with timeout");
 
       // Verify the offset was correctly committed
-      final var offsets = command.getOffsets();
+      final var offsets = command.offsets();
       assertEquals(102L, offsets.get(PARTITION).offset(), "Should commit correct offset");
     }
   }
@@ -529,18 +527,18 @@ class OffsetManagerTest {
       });
 
       // Get and verify the command
-      final var command = pollCommand(Duration.ofSeconds(2));
+      final var command = pollCommitCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command");
 
       // Complete the commit successfully
-      offsetManager.notifyCommitComplete(command.getCommitId(), true);
+      offsetManager.notifyCommitComplete(command.commitId(), true);
 
       // Assert
       final var result = commitFuture.get(2, TimeUnit.SECONDS);
       assertTrue(result, "Commit should succeed");
 
       // Verify the offset in the commit command
-      final var offsets = command.getOffsets();
+      final var offsets = command.offsets();
       assertEquals(100L, offsets.get(PARTITION).offset(), "Should commit exactly the processed offset (99+1)");
     }
 
@@ -572,18 +570,18 @@ class OffsetManagerTest {
       });
 
       // Get and verify command
-      final var command = pollCommand(Duration.ofSeconds(2));
+      final var command = pollCommitCommand(Duration.ofSeconds(2));
       assertNotNull(command, "Should have generated a commit command");
-      assertEquals(ConsumerCommand.COMMIT_OFFSETS, command, "Command should be of type COMMIT_OFFSETS");
+      assertInstanceOf(ConsumerCommand.CommitOffsets.class, command, "Command should be of type COMMIT_OFFSETS");
 
       // Verify the offsets in the command
-      var offsets = command.getOffsets();
+      var offsets = command.offsets();
       assertNotNull(offsets, "Command should contain offsets");
       assertTrue(offsets.containsKey(PARTITION), "Command should contain our partition");
       assertEquals(102L, offsets.get(PARTITION).offset(), "Should deduplicate tracked offsets");
 
       // Complete the commit
-      offsetManager.notifyCommitComplete(command.getCommitId(), true);
+      offsetManager.notifyCommitComplete(command.commitId(), true);
 
       // Assert commit completed successfully
       final var result = commitFuture.get(2, TimeUnit.SECONDS);
@@ -612,10 +610,10 @@ class OffsetManagerTest {
       final var command = performCommitAndCaptureCommand();
 
       // Simulate successful commit
-      offsetManager.notifyCommitComplete(command.getCommitId(), true);
+      offsetManager.notifyCommitComplete(command.commitId(), true);
 
       // Assert - check the command's offsets
-      final var committedOffsets = command.getOffsets();
+      final var committedOffsets = command.offsets();
       assertEquals(2, committedOffsets.size(), "Should commit for both partitions");
       assertEquals(102L, committedOffsets.get(partition0).offset(), "Should commit correct offset for partition 0");
       assertEquals(202L, committedOffsets.get(partition1).offset(), "Should commit correct offset for partition 1");
@@ -628,8 +626,7 @@ class OffsetManagerTest {
     @Test
     void shouldHandleConcurrentAccess() throws Exception {
       // Use a manager with a shorter interval for this test
-      final var concurrentManager = OffsetManager
-        .builder(mockConsumer)
+      final var concurrentManager = OffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(500))
         .build();
@@ -677,9 +674,9 @@ class OffsetManagerTest {
           }
         });
 
-        final var command = pollCommand(Duration.ofSeconds(2));
+        final var command = pollCommitCommand(Duration.ofSeconds(2));
         assertNotNull(command, "Should generate a commit command after concurrent processing");
-        concurrentManager.notifyCommitComplete(command.getCommitId(), true);
+        concurrentManager.notifyCommitComplete(command.commitId(), true);
         assertTrue(commitFuture.get(2, TimeUnit.SECONDS), "Final commit should complete successfully");
       } finally {
         concurrentManager.close();
@@ -694,8 +691,7 @@ class OffsetManagerTest {
     void shouldRespectBuilderConfigurations() {
       // Create a manager with custom configuration
       final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
-      final var customManager = OffsetManager
-        .builder(mockConsumer)
+      final var customManager = OffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(200))
         .build();
@@ -709,7 +705,7 @@ class OffsetManagerTest {
     }
   }
 
-  private ConsumerCommand performCommitAndCaptureCommand() throws Exception {
+  private ConsumerCommand.CommitOffsets performCommitAndCaptureCommand() {
     // Start the commit operation and capture the command produced for it.
     CompletableFuture.runAsync(() -> {
       try {
@@ -719,14 +715,15 @@ class OffsetManagerTest {
       }
     });
 
-    final var command = pollCommand(Duration.ofSeconds(3));
+    final var command = pollCommitCommand(Duration.ofSeconds(3));
     assertNotNull(command, "Commit command should be generated");
     return command;
   }
 
-  private ConsumerCommand pollCommand(final Duration timeout) {
+  private ConsumerCommand.CommitOffsets pollCommitCommand(final Duration timeout) {
     try {
-      return commandQueue.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
+      final var command = commandQueue.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
+      return command instanceof ConsumerCommand.CommitOffsets co ? co : null;
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       return null;

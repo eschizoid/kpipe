@@ -13,10 +13,10 @@ import java.util.function.Function;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
+import org.kpipe.consumer.ConsumerCommand;
 import org.kpipe.consumer.ConsumerRunner;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.OffsetManager;
-import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
@@ -79,8 +79,7 @@ public class App implements AutoCloseable {
     final MetricsReporter consumerMetricsReporter,
     final MetricsReporter processorMetricsReporter
   ) {
-    return ConsumerRunner
-      .builder(kpipeConsumer)
+    return ConsumerRunner.builder(kpipeConsumer)
       .withStartAction(c -> {
         c.start();
         LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
@@ -108,8 +107,7 @@ public class App implements AutoCloseable {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    return KPipeConsumer
-      .<byte[], byte[]>builder()
+    return KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
       .withProcessor(createJsonProcessorPipeline(processorRegistry))

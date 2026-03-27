@@ -15,7 +15,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kpipe.consumer.enums.ConsumerCommand;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -101,9 +100,9 @@ class KPipeConsumerMockingTest {
 
     // Combine both counting down the latch and returning a value
     doAnswer(invocation -> {
-        latch.countDown();
-        return "processed-value";
-      })
+      latch.countDown();
+      return "processed-value";
+    })
       .when(processor)
       .apply(anyString());
 
@@ -123,9 +122,9 @@ class KPipeConsumerMockingTest {
 
     // Configure mock to throw exception and count down latch
     doAnswer(invocation -> {
-        latch.countDown();
-        throw new RuntimeException("Test exception");
-      })
+      latch.countDown();
+      throw new RuntimeException("Test exception");
+    })
       .when(processor)
       .apply(anyString());
 
@@ -189,9 +188,9 @@ class KPipeConsumerMockingTest {
 
     // Configure mock to always fail and count down latch
     doAnswer(inv -> {
-        latch.countDown();
-        throw new RuntimeException("Test exception");
-      })
+      latch.countDown();
+      throw new RuntimeException("Test exception");
+    })
       .when(processor)
       .apply(anyString());
 
@@ -239,9 +238,9 @@ class KPipeConsumerMockingTest {
 
     // Configure mock to fail and count down latch
     doAnswer(inv -> {
-        latch.countDown();
-        throw new RuntimeException("Test exception");
-      })
+      latch.countDown();
+      throw new RuntimeException("Test exception");
+    })
       .when(processor)
       .apply(anyString());
 
@@ -382,9 +381,9 @@ class KPipeConsumerMockingTest {
 
     // Configure mock to return success and count down latch
     doAnswer(inv -> {
-        latch.countDown();
-        return "processed-value";
-      })
+      latch.countDown();
+      return "processed-value";
+    })
       .when(processor)
       .apply(anyString());
 
@@ -429,9 +428,9 @@ class KPipeConsumerMockingTest {
 
     // Configure mock to throw exception and count down latch
     doAnswer(inv -> {
-        latch.countDown();
-        throw new RuntimeException("Test exception");
-      })
+      latch.countDown();
+      throw new RuntimeException("Test exception");
+    })
       .when(processor)
       .apply(anyString());
 
@@ -470,8 +469,7 @@ class KPipeConsumerMockingTest {
   void shouldNotCollectMetricsWhenDisabled() {
     // Create consumer with disabled metrics
     try (
-      final var consumer = KPipeConsumer
-        .<String, String>builder()
+      final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(s -> s)
@@ -493,8 +491,7 @@ class KPipeConsumerMockingTest {
     final var enableMetrics = true;
 
     // Create a consumer with all options
-    final var consumer = KPipeConsumer
-      .<String, String>builder()
+    final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(s -> s)
@@ -562,9 +559,9 @@ class KPipeConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     doAnswer(inv -> {
-        latch.countDown();
-        return null;
-      })
+      latch.countDown();
+      return null;
+    })
       .when(processor)
       .apply(null);
 
@@ -652,8 +649,8 @@ class KPipeConsumerMockingTest {
       offsetManager
     );
 
-    commandQueue.offer(ConsumerCommand.PAUSE);
-    commandQueue.offer(ConsumerCommand.RESUME);
+    commandQueue.offer(new ConsumerCommand.Pause());
+    commandQueue.offer(new ConsumerCommand.Resume());
 
     // Act
     functionalConsumer.processCommands();
@@ -695,12 +692,11 @@ class KPipeConsumerMockingTest {
     final var completeLatch = new CountDownLatch(1);
 
     // Mock processor that counts down startLatch and waits on completeLatch
-    when(processor.apply(anyString()))
-      .thenAnswer(inv -> {
-        startLatch.countDown();
-        completeLatch.await(5, TimeUnit.SECONDS);
-        return inv.getArgument(0);
-      });
+    when(processor.apply(anyString())).thenAnswer(inv -> {
+      startLatch.countDown();
+      completeLatch.await(5, TimeUnit.SECONDS);
+      return inv.getArgument(0);
+    });
 
     // Process records
     CompletableFuture.runAsync(() -> functionalConsumer.executeProcessRecords(records));
@@ -765,8 +761,7 @@ class KPipeConsumerMockingTest {
   @Test
   void stateShouldTransitionCorrectlyDuringLifecycle() throws InterruptedException {
     // Create consumer
-    final var functionalConsumer = KPipeConsumer
-      .<String, String>builder()
+    final var functionalConsumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(s -> s)
@@ -822,9 +817,9 @@ class KPipeConsumerMockingTest {
 
     // Configure the processor to always fail
     doAnswer(inv -> {
-        latch.countDown();
-        throw new RuntimeException("Expected test exception");
-      })
+      latch.countDown();
+      throw new RuntimeException("Expected test exception");
+    })
       .when(processor)
       .apply(anyString());
 
@@ -894,7 +889,7 @@ class KPipeConsumerMockingTest {
 
       // Simulate a command to track offset
       var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
-      commandQueue.offer(ConsumerCommand.TRACK_OFFSET.withRecord(record));
+      commandQueue.offer(new ConsumerCommand.TrackOffset(record));
 
       // Process commands
       functionalConsumer.processCommands();
@@ -903,7 +898,7 @@ class KPipeConsumerMockingTest {
       verify(offsetManager).trackOffset(record);
 
       // Simulate processing completion
-      commandQueue.offer(ConsumerCommand.MARK_OFFSET_PROCESSED.withRecord(record));
+      commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
 
       // Process commands
       functionalConsumer.processCommands();
@@ -940,7 +935,7 @@ class KPipeConsumerMockingTest {
     offsets.put(new TopicPartition(TOPIC, PARTITION), new OffsetAndMetadata(123));
 
     // Send commit command
-    commandQueue.offer(ConsumerCommand.COMMIT_OFFSETS.withOffsets(offsets).withCommitId(commitId));
+    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, commitId));
 
     // Process commands
     functionalConsumer.processCommands();
@@ -979,7 +974,7 @@ class KPipeConsumerMockingTest {
     offsets.put(new TopicPartition(TOPIC, PARTITION), new OffsetAndMetadata(123));
 
     // Send commit command
-    commandQueue.offer(ConsumerCommand.COMMIT_OFFSETS.withOffsets(offsets).withCommitId(commitId));
+    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, commitId));
 
     // Process commands
     functionalConsumer.processCommands();
@@ -1069,8 +1064,7 @@ class KPipeConsumerMockingTest {
       final OffsetManager<K, V> mockOffsetManager
     ) {
       super(
-        KPipeConsumer
-          .<K, V>builder()
+        KPipeConsumer.<K, V>builder()
           .withProperties(props)
           .withTopic(topic)
           .withProcessor(processor)

@@ -1,12 +1,11 @@
 package org.kpipe.consumer;
 
-import static java.util.logging.Level.WARNING;
+import static java.lang.System.Logger.*;
 
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -14,7 +13,6 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.kpipe.consumer.enums.ConsumerCommand;
 import org.kpipe.consumer.enums.OffsetState;
 
 /// Manages Kafka consumer offsets for parallel processing scenarios.
@@ -60,7 +58,7 @@ import org.kpipe.consumer.enums.OffsetState;
 /// @param <V> The type of the record value
 public class OffsetManager<K, V> implements AutoCloseable {
 
-  private static final Logger LOGGER = Logger.getLogger(OffsetManager.class.getName());
+  private static final System.Logger LOGGER = System.getLogger(OffsetManager.class.getName());
 
   private final Consumer<K, V> kafkaConsumer;
   private final ExecutorService executorService;
@@ -143,20 +141,18 @@ public class OffsetManager<K, V> implements AutoCloseable {
     if (state.get() == OffsetState.STOPPED) throw new IllegalStateException("Cannot restart a stopped OffsetManager");
 
     if (state.compareAndSet(OffsetState.CREATED, OffsetState.RUNNING)) {
-      scheduler =
-        Executors.newSingleThreadScheduledExecutor(r ->
-          Thread.ofPlatform().daemon().name("offset-commit-scheduler").unstarted(r)
-        );
+      scheduler = Executors.newSingleThreadScheduledExecutor(r ->
+        Thread.ofPlatform().daemon().name("offset-commit-scheduler").unstarted(r)
+      );
 
-      scheduledCommitTask =
-        scheduler.scheduleAtFixedRate(
-          this::commitSafeOffsets,
-          commitInterval.toMillis(),
-          commitInterval.toMillis(),
-          TimeUnit.MILLISECONDS
-        );
+      scheduledCommitTask = scheduler.scheduleAtFixedRate(
+        this::commitSafeOffsets,
+        commitInterval.toMillis(),
+        commitInterval.toMillis(),
+        TimeUnit.MILLISECONDS
+      );
 
-      LOGGER.info("OffsetManager started with commit interval of %s".formatted(commitInterval));
+      LOGGER.log(Level.INFO, "OffsetManager started with commit interval of %s".formatted(commitInterval));
     }
 
     return this;
@@ -199,9 +195,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
   ///
   /// @param record The consumer record that was processed
   public void markOffsetProcessed(final ConsumerRecord<K, V> record) {
-    if (state.get() == OffsetState.STOPPED) {
-      return;
-    }
+    if (state.get() == OffsetState.STOPPED) return;
     final var partition = new TopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
 
@@ -223,7 +217,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
       commitSyncAndWait(60);
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      LOGGER.log(WARNING, "Interrupted while committing offsets", e);
+      LOGGER.log(Level.WARNING, "Interrupted while committing offsets", e);
     }
   }
 
@@ -238,7 +232,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
       stopScheduler();
     } finally {
       state.set(OffsetState.STOPPED);
-      LOGGER.info("OffsetManager stopped");
+      LOGGER.log(Level.INFO, "OffsetManager stopped");
     }
 
     return this;
@@ -282,8 +276,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
   ///
   /// @return Map of partition to offset metadata ready for committing
   private Map<TopicPartition, OffsetAndMetadata> prepareOffsetsToCommit() {
-    return Stream
-      .concat(pendingOffsets.keySet().stream(), highestProcessedOffsets.keySet().stream())
+    return Stream.concat(pendingOffsets.keySet().stream(), highestProcessedOffsets.keySet().stream())
       .distinct()
       .flatMap(partition -> {
         final var pending = pendingOffsets.get(partition);
@@ -307,12 +300,12 @@ public class OffsetManager<K, V> implements AutoCloseable {
     final var future = new CompletableFuture<Boolean>();
     commitFutures.put(commitId, future);
 
-    commandQueue.offer(ConsumerCommand.COMMIT_OFFSETS.withOffsets(offsetsToCommit).withCommitId(commitId));
+    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsetsToCommit, commitId));
 
     try {
       return future.get(timeoutSeconds, TimeUnit.SECONDS);
     } catch (final ExecutionException | TimeoutException e) {
-      LOGGER.log(WARNING, "Error waiting for offset commit", e);
+      LOGGER.log(Level.WARNING, "Error waiting for offset commit", e);
       return false;
     } finally {
       commitFutures.remove(commitId);
@@ -404,9 +397,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
     if (
       !state.compareAndSet(OffsetState.RUNNING, OffsetState.STOPPING) &&
       !state.compareAndSet(OffsetState.CREATED, OffsetState.STOPPING)
-    ) {
-      return;
-    }
+    ) return;
 
     try {
       stopScheduler();
@@ -415,9 +406,9 @@ public class OffsetManager<K, V> implements AutoCloseable {
         performCommit(offsetsToCommit, 5);
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
-        LOGGER.log(WARNING, "Interrupted during final commit", e);
+        LOGGER.log(Level.WARNING, "Interrupted during final commit", e);
       } catch (final Exception e) {
-        LOGGER.log(WARNING, "Error during final offset commit", e);
+        LOGGER.log(Level.WARNING, "Error during final offset commit", e);
       }
     } finally {
       cleanup();
@@ -442,7 +433,7 @@ public class OffsetManager<K, V> implements AutoCloseable {
       if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) executorService.shutdownNow();
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      LOGGER.log(WARNING, "Interrupted while waiting for executor shutdown", e);
+      LOGGER.log(Level.WARNING, "Interrupted while waiting for executor shutdown", e);
       executorService.shutdownNow();
     }
   }
