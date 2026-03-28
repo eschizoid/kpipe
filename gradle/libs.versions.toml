@@ -6,7 +6,8 @@ slf4j = "2.0.9"
 junit = "5.10.0"
 junitPlatform = "1.10.0"
 mockito = "5.18.0"
-testcontainers = "2.0.3"
+testcontainers = "2.0.4"
+postgresql = "42.7.3"
 parallelConsumer = "0.5.3.0"
 
 [libraries]
@@ -31,6 +32,7 @@ mockitoJunitJupiter = { module = "org.mockito:mockito-junit-jupiter", version.re
 
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainersJunitJupiter = { module = "org.testcontainers:testcontainers-junit-jupiter", version.ref = "testcontainers" }
+testcontainersPostgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
 testcontainersKafka = { module = "org.testcontainers:testcontainers-kafka", version.ref = "testcontainers" }
-
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 parallelConsumerCore = { module = "io.confluent.parallelconsumer:parallel-consumer-core", version.ref = "parallelConsumer" }

@@ -140,14 +140,14 @@ optimizes for throughput:
 
 This approach significantly reduces CPU overhead and GC pressure.
 
-### 2. Virtual Threads
+### 2. Virtual Threads and Scoped Values
 
-By default, KPipe uses **Java Virtual Threads** (Project Loom) to process messages. This provides a "thread-per-record"
-model that excels at I/O-bound tasks (e.g., enrichment via REST/DB).
+KPipe uses **Java Virtual Threads** (Project Loom) for high-concurrency message processing.
 
-- **I/O Bound**: Use the default parallel mode with virtual threads for maximum concurrency.
-- **Sequential**: Use `.withSequentialProcessing(true)` for stateful operations where strict FIFO ordering per
-  partition is required.
+- **Efficient Resource Reuse**: Heavy objects like `Schema.Parser`, `ByteArrayOutputStream`, and Avro encoders are 
+  cached per virtual thread using `ScopedValue`, which is significantly more lightweight than `ThreadLocal`.
+- **Thread-Per-Record**: Each message is processed in its own virtual thread, allowing KPipe to scale to millions of 
+  concurrent operations without the overhead of complex thread pools.
 
 ### 3. Reliable "At-Least-Once" Delivery
 
@@ -224,9 +224,7 @@ Extend the registry like this:
   final var uppercaseKey = RegistryKey.json("uppercase");
   registry.registerOperator(uppercaseKey, map -> {
       final var value = map.get("text");
-      if (value instanceof String text) {
-          map.put("text", text.toUpperCase());
-      }
+      if (value instanceof String text) map.put("text", text.toUpperCase());
       return map;
   });
 
@@ -487,6 +485,25 @@ final var safeKey = RegistryKey.of("safeDatabase", byte[].class);
 registry.register(safeKey, String.class, safeSink);
 
 final var safePipeline = registry.pipeline(String.class, MessageSinkRegistry.JSON_LOGGING, safeKey);
+```
+
+### Composite Sink (Broadcasting)
+
+You can broadcast processed messages to multiple destinations simultaneously using `CompositeMessageSink`. 
+Failures in one sink (e.g., a database timeout) do not prevent other sinks from receiving the data.
+
+```java
+// Create multiple sinks
+final var postgresSink = new MyPostgresSink();
+final var consoleSink = new JsonConsoleSink<byte[], byte[]>();
+
+// Broadcast to both
+final var compositeSink = new CompositeMessageSink<>(List.of(postgresSink, consoleSink));
+
+// Use with consumer
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+  .withMessageSink(compositeSink)
+  .build();
 ```
 
 ---
@@ -812,11 +829,10 @@ The library provides a built-in `when()` method for conditional processing:
   );
   ```
 
-### Thread-Safety Considerations
-- Message processors should be stateless and thread-safe
-- Avoid shared mutable state between processors
-- Use immutable data structures where possible
-- For processors with side effects (like database calls), consider using thread-local variables
+### Thread-Safety and Resource Management
+- Message processors should be stateless and thread-safe.
+- KPipe automatically handles resource reuse via `ScopedValue`. Avoid manual `ThreadLocal` usage.
+- For processors with side effects (like database calls), ensure they are compatible with high-concurrency virtual threads.
 
 ### Performance Optimization
 - Register frequently used processor combinations as single processors

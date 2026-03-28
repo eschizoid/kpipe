@@ -43,7 +43,7 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
   /// @param <T> The POJO type
   /// @param clazz The POJO class
   /// @return A new MessageFormat for the specified POJO type
-  static <T> MessageFormat<T> pojo(Class<T> clazz) {
+  static <T> MessageFormat<T> pojo(final Class<T> clazz) {
     return new PojoFormat<>(clazz);
   }
 
@@ -72,7 +72,7 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
   ///
   /// @param predicate Condition to test schemas against
   /// @return List of matching schema information
-  List<SchemaInfo> findSchemas(Predicate<SchemaInfo> predicate);
+  List<SchemaInfo> findSchemas(final Predicate<SchemaInfo> predicate);
 
   /// Serializes the given data to a byte array.
   ///
@@ -108,8 +108,7 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
       if (location.startsWith("http://") || location.startsWith("https://")) {
         final HttpResponse<String> response;
         try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
-          final var request = HttpRequest
-            .newBuilder()
+          final var request = HttpRequest.newBuilder()
             .uri(URI.create(location))
             .timeout(Duration.ofSeconds(10))
             .GET()
@@ -131,13 +130,12 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
 
             if (result == null) throw new IOException("Failed to deserialize schema registry response");
 
-            if (result.containsKey("schema")) return (String) result.get("schema"); else throw new IOException(
-              "Schema field not found in response"
-            );
+            if (result.containsKey("schema")) return (String) result.get("schema");
+            else throw new IOException("Schema field not found in response");
           } catch (final Exception e) {
             throw new IOException(
               "Error parsing schema registry response: " +
-              responseBody.substring(0, Math.min(100, responseBody.length())),
+                responseBody.substring(0, Math.min(100, responseBody.length())),
               e
             );
           }

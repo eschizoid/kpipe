@@ -35,8 +35,7 @@ class AppIntegrationTest {
   @Container
   static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
     DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_PLATFORM_VERSION))
-  )
-    .withStartupAttempts(3);
+  ).withStartupAttempts(3);
 
   @Test
   void testJsonAppEndToEnd() throws Exception {
@@ -59,16 +58,14 @@ class AppIntegrationTest {
       app.getSinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, byte[].class, capturingSink);
 
       // Start the app in a virtual thread
-      final var appThread = Thread
-        .ofVirtual()
-        .start(() -> {
-          try {
-            app.start();
-            app.awaitShutdown();
-          } catch (final Exception e) {
-            log.log(Level.ERROR, "App error", e);
-          }
-        });
+      final var appThread = Thread.ofVirtual().start(() -> {
+        try {
+          app.start();
+          app.awaitShutdown();
+        } catch (final Exception e) {
+          log.log(Level.ERROR, "App error", e);
+        }
+      });
 
       // Produce a message
       final var producerProps = new Properties();
@@ -122,7 +119,7 @@ class AppIntegrationTest {
     private final List<byte[]> messages = new ArrayList<>();
 
     @Override
-    public synchronized void send(ConsumerRecord<byte[], byte[]> record, byte[] processedValue) {
+    public synchronized void send(final ConsumerRecord<byte[], byte[]> record, final byte[] processedValue) {
       messages.add(processedValue);
     }
 

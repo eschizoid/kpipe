@@ -33,6 +33,7 @@ public class JsonMessageProcessor {
   private static final Logger LOGGER = System.getLogger(JsonMessageProcessor.class.getName());
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
   private static final byte[] EMPTY_JSON = "{}".getBytes(StandardCharsets.UTF_8);
+  private static final ScopedValue<ByteArrayOutputStream> OUTPUT_STREAM_CACHE = ScopedValue.newInstance();
 
   /// Creates an operator that adds a field with specified key and value to a JSON map.
   ///
@@ -99,9 +100,7 @@ public class JsonMessageProcessor {
     final Function<Object, Object> transformer
   ) {
     return obj -> {
-      if (obj.containsKey(field)) {
-        obj.put(field, transformer.apply(obj.get(field)));
-      }
+      if (obj.containsKey(field)) obj.put(field, transformer.apply(obj.get(field)));
       return obj;
     };
   }
@@ -142,7 +141,10 @@ public class JsonMessageProcessor {
     final Function<Map<String, Object>, Map<String, Object>> processor
   ) {
     if (jsonBytes == null || jsonBytes.length == 0) return EMPTY_JSON;
-    try (final var input = new ByteArrayInputStream(jsonBytes); final var output = new ByteArrayOutputStream()) {
+    try (final var input = new ByteArrayInputStream(jsonBytes)) {
+      final var output = OUTPUT_STREAM_CACHE.isBound() ? OUTPUT_STREAM_CACHE.get() : new ByteArrayOutputStream();
+      output.reset();
+
       final var parsed = DSL_JSON.deserialize(Map.class, input);
       if (parsed == null) return EMPTY_JSON;
       @SuppressWarnings("unchecked")
@@ -153,6 +155,19 @@ public class JsonMessageProcessor {
     } catch (final Exception e) {
       LOGGER.log(Level.WARNING, "Error processing JSON", e);
       return EMPTY_JSON;
+    }
+  }
+
+  /// Wraps a callable in a scope with JSON caches bound.
+  ///
+  /// @param <T> The return type
+  /// @param operation The operation to perform
+  /// @return The result of the operation
+  public static <T> T inScopedCaches(final ScopedValue.CallableOp<T, Exception> operation) {
+    try {
+      return ScopedValue.where(OUTPUT_STREAM_CACHE, new ByteArrayOutputStream(8192)).call(operation);
+    } catch (final Exception e) {
+      throw new RuntimeException("Error executing in JSON scoped caches", e);
     }
   }
 }

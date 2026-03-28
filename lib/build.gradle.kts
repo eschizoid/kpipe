@@ -59,6 +59,11 @@ dependencies {
     testImplementation(libsCatalog.findLibrary("mockitoJunitJupiter").get())
 
     testImplementation(libsCatalog.findLibrary("slf4jSimple").get())
+
+    testImplementation(libsCatalog.findLibrary("testcontainers").get())
+    testImplementation(libsCatalog.findLibrary("testcontainersJunitJupiter").get())
+    testImplementation(libsCatalog.findLibrary("testcontainersPostgresql").get())
+    testImplementation(libsCatalog.findLibrary("postgresql").get())
 }
 
 tasks.test {
@@ -176,7 +181,7 @@ jreleaser {
                     stagingRepository("build/staging-deploy")
                     enabled.set(true)
                     sign.set(false)
-                    maxRetries.set(180)
+                    maxRetries.set(360)
                 }
             }
         }

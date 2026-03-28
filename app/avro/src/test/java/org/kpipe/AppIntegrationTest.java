@@ -77,8 +77,7 @@ class AppIntegrationTest {
   @Container
   static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
     DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_PLATFORM_VERSION))
-  )
-    .withStartupAttempts(3);
+  ).withStartupAttempts(3);
 
   @BeforeAll
   static void startSchemaRegistryStub() throws Exception {
@@ -123,16 +122,14 @@ class AppIntegrationTest {
       app.getSinkRegistry().register(MessageSinkRegistry.AVRO_LOGGING, byte[].class, capturingSink);
 
       // Start the app
-      final var appThread = Thread
-        .ofVirtual()
-        .start(() -> {
-          try {
-            app.start();
-            app.awaitShutdown();
-          } catch (final Exception e) {
-            log.log(Level.ERROR, "App error", e);
-          }
-        });
+      final var appThread = Thread.ofVirtual().start(() -> {
+        try {
+          app.start();
+          app.awaitShutdown();
+        } catch (final Exception e) {
+          log.log(Level.ERROR, "App error", e);
+        }
+      });
 
       final var producerProps = new Properties();
       producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
@@ -256,8 +253,7 @@ class AppIntegrationTest {
       payload = out.toByteArray();
     }
 
-    final var request = HttpRequest
-      .newBuilder()
+    final var request = HttpRequest.newBuilder()
       .uri(URI.create("%s%s".formatted(schemaRegistryUrl, SCHEMA_VERSIONS_PATH)))
       .header("Content-Type", SCHEMA_CONTENT_TYPE)
       .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
