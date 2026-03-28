@@ -18,6 +18,9 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 public record CompositeMessageSink<K, V>(List<MessageSink<K, V>> sinks) implements MessageSink<K, V> {
   private static final Logger LOGGER = System.getLogger(CompositeMessageSink.class.getName());
 
+  /// Constructs a CompositeMessageSink with the specified list of sinks.
+  ///
+  /// @param sinks the list of sinks to which records will be broadcast
   public CompositeMessageSink {
     sinks = List.copyOf(sinks);
   }

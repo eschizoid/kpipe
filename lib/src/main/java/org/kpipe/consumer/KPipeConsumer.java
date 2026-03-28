@@ -41,7 +41,7 @@ import org.kpipe.sink.MessageSink;
 /// * Prevents data loss during parallel processing
 /// * Handles non-sequential offset completion safely
 ///
-/// When using an OffsetManager, auto-commit is automatically disabled since offset commits are
+/// When using an KafkaOffsetManager, auto-commit is automatically disabled since offset commits are
 /// managed explicitly.
 ///
 /// Example usage:
@@ -53,7 +53,7 @@ import org.kpipe.sink.MessageSink;
 ///     .withProcessor(value -> processValue(value))
 ///     .withRetry(3, Duration.ofSeconds(1))
 ///     .withSequentialProcessing(false) // Set to true for ordered processing
-///     .withOffsetManagerProvider(consumer -> OffsetManager.builder(consumer)
+///     .withOffsetManagerProvider(consumer -> KafkaOffsetManager.builder(consumer)
 ///         .withCommitInterval(Duration.ofSeconds(30))
 ///         .withCommandQueue(commandQueue)
 ///         .build())

@@ -16,7 +16,7 @@ import org.kpipe.config.KafkaConsumerConfig;
 import org.kpipe.consumer.ConsumerCommand;
 import org.kpipe.consumer.ConsumerRunner;
 import org.kpipe.consumer.KPipeConsumer;
-import org.kpipe.consumer.OffsetManager;
+import org.kpipe.consumer.KafkaOffsetManager;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
@@ -122,17 +122,17 @@ public class App implements AutoCloseable {
       .build();
   }
 
-  /// Creates an OffsetManager provider function that can be used with KPipeConsumer builder
+  /// Creates an KafkaOffsetManager provider function that can be used with KPipeConsumer builder
   ///
   /// @param commitInterval The interval at which to automatically commit offsets
   /// @param commandQueue The command queue
-  /// @return A function that creates an OffsetManager when given a Consumer
-  private static Function<Consumer<byte[], byte[]>, OffsetManager<byte[], byte[]>> createOffsetManagerProvider(
+  /// @return A function that creates an KafkaOffsetManager when given a Consumer
+  private static Function<Consumer<byte[], byte[]>, KafkaOffsetManager<byte[], byte[]>> createOffsetManagerProvider(
     final Duration commitInterval,
     final Queue<ConsumerCommand> commandQueue
   ) {
     return consumer ->
-      OffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
+      KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }
 
   /// Creates a message sink pipeline using the provided registry.

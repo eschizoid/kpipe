@@ -1,6 +1,6 @@
 package org.kpipe.consumer.enums;
 
-/// Represents the possible operational states of an OffsetManager.
+/// Represents the possible operational states of a KafkaOffsetManager.
 ///
 /// <p>The state transitions generally follow this sequence:
 ///
@@ -13,11 +13,11 @@ package org.kpipe.consumer.enums;
 ///
 /// <p>State transitions are atomic and thread-safe when managed properly.
 public enum OffsetState {
-  /// Initial state when the OffsetManager is created but not yet started. No offset tracking or
+  /// Initial state when the KafkaOffsetManager is created but not yet started. No offset tracking or
   /// committing occurs in this state.
   CREATED,
 
-  /// Active state when the OffsetManager is tracking and committing offsets. Periodic commit tasks
+  /// Active state when the KafkaOffsetManager is tracking and committing offsets. Periodic commit tasks
   /// are scheduled in this state.
   RUNNING,
 
@@ -25,7 +25,7 @@ public enum OffsetState {
   /// offsets are accepted.
   STOPPING,
 
-  /// Final state after the OffsetManager has been fully stopped. All resources have been released
+  /// Final state after the KafkaOffsetManager has been fully stopped. All resources have been released
   /// and no operations can be performed.
   STOPPED,
 }

@@ -13,7 +13,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.kpipe.consumer.enums.OffsetState;
 
 /// Implementation of Kafka's ConsumerRebalanceListener that handles partition rebalance events for
-/// the OffsetManager.
+/// the KafkaOffsetManager.
 ///
 /// <p>This listener manages offset tracking state during partition assignments and revocations,
 /// ensuring that:
@@ -25,7 +25,7 @@ import org.kpipe.consumer.enums.OffsetState;
 ///   <li>Memory is reclaimed for partitions no longer assigned
 /// </ul>
 ///
-/// <p>The listener coordinates with the OffsetManager to maintain accurate offset tracking during
+/// <p>The listener coordinates with the KafkaOffsetManager to maintain accurate offset tracking during
 /// consumer group rebalancing operations, preventing duplicate message processing or data loss when
 /// partitions are reassigned between consumer instances.
 ///

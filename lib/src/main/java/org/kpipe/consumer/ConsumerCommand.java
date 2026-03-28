@@ -19,12 +19,12 @@ public sealed interface ConsumerCommand {
   /// Close the consumer and release resources.
   record Close() implements ConsumerCommand {}
 
-  /// Track an offset in the OffsetManager.
+  /// Track an offset in the KafkaOffsetManager.
   ///
   /// @param record the record whose offset should be tracked
   record TrackOffset(ConsumerRecord<?, ?> record) implements ConsumerCommand {}
 
-  /// Mark an offset as processed in the OffsetManager.
+  /// Mark an offset as processed in the KafkaOffsetManager.
   ///
   /// @param record the record whose offset has been processed
   record MarkOffsetProcessed(ConsumerRecord<?, ?> record) implements ConsumerCommand {}

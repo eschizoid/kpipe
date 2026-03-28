@@ -37,7 +37,7 @@ class KPipeConsumerMockingTest {
   private Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler;
 
   @Mock
-  private OffsetManager<String, String> offsetManager;
+  private KafkaOffsetManager<String, String> offsetManager;
 
   @Captor
   private ArgumentCaptor<List<String>> topicCaptor;
@@ -1061,7 +1061,7 @@ class KPipeConsumerMockingTest {
       final Duration retryBackoff,
       final Consumer<KPipeConsumer.ProcessingError<K, V>> errorHandler,
       final Queue<ConsumerCommand> mockCommandQueue,
-      final OffsetManager<K, V> mockOffsetManager
+      final KafkaOffsetManager<K, V> mockOffsetManager
     ) {
       super(
         KPipeConsumer.<K, V>builder()
