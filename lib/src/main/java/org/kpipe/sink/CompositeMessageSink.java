@@ -15,6 +15,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 ///
 /// @param <K> the type of the record key
 /// @param <V> the type of the processed value
+/// @param sinks the list of sinks to which records will be broadcast
 public record CompositeMessageSink<K, V>(List<MessageSink<K, V>> sinks) implements MessageSink<K, V> {
   private static final Logger LOGGER = System.getLogger(CompositeMessageSink.class.getName());
 

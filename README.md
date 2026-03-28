@@ -153,14 +153,51 @@ KPipe uses **Java Virtual Threads** (Project Loom) for high-concurrency message 
 
 KPipe implements a **Lowest Pending Offset** strategy to ensure reliability even with parallel processing:
 
-- **In-Flight Tracking**: Every record's offset is tracked in a `ConcurrentSkipListSet` per partition.
+- **Pluggable Offset Management**: Use the `OffsetManager` interface to customize how offsets are stored (Kafka-based or external database).
+- **In-Flight Tracking**: Every record's offset is tracked in a `ConcurrentSkipListSet` per partition (in `KafkaOffsetManager`).
 - **No-Gap Commits**: Even if message 102 finishes before 101, offset 102 will **not** be committed until 101 is
   successfully processed.
 - **Crash Recovery**: If the consumer crashes, it will resume from the last committed "safe" offset. While this may
   result in some records being re-processed (standard "at-least-once" behavior), it guarantees no message is ever
   skipped.
 
-### 4. Error Handling & Retries
+### 4. External Offset Management
+
+While Kafka-based offset storage is the default, KPipe supports external storage (e.g., PostgreSQL) for **exactly-once processing** or specific architectural needs.
+
+1.  **Seek on Assignment**: When partitions are assigned, fetch the last processed offset from your database and call `consumer.seek(partition, offset + 1)`.
+2.  **Update on Processed**: Implement `markOffsetProcessed` to save the offset to the database.
+
+```java
+public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
+  private final Consumer<K, V> consumer;
+
+  // ... DB connection ...
+
+  @Override
+  public void markOffsetProcessed(ConsumerRecord<K, V> record) {
+    // SQL: UPDATE offsets SET offset = ? WHERE partition = ?
+  }
+
+  @Override
+  public ConsumerRebalanceListener createRebalanceListener() {
+    return new ConsumerRebalanceListener() {
+      @Override
+      public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+        for (var tp : partitions) {
+          long lastOffset = fetchFromDb(tp);
+          consumer.seek(tp, lastOffset + 1);
+        }
+      }
+      // ...
+    };
+  }
+  // ...
+}
+
+```
+
+### 5. Error Handling & Retries
 
 KPipe provides a robust, multi-layered error handling mechanism:
 
@@ -170,7 +207,7 @@ KPipe provides a robust, multi-layered error handling mechanism:
 - **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors with default
   values or logging, preventing a single malformed message from blocking the partition.
 
-### 5. Backpressure
+### 6. Backpressure
 
 When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe can automatically
 pause Kafka polling to prevent unbounded in-flight message growth.
@@ -200,7 +237,7 @@ final var consumer = KPipeConsumer.<String, String>builder()
 **Observability:** backpressure events are logged (WARNING on pause, INFO on resume) and tracked
 via two dedicated metrics: `backpressurePauseCount` and `backpressureTimeMs`.
 
-### 6. Graceful Shutdown & Interrupt Handling
+### 7. Graceful Shutdown & Interrupt Handling
 
 KPipe respects JVM signals and ensures timely shutdown without data loss:
 
@@ -643,7 +680,7 @@ public class KPipeApp implements AutoCloseable {
       .withMessageSink(sinkRegistry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(consumer -> 
-         OffsetManager.builder(consumer)
+         KafkaOffsetManager.builder(consumer)
           .withCommandQueue(commandQueue)
            .withCommitInterval(Duration.ofSeconds(30))
            .build())

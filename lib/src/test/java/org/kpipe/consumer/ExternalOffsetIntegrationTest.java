@@ -62,7 +62,12 @@ class ExternalOffsetIntegrationTest {
     private OffsetState state = OffsetState.CREATED;
     private final MockConsumer<K, V> consumer;
 
-    public PostgresOffsetManager(MockConsumer<K, V> consumer, String jdbcUrl, String username, String password) {
+    public PostgresOffsetManager(
+      final MockConsumer<K, V> consumer,
+      final String jdbcUrl,
+      final String username,
+      final String password
+    ) {
       this.consumer = consumer;
       this.jdbcUrl = jdbcUrl;
       this.username = username;
@@ -86,7 +91,6 @@ class ExternalOffsetIntegrationTest {
 
     @Override
     public void markOffsetProcessed(ConsumerRecord<K, V> record) {
-      System.out.println("[DEBUG_LOG] markOffsetProcessed: " + record.topic() + "-" + record.partition() + "@" + record.offset());
       try (
         final var conn = DriverManager.getConnection(jdbcUrl, username, password);
         final var stmt = conn.prepareStatement(
@@ -99,7 +103,6 @@ class ExternalOffsetIntegrationTest {
         stmt.setLong(3, record.offset());
         stmt.executeUpdate();
       } catch (SQLException e) {
-        System.err.println("[DEBUG_LOG] Failed to update offset in DB: " + e.getMessage());
         throw new RuntimeException("Failed to update offset in DB", e);
       }
     }
@@ -136,7 +139,7 @@ class ExternalOffsetIntegrationTest {
     }
 
     @Override
-    public void notifyCommitComplete(String id, boolean success) {}
+    public void notifyCommitComplete(final String id, final boolean success) {}
 
     @Override
     public OffsetState getState() {
@@ -159,7 +162,7 @@ class ExternalOffsetIntegrationTest {
     }
 
     // Test Helpers
-    public void setOffsetInDb(TopicPartition tp, long offset) throws SQLException {
+    public void setOffsetInDb(final TopicPartition tp, final long offset) throws SQLException {
       try (
         final var conn = DriverManager.getConnection(jdbcUrl, username, password);
         final var stmt = conn.prepareStatement(
@@ -173,7 +176,7 @@ class ExternalOffsetIntegrationTest {
       }
     }
 
-    public Long getOffsetFromDb(TopicPartition tp) throws SQLException {
+    public Long getOffsetFromDb(final TopicPartition tp) throws SQLException {
       try (
         final var conn = DriverManager.getConnection(jdbcUrl, username, password);
         final var stmt = conn.prepareStatement(
@@ -218,7 +221,7 @@ class ExternalOffsetIntegrationTest {
       .withOffsetManager(dbManager)
       .withProcessor(val -> val)
       .withSequentialProcessing(true)
-      .withMessageSink((record, val) -> {
+      .withMessageSink((record, _) -> {
         processedOffsets.add(record.offset());
         latch.countDown();
       })
@@ -228,22 +231,16 @@ class ExternalOffsetIntegrationTest {
     consumer.start();
 
     // Trigger partition assignment manually for MockConsumer
-    System.out.println("[DEBUG_LOG] Triggering rebalance for partitions: " + List.of(PARTITION));
     mc.rebalance(List.of(PARTITION));
 
     // 3. Populate Kafka with messages 0-9
-    System.out.println("[DEBUG_LOG] Adding records to mock consumer");
-    for (int i = 0; i < 10; i++) {
-      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
-    }
+    for (int i = 0; i < 10; i++) mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
 
     // 6. Verify processing starts from offset 5
-    System.out.println("[DEBUG_LOG] Waiting for latch...");
     assertTrue(
       latch.await(10, TimeUnit.SECONDS),
       "Consumer should process 5 remaining messages. Processed: %s".formatted(processedOffsets)
     );
-    System.out.println("[DEBUG_LOG] Latch finished. Processed offsets: " + processedOffsets);
 
     // Wait a bit more for the last offset to be marked as processed in the DB
     Thread.sleep(200);
