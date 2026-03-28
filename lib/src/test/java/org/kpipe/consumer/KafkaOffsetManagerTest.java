@@ -27,7 +27,7 @@ import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class OffsetManagerTest {
+class KafkaOffsetManagerTest {
 
   private static final String TOPIC = "test-topic";
   private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
@@ -38,13 +38,13 @@ class OffsetManagerTest {
   @Captor
   private ArgumentCaptor<Map<TopicPartition, OffsetAndMetadata>> offsetCaptor;
 
-  private OffsetManager<String, String> offsetManager;
+  private KafkaOffsetManager<String, String> offsetManager;
   private BlockingQueue<ConsumerCommand> commandQueue;
 
   @BeforeEach
   void setup() {
     commandQueue = new LinkedBlockingQueue<>();
-    offsetManager = OffsetManager.builder(mockConsumer).withCommandQueue(commandQueue).build();
+    offsetManager = KafkaOffsetManager.builder(mockConsumer).withCommandQueue(commandQueue).build();
     offsetManager.start();
   }
 
@@ -75,7 +75,7 @@ class OffsetManagerTest {
   class OffsetCommitTests {
 
     @ParameterizedTest
-    @MethodSource("org.kpipe.consumer.OffsetManagerTest#gapSizeScenarios")
+    @MethodSource("org.kpipe.consumer.KafkaOffsetManagerTest#gapSizeScenarios")
     void shouldHandleGapsOfVaryingSizes(
       final String description,
       final long initialOffset,
@@ -326,7 +326,7 @@ class OffsetManagerTest {
     @Test
     void shouldHandleAsyncCommitFailures() throws Exception {
       // Create a manager with a very short commit interval
-      final var asyncManager = OffsetManager.builder(mockConsumer)
+      final var asyncManager = KafkaOffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(50))
         .build();
@@ -445,7 +445,7 @@ class OffsetManagerTest {
     @Test
     void shouldAutomaticallyCommitAtInterval() throws Exception {
       // Create a manager with a short commit interval
-      final var autoCommitManager = OffsetManager.builder(mockConsumer)
+      final var autoCommitManager = KafkaOffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(50))
         .build();
@@ -626,7 +626,7 @@ class OffsetManagerTest {
     @Test
     void shouldHandleConcurrentAccess() throws Exception {
       // Use a manager with a shorter interval for this test
-      final var concurrentManager = OffsetManager.builder(mockConsumer)
+      final var concurrentManager = KafkaOffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(500))
         .build();
@@ -691,7 +691,7 @@ class OffsetManagerTest {
     void shouldRespectBuilderConfigurations() {
       // Create a manager with custom configuration
       final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
-      final var customManager = OffsetManager.builder(mockConsumer)
+      final var customManager = KafkaOffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(200))
         .build();

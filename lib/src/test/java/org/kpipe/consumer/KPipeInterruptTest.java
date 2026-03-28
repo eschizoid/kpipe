@@ -31,7 +31,7 @@ class KPipeInterruptTest {
   private Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler;
 
   @Mock
-  private OffsetManager<String, String> offsetManager;
+  private KafkaOffsetManager<String, String> offsetManager;
 
   private KPipeConsumer<String, String> createConsumer(
     final Queue<ConsumerCommand> commandQueue,

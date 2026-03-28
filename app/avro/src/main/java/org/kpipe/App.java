@@ -16,6 +16,7 @@ import org.kpipe.config.KafkaConsumerConfig;
 import org.kpipe.consumer.ConsumerCommand;
 import org.kpipe.consumer.ConsumerRunner;
 import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.consumer.KafkaOffsetManager;
 import org.kpipe.consumer.OffsetManager;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
@@ -152,7 +153,7 @@ public class App implements AutoCloseable {
     final Queue<ConsumerCommand> commandQueue
   ) {
     return consumer ->
-      OffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
+      KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }
 
   /// Creates a message sink pipeline using the provided registry.

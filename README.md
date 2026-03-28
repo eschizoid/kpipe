@@ -140,27 +140,64 @@ optimizes for throughput:
 
 This approach significantly reduces CPU overhead and GC pressure.
 
-### 2. Virtual Threads
+### 2. Virtual Threads and Scoped Values
 
-By default, KPipe uses **Java Virtual Threads** (Project Loom) to process messages. This provides a "thread-per-record"
-model that excels at I/O-bound tasks (e.g., enrichment via REST/DB).
+KPipe uses **Java Virtual Threads** (Project Loom) for high-concurrency message processing.
 
-- **I/O Bound**: Use the default parallel mode with virtual threads for maximum concurrency.
-- **Sequential**: Use `.withSequentialProcessing(true)` for stateful operations where strict FIFO ordering per
-  partition is required.
+- **Efficient Resource Reuse**: Heavy objects like `Schema.Parser`, `ByteArrayOutputStream`, and Avro encoders are 
+  cached per virtual thread using `ScopedValue`, which is significantly more lightweight than `ThreadLocal`.
+- **Thread-Per-Record**: Each message is processed in its own virtual thread, allowing KPipe to scale to millions of 
+  concurrent operations without the overhead of complex thread pools.
 
 ### 3. Reliable "At-Least-Once" Delivery
 
 KPipe implements a **Lowest Pending Offset** strategy to ensure reliability even with parallel processing:
 
-- **In-Flight Tracking**: Every record's offset is tracked in a `ConcurrentSkipListSet` per partition.
+- **Pluggable Offset Management**: Use the `OffsetManager` interface to customize how offsets are stored (Kafka-based or external database).
+- **In-Flight Tracking**: Every record's offset is tracked in a `ConcurrentSkipListSet` per partition (in `KafkaOffsetManager`).
 - **No-Gap Commits**: Even if message 102 finishes before 101, offset 102 will **not** be committed until 101 is
   successfully processed.
 - **Crash Recovery**: If the consumer crashes, it will resume from the last committed "safe" offset. While this may
   result in some records being re-processed (standard "at-least-once" behavior), it guarantees no message is ever
   skipped.
 
-### 4. Error Handling & Retries
+### 4. External Offset Management
+
+While Kafka-based offset storage is the default, KPipe supports external storage (e.g., PostgreSQL) for **exactly-once processing** or specific architectural needs.
+
+1.  **Seek on Assignment**: When partitions are assigned, fetch the last processed offset from your database and call `consumer.seek(partition, offset + 1)`.
+2.  **Update on Processed**: Implement `markOffsetProcessed` to save the offset to the database.
+
+```java
+public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
+  private final Consumer<K, V> consumer;
+
+  // ... DB connection ...
+
+  @Override
+  public void markOffsetProcessed(ConsumerRecord<K, V> record) {
+    // SQL: UPDATE offsets SET offset = ? WHERE partition = ?
+  }
+
+  @Override
+  public ConsumerRebalanceListener createRebalanceListener() {
+    return new ConsumerRebalanceListener() {
+      @Override
+      public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+        for (var tp : partitions) {
+          long lastOffset = fetchFromDb(tp);
+          consumer.seek(tp, lastOffset + 1);
+        }
+      }
+      // ...
+    };
+  }
+  // ...
+}
+
+```
+
+### 5. Error Handling & Retries
 
 KPipe provides a robust, multi-layered error handling mechanism:
 
@@ -170,7 +207,7 @@ KPipe provides a robust, multi-layered error handling mechanism:
 - **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors with default
   values or logging, preventing a single malformed message from blocking the partition.
 
-### 5. Backpressure
+### 6. Backpressure
 
 When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe can automatically
 pause Kafka polling to prevent unbounded in-flight message growth.
@@ -200,7 +237,7 @@ final var consumer = KPipeConsumer.<String, String>builder()
 **Observability:** backpressure events are logged (WARNING on pause, INFO on resume) and tracked
 via two dedicated metrics: `backpressurePauseCount` and `backpressureTimeMs`.
 
-### 6. Graceful Shutdown & Interrupt Handling
+### 7. Graceful Shutdown & Interrupt Handling
 
 KPipe respects JVM signals and ensures timely shutdown without data loss:
 
@@ -224,9 +261,7 @@ Extend the registry like this:
   final var uppercaseKey = RegistryKey.json("uppercase");
   registry.registerOperator(uppercaseKey, map -> {
       final var value = map.get("text");
-      if (value instanceof String text) {
-          map.put("text", text.toUpperCase());
-      }
+      if (value instanceof String text) map.put("text", text.toUpperCase());
       return map;
   });
 
@@ -489,6 +524,25 @@ registry.register(safeKey, String.class, safeSink);
 final var safePipeline = registry.pipeline(String.class, MessageSinkRegistry.JSON_LOGGING, safeKey);
 ```
 
+### Composite Sink (Broadcasting)
+
+You can broadcast processed messages to multiple destinations simultaneously using `CompositeMessageSink`. 
+Failures in one sink (e.g., a database timeout) do not prevent other sinks from receiving the data.
+
+```java
+// Create multiple sinks
+final var postgresSink = new MyPostgresSink();
+final var consoleSink = new JsonConsoleSink<byte[], byte[]>();
+
+// Broadcast to both
+final var compositeSink = new CompositeMessageSink<>(List.of(postgresSink, consoleSink));
+
+// Use with consumer
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+  .withMessageSink(compositeSink)
+  .build();
+```
+
 ---
 
 ## Consumer Runner
@@ -626,7 +680,7 @@ public class KPipeApp implements AutoCloseable {
       .withMessageSink(sinkRegistry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(consumer -> 
-         OffsetManager.builder(consumer)
+         KafkaOffsetManager.builder(consumer)
           .withCommandQueue(commandQueue)
            .withCommitInterval(Duration.ofSeconds(30))
            .build())
@@ -812,11 +866,10 @@ The library provides a built-in `when()` method for conditional processing:
   );
   ```
 
-### Thread-Safety Considerations
-- Message processors should be stateless and thread-safe
-- Avoid shared mutable state between processors
-- Use immutable data structures where possible
-- For processors with side effects (like database calls), consider using thread-local variables
+### Thread-Safety and Resource Management
+- Message processors should be stateless and thread-safe.
+- KPipe automatically handles resource reuse via `ScopedValue`. Avoid manual `ThreadLocal` usage.
+- For processors with side effects (like database calls), ensure they are compatible with high-concurrency virtual threads.
 
 ### Performance Optimization
 - Register frequently used processor combinations as single processors

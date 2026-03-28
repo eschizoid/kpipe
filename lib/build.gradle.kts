@@ -59,6 +59,11 @@ dependencies {
     testImplementation(libsCatalog.findLibrary("mockitoJunitJupiter").get())
 
     testImplementation(libsCatalog.findLibrary("slf4jSimple").get())
+
+    testImplementation(libsCatalog.findLibrary("testcontainers").get())
+    testImplementation(libsCatalog.findLibrary("testcontainersJunitJupiter").get())
+    testImplementation(libsCatalog.findLibrary("testcontainersPostgresql").get())
+    testImplementation(libsCatalog.findLibrary("postgresql").get())
 }
 
 tasks.test {
@@ -173,10 +178,10 @@ jreleaser {
                 create("sonatype") {
                     active.set(ALWAYS)
                     url.set("https://central.sonatype.com/api/v1/publisher")
-                    stagingRepository("build/staging-deploy")
+                    stagingRepository(layout.buildDirectory.dir("staging-deploy").get().asFile.absolutePath)
                     enabled.set(true)
                     sign.set(false)
-                    maxRetries.set(180)
+                    maxRetries.set(10)
                 }
             }
         }
@@ -185,7 +190,11 @@ jreleaser {
     release {
         github {
             enabled.set(true)
-            overwrite.set(false)
+            overwrite.set(true)
+            changelog {
+                formatted.set(ALWAYS)
+                preset.set("conventional-commits")
+            }
         }
     }
 }

@@ -19,6 +19,8 @@
 .idea/copilot.data.migration.ask2agent.xml
 .idea/google-java-format.xml
 .idea/jsLibraryMappings.xml
+/.idea/modules.xml
+/.idea/modules/lib/
 
 # AWS User-specific
 .idea/**/aws.xml

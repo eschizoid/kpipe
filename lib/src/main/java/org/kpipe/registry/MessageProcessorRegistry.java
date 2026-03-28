@@ -55,9 +55,9 @@ public class MessageProcessorRegistry {
 
     @SuppressWarnings("unchecked")
     public byte[] execute(final byte[] input) {
-      if (!(value instanceof Function)) {
-        throw new UnsupportedOperationException("Entry value is not a Function<byte[], byte[]>");
-      }
+      if (!(value instanceof Function)) throw new UnsupportedOperationException(
+        "Entry value is not a Function<byte[], byte[]>"
+      );
       final var processor = (Function<byte[], byte[]>) value;
 
       final Supplier<Long> counterIncrement = () -> invocationCount++;
@@ -142,7 +142,7 @@ public class MessageProcessorRegistry {
       UnaryOperator<Map<String, Object>> combined = obj -> obj;
       for (final var op : operators) combined = compose(combined, op);
       final var finalCombined = combined;
-      return bytes -> JsonMessageProcessor.processJson(bytes, finalCombined);
+      return bytes -> JsonMessageProcessor.inScopedCaches(() -> JsonMessageProcessor.processJson(bytes, finalCombined));
     }
   }
 
@@ -201,7 +201,10 @@ public class MessageProcessorRegistry {
         combined = compose(combined, op);
       }
       final var finalCombined = combined;
-      return bytes -> AvroMessageProcessor.processAvro(bytes, offset, schema, finalCombined);
+      return bytes ->
+        AvroMessageProcessor.inScopedCaches(() ->
+          AvroMessageProcessor.processAvro(bytes, offset, schema, finalCombined)
+        );
     }
   }
 
@@ -507,14 +510,11 @@ public class MessageProcessorRegistry {
   ///
   /// @return Unmodifiable map of all processor keys and functions
   public Map<RegistryKey<?>, Function<byte[], byte[]>> getAll() {
-    return RegistryFunctions.createUnmodifiableView(
-      registry,
-      entry -> {
-        final var regEntry = (RegistryEntry<?>) entry;
-        if (regEntry.value instanceof Function) return regEntry::execute;
-        return null;
-      }
-    );
+    return RegistryFunctions.createUnmodifiableView(registry, entry -> {
+      final var regEntry = (RegistryEntry<?>) entry;
+      if (regEntry.value instanceof Function) return regEntry::execute;
+      return null;
+    });
   }
 
   /// Gets metrics for a processor.

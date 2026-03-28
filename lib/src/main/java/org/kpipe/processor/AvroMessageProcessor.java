@@ -53,12 +53,10 @@ public class AvroMessageProcessor {
   private static final byte[] EMPTY_AVRO = new byte[0];
   private static final ConcurrentHashMap<String, Schema> SCHEMA_REGISTRY = new ConcurrentHashMap<>();
 
-  private static final ThreadLocal<Schema.Parser> SCHEMA_PARSER = ThreadLocal.withInitial(Schema.Parser::new);
-  private static final ThreadLocal<ByteArrayOutputStream> OUTPUT_STREAM_CACHE = ThreadLocal.withInitial(() ->
-    new ByteArrayOutputStream(8192)
-  );
-  private static final ThreadLocal<BinaryEncoder> ENCODER_CACHE = ThreadLocal.withInitial(() -> null);
-  private static final ThreadLocal<BinaryDecoder> DECODER_CACHE = ThreadLocal.withInitial(() -> null);
+  private static final ScopedValue<Schema.Parser> SCHEMA_PARSER = ScopedValue.newInstance();
+  private static final ScopedValue<ByteArrayOutputStream> OUTPUT_STREAM_CACHE = ScopedValue.newInstance();
+  private static final ScopedValue<BinaryEncoder> ENCODER_CACHE = ScopedValue.newInstance();
+  private static final ScopedValue<BinaryDecoder> DECODER_CACHE = ScopedValue.newInstance();
 
   /// Registers an Avro schema with the given name.
   ///
@@ -80,7 +78,8 @@ public class AvroMessageProcessor {
   /// @param schemaJson The Avro schema in JSON format
   /// @throws org.apache.avro.SchemaParseException if the schema is invalid
   public static void registerSchema(final String name, final String schemaJson) {
-    final var schema = SCHEMA_PARSER.get().parse(schemaJson);
+    final var parser = SCHEMA_PARSER.isBound() ? SCHEMA_PARSER.get() : new Schema.Parser();
+    final var schema = parser.parse(schemaJson);
     SCHEMA_REGISTRY.put(name, schema);
   }
 
@@ -215,60 +214,56 @@ public class AvroMessageProcessor {
           if (currentFieldName.equals(fieldName)) {
             final Schema fieldSchema = field.schema();
             switch (fieldSchema.getType()) {
-              case UNION:
-                {
-                  // Handle union types: try transform, then validate against union member
-                  // types
-                  var transformedValue = value;
-                  if (value != null) {
-                    transformedValue = transformer.apply(value instanceof Utf8 ? value.toString() : value);
+              case UNION: {
+                // Handle union types: try transform, then validate against union member
+                // types
+                var transformedValue = value;
+                if (value != null) {
+                  transformedValue = transformer.apply(value instanceof Utf8 ? value.toString() : value);
 
-                    // Validate transformed value against the union schema
-                    var isValid = false;
-                    for (final var typeSchema : fieldSchema.getTypes()) {
-                      if (typeSchema.getType() == Schema.Type.NULL) {
-                        if (transformedValue == null) {
-                          isValid = true;
-                          break;
-                        }
-                        continue;
-                      }
-                      if (isCompatibleWithSchema(transformedValue, typeSchema)) {
+                  // Validate transformed value against the union schema
+                  var isValid = false;
+                  for (final var typeSchema : fieldSchema.getTypes()) {
+                    if (typeSchema.getType() == Schema.Type.NULL) {
+                      if (transformedValue == null) {
                         isValid = true;
                         break;
                       }
+                      continue;
                     }
-
-                    if (!isValid) {
-                      LOGGER.log(
-                        Level.WARNING,
-                        "Transformed value %s is not compatible with union schema for field %s, keeping original".formatted(
-                            transformedValue,
-                            fieldName
-                          )
-                      );
-                      transformedValue = value; // Revert to original if invalid
+                    if (isCompatibleWithSchema(transformedValue, typeSchema)) {
+                      isValid = true;
+                      break;
                     }
                   }
-                  newRecord.put(currentFieldName, transformedValue);
-                  break;
+
+                  if (!isValid) {
+                    LOGGER.log(
+                      Level.WARNING,
+                      "Transformed value %s is not compatible with union schema for field %s, keeping original".formatted(
+                        transformedValue,
+                        fieldName
+                      )
+                    );
+                    transformedValue = value; // Revert to original if invalid
+                  }
                 }
-              case STRING:
-                {
-                  // Handle Avro's Utf8 and Strings consistently
-                  final var inputAsString = value instanceof Utf8
-                    ? value.toString()
-                    : (value == null ? null : value.toString());
-                  final var transformedValue = transformer.apply(inputAsString);
-                  newRecord.put(currentFieldName, transformedValue);
-                  break;
-                }
-              default:
-                {
-                  // Apply transformer to other value types
-                  newRecord.put(currentFieldName, transformer.apply(value));
-                  break;
-                }
+                newRecord.put(currentFieldName, transformedValue);
+                break;
+              }
+              case STRING: {
+                // Handle Avro's Utf8 and Strings consistently
+                final var inputAsString =
+                  value instanceof Utf8 ? value.toString() : (value == null ? null : value.toString());
+                final var transformedValue = transformer.apply(inputAsString);
+                newRecord.put(currentFieldName, transformedValue);
+                break;
+              }
+              default: {
+                // Apply transformer to other value types
+                newRecord.put(currentFieldName, transformer.apply(value));
+                break;
+              }
             }
           } else {
             // Copy value unchanged
@@ -356,8 +351,9 @@ public class AvroMessageProcessor {
 
       // Deserialize using cached decoder
       final var inputStream = new ByteArrayInputStream(avroBytes, offset, avroBytes.length - offset);
-      final var decoder = DecoderFactory.get().binaryDecoder(inputStream, DECODER_CACHE.get());
-      DECODER_CACHE.set(decoder);
+      final var cachedDecoder = DECODER_CACHE.isBound() ? DECODER_CACHE.get() : null;
+      final var decoder = DecoderFactory.get().binaryDecoder(inputStream, cachedDecoder);
+
       final var record = reader.read(null, decoder);
 
       // Apply the processor function to make a copy with transformations
@@ -368,12 +364,14 @@ public class AvroMessageProcessor {
       LOGGER.log(Level.DEBUG, "Processed record: %s".formatted(processed));
 
       // Reuse output stream for better performance
-      final var outputStream = OUTPUT_STREAM_CACHE.get();
+      final var outputStream = OUTPUT_STREAM_CACHE.isBound()
+        ? OUTPUT_STREAM_CACHE.get()
+        : new ByteArrayOutputStream(8192);
       outputStream.reset();
 
       // Reuse encoder for better performance
-      final var encoder = EncoderFactory.get().binaryEncoder(outputStream, ENCODER_CACHE.get());
-      ENCODER_CACHE.set(encoder);
+      final var cachedEncoder = ENCODER_CACHE.isBound() ? ENCODER_CACHE.get() : null;
+      final var encoder = EncoderFactory.get().binaryEncoder(outputStream, cachedEncoder);
 
       writer.write(processed, encoder);
       encoder.flush();
@@ -385,9 +383,28 @@ public class AvroMessageProcessor {
     }
   }
 
+  /// Wraps a callable in a scope with all Avro caches bound.
+  ///
+  /// This is used internally by the pipeline builder to ensure optimal performance
+  /// for high-throughput processing.
+  ///
+  /// @param <T> The return type of the callable
+  /// @param operation The operation to perform within the scope
+  /// @return The result of the operation
+  public static <T> T inScopedCaches(final ScopedValue.CallableOp<T, Exception> operation) {
+    try {
+      return ScopedValue.where(OUTPUT_STREAM_CACHE, new ByteArrayOutputStream(8192))
+        .where(ENCODER_CACHE, null)
+        .where(DECODER_CACHE, null)
+        .where(SCHEMA_PARSER, new Schema.Parser())
+        .call(operation);
+    } catch (final Exception e) {
+      throw new RuntimeException("Error executing in scoped caches", e);
+    }
+  }
+
   /// Clears the schema registry.
   public static void clearSchemaRegistry() {
     SCHEMA_REGISTRY.clear();
-    SCHEMA_PARSER.set(new Schema.Parser());
   }
 }
