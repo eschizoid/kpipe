@@ -26,9 +26,9 @@ class ExternalOffsetIntegrationTest {
 
   @Container
   private static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16-alpine")
-      .withDatabaseName("kpipe_test")
-      .withUsername("testuser")
-      .withPassword("testpass");
+    .withDatabaseName("kpipe_test")
+    .withUsername("testuser")
+    .withPassword("testpass");
 
   @BeforeEach
   void setUp() throws SQLException {
@@ -38,15 +38,24 @@ class ExternalOffsetIntegrationTest {
     properties.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
     properties.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
 
-    try (final var conn = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-         final var stmt = conn.createStatement()) {
-      stmt.execute("CREATE TABLE IF NOT EXISTS consumer_offsets (topic TEXT, partition INT, last_offset BIGINT, PRIMARY KEY (topic, partition))");
+    try (
+      final var conn = DriverManager.getConnection(
+        postgres.getJdbcUrl(),
+        postgres.getUsername(),
+        postgres.getPassword()
+      );
+      final var stmt = conn.createStatement()
+    ) {
+      stmt.execute(
+        "CREATE TABLE IF NOT EXISTS consumer_offsets (topic TEXT, partition INT, last_offset BIGINT, PRIMARY KEY (topic, partition))"
+      );
       stmt.execute("DELETE FROM consumer_offsets");
     }
   }
 
   /// A Database-backed Offset Manager using PostgreSQL.
   static class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
+
     private final String jdbcUrl;
     private final String username;
     private final String password;
@@ -73,20 +82,24 @@ class ExternalOffsetIntegrationTest {
     }
 
     @Override
-    public void trackOffset(ConsumerRecord<K, V> record) {
-    }
+    public void trackOffset(ConsumerRecord<K, V> record) {}
 
     @Override
     public void markOffsetProcessed(ConsumerRecord<K, V> record) {
-      try (final var conn = DriverManager.getConnection(jdbcUrl, username, password);
-           final var stmt = conn.prepareStatement(
-               "INSERT INTO consumer_offsets (topic, partition, last_offset) VALUES (?, ?, ?) " +
-               "ON CONFLICT (topic, partition) DO UPDATE SET last_offset = EXCLUDED.last_offset")) {
+      System.out.println("[DEBUG_LOG] markOffsetProcessed: " + record.topic() + "-" + record.partition() + "@" + record.offset());
+      try (
+        final var conn = DriverManager.getConnection(jdbcUrl, username, password);
+        final var stmt = conn.prepareStatement(
+          "INSERT INTO consumer_offsets (topic, partition, last_offset) VALUES (?, ?, ?) " +
+            "ON CONFLICT (topic, partition) DO UPDATE SET last_offset = EXCLUDED.last_offset"
+        )
+      ) {
         stmt.setString(1, record.topic());
         stmt.setInt(2, record.partition());
         stmt.setLong(3, record.offset());
         stmt.executeUpdate();
       } catch (SQLException e) {
+        System.err.println("[DEBUG_LOG] Failed to update offset in DB: " + e.getMessage());
         throw new RuntimeException("Failed to update offset in DB", e);
       }
     }
@@ -95,13 +108,16 @@ class ExternalOffsetIntegrationTest {
     public ConsumerRebalanceListener createRebalanceListener() {
       return new ConsumerRebalanceListener() {
         @Override
-        public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-        }
+        public void onPartitionsRevoked(Collection<TopicPartition> partitions) {}
 
         @Override
         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-          try (final var conn = DriverManager.getConnection(jdbcUrl, username, password);
-               final var stmt = conn.prepareStatement("SELECT last_offset FROM consumer_offsets WHERE topic = ? AND partition = ?")) {
+          try (
+            final var conn = DriverManager.getConnection(jdbcUrl, username, password);
+            final var stmt = conn.prepareStatement(
+              "SELECT last_offset FROM consumer_offsets WHERE topic = ? AND partition = ?"
+            )
+          ) {
             for (TopicPartition tp : partitions) {
               stmt.setString(1, tp.topic());
               stmt.setInt(2, tp.partition());
@@ -119,16 +135,37 @@ class ExternalOffsetIntegrationTest {
       };
     }
 
-    @Override public void notifyCommitComplete(String id, boolean success) {}
-    @Override public OffsetState getState() { return state; }
-    @Override public boolean isRunning() { return state == OffsetState.RUNNING; }
-    @Override public Map<String, Object> getStatistics() { return Map.of(); }
-    @Override public void close() { stop(); }
-    
+    @Override
+    public void notifyCommitComplete(String id, boolean success) {}
+
+    @Override
+    public OffsetState getState() {
+      return state;
+    }
+
+    @Override
+    public boolean isRunning() {
+      return state == OffsetState.RUNNING;
+    }
+
+    @Override
+    public Map<String, Object> getStatistics() {
+      return Map.of();
+    }
+
+    @Override
+    public void close() {
+      stop();
+    }
+
     // Test Helpers
     public void setOffsetInDb(TopicPartition tp, long offset) throws SQLException {
-      try (final var conn = DriverManager.getConnection(jdbcUrl, username, password);
-           final var stmt = conn.prepareStatement("INSERT INTO consumer_offsets (topic, partition, last_offset) VALUES (?, ?, ?)")) {
+      try (
+        final var conn = DriverManager.getConnection(jdbcUrl, username, password);
+        final var stmt = conn.prepareStatement(
+          "INSERT INTO consumer_offsets (topic, partition, last_offset) VALUES (?, ?, ?)"
+        )
+      ) {
         stmt.setString(1, tp.topic());
         stmt.setInt(2, tp.partition());
         stmt.setLong(3, offset);
@@ -137,8 +174,12 @@ class ExternalOffsetIntegrationTest {
     }
 
     public Long getOffsetFromDb(TopicPartition tp) throws SQLException {
-      try (final var conn = DriverManager.getConnection(jdbcUrl, username, password);
-           final var stmt = conn.prepareStatement("SELECT last_offset FROM consumer_offsets WHERE topic = ? AND partition = ?")) {
+      try (
+        final var conn = DriverManager.getConnection(jdbcUrl, username, password);
+        final var stmt = conn.prepareStatement(
+          "SELECT last_offset FROM consumer_offsets WHERE topic = ? AND partition = ?"
+        )
+      ) {
         stmt.setString(1, tp.topic());
         stmt.setInt(2, tp.partition());
         try (final var rs = stmt.executeQuery()) {
@@ -158,7 +199,12 @@ class ExternalOffsetIntegrationTest {
     mc.updateBeginningOffsets(Map.of(PARTITION, 0L));
 
     // 2. Pre-populate DB with an existing offset (e.g., we already finished up to offset 4)
-    final var dbManager = new PostgresOffsetManager<String, String>(mc, postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+    final var dbManager = new PostgresOffsetManager<>(
+      mc,
+      postgres.getJdbcUrl(),
+      postgres.getUsername(),
+      postgres.getPassword()
+    );
     dbManager.setOffsetInDb(PARTITION, 4L);
 
     final var processedOffsets = new CopyOnWriteArrayList<Long>();
@@ -182,22 +228,37 @@ class ExternalOffsetIntegrationTest {
     consumer.start();
 
     // Trigger partition assignment manually for MockConsumer
+    System.out.println("[DEBUG_LOG] Triggering rebalance for partitions: " + List.of(PARTITION));
     mc.rebalance(List.of(PARTITION));
 
     // 3. Populate Kafka with messages 0-9
+    System.out.println("[DEBUG_LOG] Adding records to mock consumer");
     for (int i = 0; i < 10; i++) {
       mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
     }
 
     // 6. Verify processing starts from offset 5
-    assertTrue(latch.await(10, TimeUnit.SECONDS), "Consumer should process 5 remaining messages. Processed: " + processedOffsets);
-    
+    System.out.println("[DEBUG_LOG] Waiting for latch...");
+    assertTrue(
+      latch.await(10, TimeUnit.SECONDS),
+      "Consumer should process 5 remaining messages. Processed: %s".formatted(processedOffsets)
+    );
+    System.out.println("[DEBUG_LOG] Latch finished. Processed offsets: " + processedOffsets);
+
     // Wait a bit more for the last offset to be marked as processed in the DB
     Thread.sleep(200);
 
-    assertEquals(5, processedOffsets.size(), "Should have processed 5 messages, but got: " + processedOffsets);
+    assertEquals(
+      5,
+      processedOffsets.size(),
+      "Should have processed 5 messages, but got: %s".formatted(processedOffsets)
+    );
     assertTrue(processedOffsets.stream().allMatch(o -> o >= 5), "Should only process offsets >= 5");
-    assertEquals(9L, dbManager.getOffsetFromDb(PARTITION), "DB should be updated to offset 9. Actual: " + dbManager.getOffsetFromDb(PARTITION));
+    assertEquals(
+      9L,
+      dbManager.getOffsetFromDb(PARTITION),
+      "DB should be updated to offset 9. Actual: %d".formatted(dbManager.getOffsetFromDb(PARTITION))
+    );
 
     consumer.close();
   }

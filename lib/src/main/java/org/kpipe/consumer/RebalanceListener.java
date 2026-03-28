@@ -25,7 +25,8 @@ import org.kpipe.consumer.enums.OffsetState;
 ///   <li>Memory is reclaimed for partitions no longer assigned
 /// </ul>
 ///
-/// <p>The listener coordinates with the KafkaOffsetManager to maintain accurate offset tracking during
+/// <p>The listener coordinates with the KafkaOffsetManager to maintain accurate offset tracking
+// during
 /// consumer group rebalancing operations, preventing duplicate message processing or data loss when
 /// partitions are reassigned between consumer instances.
 ///

@@ -139,7 +139,9 @@ public class KafkaOffsetManager<K, V> implements OffsetManager<K, V> {
   /// @throws IllegalStateException if the KafkaOffsetManager is already closed
   @Override
   public KafkaOffsetManager<K, V> start() {
-    if (state.get() == OffsetState.STOPPED) throw new IllegalStateException("Cannot restart a stopped KafkaOffsetManager");
+    if (state.get() == OffsetState.STOPPED) throw new IllegalStateException(
+      "Cannot restart a stopped KafkaOffsetManager"
+    );
 
     if (state.compareAndSet(OffsetState.CREATED, OffsetState.RUNNING)) {
       scheduler = Executors.newSingleThreadScheduledExecutor(r ->
