@@ -182,6 +182,7 @@ jreleaser {
                     enabled.set(true)
                     sign.set(false)
                     maxRetries.set(10)
+                    extraProperties.put("retryOnAlreadyDeployed", true)
                 }
             }
         }
