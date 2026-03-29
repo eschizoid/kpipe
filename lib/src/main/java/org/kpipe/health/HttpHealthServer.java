@@ -136,7 +136,7 @@ public final class HttpHealthServer implements AutoCloseable {
     final var payload = body.getBytes(StandardCharsets.UTF_8);
     exchange.getResponseHeaders().add("Content-Type", "text/plain; charset=utf-8");
     exchange.sendResponseHeaders(status, payload.length);
-    try (OutputStream out = exchange.getResponseBody()) {
+    try (final var out = exchange.getResponseBody()) {
       out.write(payload);
     }
   }

@@ -4,7 +4,7 @@ import org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
 
 plugins {
   java
-  id("com.gradleup.shadow") version "8.3.5" apply false
+  alias(libs.plugins.shadow) apply false
 }
 
 val libsCatalog = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")

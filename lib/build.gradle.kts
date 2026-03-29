@@ -7,7 +7,7 @@ plugins {
   `maven-publish`
   signing
   jacoco
-  id("org.jreleaser") version "1.17.0"
+  alias(libs.plugins.jreleaser)
 }
 
 val libsCatalog = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")

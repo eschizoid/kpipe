@@ -74,9 +74,7 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
     this.metricsReporters = new ArrayList<>(builder.metricsReporters);
     this.metricsInterval = builder.metricsInterval;
 
-    if (builder.useShutdownHook) {
-      Runtime.getRuntime().addShutdownHook(new Thread(this::close));
-    }
+    if (builder.useShutdownHook) Runtime.getRuntime().addShutdownHook(new Thread(this::close));
   }
 
   /// Creates a new builder for configuring a ConsumerRunner.
@@ -111,7 +109,6 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
 
   /// Checks if the consumer is healthy, according to the configured health check.
   ///
-  /// <p>This method uses a functional approach by composing predicates to determine health status.
   /// It checks three conditions:
   ///
   /// <ol>
@@ -122,8 +119,8 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
   ///
   /// @return true if the consumer is healthy, false otherwise
   public boolean isHealthy() {
-    final Predicate<T> isNotClosed = c -> !closed.get();
-    final Predicate<T> isStarted = c -> started.get();
+    final Predicate<T> isNotClosed = _ -> !closed.get();
+    final Predicate<T> isStarted = _ -> started.get();
     final Predicate<T> isHealthyPredicate = isNotClosed.and(isStarted).and(healthCheck);
     return isHealthyPredicate.test(consumer);
   }
@@ -262,9 +259,7 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
 
   /// Starts a metrics reporting thread if metrics reporters are configured.
   private void startMetricsThread() {
-    if (metricsReporters.isEmpty() || metricsInterval <= 0) {
-      return;
-    }
+    if (metricsReporters.isEmpty() || metricsInterval <= 0) return;
 
     // Function to report metrics for all reporters
     final Runnable reportAllMetrics = () ->
@@ -324,15 +319,15 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
     private Consumer<T> startAction;
     private Predicate<T> healthCheck;
     private BiFunction<T, Long, Boolean> gracefulShutdown;
-    private long shutdownTimeout = 30000;
+    private long shutdownTimeout = 30_000;
     private boolean useShutdownHook = false;
     private final List<MetricsReporter> metricsReporters = new ArrayList<>();
-    private long metricsInterval = 60000;
+    private long metricsInterval = 60_000;
 
     private Builder(final T consumer) {
       this.consumer = consumer;
       this.startAction = T::start;
-      this.healthCheck = c -> true;
+      this.healthCheck = _ -> true;
       this.gracefulShutdown = ConsumerRunner::performGracefulConsumerShutdown;
     }
 

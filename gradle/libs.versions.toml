@@ -9,6 +9,11 @@ mockito = "5.18.0"
 testcontainers = "2.0.4"
 postgresql = "42.7.3"
 parallelConsumer = "0.5.3.0"
+spotless = "8.4.0"
+axion = "1.18.7"
+shadow = "8.3.5"
+jmh = "0.7.3"
+jreleaser = "1.19.0"
 
 [libraries]
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
@@ -36,3 +41,10 @@ testcontainersPostgresql = { module = "org.testcontainers:testcontainers-postgre
 testcontainersKafka = { module = "org.testcontainers:testcontainers-kafka", version.ref = "testcontainers" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 parallelConsumerCore = { module = "io.confluent.parallelconsumer:parallel-consumer-core", version.ref = "parallelConsumer" }
+
+[plugins]
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+axion = { id = "pl.allegro.tech.build.axion-release", version.ref = "axion" }
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+jmh = { id = "me.champeau.jmh", version.ref = "jmh" }
+jreleaser = { id = "org.jreleaser", version.ref = "jreleaser" }
