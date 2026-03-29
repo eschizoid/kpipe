@@ -74,7 +74,7 @@ This benchmark compares KPipe's zero-copy offset-based deserialization against t
 `Arrays.copyOfRange`.
 
 | Benchmark                                       |    Mode |  Cnt |            Score |            Error |   Units |
-|-------------------------------------------------|--------:|-----:|-----------------:|-----------------:|--------:|
+| ----------------------------------------------- | ------: | ---: | ---------------: | ---------------: | ------: |
 | `AvroPipelineBenchmark.kpipeAvroMagicPipeline`  | `thrpt` | `16` | `740,303,088.78` | `+/- 35,778,690` | `ops/s` |
 | `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `16` | `351,320,682.67` | `+/- 68,268,778` | `ops/s` |
 
@@ -87,7 +87,7 @@ high-throughput streams.
 This benchmark measures the cost of chaining multiple transformations.
 
 | Benchmark                                      |    Mode |  Cnt |        Score |          Error |   Units |
-|------------------------------------------------|--------:|-----:|-------------:|---------------:|--------:|
+| ---------------------------------------------- | ------: | ---: | -----------: | -------------: | ------: |
 | `JsonPipelineBenchmark.kpipeJsonPipeline`      | `thrpt` | `16` | `405,542.23` | `+/- 28,441.3` | `ops/s` |
 | `JsonPipelineBenchmark.manualJsonSerDeChained` | `thrpt` | `16` | `120,315.66` | `+/- 10,061.3` | `ops/s` |
 | `JsonPipelineBenchmark.manualJsonSingleSerDe`  | `thrpt` | `16` | `364,166.21` | `+/- 39,811.4` | `ops/s` |
@@ -102,7 +102,7 @@ This benchmark compares KPipe's "thread-per-record" model using Java Virtual Thr
 Confluent Parallel Consumer.
 
 | Benchmark                                                 |    Mode |  Cnt |       Score |        Error |   Units |
-|-----------------------------------------------------------|--------:|-----:|------------:|-------------:|--------:|
+| --------------------------------------------------------- | ------: | ---: | ----------: | -----------: | ------: |
 | `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `16` | `3,235.415` | `+/- 14.876` | `ops/s` |
 | `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `16` | `3,306.732` |  `+/- 3.368` | `ops/s` |
 
