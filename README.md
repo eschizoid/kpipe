@@ -69,13 +69,15 @@ KPipe works well for:
 - I/O-bound processing (REST calls, database lookups)
 - teams adopting **modern Java concurrency**
 
-KPipe is not intended to replace large streaming frameworks. It focuses on **simple, composable Kafka consumer pipelines.**
+KPipe is not intended to replace large streaming frameworks. It focuses on **simple, composable Kafka consumer
+pipelines.**
 
 ---
 
 # Why Not Just Use Kafka Streams?
 
-Kafka Streams is powerful but introduces a full topology framework and state management layer that many services do not need.
+Kafka Streams is powerful but introduces a full topology framework and state management layer that many services do not
+need.
 
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
@@ -153,8 +155,10 @@ KPipe uses **Java Virtual Threads** (Project Loom) for high-concurrency message 
 
 KPipe implements a **Lowest Pending Offset** strategy to ensure reliability even with parallel processing:
 
-- **Pluggable Offset Management**: Use the `OffsetManager` interface to customize how offsets are stored (Kafka-based or external database).
-- **In-Flight Tracking**: Every record's offset is tracked in a `ConcurrentSkipListSet` per partition (in `KafkaOffsetManager`).
+- **Pluggable Offset Management**: Use the `OffsetManager` interface to customize how offsets are stored (Kafka-based or
+  external database).
+- **In-Flight Tracking**: Every record's offset is tracked in a `ConcurrentSkipListSet` per partition (in
+  `KafkaOffsetManager`).
 - **No-Gap Commits**: Even if message 102 finishes before 101, offset 102 will **not** be committed until 101 is
   successfully processed.
 - **Crash Recovery**: If the consumer crashes, it will resume from the last committed "safe" offset. While this may
@@ -163,9 +167,11 @@ KPipe implements a **Lowest Pending Offset** strategy to ensure reliability even
 
 ### 4. External Offset Management
 
-While Kafka-based offset storage is the default, KPipe supports external storage (e.g., PostgreSQL) for **exactly-once processing** or specific architectural needs.
+While Kafka-based offset storage is the default, KPipe supports external storage (e.g., PostgreSQL) for **exactly-once
+processing** or specific architectural needs.
 
-1.  **Seek on Assignment**: When partitions are assigned, fetch the last processed offset from your database and call `consumer.seek(partition, offset + 1)`.
+1.  **Seek on Assignment**: When partitions are assigned, fetch the last processed offset from your database and call
+    `consumer.seek(partition, offset + 1)`.
 2.  **Update on Processed**: Implement `markOffsetProcessed` to save the offset to the database.
 
 ```java
@@ -202,15 +208,15 @@ public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
 KPipe provides a robust, multi-layered error handling mechanism:
 
 - **Built-in Retries**: Configure `.withRetry(maxRetries, backoff)` to automatically retry transient failures.
-- **Dead Letter Handling**: Provide a `.withErrorHandler()` to redirect messages that fail after all retries to an
-  error topic or database.
+- **Dead Letter Handling**: Provide a `.withErrorHandler()` to redirect messages that fail after all retries to an error
+  topic or database.
 - **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors with default
   values or logging, preventing a single malformed message from blocking the partition.
 
 ### 6. Backpressure
 
-When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe can automatically
-pause Kafka polling to prevent unbounded in-flight message growth.
+When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe can automatically pause Kafka polling to
+prevent unbounded in-flight message growth.
 
 Backpressure uses **two configurable watermarks** (hysteresis) to avoid rapid pause/resume oscillation:
 
@@ -235,8 +241,8 @@ final var consumer = KPipeConsumer.<String, String>builder()
 
 - Not compatible with sequential processing mode (in-flight is always ≤ 1 in that mode)
 
-**Observability:** backpressure events are logged (WARNING on pause, INFO on resume) and tracked
-via two dedicated metrics: `backpressurePauseCount` and `backpressureTimeMs`.
+**Observability:** backpressure events are logged (WARNING on pause, INFO on resume) and tracked via two dedicated
+metrics: `backpressurePauseCount` and `backpressureTimeMs`.
 
 ### 7. Graceful Shutdown & Interrupt Handling
 
@@ -244,8 +250,8 @@ KPipe respects JVM signals and ensures timely shutdown without data loss:
 
 - **Interrupt Awareness**: Interrupts trigger a coordinated shutdown sequence. They do **not** cause records to be
   skipped.
-- **Reliable Redelivery**: If a record's processing is interrupted (e.g., during retry backoff or transformation),
-  the offset is NOT marked as processed. This ensures it will be safely picked up by the next consumer instance,
+- **Reliable Redelivery**: If a record's processing is interrupted (e.g., during retry backoff or transformation), the
+  offset is NOT marked as processed. This ensures it will be safely picked up by the next consumer instance,
   guaranteeing "at-least-once" delivery even during shutdown.
 
 ---
@@ -413,7 +419,8 @@ final var confluentPipeline = registry.avroPipelineBuilder("user", 5)
 
 ### POJO Processing
 
-For high-performance processing of Java records or POJOs, use the `PojoFormat` and `PojoPipelineBuilder`. This leverages DSL-JSON annotation processing for near-native performance.
+For high-performance processing of Java records or POJOs, use the `PojoFormat` and `PojoPipelineBuilder`. This leverages
+DSL-JSON annotation processing for near-native performance.
 
 ```java
 final var registry = new MessageProcessorRegistry("myApp");
@@ -477,19 +484,14 @@ MessageSink<String, byte[]> databaseSink = (record, processedValue) -> {
     databaseService.insert(data);
 
     // Log success
-    log.log(
-      Level.INFO,
-      "Successfully wrote message to database: " + record.key()
-    );
+    log.log(Level.INFO, "Successfully wrote message to database: " + record.key());
   } catch (Exception e) {
     log.log(Level.ERROR, "Failed to write message to database", e);
   }
 };
 
 // Use the custom sink with a consumer
-final var consumer = KPipeConsumer.<String, byte[]>builder()
-  .withMessageSink(databaseSink)
-  .build();
+final var consumer = KPipeConsumer.<String, byte[]>builder().withMessageSink(databaseSink).build();
 ```
 
 ### Message Sink Registry
@@ -531,8 +533,8 @@ final var safePipeline = registry.pipeline(String.class, MessageSinkRegistry.JSO
 
 ### Composite Sink (Broadcasting)
 
-You can broadcast processed messages to multiple destinations simultaneously using `CompositeMessageSink`.
-Failures in one sink (e.g., a database timeout) do not prevent other sinks from receiving the data.
+You can broadcast processed messages to multiple destinations simultaneously using `CompositeMessageSink`. Failures in
+one sink (e.g., a database timeout) do not prevent other sinks from receiving the data.
 
 ```java
 // Create multiple sinks
@@ -541,14 +543,10 @@ final var postgresSink = new MyPostgresSink();
 final var consoleSink = new JsonConsoleSink<byte[], byte[]>();
 
 // Broadcast to both
-final var compositeSink = new CompositeMessageSink<>(
-  List.of(postgresSink, consoleSink)
-);
+final var compositeSink = new CompositeMessageSink<>(List.of(postgresSink, consoleSink));
 
 // Use with consumer
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
-  .withMessageSink(compositeSink)
-  .build();
+final var consumer = KPipeConsumer.<byte[], byte[]>builder().withMessageSink(compositeSink).build();
 ```
 
 ---
@@ -579,13 +577,7 @@ The `ConsumerRunner` supports extensive configuration options:
 final var runner = ConsumerRunner.builder(consumer)
   // Configure metrics reporting
   .withMetricsReporters(
-    List.of(
-      new ConsumerMetricsReporter(
-        consumer::getMetrics,
-        () -> System.currentTimeMillis() - startTime,
-        null
-      )
-    )
+    List.of(new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime, null))
   )
   .withMetricsInterval(30000) // Report metrics every 30 seconds
   // Configure health checks
@@ -600,10 +592,7 @@ final var runner = ConsumerRunner.builder(consumer)
   })
   // Configure custom graceful shutdown
   .withGracefulShutdown((c, timeoutMs) -> {
-    log.log(
-      Level.INFO,
-      "Initiating graceful shutdown with timeout: " + timeoutMs + "ms"
-    );
+    log.log(Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
     return ConsumerRunner.performGracefulConsumerShutdown(c, timeoutMs);
   })
   .build();
@@ -633,16 +622,10 @@ The `ConsumerRunner` integrates with metrics reporting:
 
 ```java
 // Add multiple metrics reporters
-ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(
-  consumer
-)
+ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
   .withMetricsReporters(
     List.of(
-      new ConsumerMetricsReporter(
-        consumer::getMetrics,
-        () -> System.currentTimeMillis() - startTime,
-        null
-      ),
+      new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime, null),
       new ProcessorMetricsReporter(registry)
     )
   )
@@ -671,9 +654,7 @@ Here's a concise example of a KPipe application:
 ```java
 public class KPipeApp implements AutoCloseable {
 
-  private static final System.Logger LOGGER = System.getLogger(
-    KPipeApp.class.getName()
-  );
+  private static final System.Logger LOGGER = System.getLogger(KPipeApp.class.getName());
   private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
 
   static void main() {
@@ -691,20 +672,13 @@ public class KPipeApp implements AutoCloseable {
 
   public KPipeApp(final AppConfig config) {
     // Create processor and sink registries
-    final var processorRegistry = new MessageProcessorRegistry(
-      config.appName()
-    );
+    final var processorRegistry = new MessageProcessorRegistry(config.appName());
     final var sinkRegistry = new MessageSinkRegistry();
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Create the functional consumer
     final var functionalConsumer = KPipeConsumer.<byte[], byte[]>builder()
-      .withProperties(
-        KafkaConsumerConfig.createConsumerConfig(
-          config.bootstrapServers(),
-          config.consumerGroup()
-        )
-      )
+      .withProperties(KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup()))
       .withTopic(config.topic())
       .withProcessor(
         processorRegistry
@@ -714,9 +688,7 @@ public class KPipeApp implements AutoCloseable {
           .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
           .build()
       )
-      .withMessageSink(
-        sinkRegistry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING)
-      )
+      .withMessageSink(sinkRegistry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider((consumer) ->
         KafkaOffsetManager.builder(consumer)
@@ -875,7 +847,8 @@ final var fullPipeline = registry.jsonPipelineBuilder()
 
 ### Enum-Based Registry (Static Type Safety)
 
-For the highest level of type safety, you can define your operators as an `Enum` that implements `UnaryOperator<T>`. This allows for bulk registration and discoverability of standard processors:
+For the highest level of type safety, you can define your operators as an `Enum` that implements `UnaryOperator<T>`.
+This allows for bulk registration and discoverability of standard processors:
 
 ```java
 public enum StandardProcessors implements UnaryOperator<Map<String, Object>> {
@@ -910,14 +883,8 @@ Predicate<byte[]> isOrderMessage = (bytes) -> {
 // Use the built-in conditional processor
 Function<byte[], byte[]> conditionalPipeline = MessageProcessorRegistry.when(
   isOrderMessage,
-  registry
-    .jsonPipelineBuilder()
-    .add(RegistryKey.json("orderProcessor"))
-    .build(),
-  registry
-    .jsonPipelineBuilder()
-    .add(RegistryKey.json("defaultProcessor"))
-    .build()
+  registry.jsonPipelineBuilder().add(RegistryKey.json("orderProcessor")).build(),
+  registry.jsonPipelineBuilder().add(RegistryKey.json("defaultProcessor")).build()
 );
 ```
 
@@ -925,7 +892,8 @@ Function<byte[], byte[]> conditionalPipeline = MessageProcessorRegistry.when(
 
 - Message processors should be stateless and thread-safe.
 - KPipe automatically handles resource reuse via `ScopedValue`. Avoid manual `ThreadLocal` usage.
-- For processors with side effects (like database calls), ensure they are compatible with high-concurrency virtual threads.
+- For processors with side effects (like database calls), ensure they are compatible with high-concurrency virtual
+  threads.
 
 ### Performance Optimization
 
@@ -947,9 +915,9 @@ optimizations. Performance depends on workload shape (I/O vs CPU bound), partiti
   operations.
 - **DslJson Integration**: Uses a high-performance JSON library to reduce parsing overhead and GC pressure.
 
-Latest parallel benchmark snapshot (see `benchmarks/README.md`) shows a throughput edge for KPipe in that scenario,
-with a higher allocation footprint than Confluent Parallel Consumer. Treat these as scenario-specific results, not
-universal guarantees.
+Latest parallel benchmark snapshot (see `benchmarks/README.md`) shows a throughput edge for KPipe in that scenario, with
+a higher allocation footprint than Confluent Parallel Consumer. Treat these as scenario-specific results, not universal
+guarantees.
 
 ---
 

@@ -78,9 +78,9 @@ This benchmark compares KPipe's zero-copy offset-based deserialization against t
 | `AvroPipelineBenchmark.kpipeAvroMagicPipeline`  | `thrpt` | `16` | `740,303,088.78` | `+/- 35,778,690` | `ops/s` |
 | `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `16` | `351,320,682.67` | `+/- 68,268,778` | `ops/s` |
 
-**Observation**: KPipe is **~2.1x faster** when handling Confluent Magic Bytes. By using an `offset` instead of
-copying the byte array, we effectively eliminate allocation overhead and drastically reduce GC pressure for
-high-throughput streams.
+**Observation**: KPipe is **~2.1x faster** when handling Confluent Magic Bytes. By using an `offset` instead of copying
+the byte array, we effectively eliminate allocation overhead and drastically reduce GC pressure for high-throughput
+streams.
 
 ### 2. JSON Pipeline: Defeating the "SerDe Tax"
 
@@ -122,11 +122,11 @@ Based on the latest snapshot results, we can derive the following throughput exp
   when Kafka I/O is excluded.
 - **JSON (In-Memory)**: Up to **~405,000 records/s**. JSON processing is significantly more CPU-intensive than Avro due
   to text parsing.
-- **End-to-End Parallel Processing**: **~32.3M to ~33.1M messages/s**. For this run, use `score * 10,000`
-  because `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`.
+- **End-to-End Parallel Processing**: **~32.3M to ~33.1M messages/s**. For this run, use `score * 10,000` because
+  `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`.
 
-> **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`. For this benchmark,
-> derive message rate as `ops/s * 10,000`.
+> **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`. For this benchmark, derive message
+> rate as `ops/s * 10,000`.
 
 Key performance indicators to watch for:
 
@@ -138,9 +138,9 @@ Key performance indicators to watch for:
   processing.
 - **Real Infrastructure vs. Mocks**: This suite favors repeatable local microbenchmarks by using an embedded Kafka
   broker.
-- **Parallel timing fairness**: both `kpipeParallelProcessing` and `confluentParallelProcessing` start
-  their processing loops inside benchmark methods (not in setup), so measured time includes comparable
-  startup-to-completion behavior for each invocation.
+- **Parallel timing fairness**: both `kpipeParallelProcessing` and `confluentParallelProcessing` start their processing
+  loops inside benchmark methods (not in setup), so measured time includes comparable startup-to-completion behavior for
+  each invocation.
 - **Parallel throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`, so its
   reported throughput is normalized per processed message rather than per full benchmark invocation.
 - **Logging noise control**: KPipe parallel benchmark uses a no-op sink in benchmark runs to avoid console I/O from
@@ -221,5 +221,5 @@ To regenerate source benchmark results before producing/refreshing the graph:
   -Pjmh.resultFormat=TEXT
 ```
 
-> Note: JMH output is written to `benchmarks/build/results/jmh/results.<resultFormat lowercase>`.
-> For `TEXT`, the file is typically `benchmarks/build/results/jmh/results.text`.
+> Note: JMH output is written to `benchmarks/build/results/jmh/results.<resultFormat lowercase>`. For `TEXT`, the file
+> is typically `benchmarks/build/results/jmh/results.text`.
