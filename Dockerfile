@@ -1,6 +1,6 @@
 FROM openjdk:25-ea-slim
 
-RUN apt-get update && apt-get install -y procps && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y procps curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -22,5 +22,5 @@ ENTRYPOINT ["java", \
     "-jar", \
     "/app/app.jar"]
 
-#HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-#    CMD pgrep -f "java.*app.jar" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${HEALTH_HTTP_PORT:-8080}${HEALTH_HTTP_PATH:-/health} || exit 1

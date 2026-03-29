@@ -18,12 +18,15 @@ class HttpHealthServerTest {
 
   @Test
   void shouldNormalizePathAndDefaultAppName() throws Exception {
-    final var server = new HttpHealthServer("127.0.0.1", 0, "health", () -> true, null);
+    final var server = new HttpHealthServer("127.0.0.1", 0, "health", () -> true, () -> 5L, () -> true, null);
     try (server) {
       server.start();
       final var response = sendRequest(server, "GET");
       assertEquals(200, response.statusCode());
-      assertEquals("OK", response.body());
+      assertEquals("application/json; charset=utf-8", response.headers().firstValue("Content-Type").orElse(""));
+      assertTrue(response.body().contains("\"status\": \"OK\""));
+      assertTrue(response.body().contains("\"inFlight\": 5"));
+      assertTrue(response.body().contains("\"paused\": true"));
     }
   }
 
@@ -34,7 +37,7 @@ class HttpHealthServerTest {
 
       final var response = sendRequest(server, "GET");
       assertEquals(200, response.statusCode());
-      assertEquals("OK", response.body());
+      assertTrue(response.body().contains("\"status\": \"OK\""));
     }
   }
 
@@ -45,7 +48,7 @@ class HttpHealthServerTest {
 
       final var response = sendRequest(server, "GET");
       assertEquals(503, response.statusCode());
-      assertEquals("UNHEALTHY", response.body());
+      assertTrue(response.body().contains("\"status\": \"UNHEALTHY\""));
     }
   }
 
@@ -60,7 +63,7 @@ class HttpHealthServerTest {
 
       final var response = sendRequest(server, "GET");
       assertEquals(503, response.statusCode());
-      assertEquals("UNHEALTHY", response.body());
+      assertTrue(response.body().contains("\"status\": \"UNHEALTHY\""));
     }
   }
 
@@ -78,16 +81,15 @@ class HttpHealthServerTest {
   @Test
   void shouldReturnEmptyWhenDisabledFromEnv() {
     try (MockedStatic<AppConfig> mocked = Mockito.mockStatic(AppConfig.class)) {
-      mocked.when(() -> AppConfig.getEnvOrDefault(HttpHealthServer.ENV_ENABLED, "true")).thenReturn("false");
+      mocked.when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_ENABLED, "true")).thenReturn("false");
 
-      final Optional<HttpHealthServer> server = HttpHealthServer.fromEnv(() -> true, "test-app");
+      final Optional<HttpHealthServer> server = HttpHealthServer.fromEnv(() -> true, () -> 0L, () -> false, "test-app");
       assertTrue(server.isEmpty());
     }
   }
 
-  private static HttpHealthServer newServer(final BooleanSupplier supplier)
-    throws Exception {
-    return new HttpHealthServer("127.0.0.1", 0, "/health", supplier, "test-app");
+  private static HttpHealthServer newServer(final BooleanSupplier supplier) throws Exception {
+    return new HttpHealthServer("127.0.0.1", 0, "/health", supplier, () -> 0L, () -> false, "test-app");
   }
 
   private static HttpResponse<String> sendRequest(final HttpHealthServer server, final String method) throws Exception {

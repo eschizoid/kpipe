@@ -71,7 +71,14 @@ public class App implements AutoCloseable {
 
     final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
     runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
-    healthServer = HttpHealthServer.fromEnv(runner::isHealthy, config.appName()).orElse(null);
+    healthServer =
+      HttpHealthServer.fromEnv(
+        runner::isHealthy,
+        () -> kpipeConsumer.getMetrics().getOrDefault("inFlight", 0L),
+        kpipeConsumer::isPaused,
+        config.appName()
+      )
+        .orElse(null);
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.
