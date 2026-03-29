@@ -3,24 +3,22 @@ plugins {
   alias(libs.plugins.jmh)
 }
 
-val libsCatalog = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
-
 dependencies {
   // Benchmarks consume public API from :lib
   implementation(project(":lib"))
 
   // Benchmark targets
-  implementation(libsCatalog.findLibrary("kafkaClients").get())
-  implementation(libsCatalog.findLibrary("parallelConsumerCore").get())
-  implementation(libsCatalog.findLibrary("avro").get())
-  implementation(libsCatalog.findLibrary("dslJson").get())
+  implementation(libs.kafkaClients)
+  implementation(libs.parallelConsumerCore)
+  implementation(libs.avro)
+  implementation(libs.dslJson)
 
   // Logging for JMH forks
-  implementation(libsCatalog.findLibrary("slf4jSimple").get())
+  implementation(libs.slf4jSimple)
 
-  implementation(libsCatalog.findLibrary("kafkaTestCommonRuntime").get())
+  implementation(libs.kafkaTestCommonRuntime)
 
-  implementation(libsCatalog.findLibrary("junitJupiterApi").get())
+  implementation(libs.junitJupiterApi)
 }
 
 jmh {

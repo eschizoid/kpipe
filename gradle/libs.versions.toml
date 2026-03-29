@@ -17,8 +17,6 @@ jreleaser = "1.19.0"
 
 [libraries]
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
-kafkaScala213 = { module = "org.apache.kafka:kafka_2.13", version.ref = "kafka" }
-kafkaServerCommon = { module = "org.apache.kafka:kafka-server-common", version.ref = "kafka" }
 kafkaTestCommonRuntime = { module = "org.apache.kafka:kafka-test-common-runtime", version.ref = "kafka" }
 
 avro = { module = "org.apache.avro:avro", version.ref = "avro" }

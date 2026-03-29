@@ -1,4 +1,4 @@
-import org.gradle.api.artifacts.VersionCatalogsExtension
+
 import org.jreleaser.model.Active.ALWAYS
 import org.jreleaser.model.Active.NEVER
 
@@ -9,8 +9,6 @@ plugins {
   jacoco
   alias(libs.plugins.jreleaser)
 }
-
-val libsCatalog = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
 
 description = "KPipe - Functional Kafka Consumer Library"
 
@@ -37,33 +35,33 @@ repositories {
 
 dependencies {
   // Kafka
-  implementation(libsCatalog.findLibrary("kafkaClients").get())
+  implementation(libs.kafkaClients)
 
   // DSL-JSON
-  implementation(libsCatalog.findLibrary("dslJson").get())
-  annotationProcessor(libsCatalog.findLibrary("dslJson").get())
-  testAnnotationProcessor(libsCatalog.findLibrary("dslJson").get())
+  implementation(libs.dslJson)
+  annotationProcessor(libs.dslJson)
+  testAnnotationProcessor(libs.dslJson)
 
   // Avro
-  implementation(libsCatalog.findLibrary("avro").get())
+  implementation(libs.avro)
 
   // SLF4J API only
-  implementation(libsCatalog.findLibrary("slf4jApi").get())
+  implementation(libs.slf4jApi)
 
   // Testing
-  testImplementation(platform(libsCatalog.findLibrary("junitBom").get()))
-  testImplementation(libsCatalog.findLibrary("junitJupiter").get())
-  testRuntimeOnly(libsCatalog.findLibrary("junitPlatformLauncher").get())
+  testImplementation(platform(libs.junitBom))
+  testImplementation(libs.junitJupiter)
+  testRuntimeOnly(libs.junitPlatformLauncher)
 
-  testImplementation(libsCatalog.findLibrary("mockitoCore").get())
-  testImplementation(libsCatalog.findLibrary("mockitoJunitJupiter").get())
+  testImplementation(libs.mockitoCore)
+  testImplementation(libs.mockitoJunitJupiter)
 
-  testImplementation(libsCatalog.findLibrary("slf4jSimple").get())
+  testImplementation(libs.slf4jSimple)
 
-  testImplementation(libsCatalog.findLibrary("testcontainers").get())
-  testImplementation(libsCatalog.findLibrary("testcontainersJunitJupiter").get())
-  testImplementation(libsCatalog.findLibrary("testcontainersPostgresql").get())
-  testImplementation(libsCatalog.findLibrary("postgresql").get())
+  testImplementation(libs.testcontainers)
+  testImplementation(libs.testcontainersJunitJupiter)
+  testImplementation(libs.testcontainersPostgresql)
+  testImplementation(libs.postgresql)
 }
 
 tasks.test {

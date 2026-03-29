@@ -1,5 +1,4 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
 
 plugins {
@@ -7,23 +6,21 @@ plugins {
   alias(libs.plugins.shadow) apply false
 }
 
-val libsCatalog = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
-
 subprojects {
   apply(plugin = "java")
   apply(plugin = "com.gradleup.shadow")
 
   dependencies {
-    add("implementation", project(":lib"))
-    add("implementation", libsCatalog.findLibrary("kafkaClients").get())
-    add("implementation", libsCatalog.findLibrary("slf4jSimple").get())
+    implementation(project(":lib"))
+    implementation(rootProject.libs.kafkaClients)
+    implementation(rootProject.libs.slf4jSimple)
 
-    add("testImplementation", libsCatalog.findLibrary("junitJupiter").get())
-    add("testImplementation", libsCatalog.findLibrary("testcontainers").get())
-    add("testImplementation", libsCatalog.findLibrary("testcontainersJunitJupiter").get())
-    add("testImplementation", libsCatalog.findLibrary("testcontainersKafka").get())
-    add("testImplementation", libsCatalog.findLibrary("dslJson").get())
-    add("testRuntimeOnly", libsCatalog.findLibrary("junitPlatformLauncher").get())
+    testImplementation(rootProject.libs.junitJupiter)
+    testImplementation(rootProject.libs.testcontainers)
+    testImplementation(rootProject.libs.testcontainersJunitJupiter)
+    testImplementation(rootProject.libs.testcontainersKafka)
+    testImplementation(rootProject.libs.dslJson)
+    testRuntimeOnly(rootProject.libs.junitPlatformLauncher)
   }
 
   tasks.withType<Test> {
