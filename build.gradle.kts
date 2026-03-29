@@ -7,6 +7,13 @@ plugins {
 buildscript {
   dependencies {
     classpath(libs.jgitGpgBc)
+    classpath(libs.jgit)
+  }
+  configurations.classpath {
+    resolutionStrategy {
+      force(libs.jgitGpgBc)
+      force(libs.jgit)
+    }
   }
 }
 
