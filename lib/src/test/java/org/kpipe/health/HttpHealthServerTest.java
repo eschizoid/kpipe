@@ -31,7 +31,7 @@ class HttpHealthServerTest {
 
   @Test
   void shouldReturnOkWhenHealthy() throws Exception {
-    try (HttpHealthServer server = newServer(() -> true)) {
+    try (final var server = newServer(() -> true)) {
       server.start();
 
       final var response = sendRequest(server, "GET");
@@ -42,7 +42,7 @@ class HttpHealthServerTest {
 
   @Test
   void shouldReturnUnhealthyWhenSupplierFalse() throws Exception {
-    try (HttpHealthServer server = newServer(() -> false)) {
+    try (final var server = newServer(() -> false)) {
       server.start();
 
       final var response = sendRequest(server, "GET");

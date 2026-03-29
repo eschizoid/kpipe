@@ -152,7 +152,7 @@ Key performance indicators to watch for:
 
 ## Requirements
 
-- **Java 25+**
+- **Java 24+**
 - **Gradle**: Used to compile and execute the benchmark harness.
 
 ### CPU/CPI Profiling For Parallel Benchmark

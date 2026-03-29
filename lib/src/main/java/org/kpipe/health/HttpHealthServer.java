@@ -3,7 +3,6 @@ package org.kpipe.health;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.net.InetSocketAddress;
@@ -13,7 +12,6 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
-import org.kpipe.config.AppConfig;
 
 /// Lightweight HTTP health check server using the JDK built-in HttpServer.
 public final class HttpHealthServer implements AutoCloseable {
@@ -120,20 +118,17 @@ public final class HttpHealthServer implements AutoCloseable {
       healthy = false;
     }
 
-    final long inFlight = inFlightSupplier.get();
-    final boolean paused = pausedSupplier.getAsBoolean();
+    final var inFlight = inFlightSupplier.get();
+    final var paused = pausedSupplier.getAsBoolean();
 
     final var body = """
-        {
-          "status": "%s",
-          "inFlight": %d,
-          "paused": %b
-        }
-        """.formatted(
-        healthy ? "OK" : "UNHEALTHY",
-        inFlight,
-        paused
-      ).strip();
+      {
+        "status": "%s",
+        "inFlight": %d,
+        "paused": %b
+      }
+      """.formatted(healthy ? "OK" : "UNHEALTHY", inFlight, paused)
+      .strip();
 
     sendResponse(exchange, healthy ? 200 : 503, body);
   }
@@ -151,16 +146,6 @@ public final class HttpHealthServer implements AutoCloseable {
   private static String normalizePath(final String path) {
     if (path == null || path.isBlank()) return HealthConfig.DEFAULT_PATH;
     return path.startsWith("/") ? path : "/" + path;
-  }
-
-  private static int parsePort(final String value) {
-    try {
-      final var port = Integer.parseInt(value);
-      if (port < 1 || port > 65535) return HealthConfig.DEFAULT_PORT;
-      return port;
-    } catch (final NumberFormatException e) {
-      return HealthConfig.DEFAULT_PORT;
-    }
   }
 
   /// Returns the actual bind address of the underlying {@link HttpServer}.

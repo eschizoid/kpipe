@@ -133,4 +133,4 @@ public final class RegistryFunctions {
     registry.forEach((key, value) -> result.put(key, valueMapper.apply(value)));
     return Collections.unmodifiableMap(result);
   }
-} // end RegistryFunctions
+}

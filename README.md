@@ -101,26 +101,26 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 <dependency>
     <groupId>io.github.eschizoid</groupId>
     <artifactId>kpipe</artifactId>
-    <version>1.1.0</version>
+    <version>1.4.0</version>
 </dependency>
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'io.github.eschizoid:kpipe:1.1.0'
+implementation 'io.github.eschizoid:kpipe:1.4.0'
 ```
 
 ### Gradle (Kotlin)
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe:1.1.0")
+implementation("io.github.eschizoid:kpipe:1.4.0")
 ```
 
 ### SBT
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.1.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.4.0"
 ```
 
 ---
@@ -128,7 +128,7 @@ libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.1.0"
 ## Architecture and Reliability
 
 KPipe is designed to be a lightweight, high-performance alternative to existing Kafka consumer libraries, focusing on
-modern Java 25+ features and predictable behavior.
+modern Java 24+ features (Virtual Threads, Scoped Values) and predictable behavior.
 
 ### 1. The "Single SerDe Cycle" Strategy
 
@@ -182,7 +182,7 @@ public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
   // ... DB connection ...
 
   @Override
-  public void markOffsetProcessed(ConsumerRecord<K, V> record) {
+  public void markOffsetProcessed(final ConsumerRecord<K, V> record) {
     // SQL: UPDATE offsets SET offset = ? WHERE partition = ?
   }
 
@@ -190,7 +190,7 @@ public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
   public ConsumerRebalanceListener createRebalanceListener() {
     return new ConsumerRebalanceListener() {
       @Override
-      public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+      public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
         for (var tp : partitions) {
           long lastOffset = fetchFromDb(tp);
           consumer.seek(tp, lastOffset + 1);
@@ -224,7 +224,7 @@ Backpressure uses **two configurable watermarks** (hysteresis) to avoid rapid pa
 - **Low watermark** — resume Kafka polling when in-flight drops to or below this count (hysteresis)
 
 ```java
-final var consumer = KPipeConsumer.<String, String>builder()
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
   .withProcessor(pipeline)
@@ -461,7 +461,7 @@ final var jsonConsoleSink = new JsonConsoleSink<>();
 final var avroConsoleSink = new AvroConsoleSink<>();
 
 // Use a sink with a consumer
-final var consumer = KPipeConsumer.<String, byte[]>builder()
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
   .withProcessor(pipeline)
@@ -475,7 +475,7 @@ You can create custom sinks using lambda expressions:
 
 ```java
 // Create a custom sink that writes to a database
-MessageSink<String, byte[]> databaseSink = (record, processedValue) -> {
+MessageSink<byte[], byte[]> databaseSink = (record, processedValue) -> {
   try {
     // Parse the processed value
     final var data = new String(processedValue, StandardCharsets.UTF_8);
@@ -491,7 +491,7 @@ MessageSink<String, byte[]> databaseSink = (record, processedValue) -> {
 };
 
 // Use the custom sink with a consumer
-final var consumer = KPipeConsumer.<String, byte[]>builder().withMessageSink(databaseSink).build();
+final var consumer = KPipeConsumer.<byte[], byte[]>builder().withMessageSink(databaseSink).build();
 ```
 
 ### Message Sink Registry
@@ -511,7 +511,7 @@ registry.register(dbKey, byte[].class, databaseSink);
 final var sinkPipeline = registry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING, dbKey);
 
 // Use the sink pipeline with a consumer
-final var consumer = KPipeConsumer.<String, byte[]>builder()
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withMessageSink(sinkPipeline)
   .build();
 ```
@@ -558,7 +558,7 @@ graceful shutdown:
 
 ```java
 // Create a consumer runner with default settings
-ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
+ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner = ConsumerRunner.builder(consumer)
   .build();
 
 // Start the consumer
@@ -577,11 +577,11 @@ The `ConsumerRunner` supports extensive configuration options:
 final var runner = ConsumerRunner.builder(consumer)
   // Configure metrics reporting
   .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
-  .withMetricsInterval(30000) // Report metrics every 30 seconds
+  .withMetricsInterval(30_000) // Report metrics every 30 seconds
   // Configure health checks
   .withHealthCheck(KPipeConsumer::isRunning)
   // Configure graceful shutdown
-  .withShutdownTimeout(10000) // 10 seconds timeout for shutdown
+  .withShutdownTimeout(10_000) // 10 seconds timeout for shutdown
   .withShutdownHook(true) // Register JVM shutdown hook
   // Configure custom start action
   .withStartAction((c) -> {
@@ -620,14 +620,14 @@ The `ConsumerRunner` integrates with metrics reporting:
 
 ```java
 // Add multiple metrics reporters
-ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
+ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner = ConsumerRunner.builder(consumer)
   .withMetricsReporters(
     List.of(
       ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
       ProcessorMetricsReporter.forRegistry(processorRegistry)
     )
   )
-  .withMetricsInterval(60000) // Report every minute
+  .withMetricsInterval(60_000) // Report every minute
   .build();
 ```
 
@@ -636,7 +636,7 @@ ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(co
 The `ConsumerRunner` implements `AutoCloseable` for use with try-with-resources:
 
 ```java
-try (ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(consumer).build()) {
+try (ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner = ConsumerRunner.builder(consumer).build()) {
   runner.start();
   // Application logic here
   // Runner will be automatically closed when exiting the try block
@@ -746,7 +746,7 @@ export SHUTDOWN_TIMEOUT_SEC=5
 
 ## Requirements
 
-- Java 25+
+- Java 24+
 - Gradle (for building the project)
 - [kcat](https://github.com/edenhill/kcat) (for testing)
 - Docker (for local Kafka setup)
@@ -889,7 +889,8 @@ Function<byte[], byte[]> conditionalPipeline = MessageProcessorRegistry.when(
 ### Thread-Safety and Resource Management
 
 - Message processors should be stateless and thread-safe.
-- KPipe automatically handles resource reuse via `ScopedValue`. Avoid manual `ThreadLocal` usage.
+- KPipe automatically handles resource reuse via `ScopedValue` (optimized for Virtual Threads). Avoid manual
+  `ThreadLocal` usage.
 - For processors with side effects (like database calls), ensure they are compatible with high-concurrency virtual
   threads.
 

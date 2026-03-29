@@ -47,7 +47,7 @@ import org.kpipe.sink.MessageSink;
 /// Example usage:
 ///
 /// ```java
-/// final var consumer = KPipeConsumer.<String, String>builder()
+/// final var consumer = KPipeConsumer.<byte[], byte[]>builder()
 ///     .withProperties(kafkaProps)
 ///     .withTopic("example-topic")
 ///     .withProcessor(value -> processValue(value))
@@ -784,7 +784,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       if (!backpressureWarningLogged && inFlightCount.get() > BACKPRESSURE_WARNING_THRESHOLD) {
         LOGGER.log(
           Level.WARNING,
-          "In-flight count(%d) exceeds %d but background is disable for topic%s. ".formatted(
+          "In-flight count(%d) exceeds %d but backpressure is disabled for topic %s. ".formatted(
               inFlightCount.get(),
               BACKPRESSURE_WARNING_THRESHOLD,
               topic
