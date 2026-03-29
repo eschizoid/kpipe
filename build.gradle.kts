@@ -1,6 +1,13 @@
 plugins {
   alias(libs.plugins.spotless)
   alias(libs.plugins.axion)
+  alias(libs.plugins.jreleaser) apply false
+}
+
+buildscript {
+  dependencies {
+    classpath(libs.jgitGpgBc)
+  }
 }
 
 scmVersion {

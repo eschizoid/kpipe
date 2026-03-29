@@ -14,6 +14,7 @@ axion = "1.18.7"
 shadow = "8.3.5"
 jmh = "0.7.3"
 jreleaser = "1.19.0"
+jgit = "6.9.0.202403050730-r"
 
 [libraries]
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
@@ -39,6 +40,7 @@ testcontainersPostgresql = { module = "org.testcontainers:testcontainers-postgre
 testcontainersKafka = { module = "org.testcontainers:testcontainers-kafka", version.ref = "testcontainers" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 parallelConsumerCore = { module = "io.confluent.parallelconsumer:parallel-consumer-core", version.ref = "parallelConsumer" }
+jgitGpgBc = { module = "org.eclipse.jgit:org.eclipse.jgit.gpg.bc", version.ref = "jgit" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
