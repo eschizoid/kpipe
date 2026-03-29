@@ -12,10 +12,7 @@ import java.util.function.Supplier;
 ///
 /// ```java
 /// // Create with default logging
-/// ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
-///     consumer::getMetrics,
-///     () -> System.currentTimeMillis() - startTime
-/// );
+/// final var reporter = ConsumerMetricsReporter.forConsumer(consumer::getMetrics);
 /// reporter.reportMetrics(); // Will log to System logger
 /// ```
 ///
@@ -23,33 +20,16 @@ import java.util.function.Supplier;
 ///
 /// ```java
 /// // Report metrics to Prometheus
-/// Consumer<String> prometheusReporter = metric ->
-///     PrometheusClient.pushGauge("consumer_metrics", parseValues(metric));
-///
-/// ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
-///     consumer::getMetrics,
-///     () -> System.currentTimeMillis() - startTime,
-///     prometheusReporter
-/// );
+/// final var reporter = ConsumerMetricsReporter.forConsumer(consumer::getMetrics)
+///     .toConsumer(metric -> PrometheusClient.pushGauge("consumer_metrics", parseValues(metric)));
 /// ```
 ///
-/// **Example 3:** Advanced usage with alerting:
+/// **Example 3:** Fluent usage with custom reporter:
 ///
 /// ```java
-/// // Report and check thresholds
-/// ConsumerMetricsReporter reporter = new ConsumerMetricsReporter(
-///     consumer::getMetrics,
-///     () -> System.currentTimeMillis() - startTime,
-///     metric -> {
-///         logger.info(metric);
-///
-///         // Extract error count and check threshold
-///         int errors = extractErrorCount(metric);
-///         if (errors > ERROR_THRESHOLD) {
-///             alertSystem.sendAlert("High error rate detected: " + errors);
-///         }
-///     }
-/// );
+/// final var reporter = ConsumerMetricsReporter.forConsumer(consumer::getMetrics)
+///     .toConsumer(System.out::println);
+/// reporter.reportMetrics();
 /// ```
 ///
 /// @param metricsSupplier supplier of consumer metrics
@@ -59,30 +39,19 @@ public record ConsumerMetricsReporter(
   Supplier<Map<String, Long>> metricsSupplier,
   Supplier<Long> uptimeSupplier,
   Consumer<String> reporter
-)
-  implements MetricsReporter {
+) implements MetricsReporter {
   private static final Logger LOGGER = System.getLogger(ConsumerMetricsReporter.class.getName());
+  private static final long APP_START_TIME = System.currentTimeMillis();
   private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
   private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
   private static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
   private static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
 
-  /// Creates a consumer metrics reporter with the specified metrics supplier and reporter.
+  /// Creates a consumer metrics reporter with custom components.
   ///
-  /// Example with a custom reporter:
-  ///
-  /// ```java
-  /// // Send metrics to Slack
-  /// Consumer<String> slackReporter = metric ->
-  ///     slackClient.sendMessage("#metrics-channel", metric);
-  ///
-  /// final var reporter = new ConsumerMetricsReporter(
-  ///     consumer::getMetrics,
-  ///     () -> System.currentTimeMillis() - startTime,
-  ///     slackReporter
-  /// );
-  /// ```
+  /// This constructor is intended for internal use or advanced customization.
+  /// Use {@link #forConsumer} for a more ergonomic API.
   ///
   /// @param metricsSupplier supplier of consumer metrics
   /// @param uptimeSupplier supplier of application uptime in ms
@@ -113,19 +82,19 @@ public record ConsumerMetricsReporter(
       if (metrics != null && !metrics.isEmpty()) {
         final var sb = new StringBuilder(
           "Consumer metrics: messages received: %d, messages processed: %d, errors: %d, uptime: %d ms".formatted(
-              metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L),
-              metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L),
-              metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L),
-              uptimeSupplier.get()
-            )
+            metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L),
+            metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L),
+            metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L),
+            uptimeSupplier.get()
+          )
         );
 
         if (metrics.containsKey(METRIC_BACKPRESSURE_PAUSE_COUNT)) {
           sb.append(
             ", backpressure pauses: %d, backpressure time: %d ms".formatted(
-                metrics.getOrDefault(METRIC_BACKPRESSURE_PAUSE_COUNT, 0L),
-                metrics.getOrDefault(METRIC_BACKPRESSURE_TIME_MS, 0L)
-              )
+              metrics.getOrDefault(METRIC_BACKPRESSURE_PAUSE_COUNT, 0L),
+              metrics.getOrDefault(METRIC_BACKPRESSURE_TIME_MS, 0L)
+            )
           );
         }
 
@@ -138,5 +107,33 @@ public record ConsumerMetricsReporter(
 
   private void logMetrics(final String metrics) {
     LOGGER.log(Level.INFO, metrics);
+  }
+
+  /// Creates a fluent builder-like starting point for a consumer metrics reporter.
+  ///
+  /// @param metricsSupplier supplier of consumer metrics
+  /// @return a new reporter that can be further customized
+  public static ConsumerMetricsReporter forConsumer(final Supplier<Map<String, Long>> metricsSupplier) {
+    return new ConsumerMetricsReporter(metricsSupplier, () -> System.currentTimeMillis() - APP_START_TIME, null);
+  }
+
+  /// Creates a fluent builder-like starting point for a consumer metrics reporter.
+  ///
+  /// @param metricsSupplier supplier of consumer metrics
+  /// @param uptimeSupplier supplier of application uptime in ms
+  /// @return a new reporter that can be further customized
+  public static ConsumerMetricsReporter forConsumer(
+    final Supplier<Map<String, Long>> metricsSupplier,
+    final Supplier<Long> uptimeSupplier
+  ) {
+    return new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, null);
+  }
+
+  /// Creates a new reporter with the specified consumer for output.
+  ///
+  /// @param reporter the consumer for reporting metrics
+  /// @return a new ConsumerMetricsReporter instance
+  public ConsumerMetricsReporter toConsumer(final Consumer<String> reporter) {
+    return new ConsumerMetricsReporter(this.metricsSupplier, this.uptimeSupplier, reporter);
   }
 }

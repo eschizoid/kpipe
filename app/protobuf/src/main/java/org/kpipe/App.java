@@ -63,22 +63,16 @@ public class App implements AutoCloseable {
     sinkRegistry = new MessageSinkRegistry();
     kpipeConsumer = createConsumer(config, processorRegistry, sinkRegistry);
 
-    final var consumerMetricsReporter = new ConsumerMetricsReporter(
-      kpipeConsumer::getMetrics,
-      () -> System.currentTimeMillis() - startTime.get(),
-      null
-    );
+    final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
 
-    final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
+    final var processorMetricsReporter = ProcessorMetricsReporter.forRegistry(processorRegistry);
     runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
-    healthServer =
-      HttpHealthServer.fromEnv(
-        runner::isHealthy,
-        () -> kpipeConsumer.getMetrics().getOrDefault("inFlight", 0L),
-        kpipeConsumer::isPaused,
-        config.appName()
-      )
-        .orElse(null);
+    healthServer = HttpHealthServer.fromEnv(
+      runner::isHealthy,
+      () -> kpipeConsumer.getMetrics().getOrDefault("inFlight", 0L),
+      kpipeConsumer::isPaused,
+      config.appName()
+    ).orElse(null);
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.

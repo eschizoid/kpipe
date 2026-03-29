@@ -76,23 +76,17 @@ public class App implements AutoCloseable {
     sinkRegistry = new MessageSinkRegistry();
     functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry, schemaRegistryUrl);
 
-    final var consumerMetricsReporter = new ConsumerMetricsReporter(
-      functionalConsumer::getMetrics,
-      () -> System.currentTimeMillis() - startTime.get(),
-      null
-    );
+    final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(functionalConsumer::getMetrics);
 
-    final var processorMetricsReporter = new ProcessorMetricsReporter(processorRegistry, null);
-    final var sinkMetricsReporter = new SinkMetricsReporter(sinkRegistry, null);
+    final var processorMetricsReporter = ProcessorMetricsReporter.forRegistry(processorRegistry);
+    final var sinkMetricsReporter = SinkMetricsReporter.forRegistry(sinkRegistry);
     runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter);
-    healthServer =
-      HttpHealthServer.fromEnv(
-        runner::isHealthy,
-        () -> functionalConsumer.getMetrics().getOrDefault("inFlight", 0L),
-        functionalConsumer::isPaused,
-        config.appName()
-      )
-        .orElse(null);
+    healthServer = HttpHealthServer.fromEnv(
+      runner::isHealthy,
+      () -> functionalConsumer.getMetrics().getOrDefault("inFlight", 0L),
+      functionalConsumer::isPaused,
+      config.appName()
+    ).orElse(null);
   }
 
   private static String resolveSchemaRegistryUrl() {

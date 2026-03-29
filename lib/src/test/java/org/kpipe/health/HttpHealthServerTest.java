@@ -11,7 +11,6 @@ import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.kpipe.config.AppConfig;
-import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 class HttpHealthServerTest {
@@ -58,7 +57,7 @@ class HttpHealthServerTest {
       throw new RuntimeException("boom");
     };
 
-    try (HttpHealthServer server = newServer(supplier)) {
+    try (final var server = newServer(supplier)) {
       server.start();
 
       final var response = sendRequest(server, "GET");
@@ -69,7 +68,7 @@ class HttpHealthServerTest {
 
   @Test
   void shouldReturnMethodNotAllowedForNonGet() throws Exception {
-    try (HttpHealthServer server = newServer(() -> true)) {
+    try (final var server = newServer(() -> true)) {
       server.start();
 
       final var response = sendRequest(server, "POST");
@@ -80,7 +79,7 @@ class HttpHealthServerTest {
 
   @Test
   void shouldReturnEmptyWhenDisabledFromEnv() {
-    try (MockedStatic<AppConfig> mocked = Mockito.mockStatic(AppConfig.class)) {
+    try (final var mocked = Mockito.mockStatic(AppConfig.class)) {
       mocked.when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_ENABLED, "true")).thenReturn("false");
 
       final Optional<HttpHealthServer> server = HttpHealthServer.fromEnv(() -> true, () -> 0L, () -> false, "test-app");

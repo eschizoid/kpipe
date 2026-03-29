@@ -13,7 +13,7 @@ package org.kpipe.metrics;
 ///
 /// ```java
 /// // Create and use a metrics reporter
-/// final var reporter = new ProcessorMetricsReporter(registry);
+/// final var reporter = ProcessorMetricsReporter.forRegistry(registry);
 ///
 /// // Start the reporter (optional, if implemented)
 /// reporter.start();

@@ -63,7 +63,7 @@ class ProcessorMetricsReporterTest {
     doReturn(processorMap).when(registry).getAll();
     doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
-    metricsReporter = new ProcessorMetricsReporter(registry);
+    metricsReporter = ProcessorMetricsReporter.forRegistry(registry);
 
     // Assert
     assertDoesNotThrow(() -> metricsReporter.reportMetrics());
@@ -79,7 +79,7 @@ class ProcessorMetricsReporterTest {
     doReturn(processorMap).when(registry).getAll();
     doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
-    metricsReporter = new ProcessorMetricsReporter(registry, reporter);
+    metricsReporter = ProcessorMetricsReporter.forRegistry(registry).toConsumer(reporter);
 
     // Act
     metricsReporter.reportMetrics();
@@ -158,5 +158,38 @@ class ProcessorMetricsReporterTest {
 
     // Assert
     verify(reporter, times(1)).accept(anyString());
+  }
+
+  @Test
+  void shouldWorkWithFluentApi() {
+    // Arrange
+    final var processorMap = new HashMap<RegistryKey<?>, Object>();
+    for (final var name : processorNames) {
+      processorMap.put(name, new Object());
+    }
+    doReturn(processorMap).when(registry).getAll();
+    doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
+
+    // Act
+    ProcessorMetricsReporter.forRegistry(registry).toConsumer(reporter).reportMetrics();
+
+    // Assert
+    verify(reporter, times(processorNames.size())).accept(anyString());
+  }
+
+  @Test
+  void shouldSupportSelectiveReporting() {
+    // Arrange
+    final RegistryKey<?> selectedKey = RegistryKey.of("selected", Object.class);
+    final Set<RegistryKey<?>> selectedKeys = Collections.singleton(selectedKey);
+    doReturn(testMetrics).when(registry).getMetrics(selectedKey);
+
+    // Act
+    final var reporterInstance = ProcessorMetricsReporter.forRegistry(registry, selectedKeys).toConsumer(reporter);
+    reporterInstance.reportMetrics();
+
+    // Assert
+    verify(reporter, times(1)).accept(contains("selected"));
+    verify(registry, never()).getAll();
   }
 }

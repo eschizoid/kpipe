@@ -319,7 +319,7 @@ Configure automatic metrics reporting:
 
 ```java
 final var runner = ConsumerRunner.builder(consumer)
-  .withMetricsReporters(List.of(new ConsumerMetricsReporter(consumer::getMetrics, () -> uptimeMs, null)))
+  .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
   .withMetricsInterval(30_000)
   .build();
 
@@ -576,9 +576,7 @@ The `ConsumerRunner` supports extensive configuration options:
 // Create a consumer runner with advanced configuration
 final var runner = ConsumerRunner.builder(consumer)
   // Configure metrics reporting
-  .withMetricsReporters(
-    List.of(new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime, null))
-  )
+  .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
   .withMetricsInterval(30000) // Report metrics every 30 seconds
   // Configure health checks
   .withHealthCheck(KPipeConsumer::isRunning)
@@ -625,8 +623,8 @@ The `ConsumerRunner` integrates with metrics reporting:
 ConsumerRunner<KPipeConsumer<String, String>> runner = ConsumerRunner.builder(consumer)
   .withMetricsReporters(
     List.of(
-      new ConsumerMetricsReporter(consumer::getMetrics, () -> System.currentTimeMillis() - startTime, null),
-      new ProcessorMetricsReporter(registry)
+      ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
+      ProcessorMetricsReporter.forRegistry(processorRegistry)
     )
   )
   .withMetricsInterval(60000) // Report every minute
