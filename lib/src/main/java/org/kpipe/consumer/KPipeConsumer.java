@@ -71,7 +71,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
 
-  // Metric key constants
   private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
   private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
@@ -465,7 +464,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
             processCommands();
             checkBackpressure();
             if (!isRunning()) break;
-            if (isPaused()) { Thread.sleep(100); continue; }
+            if (isPaused()) {
+              Thread.sleep(100);
+              continue;
+            }
 
             final var records = pollRecords();
             if (records != null && !records.isEmpty()) processRecords(records);

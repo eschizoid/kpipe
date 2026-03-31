@@ -1,9 +1,6 @@
 package org.kpipe.processor;
 
-import com.dslplatform.json.DslJson;
 import java.io.ByteArrayOutputStream;
-import java.lang.System.Logger;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -27,10 +24,6 @@ import java.util.function.UnaryOperator;
 public class JsonMessageProcessor {
 
   private JsonMessageProcessor() {}
-
-  private static final Logger LOGGER = System.getLogger(JsonMessageProcessor.class.getName());
-  private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
-  private static final byte[] EMPTY_JSON = "{}".getBytes(StandardCharsets.UTF_8);
   private static final ScopedValue<ByteArrayOutputStream> OUTPUT_STREAM_CACHE = ScopedValue.newInstance();
 
   /// Creates an operator that adds a field with specified key and value to a JSON map.

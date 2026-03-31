@@ -47,7 +47,6 @@ public class AvroMessageProcessor {
   private AvroMessageProcessor() {}
 
   private static final Logger LOGGER = System.getLogger(AvroMessageProcessor.class.getName());
-  private static final byte[] EMPTY_AVRO = new byte[0];
   private static final ConcurrentHashMap<String, Schema> SCHEMA_REGISTRY = new ConcurrentHashMap<>();
 
   private static final ScopedValue<Schema.Parser> SCHEMA_PARSER = ScopedValue.newInstance();
