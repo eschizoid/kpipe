@@ -1,3 +1,6 @@
+/// This module defines the core components of the KPipe library, including
+/// configuration, consumers, health checks, metrics, processors, registry,
+/// and sinks.
 module org.kpipe {
   requires com.fasterxml.jackson.core;
   requires java.net.http;
