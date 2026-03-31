@@ -801,42 +801,17 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private boolean tryProcessRecord(final ConsumerRecord<K, V> record) {
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) {
-        if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
-        LOGGER.log(
-          Level.INFO,
-          "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempt, maxRetries)
-        );
-
-        try {
-          Thread.sleep(retryBackoff.toMillis());
-        } catch (final InterruptedException ie) {
-          Thread.currentThread().interrupt();
-          return false;
-        }
+        if (!handleRetry(record, attempt)) return false;
       }
 
       try {
         if (processor instanceof MessagePipeline typedPipeline) {
-          final var recordValue = (byte[]) record.value();
-          final var deserialized = typedPipeline.deserialize(recordValue);
-          if (deserialized == null) return false;
-
-          final var processed = typedPipeline.process(deserialized);
-          if (processed == null) return false;
-
-          final var sink = typedPipeline.getSink();
-          // Call configured sink for typed object
-          if (sink != null) sink.accept(processed);
-          // Fallback to consumer sink
-          else messageSink.accept((V) processed);
-
-          if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
-          return true;
+            return processTypedRecord(record, typedPipeline);
         }
 
         final var processedValue = processor.apply(record.value());
         messageSink.accept(processedValue);
-        if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
+        markOffsetProcessed(record);
         return true;
       } catch (final Exception e) {
         if (isInterruptionRelated(e)) {
@@ -845,23 +820,62 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         }
 
         if (attempt == maxRetries) {
-          if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-          LOGGER.log(
-            Level.WARNING,
-            "Failed to process message at offset %d after %d attempts: %s".formatted(
-              record.offset(),
-              maxRetries + 1,
-              e.getMessage()
-            ),
-            e
-          );
-          errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
-          if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
+          handleProcessingError(record, e);
           return false;
         }
       }
     }
     return false;
+  }
+
+  private boolean handleRetry(final ConsumerRecord<K, V> record, final int attempt) {
+    if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
+    LOGGER.log(
+      Level.INFO,
+      "Retrying message at offset {0} (attempt {1} of {2})",
+      new Object[] { record.offset(), attempt, maxRetries }
+    );
+
+    try {
+      Thread.sleep(retryBackoff.toMillis());
+      return true;
+    } catch (final InterruptedException ie) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private boolean processTypedRecord(final ConsumerRecord<K, V> record, final MessagePipeline typedPipeline) {
+    final var recordValue = (byte[]) record.value();
+    final var deserialized = typedPipeline.deserialize(recordValue);
+    if (deserialized == null) return false;
+
+    final var processed = typedPipeline.process(deserialized);
+    if (processed == null) return false;
+
+    final var sink = typedPipeline.getSink();
+    if (sink != null) sink.accept(processed);
+    else messageSink.accept((V) processed);
+
+    markOffsetProcessed(record);
+    return true;
+  }
+
+  private void markOffsetProcessed(final ConsumerRecord<K, V> record) {
+    if (offsetManager != null) {
+      commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
+    }
+  }
+
+  private void handleProcessingError(final ConsumerRecord<K, V> record, final Exception e) {
+    if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+    LOGGER.log(
+      Level.WARNING,
+      "Failed to process message at offset {0} after {1} attempts: {2}",
+            record.offset(), maxRetries + 1, e.getMessage());
+    errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
+    markOffsetProcessed(record);
   }
 
   private void checkBackpressure() {
