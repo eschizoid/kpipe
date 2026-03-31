@@ -54,9 +54,9 @@ class AppIntegrationTest {
 
     try (final var app = new App(config)) {
       // Register the capturing sink
-      app.getProcessorRegistry().sinkRegistry().register(RegistryKey.of("jsonLogging", Map.class), capturingSink);
+      app.getProcessorRegistry().sinkRegistry().register(RegistryKey.json("jsonLogging"), capturingSink);
       // Verify registration
-      final var sink = app.getProcessorRegistry().sinkRegistry().get(RegistryKey.of("jsonLogging", Map.class));
+      final var sink = app.getProcessorRegistry().sinkRegistry().get(RegistryKey.json("jsonLogging"));
       System.out.println("[DEBUG_LOG] Registered sink is capturing: " + (sink != null));
 
       // Set up the processor registry
