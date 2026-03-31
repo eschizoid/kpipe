@@ -139,9 +139,7 @@ public class MessageProcessorRegistry {
     ///
     /// @return the composed pipeline function
     public Function<byte[], byte[]> build() {
-      UnaryOperator<Map<String, Object>> combined = obj -> obj;
-      for (final var op : operators) combined = compose(combined, op);
-      final var finalCombined = combined;
+      final var finalCombined = operators.stream().reduce(obj -> obj, (acc, op) -> t -> op.apply(acc.apply(t)));
       return bytes -> JsonMessageProcessor.inScopedCaches(() -> JsonMessageProcessor.processJson(bytes, finalCombined));
     }
   }
@@ -196,11 +194,7 @@ public class MessageProcessorRegistry {
       final var schema = AvroMessageProcessor.getSchema(schemaKey);
       if (schema == null) throw new IllegalArgumentException("Schema not found: " + schemaKey);
 
-      UnaryOperator<GenericRecord> combined = record -> record;
-      for (final var op : operators) {
-        combined = compose(combined, op);
-      }
-      final var finalCombined = combined;
+      final var finalCombined = operators.stream().reduce(record -> record, (acc, op) -> t -> op.apply(acc.apply(t)));
       return bytes ->
         AvroMessageProcessor.inScopedCaches(() ->
           AvroMessageProcessor.processAvro(bytes, offset, schema, finalCombined)
@@ -246,32 +240,22 @@ public class MessageProcessorRegistry {
     ///
     /// @return the composed pipeline function
     public Function<byte[], byte[]> build() {
-      final MessageFormat<T> format = MessageFormat.pojo(clazz);
-
-      UnaryOperator<T> combined = obj -> obj;
-      for (final var op : operators) {
-        combined = compose(combined, op);
-      }
-      final var finalCombined = combined;
+      final var format = MessageFormat.pojo(clazz);
+      final var finalCombined = operators.stream().reduce(obj -> obj, (acc, op) -> t -> op.apply(acc.apply(t)));
 
       return bytes -> {
         try {
           if (bytes == null || bytes.length == 0) return bytes;
-          final T deserialized = format.deserialize(bytes);
+          final var deserialized = format.deserialize(bytes);
           if (deserialized == null) return bytes;
-          final T processed = finalCombined.apply(deserialized);
-          if (processed == null) return bytes;
-          return format.serialize(processed);
+          final var processed = finalCombined.apply(deserialized);
+          return (processed == null) ? bytes : format.serialize(processed);
         } catch (final Exception e) {
           LOGGER.log(Level.WARNING, "Error in POJO pipeline execution", e);
           return defaultErrorValue;
         }
       };
     }
-  }
-
-  private <T> UnaryOperator<T> compose(UnaryOperator<T> first, UnaryOperator<T> second) {
-    return t -> second.apply(first.apply(t));
   }
 
   /// Registers a typed operator using a type-safe RegistryKey.
