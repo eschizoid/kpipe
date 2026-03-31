@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
+import org.kpipe.processor.JsonMessageProcessor;
 
 /// JSON implementation of MessageFormat for KPipe.
 ///
@@ -81,10 +82,15 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   /// @return the serialized byte array
   @Override
   public byte[] serialize(final Map<String, Object> data) {
-    try (final var output = new ByteArrayOutputStream()) {
-      DSL_JSON.serialize(data, output);
-      return output.toByteArray();
-    } catch (final IOException e) {
+    if (data == null) return null;
+    try {
+      return JsonMessageProcessor.inScopedCaches(() -> {
+        try (final var output = new ByteArrayOutputStream()) {
+          DSL_JSON.serialize(data, output);
+          return output.toByteArray();
+        }
+      });
+    } catch (final Exception e) {
       throw new RuntimeException("Failed to serialize JSON", e);
     }
   }
@@ -96,6 +102,7 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   @Override
   @SuppressWarnings("unchecked")
   public Map<String, Object> deserialize(final byte[] data) {
+    if (data == null || data.length == 0) return null;
     try (final var input = new ByteArrayInputStream(data)) {
       return (Map<String, Object>) DSL_JSON.deserialize(Map.class, input);
     } catch (final IOException e) {

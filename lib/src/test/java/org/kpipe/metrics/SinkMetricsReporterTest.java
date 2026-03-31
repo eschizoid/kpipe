@@ -42,7 +42,7 @@ class SinkMetricsReporterTest {
   @BeforeEach
   void setUp() {
     sinkKeys = new HashSet<>(
-      Arrays.asList(RegistryKey.of("sink1", Object.class), RegistryKey.of("sink2", Object.class))
+      Arrays.asList(RegistryKey.of("sink1", byte[].class), RegistryKey.of("sink2", byte[].class))
     );
 
     testMetrics = new HashMap<>();
@@ -70,7 +70,7 @@ class SinkMetricsReporterTest {
   @Test
   void shouldSupportSelectiveReporting() {
     // Arrange
-    final RegistryKey<?> selectedKey = RegistryKey.of("selected", Object.class);
+    final RegistryKey<?> selectedKey = RegistryKey.of("selected", byte[].class);
     final Set<RegistryKey<?>> selectedKeys = Collections.singleton(selectedKey);
     doReturn(testMetrics).when(registry).getMetrics(selectedKey);
 

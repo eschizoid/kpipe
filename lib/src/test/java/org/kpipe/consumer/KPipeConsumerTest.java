@@ -320,7 +320,7 @@ class KPipeConsumerTest {
     consumer.processRecord(record);
 
     // Assert
-    verify(sink).send(eq(record), eq("v-processed"));
+    verify(sink).accept(eq("v-processed"));
     consumer.close();
   }
 
@@ -351,7 +351,7 @@ class KPipeConsumerTest {
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(Function.identity())
-      .withMessageSink((record, value) -> {
+      .withMessageSink(value -> {
         try {
           Thread.sleep(500);
         } catch (InterruptedException e) {
@@ -386,7 +386,7 @@ class KPipeConsumerTest {
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessor(Function.identity())
-      .withMessageSink((record, value) -> {
+      .withMessageSink(value -> {
         try {
           Thread.sleep(500);
         } catch (InterruptedException e) {

@@ -30,12 +30,22 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
 
   private final Map<String, SchemaInfo> schemas = new ConcurrentHashMap<>();
   private final Function<String, String> schemaReader;
+  private String defaultSchemaKey;
 
   /// Constructs a new AvroFormat with the specified schema reader function.
   ///
   /// @param schemaReader Function to read schema content from a location
   public AvroFormat(final Function<String, String> schemaReader) {
     this.schemaReader = schemaReader;
+  }
+
+  /// Sets the default schema key to use for deserialization.
+  ///
+  /// @param schemaKey The schema key
+  /// @return This AvroFormat instance
+  public AvroFormat withDefaultSchema(String schemaKey) {
+    this.defaultSchemaKey = schemaKey;
+    return this;
   }
 
   /// Returns an unmodifiable view of all schemas registered with this format.
@@ -106,12 +116,26 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     }
   }
 
-  /// Deserialization is not supported without schema context.
+  /// Deserializes the given byte array to an Avro GenericRecord.
   ///
   /// @param data the serialized byte array
-  /// @return nothing; always throws UnsupportedOperationException
+  /// @return the deserialized record
   @Override
   public GenericRecord deserialize(final byte[] data) {
-    throw new UnsupportedOperationException("Avro deserialization requires a schema context. Use specialized methods.");
+    if (data == null || data.length == 0) return null;
+    if (defaultSchemaKey == null) {
+      throw new UnsupportedOperationException(
+        "Avro deserialization requires a default schema key. Use withDefaultSchema()."
+      );
+    }
+    final var schema = AvroMessageProcessor.getSchema(defaultSchemaKey);
+    if (schema == null) {
+      throw new IllegalArgumentException("No schema found for key: " + defaultSchemaKey);
+    }
+    return AvroMessageProcessor.inScopedCaches(() -> {
+      final var datumReader = new org.apache.avro.generic.GenericDatumReader<GenericRecord>(schema);
+      final var decoder = org.apache.avro.io.DecoderFactory.get().binaryDecoder(data, null);
+      return datumReader.read(null, decoder);
+    });
   }
 }

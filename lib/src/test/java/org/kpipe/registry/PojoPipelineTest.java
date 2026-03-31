@@ -15,7 +15,7 @@ public class PojoPipelineTest {
     registry.registerOperator(userMaskerKey, (UserRecord user) -> new UserRecord(user.id(), "MASKED", user.email()));
 
     // Build pipeline
-    final var pipeline = registry.pojoPipelineBuilder(UserRecord.class).add(userMaskerKey).build();
+    final var pipeline = registry.pipeline(MessageFormat.pojo(UserRecord.class)).add(userMaskerKey).build();
 
     // Initial data
     final var user = new UserRecord("1", "John Doe", "john@example.com");
@@ -41,7 +41,7 @@ public class PojoPipelineTest {
     final byte[] inputBytes = format.serialize(user);
 
     final var pipeline = registry
-      .pojoPipelineBuilder(UserRecord.class)
+      .pipeline(MessageFormat.pojo(UserRecord.class))
       .add(u -> new UserRecord(u.id(), u.name().toUpperCase(), u.email()))
       .add(u -> new UserRecord(u.id(), u.name(), "PROTECTED"))
       .build();

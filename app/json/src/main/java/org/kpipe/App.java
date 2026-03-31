@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
@@ -60,10 +61,12 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
-    sinkRegistry = new MessageSinkRegistry();
+    this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
+    this.sinkRegistry = processorRegistry.sinkRegistry();
+    // Pre-register loggers
+    sinkRegistry.register(RegistryKey.of("jsonLogging", Map.class), new org.kpipe.sink.JsonConsoleSink<>());
 
-    kpipeConsumer = createConsumer(config, processorRegistry, sinkRegistry);
+    this.kpipeConsumer = createConsumer(config, processorRegistry);
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
 
     final var processorMetricsReporter = ProcessorMetricsReporter.forRegistry(processorRegistry);
@@ -101,12 +104,10 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   /// @param processorRegistry Map of processor functions
-  /// @param sinkRegistry Map of sink functions
   /// @return A configured functional consumer
   public static KPipeConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
-    final MessageProcessorRegistry processorRegistry,
-    final MessageSinkRegistry sinkRegistry
+    final MessageProcessorRegistry processorRegistry
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
@@ -116,7 +117,6 @@ public class App implements AutoCloseable {
       .withTopic(config.topic())
       .withProcessor(createJsonProcessorPipeline(processorRegistry, config))
       .withPollTimeout(config.pollTimeout())
-      .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
       .withMetrics(true)
@@ -140,8 +140,8 @@ public class App implements AutoCloseable {
   ///
   /// @param registry the message sink registry
   /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    return registry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING);
+  private static MessageSink<byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
+    return registry.pipeline(MessageSinkRegistry.JSON_LOGGING);
   }
 
   /// Creates a processor pipeline using the provided registry.
@@ -149,12 +149,13 @@ public class App implements AutoCloseable {
   /// @param registry the message processor registry
   /// @param config the application configuration
   /// @return a function that processes messages through the pipeline
-  private static Function<byte[], byte[]> createJsonProcessorPipeline(
+  private static java.util.function.UnaryOperator<byte[]> createJsonProcessorPipeline(
     final MessageProcessorRegistry registry,
     final AppConfig config
   ) {
-    final var builder = registry.jsonPipelineBuilder();
+    final var builder = registry.pipeline(MessageFormat.JSON);
     for (final var name : config.processors()) builder.add(RegistryKey.json(name));
+    builder.toSink(RegistryKey.of("jsonLogging", Map.class));
     return builder.build();
   }
 

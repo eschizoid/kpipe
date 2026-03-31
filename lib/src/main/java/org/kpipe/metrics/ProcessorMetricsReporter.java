@@ -104,7 +104,7 @@ public record ProcessorMetricsReporter(
   /// @param registry the message processor registry
   /// @return a new reporter that can be further customized
   public static ProcessorMetricsReporter forRegistry(final MessageProcessorRegistry registry) {
-    return new ProcessorMetricsReporter(() -> registry.getAll().keySet(), registry::getMetrics, null);
+    return new ProcessorMetricsReporter(registry::getKeys, registry::getMetrics, null);
   }
 
   /// Creates a fluent builder-like starting point for selective processor metrics reporting.

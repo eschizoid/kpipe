@@ -23,12 +23,10 @@ import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
 import org.kpipe.metrics.SinkMetricsReporter;
-import org.kpipe.processor.AvroMessageProcessor;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
-import org.kpipe.sink.AvroConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
@@ -73,8 +71,8 @@ public class App implements AutoCloseable {
   /// @param schemaRegistryUrl Schema Registry base URL
   public App(final AppConfig config, final String schemaRegistryUrl) {
     processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
-    sinkRegistry = new MessageSinkRegistry();
-    functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry, schemaRegistryUrl);
+    sinkRegistry = processorRegistry.sinkRegistry();
+    functionalConsumer = createConsumer(config, processorRegistry, schemaRegistryUrl);
 
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(functionalConsumer::getMetrics);
 
@@ -121,12 +119,11 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   /// @param processorRegistry Map of processor functions
-  /// @param sinkRegistry Map of sink functions
+  /// @param schemaRegistryUrl Schema Registry base URL
   /// @return A configured functional consumer
   public static KPipeConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
     final MessageProcessorRegistry processorRegistry,
-    final MessageSinkRegistry sinkRegistry,
     final String schemaRegistryUrl
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
@@ -135,9 +132,8 @@ public class App implements AutoCloseable {
     return KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createAvroProcessorPipeline(processorRegistry, config, sinkRegistry, schemaRegistryUrl))
+      .withProcessor(createAvroProcessorPipeline(processorRegistry, config, schemaRegistryUrl))
       .withPollTimeout(config.pollTimeout())
-      .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
       .withMetrics(true)
@@ -161,34 +157,30 @@ public class App implements AutoCloseable {
   ///
   /// @param registry the message sink registry
   /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    return registry.pipeline(byte[].class, MessageSinkRegistry.AVRO_LOGGING);
+  private static MessageSink<byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
+    return registry.pipeline(MessageSinkRegistry.AVRO_LOGGING);
   }
 
   /// Creates a processor pipeline using the provided registry.
   ///
   /// @param registry the message processor registry
   /// @param config the application configuration
-  /// @param sinkRegistry the message sink registry
+  /// @param schemaRegistryUrl the schema registry URL
   /// @return a function that processes messages through the pipeline
-  private static Function<byte[], byte[]> createAvroProcessorPipeline(
+  private static java.util.function.UnaryOperator<byte[]> createAvroProcessorPipeline(
     final MessageProcessorRegistry registry,
     final AppConfig config,
-    final MessageSinkRegistry sinkRegistry,
     final String schemaRegistryUrl
   ) {
-    registry.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
+    final var avroFormat = (org.kpipe.registry.AvroFormat) MessageFormat.AVRO;
+    // Register schema for the test/app
+    avroFormat.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
+    avroFormat.withDefaultSchema("1");
 
-    // Register the sink
-    final var schema = AvroMessageProcessor.getSchema("1");
-    if (schema != null) sinkRegistry.register(
-      MessageSinkRegistry.AVRO_LOGGING,
-      byte[].class,
-      new AvroConsoleSink<>(schema)
-    );
-
-    final var builder = registry.avroPipelineBuilder("1", 5);
+    final var builder = registry.pipeline(avroFormat);
+    builder.skipBytes(5);
     for (final var name : config.processors()) builder.add(RegistryKey.avro(name));
+    builder.toSink(RegistryKey.of("avroLogging", org.apache.avro.generic.GenericRecord.class));
     return builder.build();
   }
 

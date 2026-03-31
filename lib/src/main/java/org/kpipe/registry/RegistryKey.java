@@ -45,13 +45,13 @@ public record RegistryKey<T>(String name, Class<T> type) {
     return of(name, GenericRecord.class);
   }
 
-  /// Convenience factory for POJO/Record keys.
+  /// Convenience factory for sink keys.
   ///
-  /// @param <T> The POJO type
-  /// @param name The unique name of the registry entry
-  /// @param type The POJO class
-  /// @return A new RegistryKey for the specified POJO type
-  public static <T> RegistryKey<T> pojo(final String name, final Class<T> type) {
+  /// @param <T> The type of the processed object the sink accepts
+  /// @param name The unique name of the sink
+  /// @param type The class representing the type
+  /// @return A new type-safe RegistryKey for a sink
+  public static <T> RegistryKey<T> sink(final String name, final Class<T> type) {
     return new RegistryKey<>(name, type);
   }
 }

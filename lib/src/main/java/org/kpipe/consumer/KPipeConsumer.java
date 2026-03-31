@@ -84,7 +84,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final Function<V, V> processor;
   private final ExecutorService virtualThreadExecutor;
   private final Duration pollTimeout;
-  private final MessageSink<K, V> messageSink;
+  private final MessageSink<V> messageSink;
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
   private final Duration waitForMessagesTimeout;
   private final Duration threadTerminationTimeout;
@@ -150,7 +150,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private Duration retryBackoff = Duration.ofMillis(500);
     private boolean enableMetrics = true;
     private boolean sequentialProcessing = false;
-    private MessageSink<K, V> messageSink;
+    private MessageSink<V> messageSink;
     private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
     private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
@@ -186,6 +186,16 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     public Builder<K, V> withProcessor(final Function<V, V> processor) {
       this.processor = processor;
       return this;
+    }
+
+    /// Sets the pipeline to process each consumed message.
+    ///
+    /// This is equivalent to `withProcessor` but emphasizes the use of a typed pipeline.
+    ///
+    /// @param pipeline The pipeline to apply to message values
+    /// @return This builder instance for method chaining
+    public Builder<K, V> withPipeline(final Function<V, V> pipeline) {
+      return withProcessor(pipeline);
     }
 
     /// Sets the timeout duration for the consumer's poll operation.
@@ -240,7 +250,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param messageSink The sink that handles successfully processed messages
     /// @return This builder instance for method chaining
-    public Builder<K, V> withMessageSink(final MessageSink<K, V> messageSink) {
+    public Builder<K, V> withMessageSink(final MessageSink<V> messageSink) {
       this.messageSink = messageSink;
       return this;
     }
@@ -806,7 +816,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
       try {
         final var processedValue = processor.apply(record.value());
-        messageSink.send(record, processedValue);
+        messageSink.accept(processedValue);
         if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
         return true;
       } catch (final Exception e) {

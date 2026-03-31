@@ -1,14 +1,10 @@
 package org.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-import java.util.concurrent.atomic.AtomicInteger;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.kpipe.sink.MessageSink;
 
 class MessageSinkRegistryTest {
@@ -37,16 +33,13 @@ class MessageSinkRegistryTest {
     final var key = RegistryKey.of("testSink", Object.class);
 
     // Act
-    registry.register(key, Object.class, testSink);
-    final var retrieved = registry.get(key, Object.class);
+    registry.register(key, testSink);
+    final var retrieved = registry.get(key);
 
     // Assert
     assertNotNull(retrieved);
-
-    final var record = new ConsumerRecord<Object, Object>("topic", 0, 0, "key", "value");
-    retrieved.send(record, "processed");
-
-    verify(testSink).send(record, "processed");
+    retrieved.accept("processed");
+    verify(testSink).accept("processed");
   }
 
   @Test
@@ -54,7 +47,7 @@ class MessageSinkRegistryTest {
     // Arrange
     final var testSink = mock(MessageSink.class);
     final var key = RegistryKey.<Object>of("sinkToRemove", Object.class);
-    registry.register(key, Object.class, testSink);
+    registry.register(key, testSink);
 
     // Act & Assert
     assertTrue(registry.getAll().containsKey(key));
@@ -68,7 +61,7 @@ class MessageSinkRegistryTest {
   void shouldClearAllSinks() {
     // Arrange
     final var testSink = mock(MessageSink.class);
-    registry.register(RegistryKey.of("testSink", Object.class), Object.class, testSink);
+    registry.register(RegistryKey.of("testSink", Object.class), testSink);
 
     // Act
     registry.clear();
@@ -86,56 +79,53 @@ class MessageSinkRegistryTest {
     final var key1 = RegistryKey.of("sink1", Object.class);
     final var key2 = RegistryKey.of("sink2", Object.class);
 
-    registry.register(key1, Object.class, sink1);
-    registry.register(key2, Object.class, sink2);
+    registry.register(key1, sink1);
+    registry.register(key2, sink2);
 
     // Act
-    final var pipeline = registry.pipeline(Object.class, key1, key2);
-    final var record = new ConsumerRecord<Object, Object>("topic", 0, 0, "key", "value");
-    pipeline.send(record, "processed");
+    final var pipeline = registry.pipeline(key1, key2);
+    pipeline.accept("processed");
 
     // Assert
-    verify(sink1).send(record, "processed");
-    verify(sink2).send(record, "processed");
+    verify(sink1).accept("processed");
+    verify(sink2).accept("processed");
   }
 
   @Test
   void shouldContinuePipelineWhenOneSinkThrowsException() {
     // Arrange
     final var failingSink = mock(MessageSink.class);
-    doThrow(new RuntimeException("Test failure")).when(failingSink).send(any(), any());
+    doThrow(new RuntimeException("Test failure")).when(failingSink).accept(any());
 
     final var workingSink = mock(MessageSink.class);
 
     final var keyFailing = RegistryKey.of("failingSink", Object.class);
     final var keyWorking = RegistryKey.of("workingSink", Object.class);
 
-    registry.register(keyFailing, Object.class, failingSink);
-    registry.register(keyWorking, Object.class, workingSink);
+    registry.register(keyFailing, failingSink);
+    registry.register(keyWorking, workingSink);
 
     // Act
-    final var pipeline = registry.pipeline(Object.class, keyFailing, keyWorking);
-    final var record = new ConsumerRecord<Object, Object>("topic", 0, 0, "key", "value");
-    pipeline.send(record, "processed");
+    final var pipeline = registry.pipeline(keyFailing, keyWorking);
+    pipeline.accept("processed");
 
     // Assert
-    verify(workingSink).send(record, "processed");
+    verify(workingSink).accept("processed");
   }
 
   @Test
   void shouldTrackMetricsForSink() {
     // Arrange
-    final var callCount = new AtomicInteger(0);
-    final MessageSink<Object, Object> countingSink = (record, value) -> callCount.incrementAndGet();
+    final var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    final MessageSink<Object> countingSink = value -> callCount.incrementAndGet();
 
     final var key = RegistryKey.of("countingSink", Object.class);
-    registry.register(key, Object.class, countingSink);
-    final var sink = registry.get(key, Object.class);
+    registry.register(key, countingSink);
+    final var sink = registry.get(key);
 
     // Act
-    final var record = new ConsumerRecord<Object, Object>("topic", 0, 0, "key", "value");
-    sink.send(record, "processed");
-    sink.send(record, "processed");
+    sink.accept("processed");
+    sink.accept("processed");
 
     // Assert
     final var metrics = registry.getMetrics(key);
@@ -146,18 +136,17 @@ class MessageSinkRegistryTest {
   @Test
   void shouldTrackErrorMetricsForFailingSink() {
     // Arrange
-    final MessageSink<Object, Object> failingSink = (record, value) -> {
+    final MessageSink<Object> failingSink = value -> {
       throw new RuntimeException("Test failure");
     };
 
     final var key = RegistryKey.of("failingSink", Object.class);
-    registry.register(key, Object.class, failingSink);
-    final var sink = registry.get(key, Object.class);
+    registry.register(key, failingSink);
+    final var sink = registry.get(key);
 
     // Act
-    final var record = new ConsumerRecord<Object, Object>("topic", 0, 0, "key", "value");
     try {
-      sink.send(record, "processed");
+      sink.accept("processed");
       fail("Should have thrown an exception");
     } catch (final RuntimeException e) {
       // Expected
@@ -165,29 +154,27 @@ class MessageSinkRegistryTest {
 
     // Assert
     final var metrics = registry.getMetrics(key);
-    assertEquals(0L, metrics.get("invocationCount"));
     assertEquals(1L, metrics.get("errorCount"));
   }
 
   @Test
   void shouldWrapSinkWithErrorHandling() {
     // Arrange
-    final MessageSink<Object, Object> failingSink = (record, value) -> {
+    final MessageSink<Object> failingSink = value -> {
       throw new RuntimeException("Test failure");
     };
 
     // Act
     final var safeSink = MessageSinkRegistry.withErrorHandling(failingSink);
-    final var record = new ConsumerRecord<Object, Object>("topic", 0, 0, "key", "value");
 
     // Assert - should not throw exception
-    safeSink.send(record, "processed");
+    safeSink.accept("processed");
   }
 
   @Test
   void shouldReturnEmptyMetricsForNonExistentSink() {
     // Act
-    final var metrics = registry.getMetrics(RegistryKey.<Object>of("nonExistentSink", Object.class));
+    final var metrics = registry.getMetrics(RegistryKey.of("nonExistent", Object.class));
 
     // Assert
     assertTrue(metrics.isEmpty());
@@ -199,13 +186,15 @@ class MessageSinkRegistryTest {
     final var testSink = mock(MessageSink.class);
 
     // Assert
-    assertThrows(NullPointerException.class, () -> registry.register(null, Object.class, testSink));
+    assertThrows(NullPointerException.class, () -> registry.register(null, testSink));
   }
 
   @Test
   void shouldRejectNullSink() {
     // Assert
-    assertThrows(NullPointerException.class, () -> registry.register(RegistryKey.<Object>of("test", Object.class), Object.class, null));
+    assertThrows(NullPointerException.class, () ->
+      registry.register(RegistryKey.<Object>of("test", Object.class), null)
+    );
   }
 
   @Test
@@ -213,26 +202,27 @@ class MessageSinkRegistryTest {
     // Arrange
     final var key = RegistryKey.<String>of("typedSink", String.class);
     @SuppressWarnings("unchecked")
-    final MessageSink<String, String> testSink = mock(MessageSink.class);
-    registry.register(key, String.class, testSink);
+    final MessageSink<String> testSink = mock(MessageSink.class);
+    registry.register(key, testSink);
 
     // Act
-    final var retrieved = registry.get(key, String.class);
-    final var record = new ConsumerRecord<>("topic", 0, 0, "key", "value");
-    retrieved.send(record, "processed");
+    final var retrieved = registry.get(key);
+    retrieved.accept("processed");
 
     // Assert
-    assertNotNull(retrieved);
-    verify(testSink).send(record, "processed");
+    verify(testSink).accept("processed");
   }
 
   @Test
   void shouldThrowOnTypeMismatch() {
     // Arrange
-    final var key = RegistryKey.<Integer>of("typeMismatchSink", Integer.class);
-    registry.register(key, String.class, (record, value) -> {});
+    final var key = RegistryKey.<String>of("typedSink", String.class);
+    registry.register(key, msg -> {});
 
     // Act & Assert
-    assertThrows(IllegalArgumentException.class, () -> registry.get(key, Integer.class));
+    assertThrows(ClassCastException.class, () -> {
+      final MessageSink<Integer> retrieved = (MessageSink<Integer>) (MessageSink<?>) registry.get(key);
+      retrieved.accept(123);
+    });
   }
 }

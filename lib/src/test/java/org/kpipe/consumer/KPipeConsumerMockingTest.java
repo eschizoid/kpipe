@@ -1059,7 +1059,7 @@ class KPipeConsumerMockingTest {
       final KafkaConsumer<K, V> mockConsumer,
       final int maxRetries,
       final Duration retryBackoff,
-      final Consumer<KPipeConsumer.ProcessingError<K, V>> errorHandler,
+      final java.util.function.Consumer<KPipeConsumer.ProcessingError<K, V>> errorHandler,
       final Queue<ConsumerCommand> mockCommandQueue,
       final KafkaOffsetManager<K, V> mockOffsetManager
     ) {

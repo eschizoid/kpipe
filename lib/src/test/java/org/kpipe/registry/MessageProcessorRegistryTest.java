@@ -3,7 +3,6 @@ package org.kpipe.registry;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Map;
-import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +21,7 @@ class MessageProcessorRegistryTest {
   void shouldContainDefaultOperators() {
     // Act
     var pipeline = registry
-      .jsonPipelineBuilder()
+      .pipeline(MessageFormat.JSON)
       .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
       .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
       .add(MessageProcessorRegistry.JSON_MARK_PROCESSED)
@@ -40,16 +39,13 @@ class MessageProcessorRegistryTest {
   void shouldRegisterAndRetrieveJsonOperator() {
     // Arrange
     final var key = RegistryKey.json("testOperator");
-    registry.registerOperator(
-      key,
-      obj -> {
-        obj.put("test", "value");
-        return obj;
-      }
-    );
+    registry.registerOperator(key, obj -> {
+      obj.put("test", "value");
+      return obj;
+    });
 
     // Act
-    var pipeline = registry.jsonPipelineBuilder().add(key).build();
+    var pipeline = registry.pipeline(MessageFormat.JSON).add(key).build();
     var result = new String(pipeline.apply("{}".getBytes()));
 
     // Assert
@@ -62,23 +58,17 @@ class MessageProcessorRegistryTest {
     final var op1 = RegistryKey.json("op1");
     final var op2 = RegistryKey.json("op2");
 
-    registry.registerOperator(
-      op1,
-      obj -> {
-        obj.put("op1", "val1");
-        return obj;
-      }
-    );
-    registry.registerOperator(
-      op2,
-      obj -> {
-        obj.put("op2", "val2");
-        return obj;
-      }
-    );
+    registry.registerOperator(op1, obj -> {
+      obj.put("op1", "val1");
+      return obj;
+    });
+    registry.registerOperator(op2, obj -> {
+      obj.put("op2", "val2");
+      return obj;
+    });
 
     // Act
-    final var pipeline = registry.jsonPipelineBuilder().add(op1).add(op2).build();
+    final var pipeline = registry.pipeline(MessageFormat.JSON).add(op1).add(op2).build();
     final var result = new String(pipeline.apply("{}".getBytes()));
 
     // Assert
@@ -89,106 +79,100 @@ class MessageProcessorRegistryTest {
   @Test
   void shouldHandleErrorsGracefully() {
     // Arrange
-    Function<byte[], byte[]> processor = message -> {
+    UnaryOperator<Map<String, Object>> operator = message -> {
       throw new RuntimeException("Test exception");
     };
 
-    final var safeProcessor = MessageProcessorRegistry.withErrorHandling(processor, "fallback".getBytes());
+    final var pipeline = registry.pipeline(MessageFormat.JSON).add(operator).build();
 
-    // Act
-    final var result = safeProcessor.apply("any input".getBytes());
-
-    // Assert
-    assertEquals("fallback", new String(result));
+    // Act & Assert
+    assertNull(pipeline.apply("{}".getBytes()));
   }
 
   @Test
   void shouldApplyConditionBasedProcessing() {
     // Arrange
-    Function<byte[], byte[]> trueProcessor = message -> "true".getBytes();
-    Function<byte[], byte[]> falseProcessor = message -> "false".getBytes();
+    UnaryOperator<Map<String, Object>> trueOp = message -> {
+      message.put("result", "true");
+      return message;
+    };
+    UnaryOperator<Map<String, Object>> falseOp = message -> {
+      message.put("result", "false");
+      return message;
+    };
 
     // Act
-    final var conditionalProcessor = MessageProcessorRegistry.when(
-      message -> message.length > 5,
-      trueProcessor,
-      falseProcessor
-    );
+    final var pipeline = registry
+      .pipeline(MessageFormat.JSON)
+      .when(obj -> obj.size() > 0, trueOp, falseOp)
+      .build();
 
     // Assert
-    final var longMessage = "123456".getBytes();
-    assertArrayEquals("true".getBytes(), conditionalProcessor.apply(longMessage));
+    final var nonEmpty = "{\"key\":\"val\"}".getBytes();
+    assertTrue(new String(pipeline.apply(nonEmpty)).contains("\"result\":\"true\""));
 
-    // Test condition false
-    final var shortMessage = "1234".getBytes();
-    assertArrayEquals("false".getBytes(), conditionalProcessor.apply(shortMessage));
+    final var empty = "{}".getBytes();
+    assertTrue(new String(pipeline.apply(empty)).contains("\"result\":\"false\""));
   }
 
   @Test
   void shouldTrackRegisteredProcessors() {
     // Arrange
-    final var key = RegistryKey.<Function<byte[], byte[]>>of("unique" + System.currentTimeMillis(), Function.class);
-    Function<byte[], byte[]> processor = message -> message;
+    final var key = RegistryKey.json("p1");
+    final UnaryOperator<Map<String, Object>> op = obj -> obj;
+    registry.registerOperator(key, op);
 
     // Act
-    registry.register(key, processor);
-    Map<RegistryKey<?>, Function<byte[], byte[]>> allProcessors = registry.getAll();
+    var keys = registry.getKeys();
 
     // Assert
-    assertTrue(allProcessors.containsKey(key));
+    assertTrue(keys.contains(key));
   }
 
   @Test
   void shouldUnregisterProcessor() {
     // Arrange
-    final var key = RegistryKey.<Function<byte[], byte[]>>of("processorToRemove", Function.class);
+    final var key = RegistryKey.json("p1");
+    registry.registerOperator(key, obj -> obj);
 
     // Act
-    registry.register(key, msg -> msg);
-
-    // Assert
-    assertTrue(registry.getAll().containsKey(key));
-
-    // Act
+    assertTrue(registry.getKeys().contains(key));
     boolean removed = registry.unregister(key);
 
     // Assert
     assertTrue(removed);
-    assertFalse(registry.getAll().containsKey(key));
+    assertFalse(registry.getKeys().contains(key));
   }
 
   @Test
   void shouldTrackMetrics() {
     // Arrange
-    final var key = RegistryKey.<Function<byte[], byte[]>>of("metricsTest", Function.class);
-    registry.register(key, msg -> msg);
+    final var key = RegistryKey.json("metricsTest");
+    registry.registerOperator(key, obj -> obj);
+
+    final var pipeline = registry.pipeline(MessageFormat.JSON).add(key).build();
 
     // Act
-    final var processor = registry.get(key);
-    processor.apply("test".getBytes());
-    processor.apply("test2".getBytes());
+    pipeline.apply("{}".getBytes());
+    pipeline.apply("{}".getBytes());
 
     // Assert
     final var metrics = registry.getMetrics(key);
     assertEquals(2L, metrics.get("invocationCount"));
-    assertEquals(0L, metrics.get("errorCount"));
   }
 
   @Test
   void shouldRegisterAndRetrieveTypedOperator() {
     // Arrange
     final var key = RegistryKey.json("typedOp");
-    registry.registerOperator(
-      key,
-      obj -> {
-        obj.put("typed", "success");
-        return obj;
-      }
-    );
+    registry.registerOperator(key, obj -> {
+      obj.put("typed", "success");
+      return obj;
+    });
 
     // Act
     final var retrieved = registry.getOperator(key);
-    final var pipeline = registry.jsonPipelineBuilder().add(key).build();
+    final var pipeline = registry.pipeline(MessageFormat.JSON).add(key).build();
     final var result = new String(pipeline.apply("{}".getBytes()));
 
     // Assert
@@ -200,17 +184,14 @@ class MessageProcessorRegistryTest {
   void shouldComposePipelineUsingBuilder() {
     // Arrange
     final var key1 = RegistryKey.json("builderOp1");
-    registry.registerOperator(
-      key1,
-      obj -> {
-        obj.put("b1", "v1");
-        return obj;
-      }
-    );
+    registry.registerOperator(key1, obj -> {
+      obj.put("b1", "v1");
+      return obj;
+    });
 
     // Act
     final var pipeline = registry
-      .jsonPipelineBuilder()
+      .pipeline(MessageFormat.JSON)
       .add(key1)
       .add(obj -> {
         obj.put("b2", "v2");
@@ -262,7 +243,7 @@ class MessageProcessorRegistryTest {
     assertNotNull(registry.getOperator(key1));
     assertNotNull(registry.getOperator(key2));
 
-    final var pipeline = registry.jsonPipelineBuilder().add(key1).add(key2).build();
+    final var pipeline = registry.pipeline(MessageFormat.JSON).add(key1).add(key2).build();
 
     final var result = new String(pipeline.apply("{}".getBytes()));
     assertTrue(result.contains("\"enum1\":\"v1\""));

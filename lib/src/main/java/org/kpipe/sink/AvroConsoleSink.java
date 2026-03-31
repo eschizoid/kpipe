@@ -14,15 +14,13 @@ import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.EncoderFactory;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.kpipe.processor.AvroMessageProcessor;
 
-/// A sink that logs processed Kafka messages with Avro formatting.
+/// A sink that logs processed messages with Avro formatting.
 ///
-/// @param <K> The type of message key
-/// @param <V> The type of message value
+/// @param <T> The type of message to log
 /// @param schema The Avro schema used to decode byte array messages
-public record AvroConsoleSink<K, V>(Schema schema) implements MessageSink<K, V> {
+public record AvroConsoleSink<T>(Schema schema) implements MessageSink<T> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private static final Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());
   private static final Level LOG_LEVEL = Level.INFO;
@@ -33,35 +31,24 @@ public record AvroConsoleSink<K, V>(Schema schema) implements MessageSink<K, V> 
   }
 
   @Override
-  public void send(final ConsumerRecord<K, V> record, final V processedValue) {
+  public void accept(final T processedValue) {
     try {
       if (!LOGGER.isLoggable(LOG_LEVEL)) return;
-      final var logData = LinkedHashMap.newLinkedHashMap(5);
-      logData.put("topic", record.topic());
-      logData.put("partition", record.partition());
-      logData.put("offset", record.offset());
-      logData.put("key", String.valueOf(record.key()));
+      final var logData = LinkedHashMap.newLinkedHashMap(1);
       logData.put("processedMessage", formatValue(processedValue));
 
       try (final var out = new ByteArrayOutputStream()) {
         DSL_JSON.serialize(logData, out);
         LOGGER.log(LOG_LEVEL, out.toString(StandardCharsets.UTF_8));
       } catch (final IOException e) {
-        LOGGER.log(
-          Level.WARNING,
-          "Failed to process message (topic=%s, partition=%d, offset=%d)".formatted(
-              record.topic(),
-              record.partition(),
-              record.offset()
-            )
-        );
+        LOGGER.log(Level.WARNING, "Failed to serialize log data");
       }
     } catch (final Exception e) {
       LOGGER.log(Level.ERROR, "Error in AvroConsoleSink while processing message", e);
     }
   }
 
-  private String formatValue(final V value) {
+  private String formatValue(final T value) {
     if (value == null) return "null";
     if (value instanceof byte[] bytes) {
       if (bytes.length == 0) return "empty";

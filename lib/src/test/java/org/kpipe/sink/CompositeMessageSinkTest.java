@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.util.List;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 
 class CompositeMessageSinkTest {
@@ -13,38 +12,36 @@ class CompositeMessageSinkTest {
   @SuppressWarnings("unchecked")
   void shouldBroadcastToAllSinks() {
     // Given
-    final var sink1 = (MessageSink<String, String>) mock(MessageSink.class);
-    final var sink2 = (MessageSink<String, String>) mock(MessageSink.class);
+    final var sink1 = (MessageSink<String>) mock(MessageSink.class);
+    final var sink2 = (MessageSink<String>) mock(MessageSink.class);
     final var compositeSink = new CompositeMessageSink<>(List.of(sink1, sink2));
-    final var record = new ConsumerRecord<>("topic", 0, 0L, "key", "value");
     final var processedValue = "processed";
 
     // When
-    compositeSink.send(record, processedValue);
+    compositeSink.accept(processedValue);
 
     // Then
-    verify(sink1).send(record, processedValue);
-    verify(sink2).send(record, processedValue);
+    verify(sink1).accept(processedValue);
+    verify(sink2).accept(processedValue);
   }
 
   @Test
   @SuppressWarnings("unchecked")
   void shouldContinueOnSinkFailure() {
     // Given
-    final var failingSink = (MessageSink<String, String>) mock(MessageSink.class);
-    final var successfulSink = (MessageSink<String, String>) mock(MessageSink.class);
+    final var failingSink = (MessageSink<String>) mock(MessageSink.class);
+    final var successfulSink = (MessageSink<String>) mock(MessageSink.class);
 
-    doThrow(new RuntimeException("Sink failed")).when(failingSink).send(any(), any());
+    doThrow(new RuntimeException("Sink failed")).when(failingSink).accept(any());
 
     final var compositeSink = new CompositeMessageSink<>(List.of(failingSink, successfulSink));
-    final var record = new ConsumerRecord<>("topic", 0, 0L, "key", "value");
     final var processedValue = "processed";
 
     // When
-    assertDoesNotThrow(() -> compositeSink.send(record, processedValue));
+    assertDoesNotThrow(() -> compositeSink.accept(processedValue));
 
     // Then
-    verify(failingSink).send(record, processedValue);
-    verify(successfulSink).send(record, processedValue);
+    verify(failingSink).accept(processedValue);
+    verify(successfulSink).accept(processedValue);
   }
 }

@@ -50,7 +50,7 @@ class KPipeBackpressureIntegrationTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(v -> v)
-        .withMessageSink((record, value) -> {
+        .withMessageSink(value -> {
           sinkStarted.countDown();
           try {
             sinkRelease.await(5, TimeUnit.SECONDS);
@@ -96,7 +96,7 @@ class KPipeBackpressureIntegrationTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(v -> v)
-        .withMessageSink((record, value) -> {
+        .withMessageSink(value -> {
           sinkStarted.countDown();
           try {
             sinkRelease.await(5, TimeUnit.SECONDS);
@@ -137,7 +137,7 @@ class KPipeBackpressureIntegrationTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(v -> v)
-        .withMessageSink((record, value) -> sinkDone.countDown())
+        .withMessageSink(value -> sinkDone.countDown())
         .withBackpressure(10, 5)
         .withConsumer(() -> mockConsumer)
         .build();
@@ -179,7 +179,7 @@ class KPipeBackpressureIntegrationTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withProcessor(v -> v)
-        .withMessageSink((record, value) -> {
+        .withMessageSink(value -> {
           sinkStarted.countDown();
           try {
             sinkRelease.await(5, TimeUnit.SECONDS);

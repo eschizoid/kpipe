@@ -12,14 +12,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.config.AppConfig;
+import org.kpipe.processor.JsonMessageProcessor;
 import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -55,7 +56,15 @@ class AppIntegrationTest {
 
     try (final var app = new App(config)) {
       // Register the capturing sink
-      app.getSinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, byte[].class, capturingSink);
+      app.getProcessorRegistry().sinkRegistry().register(RegistryKey.of("jsonLogging", Map.class), capturingSink);
+      // Verify registration
+      final var sink = app.getProcessorRegistry().sinkRegistry().get(RegistryKey.of("jsonLogging", Map.class));
+      System.out.println("[DEBUG_LOG] Registered sink is capturing: " + (sink != null));
+
+      // Set up the processor registry
+      app.getProcessorRegistry().registerOperator(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));
+      app.getProcessorRegistry().registerOperator(RegistryKey.json("markProcessed"), JsonMessageProcessor.addFieldOperator("status", "processed"));
+      app.getProcessorRegistry().registerOperator(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
 
       // Start the app in a virtual thread
       final var appThread = Thread.ofVirtual().start(() -> {
@@ -82,18 +91,13 @@ class AppIntegrationTest {
       final var received = capturingSink.getMessages();
       assertFalse(received.isEmpty(), "Should have received at least one message");
 
-      final var processedBytes = received.getFirst();
-      final var dslJson = new DslJson<Map<String, Object>>();
-      final Map<String, Object> processedMap;
-      try (final var input = new java.io.ByteArrayInputStream(processedBytes)) {
-        processedMap = dslJson.deserialize(Map.class, input);
-      }
+      final var processedMap = received.getFirst();
 
       assertEquals(1.0, ((Number) processedMap.get("id")).doubleValue());
       assertEquals("Hello JSON", processedMap.get("message"));
       assertTrue(processedMap.containsKey("source"), "Should have 'source' field added by addSource");
-      assertTrue(processedMap.containsKey("processed"), "Should have 'processed' field added by markProcessed");
-      assertTrue(processedMap.containsKey("timestamp"), "Should have 'timestamp' field added by addTimestamp");
+      assertTrue(processedMap.containsKey("status"), "Should have 'status' field added by markProcessed");
+      assertTrue(processedMap.containsKey("processedAt"), "Should have 'processedAt' field added by addTimestamp");
     }
   }
 
@@ -114,16 +118,16 @@ class AppIntegrationTest {
     throw new AssertionError("Timed out waiting for consumer to receive produced message(s)");
   }
 
-  private static class CapturingSink implements MessageSink<byte[], byte[]> {
+  private static class CapturingSink implements MessageSink<Map<String, Object>> {
 
-    private final List<byte[]> messages = new ArrayList<>();
+    private final List<Map<String, Object>> messages = new ArrayList<>();
 
     @Override
-    public synchronized void send(final ConsumerRecord<byte[], byte[]> record, final byte[] processedValue) {
+    public synchronized void accept(final Map<String, Object> processedValue) {
       messages.add(processedValue);
     }
 
-    public synchronized List<byte[]> getMessages() {
+    public synchronized List<Map<String, Object>> getMessages() {
       return new ArrayList<>(messages);
     }
 

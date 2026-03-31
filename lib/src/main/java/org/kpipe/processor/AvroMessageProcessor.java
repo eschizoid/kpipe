@@ -1,6 +1,5 @@
 package org.kpipe.processor;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -13,8 +12,6 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.*;
 import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.BinaryEncoder;
-import org.apache.avro.io.DecoderFactory;
-import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.util.Utf8;
 
 /// Provides utility functions for processing Avro messages. This class contains common message
@@ -295,102 +292,6 @@ public class AvroMessageProcessor {
     };
   }
 
-  /// Applies a processing function to parsed Avro data with internal caching for
-  /// performance.
-  ///
-  /// ```java
-  /// byte[] result = AvroMessageProcessor.processAvro(
-  ///     avroBytes,
-  ///     schema,
-  ///     record -> {
-  ///         record.put("status", "processed");
-  ///         return record;
-  ///     }
-  /// );
-  /// ```
-  ///
-  /// @param avroBytes The raw Avro data as a byte array
-  /// @param schema The Avro schema to use for parsing and serializing
-  /// @param processor Function to transform the parsed Avro record
-  /// @return Serialized Avro bytes after processing
-  public static byte[] processAvro(
-    final byte[] avroBytes,
-    final Schema schema,
-    final Function<GenericRecord, GenericRecord> processor
-  ) {
-    return processAvro(avroBytes, 0, schema, processor);
-  }
-
-  /// Applies a processing function to parsed Avro data, optionally skipping a prefix.
-  ///
-  /// This method is particularly useful for handling Avro data with custom headers or
-  /// magic bytes without needing to copy the byte array first.
-  ///
-  /// ```java
-  /// // Skip 5 magic bytes and process
-  /// byte[] result = AvroMessageProcessor.processAvro(avroBytes, 5, schema, record -> record);
-  /// ```
-  ///
-  /// @param avroBytes The raw Avro data as a byte array
-  /// @param offset The number of bytes to skip at the start
-  /// @param schema The Avro schema to use for parsing and serializing
-  /// @param processor Function to transform the parsed Avro record
-  /// @return Serialized Avro bytes after processing
-  public static byte[] processAvro(
-    final byte[] avroBytes,
-    final int offset,
-    final Schema schema,
-    final Function<GenericRecord, GenericRecord> processor
-  ) {
-    if (avroBytes == null || avroBytes.length <= offset) return EMPTY_AVRO;
-
-    try {
-      // Create a reader and writer
-      final var reader = new GenericDatumReader<GenericRecord>(schema);
-      final var writer = new GenericDatumWriter<GenericRecord>(schema);
-
-      // Deserialize using cached decoder
-      final var inputStream = new ByteArrayInputStream(avroBytes, offset, avroBytes.length - offset);
-      final var cachedDecoder = DECODER_CACHE.isBound() ? DECODER_CACHE.get() : null;
-      final var decoder = DecoderFactory.get().binaryDecoder(inputStream, cachedDecoder);
-
-      final var record = reader.read(null, decoder);
-
-      // Apply the processor function to make a copy with transformations
-      if (record == null) return EMPTY_AVRO;
-      final var processed = processor.apply(record);
-
-      if (processed == null) return EMPTY_AVRO;
-      LOGGER.log(Level.DEBUG, "Processed record: %s".formatted(processed));
-
-      // Reuse output stream for better performance
-      final var outputStream = OUTPUT_STREAM_CACHE.isBound()
-        ? OUTPUT_STREAM_CACHE.get()
-        : new ByteArrayOutputStream(8192);
-      outputStream.reset();
-
-      // Reuse encoder for better performance
-      final var cachedEncoder = ENCODER_CACHE.isBound() ? ENCODER_CACHE.get() : null;
-      final var encoder = EncoderFactory.get().binaryEncoder(outputStream, cachedEncoder);
-
-      writer.write(processed, encoder);
-      encoder.flush();
-
-      return outputStream.toByteArray();
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error processing Avro", e);
-      return EMPTY_AVRO;
-    }
-  }
-
-  /// Wraps a callable in a scope with all Avro caches bound.
-  ///
-  /// This is used internally by the pipeline builder to ensure optimal performance
-  /// for high-throughput processing.
-  ///
-  /// @param <T> The return type of the callable
-  /// @param operation The operation to perform within the scope
-  /// @return The result of the operation
   public static <T> T inScopedCaches(final ScopedValue.CallableOp<T, Exception> operation) {
     try {
       return ScopedValue.where(OUTPUT_STREAM_CACHE, new ByteArrayOutputStream(8192))
@@ -399,7 +300,7 @@ public class AvroMessageProcessor {
         .where(SCHEMA_PARSER, new Schema.Parser())
         .call(operation);
     } catch (final Exception e) {
-      throw new RuntimeException("Error executing in scoped caches", e);
+      throw new RuntimeException("Error executing in Avro scoped caches", e);
     }
   }
 

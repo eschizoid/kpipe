@@ -1,10 +1,8 @@
 package org.kpipe.processor;
 
 import com.dslplatform.json.DslJson;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.function.Function;
@@ -121,48 +119,6 @@ public class JsonMessageProcessor {
     };
   }
 
-  /// Applies a processing function to parsed JSON data.
-  ///
-  /// ```java
-  /// byte[] result = JsonMessageProcessor.processJson(
-  ///     jsonBytes,
-  ///     map -> {
-  ///         map.put("status", "processed");
-  ///         return map;
-  ///     }
-  /// );
-  /// ```
-  ///
-  /// @param jsonBytes The raw JSON data as a byte array
-  /// @param processor Function to transform the parsed JSON object
-  /// @return Serialized JSON bytes after processing
-  public static byte[] processJson(
-    final byte[] jsonBytes,
-    final Function<Map<String, Object>, Map<String, Object>> processor
-  ) {
-    if (jsonBytes == null || jsonBytes.length == 0) return EMPTY_JSON;
-    try (final var input = new ByteArrayInputStream(jsonBytes)) {
-      final var output = OUTPUT_STREAM_CACHE.isBound() ? OUTPUT_STREAM_CACHE.get() : new ByteArrayOutputStream();
-      output.reset();
-
-      final var parsed = DSL_JSON.deserialize(Map.class, input);
-      if (parsed == null) return EMPTY_JSON;
-      @SuppressWarnings("unchecked")
-      final var processed = processor.apply(parsed);
-      if (processed == null) return EMPTY_JSON;
-      DSL_JSON.serialize(processed, output);
-      return output.toByteArray();
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error processing JSON", e);
-      return EMPTY_JSON;
-    }
-  }
-
-  /// Wraps a callable in a scope with JSON caches bound.
-  ///
-  /// @param <T> The return type
-  /// @param operation The operation to perform
-  /// @return The result of the operation
   public static <T> T inScopedCaches(final ScopedValue.CallableOp<T, Exception> operation) {
     try {
       return ScopedValue.where(OUTPUT_STREAM_CACHE, new ByteArrayOutputStream(8192)).call(operation);
