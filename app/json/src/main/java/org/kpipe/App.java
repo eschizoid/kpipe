@@ -10,7 +10,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
@@ -140,7 +139,7 @@ public class App implements AutoCloseable {
   ///
   /// @param registry the message sink registry
   /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
+  private static MessageSink<Map<String, Object>> createSinksPipeline(final MessageSinkRegistry registry) {
     return registry.pipeline(MessageSinkRegistry.JSON_LOGGING);
   }
 

@@ -190,8 +190,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
           .<byte[], byte[]>builder()
           .withProperties(kpipeProps)
           .withTopic(TOPIC)
-          .withMessageSink((record, processedValue) -> {})
-          .withProcessor(val -> {
+          .withPipeline(val -> {
             processedCount.incrementAndGet();
             return val;
           })

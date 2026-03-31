@@ -26,7 +26,6 @@ import org.kpipe.metrics.ProcessorMetricsReporter;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
-import org.kpipe.sink.MessageSink;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
 /// pipeline of message processors.
@@ -138,9 +137,7 @@ public class App implements AutoCloseable {
   /// @param registry the message processor registry
   /// @return a function that processes messages through the pipeline
   private static UnaryOperator<byte[]> createProtobufProcessorPipeline(final MessageProcessorRegistry registry) {
-    return registry
-      .pipeline(MessageFormat.PROTOBUF)
-      .build();
+    return registry.pipeline(MessageFormat.PROTOBUF).build();
   }
 
   /// Gets the processor registry used by this application.

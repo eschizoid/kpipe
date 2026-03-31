@@ -10,6 +10,8 @@ import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.io.EncoderFactory;
 import org.kpipe.processor.AvroMessageProcessor;
+import org.kpipe.registry.AvroFormat;
+import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 import org.openjdk.jmh.annotations.*;
@@ -78,8 +80,10 @@ public class AvroPipelineBenchmark {
     avroWithMagicBytes[4] = 1;
     System.arraycopy(avroBytes, 0, avroWithMagicBytes, 5, avroBytes.length);
 
-    final var registry = new MessageProcessorRegistry("benchmark-app", org.kpipe.registry.MessageFormat.AVRO);
-    registry.addSchema("user", "com.kpipe.User", schemaJson);
+    final var registry = new MessageProcessorRegistry("benchmark-app", MessageFormat.AVRO);
+    final var format = (AvroFormat) MessageFormat.AVRO;
+    format.addSchema("user", "com.kpipe.User", schemaJson);
+    format.withDefaultSchema("user");
 
     // Register operators
     final var op1 = RegistryKey.avro("op1");
@@ -88,8 +92,8 @@ public class AvroPipelineBenchmark {
     registry.registerOperator(op1, AvroMessageProcessor.addFieldOperator("processed", true));
     registry.registerOperator(op2, AvroMessageProcessor.addFieldOperator("name", "PROCESSED"));
 
-    kpipePipeline = registry.avroPipelineBuilder("user").add(op1).add(op2).build();
-    kpipeMagicPipeline = registry.avroPipelineBuilder("user", 5).add(op1).add(op2).build();
+    kpipePipeline = registry.pipeline(format).add(op1).add(op2).build();
+    kpipeMagicPipeline = registry.pipeline(format).skipBytes(5).add(op1).add(op2).build();
   }
 
   @Benchmark
@@ -107,15 +111,12 @@ public class AvroPipelineBenchmark {
   public void manualAvroMagicHandling(final Blackhole bh) {
     // This mimics the manual way of handling magic bytes with copying
     final var stripped = Arrays.copyOfRange(avroWithMagicBytes, 5, avroWithMagicBytes.length);
-    final var result = AvroMessageProcessor.processAvro(
-      stripped,
-      schema,
-      record -> {
-        record.put("processed", true);
-        record.put("name", "PROCESSED");
-        return record;
-      }
-    );
-    bh.consume(result);
+    final var format = (AvroFormat) MessageFormat.AVRO;
+    final var record = format.deserialize(stripped);
+    if (record != null) {
+      record.put("processed", true);
+      record.put("name", "PROCESSED");
+    }
+    bh.consume(format.serialize(record));
   }
 }

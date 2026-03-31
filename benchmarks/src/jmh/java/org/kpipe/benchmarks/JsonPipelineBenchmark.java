@@ -3,7 +3,7 @@ package org.kpipe.benchmarks;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
-import org.kpipe.processor.JsonMessageProcessor;
+import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 import org.openjdk.jmh.annotations.*;
@@ -54,7 +54,7 @@ public class JsonPipelineBenchmark {
           StandardCharsets.UTF_8
         );
 
-    final var registry = new MessageProcessorRegistry("benchmark-app");
+    final var registry = new MessageProcessorRegistry("benchmark-app", MessageFormat.JSON);
     // Register some operators
     final var op1 = RegistryKey.json("op1");
     final var op2 = RegistryKey.json("op2");
@@ -82,7 +82,7 @@ public class JsonPipelineBenchmark {
       }
     );
 
-    kpipePipeline = registry.jsonPipelineBuilder().add(op1).add(op2).add(op3).build();
+    kpipePipeline = registry.pipeline(MessageFormat.JSON).add(op1).add(op2).add(op3).build();
   }
 
   @Benchmark
@@ -93,27 +93,29 @@ public class JsonPipelineBenchmark {
   @Benchmark
   public void manualJsonSerDeChained(final Blackhole bh) {
     // This mimics the "bad" way of chaining byte-to-byte functions
-    final var step1 = JsonMessageProcessor.processJson(
-      jsonBytes,
-      map -> {
-        map.put("processed_by", "manual");
-        return map;
-      }
-    );
-    final var step2 = JsonMessageProcessor.processJson(
-      step1,
-      map -> {
-        map.put("timestamp", BENCHMARK_TIMESTAMP);
-        return map;
-      }
-    );
-    final var step3 = JsonMessageProcessor.processJson(
-      step2,
-      map -> {
-        map.remove("email");
-        return map;
-      }
-    );
+    final var format = MessageFormat.JSON;
+    
+    // Step 1
+    final var map1 = format.deserialize(jsonBytes);
+    if (map1 != null) {
+        map1.put("processed_by", "manual");
+    }
+    final var step1 = format.serialize(map1);
+    
+    // Step 2
+    final var map2 = format.deserialize(step1);
+    if (map2 != null) {
+        map2.put("timestamp", BENCHMARK_TIMESTAMP);
+    }
+    final var step2 = format.serialize(map2);
+    
+    // Step 3
+    final var map3 = format.deserialize(step2);
+    if (map3 != null) {
+        map3.remove("email");
+    }
+    final var step3 = format.serialize(map3);
+    
     bh.consume(step3);
   }
 
@@ -127,15 +129,14 @@ public class JsonPipelineBenchmark {
     // 2. Logic
     // 3. Serialization
 
-    final var result = JsonMessageProcessor.processJson(
-      jsonBytes,
-      map -> {
+    final var format = MessageFormat.JSON;
+    final var map = format.deserialize(jsonBytes);
+    if (map != null) {
         map.put("processed_by", "manual");
         map.put("timestamp", BENCHMARK_TIMESTAMP);
         map.remove("email");
-        return map;
-      }
-    );
+    }
+    final var result = format.serialize(map);
     bh.consume(result);
   }
 }

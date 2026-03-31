@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -156,7 +155,9 @@ public class App implements AutoCloseable {
   ///
   /// @param registry the message sink registry
   /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
+  private static MessageSink<org.apache.avro.generic.GenericRecord> createSinksPipeline(
+    final MessageSinkRegistry registry
+  ) {
     return registry.pipeline(MessageSinkRegistry.AVRO_LOGGING);
   }
 

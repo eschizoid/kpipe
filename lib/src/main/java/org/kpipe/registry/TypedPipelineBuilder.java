@@ -45,7 +45,7 @@ public final class TypedPipelineBuilder<T> {
   ///
   /// @param operator The operator to add.
   /// @return This builder.
-  public TypedPipelineBuilder<T> add(UnaryOperator<T> operator) {
+  public TypedPipelineBuilder<T> add(final UnaryOperator<T> operator) {
     operators.add(Objects.requireNonNull(operator, "operator cannot be null"));
     return this;
   }
@@ -54,7 +54,7 @@ public final class TypedPipelineBuilder<T> {
   ///
   /// @param key The registry key for the operator.
   /// @return This builder.
-  public TypedPipelineBuilder<T> add(RegistryKey<T> key) {
+  public TypedPipelineBuilder<T> add(final RegistryKey<T> key) {
     final var operator = registry.getOperator(key);
     return add(registry.wrapOperator(key, operator != null ? operator : t -> t));
   }
@@ -64,7 +64,7 @@ public final class TypedPipelineBuilder<T> {
   /// @param keys The registry keys for the operators.
   /// @return This builder.
   @SafeVarargs
-  public final TypedPipelineBuilder<T> add(RegistryKey<T>... keys) {
+  public final TypedPipelineBuilder<T> add(final RegistryKey<T>... keys) {
     for (final var key : keys) {
       add(key);
     }
@@ -99,9 +99,11 @@ public final class TypedPipelineBuilder<T> {
   /// @param key The registry key for the sink.
   /// @return This builder.
   public TypedPipelineBuilder<T> toSink(RegistryKey<T> key) {
-    return toSink(registry.wrapSink(key, t -> {
-      LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
-    }));
+    return toSink(
+      registry.wrapSink(key, t -> {
+        LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
+      })
+    );
   }
 
   /// Composes a sequence of registry keys into a single sink.

@@ -2,7 +2,6 @@ package org.kpipe;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.dslplatform.json.DslJson;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +18,6 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.config.AppConfig;
 import org.kpipe.processor.JsonMessageProcessor;
-import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
@@ -62,9 +60,18 @@ class AppIntegrationTest {
       System.out.println("[DEBUG_LOG] Registered sink is capturing: " + (sink != null));
 
       // Set up the processor registry
-      app.getProcessorRegistry().registerOperator(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));
-      app.getProcessorRegistry().registerOperator(RegistryKey.json("markProcessed"), JsonMessageProcessor.addFieldOperator("status", "processed"));
-      app.getProcessorRegistry().registerOperator(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
+      app
+        .getProcessorRegistry()
+        .registerOperator(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));
+      app
+        .getProcessorRegistry()
+        .registerOperator(
+          RegistryKey.json("markProcessed"),
+          JsonMessageProcessor.addFieldOperator("status", "processed")
+        );
+      app
+        .getProcessorRegistry()
+        .registerOperator(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
 
       // Start the app in a virtual thread
       final var appThread = Thread.ofVirtual().start(() -> {
