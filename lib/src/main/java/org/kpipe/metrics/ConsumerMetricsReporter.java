@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/// Functional service for reporting Kafka consumer metrics.
+/// Service for reporting Kafka consumer metrics.
 ///
 /// **Example 1:** Basic usage with default logging:
 ///

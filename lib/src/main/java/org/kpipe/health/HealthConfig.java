@@ -28,17 +28,23 @@ public final class HealthConfig {
   /// Default HTTP path for the health endpoint.
   public static final String DEFAULT_PATH = "/health";
 
-  /// Get the enabled status from environment.
+  /// Checks if the health configuration is enabled.
+  ///
+  /// @return true if enabled, false otherwise
   public static boolean isEnabled() {
     return !"false".equalsIgnoreCase(AppConfig.getEnvOrDefault(ENV_ENABLED, "true"));
   }
 
-  /// Get the host from environment.
+  /// Retrieves the host from the environment.
+  ///
+  /// @return the host as a string
   public static String getHost() {
     return AppConfig.getEnvOrDefault(ENV_HOST, DEFAULT_HOST);
   }
 
-  /// Get the port from environment.
+  /// Retrieves the port from the environment.
+  ///
+  /// @return the port as an integer
   public static int getPort() {
     try {
       final var value = AppConfig.getEnvOrDefault(ENV_PORT, Integer.toString(DEFAULT_PORT));
@@ -50,7 +56,9 @@ public final class HealthConfig {
     }
   }
 
-  /// Get the path from environment.
+  /// Retrieves the path from the environment.
+  ///
+  /// @return the path as a string
   public static String getPath() {
     return AppConfig.getEnvOrDefault(ENV_PATH, DEFAULT_PATH);
   }

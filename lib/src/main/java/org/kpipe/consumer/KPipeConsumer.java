@@ -329,7 +329,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///     less than highWatermark)
     /// @return This builder instance for method chaining
     public Builder<K, V> withBackpressure(final long highWatermark, final long lowWatermark) {
-      this.backpressureController = new BackpressureController(highWatermark, lowWatermark);
+      this.backpressureController = new BackpressureController(highWatermark, lowWatermark, null);
       return this;
     }
 
@@ -345,9 +345,12 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         "Poll timeout must be positive"
       );
       if (offsetManager != null || offsetManagerProvider != null) kafkaProps.setProperty("enable.auto.commit", "false");
-      if (backpressureController != null && sequentialProcessing) throw new IllegalStateException(
-        "Backpressure is not compatible with sequential processing: in sequential mode in-flight count is always ≤ 1"
-      );
+      if (backpressureController != null && sequentialProcessing) {
+        LOGGER.log(
+          System.Logger.Level.INFO,
+          "Sequential processing enabled with backpressure: switching to lag-based monitoring."
+        );
+      }
       return new KPipeConsumer<>(this);
     }
   }
@@ -381,12 +384,16 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           : null;
     this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
     this.rebalanceListener = builder.rebalanceListener != null ? builder.rebalanceListener : null;
-    this.backpressureController = builder.backpressureController;
 
-    initializeMetrics();
-  }
+    this.backpressureController =
+      builder.backpressureController != null
+        ? builder.backpressureController.withStrategy(
+            this.sequentialProcessing
+              ? BackpressureController.lagStrategy()
+              : BackpressureController.inFlightStrategy(this.inFlightCount::get)
+          )
+        : null;
 
-  private void initializeMetrics() {
     if (enableMetrics) {
       metrics.put(METRIC_MESSAGES_RECEIVED, new AtomicLong(0));
       metrics.put(METRIC_MESSAGES_PROCESSED, new AtomicLong(0));
@@ -650,23 +657,68 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       return; // Already closed or closing
     }
 
-    // Create a tracker first to avoid missing in-flight messages
-    final var tracker = createTrackerIfEnabled(waitForMessagesTimeout.toMillis());
+    final var waitForMessagesMs = waitForMessagesTimeout.toMillis();
+    final var tracker = (waitForMessagesMs > 0 && enableMetrics) ? createMessageTracker() : null;
 
     // Signal shutdown
-    signalShutdown();
+    pause();
+    commandQueue.offer(new ConsumerCommand.Close());
 
     // Wait for in-flight messages
-    waitForInFlightMessages(tracker, waitForMessagesTimeout.toMillis());
+    Optional.ofNullable(tracker).ifPresent(t -> {
+      try {
+        final var inFlight = t.getInFlightMessageCount();
+        if (inFlight > 0) {
+          LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlight));
+          t.waitForCompletion(waitForMessagesMs);
+        }
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
+      }
+    });
 
     // Wake up consumer and wait for thread termination
-    wakeupAndWaitForConsumerThread(threadTerminationTimeout.toMillis());
+    Optional.ofNullable(kafkaConsumer).ifPresent(consumer -> {
+      try {
+        consumer.wakeup();
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
+      }
+    });
+
+    Optional.ofNullable(consumerThread.get())
+      .filter(Thread::isAlive)
+      .ifPresent(thread -> {
+        try {
+          thread.join(threadTerminationTimeout.toMillis());
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+          LOGGER.log(Level.WARNING, "Interrupted while waiting for consumer thread");
+        }
+      });
 
     // Shutdown executor
-    shutdownExecutor(executorTerminationTimeout.toMillis());
+    try {
+      virtualThreadExecutor.shutdown();
+      if (!virtualThreadExecutor.awaitTermination(executorTerminationTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+        LOGGER.log(Level.WARNING, "Not all processing tasks completed during shutdown");
+        final var pending = virtualThreadExecutor.shutdownNow();
+        LOGGER.log(Level.WARNING, "%d tasks were not processed".formatted(pending.size()));
+      }
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      virtualThreadExecutor.shutdownNow();
+      LOGGER.log(Level.WARNING, "Interrupted while waiting for executor termination");
+    }
 
     // Shutdown offset manager if enabled
-    closeOffsetManager();
+    if (offsetManager != null) {
+      try {
+        offsetManager.close();
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error closing offset manager", e);
+      }
+    }
 
     // Ensure the state is set to CLOSED
     state.set(ConsumerState.CLOSED);
@@ -726,84 +778,74 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
 
     try {
-      for (int attempt = 0; attempt <= maxRetries; attempt++) {
-        if (attempt > 0) {
-          if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
-          LOGGER.log(
-            Level.INFO,
-            "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempt, maxRetries)
-          );
-
-          try {
-            Thread.sleep(retryBackoff.toMillis());
-          } catch (final InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            return; // Interrupts must not mark the record as processed.
-          }
-        }
-
-        try {
-          final var processedValue = processor.apply(record.value());
-          messageSink.send(record, processedValue);
-          if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-          if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
-          return;
-        } catch (final Exception e) {
-          if (isInterruptionRelated(e)) {
-            Thread.currentThread().interrupt();
-            return; // Interrupt-like failures should be retried after restart/rebalance.
-          }
-
-          if (attempt == maxRetries) {
-            if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-            LOGGER.log(
-              Level.WARNING,
-              "Failed to process message at offset %d after %d attempts: %s".formatted(
-                record.offset(),
-                maxRetries + 1,
-                e.getMessage()
-              ),
-              e
-            );
-            errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
-            if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
-            return;
-          }
-        }
+      final var result = tryProcessRecord(record);
+      if (result) {
+        if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
       }
     } finally {
       inFlightCount.decrementAndGet();
     }
   }
 
-  private static final long BACKPRESSURE_WARNING_THRESHOLD = 10_000;
-  private volatile boolean backpressureWarningLogged;
+  private boolean tryProcessRecord(final ConsumerRecord<K, V> record) {
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
+        LOGGER.log(
+          Level.INFO,
+          "Retrying message at offset %d (attempt %d of %d)".formatted(record.offset(), attempt, maxRetries)
+        );
+
+        try {
+          Thread.sleep(retryBackoff.toMillis());
+        } catch (final InterruptedException ie) {
+          Thread.currentThread().interrupt();
+          return false;
+        }
+      }
+
+      try {
+        final var processedValue = processor.apply(record.value());
+        messageSink.send(record, processedValue);
+        if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
+        return true;
+      } catch (final Exception e) {
+        if (isInterruptionRelated(e)) {
+          Thread.currentThread().interrupt();
+          return false;
+        }
+
+        if (attempt == maxRetries) {
+          if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+          LOGGER.log(
+            Level.WARNING,
+            "Failed to process message at offset %d after %d attempts: %s".formatted(
+              record.offset(),
+              maxRetries + 1,
+              e.getMessage()
+            ),
+            e
+          );
+          errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
+          if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
+          return false;
+        }
+      }
+    }
+    return false;
+  }
 
   private void checkBackpressure() {
-    if (backpressureController == null) {
-      if (!backpressureWarningLogged && inFlightCount.get() > BACKPRESSURE_WARNING_THRESHOLD) {
-        LOGGER.log(
-          Level.WARNING,
-          "In-flight count(%d) exceeds %d but backpressure is disabled for topic %s. ".formatted(
-              inFlightCount.get(),
-              BACKPRESSURE_WARNING_THRESHOLD,
-              topic
-            ) +
-            "Consider enabling backpressure with withBackpressure to prevent memory exhaustion."
-        );
-        backpressureWarningLogged = true;
-      }
-      return;
-    }
+    if (backpressureController == null) return;
 
-    final long inFlight = inFlightCount.get();
-
-    switch (backpressureController.check(inFlight, isPaused())) {
+    switch (backpressureController.check(kafkaConsumer, isPaused())) {
       case PAUSE -> {
+        final long currentValue = backpressureController.getMetric(kafkaConsumer);
         LOGGER.log(
           Level.WARNING,
-          "Backpressure triggered: pausing consumer (in-flight=%d, highWatermark=%d) for topic %s".formatted(
-            inFlight,
+          "Backpressure triggered: pausing consumer (%s=%d, highWatermark=%d) for topic %s".formatted(
+            backpressureController.getMetricName(),
+            currentValue,
             backpressureController.highWatermark(),
             topic
           )
@@ -813,13 +855,15 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         pause();
       }
       case RESUME -> {
+        final long currentValue = backpressureController.getMetric(kafkaConsumer);
         final long pauseDurationMs = System.currentTimeMillis() - backpressurePauseStartTime;
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(pauseDurationMs);
         LOGGER.log(
           Level.INFO,
-          "Backpressure resolved: resuming consumer (paused for %d ms, in-flight=%d) for topic %s".formatted(
+          "Backpressure resolved: resuming consumer (paused for %d ms, %s=%d) for topic %s".formatted(
             pauseDurationMs,
-            inFlight,
+            backpressureController.getMetricName(),
+            currentValue,
             topic
           )
         );
@@ -831,10 +875,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   private static boolean isInterruptionRelated(final Throwable error) {
-    Throwable current = error;
-    while (current != null) {
+    for (Throwable current = error; current != null; current = current.getCause()) {
       if (current instanceof InterruptedException || current instanceof ClosedByInterruptException) return true;
-      current = current.getCause();
     }
     return false;
   }
@@ -858,76 +900,5 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         }
       })
       .orElse(null);
-  }
-
-  private MessageTracker createTrackerIfEnabled(final long waitForMessagesMs) {
-    return (waitForMessagesMs > 0 && enableMetrics) ? createMessageTracker() : null;
-  }
-
-  private void signalShutdown() {
-    pause();
-    commandQueue.offer(new ConsumerCommand.Close());
-  }
-
-  private void waitForInFlightMessages(final MessageTracker tracker, final long waitForMessagesMs) {
-    Optional.ofNullable(tracker).ifPresent(t -> {
-      try {
-        long inFlightCount = t.getInFlightMessageCount();
-        if (inFlightCount > 0) {
-          LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlightCount));
-          t.waitForCompletion(waitForMessagesMs);
-        }
-      } catch (Exception e) {
-        LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
-      }
-    });
-  }
-
-  private void wakeupAndWaitForConsumerThread(final long threadTerminationMs) {
-    // Safe wakeup of the consumer
-    Optional.ofNullable(kafkaConsumer).ifPresent(consumer -> {
-      try {
-        consumer.wakeup();
-      } catch (Exception e) {
-        LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
-      }
-    });
-
-    // Wait for thread termination
-    Optional.ofNullable(consumerThread.get())
-      .filter(Thread::isAlive)
-      .ifPresent(thread -> {
-        try {
-          thread.join(threadTerminationMs);
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-          LOGGER.log(Level.WARNING, "Interrupted while waiting for consumer thread");
-        }
-      });
-  }
-
-  private void shutdownExecutor(final long executorTerminationMs) {
-    try {
-      virtualThreadExecutor.shutdown();
-      if (!virtualThreadExecutor.awaitTermination(executorTerminationMs, TimeUnit.MILLISECONDS)) {
-        LOGGER.log(Level.WARNING, "Not all processing tasks completed during shutdown");
-        final var pending = virtualThreadExecutor.shutdownNow();
-        LOGGER.log(Level.WARNING, "%d tasks were not processed".formatted(pending.size()));
-      }
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      virtualThreadExecutor.shutdownNow();
-      LOGGER.log(Level.WARNING, "Interrupted while waiting for executor termination");
-    }
-  }
-
-  private void closeOffsetManager() {
-    if (offsetManager != null) {
-      try {
-        offsetManager.close();
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Error closing offset manager", e);
-      }
-    }
   }
 }

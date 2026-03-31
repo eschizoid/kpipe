@@ -16,8 +16,6 @@ import java.util.function.Supplier;
 /// Lightweight HTTP health check server using the JDK built-in HttpServer.
 public final class HttpHealthServer implements AutoCloseable {
 
-  public static final String DEFAULT_PATH = "/health";
-
   private static final Logger LOGGER = System.getLogger(HttpHealthServer.class.getName());
 
   private final HttpServer server;
