@@ -110,11 +110,16 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   }
 
   /// Returns the current metric value.
+  ///
+  /// @param consumer the Kafka consumer to monitor
+  /// @return the current metric value
   public long getMetric(final Consumer<?, ?> consumer) {
     return strategy != null ? strategy.getMetric(consumer) : 0L;
   }
 
   /// Returns the name of the metric being monitored.
+  ///
+  /// @return the name of the metric being monitored
   public String getMetricName() {
     return strategy != null ? strategy.getName() : "none";
   }
