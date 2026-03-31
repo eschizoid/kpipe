@@ -180,7 +180,7 @@ public class App implements AutoCloseable {
     final var builder = registry.pipeline(avroFormat);
     builder.skipBytes(5);
     for (final var name : config.processors()) builder.add(RegistryKey.avro(name));
-    builder.toSink(RegistryKey.of("avroLogging", org.apache.avro.generic.GenericRecord.class));
+    builder.toSink(RegistryKey.avro("avroLogging"));
     return builder.build();
   }
 

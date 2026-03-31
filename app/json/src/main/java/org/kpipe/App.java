@@ -63,7 +63,7 @@ public class App implements AutoCloseable {
     this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
     this.sinkRegistry = processorRegistry.sinkRegistry();
     // Pre-register loggers
-    sinkRegistry.register(RegistryKey.of("jsonLogging", Map.class), new org.kpipe.sink.JsonConsoleSink<>());
+    sinkRegistry.register(RegistryKey.json("jsonLogging"), new org.kpipe.sink.JsonConsoleSink<>());
 
     this.kpipeConsumer = createConsumer(config, processorRegistry);
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
@@ -154,7 +154,7 @@ public class App implements AutoCloseable {
   ) {
     final var builder = registry.pipeline(MessageFormat.JSON);
     for (final var name : config.processors()) builder.add(RegistryKey.json(name));
-    builder.toSink(RegistryKey.of("jsonLogging", Map.class));
+    builder.toSink(RegistryKey.json("jsonLogging"));
     return builder.build();
   }
 

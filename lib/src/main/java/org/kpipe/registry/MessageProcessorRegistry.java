@@ -157,29 +157,31 @@ public class MessageProcessorRegistry {
 
   /// Wraps a sink with additional functionality, such as metrics collection.
   ///
-  /// @param <T> The type of data the sink processes
-  /// @param key The type-safe key to retrieve
-  /// @param sink The sink to wrap
-  /// @return The wrapped sink, or the original sink if no wrapping is needed
+  /// @param <T> The type of data the sink processes.
+  /// @param key The type-safe key to retrieve.
+  /// @return The wrapped sink.
   @SuppressWarnings("unchecked")
-  public <T> MessageSink<T> wrapSink(final RegistryKey<T> key, final MessageSink<T> sink) {
+  public <T> MessageSink<T> wrapSink(final RegistryKey<T> key) {
     return input -> {
       final var entry = (RegistryEntry<MessageSink<T>>) registryMap.get(key);
       if (entry != null) {
         entry.accept(input);
       } else {
         final var registeredSink = sinkRegistry.get(key);
-        if (registeredSink != null) registeredSink.accept(input);
-        else sink.accept(input);
+        if (registeredSink != null) {
+          registeredSink.accept(input);
+        } else {
+          LOGGER.log(Logger.Level.WARNING, "No sink found in registry for key: {0}", key);
+        }
       }
     };
   }
 
-  /// Retrieves a typed operator using a type-safe RegistryKey.
+  /// Retrieves a typed operator from the registry.
   ///
-  /// @param <T> The type of data the operator processes
-  /// @param key The type-safe key to retrieve
-  /// @return The registered operator, or null if not found
+  /// @param <T> The type of data the operator processes.
+  /// @param key The type-safe key to retrieve.
+  /// @return The registered operator, or a no-op operator if not found.
   @SuppressWarnings("unchecked")
   public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
     return input -> {

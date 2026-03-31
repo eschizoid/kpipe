@@ -92,8 +92,8 @@ public class AvroPipelineBenchmark {
     registry.registerOperator(op1, AvroMessageProcessor.addFieldOperator("processed", true));
     registry.registerOperator(op2, AvroMessageProcessor.addFieldOperator("name", "PROCESSED"));
 
-    kpipePipeline = registry.pipeline(format).add(op1).add(op2).build();
-    kpipeMagicPipeline = registry.pipeline(format).skipBytes(5).add(op1).add(op2).build();
+    kpipePipeline = registry.pipeline(format).add(op1, op2).build();
+    kpipeMagicPipeline = registry.pipeline(format).skipBytes(5).add(op1, op2).build();
   }
 
   @Benchmark

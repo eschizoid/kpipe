@@ -82,7 +82,7 @@ public class JsonPipelineBenchmark {
       }
     );
 
-    kpipePipeline = registry.pipeline(MessageFormat.JSON).add(op1).add(op2).add(op3).build();
+    kpipePipeline = registry.pipeline(MessageFormat.JSON).add(op1, op2, op3).build();
   }
 
   @Benchmark

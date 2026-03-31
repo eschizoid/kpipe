@@ -1,7 +1,5 @@
 package org.kpipe.registry;
 
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -14,7 +12,6 @@ import org.kpipe.sink.MessageSink;
 /// @param <T> The type of the object in the pipeline.
 public final class TypedPipelineBuilder<T> {
 
-  private static final Logger LOGGER = System.getLogger(TypedPipelineBuilder.class.getName());
   private final MessageFormat<T> format;
   private final List<UnaryOperator<T>> operators = new ArrayList<>();
   private final MessageProcessorRegistry registry;
@@ -50,23 +47,14 @@ public final class TypedPipelineBuilder<T> {
     return this;
   }
 
-  /// Adds a transformation operator from the registry.
-  ///
-  /// @param key The registry key for the operator.
-  /// @return This builder.
-  public TypedPipelineBuilder<T> add(final RegistryKey<T> key) {
-    final var operator = registry.getOperator(key);
-    return add(registry.wrapOperator(key, operator != null ? operator : t -> t));
-  }
-
-  /// Adds multiple transformation operators from the registry.
+  /// Adds transformation operators from the registry.
   ///
   /// @param keys The registry keys for the operators.
   /// @return This builder.
   @SafeVarargs
   public final TypedPipelineBuilder<T> add(final RegistryKey<T>... keys) {
     for (final var key : keys) {
-      add(key);
+      add(registry.getOperator(key));
     }
     return this;
   }
@@ -90,29 +78,28 @@ public final class TypedPipelineBuilder<T> {
   /// @param sink The sink to add.
   /// @return This builder.
   public TypedPipelineBuilder<T> toSink(MessageSink<T> sink) {
-    this.sink = Objects.requireNonNull(sink, "sink cannot be null");
+    if (this.sink == null) {
+      this.sink = Objects.requireNonNull(sink, "sink cannot be null");
+    } else {
+      final var currentSink = this.sink;
+      this.sink = value -> {
+        currentSink.accept(value);
+        sink.accept(value);
+      };
+    }
     return this;
   }
 
-  /// Sets a terminal sink for the pipeline from the registry.
-  ///
-  /// @param key The registry key for the sink.
-  /// @return This builder.
-  public TypedPipelineBuilder<T> toSink(RegistryKey<T> key) {
-    return toSink(
-      registry.wrapSink(key, t -> {
-        LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
-      })
-    );
-  }
-
-  /// Composes a sequence of registry keys into a single sink.
+  /// Sets terminal sinks for the pipeline from the registry.
   ///
   /// @param sinkKeys The registry keys for the sinks.
   /// @return This builder.
   @SafeVarargs
   public final TypedPipelineBuilder<T> toSink(RegistryKey<T>... sinkKeys) {
-    return toSink(registry.sinkRegistry().pipeline(sinkKeys));
+    for (final var key : sinkKeys) {
+      toSink(registry.wrapSink(key));
+    }
+    return this;
   }
 
   /// Builds the [MessagePipeline].
@@ -147,17 +134,13 @@ public final class TypedPipelineBuilder<T> {
 
       @Override
       public byte[] serialize(T data) {
-        if (data == null) {
-          return null;
-        }
+        if (data == null) return null;
         return format.serialize(data);
       }
 
       @Override
       public T process(T data) {
-        if (data == null) {
-          return null;
-        }
+        if (data == null) return null;
         var current = data;
         for (final var operator : pipelineOperators) {
           current = operator.apply(current);
