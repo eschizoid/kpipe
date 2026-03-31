@@ -36,7 +36,6 @@ public class App implements AutoCloseable {
   private static final Logger LOGGER = System.getLogger(App.class.getName());
   private static final String DEFAULT_SCHEMA_REGISTRY_URL = "http://schema-registry:8081";
 
-  private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final KPipeConsumer<byte[], byte[]> functionalConsumer;
   private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
   private final HttpHealthServer healthServer;

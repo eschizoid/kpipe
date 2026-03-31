@@ -61,33 +61,31 @@ public class MessageProcessorRegistry {
       return metrics;
     }
 
-    public <V> UnaryOperator<V> wrapOperator(final UnaryOperator<V> operator) {
-      return input -> {
-        final var start = System.nanoTime();
-        try {
-          final var result = operator.apply(input);
-          invocationCount.increment();
-          totalProcessingTimeNs.add(System.nanoTime() - start);
-          return result;
-        } catch (final Exception e) {
-          errorCount.increment();
-          throw e;
-        }
-      };
+    @SuppressWarnings("unchecked")
+    public <V> V apply(final V input) {
+      final var start = System.nanoTime();
+      try {
+        final var result = ((UnaryOperator<V>) value).apply(input);
+        invocationCount.increment();
+        totalProcessingTimeNs.add(System.nanoTime() - start);
+        return result;
+      } catch (final Exception e) {
+        errorCount.increment();
+        throw e;
+      }
     }
 
-    public <V> MessageSink<V> wrapSink(final MessageSink<V> sink) {
-      return input -> {
-        final var start = System.nanoTime();
-        try {
-          sink.accept(input);
-          invocationCount.increment();
-          totalProcessingTimeNs.add(System.nanoTime() - start);
-        } catch (final Exception e) {
-          errorCount.increment();
-          throw e;
-        }
-      };
+    @SuppressWarnings("unchecked")
+    public <V> void accept(final V input) {
+      final var start = System.nanoTime();
+      try {
+        ((MessageSink<V>) value).accept(input);
+        invocationCount.increment();
+        totalProcessingTimeNs.add(System.nanoTime() - start);
+      } catch (final Exception e) {
+        errorCount.increment();
+        throw e;
+      }
     }
   }
 
@@ -109,7 +107,7 @@ public class MessageProcessorRegistry {
   /// Example usage:
   /// ```java
   /// final var registry = new MessageProcessorRegistry("my-app");
-  /// var pipeline = registry.pipeline(MessageFormat.JSON)
+  /// final var pipeline = registry.pipeline(MessageFormat.JSON)
   ///     .add(RegistryKey.json("addTimestamp"))
   ///     .build();
   /// ```
@@ -150,9 +148,11 @@ public class MessageProcessorRegistry {
   /// @return The wrapped operator, or the original operator if no wrapping is needed
   @SuppressWarnings("unchecked")
   public <T> UnaryOperator<T> wrapOperator(final RegistryKey<T> key, final UnaryOperator<T> operator) {
-    final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
-    if (entry == null) return operator;
-    return entry.wrapOperator(entry.value);
+    return input -> {
+      final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
+      if (entry == null) return operator.apply(input);
+      return entry.apply(input);
+    };
   }
 
   /// Wraps a sink with additional functionality, such as metrics collection.
@@ -163,13 +163,16 @@ public class MessageProcessorRegistry {
   /// @return The wrapped sink, or the original sink if no wrapping is needed
   @SuppressWarnings("unchecked")
   public <T> MessageSink<T> wrapSink(final RegistryKey<T> key, final MessageSink<T> sink) {
-    final var entry = (RegistryEntry<MessageSink<T>>) registryMap.get(key);
-    if (entry == null) {
-      final var registeredSink = (MessageSink<T>) sinkRegistry.get(key);
-      if (registeredSink != null) return registeredSink;
-      return sink;
-    }
-    return entry.wrapSink(entry.value);
+    return input -> {
+      final var entry = (RegistryEntry<MessageSink<T>>) registryMap.get(key);
+      if (entry != null) {
+        entry.accept(input);
+      } else {
+        final var registeredSink = sinkRegistry.get(key);
+        if (registeredSink != null) registeredSink.accept(input);
+        else sink.accept(input);
+      }
+    };
   }
 
   /// Retrieves a typed operator using a type-safe RegistryKey.
@@ -179,9 +182,13 @@ public class MessageProcessorRegistry {
   /// @return The registered operator, or null if not found
   @SuppressWarnings("unchecked")
   public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
-    final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
-    if (entry == null) return null;
-    return entry.value;
+    return input -> {
+      final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
+      if (entry != null) {
+        return entry.apply(input);
+      }
+      return input;
+    };
   }
 
   /// Creates a new registry with JSON as the default message format.

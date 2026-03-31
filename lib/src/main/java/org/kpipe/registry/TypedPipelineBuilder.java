@@ -1,5 +1,7 @@
 package org.kpipe.registry;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -12,6 +14,7 @@ import org.kpipe.sink.MessageSink;
 /// @param <T> The type of the object in the pipeline.
 public final class TypedPipelineBuilder<T> {
 
+  private static final Logger LOGGER = System.getLogger(TypedPipelineBuilder.class.getName());
   private final MessageFormat<T> format;
   private final List<UnaryOperator<T>> operators = new ArrayList<>();
   private final MessageProcessorRegistry registry;
@@ -96,7 +99,9 @@ public final class TypedPipelineBuilder<T> {
   /// @param key The registry key for the sink.
   /// @return This builder.
   public TypedPipelineBuilder<T> toSink(RegistryKey<T> key) {
-    return toSink(registry.wrapSink(key, t -> {}));
+    return toSink(registry.wrapSink(key, t -> {
+      LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
+    }));
   }
 
   /// Composes a sequence of registry keys into a single sink.

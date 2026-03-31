@@ -6,6 +6,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
+
+import org.apache.avro.generic.GenericRecord;
 import org.kpipe.sink.AvroConsoleSink;
 import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
@@ -33,6 +35,11 @@ public class MessageSinkRegistry {
   public static final RegistryKey<byte[]> JSON_LOGGING = RegistryKey.of("jsonLogging", byte[].class);
   /// Pre-defined key for the Avro logging sink.
   public static final RegistryKey<byte[]> AVRO_LOGGING = RegistryKey.of("avroLogging", byte[].class);
+
+  /// Pre-defined key for the JSON map logging sink.
+  public static final RegistryKey<Map<String, Object>> JSON_MAP_LOGGING = RegistryKey.json("jsonLogging");
+  /// Pre-defined key for the Avro generic record logging sink.
+  public static final RegistryKey<GenericRecord> AVRO_GENERIC_LOGGING = RegistryKey.avro("avroLogging");
 
   private static class SinkEntry<T> {
 
@@ -75,6 +82,8 @@ public class MessageSinkRegistry {
   public MessageSinkRegistry() {
     register(JSON_LOGGING, new JsonConsoleSink<>());
     register(AVRO_LOGGING, new AvroConsoleSink<>());
+    register(JSON_MAP_LOGGING, new JsonConsoleSink<>());
+    register(AVRO_GENERIC_LOGGING, new AvroConsoleSink<>());
   }
 
   /// Registers a new message sink with the specified key.
@@ -110,9 +119,12 @@ public class MessageSinkRegistry {
   /// @return the sink, or null if not found
   @SuppressWarnings("unchecked")
   public <T> MessageSink<T> get(final RegistryKey<T> key) {
-    final var entry = (SinkEntry<T>) registry.get(key);
-    if (entry == null) return null;
-    return entry::accept;
+    return value -> {
+      final var entry = (SinkEntry<T>) registry.get(key);
+      if (entry != null) {
+        entry.accept(value);
+      }
+    };
   }
 
   /// Creates a composite sink that sends objects to multiple sinks identified by keys.
