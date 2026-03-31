@@ -235,7 +235,7 @@ class ExternalOffsetIntegrationTest {
 
     // 3. Populate Kafka with messages 0-9
     for (int i = 0; i < 10; i++) {
-        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
     }
 
     // 6. Verify processing starts from offset 5
@@ -247,21 +247,17 @@ class ExternalOffsetIntegrationTest {
     // Wait for the last offset to be marked as processed in the DB (polling for stability)
     long lastDbOffset = -1;
     for (int i = 0; i < 20; i++) {
-        final var offset = dbManager.getOffsetFromDb(PARTITION);
-        if (offset != null && offset == 9L) {
-            lastDbOffset = offset;
-            break;
-        }
-        Thread.sleep(100);
+      final var offset = dbManager.getOffsetFromDb(PARTITION);
+      if (offset != null && offset == 9L) {
+        lastDbOffset = offset;
+        break;
+      }
+      Thread.sleep(100);
     }
 
     assertEquals(5, processedOffsets.size(), "Should have processed 5 messages");
     assertTrue(processedOffsets.stream().allMatch(o -> o >= 5), "Should only process offsets >= 5");
-    assertEquals(
-      9L,
-      lastDbOffset,
-      "DB should be updated to offset 9. Actual: %d".formatted(lastDbOffset)
-    );
+    assertEquals(9L, lastDbOffset, "DB should be updated to offset 9. Actual: %d".formatted(lastDbOffset));
 
     consumer.close();
   }

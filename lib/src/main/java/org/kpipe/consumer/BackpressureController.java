@@ -40,9 +40,14 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   /// Strategy for measuring the backpressure metric.
   public interface Strategy {
     /// Returns the current value of the metric.
+    ///
+    /// @param consumer the Kafka consumer to monitor
+    /// @return the current value of the metric
     long getMetric(final Consumer<?, ?> consumer);
 
     /// Returns a human-readable name for the metric (e.g., "in-flight", "lag").
+    ///
+    /// @return the name of the metric
     String getName();
   }
 
