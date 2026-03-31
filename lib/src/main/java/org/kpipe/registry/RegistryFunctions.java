@@ -71,12 +71,29 @@ public final class RegistryFunctions {
   /// Creates a consumer wrapper that suppresses exceptions thrown by the wrapped consumer,
   /// logging them instead of propagating.
   ///
+  /// @param <T> the type of the input to the consumer
+  /// @param operation the consumer to wrap with error handling
+  /// @param logger the logger instance to use for logging exceptions
+  /// @return a consumer that executes the operation but suppresses and logs any exceptions
+  public static <T> Consumer<T> withConsumerErrorHandling(final Consumer<T> operation, final Logger logger) {
+    return input -> {
+      try {
+        operation.accept(input);
+      } catch (final Exception e) {
+        logger.log(Level.WARNING, "Error in operation", e);
+      }
+    };
+  }
+
+  /// Creates a bi-consumer wrapper that suppresses exceptions thrown by the wrapped consumer,
+  /// logging them instead of propagating.
+  ///
   /// @param <T> the type of the first input to the consumer
   /// @param <U> the type of the second input to the consumer
   /// @param operation the consumer to wrap with error handling
   /// @param logger the logger instance to use for logging exceptions
   /// @return a consumer that executes the operation but suppresses and logs any exceptions
-  public static <T, U> BiConsumer<T, U> withConsumerErrorHandling(
+  public static <T, U> BiConsumer<T, U> withBiConsumerErrorHandling(
     final BiConsumer<T, U> operation,
     final Logger logger
   ) {

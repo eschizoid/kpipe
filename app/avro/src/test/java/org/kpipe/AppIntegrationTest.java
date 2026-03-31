@@ -26,12 +26,9 @@ import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.EncoderFactory;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -40,7 +37,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.kpipe.config.AppConfig;
-import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -119,7 +116,7 @@ class AppIntegrationTest {
 
     try (final var app = new App(config, srUrl)) {
       // Register the capturing sink
-      app.getSinkRegistry().register(MessageSinkRegistry.AVRO_LOGGING, byte[].class, capturingSink);
+      app.getProcessorRegistry().sinkRegistry().register(RegistryKey.avro("avroLogging"), capturingSink);
 
       // Start the app
       final var appThread = Thread.ofVirtual().start(() -> {
@@ -146,10 +143,7 @@ class AppIntegrationTest {
       final var received = capturingSink.getMessages();
       assertFalse(received.isEmpty(), "Should have received at least one message");
 
-      final var processedBytes = received.getFirst();
-      final var decoder = DecoderFactory.get().binaryDecoder(processedBytes, null);
-      final var reader = new GenericDatumReader<GenericRecord>(schema);
-      final var processedRecord = reader.read(null, decoder);
+      final var processedRecord = received.getFirst();
 
       assertEquals(1L, processedRecord.get("id"));
       assertEquals("Test User", processedRecord.get("name").toString());
@@ -277,16 +271,16 @@ class AppIntegrationTest {
     }
   }
 
-  private static class CapturingSink implements MessageSink<byte[], byte[]> {
+  private static class CapturingSink implements MessageSink<GenericRecord> {
 
-    private final List<byte[]> messages = new ArrayList<>();
+    private final List<GenericRecord> messages = new ArrayList<>();
 
     @Override
-    public synchronized void send(final ConsumerRecord<byte[], byte[]> record, byte[] processedValue) {
+    public synchronized void accept(GenericRecord processedValue) {
       messages.add(processedValue);
     }
 
-    public synchronized List<byte[]> getMessages() {
+    public synchronized List<GenericRecord> getMessages() {
       return new ArrayList<>(messages);
     }
 

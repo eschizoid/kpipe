@@ -1,16 +1,9 @@
 package org.kpipe.sink;
 
-import org.apache.kafka.clients.consumer.ConsumerRecord;
+import java.util.function.Consumer;
 
-/// Functional interface representing a destination for processed Kafka messages.
+/// Functional interface representing a destination for processed messages.
 ///
-/// @param <K> The type of message key
-/// @param <V> The type of message value
+/// @param <T> The type of the processed object.
 @FunctionalInterface
-public interface MessageSink<K, V> {
-  /// Sends a processed message to the sink.
-  ///
-  /// @param record The original Kafka record
-  /// @param processedValue The result of processing the record value
-  void send(final ConsumerRecord<K, V> record, final V processedValue);
-}
+public interface MessageSink<T> extends Consumer<T> {}

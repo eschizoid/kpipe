@@ -16,8 +16,13 @@ import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.EncoderFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.kpipe.registry.AvroFormat;
+import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.MessageProcessorRegistry;
 
 class AvroMessageProcessorTest {
+
+  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry("test-app");
 
   @AfterEach
   public void clearSchemaRegistry() {
@@ -27,8 +32,7 @@ class AvroMessageProcessorTest {
   @Test
   void testParseAvroInvalidRecord() {
     // Arrange
-    final var schemaJson =
-      """
+    final var schemaJson = """
       {
         "type": "record",
         "name": "Simple",
@@ -41,17 +45,18 @@ class AvroMessageProcessorTest {
     final var schema = AvroMessageProcessor.getSchema("simpleSchema");
 
     // Act
-    byte[] result = AvroMessageProcessor.processAvro(invalidAvroBytes, schema, record -> record);
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("simpleSchema");
+    final var pipeline = REGISTRY.pipeline(format).build();
+    byte[] result = pipeline.apply(invalidAvroBytes);
 
     // Assert
-    assertEquals(0, result.length);
+    assertNull(result);
   }
 
   @Test
   void testSimpleAvroProcessing() throws IOException {
     // Arrange
-    final var schemaJson =
-      """
+    final var schemaJson = """
       {
         "type": "record",
         "name": "Simple",
@@ -73,7 +78,9 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("simpleSchema", schemaJson);
 
     // Act
-    final var result = AvroMessageProcessor.processAvro(avroBytes, schema, record1 -> record1);
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("simpleSchema");
+    final var pipeline = REGISTRY.pipeline(format).build();
+    final var result = pipeline.apply(avroBytes);
 
     // Assert
     assertNotNull(result);
@@ -83,8 +90,7 @@ class AvroMessageProcessorTest {
   @Test
   void testParseAvroValidRecord() throws IOException {
     // Arrange
-    final var schemaJson =
-      """
+    final var schemaJson = """
       {
         "type": "record",
         "name": "Simple",
@@ -106,7 +112,9 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("testSchema", schemaJson);
 
     // Act
-    final var result = AvroMessageProcessor.processAvro(avroBytes, schema, record1 -> record1);
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("testSchema");
+    final var pipeline = REGISTRY.pipeline(format).build();
+    final var result = pipeline.apply(avroBytes);
 
     // Assert
     assertNotNull(result);
@@ -120,8 +128,7 @@ class AvroMessageProcessorTest {
   @Test
   void testAddFieldValidRecord() throws IOException {
     // Arrange
-    final var schemaJson =
-      """
+    final var schemaJson = """
       {
         "type": "record",
         "name": "Simple",
@@ -144,15 +151,14 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("sourceSchema", schemaJson);
 
     // Act
-    final var result = AvroMessageProcessor.processAvro(
-      avroBytes,
-      schema,
-      AvroMessageProcessor.addFieldOperator("source", "test-app")
-    );
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("sourceSchema");
+    final var pipeline = REGISTRY.pipeline(format)
+      .add(AvroMessageProcessor.addFieldOperator("source", "test-app"))
+      .build();
+    final var result = pipeline.apply(avroBytes);
 
     // Assert
     assertNotNull(result);
-    assertTrue(result.length > 0);
     final var reader = new GenericDatumReader<GenericRecord>(schema);
     final var inputStream = new ByteArrayInputStream(result);
     final var resultRecord = reader.read(null, DecoderFactory.get().binaryDecoder(inputStream, null));
@@ -163,8 +169,7 @@ class AvroMessageProcessorTest {
   @Test
   void testAddTimestamp() throws IOException {
     // Arrange
-    final var schemaJson =
-      """
+    final var schemaJson = """
       {
         "type": "record",
         "name": "Simple",
@@ -187,15 +192,12 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("timestampSchema", schemaJson);
 
     // Act
-    final var result = AvroMessageProcessor.processAvro(
-      avroBytes,
-      schema,
-      AvroMessageProcessor.addTimestampOperator("timestamp")
-    );
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("timestampSchema");
+    final var pipeline = REGISTRY.pipeline(format).add(AvroMessageProcessor.addTimestampOperator("timestamp")).build();
+    final var result = pipeline.apply(avroBytes);
 
     // Assert
     assertNotNull(result);
-    assertTrue(result.length > 0);
     try (final var inputStream = new ByteArrayInputStream(result)) {
       final var reader = new GenericDatumReader<GenericRecord>(schema);
       GenericRecord resultRecord = reader.read(null, DecoderFactory.get().binaryDecoder(inputStream, null));
@@ -208,8 +210,7 @@ class AvroMessageProcessorTest {
   @Test
   void testRemoveFields() throws IOException {
     // Arrange
-    final var schemaJson =
-      """
+    final var schemaJson = """
       {
         "type": "record",
         "name": "TestRecord",
@@ -235,15 +236,14 @@ class AvroMessageProcessorTest {
     }
 
     // Act
-    byte[] result = AvroMessageProcessor.processAvro(
-      avroBytes,
-      schema,
-      AvroMessageProcessor.removeFieldsOperator(schema, "source", "remove_source")
-    );
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("testSchema");
+    final var pipeline = REGISTRY.pipeline(format)
+      .add(AvroMessageProcessor.removeFieldsOperator(schema, "source", "remove_source"))
+      .build();
+    byte[] result = pipeline.apply(avroBytes);
 
     // Assert
     assertNotNull(result);
-    assertTrue(result.length > 0);
     try (final var inputStream = new ByteArrayInputStream(result)) {
       final var reader = new GenericDatumReader<GenericRecord>(schema);
       final var resultRecord = reader.read(null, DecoderFactory.get().binaryDecoder(inputStream, null));
@@ -256,8 +256,7 @@ class AvroMessageProcessorTest {
   @Test
   void testTransformField() throws IOException {
     // Arrange
-    final var simpleSchemaJson =
-      """
+    final var simpleSchemaJson = """
       {
         "type": "record",
         "name": "Simple",
@@ -277,17 +276,18 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var result = AvroMessageProcessor.processAvro(
-      avroBytes,
-      schema,
-      AvroMessageProcessor.transformFieldOperator(
-        schema,
-        "value",
-        value -> value instanceof String ? ((String) value).toUpperCase() : value
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("transformSchema");
+    final var pipeline = REGISTRY.pipeline(format)
+      .add(
+        AvroMessageProcessor.transformFieldOperator(schema, "value", value ->
+          value instanceof String ? ((String) value).toUpperCase() : value
+        )
       )
-    );
+      .build();
+    final var result = pipeline.apply(avroBytes);
 
     // Assert
+    assertNotNull(result);
     final var reader = new GenericDatumReader<GenericRecord>(schema);
     final var resultRecord = reader.read(
       null,
@@ -299,8 +299,7 @@ class AvroMessageProcessorTest {
   @Test
   void testTransformNumericField() throws IOException {
     // Arrange
-    final var simpleSchemaJson =
-      """
+    final var simpleSchemaJson = """
       {
         "type": "record",
         "name": "Simple",
@@ -322,17 +321,18 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var result = AvroMessageProcessor.processAvro(
-      avroBytes,
-      schema,
-      AvroMessageProcessor.transformFieldOperator(
-        schema,
-        "age",
-        value -> value instanceof Integer ? ((Integer) value) * 2 : value
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("ageSchema");
+    final var pipeline = REGISTRY.pipeline(format)
+      .add(
+        AvroMessageProcessor.transformFieldOperator(schema, "age", value ->
+          value instanceof Integer ? ((Integer) value) * 2 : value
+        )
       )
-    );
+      .build();
+    final var result = pipeline.apply(avroBytes);
 
     // Assert
+    assertNotNull(result);
     final var reader = new GenericDatumReader<GenericRecord>(schema);
     final var resultRecord = reader.read(
       null,
@@ -344,8 +344,7 @@ class AvroMessageProcessorTest {
   @Test
   void testTransformUnionField() throws IOException {
     // Arrange
-    final var unionSchemaJson =
-      """
+    final var unionSchemaJson = """
       {
         "type": "record",
         "name": "UnionRecord",
@@ -367,17 +366,18 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var result = AvroMessageProcessor.processAvro(
-      avroBytes,
-      schema,
-      AvroMessageProcessor.transformFieldOperator(
-        schema,
-        "comment",
-        value -> value instanceof String ? ((String) value).toUpperCase() : value
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("unionSchema");
+    final var pipeline = REGISTRY.pipeline(format)
+      .add(
+        AvroMessageProcessor.transformFieldOperator(schema, "comment", value ->
+          value instanceof String ? ((String) value).toUpperCase() : value
+        )
       )
-    );
+      .build();
+    final var result = pipeline.apply(avroBytes);
 
     // Assert
+    assertNotNull(result);
     final var reader = new GenericDatumReader<GenericRecord>(schema);
     final var resultRecord = reader.read(
       null,
@@ -389,8 +389,7 @@ class AvroMessageProcessorTest {
   @Test
   void testAddFields() throws IOException {
     // Arrange
-    final var schemaJson =
-      """
+    final var schemaJson = """
       {
         "type": "record",
         "name": "MultiField",
@@ -424,19 +423,17 @@ class AvroMessageProcessorTest {
     );
 
     // Act
-    final var result = AvroMessageProcessor.processAvro(
-      avroBytes,
-      schema,
-      AvroMessageProcessor.addFieldsOperator(fieldsToAdd)
-    );
+    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("multiFieldSchema");
+    final var pipeline = REGISTRY.pipeline(format).add(AvroMessageProcessor.addFieldsOperator(fieldsToAdd)).build();
+    final var result = pipeline.apply(avroBytes);
 
     // Assert
+    assertNotNull(result);
     final var reader = new GenericDatumReader<GenericRecord>(schema);
     final var resultRecord = reader.read(
       null,
       DecoderFactory.get().binaryDecoder(new ByteArrayInputStream(result), null)
     );
-
     assertEquals(42, resultRecord.get("id"));
     assertEquals("test-app", resultRecord.get("source").toString());
     assertEquals("development", resultRecord.get("environment").toString());

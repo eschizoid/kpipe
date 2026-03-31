@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -51,7 +50,7 @@ class CompositeSinkIntegrationTest {
     }
 
     // 2. Define the Postgres Sink
-    final MessageSink<String, String> postgresSink = (record, value) -> {
+    final MessageSink<String> postgresSink = value -> {
       try (
         final var conn = DriverManager.getConnection(
           postgres.getJdbcUrl(),
@@ -60,7 +59,7 @@ class CompositeSinkIntegrationTest {
         );
         final var pstmt = conn.prepareStatement("INSERT INTO processed_messages (id, content) VALUES (?, ?)")
       ) {
-        pstmt.setString(1, record.key());
+        pstmt.setString(1, "msg-123");
         pstmt.setString(2, value);
         pstmt.executeUpdate();
       } catch (final Exception e) {
@@ -69,22 +68,16 @@ class CompositeSinkIntegrationTest {
     };
 
     // 3. Define a Capturing Sink for verification
-    final var capturingSink = new MessageSink<String, String>() {
+    final var capturingSink = new MessageSink<String>() {
       private final List<String> values = new ArrayList<>();
-      private final List<ConsumerRecord<String, String>> records = new ArrayList<>();
 
       @Override
-      public void send(final ConsumerRecord<String, String> record, final String processedValue) {
-        records.add(record);
+      public void accept(final String processedValue) {
         values.add(processedValue);
       }
 
       public List<String> getValues() {
         return values;
-      }
-
-      public List<ConsumerRecord<String, String>> getRecords() {
-        return records;
       }
     };
 
@@ -92,11 +85,10 @@ class CompositeSinkIntegrationTest {
     final var compositeSink = new CompositeMessageSink<>(List.of(postgresSink, capturingSink));
 
     // 5. Execute
-    final var record = new ConsumerRecord<>("test-topic", 0, 0, "msg-123", "original-content");
-    compositeSink.send(record, "processed-content");
+    compositeSink.accept("processed-content");
 
     // 6. Verify Capturing Sink
-    assertEquals(1, capturingSink.getRecords().size());
+    assertEquals(1, capturingSink.getValues().size());
     assertEquals("processed-content", capturingSink.getValues().getFirst());
 
     // 7. Verify Database

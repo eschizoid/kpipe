@@ -7,28 +7,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
-import org.kpipe.consumer.ConsumerCommand;
-import org.kpipe.consumer.ConsumerRunner;
-import org.kpipe.consumer.KPipeConsumer;
-import org.kpipe.consumer.KafkaOffsetManager;
-import org.kpipe.consumer.OffsetManager;
+import org.kpipe.consumer.*;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
 import org.kpipe.metrics.SinkMetricsReporter;
-import org.kpipe.processor.AvroMessageProcessor;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
-import org.kpipe.sink.AvroConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
@@ -38,9 +31,8 @@ public class App implements AutoCloseable {
   private static final Logger LOGGER = System.getLogger(App.class.getName());
   private static final String DEFAULT_SCHEMA_REGISTRY_URL = "http://schema-registry:8081";
 
-  private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final KPipeConsumer<byte[], byte[]> functionalConsumer;
-  private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
+  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
   private final HttpHealthServer healthServer;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
@@ -73,8 +65,8 @@ public class App implements AutoCloseable {
   /// @param schemaRegistryUrl Schema Registry base URL
   public App(final AppConfig config, final String schemaRegistryUrl) {
     processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
-    sinkRegistry = new MessageSinkRegistry();
-    functionalConsumer = createConsumer(config, processorRegistry, sinkRegistry, schemaRegistryUrl);
+    sinkRegistry = processorRegistry.sinkRegistry();
+    functionalConsumer = createConsumer(config, processorRegistry, schemaRegistryUrl);
 
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(functionalConsumer::getMetrics);
 
@@ -97,19 +89,19 @@ public class App implements AutoCloseable {
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.
-  private ConsumerRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
+  private KPipeRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
     final MetricsReporter consumerMetricsReporter,
     final MetricsReporter processorMetricsReporter,
     final MetricsReporter sinkMetricsReporter
   ) {
-    return ConsumerRunner.builder(functionalConsumer)
+    return KPipeRunner.builder(functionalConsumer)
       .withStartAction(c -> {
         c.start();
         LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
       })
       .withHealthCheck(KPipeConsumer::isRunning)
-      .withGracefulShutdown(ConsumerRunner::performGracefulConsumerShutdown)
+      .withGracefulShutdown(KPipeRunner::performGracefulConsumerShutdown)
       .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter))
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())
@@ -121,12 +113,11 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   /// @param processorRegistry Map of processor functions
-  /// @param sinkRegistry Map of sink functions
+  /// @param schemaRegistryUrl Schema Registry base URL
   /// @return A configured functional consumer
   public static KPipeConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
     final MessageProcessorRegistry processorRegistry,
-    final MessageSinkRegistry sinkRegistry,
     final String schemaRegistryUrl
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
@@ -135,9 +126,8 @@ public class App implements AutoCloseable {
     return KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createAvroProcessorPipeline(processorRegistry, config, sinkRegistry, schemaRegistryUrl))
+      .withPipeline(createAvroProcessorPipeline(processorRegistry, config, schemaRegistryUrl))
       .withPollTimeout(config.pollTimeout())
-      .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
       .withMetrics(true)
@@ -161,34 +151,32 @@ public class App implements AutoCloseable {
   ///
   /// @param registry the message sink registry
   /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    return registry.pipeline(byte[].class, MessageSinkRegistry.AVRO_LOGGING);
+  private static MessageSink<org.apache.avro.generic.GenericRecord> createSinksPipeline(
+    final MessageSinkRegistry registry
+  ) {
+    return registry.pipeline(MessageSinkRegistry.AVRO_LOGGING);
   }
 
   /// Creates a processor pipeline using the provided registry.
   ///
   /// @param registry the message processor registry
   /// @param config the application configuration
-  /// @param sinkRegistry the message sink registry
+  /// @param schemaRegistryUrl the schema registry URL
   /// @return a function that processes messages through the pipeline
-  private static Function<byte[], byte[]> createAvroProcessorPipeline(
+  private static java.util.function.UnaryOperator<byte[]> createAvroProcessorPipeline(
     final MessageProcessorRegistry registry,
     final AppConfig config,
-    final MessageSinkRegistry sinkRegistry,
     final String schemaRegistryUrl
   ) {
-    registry.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
+    final var avroFormat = (org.kpipe.registry.AvroFormat) MessageFormat.AVRO;
+    // Register schema for the test/app
+    avroFormat.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
+    avroFormat.withDefaultSchema("1");
 
-    // Register the sink
-    final var schema = AvroMessageProcessor.getSchema("1");
-    if (schema != null) sinkRegistry.register(
-      MessageSinkRegistry.AVRO_LOGGING,
-      byte[].class,
-      new AvroConsoleSink<>(schema)
-    );
-
-    final var builder = registry.avroPipelineBuilder("1", 5);
+    final var builder = registry.pipeline(avroFormat);
+    builder.skipBytes(5);
     for (final var name : config.processors()) builder.add(RegistryKey.avro(name));
+    builder.toSink(RegistryKey.avro("avroLogging"));
     return builder.build();
   }
 

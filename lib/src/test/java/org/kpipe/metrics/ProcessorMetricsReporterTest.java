@@ -56,11 +56,7 @@ class ProcessorMetricsReporterTest {
   @Test
   void shouldCreateFromRegistryWithDefaultReporter() {
     // Arrange
-    final var processorMap = new HashMap<RegistryKey<?>, Object>();
-    for (RegistryKey<?> name : processorNames) {
-      processorMap.put(name, new Object());
-    }
-    doReturn(processorMap).when(registry).getAll();
+    doReturn(processorNames).when(registry).getKeys();
     doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
     metricsReporter = ProcessorMetricsReporter.forRegistry(registry);
@@ -72,11 +68,7 @@ class ProcessorMetricsReporterTest {
   @Test
   void shouldCreateFromRegistryWithCustomReporter() {
     // Arrange
-    final var processorMap = new HashMap<RegistryKey<?>, Object>();
-    for (final var name : processorNames) {
-      processorMap.put(name, new Object());
-    }
-    doReturn(processorMap).when(registry).getAll();
+    doReturn(processorNames).when(registry).getKeys();
     doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
     metricsReporter = ProcessorMetricsReporter.forRegistry(registry).toConsumer(reporter);
@@ -163,11 +155,7 @@ class ProcessorMetricsReporterTest {
   @Test
   void shouldWorkWithFluentApi() {
     // Arrange
-    final var processorMap = new HashMap<RegistryKey<?>, Object>();
-    for (final var name : processorNames) {
-      processorMap.put(name, new Object());
-    }
-    doReturn(processorMap).when(registry).getAll();
+    doReturn(processorNames).when(registry).getKeys();
     doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
     // Act
@@ -190,6 +178,6 @@ class ProcessorMetricsReporterTest {
 
     // Assert
     verify(reporter, times(1)).accept(contains("selected"));
-    verify(registry, never()).getAll();
+    verify(registry, never()).getKeys();
   }
 }

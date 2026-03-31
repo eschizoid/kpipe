@@ -6,7 +6,6 @@ import static org.mockito.Mockito.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.*;
 import org.junit.jupiter.api.Test;
@@ -25,10 +24,10 @@ class KPipeInterruptTest {
   private KafkaConsumer<String, String> mockConsumer;
 
   @Mock
-  private MessageSink<String, String> messageSink;
+  private MessageSink<String> messageSink;
 
   @Mock
-  private Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler;
+  private java.util.function.Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler;
 
   @Mock
   private KafkaOffsetManager<String, String> offsetManager;
@@ -95,7 +94,7 @@ class KPipeInterruptTest {
     processingThread.interrupt();
     assertTrue(threadFinished.await(1, TimeUnit.SECONDS));
 
-    verify(messageSink, never()).send(any(), any());
+    verify(messageSink, never()).accept(any());
     verify(errorHandler, never()).accept(any());
     assertFalse(hasMarkOffsetProcessed(commandQueue, 123L));
   }
@@ -126,7 +125,7 @@ class KPipeInterruptTest {
     assertTrue(done.await(1, TimeUnit.SECONDS));
     assertTrue(interruptedFlag.get(1, TimeUnit.SECONDS));
 
-    verify(messageSink, never()).send(any(), any());
+    verify(messageSink, never()).accept(any());
     verify(errorHandler, never()).accept(any());
     assertFalse(hasMarkOffsetProcessed(commandQueue, 456L));
   }
@@ -142,7 +141,7 @@ class KPipeInterruptTest {
 
     consumer.processRecord(record);
 
-    verify(messageSink, never()).send(any(), any());
+    verify(messageSink, never()).accept(any());
     verify(errorHandler, times(1)).accept(any());
     assertTrue(hasMarkOffsetProcessed(commandQueue, 789L));
   }
@@ -158,7 +157,7 @@ class KPipeInterruptTest {
 
     consumer.processRecord(record);
 
-    verify(messageSink, times(1)).send(record, "processed");
+    verify(messageSink, times(1)).accept("processed");
     verify(errorHandler, never()).accept(any());
     assertTrue(hasMarkOffsetProcessed(commandQueue, 999L));
   }

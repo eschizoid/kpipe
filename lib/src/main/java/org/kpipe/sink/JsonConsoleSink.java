@@ -10,62 +10,31 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-/// A sink that logs processed Kafka messages with JSON formatting.
+/// A sink that logs processed messages with JSON formatting.
 ///
-/// <p>This implementation of {@link MessageSink} provides logging functionality for Kafka messages
-/// and their processed values. It formats the message content as JSON for better readability and
-/// debugging. The sink handles various message value types, with special treatment for byte arrays.
-///
-/// <p>Features:
-///
-/// <ul>
-///   <li>JSON formatting of message metadata and content
-///   <li>Special handling for byte arrays (attempts UTF-8 decoding)
-///   <li>Automatic detection of JSON-looking content in byte arrays
-///   <li>For JSON objects, parse + reserialize into normalized JSON output
-///   <li>For JSON arrays, parse + reserialize into normalized JSON output
-///   <li>Fallback to raw UTF-8 string when JSON parsing fails
-///   <li>Performance optimization by checking log level before processing
-///   <li>Robust error handling that logs exceptions without disrupting the main processing flow
-/// </ul>
-///
-/// @param <K> The type of message key
-/// @param <V> The type of message value
-public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
+/// @param <T> The type of the processed object
+public record JsonConsoleSink<T>() implements MessageSink<T> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private static final Logger LOGGER = System.getLogger(JsonConsoleSink.class.getName());
   private static final Level LOG_LEVEL = Level.INFO;
 
-  /// Logs a message with its key and value.
+  /// Logs a processed value.
   ///
-  /// @param record The original Kafka consumer record
   /// @param processedValue The value after processing
   @Override
-  public void send(final ConsumerRecord<K, V> record, final V processedValue) {
+  public void accept(final T processedValue) {
     try {
       // Skip if the logging level doesn't require it
       if (!LOGGER.isLoggable(LOG_LEVEL)) return;
-      final var logData = LinkedHashMap.newLinkedHashMap(5);
-      logData.put("topic", record.topic());
-      logData.put("partition", record.partition());
-      logData.put("offset", record.offset());
-      logData.put("key", String.valueOf(record.key()));
+      final var logData = LinkedHashMap.newLinkedHashMap(1);
       logData.put("processedMessage", formatValue(processedValue));
 
       try (final var out = new ByteArrayOutputStream()) {
         DSL_JSON.serialize(logData, out);
         LOGGER.log(LOG_LEVEL, out.toString(StandardCharsets.UTF_8));
       } catch (final IOException e) {
-        LOGGER.log(
-          Level.WARNING,
-          "Failed to processed message (topic=%s, partition=%d, offset=%d)".formatted(
-              record.topic(),
-              record.partition(),
-              record.offset()
-            )
-        );
+        LOGGER.log(Level.WARNING, "Failed to serialize log data");
       }
     } catch (final Exception e) {
       LOGGER.log(Level.ERROR, "Error in ConsoleSink while processing message", e);
@@ -73,19 +42,7 @@ public record JsonConsoleSink<K, V>() implements MessageSink<K, V> {
   }
 
   /// Formats a value for logging with special handling for different types.
-  ///
-  /// <p>Byte array behavior:
-  ///
-  /// <ul>
-  ///   <li>empty arrays -> `"empty"`
-  ///   <li>JSON objects -> parsed and reserialized for stable JSON formatting
-  ///   <li>JSON arrays -> parsed and reserialized for stable JSON formatting
-  ///   <li>invalid JSON / non-JSON text -> returned as decoded UTF-8 text
-  /// </ul>
-  ///
-  /// @param value The value to format
-  /// @return A string representation of the value suitable for logging
-  private String formatValue(final V value) {
+  private String formatValue(final T value) {
     if (value == null) return "null";
     if (value instanceof byte[] bytes) {
       if (bytes.length == 0) return "empty";

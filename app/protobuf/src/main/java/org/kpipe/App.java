@@ -10,11 +10,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
 import org.kpipe.consumer.ConsumerCommand;
-import org.kpipe.consumer.ConsumerRunner;
+import org.kpipe.consumer.KPipeRunner;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.KafkaOffsetManager;
 import org.kpipe.consumer.OffsetManager;
@@ -25,7 +26,6 @@ import org.kpipe.metrics.ProcessorMetricsReporter;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
-import org.kpipe.sink.MessageSink;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
 /// pipeline of message processors.
@@ -35,7 +35,7 @@ public class App implements AutoCloseable {
 
   private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final KPipeConsumer<byte[], byte[]> kpipeConsumer;
-  private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
+  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
   private final HttpHealthServer healthServer;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
@@ -59,9 +59,10 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.PROTOBUF);
-    sinkRegistry = new MessageSinkRegistry();
-    kpipeConsumer = createConsumer(config, processorRegistry, sinkRegistry);
+    this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.PROTOBUF);
+    this.sinkRegistry = processorRegistry.sinkRegistry();
+
+    this.kpipeConsumer = createConsumer(config, processorRegistry);
 
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
 
@@ -76,18 +77,18 @@ public class App implements AutoCloseable {
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.
-  private ConsumerRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
+  private KPipeRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
     final MetricsReporter consumerMetricsReporter,
     final MetricsReporter processorMetricsReporter
   ) {
-    return ConsumerRunner.builder(kpipeConsumer)
+    return KPipeRunner.builder(kpipeConsumer)
       .withStartAction(c -> {
         c.start();
         LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
       })
       .withHealthCheck(KPipeConsumer::isRunning)
-      .withGracefulShutdown(ConsumerRunner::performGracefulConsumerShutdown)
+      .withGracefulShutdown(KPipeRunner::performGracefulConsumerShutdown)
       .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter))
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())
@@ -99,12 +100,10 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   /// @param processorRegistry Map of processor functions
-  /// @param sinkRegistry Map of sink functions
   /// @return A configured functional consumer
   public static KPipeConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
-    final MessageProcessorRegistry processorRegistry,
-    final MessageSinkRegistry sinkRegistry
+    final MessageProcessorRegistry processorRegistry
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
@@ -112,9 +111,8 @@ public class App implements AutoCloseable {
     return KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createJsonProcessorPipeline(processorRegistry))
+      .withPipeline(createProtobufProcessorPipeline(processorRegistry))
       .withPollTimeout(config.pollTimeout())
-      .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
       .withMetrics(true)
@@ -134,26 +132,12 @@ public class App implements AutoCloseable {
       KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }
 
-  /// Creates a message sink pipeline using the provided registry.
-  ///
-  /// @param registry the message sink registry
-  /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    final var pipeline = registry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING);
-    return MessageSinkRegistry.withErrorHandling(pipeline);
-  }
-
   /// Creates a processor pipeline using the provided registry.
   ///
   /// @param registry the message processor registry
   /// @return a function that processes messages through the pipeline
-  private static Function<byte[], byte[]> createJsonProcessorPipeline(final MessageProcessorRegistry registry) {
-    return registry
-      .jsonPipelineBuilder()
-      .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
-      .add(MessageProcessorRegistry.JSON_MARK_PROCESSED)
-      .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
-      .build();
+  private static UnaryOperator<byte[]> createProtobufProcessorPipeline(final MessageProcessorRegistry registry) {
+    return registry.pipeline(MessageFormat.PROTOBUF).build();
   }
 
   /// Gets the processor registry used by this application.

@@ -2,13 +2,11 @@ package org.kpipe.registry;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
+import java.util.concurrent.atomic.LongAdder;
+import org.apache.avro.generic.GenericRecord;
 import org.kpipe.sink.AvroConsoleSink;
 import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
@@ -30,83 +28,66 @@ import org.kpipe.sink.MessageSink;
 public class MessageSinkRegistry {
 
   private static final Logger LOGGER = System.getLogger(MessageSinkRegistry.class.getName());
-  private final ConcurrentHashMap<RegistryKey<?>, SinkEntry<?, ?>> registry = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<RegistryKey<?>, SinkEntry<?>> registry = new ConcurrentHashMap<>();
 
-  /// Pre-defined key for the JSON logging sink.
-  public static final RegistryKey<byte[]> JSON_LOGGING = RegistryKey.of("jsonLogging", byte[].class);
-  /// Pre-defined key for the Avro logging sink.
-  public static final RegistryKey<byte[]> AVRO_LOGGING = RegistryKey.of("avroLogging", byte[].class);
+  /// Pre-defined key for the JSON logging sink (Map based).
+  public static final RegistryKey<Map<String, Object>> JSON_LOGGING = RegistryKey.json("jsonLogging");
+  /// Pre-defined key for the Avro logging sink (GenericRecord based).
+  public static final RegistryKey<GenericRecord> AVRO_LOGGING = RegistryKey.avro("avroLogging");
 
-  private static class SinkEntry<K, V> {
+  private static class SinkEntry<T> {
 
-    final MessageSink<K, V> sink;
-    final Class<K> keyType;
-    final Class<V> valueType;
-    long messageCount = 0;
-    long errorCount = 0;
-    long totalProcessingTimeMs = 0;
+    final MessageSink<T> sink;
+    final Class<T> valueType;
+    final LongAdder invocationCount = new LongAdder();
+    final LongAdder errorCount = new LongAdder();
+    final LongAdder totalProcessingTimeNs = new LongAdder();
 
-    SinkEntry(final MessageSink<K, V> sink, final Class<K> keyType, final Class<V> valueType) {
+    SinkEntry(final MessageSink<T> sink, final Class<T> valueType) {
       this.sink = sink;
-      this.keyType = keyType;
       this.valueType = valueType;
     }
 
-    public void send(final ConsumerRecord<K, V> record, final V processedValue) {
-      final Supplier<Long> counterIncrement = () -> messageCount++;
-      final Supplier<Long> errorIncrement = () -> errorCount++;
-      final Consumer<Duration> timeAccumulator = duration -> totalProcessingTimeMs += duration.toMillis();
+    public Map<String, Object> getMetrics() {
+      final long count = invocationCount.sum();
+      final long errors = errorCount.sum();
+      final long timeNs = totalProcessingTimeNs.sum();
+      final var metrics = new ConcurrentHashMap<String, Object>();
+      metrics.put("invocationCount", count);
+      metrics.put("errorCount", errors);
+      metrics.put("averageProcessingTimeMs", count > 0 ? (timeNs / count) / 1_000_000.0 : 0);
+      return metrics;
+    }
 
-      final var timedExecution = RegistryFunctions.<V, Void>timedExecution(
-        counterIncrement,
-        errorIncrement,
-        timeAccumulator
-      );
-
-      timedExecution.apply(
-        processedValue,
-        (V value) -> {
-          sink.send(record, value);
-          return null;
-        }
-      );
+    public void accept(final T processedValue) {
+      final var start = System.nanoTime();
+      try {
+        sink.accept(processedValue);
+        invocationCount.increment();
+        totalProcessingTimeNs.add(System.nanoTime() - start);
+      } catch (final Exception e) {
+        errorCount.increment();
+        throw e;
+      }
     }
   }
 
-  /// Constructs a new `MessageSinkRegistry` object with a default logging sink.
-  ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Create a new registry with the default logging sink
-  /// final var registry = new MessageSinkRegistry();
-  /// ```
+  /// Constructs a new `MessageSinkRegistry` object with default logging sinks.
   public MessageSinkRegistry() {
-    register(JSON_LOGGING, byte[].class, new JsonConsoleSink<>());
-    register(AVRO_LOGGING, byte[].class, new AvroConsoleSink<>());
+    register(JSON_LOGGING, new JsonConsoleSink<>());
+    register(AVRO_LOGGING, new AvroConsoleSink<>());
   }
 
-  /// Registers a new message sink with the specified key and types.
-  ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Register a custom database sink with explicit types
-  /// final var dbKey = RegistryKey.json("database");
-  /// registry.register(dbKey, String.class, new DatabaseSink<>());
-  /// ```
+  /// Registers a new message sink with the specified key.
   ///
   /// @param key The type-safe key for the sink
-  /// @param keyType The class representing the message key type
   /// @param sink The sink implementation to register
-  /// @param <K> The type of message key
-  /// @param <V> The type of message value
-  public <K, V> void register(final RegistryKey<V> key, final Class<K> keyType, final MessageSink<K, V> sink) {
+  /// @param <T> The type of message value
+  public <T> void register(final RegistryKey<T> key, final MessageSink<T> sink) {
     Objects.requireNonNull(key, "Sink key cannot be null");
     Objects.requireNonNull(sink, "Sink implementation cannot be null");
-    Objects.requireNonNull(keyType, "Key type cannot be null");
 
-    final var entry = new SinkEntry<>(sink, keyType, key.type());
+    final var entry = new SinkEntry<>(sink, key.type());
     registry.put(key, entry);
   }
 
@@ -119,66 +100,40 @@ public class MessageSinkRegistry {
   }
 
   /// Removes all registered sinks.
-  ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Clear the registry when shutting down
-  /// registry.clear();
-  /// ```
   public void clear() {
     registry.clear();
   }
 
-  /// Retrieves a sink by key from the registry, verifying the expected types.
+  /// Retrieves a sink by key from the registry.
   ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Get the logging sink with type verification
-  /// MessageSink<String, Map<String, Object>> consoleSink = registry.get(
-  ///     RegistryKey.json("logging"), String.class);
-  /// ```
-  ///
-  /// @param <K> the type of the message key
-  /// @param <V> the type of the message value
+  /// @param <T> the type of the message value
   /// @param key the type-safe key of the sink to retrieve
-  /// @param keyType the expected class of the message key
   /// @return the sink, or null if not found
-  /// @throws IllegalArgumentException if the registered types do not match the requested types
   @SuppressWarnings("unchecked")
-  public <K, V> MessageSink<K, V> get(final RegistryKey<V> key, final Class<K> keyType) {
-    final var entry = (SinkEntry<K, V>) registry.get(key);
-    if (entry == null) return null;
-
-    if (!entry.keyType.isAssignableFrom(keyType)) {
-      throw new IllegalArgumentException(
-        "Key type mismatch for sink '" +
-        key.name() +
-        "'. Registered: " +
-        entry.keyType.getSimpleName() +
-        ", Requested: " +
-        keyType.getSimpleName()
-      );
-    }
-    return entry::send;
+  public <T> MessageSink<T> get(final RegistryKey<T> key) {
+    return value -> {
+      final var entry = (SinkEntry<T>) registry.get(key);
+      if (entry != null) {
+        entry.accept(value);
+      } else {
+        LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
+      }
+    };
   }
 
-  /// Creates a composite sink that sends messages to multiple sinks identified by keys.
+  /// Creates a composite sink that sends objects to multiple sinks identified by keys.
   ///
-  /// @param keyType The class representing the message key type
   /// @param sinkKeys Keys of sinks to include in the composite
-  /// @param <K> The type of message key
-  /// @param <V> The type of message value
+  /// @param <T> The type of the processed object
   /// @return A composite sink that delegates to all specified sinks
   @SafeVarargs
-  public final <K, V> MessageSink<K, V> pipeline(final Class<K> keyType, final RegistryKey<V>... sinkKeys) {
-    return (record, processedValue) -> {
+  public final <T> MessageSink<T> pipeline(final RegistryKey<T>... sinkKeys) {
+    return processedValue -> {
       for (final var key : sinkKeys) {
-        final var sink = this.get(key, keyType);
+        final var sink = this.get(key);
         if (sink != null) {
           try {
-            sink.send(record, processedValue);
+            sink.accept(processedValue);
           } catch (final Exception e) {
             LOGGER.log(Level.WARNING, "Error sending to sink: %s".formatted(key.name()), e);
           }
@@ -191,17 +146,10 @@ public class MessageSinkRegistry {
   ///
   /// @return Unmodifiable map of all sink keys and their class names
   public Map<RegistryKey<?>, String> getAll() {
-    return RegistryFunctions.createUnmodifiableView(
-      registry,
-      entry -> {
-        final var sinkEntry = (SinkEntry<?, ?>) entry;
-        return "%s(%s, %s)".formatted(
-            sinkEntry.sink.getClass().getSimpleName(),
-            sinkEntry.keyType.getSimpleName(),
-            sinkEntry.valueType.getSimpleName()
-          );
-      }
-    );
+    return RegistryFunctions.createUnmodifiableView(registry, entry -> {
+      final var sinkEntry = (SinkEntry<?>) entry;
+      return "%s(%s)".formatted(sinkEntry.sink.getClass().getSimpleName(), sinkEntry.valueType.getSimpleName());
+    });
   }
 
   /// Gets performance metrics for a specific sink.
@@ -211,32 +159,15 @@ public class MessageSinkRegistry {
   public Map<String, Object> getMetrics(final RegistryKey<?> key) {
     final var entry = registry.get(key);
     if (entry == null) return Map.of();
-    return RegistryFunctions.createMetrics(entry.messageCount, entry.errorCount, entry.totalProcessingTimeMs);
+    return entry.getMetrics();
   }
 
   /// Wraps a sink with error handling logic that suppresses exceptions.
   ///
-  /// Example:
-  ///
-  /// ```java
-  /// // Get a sink that might throw exceptions
-  /// final var unreliableKey = RegistryKey.json("unreliableSink");
-  /// MessageSink<String, Map<String, Object>> riskySink = registry.get(unreliableKey,
-  /// String.class);
-  ///
-  /// // Wrap it with error handling
-  /// MessageSink<String, Map<String, Object>> safeSink =
-  /// MessageSinkRegistry.withErrorHandling(riskySink);
-  ///
-  /// // Safely send messages
-  /// safeSink.send(record, processedValue); // Won't throw exceptions
-  /// ```
-  ///
   /// @param sink The sink to wrap with error handling
-  /// @param <K> The type of message key
-  /// @param <V> The type of message value
+  /// @param <T> The type of message value
   /// @return A sink that handles errors during processing
-  public static <K, V> MessageSink<K, V> withErrorHandling(final MessageSink<K, V> sink) {
-    return RegistryFunctions.withConsumerErrorHandling(sink::send, LOGGER)::accept;
+  public static <T> MessageSink<T> withErrorHandling(final MessageSink<T> sink) {
+    return RegistryFunctions.withConsumerErrorHandling(sink::accept, LOGGER)::accept;
   }
-} // end MessageSinkRegistry
+}

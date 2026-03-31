@@ -1,11 +1,6 @@
 package org.kpipe.processor;
 
-import com.dslplatform.json.DslJson;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -18,7 +13,7 @@ import java.util.function.UnaryOperator;
 ///
 /// ```java
 /// // Create an optimized pipeline using these processors
-/// final var pipeline = registry.jsonPipelineBuilder()
+/// final var pipeline = registry.pipeline(MessageFormat.JSON)
 ///     .add(RegistryKey.json("addTimestamp"))
 ///     .add(RegistryKey.json("sanitizeData"))
 ///     .build();
@@ -30,9 +25,6 @@ public class JsonMessageProcessor {
 
   private JsonMessageProcessor() {}
 
-  private static final Logger LOGGER = System.getLogger(JsonMessageProcessor.class.getName());
-  private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
-  private static final byte[] EMPTY_JSON = "{}".getBytes(StandardCharsets.UTF_8);
   private static final ScopedValue<ByteArrayOutputStream> OUTPUT_STREAM_CACHE = ScopedValue.newInstance();
 
   /// Creates an operator that adds a field with specified key and value to a JSON map.
@@ -121,47 +113,10 @@ public class JsonMessageProcessor {
     };
   }
 
-  /// Applies a processing function to parsed JSON data.
+  /// Executes an operation within scoped caches for JSON processing.
   ///
-  /// ```java
-  /// byte[] result = JsonMessageProcessor.processJson(
-  ///     jsonBytes,
-  ///     map -> {
-  ///         map.put("status", "processed");
-  ///         return map;
-  ///     }
-  /// );
-  /// ```
-  ///
-  /// @param jsonBytes The raw JSON data as a byte array
-  /// @param processor Function to transform the parsed JSON object
-  /// @return Serialized JSON bytes after processing
-  public static byte[] processJson(
-    final byte[] jsonBytes,
-    final Function<Map<String, Object>, Map<String, Object>> processor
-  ) {
-    if (jsonBytes == null || jsonBytes.length == 0) return EMPTY_JSON;
-    try (final var input = new ByteArrayInputStream(jsonBytes)) {
-      final var output = OUTPUT_STREAM_CACHE.isBound() ? OUTPUT_STREAM_CACHE.get() : new ByteArrayOutputStream();
-      output.reset();
-
-      final var parsed = DSL_JSON.deserialize(Map.class, input);
-      if (parsed == null) return EMPTY_JSON;
-      @SuppressWarnings("unchecked")
-      final var processed = processor.apply(parsed);
-      if (processed == null) return EMPTY_JSON;
-      DSL_JSON.serialize(processed, output);
-      return output.toByteArray();
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error processing JSON", e);
-      return EMPTY_JSON;
-    }
-  }
-
-  /// Wraps a callable in a scope with JSON caches bound.
-  ///
-  /// @param <T> The return type
-  /// @param operation The operation to perform
+  /// @param <T> The result type of the operation
+  /// @param operation The operation to execute within the scoped caches
   /// @return The result of the operation
   public static <T> T inScopedCaches(final ScopedValue.CallableOp<T, Exception> operation) {
     try {

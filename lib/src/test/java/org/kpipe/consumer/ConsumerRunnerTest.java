@@ -26,17 +26,15 @@ class ConsumerRunnerTest {
   @Mock
   private MetricsReporter mockReporter;
 
-  private ConsumerRunner<KPipeConsumer<String, String>> runner;
+  private KPipeRunner<KPipeConsumer<String, String>> runner;
 
   @Test
   void shouldStartConsumer() {
     // Arrange
     when(mockConsumer.isRunning()).thenReturn(true);
-    runner =
-      ConsumerRunner
-        .builder(mockConsumer)
-        .withHealthCheck(KPipeConsumer::isRunning) // Use the isRunning method in health check
-        .build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .withHealthCheck(KPipeConsumer::isRunning) // Use the isRunning method in health check
+      .build();
 
     // Act
     runner.start();
@@ -50,7 +48,7 @@ class ConsumerRunnerTest {
   void shouldHandleStartException() {
     // Arrange
     doThrow(new RuntimeException("Start failed")).when(mockConsumer).start();
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
 
     // Act & Assert
     assertThrows(RuntimeException.class, () -> runner.start());
@@ -61,7 +59,9 @@ class ConsumerRunnerTest {
   void shouldCheckHealthCorrectly() {
     // Arrange
     final var healthCheckResult = new AtomicBoolean(true);
-    runner = ConsumerRunner.builder(mockConsumer).withHealthCheck(c -> healthCheckResult.get()).build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .withHealthCheck(c -> healthCheckResult.get())
+      .build();
     runner.start();
 
     // Act & Assert - Initially healthy
@@ -77,7 +77,7 @@ class ConsumerRunnerTest {
     // Arrange
     when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
     when(mockTracker.getInFlightMessageCount()).thenReturn(0L);
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
 
     // Act
@@ -96,7 +96,7 @@ class ConsumerRunnerTest {
     when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
     when(mockTracker.getInFlightMessageCount()).thenReturn(5L).thenReturn(0L);
     when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.of(true));
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
 
     // Act
@@ -113,7 +113,7 @@ class ConsumerRunnerTest {
     when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
     when(mockTracker.getInFlightMessageCount()).thenReturn(5L).thenReturn(3L);
     when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.of(false));
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
 
     // Act
@@ -132,7 +132,7 @@ class ConsumerRunnerTest {
       return true;
     };
 
-    runner = ConsumerRunner.builder(mockConsumer).withGracefulShutdown(customShutdown).build();
+    runner = KPipeRunner.builder(mockConsumer).withGracefulShutdown(customShutdown).build();
     runner.start();
 
     // Act
@@ -146,7 +146,7 @@ class ConsumerRunnerTest {
   @Test
   void shouldNotStartTwice() {
     // Arrange
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
     reset(mockConsumer); // Reset to verify no more calls
 
@@ -160,7 +160,7 @@ class ConsumerRunnerTest {
   @Test
   void shouldCloseConsumerWhenClosed() {
     // Arrange
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
 
     // Act
@@ -174,7 +174,7 @@ class ConsumerRunnerTest {
   @Test
   void shouldHandleMultipleCloses() {
     // Arrange
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
     runner.close();
     reset(mockConsumer);
@@ -192,7 +192,7 @@ class ConsumerRunnerTest {
     when(mockConsumer.createMessageTracker()).thenReturn(mockTracker);
     when(mockTracker.getInFlightMessageCount()).thenReturn(0L);
 
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
 
     // Create a thread to close the runner after a delay
@@ -216,7 +216,7 @@ class ConsumerRunnerTest {
   @Test
   void shouldTimeoutWhenAwaitingShutdown() throws Exception {
     // Arrange
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
 
     // Act
@@ -236,12 +236,10 @@ class ConsumerRunnerTest {
       return true;
     };
 
-    runner =
-      ConsumerRunner
-        .builder(mockConsumer)
-        .withShutdownTimeout(customTimeout)
-        .withGracefulShutdown(timeoutCapturingShutdown)
-        .build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .withShutdownTimeout(customTimeout)
+      .withGracefulShutdown(timeoutCapturingShutdown)
+      .build();
     runner.start();
 
     // Act
@@ -258,7 +256,7 @@ class ConsumerRunnerTest {
     when(mockTracker.getInFlightMessageCount()).thenReturn(0L);
 
     // Act
-    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = KPipeRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertTrue(result);
@@ -275,7 +273,7 @@ class ConsumerRunnerTest {
     when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.of(true));
 
     // Act
-    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = KPipeRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertTrue(result);
@@ -292,7 +290,7 @@ class ConsumerRunnerTest {
     when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.of(false));
 
     // Act
-    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = KPipeRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertFalse(result);
@@ -309,7 +307,7 @@ class ConsumerRunnerTest {
     when(mockTracker.getInFlightMessageCount()).thenThrow(new RuntimeException("Tracker failure"));
 
     // Act
-    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = KPipeRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertFalse(result); // Expect false when an exception occurs
@@ -324,7 +322,7 @@ class ConsumerRunnerTest {
     when(mockTracker.waitForCompletion(anyLong())).thenReturn(Optional.empty());
 
     // Act
-    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = KPipeRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertFalse(result);
@@ -338,7 +336,7 @@ class ConsumerRunnerTest {
     when(mockConsumer.createMessageTracker()).thenReturn(null);
 
     // Act
-    final var result = ConsumerRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
+    final var result = KPipeRunner.performGracefulConsumerShutdown(mockConsumer, 1000);
 
     // Assert
     assertTrue(result);
@@ -355,7 +353,7 @@ class ConsumerRunnerTest {
       consumer.start();
     };
 
-    runner = ConsumerRunner.builder(mockConsumer).withStartAction(customStartAction).build();
+    runner = KPipeRunner.builder(mockConsumer).withStartAction(customStartAction).build();
 
     // Act
     runner.start();
@@ -372,7 +370,7 @@ class ConsumerRunnerTest {
     // but we can verify the behavior through reflection or functional testing
 
     // Arrange & Act - Create runner with shutdown hook
-    runner = ConsumerRunner.builder(mockConsumer).withShutdownHook(true).build();
+    runner = KPipeRunner.builder(mockConsumer).withShutdownHook(true).build();
     // No direct assertion possible - this is mostly for coverage
     // The actual shutdown hook behavior would be tested in integration tests
   }
@@ -381,12 +379,10 @@ class ConsumerRunnerTest {
   void shouldStartMetricsThreadWithReporters() throws Exception {
     // Arrange
     final long metricsInterval = 100; // Short interval for testing
-    runner =
-      ConsumerRunner
-        .builder(mockConsumer)
-        .withMetricsReporters(List.of(mockReporter))
-        .withMetricsInterval(metricsInterval)
-        .build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .withMetricsReporters(List.of(mockReporter))
+      .withMetricsInterval(metricsInterval)
+      .build();
 
     // Act
     runner.start();
@@ -404,12 +400,10 @@ class ConsumerRunnerTest {
   @Test
   void shouldNotStartMetricsThreadWithoutReporters() {
     // Arrange
-    runner =
-      ConsumerRunner
-        .builder(mockConsumer)
-        .withMetricsReporters(List.of()) // Empty list
-        .withMetricsInterval(100)
-        .build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .withMetricsReporters(List.of()) // Empty list
+      .withMetricsInterval(100)
+      .build();
 
     // Act
     runner.start();
@@ -420,12 +414,10 @@ class ConsumerRunnerTest {
   @Test
   void shouldNotStartMetricsThreadWithNegativeInterval() {
     // Arrange
-    runner =
-      ConsumerRunner
-        .builder(mockConsumer)
-        .withMetricsReporters(List.of(mockReporter))
-        .withMetricsInterval(-1) // Negative interval
-        .build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .withMetricsReporters(List.of(mockReporter))
+      .withMetricsInterval(-1) // Negative interval
+      .build();
 
     // Act
     runner.start();
@@ -438,12 +430,10 @@ class ConsumerRunnerTest {
   void shouldStopMetricsThreadOnShutdown() throws Exception {
     // Arrange
     final long metricsInterval = 100;
-    runner =
-      ConsumerRunner
-        .builder(mockConsumer)
-        .withMetricsReporters(List.of(mockReporter))
-        .withMetricsInterval(metricsInterval)
-        .build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .withMetricsReporters(List.of(mockReporter))
+      .withMetricsInterval(metricsInterval)
+      .build();
 
     runner.start();
 
@@ -469,12 +459,10 @@ class ConsumerRunnerTest {
     final long metricsInterval = 100;
     doThrow(new RuntimeException("Metrics error")).when(mockReporter).reportMetrics();
 
-    runner =
-      ConsumerRunner
-        .builder(mockConsumer)
-        .withMetricsReporters(List.of(mockReporter))
-        .withMetricsInterval(metricsInterval)
-        .build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .withMetricsReporters(List.of(mockReporter))
+      .withMetricsInterval(metricsInterval)
+      .build();
 
     // Act
     runner.start();
@@ -495,14 +483,12 @@ class ConsumerRunnerTest {
     final var configFunctionCalled = new AtomicBoolean(false);
 
     // Act
-    runner =
-      ConsumerRunner
-        .builder(mockConsumer)
-        .with(builder -> {
-          configFunctionCalled.set(true);
-          return builder.withShutdownTimeout(2000);
-        })
-        .build();
+    runner = KPipeRunner.builder(mockConsumer)
+      .with(builder -> {
+        configFunctionCalled.set(true);
+        return builder.withShutdownTimeout(2000);
+      })
+      .build();
 
     // Assert
     assertTrue(configFunctionCalled.get());
@@ -511,7 +497,7 @@ class ConsumerRunnerTest {
   @Test
   void shouldUseDefaultHealthCheckWhenNotSpecified() {
     // Arrange
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
     runner.start();
 
     // Act & Assert
@@ -521,7 +507,7 @@ class ConsumerRunnerTest {
   @Test
   void shouldNotBeHealthyWhenNotStarted() {
     // Arrange
-    runner = ConsumerRunner.builder(mockConsumer).build();
+    runner = KPipeRunner.builder(mockConsumer).build();
 
     // Act & Assert - Consumer not started
     assertFalse(runner.isHealthy());

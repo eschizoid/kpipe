@@ -73,10 +73,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       if (System.nanoTime() >= deadline) {
         throw new IllegalStateException(
           "%s timed out waiting for %d messages; processed=%d".formatted(
-              benchmarkName,
-              TARGET_MESSAGES,
-              processedCount.get()
-            )
+            benchmarkName,
+            TARGET_MESSAGES,
+            processedCount.get()
+          )
         );
       }
       Thread.onSpinWait();
@@ -138,15 +138,12 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
 
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
-        final var value =
-          """
-                  {
-                    "id": 12345,
-                    "message": "Benchmark message"
-                  }
-                  """.getBytes(
-              StandardCharsets.UTF_8
-            );
+        final var value = """
+          {
+            "id": 12345,
+            "message": "Benchmark message"
+          }
+          """.getBytes(StandardCharsets.UTF_8);
 
         for (int i = 0; i < TARGET_MESSAGES; i++) {
           producer.send(new ProducerRecord<>(TOPIC, value)).get();
@@ -185,18 +182,15 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       final var kpipeProps = kafkaContext.consumerProps("kpipe-group");
       kpipeProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
-      consumer =
-        KPipeConsumer
-          .<byte[], byte[]>builder()
-          .withProperties(kpipeProps)
-          .withTopic(TOPIC)
-          .withMessageSink((record, processedValue) -> {})
-          .withProcessor(val -> {
-            processedCount.incrementAndGet();
-            return val;
-          })
-          .withSequentialProcessing(false)
-          .build();
+      consumer = KPipeConsumer.<byte[], byte[]>builder()
+        .withProperties(kpipeProps)
+        .withTopic(TOPIC)
+        .withPipeline(val -> {
+          processedCount.incrementAndGet();
+          return val;
+        })
+        .withSequentialProcessing(false)
+        .build();
     }
 
     void start() {
@@ -233,16 +227,14 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       consumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
       kafkaConsumer = new KafkaConsumer<>(consumerProps);
-      processor =
-        ParallelStreamProcessor.createEosStreamProcessor(
-          ParallelConsumerOptions
-            .<byte[], byte[]>builder()
-            .ordering(ParallelConsumerOptions.ProcessingOrder.UNORDERED)
-            .maxConcurrency(100)
-            .ignoreReflectiveAccessExceptionsForAutoCommitDisabledCheck(true)
-            .consumer(kafkaConsumer)
-            .build()
-        );
+      processor = ParallelStreamProcessor.createEosStreamProcessor(
+        ParallelConsumerOptions.<byte[], byte[]>builder()
+          .ordering(ParallelConsumerOptions.ProcessingOrder.UNORDERED)
+          .maxConcurrency(100)
+          .ignoreReflectiveAccessExceptionsForAutoCommitDisabledCheck(true)
+          .consumer(kafkaConsumer)
+          .build()
+      );
 
       processor.subscribe(Collections.singletonList(TOPIC));
     }
@@ -282,14 +274,13 @@ public final class ParallelProcessingBenchmarkInfrastructure {
           .setNumControllerNodes(1)
           .build();
 
-        cluster =
-          new KafkaClusterTestKit.Builder(nodes)
-            .setConfigProp("auto.create.topics.enable", "true")
-            .setConfigProp("offsets.topic.replication.factor", "1")
-            .setConfigProp("transaction.state.log.replication.factor", "1")
-            .setConfigProp("transaction.state.log.min.isr", "1")
-            .setConfigProp("min.insync.replicas", "1")
-            .build();
+        cluster = new KafkaClusterTestKit.Builder(nodes)
+          .setConfigProp("auto.create.topics.enable", "true")
+          .setConfigProp("offsets.topic.replication.factor", "1")
+          .setConfigProp("transaction.state.log.replication.factor", "1")
+          .setConfigProp("transaction.state.log.min.isr", "1")
+          .setConfigProp("min.insync.replicas", "1")
+          .build();
 
         cluster.format();
         cluster.startup();

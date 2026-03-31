@@ -5,7 +5,6 @@ import static org.mockito.Mockito.*;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
@@ -82,12 +81,12 @@ class RegistryFunctionsTest {
   void shouldExecuteConsumerSuccessfully() {
     // Arrange
     final var counter = new AtomicLong(0);
-    final BiConsumer<String, Integer> operation = (s, i) -> counter.incrementAndGet();
+    final java.util.function.Consumer<String> operation = s -> counter.incrementAndGet();
     final var logger = mock(System.Logger.class);
 
     // Act
     final var safeConsumer = RegistryFunctions.withConsumerErrorHandling(operation, logger);
-    safeConsumer.accept("test", 42);
+    safeConsumer.accept("test");
 
     // Assert
     assertEquals(1, counter.get());
@@ -98,14 +97,14 @@ class RegistryFunctionsTest {
   @Test
   void shouldSuppressAndLogConsumerExceptions() {
     // Arrange
-    final BiConsumer<String, Integer> operation = (s, i) -> {
+    final java.util.function.Consumer<String> operation = s -> {
       throw new IllegalArgumentException("Test consumer exception");
     };
     final var logger = mock(System.Logger.class);
 
     // Act
     final var safeConsumer = RegistryFunctions.withConsumerErrorHandling(operation, logger);
-    safeConsumer.accept("test", 42);
+    safeConsumer.accept("test");
 
     // Assert
     verify(logger, atLeastOnce()).log(any(System.Logger.Level.class), anyString(), any(Throwable.class));
