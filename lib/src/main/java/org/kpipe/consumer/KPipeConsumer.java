@@ -134,19 +134,14 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private String topic;
     private Function<V, V> processor;
     private Duration pollTimeout = Duration.ofMillis(100);
-    private java.util.function.Consumer<ProcessingError<K, V>> errorHandler = error -> {
+    private java.util.function.Consumer<ProcessingError<K, V>> errorHandler = e ->
       LOGGER.log(
         Level.WARNING,
-        "Processing failed for record (topic=%s, partition=%d, offset=%d) after %d retries: %s".formatted(
-          error.record().topic(),
-          error.record().partition(),
-          error.record().offset(),
-          error.retryCount(),
-          error.exception().getMessage()
-        ),
-        error.exception()
+        "Failed at offset {0} after {1} retries: {2}",
+        e.record().offset(),
+        e.retryCount(),
+        e.exception().getMessage()
       );
-    };
     private int maxRetries = 0;
     private Duration retryBackoff = Duration.ofMillis(500);
     private boolean enableMetrics = true;
@@ -406,13 +401,22 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         : null;
 
     if (enableMetrics) {
-      metrics.put(METRIC_MESSAGES_RECEIVED, new AtomicLong(0));
-      metrics.put(METRIC_MESSAGES_PROCESSED, new AtomicLong(0));
-      metrics.put(METRIC_PROCESSING_ERRORS, new AtomicLong(0));
-      metrics.put(METRIC_RETRIES, new AtomicLong(0));
+      metrics.putAll(
+        Map.of(
+          METRIC_MESSAGES_RECEIVED,
+          new AtomicLong(0),
+          METRIC_MESSAGES_PROCESSED,
+          new AtomicLong(0),
+          METRIC_PROCESSING_ERRORS,
+          new AtomicLong(0),
+          METRIC_RETRIES,
+          new AtomicLong(0)
+        )
+      );
       if (backpressureController != null) {
-        metrics.put(METRIC_BACKPRESSURE_PAUSE_COUNT, new AtomicLong(0));
-        metrics.put(METRIC_BACKPRESSURE_TIME_MS, new AtomicLong(0));
+        metrics.putAll(
+          Map.of(METRIC_BACKPRESSURE_PAUSE_COUNT, new AtomicLong(0), METRIC_BACKPRESSURE_TIME_MS, new AtomicLong(0))
+        );
       }
     }
   }
@@ -443,47 +447,33 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   ///     closed
   public void start() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot restart a closed consumer");
-
-    if (!state.compareAndSet(ConsumerState.CREATED, ConsumerState.RUNNING)) {
-      LOGGER.log(Level.WARNING, "Consumer already running for topic {0}", topic);
-      return;
-    }
+    if (!state.compareAndSet(ConsumerState.CREATED, ConsumerState.RUNNING)) return;
 
     if (offsetManager != null) offsetManager.start();
-
     if (rebalanceListener != null) kafkaConsumer.subscribe(List.of(topic), rebalanceListener);
     else kafkaConsumer.subscribe(List.of(topic));
 
-    Thread.UncaughtExceptionHandler exceptionHandler = (thread, throwable) -> {
-      LOGGER.log(Level.ERROR, "Uncaught exception in consumer thread: %s".formatted(thread.getName()), throwable);
-      state.set(ConsumerState.CLOSING);
-    };
-
     final var thread = Thread.ofVirtual()
       .name("kafka-consumer-%s-%s".formatted(topic, UUID.randomUUID().toString().substring(0, 8)))
-      .uncaughtExceptionHandler(exceptionHandler)
+      .uncaughtExceptionHandler((t, e) -> {
+        LOGGER.log(Level.ERROR, "Uncaught exception in thread {0}", t.getName(), e);
+        state.set(ConsumerState.CLOSING);
+      })
       .start(() -> {
         try {
           while (isRunning()) {
             processCommands();
             checkBackpressure();
-
             if (!isRunning()) break;
-
-            if (isPaused()) {
-              Thread.sleep(100);
-              continue;
-            }
+            if (isPaused()) { Thread.sleep(100); continue; }
 
             final var records = pollRecords();
             if (records != null && !records.isEmpty()) processRecords(records);
           }
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
-          LOGGER.log(Level.INFO, "Consumer thread interrupted for topic {0}", topic);
         } catch (final Exception e) {
-          LOGGER.log(Level.WARNING, "Error in consumer thread", e);
-          throw e;
+          if (isRunning()) LOGGER.log(Level.WARNING, "Error in consumer thread", e);
         } finally {
           try {
             kafkaConsumer.close();
@@ -504,22 +494,9 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   ///
   /// <p>This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
-    final var currentState = state.get();
-
-    // Don't send a pause command if already paused or closed
-    if (currentState == ConsumerState.PAUSED || currentState == ConsumerState.CLOSED) {
-      LOGGER.log(Level.INFO, "Consumer already paused or closed for topic {0}", topic);
-      return;
-    }
-
-    // Always add command to the queue for proper test verification
+    if (state.get() == ConsumerState.PAUSED || state.get() == ConsumerState.CLOSED) return;
     commandQueue.offer(new ConsumerCommand.Pause());
-    LOGGER.log(Level.INFO, "Consumer pause requested for topic {0}", topic);
-
-    // Update state if not closed or closing
-    if (currentState != ConsumerState.CLOSING) {
-      state.set(ConsumerState.PAUSED);
-    }
+    if (state.get() != ConsumerState.CLOSING) state.set(ConsumerState.PAUSED);
   }
 
   /// Processes pending commands from the command queue.
@@ -588,22 +565,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   ///
   /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
-    final var currentState = state.get();
-
-    if (currentState == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
-
-    // Don't send a resume command if already running
-    if (currentState == ConsumerState.RUNNING) {
-      LOGGER.log(Level.INFO, "Consumer already running for topic {0}", topic);
-      return;
-    }
-
-    // Always add command to the queue for proper test verification
+    if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
+    if (state.get() == ConsumerState.RUNNING) return;
     commandQueue.offer(new ConsumerCommand.Resume());
-    LOGGER.log(Level.INFO, "Consumer resume requested for topic {0}", topic);
-
-    // Update state if not closing or closed
-    if (currentState != ConsumerState.CLOSING) state.set(ConsumerState.RUNNING);
+    if (state.get() != ConsumerState.CLOSING) state.set(ConsumerState.RUNNING);
   }
 
   /// Returns whether the consumer is currently paused.
@@ -660,78 +625,54 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// <p>This method is idempotent - calling it multiple times has no additional effect.
   @Override
   public void close() {
-    // Only proceed if not already closed or closing
     if (
       !state.compareAndSet(ConsumerState.RUNNING, ConsumerState.CLOSING) &&
       !state.compareAndSet(ConsumerState.PAUSED, ConsumerState.CLOSING)
-    ) {
-      return; // Already closed or closing
-    }
+    ) return;
 
-    final var waitForMessagesMs = waitForMessagesTimeout.toMillis();
-    final var tracker = (waitForMessagesMs > 0 && enableMetrics) ? createMessageTracker() : null;
-
-    // Signal shutdown
+    final var tracker = (waitForMessagesTimeout.toMillis() > 0 && enableMetrics) ? createMessageTracker() : null;
     pause();
     commandQueue.offer(new ConsumerCommand.Close());
 
-    // Wait for in-flight messages
-    Optional.ofNullable(tracker).ifPresent(t -> {
+    if (tracker != null && tracker.getInFlightMessageCount() > 0) {
+      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", tracker.getInFlightMessageCount());
+      tracker.waitForCompletion(waitForMessagesTimeout.toMillis());
+    }
+
+    if (kafkaConsumer != null) {
       try {
-        final var inFlight = t.getInFlightMessageCount();
-        if (inFlight > 0) {
-          LOGGER.log(Level.INFO, "Waiting for %d in-flight messages to complete".formatted(inFlight));
-          t.waitForCompletion(waitForMessagesMs);
-        }
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Error waiting for in-flight messages", e);
+        kafkaConsumer.wakeup();
+      } catch (Exception e) {
+        LOGGER.log(Level.WARNING, "Error during wakeup", e);
       }
-    });
+    }
 
-    // Wake up consumer and wait for thread termination
-    Optional.ofNullable(kafkaConsumer).ifPresent(consumer -> {
+    final var thread = consumerThread.get();
+    if (thread != null && thread.isAlive()) {
       try {
-        consumer.wakeup();
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Error during consumer wakeup", e);
+        thread.join(threadTerminationTimeout.toMillis());
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
-    });
+    }
 
-    Optional.ofNullable(consumerThread.get())
-      .filter(Thread::isAlive)
-      .ifPresent(thread -> {
-        try {
-          thread.join(threadTerminationTimeout.toMillis());
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-          LOGGER.log(Level.WARNING, "Interrupted while waiting for consumer thread");
-        }
-      });
-
-    // Shutdown executor
     try {
       virtualThreadExecutor.shutdown();
       if (!virtualThreadExecutor.awaitTermination(executorTerminationTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
-        LOGGER.log(Level.WARNING, "Not all processing tasks completed during shutdown");
-        final var pending = virtualThreadExecutor.shutdownNow();
-        LOGGER.log(Level.WARNING, "%d tasks were not processed".formatted(pending.size()));
+        LOGGER.log(Level.WARNING, "{0} tasks not processed", virtualThreadExecutor.shutdownNow().size());
       }
-    } catch (final InterruptedException e) {
+    } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       virtualThreadExecutor.shutdownNow();
-      LOGGER.log(Level.WARNING, "Interrupted while waiting for executor termination");
     }
 
-    // Shutdown offset manager if enabled
     if (offsetManager != null) {
       try {
         offsetManager.close();
-      } catch (final Exception e) {
+      } catch (Exception e) {
         LOGGER.log(Level.WARNING, "Error closing offset manager", e);
       }
     }
-
-    // Ensure the state is set to CLOSED
     state.set(ConsumerState.CLOSED);
   }
 
@@ -739,28 +680,19 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   ///
   /// @param records the batch of records to process
   protected void processRecords(final ConsumerRecords<K, V> records) {
-    if (sequentialProcessing) {
-      // Process sequentially for cases where order matters
-      for (final var record : records.records(topic)) {
-        // Track offset before processing
-        if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
-        inFlightCount.incrementAndGet();
+    for (final var record : records.records(topic)) {
+      if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
+      inFlightCount.incrementAndGet();
+
+      if (sequentialProcessing) {
         processRecord(record);
-      }
-    } else {
-      // Process in parallel using virtual threads
-      final var topicRecords = records.records(topic);
-      for (final var record : topicRecords) {
-        // Track offset before submitting to virtual thread
-        if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
-        inFlightCount.incrementAndGet();
+      } else {
         try {
           virtualThreadExecutor.submit(() -> processRecord(record));
         } catch (final RejectedExecutionException e) {
-          // Handle task rejection (typically during shutdown)
           inFlightCount.decrementAndGet();
           if (isRunning()) {
-            LOGGER.log(Level.WARNING, "Task submission rejected, likely during shutdown", e);
+            LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
             if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
             errorHandler.accept(new ProcessingError<>(record, e, 0));
           }
@@ -806,7 +738,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
       try {
         if (processor instanceof MessagePipeline typedPipeline) {
-            return processTypedRecord(record, typedPipeline);
+          return processTypedRecord(record, typedPipeline);
         }
 
         final var processedValue = processor.apply(record.value());
@@ -873,7 +805,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     LOGGER.log(
       Level.WARNING,
       "Failed to process message at offset {0} after {1} attempts: {2}",
-            record.offset(), maxRetries + 1, e.getMessage());
+      record.offset(),
+      maxRetries + 1,
+      e.getMessage()
+    );
     errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
     markOffsetProcessed(record);
   }
@@ -883,33 +818,21 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
     switch (backpressureController.check(kafkaConsumer, isPaused())) {
       case PAUSE -> {
-        final long currentValue = backpressureController.getMetric(kafkaConsumer);
+        final long value = backpressureController.getMetric(kafkaConsumer);
         LOGGER.log(
           Level.WARNING,
-          "Backpressure triggered: pausing consumer (%s=%d, highWatermark=%d) for topic %s".formatted(
-            backpressureController.getMetricName(),
-            currentValue,
-            backpressureController.highWatermark(),
-            topic
-          )
+          "Backpressure triggered: pausing consumer ({0}={1})",
+          backpressureController.getMetricName(),
+          value
         );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
         backpressurePauseStartTime = System.currentTimeMillis();
         pause();
       }
       case RESUME -> {
-        final long currentValue = backpressureController.getMetric(kafkaConsumer);
-        final long pauseDurationMs = System.currentTimeMillis() - backpressurePauseStartTime;
-        if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(pauseDurationMs);
-        LOGGER.log(
-          Level.INFO,
-          "Backpressure resolved: resuming consumer (paused for %d ms, %s=%d) for topic %s".formatted(
-            pauseDurationMs,
-            backpressureController.getMetricName(),
-            currentValue,
-            topic
-          )
-        );
+        final long duration = System.currentTimeMillis() - backpressurePauseStartTime;
+        if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
+        LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
         resume();
       }
       case NONE -> {
