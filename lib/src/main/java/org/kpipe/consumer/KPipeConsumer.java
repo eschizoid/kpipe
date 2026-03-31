@@ -48,21 +48,20 @@ import org.kpipe.sink.MessageSink;
 /// Example usage:
 ///
 /// ```java
+/// final var pipeline = registry.pipeline(MessageFormat.JSON)
+///     .add(sanitizeKey)
+///     .toSink(MessageSinkRegistry.JSON_LOGGING)
+///     .build();
+///
 /// final var consumer = KPipeConsumer.<byte[], byte[]>builder()
 ///     .withProperties(kafkaProps)
 ///     .withTopic("example-topic")
-///     .withProcessor(value -> processValue(value))
+///     .withPipeline(pipeline)
 ///     .withRetry(3, Duration.ofSeconds(1))
-///     .withSequentialProcessing(false) // Set to true for ordered processing
-///     .withOffsetManagerProvider(consumer -> KafkaOffsetManager.builder(consumer)
-///         .withCommitInterval(Duration.ofSeconds(30))
-///         .withCommandQueue(commandQueue)
-///         .build())
 ///     .build();
 ///
-/// consumer.start();
-/// // Later when finished
-/// consumer.close();
+/// final var runner = KPipeRunner.builder(consumer).build();
+/// runner.start();
 /// ```
 ///
 /// @param <K> the type of keys in the consumed records
