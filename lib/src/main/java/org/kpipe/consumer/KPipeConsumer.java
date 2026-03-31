@@ -16,6 +16,7 @@ import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.config.AppConfig;
 import org.kpipe.consumer.enums.ConsumerState;
+import org.kpipe.registry.MessagePipeline;
 import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
 
@@ -815,7 +816,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       }
 
       try {
-        if (processor instanceof org.kpipe.registry.MessagePipeline typedPipeline) {
+        if (processor instanceof MessagePipeline typedPipeline) {
           final var recordValue = (byte[]) record.value();
           final var deserialized = typedPipeline.deserialize(recordValue);
           if (deserialized == null) return false;

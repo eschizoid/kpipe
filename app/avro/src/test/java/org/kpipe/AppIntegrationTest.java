@@ -116,10 +116,7 @@ class AppIntegrationTest {
 
     try (final var app = new App(config, srUrl)) {
       // Register the capturing sink
-      app
-        .getProcessorRegistry()
-        .sinkRegistry()
-        .register(RegistryKey.avro("avroLogging"), capturingSink);
+      app.getProcessorRegistry().sinkRegistry().register(RegistryKey.avro("avroLogging"), capturingSink);
 
       // Start the app
       final var appThread = Thread.ofVirtual().start(() -> {

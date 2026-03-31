@@ -44,19 +44,18 @@ public class AvroPipelineBenchmark {
 
   @Setup
   public void setup() throws IOException {
-    String schemaJson =
-      """
-            {
-              "type": "record",
-              "name": "User",
-              "fields": [
-                {"name": "id", "type": "long"},
-                {"name": "name", "type": "string"},
-                {"name": "email", "type": ["null", "string"], "default": null},
-                {"name": "processed", "type": "boolean", "default": false}
-              ]
-            }
-            """;
+    String schemaJson = """
+      {
+        "type": "record",
+        "name": "User",
+        "fields": [
+          {"name": "id", "type": "long"},
+          {"name": "name", "type": "string"},
+          {"name": "email", "type": ["null", "string"], "default": null},
+          {"name": "processed", "type": "boolean", "default": false}
+        ]
+      }
+      """;
     schema = new Schema.Parser().parse(schemaJson);
 
     final var record = new GenericData.Record(schema);

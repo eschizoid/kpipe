@@ -53,9 +53,7 @@ public final class TypedPipelineBuilder<T> {
   /// @return This builder.
   @SafeVarargs
   public final TypedPipelineBuilder<T> add(final RegistryKey<T>... keys) {
-    for (final var key : keys) {
-      add(registry.getOperator(key));
-    }
+    for (final var key : keys) add(registry.getOperator(key));
     return this;
   }
 
@@ -65,7 +63,11 @@ public final class TypedPipelineBuilder<T> {
   /// @param ifTrue The operator to apply if the condition is true.
   /// @param ifFalse The operator to apply if the condition is false.
   /// @return This builder.
-  public TypedPipelineBuilder<T> when(Predicate<T> condition, UnaryOperator<T> ifTrue, UnaryOperator<T> ifFalse) {
+  public TypedPipelineBuilder<T> when(
+    final Predicate<T> condition,
+    final UnaryOperator<T> ifTrue,
+    final UnaryOperator<T> ifFalse
+  ) {
     Objects.requireNonNull(condition, "condition cannot be null");
     Objects.requireNonNull(ifTrue, "ifTrue operator cannot be null");
     Objects.requireNonNull(ifFalse, "ifFalse operator cannot be null");
@@ -77,7 +79,7 @@ public final class TypedPipelineBuilder<T> {
   ///
   /// @param sink The sink to add.
   /// @return This builder.
-  public TypedPipelineBuilder<T> toSink(MessageSink<T> sink) {
+  public TypedPipelineBuilder<T> toSink(final MessageSink<T> sink) {
     if (this.sink == null) {
       this.sink = Objects.requireNonNull(sink, "sink cannot be null");
     } else {
@@ -96,9 +98,7 @@ public final class TypedPipelineBuilder<T> {
   /// @return This builder.
   @SafeVarargs
   public final TypedPipelineBuilder<T> toSink(RegistryKey<T>... sinkKeys) {
-    for (final var key : sinkKeys) {
-      toSink(registry.sinkRegistry().get(key));
-    }
+    for (final var key : sinkKeys) toSink(registry.sinkRegistry().get(key));
     return this;
   }
 
@@ -118,13 +118,9 @@ public final class TypedPipelineBuilder<T> {
 
       @Override
       public T deserialize(byte[] data) {
-        if (data == null) {
-          return null;
-        }
+        if (data == null) return null;
         if (bytesToSkip > 0) {
-          if (data.length <= bytesToSkip) {
-            return null;
-          }
+          if (data.length <= bytesToSkip) return null;
           final var actualData = new byte[data.length - bytesToSkip];
           System.arraycopy(data, bytesToSkip, actualData, 0, actualData.length);
           return format.deserialize(actualData);

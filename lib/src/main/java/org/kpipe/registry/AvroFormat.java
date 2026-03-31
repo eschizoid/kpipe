@@ -123,15 +123,9 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   @Override
   public GenericRecord deserialize(final byte[] data) {
     if (data == null || data.length == 0) return null;
-    if (defaultSchemaKey == null) {
-      throw new UnsupportedOperationException(
-        "Avro deserialization requires a default schema key. Use withDefaultSchema()."
-      );
-    }
+    if (defaultSchemaKey == null) throw new UnsupportedOperationException("Avro deserialization requires a default schema key. Use withDefaultSchema().");
     final var schema = AvroMessageProcessor.getSchema(defaultSchemaKey);
-    if (schema == null) {
-      throw new IllegalArgumentException("No schema found for key: " + defaultSchemaKey);
-    }
+    if (schema == null) throw new IllegalArgumentException("No schema found for key: %s".formatted(defaultSchemaKey));
     return AvroMessageProcessor.inScopedCaches(() -> {
       final var datumReader = new org.apache.avro.generic.GenericDatumReader<GenericRecord>(schema);
       final var decoder = org.apache.avro.io.DecoderFactory.get().binaryDecoder(data, null);
