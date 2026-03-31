@@ -12,11 +12,7 @@ import java.util.function.Function;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
-import org.kpipe.consumer.ConsumerCommand;
-import org.kpipe.consumer.ConsumerRunner;
-import org.kpipe.consumer.KPipeConsumer;
-import org.kpipe.consumer.KafkaOffsetManager;
-import org.kpipe.consumer.OffsetManager;
+import org.kpipe.consumer.*;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
@@ -36,7 +32,7 @@ public class App implements AutoCloseable {
   private static final String DEFAULT_SCHEMA_REGISTRY_URL = "http://schema-registry:8081";
 
   private final KPipeConsumer<byte[], byte[]> functionalConsumer;
-  private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
+  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
   private final HttpHealthServer healthServer;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
@@ -93,19 +89,19 @@ public class App implements AutoCloseable {
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.
-  private ConsumerRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
+  private KPipeRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
     final MetricsReporter consumerMetricsReporter,
     final MetricsReporter processorMetricsReporter,
     final MetricsReporter sinkMetricsReporter
   ) {
-    return ConsumerRunner.builder(functionalConsumer)
+    return KPipeRunner.builder(functionalConsumer)
       .withStartAction(c -> {
         c.start();
         LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
       })
       .withHealthCheck(KPipeConsumer::isRunning)
-      .withGracefulShutdown(ConsumerRunner::performGracefulConsumerShutdown)
+      .withGracefulShutdown(KPipeRunner::performGracefulConsumerShutdown)
       .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter))
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())

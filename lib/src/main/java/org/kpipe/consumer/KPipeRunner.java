@@ -18,7 +18,7 @@ import org.kpipe.metrics.MetricsReporter;
 /// A thread-safe runner for {@link KPipeConsumer} instances that manages the consumer
 /// lifecycle.
 ///
-/// The ConsumerRunner provides:
+/// The KPipeRunner provides:
 ///
 /// * Controlled startup and shutdown
 /// * Health monitoring
@@ -33,7 +33,7 @@ import org.kpipe.metrics.MetricsReporter;
 ///     .withProcessor(message -> processMessage(message))
 ///     .build();
 ///
-/// final var runner = ConsumerRunner.builder(consumer)
+/// final var runner = KPipeRunner.builder(consumer)
 ///     .withHealthCheck(KPipeConsumer::isRunning)
 ///     .withShutdownHook(true)
 ///     .withShutdownTimeout(5000)
@@ -44,9 +44,9 @@ import org.kpipe.metrics.MetricsReporter;
 /// ```
 ///
 /// @param <T> the type of consumer being managed, must extend KPipeConsumer
-public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable {
+public class KPipeRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable {
 
-  private static final Logger LOGGER = System.getLogger(ConsumerRunner.class.getName());
+  private static final Logger LOGGER = System.getLogger(KPipeRunner.class.getName());
 
   // Consumer state
   private final T consumer;
@@ -65,7 +65,7 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
   private final long metricsInterval;
   private volatile Thread metricsThread;
 
-  private ConsumerRunner(final Builder<T> builder) {
+  private KPipeRunner(final Builder<T> builder) {
     this.consumer = builder.consumer;
     this.startAction = builder.startAction;
     this.healthCheck = builder.healthCheck;
@@ -77,7 +77,7 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
     if (builder.useShutdownHook) Runtime.getRuntime().addShutdownHook(new Thread(this::close));
   }
 
-  /// Creates a new builder for configuring a ConsumerRunner.
+  /// Creates a new builder for configuring a KPipeRunner.
   ///
   /// @param <T> the type of consumer to run
   /// @param consumer the consumer instance to manage
@@ -209,8 +209,7 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
     // Pause the consumer first to prevent receiving new messages
     consumer.pause();
 
-    return Optional
-      .ofNullable(consumer.createMessageTracker())
+    return Optional.ofNullable(consumer.createMessageTracker())
       .map(tracker -> {
         try {
           // First check for in-flight messages
@@ -236,7 +235,8 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
           inFlightCount = tracker.getInFlightMessageCount();
           final var allProcessed = completed && inFlightCount == 0;
 
-          if (allProcessed) LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down"); else LOGGER.log(
+          if (allProcessed) LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down");
+          else LOGGER.log(
             Level.WARNING,
             "Shutdown timeout reached with %s messages still in flight".formatted(inFlightCount)
           );
@@ -274,43 +274,39 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
     // Predicate to check if the thread should continue running
     final Predicate<Thread> shouldContinue = thread -> !closed.get() && !thread.isInterrupted();
 
-    metricsThread =
-      Thread
-        .ofPlatform()
-        .name("metrics-reporter")
-        .daemon(true)
-        .start(() -> {
-          final var currentThread = Thread.currentThread();
-          while (shouldContinue.test(currentThread)) {
-            try {
-              reportAllMetrics.run();
-              Thread.sleep(metricsInterval);
-            } catch (final InterruptedException e) {
-              Thread.currentThread().interrupt();
-              break;
-            }
+    metricsThread = Thread.ofPlatform()
+      .name("metrics-reporter")
+      .daemon(true)
+      .start(() -> {
+        final var currentThread = Thread.currentThread();
+        while (shouldContinue.test(currentThread)) {
+          try {
+            reportAllMetrics.run();
+            Thread.sleep(metricsInterval);
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            break;
           }
-        });
-  }
-
-  /// Stops the metrics reporting thread if it's running.
-  private void stopMetricsThread() {
-    Optional
-      .ofNullable(metricsThread)
-      .ifPresent(thread -> {
-        thread.interrupt();
-        try {
-          thread.join(1_000); // Wait up to 1 second for the thread to terminate
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-          LOGGER.log(Level.WARNING, "Interrupted while stopping metrics thread");
-        } finally {
-          metricsThread = null;
         }
       });
   }
 
-  /// Builder for creating ConsumerRunner instances with custom configuration.
+  /// Stops the metrics reporting thread if it's running.
+  private void stopMetricsThread() {
+    Optional.ofNullable(metricsThread).ifPresent(thread -> {
+      thread.interrupt();
+      try {
+        thread.join(1_000); // Wait up to 1 second for the thread to terminate
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        LOGGER.log(Level.WARNING, "Interrupted while stopping metrics thread");
+      } finally {
+        metricsThread = null;
+      }
+    });
+  }
+
+  /// Builder for creating KPipeRunner instances with custom configuration.
   ///
   /// @param <T> the type of consumer being managed
   public static class Builder<T extends KPipeConsumer<?, ?>> {
@@ -328,7 +324,7 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
       this.consumer = consumer;
       this.startAction = T::start;
       this.healthCheck = _ -> true;
-      this.gracefulShutdown = ConsumerRunner::performGracefulConsumerShutdown;
+      this.gracefulShutdown = KPipeRunner::performGracefulConsumerShutdown;
     }
 
     /// Sets a custom action to perform when starting the consumer.
@@ -404,11 +400,11 @@ public class ConsumerRunner<T extends KPipeConsumer<?, ?>> implements AutoClosea
       return configurer.apply(this);
     }
 
-    /// Builds a new ConsumerRunner with the configured settings.
+    /// Builds a new KPipeRunner with the configured settings.
     ///
-    /// @return a new ConsumerRunner instance
-    public ConsumerRunner<T> build() {
-      return new ConsumerRunner<>(this);
+    /// @return a new KPipeRunner instance
+    public KPipeRunner<T> build() {
+      return new KPipeRunner<>(this);
     }
   }
 }

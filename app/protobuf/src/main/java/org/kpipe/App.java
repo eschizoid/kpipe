@@ -15,7 +15,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
 import org.kpipe.consumer.ConsumerCommand;
-import org.kpipe.consumer.ConsumerRunner;
+import org.kpipe.consumer.KPipeRunner;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.KafkaOffsetManager;
 import org.kpipe.consumer.OffsetManager;
@@ -35,7 +35,7 @@ public class App implements AutoCloseable {
 
   private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final KPipeConsumer<byte[], byte[]> kpipeConsumer;
-  private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
+  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
   private final HttpHealthServer healthServer;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
@@ -77,18 +77,18 @@ public class App implements AutoCloseable {
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.
-  private ConsumerRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
+  private KPipeRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
     final MetricsReporter consumerMetricsReporter,
     final MetricsReporter processorMetricsReporter
   ) {
-    return ConsumerRunner.builder(kpipeConsumer)
+    return KPipeRunner.builder(kpipeConsumer)
       .withStartAction(c -> {
         c.start();
         LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
       })
       .withHealthCheck(KPipeConsumer::isRunning)
-      .withGracefulShutdown(ConsumerRunner::performGracefulConsumerShutdown)
+      .withGracefulShutdown(KPipeRunner::performGracefulConsumerShutdown)
       .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter))
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())

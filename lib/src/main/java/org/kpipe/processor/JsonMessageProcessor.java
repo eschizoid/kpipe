@@ -24,6 +24,7 @@ import java.util.function.UnaryOperator;
 public class JsonMessageProcessor {
 
   private JsonMessageProcessor() {}
+
   private static final ScopedValue<ByteArrayOutputStream> OUTPUT_STREAM_CACHE = ScopedValue.newInstance();
 
   /// Creates an operator that adds a field with specified key and value to a JSON map.
