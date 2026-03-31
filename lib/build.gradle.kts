@@ -78,6 +78,21 @@ tasks.test {
   forkEvery = 200
 }
 
+tasks.compileJava {
+  doFirst {
+    options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
+    classpath = files()
+  }
+}
+
+tasks.javadoc {
+  doFirst {
+    val javadocOptions = options as StandardJavadocDocletOptions
+    javadocOptions.addMultilineStringsOption("-module-path").value = listOf(classpath.asPath)
+    classpath = files()
+  }
+}
+
 tasks.jacocoTestReport {
   reports {
     csv.required.set(true)
