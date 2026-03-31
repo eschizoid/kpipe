@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
@@ -59,9 +60,10 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.PROTOBUF);
-    sinkRegistry = new MessageSinkRegistry();
-    kpipeConsumer = createConsumer(config, processorRegistry, sinkRegistry);
+    this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.PROTOBUF);
+    this.sinkRegistry = processorRegistry.sinkRegistry();
+
+    this.kpipeConsumer = createConsumer(config, processorRegistry);
 
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
 
@@ -99,12 +101,10 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   /// @param processorRegistry Map of processor functions
-  /// @param sinkRegistry Map of sink functions
   /// @return A configured functional consumer
   public static KPipeConsumer<byte[], byte[]> createConsumer(
     final AppConfig config,
-    final MessageProcessorRegistry processorRegistry,
-    final MessageSinkRegistry sinkRegistry
+    final MessageProcessorRegistry processorRegistry
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
@@ -112,9 +112,8 @@ public class App implements AutoCloseable {
     return KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withProcessor(createJsonProcessorPipeline(processorRegistry))
+      .withPipeline(createProtobufProcessorPipeline(processorRegistry))
       .withPollTimeout(config.pollTimeout())
-      .withMessageSink(createSinksPipeline(sinkRegistry))
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
       .withMetrics(true)
@@ -134,25 +133,13 @@ public class App implements AutoCloseable {
       KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }
 
-  /// Creates a message sink pipeline using the provided registry.
-  ///
-  /// @param registry the message sink registry
-  /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<byte[], byte[]> createSinksPipeline(final MessageSinkRegistry registry) {
-    final var pipeline = registry.pipeline(byte[].class, MessageSinkRegistry.JSON_LOGGING);
-    return MessageSinkRegistry.withErrorHandling(pipeline);
-  }
-
   /// Creates a processor pipeline using the provided registry.
   ///
   /// @param registry the message processor registry
   /// @return a function that processes messages through the pipeline
-  private static Function<byte[], byte[]> createJsonProcessorPipeline(final MessageProcessorRegistry registry) {
+  private static UnaryOperator<byte[]> createProtobufProcessorPipeline(final MessageProcessorRegistry registry) {
     return registry
-      .jsonPipelineBuilder()
-      .add(MessageProcessorRegistry.JSON_ADD_SOURCE)
-      .add(MessageProcessorRegistry.JSON_MARK_PROCESSED)
-      .add(MessageProcessorRegistry.JSON_ADD_TIMESTAMP)
+      .pipeline(MessageFormat.PROTOBUF)
       .build();
   }
 

@@ -35,7 +35,7 @@ import org.apache.avro.util.Utf8;
 /// AvroMessageProcessor.registerSchema("userSchema", userSchemaJson);
 ///
 /// // Create an optimized pipeline using these processors
-/// final var pipeline = registry.avroPipelineBuilder("userSchema")
+/// final var pipeline = registry.pipeline(MessageFormat.AVRO)
 ///     .add(RegistryKey.avro("addTimestamp_userSchema"))
 ///     .build();
 ///
@@ -294,8 +294,9 @@ public class AvroMessageProcessor {
 
   /// Executes an operation within scoped caches for Avro processing.
   ///
-  /// @param operation The operation to execute within the scoped caches.
-  /// @return The result of the operation.
+  /// @param <T> The result type of the operation
+  /// @param operation The operation to execute within the scoped caches
+  /// @return The result of the operation
   public static <T> T inScopedCaches(final ScopedValue.CallableOp<T, Exception> operation) {
     try {
       return ScopedValue.where(OUTPUT_STREAM_CACHE, new ByteArrayOutputStream(8192))

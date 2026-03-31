@@ -16,7 +16,7 @@ import java.util.function.UnaryOperator;
 ///
 /// ```java
 /// // Create an optimized pipeline using these processors
-/// final var pipeline = registry.jsonPipelineBuilder()
+/// final var pipeline = registry.pipeline(MessageFormat.JSON)
 ///     .add(RegistryKey.json("addTimestamp"))
 ///     .add(RegistryKey.json("sanitizeData"))
 ///     .build();
@@ -121,8 +121,9 @@ public class JsonMessageProcessor {
 
   /// Executes an operation within scoped caches for JSON processing.
   ///
-  /// @param operation The operation to execute within the scoped caches.
-  /// @return The result of the operation.
+  /// @param <T> The result type of the operation
+  /// @param operation The operation to execute within the scoped caches
+  /// @return The result of the operation
   public static <T> T inScopedCaches(final ScopedValue.CallableOp<T, Exception> operation) {
     try {
       return ScopedValue.where(OUTPUT_STREAM_CACHE, new ByteArrayOutputStream(8192)).call(operation);

@@ -12,15 +12,16 @@ import org.kpipe.sink.MessageSink;
 
 /// Registry for managing and composing message processors in KPipe.
 ///
-/// This class allows registration, retrieval, and composition of byte array message processors for
-/// different formats (JSON, Avro, Protobuf). It supports schema-based and type-safe pipelines for
-/// Kafka message processing, and provides utilities for building and composing processing chains.
+/// This class allows registration, retrieval, and composition of message processors for different
+/// formats (JSON, Avro, Protobuf, POJO). It supports type-safe pipelines for Kafka message
+/// processing and provides utilities for building and composing processing chains via
+// [TypedPipelineBuilder].
 ///
 /// Example usage:
 /// ```java
 /// final var registry = new MessageProcessorRegistry("my-app");
-/// registry.addSchema("user", "User", "schemas/user.avsc");
-/// var pipeline = registry.avroPipelineBuilder("user").build();
+/// var pipeline =
+// registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("addTimestamp")).build();
 /// ```
 public class MessageProcessorRegistry {
 
@@ -104,6 +105,14 @@ public class MessageProcessorRegistry {
   /// @param format The message format for serialization/deserialization.
   /// @param <T>    The type of the object in the pipeline.
   /// @return A new TypedPipelineBuilder.
+  ///
+  /// Example usage:
+  /// ```java
+  /// final var registry = new MessageProcessorRegistry("my-app");
+  /// var pipeline = registry.pipeline(MessageFormat.JSON)
+  ///     .add(RegistryKey.json("addTimestamp"))
+  ///     .build();
+  /// ```
   public <T> TypedPipelineBuilder<T> pipeline(final MessageFormat<T> format) {
     return new TypedPipelineBuilder<>(format, this);
   }
