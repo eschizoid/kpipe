@@ -1,6 +1,7 @@
 package org.kpipe.registry;
 
 import java.util.function.UnaryOperator;
+import org.kpipe.sink.MessageSink;
 
 /// A unified pipeline interface that encapsulates the lifecycle:
 /// byte[] (Kafka) -> T (Deserialized Object) -> T (Processed Object) -> byte[] (Kafka).
@@ -24,6 +25,13 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
   /// @param data The deserialized object.
   /// @return The processed object.
   T process(T data);
+
+  /// Returns the terminal sink configured for this pipeline, if any.
+  ///
+  /// @return The message sink, or null if none is configured.
+  default MessageSink<T> getSink() {
+    return null;
+  }
 
   /// Implementation of UnaryOperator.apply that executes the full pipeline lifecycle.
   ///

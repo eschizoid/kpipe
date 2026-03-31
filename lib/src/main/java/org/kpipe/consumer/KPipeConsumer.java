@@ -815,6 +815,24 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       }
 
       try {
+        if (processor instanceof org.kpipe.registry.MessagePipeline typedPipeline) {
+          final var recordValue = (byte[]) record.value();
+          final var deserialized = typedPipeline.deserialize(recordValue);
+          if (deserialized == null) return false;
+
+          final var processed = typedPipeline.process(deserialized);
+          if (processed == null) return false;
+
+          final var sink = typedPipeline.getSink();
+          // Call configured sink for typed object
+          if (sink != null) sink.accept(processed);
+          // Fallback to consumer sink
+          else messageSink.accept((V) processed);
+
+          if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
+          return true;
+        }
+
         final var processedValue = processor.apply(record.value());
         messageSink.accept(processedValue);
         if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));

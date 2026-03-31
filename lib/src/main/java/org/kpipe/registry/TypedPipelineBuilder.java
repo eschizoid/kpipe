@@ -118,6 +118,11 @@ public final class TypedPipelineBuilder<T> {
 
     return new MessagePipeline<T>() {
       @Override
+      public MessageSink<T> getSink() {
+        return pipelineSink;
+      }
+
+      @Override
       public T deserialize(byte[] data) {
         if (data == null) {
           return null;
@@ -152,9 +157,6 @@ public final class TypedPipelineBuilder<T> {
           if (current == null) {
             return null;
           }
-        }
-        if (pipelineSink != null) {
-          pipelineSink.accept(current);
         }
         return current;
       }

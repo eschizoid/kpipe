@@ -137,7 +137,8 @@ public class MessageProcessorRegistry {
   ///
   /// @param <T> The type of data the operator processes
   /// @param key The type-safe key to retrieve
-  /// @return The registered operator, or null if not found
+  /// @param operator The operator to wrap
+  /// @return The wrapped operator, or the original operator if no wrapping is needed
   @SuppressWarnings("unchecked")
   public <T> UnaryOperator<T> wrapOperator(final RegistryKey<T> key, final UnaryOperator<T> operator) {
     final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
@@ -145,6 +146,12 @@ public class MessageProcessorRegistry {
     return entry.wrapOperator(entry.value);
   }
 
+  /// Wraps a sink with additional functionality, such as metrics collection.
+  ///
+  /// @param <T> The type of data the sink processes
+  /// @param key The type-safe key to retrieve
+  /// @param sink The sink to wrap
+  /// @return The wrapped sink, or the original sink if no wrapping is needed
   @SuppressWarnings("unchecked")
   public <T> MessageSink<T> wrapSink(final RegistryKey<T> key, final MessageSink<T> sink) {
     final var entry = (RegistryEntry<MessageSink<T>>) registryMap.get(key);

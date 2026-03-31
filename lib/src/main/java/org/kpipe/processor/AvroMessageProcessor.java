@@ -292,6 +292,10 @@ public class AvroMessageProcessor {
     };
   }
 
+  /// Executes an operation within scoped caches for Avro processing.
+  ///
+  /// @param operation The operation to execute within the scoped caches.
+  /// @return The result of the operation.
   public static <T> T inScopedCaches(final ScopedValue.CallableOp<T, Exception> operation) {
     try {
       return ScopedValue.where(OUTPUT_STREAM_CACHE, new ByteArrayOutputStream(8192))

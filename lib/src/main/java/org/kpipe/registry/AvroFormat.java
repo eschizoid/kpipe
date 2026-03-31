@@ -135,7 +135,11 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     return AvroMessageProcessor.inScopedCaches(() -> {
       final var datumReader = new org.apache.avro.generic.GenericDatumReader<GenericRecord>(schema);
       final var decoder = org.apache.avro.io.DecoderFactory.get().binaryDecoder(data, null);
-      return datumReader.read(null, decoder);
+      try {
+        return datumReader.read(null, decoder);
+      } catch (final IOException e) {
+        throw new RuntimeException("Failed to deserialize Avro record", e);
+      }
     });
   }
 }
