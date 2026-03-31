@@ -1,6 +1,5 @@
 package org.kpipe.registry;
 
-import java.lang.System.Logger;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
@@ -15,17 +14,15 @@ import org.kpipe.sink.MessageSink;
 /// This class allows registration, retrieval, and composition of message processors for different
 /// formats (JSON, Avro, Protobuf, POJO). It supports type-safe pipelines for Kafka message
 /// processing and provides utilities for building and composing processing chains via
-// [TypedPipelineBuilder].
+/// [TypedPipelineBuilder].
 ///
 /// Example usage:
 /// ```java
 /// final var registry = new MessageProcessorRegistry("my-app");
 /// var pipeline =
-// registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("addTimestamp")).build();
+/// registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("addTimestamp")).build();
 /// ```
 public class MessageProcessorRegistry {
-
-  private static final Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
 
   /// Pre-defined key for adding a source field to JSON messages.
   public static final RegistryKey<Map<String, Object>> JSON_ADD_SOURCE = RegistryKey.json("addSource");
@@ -140,43 +137,6 @@ public class MessageProcessorRegistry {
     }
   }
 
-  /// Retrieves a typed operator using a type-safe RegistryKey.
-  ///
-  /// @param <T> The type of data the operator processes
-  /// @param key The type-safe key to retrieve
-  /// @param operator The operator to wrap
-  /// @return The wrapped operator, or the original operator if no wrapping is needed
-  @SuppressWarnings("unchecked")
-  public <T> UnaryOperator<T> wrapOperator(final RegistryKey<T> key, final UnaryOperator<T> operator) {
-    return input -> {
-      final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
-      if (entry == null) return operator.apply(input);
-      return entry.apply(input);
-    };
-  }
-
-  /// Wraps a sink with additional functionality, such as metrics collection.
-  ///
-  /// @param <T> The type of data the sink processes.
-  /// @param key The type-safe key to retrieve.
-  /// @return The wrapped sink.
-  @SuppressWarnings("unchecked")
-  public <T> MessageSink<T> wrapSink(final RegistryKey<T> key) {
-    return input -> {
-      final var entry = (RegistryEntry<MessageSink<T>>) registryMap.get(key);
-      if (entry != null) {
-        entry.accept(input);
-      } else {
-        final var registeredSink = sinkRegistry.get(key);
-        if (registeredSink != null) {
-          registeredSink.accept(input);
-        } else {
-          LOGGER.log(Logger.Level.WARNING, "No sink found in registry for key: {0}", key);
-        }
-      }
-    };
-  }
-
   /// Retrieves a typed operator from the registry.
   ///
   /// @param <T> The type of data the operator processes.
@@ -186,9 +146,7 @@ public class MessageProcessorRegistry {
   public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
     return input -> {
       final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
-      if (entry != null) {
-        return entry.apply(input);
-      }
+      if (entry != null) return entry.apply(input);
       return input;
     };
   }

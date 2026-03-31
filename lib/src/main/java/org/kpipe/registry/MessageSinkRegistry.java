@@ -113,7 +113,11 @@ public class MessageSinkRegistry {
   public <T> MessageSink<T> get(final RegistryKey<T> key) {
     return value -> {
       final var entry = (SinkEntry<T>) registry.get(key);
-      if (entry != null) entry.accept(value);
+      if (entry != null) {
+        entry.accept(value);
+      } else {
+        LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
+      }
     };
   }
 

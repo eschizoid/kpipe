@@ -97,7 +97,7 @@ public final class TypedPipelineBuilder<T> {
   @SafeVarargs
   public final TypedPipelineBuilder<T> toSink(RegistryKey<T>... sinkKeys) {
     for (final var key : sinkKeys) {
-      toSink(registry.wrapSink(key));
+      toSink(registry.sinkRegistry().get(key));
     }
     return this;
   }
@@ -144,9 +144,7 @@ public final class TypedPipelineBuilder<T> {
         var current = data;
         for (final var operator : pipelineOperators) {
           current = operator.apply(current);
-          if (current == null) {
-            return null;
-          }
+          if (current == null) return null;
         }
         return current;
       }
