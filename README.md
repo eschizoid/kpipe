@@ -368,7 +368,7 @@ log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs
 Configure automatic metrics reporting:
 
 ```java
-final var runner = ConsumerRunner.builder(consumer)
+final var runner = KPipeRunner.builder(consumer)
   .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
   .withMetricsInterval(30_000)
   .build();
@@ -590,14 +590,14 @@ final var pipeline = registry.jsonPipeline().toSink(compositeSink).build();
 
 ---
 
-## Consumer Runner
+## KPipe Runner
 
-The `ConsumerRunner` provides a high-level management layer for Kafka consumers, handling lifecycle, metrics, and
+The `KPipeRunner` provides a high-level management layer for Kafka consumers, handling lifecycle, metrics, and
 graceful shutdown:
 
 ```java
 // Create a consumer runner with default settings
-final var runner = ConsumerRunner.builder(consumer).build();
+final var runner = KPipeRunner.builder(consumer).build();
 
 // Start the consumer
 runner.start();
@@ -608,11 +608,11 @@ runner.awaitShutdown();
 
 ### Advanced Configuration
 
-The `ConsumerRunner` supports extensive configuration options:
+The `KPipeRunner` supports extensive configuration options:
 
 ```java
 // Create a consumer runner with advanced configuration
-final var runner = ConsumerRunner.builder(consumer)
+final var runner = KPipeRunner.builder(consumer)
   // Configure metrics reporting
   .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
   .withMetricsInterval(30_000) // Report metrics every 30 seconds
@@ -629,14 +629,14 @@ final var runner = ConsumerRunner.builder(consumer)
   // Configure custom graceful shutdown
   .withGracefulShutdown((c, timeoutMs) -> {
     log.log(Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
-    return ConsumerRunner.performGracefulConsumerShutdown(c, timeoutMs);
+    return KPipeRunner.performGracefulConsumerShutdown(c, timeoutMs);
   })
   .build();
 ```
 
 ### Lifecycle Management
 
-The `ConsumerRunner` manages the complete lifecycle of a consumer:
+The `KPipeRunner` manages the complete lifecycle of a consumer:
 
 ```java
 // Start the consumer (idempotent - safe to call multiple times)
@@ -654,11 +654,11 @@ runner.close();
 
 ### Metrics Integration
 
-The `ConsumerRunner` integrates with metrics reporting:
+The `KPipeRunner` integrates with metrics reporting:
 
 ```java
 // Add multiple metrics reporters
-final var runner = ConsumerRunner.builder(consumer)
+final var runner = KPipeRunner.builder(consumer)
   .withMetricsReporters(
     List.of(
       ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
@@ -671,10 +671,10 @@ final var runner = ConsumerRunner.builder(consumer)
 
 ### Using with AutoCloseable
 
-The `ConsumerRunner` implements `AutoCloseable` for use with try-with-resources:
+The `KPipeRunner` implements `AutoCloseable` for use with try-with-resources:
 
 ```java
-try (final var runner = ConsumerRunner.builder(consumer).build()) {
+try (final var runner = KPipeRunner.builder(consumer).build()) {
   runner.start();
   // Application logic here
   // Runner will be automatically closed when exiting the try block
@@ -691,7 +691,7 @@ Here's a concise example of a KPipe application:
 public class KPipeApp implements AutoCloseable {
 
   private static final System.Logger LOGGER = System.getLogger(KPipeApp.class.getName());
-  private final ConsumerRunner<KPipeConsumer<byte[], byte[]>> runner;
+  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
 
   static void main() {
     // Load configuration from environment variables
@@ -736,7 +736,7 @@ public class KPipeApp implements AutoCloseable {
       .build();
 
     // Set up the consumer runner with metrics and shutdown hooks
-    runner = ConsumerRunner.builder(functionalConsumer)
+    runner = KPipeRunner.builder(functionalConsumer)
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())
       .withShutdownHook(true)
