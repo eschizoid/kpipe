@@ -12,15 +12,15 @@ subprojects {
 
   dependencies {
     implementation(project(":lib"))
-    implementation(libs.kafkaClients)
-    implementation(libs.slf4jSimple)
+    implementation(rootProject.libs.kafkaClients)
+    implementation(rootProject.libs.slf4jSimple)
 
-    testImplementation(libs.junitJupiter)
-    testImplementation(libs.testcontainers)
-    testImplementation(libs.testcontainersJunitJupiter)
-    testImplementation(libs.testcontainersKafka)
-    testImplementation(libs.dslJson)
-    testRuntimeOnly(libs.junitPlatformLauncher)
+    testImplementation(rootProject.libs.junitJupiter)
+    testImplementation(rootProject.libs.testcontainers)
+    testImplementation(rootProject.libs.testcontainersJunitJupiter)
+    testImplementation(rootProject.libs.testcontainersKafka)
+    testImplementation(rootProject.libs.dslJson)
+    testRuntimeOnly(rootProject.libs.junitPlatformLauncher)
   }
 
   tasks.withType<Test> {
