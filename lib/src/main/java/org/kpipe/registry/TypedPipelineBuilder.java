@@ -22,7 +22,7 @@ public final class TypedPipelineBuilder<T> {
   ///
   /// @param format   The message format for serialization/deserialization.
   /// @param registry The registry for looking up operators and sinks.
-  public TypedPipelineBuilder(MessageFormat<T> format, MessageProcessorRegistry registry) {
+  public TypedPipelineBuilder(final MessageFormat<T> format, MessageProcessorRegistry registry) {
     this.format = Objects.requireNonNull(format, "format cannot be null");
     this.registry = Objects.requireNonNull(registry, "registry cannot be null");
   }
@@ -33,7 +33,7 @@ public final class TypedPipelineBuilder<T> {
   ///
   /// @param skipBytes The number of bytes to skip.
   /// @return This builder.
-  public TypedPipelineBuilder<T> skipBytes(int skipBytes) {
+  public TypedPipelineBuilder<T> skipBytes(final int skipBytes) {
     this.skipBytes = skipBytes;
     return this;
   }
@@ -78,8 +78,7 @@ public final class TypedPipelineBuilder<T> {
   /// Sets a terminal sink for the pipeline.
   ///
   /// @param sink The sink to add.
-  /// @return This builder.
-  public TypedPipelineBuilder<T> toSink(final MessageSink<T> sink) {
+  public void toSink(final MessageSink<T> sink) {
     if (this.sink == null) {
       this.sink = Objects.requireNonNull(sink, "sink cannot be null");
     } else {
@@ -89,7 +88,6 @@ public final class TypedPipelineBuilder<T> {
         sink.accept(value);
       };
     }
-    return this;
   }
 
   /// Sets terminal sinks for the pipeline from the registry.
@@ -97,7 +95,7 @@ public final class TypedPipelineBuilder<T> {
   /// @param sinkKeys The registry keys for the sinks.
   /// @return This builder.
   @SafeVarargs
-  public final TypedPipelineBuilder<T> toSink(RegistryKey<T>... sinkKeys) {
+  public final TypedPipelineBuilder<T> toSink(final RegistryKey<T>... sinkKeys) {
     for (final var key : sinkKeys) toSink(registry.sinkRegistry().get(key));
     return this;
   }

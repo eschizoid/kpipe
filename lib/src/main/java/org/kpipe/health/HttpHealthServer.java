@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import org.kpipe.config.HealthConfig;
 
 /// Lightweight HTTP health check server using the JDK built-in HttpServer.
 public final class HttpHealthServer implements AutoCloseable {

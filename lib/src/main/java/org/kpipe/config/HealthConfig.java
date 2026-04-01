@@ -1,6 +1,4 @@
-package org.kpipe.health;
-
-import org.kpipe.config.AppConfig;
+package org.kpipe.config;
 
 /// Configuration constants for the health HTTP server.
 public final class HealthConfig {

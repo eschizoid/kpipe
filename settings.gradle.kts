@@ -1,11 +1,9 @@
 rootProject.name = "kpipe"
 
-// Main modules
-include("app")
+include("examples")
 include("lib")
 
-// Submodules of app
-include("app:json")
-include("app:avro")
-include("app:protobuf")
+include("examples:json")
+include("examples:avro")
+include("examples:protobuf")
 include("benchmarks")

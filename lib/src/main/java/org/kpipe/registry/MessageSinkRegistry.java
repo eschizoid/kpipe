@@ -168,6 +168,6 @@ public class MessageSinkRegistry {
   /// @param <T> The type of message value
   /// @return A sink that handles errors during processing
   public static <T> MessageSink<T> withErrorHandling(final MessageSink<T> sink) {
-    return RegistryFunctions.withConsumerErrorHandling(sink::accept, LOGGER)::accept;
+    return RegistryFunctions.withConsumerErrorHandling(sink, LOGGER)::accept;
   }
 }

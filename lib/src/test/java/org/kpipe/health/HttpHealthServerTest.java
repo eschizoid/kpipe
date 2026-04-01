@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.kpipe.config.AppConfig;
+import org.kpipe.config.HealthConfig;
 import org.mockito.Mockito;
 
 class HttpHealthServerTest {
