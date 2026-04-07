@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.*;
 import org.kpipe.processor.JsonMessageProcessor;
 import org.kpipe.sink.MessageSink;
@@ -39,9 +40,9 @@ public class MessageProcessorRegistry {
   private static class RegistryEntry<T> {
 
     final T value;
-    final java.util.concurrent.atomic.LongAdder invocationCount = new java.util.concurrent.atomic.LongAdder();
-    final java.util.concurrent.atomic.LongAdder errorCount = new java.util.concurrent.atomic.LongAdder();
-    final java.util.concurrent.atomic.LongAdder totalProcessingTimeNs = new java.util.concurrent.atomic.LongAdder();
+    final LongAdder invocationCount = new LongAdder();
+    final LongAdder errorCount = new LongAdder();
+    final LongAdder totalProcessingTimeNs = new LongAdder();
 
     RegistryEntry(final T value) {
       this.value = value;
@@ -117,8 +118,17 @@ public class MessageProcessorRegistry {
   /// @param <T> The type of data the operator processes
   /// @param key The type-safe key to register under
   /// @param operator The operator to register
-  public <T> void registerOperator(final RegistryKey<T> key, final UnaryOperator<T> operator) {
+  public <T> void register(final RegistryKey<T> key, final UnaryOperator<T> operator) {
     registryMap.put(key, new RegistryEntry<>(operator));
+  }
+
+  /// Registers a message sink using a type-safe RegistryKey.
+  ///
+  /// @param <T> The type of data the sink processes
+  /// @param key The type-safe key to register under
+  /// @param sink The sink implementation to register
+  public <T> void register(final RegistryKey<T> key, final MessageSink<T> sink) {
+    registryMap.put(key, new RegistryEntry<>(sink));
   }
 
   /// Registers all constants of an Enum that implements UnaryOperator<T>.
@@ -133,7 +143,7 @@ public class MessageProcessorRegistry {
     Objects.requireNonNull(type, "Type cannot be null");
     Objects.requireNonNull(enumClass, "Enum class cannot be null");
     for (final var constant : enumClass.getEnumConstants()) {
-      registerOperator(RegistryKey.of(constant.name(), type), constant);
+      register(RegistryKey.of(constant.name(), type), constant);
     }
   }
 
@@ -148,6 +158,23 @@ public class MessageProcessorRegistry {
       final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
       if (entry != null) return entry.apply(input);
       return input;
+    };
+  }
+
+  /// Retrieves a message sink from the registry.
+  ///
+  /// @param <T> The type of data the sink processes.
+  /// @param key The type-safe key to retrieve.
+  /// @return The registered sink, or a no-op sink if not found.
+  @SuppressWarnings("unchecked")
+  public <T> MessageSink<T> getSink(final RegistryKey<T> key) {
+    return input -> {
+      final var entry = (RegistryEntry<MessageSink<T>>) registryMap.get(key);
+      if (entry != null) {
+        entry.accept(input);
+      } else {
+        sinkRegistry.get(key).accept(input);
+      }
     };
   }
 
@@ -173,9 +200,9 @@ public class MessageProcessorRegistry {
   private void registerDefaultProcessors() {
     // Register default operators for optimized pipelines
     if (messageFormat == MessageFormat.JSON) {
-      registerOperator(JSON_ADD_SOURCE, JsonMessageProcessor.addFieldOperator("source", sourceAppName));
-      registerOperator(JSON_ADD_TIMESTAMP, JsonMessageProcessor.addTimestampOperator("timestamp"));
-      registerOperator(JSON_MARK_PROCESSED, JsonMessageProcessor.addFieldOperator("processed", "true"));
+      register(JSON_ADD_SOURCE, JsonMessageProcessor.addFieldOperator("source", sourceAppName));
+      register(JSON_ADD_TIMESTAMP, JsonMessageProcessor.addTimestampOperator("timestamp"));
+      register(JSON_MARK_PROCESSED, JsonMessageProcessor.addFieldOperator("processed", "true"));
     }
   }
 

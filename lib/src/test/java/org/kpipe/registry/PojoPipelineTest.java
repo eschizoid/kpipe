@@ -12,7 +12,7 @@ public class PojoPipelineTest {
 
     // Register a POJO operator
     final RegistryKey<UserRecord> userMaskerKey = RegistryKey.of("userMasker", UserRecord.class);
-    registry.registerOperator(userMaskerKey, (UserRecord user) -> new UserRecord(user.id(), "MASKED", user.email()));
+    registry.register(userMaskerKey, (UserRecord user) -> new UserRecord(user.id(), "MASKED", user.email()));
 
     // Build pipeline
     final var pipeline = registry.pipeline(MessageFormat.pojo(UserRecord.class)).add(userMaskerKey).build();

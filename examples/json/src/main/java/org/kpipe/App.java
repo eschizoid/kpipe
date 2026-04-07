@@ -22,6 +22,7 @@ import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
+import org.kpipe.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
@@ -36,7 +37,6 @@ public class App implements AutoCloseable {
   private final HttpHealthServer healthServer;
   private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
-  private final MessageSinkRegistry sinkRegistry;
 
   /// Main entry point for the Kafka consumer application.
   static void main() {
@@ -57,9 +57,8 @@ public class App implements AutoCloseable {
   /// @param config The application configuration
   public App(final AppConfig config) {
     this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
-    this.sinkRegistry = processorRegistry.sinkRegistry();
     // Pre-register loggers
-    sinkRegistry.register(RegistryKey.json("jsonLogging"), new org.kpipe.sink.JsonConsoleSink<>());
+    processorRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
 
     this.kpipeConsumer = createConsumer(config, processorRegistry);
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
@@ -111,6 +110,7 @@ public class App implements AutoCloseable {
       .withProperties(kafkaProps)
       .withTopic(config.topic())
       .withPipeline(createJsonProcessorPipeline(processorRegistry, config))
+      .withMessageSink((MessageSink<byte[]>) (MessageSink<?>) createSinksPipeline(processorRegistry))
       .withPollTimeout(config.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
@@ -133,10 +133,10 @@ public class App implements AutoCloseable {
 
   /// Creates a message sink pipeline using the provided registry.
   ///
-  /// @param registry the message sink registry
+  /// @param registry the message processor registry
   /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<Map<String, Object>> createSinksPipeline(final MessageSinkRegistry registry) {
-    return registry.pipeline(MessageSinkRegistry.JSON_LOGGING);
+  private static MessageSink<Map<String, Object>> createSinksPipeline(final MessageProcessorRegistry registry) {
+    return registry.getSink(MessageSinkRegistry.JSON_LOGGING);
   }
 
   /// Creates a processor pipeline using the provided registry.
@@ -159,13 +159,6 @@ public class App implements AutoCloseable {
   /// @return the message processor registry
   public MessageProcessorRegistry getProcessorRegistry() {
     return processorRegistry;
-  }
-
-  /// Gets the sink registry used by this application.
-  ///
-  /// @return the message sink registry
-  public MessageSinkRegistry getSinkRegistry() {
-    return sinkRegistry;
   }
 
   void start() {

@@ -54,24 +54,23 @@ class AppIntegrationTest {
 
     try (final var app = new App(config)) {
       // Register the capturing sink
-      app.getProcessorRegistry().sinkRegistry().register(RegistryKey.json("jsonLogging"), capturingSink);
+      app.getProcessorRegistry().register(RegistryKey.json("jsonLogging"), capturingSink);
       // Verify registration
-      final var sink = app.getProcessorRegistry().sinkRegistry().get(RegistryKey.json("jsonLogging"));
-      System.out.println("[DEBUG_LOG] Registered sink is capturing: " + (sink != null));
+      final var sink = app.getProcessorRegistry().getSink(RegistryKey.json("jsonLogging"));
 
       // Set up the processor registry
       app
         .getProcessorRegistry()
-        .registerOperator(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));
+        .register(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));
       app
         .getProcessorRegistry()
-        .registerOperator(
+        .register(
           RegistryKey.json("markProcessed"),
           JsonMessageProcessor.addFieldOperator("status", "processed")
         );
       app
         .getProcessorRegistry()
-        .registerOperator(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
+        .register(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
 
       // Start the app in a virtual thread
       final var appThread = Thread.ofVirtual().start(() -> {

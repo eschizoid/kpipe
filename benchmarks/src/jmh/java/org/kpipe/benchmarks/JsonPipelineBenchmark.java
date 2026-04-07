@@ -57,15 +57,15 @@ public class JsonPipelineBenchmark {
     final var op2 = RegistryKey.json("op2");
     final var op3 = RegistryKey.json("op3");
 
-    registry.registerOperator(op1, map -> {
+    registry.register(op1, map -> {
       map.put("processed_by", "kpipe");
       return map;
     });
-    registry.registerOperator(op2, map -> {
+    registry.register(op2, map -> {
       map.put("timestamp", BENCHMARK_TIMESTAMP);
       return map;
     });
-    registry.registerOperator(op3, map -> {
+    registry.register(op3, map -> {
       map.remove("email");
       return map;
     });

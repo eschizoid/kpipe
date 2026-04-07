@@ -8,6 +8,7 @@ import org.kpipe.sink.MessageSink;
 ///
 /// @param <T> The type of the object in the pipeline.
 public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
+
   /// Deserializes the raw byte array into a typed object.
   ///
   /// @param data The raw data from Kafka.
@@ -41,13 +42,9 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
   default byte[] apply(byte[] data) {
     try {
       final var deserialized = deserialize(data);
-      if (deserialized == null) {
-        return null;
-      }
+      if (deserialized == null) return null;
       final var processed = process(deserialized);
-      if (processed == null) {
-        return null;
-      }
+      if (processed == null) return null;
       return serialize(processed);
     } catch (final Exception e) {
       return null;

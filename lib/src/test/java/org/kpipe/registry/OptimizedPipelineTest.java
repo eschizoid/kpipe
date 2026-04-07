@@ -29,8 +29,8 @@ class OptimizedPipelineTest {
     final var addSource = RegistryKey.json("addSource");
     final var addStatus = RegistryKey.json("addStatus");
 
-    registry.registerOperator(addSource, JsonMessageProcessor.addFieldOperator("source", SOURCE_APP));
-    registry.registerOperator(addStatus, JsonMessageProcessor.addFieldOperator("status", "processed"));
+    registry.register(addSource, JsonMessageProcessor.addFieldOperator("source", SOURCE_APP));
+    registry.register(addStatus, JsonMessageProcessor.addFieldOperator("status", "processed"));
 
     // Create optimized pipeline
     final var pipeline = registry.pipeline(MessageFormat.JSON).add(addSource, addStatus).build();
@@ -65,8 +65,8 @@ class OptimizedPipelineTest {
     final var addSource = RegistryKey.avro("addSource");
     final var addStatus = RegistryKey.avro("addStatus");
 
-    registry.registerOperator(addSource, AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
-    registry.registerOperator(addStatus, AvroMessageProcessor.addFieldOperator("status", "processed"));
+    registry.register(addSource, AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
+    registry.register(addStatus, AvroMessageProcessor.addFieldOperator("status", "processed"));
 
     // Create optimized pipeline
     final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("user");
@@ -140,15 +140,9 @@ class OptimizedPipelineTest {
     // Note: Default operators are registered for the whole registry if format is JSON,
     // but here we are using AVRO. We need to register them for AVRO specifically if we want to use
     // them.
-    registry.registerOperator(
-      RegistryKey.avro("addSource"),
-      AvroMessageProcessor.addFieldOperator("source", SOURCE_APP)
-    );
-    registry.registerOperator(
-      RegistryKey.avro("markProcessed"),
-      AvroMessageProcessor.addFieldOperator("processed", "true")
-    );
-    registry.registerOperator(RegistryKey.avro("addTimestamp"), AvroMessageProcessor.addTimestampOperator("timestamp"));
+    registry.register(RegistryKey.avro("addSource"), AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
+    registry.register(RegistryKey.avro("markProcessed"), AvroMessageProcessor.addFieldOperator("processed", "true"));
+    registry.register(RegistryKey.avro("addTimestamp"), AvroMessageProcessor.addTimestampOperator("timestamp"));
 
     final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("user");
     final var pipeline = registry
@@ -197,7 +191,7 @@ class OptimizedPipelineTest {
 
     // Register operators
     final var addSource = RegistryKey.avro("addSource");
-    registry.registerOperator(addSource, AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
+    registry.register(addSource, AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
 
     // Create optimized pipeline with offset 5 (simulating magic bytes)
     final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("userOffset");

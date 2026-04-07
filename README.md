@@ -28,10 +28,10 @@ Create a pipeline and start a Kafka consumer in a few lines:
 final var registry = new MessageProcessorRegistry("demo");
 
 final var sanitizeKey = RegistryKey.json("sanitize");
-registry.registerOperator(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password"));
+registry.register(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password"));
 
 final var stampKey = RegistryKey.json("stamp");
-registry.registerOperator(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
+registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
 
 final var pipeline = registry.pipeline(MessageFormat.JSON)
   .add(sanitizeKey, stampKey)
@@ -317,7 +317,7 @@ final var registry = new MessageProcessorRegistry("myApp");
 
 // Register a custom JSON operator for field transformations
 final var uppercaseKey = RegistryKey.json("uppercase");
-registry.registerOperator(uppercaseKey, map -> {
+registry.register(uppercaseKey, map -> {
     final var value = map.get("text");
     if (value instanceof String text) map.put("text", text.toUpperCase());
     return map;
@@ -325,7 +325,7 @@ registry.registerOperator(uppercaseKey, map -> {
 
 // Built-in operators are also available
 final var envKey = RegistryKey.json("addEnvironment");
-registry.registerOperator(envKey,
+registry.register(envKey,
     JsonMessageProcessor.addFieldOperator("environment", "production"));
 
 // Create a high-performance pipeline (single SerDe cycle)
@@ -411,15 +411,15 @@ final var registry = new MessageProcessorRegistry("myApp");
 
 // Operators are pure functions that modify a Map
 final var stampKey = RegistryKey.json("addTimestamp");
-registry.registerOperator(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
+registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
 
 final var sanitizeKey = RegistryKey.json("sanitize");
-registry.registerOperator(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password", "ssn"));
+registry.register(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password", "ssn"));
 
 // Metadata merging
 final var metadata = Map.of("version", "1.0", "env", "prod");
 final var metaKey = RegistryKey.json("addMetadata");
-registry.registerOperator(metaKey, JsonMessageProcessor.mergeWithOperator(metadata));
+registry.register(metaKey, JsonMessageProcessor.mergeWithOperator(metadata));
 
 // Build an optimized pipeline (one deserialization -> many transformations -> one serialization)
 final var pipeline = registry.pipeline(MessageFormat.JSON)
@@ -442,12 +442,12 @@ final var schema = AvroMessageProcessor.getSchema("user");
 
 // Register manual operators
 final var sanitizeKey = RegistryKey.avro("sanitize");
-registry.registerOperator(sanitizeKey,
+registry.register(sanitizeKey,
     AvroMessageProcessor.removeFieldsOperator(schema, "password", "creditCard"));
 
 // Transform fields
 final var upperKey = RegistryKey.avro("uppercaseName");
-registry.registerOperator(upperKey,
+registry.register(upperKey,
     AvroMessageProcessor.transformFieldOperator(schema, "name", value -> {
         if (value instanceof String text) return text.toUpperCase();
         return value;
@@ -480,7 +480,7 @@ final var registry = new MessageProcessorRegistry("myApp");
 
 // Define a custom operator for your record
 final var userKey = RegistryKey.of("userTransform", UserRecord.class);
-registry.registerOperator(userKey, user -> new UserRecord(user.id(), user.name().toUpperCase(), user.email()));
+registry.register(userKey, user -> new UserRecord(user.id(), user.name().toUpperCase(), user.email()));
 
 // Build an optimized POJO pipeline
 final var pipeline = registry.pipeline(MessageFormat.pojo(UserRecord.class))
@@ -875,11 +875,11 @@ final var registry = new MessageProcessorRegistry("myApp");
 
 // Create focused operator groups
 final var securityKey = RegistryKey.json("security");
-registry.registerOperator(securityKey,
+registry.register(securityKey,
     JsonMessageProcessor.removeFieldsOperator("password", "creditCard"));
 
 final var enrichmentKey = RegistryKey.json("enrichment");
-registry.registerOperator(enrichmentKey,
+registry.register(enrichmentKey,
     JsonMessageProcessor.addTimestampOperator("processedAt"));
 
 // Compose them into an optimized pipeline
@@ -942,7 +942,7 @@ To skip a message in a pipeline, return `null` in your operator. KPipe will trea
 the current record and will not send it to any downstream operators or sinks.
 
 ```java
-registry.registerOperator(RegistryKey.json("filter"), map -> {
+registry.register(RegistryKey.json("filter"), map -> {
     if ("internal".equals(map.get("type"))) {
         return null; // Skip this message
     }

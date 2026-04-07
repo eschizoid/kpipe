@@ -39,7 +39,7 @@ class MessageProcessorRegistryTest {
   void shouldRegisterAndRetrieveJsonOperator() {
     // Arrange
     final var key = RegistryKey.json("testOperator");
-    registry.registerOperator(key, obj -> {
+    registry.register(key, obj -> {
       obj.put("test", "value");
       return obj;
     });
@@ -58,11 +58,11 @@ class MessageProcessorRegistryTest {
     final var op1 = RegistryKey.json("op1");
     final var op2 = RegistryKey.json("op2");
 
-    registry.registerOperator(op1, obj -> {
+    registry.register(op1, obj -> {
       obj.put("op1", "val1");
       return obj;
     });
-    registry.registerOperator(op2, obj -> {
+    registry.register(op2, obj -> {
       obj.put("op2", "val2");
       return obj;
     });
@@ -120,7 +120,7 @@ class MessageProcessorRegistryTest {
     // Arrange
     final var key = RegistryKey.json("p1");
     final UnaryOperator<Map<String, Object>> op = obj -> obj;
-    registry.registerOperator(key, op);
+    registry.register(key, op);
 
     // Act
     var keys = registry.getKeys();
@@ -133,7 +133,7 @@ class MessageProcessorRegistryTest {
   void shouldUnregisterProcessor() {
     // Arrange
     final var key = RegistryKey.json("p1");
-    registry.registerOperator(key, obj -> obj);
+    registry.register(key, obj -> obj);
 
     // Act
     assertTrue(registry.getKeys().contains(key));
@@ -148,7 +148,7 @@ class MessageProcessorRegistryTest {
   void shouldTrackMetrics() {
     // Arrange
     final var key = RegistryKey.json("metricsTest");
-    registry.registerOperator(key, obj -> obj);
+    registry.register(key, obj -> obj);
 
     final var pipeline = registry.pipeline(MessageFormat.JSON).add(key).build();
 
@@ -165,7 +165,7 @@ class MessageProcessorRegistryTest {
   void shouldRegisterAndRetrieveTypedOperator() {
     // Arrange
     final var key = RegistryKey.json("typedOp");
-    registry.registerOperator(key, obj -> {
+    registry.register(key, obj -> {
       obj.put("typed", "success");
       return obj;
     });
@@ -184,7 +184,7 @@ class MessageProcessorRegistryTest {
   void shouldComposePipelineUsingBuilder() {
     // Arrange
     final var key1 = RegistryKey.json("builderOp1");
-    registry.registerOperator(key1, obj -> {
+    registry.register(key1, obj -> {
       obj.put("b1", "v1");
       return obj;
     });
@@ -232,7 +232,7 @@ class MessageProcessorRegistryTest {
 
   @Test
   @SuppressWarnings("unchecked")
-  void shouldRegisterOperatorsFromEnum() {
+  void shouldRegisterFromEnum() {
     // Act
     registry.registerEnum((Class<Map<String, Object>>) (Class<?>) Map.class, TestOperators.class);
 
