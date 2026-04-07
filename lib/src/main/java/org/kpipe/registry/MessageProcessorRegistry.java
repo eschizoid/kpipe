@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.LongAdder;
 import java.util.function.*;
 import org.kpipe.processor.JsonMessageProcessor;
 import org.kpipe.sink.MessageSink;
@@ -22,8 +21,14 @@ import org.kpipe.sink.MessageSink;
 /// final var registry = new MessageProcessorRegistry("my-app");
 /// var pipeline =
 /// registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("addTimestamp")).build();
+///
+/// // Optional: Wrap with error handling
+/// final var safeSink = MessageProcessorRegistry.withErrorHandling(new MySink());
+/// registry.register(RegistryKey.json("safeSink"), safeSink);
 /// ```
 public class MessageProcessorRegistry {
+
+  private static final System.Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
 
   /// Pre-defined key for adding a source field to JSON messages.
   public static final RegistryKey<Map<String, Object>> JSON_ADD_SOURCE = RegistryKey.json("addSource");
@@ -35,57 +40,6 @@ public class MessageProcessorRegistry {
   private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> registryMap = new ConcurrentHashMap<>();
   private final String sourceAppName;
   private final MessageFormat<?> messageFormat;
-
-  /// A registry entry that maintains execution statistics.
-  private static class RegistryEntry<T> {
-
-    final T value;
-    final LongAdder invocationCount = new LongAdder();
-    final LongAdder errorCount = new LongAdder();
-    final LongAdder totalProcessingTimeNs = new LongAdder();
-
-    RegistryEntry(final T value) {
-      this.value = value;
-    }
-
-    public Map<String, Object> getMetrics() {
-      final long count = invocationCount.sum();
-      final long errors = errorCount.sum();
-      final long timeNs = totalProcessingTimeNs.sum();
-      final var metrics = new ConcurrentHashMap<String, Object>();
-      metrics.put("invocationCount", count);
-      metrics.put("errorCount", errors);
-      metrics.put("averageProcessingTimeMs", count > 0 ? (timeNs / count) / 1_000_000.0 : 0);
-      return metrics;
-    }
-
-    @SuppressWarnings("unchecked")
-    public <V> V apply(final V input) {
-      final var start = System.nanoTime();
-      try {
-        final var result = ((UnaryOperator<V>) value).apply(input);
-        invocationCount.increment();
-        totalProcessingTimeNs.add(System.nanoTime() - start);
-        return result;
-      } catch (final Exception e) {
-        errorCount.increment();
-        throw e;
-      }
-    }
-
-    @SuppressWarnings("unchecked")
-    public <V> void accept(final V input) {
-      final var start = System.nanoTime();
-      try {
-        ((MessageSink<V>) value).accept(input);
-        invocationCount.increment();
-        totalProcessingTimeNs.add(System.nanoTime() - start);
-      } catch (final Exception e) {
-        errorCount.increment();
-        throw e;
-      }
-    }
-  }
 
   private final MessageSinkRegistry sinkRegistry = new MessageSinkRegistry();
 
@@ -124,11 +78,27 @@ public class MessageProcessorRegistry {
 
   /// Registers a message sink using a type-safe RegistryKey.
   ///
-  /// @param <T> The type of data the sink processes
-  /// @param key The type-safe key to register under
+  /// @param <T>  The type of data the sink processes
+  /// @param key  The type-safe key to register under
   /// @param sink The sink implementation to register
   public <T> void register(final RegistryKey<T> key, final MessageSink<T> sink) {
     registryMap.put(key, new RegistryEntry<>(sink));
+  }
+
+  /// Registers all constants of an Enum that implements MessageSink<T>.
+  ///
+  /// Each constant's name is used as the key.
+  ///
+  /// @param <T>       The type of data the sink processes
+  /// @param <E>       The Enum type that implements MessageSink<T>
+  /// @param type      The class representing the data type
+  /// @param enumClass The Enum class to register
+  public <T, E extends Enum<E> & MessageSink<T>> void registerSinkEnum(final Class<T> type, final Class<E> enumClass) {
+    Objects.requireNonNull(type, "Type cannot be null");
+    Objects.requireNonNull(enumClass, "Enum class cannot be null");
+    for (final var constant : enumClass.getEnumConstants()) {
+      register(RegistryKey.of(constant.name(), type), constant);
+    }
   }
 
   /// Registers all constants of an Enum that implements UnaryOperator<T>.
@@ -216,33 +186,63 @@ public class MessageProcessorRegistry {
     messageFormat.addSchema(key, fullyQualifiedName, location);
   }
 
-  /// Unregisters a processor.
+  /// Unregisters a processor or sink.
   ///
-  /// @param key The key of the processor to remove
-  /// @return true if the processor was removed, false if it wasn't found
+  /// @param key The key to remove
+  /// @return true if it was removed, false if it wasn't found
   public boolean unregister(final RegistryKey<?> key) {
-    return registryMap.remove(key) != null;
+    return registryMap.remove(key) != null || sinkRegistry.unregister(key);
   }
 
-  /// Clears all processors from the registry.
+  /// Clears all processors and sinks from the registry.
   public void clear() {
     registryMap.clear();
+    sinkRegistry.clear();
   }
 
-  /// Returns all registered processor keys.
+  /// Returns an unmodifiable set of all registered processor keys.
   ///
   /// @return Unmodifiable set of all registered processor keys.
   public Set<RegistryKey<?>> getKeys() {
     return Collections.unmodifiableSet(registryMap.keySet());
   }
 
-  /// Gets metrics for a processor.
+  /// Returns an unmodifiable map of all registered processors and sinks.
   ///
-  /// @param key The processor key
-  /// @return Map containing metrics or empty map if processor not found
+  /// @return Unmodifiable map of all keys and their simple class names
+  public Map<RegistryKey<?>, String> getAll() {
+    return RegistryFunctions.createUnmodifiableView(registryMap, value -> {
+      final var entry = (RegistryEntry<?>) value;
+      return "%s".formatted(entry.value().getClass().getSimpleName());
+    });
+  }
+
+  /// Gets performance metrics for a specific processor or sink.
+  ///
+  /// @param key The key to look up
+  /// @return Map containing metrics or empty map if not found
   public Map<String, Object> getMetrics(final RegistryKey<?> key) {
     final var entry = registryMap.get(key);
-    if (entry == null) return Map.of();
-    return entry.getMetrics();
+    if (entry != null) return entry.getMetrics();
+    return sinkRegistry.getMetrics(key);
+  }
+
+  /// Wraps a sink with error handling logic that suppresses exceptions.
+  ///
+  /// @param sink The sink to wrap with error handling
+  /// @param <T>  The type of message value
+  /// @return A sink that handles errors during processing
+  public static <T> MessageSink<T> withErrorHandling(final MessageSink<T> sink) {
+    return RegistryFunctions.withConsumerErrorHandling(sink, LOGGER)::accept;
+  }
+
+  /// Wraps an operator with error handling logic that suppresses exceptions and returns the
+  /// original input.
+  ///
+  /// @param operator The operator to wrap with error handling
+  /// @param <T>      The type of message value
+  /// @return An operator that handles errors during processing, returning original input on error
+  public static <T> UnaryOperator<T> withErrorHandling(final UnaryOperator<T> operator) {
+    return RegistryFunctions.withOperatorErrorHandling(operator, LOGGER);
   }
 }

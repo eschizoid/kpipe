@@ -5,7 +5,6 @@ import java.lang.System.Logger.Level;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.LongAdder;
 import org.apache.avro.generic.GenericRecord;
 import org.kpipe.sink.AvroConsoleSink;
 import org.kpipe.sink.JsonConsoleSink;
@@ -28,49 +27,12 @@ import org.kpipe.sink.MessageSink;
 public class MessageSinkRegistry {
 
   private static final Logger LOGGER = System.getLogger(MessageSinkRegistry.class.getName());
-  private final ConcurrentHashMap<RegistryKey<?>, SinkEntry<?>> registry = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> registry = new ConcurrentHashMap<>();
 
   /// Pre-defined key for the JSON logging sink (Map based).
   public static final RegistryKey<Map<String, Object>> JSON_LOGGING = RegistryKey.json("jsonLogging");
   /// Pre-defined key for the Avro logging sink (GenericRecord based).
   public static final RegistryKey<GenericRecord> AVRO_LOGGING = RegistryKey.avro("avroLogging");
-
-  private static class SinkEntry<T> {
-
-    final MessageSink<T> sink;
-    final Class<T> valueType;
-    final LongAdder invocationCount = new LongAdder();
-    final LongAdder errorCount = new LongAdder();
-    final LongAdder totalProcessingTimeNs = new LongAdder();
-
-    SinkEntry(final MessageSink<T> sink, final Class<T> valueType) {
-      this.sink = sink;
-      this.valueType = valueType;
-    }
-
-    public Map<String, Object> getMetrics() {
-      final long count = invocationCount.sum();
-      final long errors = errorCount.sum();
-      final long timeNs = totalProcessingTimeNs.sum();
-      final var metrics = new ConcurrentHashMap<String, Object>();
-      metrics.put("invocationCount", count);
-      metrics.put("errorCount", errors);
-      metrics.put("averageProcessingTimeMs", count > 0 ? (timeNs / count) / 1_000_000.0 : 0);
-      return metrics;
-    }
-
-    public void accept(final T processedValue) {
-      final var start = System.nanoTime();
-      try {
-        sink.accept(processedValue);
-        invocationCount.increment();
-        totalProcessingTimeNs.add(System.nanoTime() - start);
-      } catch (final Exception e) {
-        errorCount.increment();
-        throw e;
-      }
-    }
-  }
 
   /// Constructs a new `MessageSinkRegistry` object with default logging sinks.
   public MessageSinkRegistry() {
@@ -78,17 +40,32 @@ public class MessageSinkRegistry {
     register(AVRO_LOGGING, new AvroConsoleSink<>());
   }
 
+  /// Registers all constants of an Enum that implements MessageSink<T>.
+  ///
+  /// Each constant's name is used as the key.
+  ///
+  /// @param <T>       The type of data the sink processes
+  /// @param <E>       The Enum type that implements MessageSink<T>
+  /// @param type      The class representing the data type
+  /// @param enumClass The Enum class to register
+  public <T, E extends Enum<E> & MessageSink<T>> void registerEnum(final Class<T> type, final Class<E> enumClass) {
+    Objects.requireNonNull(type, "Type cannot be null");
+    Objects.requireNonNull(enumClass, "Enum class cannot be null");
+    for (final var constant : enumClass.getEnumConstants()) {
+      register(RegistryKey.of(constant.name(), type), constant);
+    }
+  }
+
   /// Registers a new message sink with the specified key.
   ///
-  /// @param key The type-safe key for the sink
+  /// @param key  The type-safe key for the sink
   /// @param sink The sink implementation to register
-  /// @param <T> The type of message value
+  /// @param <T>  The type of message value
   public <T> void register(final RegistryKey<T> key, final MessageSink<T> sink) {
     Objects.requireNonNull(key, "Sink key cannot be null");
     Objects.requireNonNull(sink, "Sink implementation cannot be null");
 
-    final var entry = new SinkEntry<>(sink, key.type());
-    registry.put(key, entry);
+    registry.put(key, new RegistryEntry<>(sink));
   }
 
   /// Unregisters a sink by key.
@@ -112,7 +89,7 @@ public class MessageSinkRegistry {
   @SuppressWarnings("unchecked")
   public <T> MessageSink<T> get(final RegistryKey<T> key) {
     return value -> {
-      final var entry = (SinkEntry<T>) registry.get(key);
+      final var entry = (RegistryEntry<MessageSink<T>>) registry.get(key);
       if (entry != null) {
         entry.accept(value);
       } else {
@@ -128,27 +105,17 @@ public class MessageSinkRegistry {
   /// @return A composite sink that delegates to all specified sinks
   @SafeVarargs
   public final <T> MessageSink<T> pipeline(final RegistryKey<T>... sinkKeys) {
-    return processedValue -> {
-      for (final var key : sinkKeys) {
-        final var sink = this.get(key);
-        if (sink != null) {
-          try {
-            sink.accept(processedValue);
-          } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Error sending to sink: %s".formatted(key.name()), e);
-          }
-        }
-      }
-    };
+    return TypedPipelineBuilder.compositeSink(this, sinkKeys);
   }
 
   /// Returns an unmodifiable map of all registered sinks.
   ///
   /// @return Unmodifiable map of all sink keys and their class names
   public Map<RegistryKey<?>, String> getAll() {
-    return RegistryFunctions.createUnmodifiableView(registry, entry -> {
-      final var sinkEntry = (SinkEntry<?>) entry;
-      return "%s(%s)".formatted(sinkEntry.sink.getClass().getSimpleName(), sinkEntry.valueType.getSimpleName());
+    return RegistryFunctions.createUnmodifiableView(registry, value -> {
+      final var entry = (RegistryEntry<?>) value;
+      final var sink = entry.value();
+      return "%s".formatted(sink.getClass().getSimpleName());
     });
   }
 
@@ -165,7 +132,7 @@ public class MessageSinkRegistry {
   /// Wraps a sink with error handling logic that suppresses exceptions.
   ///
   /// @param sink The sink to wrap with error handling
-  /// @param <T> The type of message value
+  /// @param <T>  The type of message value
   /// @return A sink that handles errors during processing
   public static <T> MessageSink<T> withErrorHandling(final MessageSink<T> sink) {
     return RegistryFunctions.withConsumerErrorHandling(sink, LOGGER)::accept;

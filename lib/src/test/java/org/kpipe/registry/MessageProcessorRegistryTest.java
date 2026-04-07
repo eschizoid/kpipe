@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.kpipe.sink.MessageSink;
 
 class MessageProcessorRegistryTest {
 
@@ -86,7 +87,37 @@ class MessageProcessorRegistryTest {
     final var pipeline = registry.pipeline(MessageFormat.JSON).add(operator).build();
 
     // Act & Assert
+    // Pipeline itself catches errors in TypedPipelineBuilder's implementation
     assertNull(pipeline.apply("{}".getBytes()));
+  }
+
+  @Test
+  void shouldWrapOperatorWithErrorHandling() {
+    // Arrange
+    final UnaryOperator<Map<String, Object>> operator = message -> {
+      throw new RuntimeException("Test exception");
+    };
+    final var safeOperator = MessageProcessorRegistry.withErrorHandling(operator);
+
+    // Act
+    final var input = new java.util.HashMap<String, Object>();
+    final var result = safeOperator.apply(input);
+
+    // Assert
+    assertSame(input, result);
+  }
+
+  @Test
+  void shouldWrapSinkWithErrorHandling() {
+    // Arrange
+    final MessageSink<Map<String, Object>> sink = message -> {
+      throw new RuntimeException("Test exception");
+    };
+    final var safeSink = MessageProcessorRegistry.withErrorHandling(sink);
+
+    // Act & Assert
+    // Should not throw exception
+    assertDoesNotThrow(() -> safeSink.accept(new java.util.HashMap<>()));
   }
 
   @Test

@@ -100,6 +100,25 @@ public final class TypedPipelineBuilder<T> {
     return this;
   }
 
+  /// Creates a composite sink that delegates to multiple sinks from a registry.
+  ///
+  /// @param registry The sink registry
+  /// @param sinkKeys The keys of the sinks to compose
+  /// @param <T>      The message type
+  /// @return A composite sink
+  @SafeVarargs
+  public static <T> MessageSink<T> compositeSink(MessageSinkRegistry registry, final RegistryKey<T>... sinkKeys) {
+    return value -> {
+      for (final var key : sinkKeys) {
+        try {
+          registry.get(key).accept(value);
+        } catch (final Exception e) {
+          // Suppress error to allow other sinks to proceed, similar to previous implementation
+        }
+      }
+    };
+  }
+
   /// Builds the [MessagePipeline].
   ///
   /// @return A new MessagePipeline instance.
