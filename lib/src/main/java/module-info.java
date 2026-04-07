@@ -6,7 +6,6 @@ module org.kpipe {
   requires java.net.http;
   requires jdk.httpserver;
   requires org.apache.avro;
-  requires org.slf4j;
   requires dsl.json;
   requires kafka.clients;
 

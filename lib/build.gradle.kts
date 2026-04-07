@@ -1,4 +1,3 @@
-
 import org.jreleaser.model.Active.ALWAYS
 import org.jreleaser.model.Active.NEVER
 
@@ -10,8 +9,7 @@ plugins {
   alias(libs.plugins.jreleaser)
 }
 
-description = "KPipe - Functional Kafka Consumer Library"
-
+description = "KPipe - Lightweight Kafka processing library for modern Java"
 java {
   withSourcesJar()
   withJavadocJar()

@@ -9,6 +9,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
@@ -18,6 +19,7 @@ import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.MetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
 import org.kpipe.metrics.SinkMetricsReporter;
+import org.kpipe.registry.AvroFormat;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
@@ -163,12 +165,12 @@ public class App implements AutoCloseable {
   /// @param config the application configuration
   /// @param schemaRegistryUrl the schema registry URL
   /// @return a function that processes messages through the pipeline
-  private static java.util.function.UnaryOperator<byte[]> createAvroProcessorPipeline(
+  private static UnaryOperator<byte[]> createAvroProcessorPipeline(
     final MessageProcessorRegistry registry,
     final AppConfig config,
     final String schemaRegistryUrl
   ) {
-    final var avroFormat = (org.kpipe.registry.AvroFormat) MessageFormat.AVRO;
+    final var avroFormat = (AvroFormat) MessageFormat.AVRO;
     // Register schema for the test/app
     avroFormat.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
     avroFormat.withDefaultSchema("1");
