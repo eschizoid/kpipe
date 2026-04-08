@@ -109,19 +109,19 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'io.github.eschizoid:kpipe:1.5.1'
+implementation 'io.github.eschizoid:kpipe:1.6.0'
 ```
 
 ### Gradle (Kotlin)
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe:1.5.1")
+implementation("io.github.eschizoid:kpipe:1.6.0")
 ```
 
 ### SBT
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.5.1"
+libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.6.0"
 ```
 
 ---
