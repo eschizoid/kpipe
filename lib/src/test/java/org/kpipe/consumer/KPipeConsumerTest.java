@@ -413,7 +413,7 @@ class KPipeConsumerTest {
   }
 
   @Test
-  void withBackpressureShouldNotAddBackpressureMetricsWhenDisabled() {
+  void withBackpressureShouldAddBackpressureMetricsByDefault() {
     // Arrange: no withBackpressure call
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
@@ -421,16 +421,16 @@ class KPipeConsumerTest {
       .withProcessor(Function.identity())
       .build();
 
-    // Assert: backpressure metric keys are absent
+    // Assert: backpressure metric keys are present by default
     final var metrics = consumer.getMetrics();
-    assertFalse(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
-    assertFalse(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS));
+    assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
+    assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS));
 
     consumer.close();
   }
 
   @Test
-  void withBackpressureShouldNotAffectConsumerWhenDisabled() {
+  void withBackpressureShouldBeEnabledByDefault() {
     // Arrange: no withBackpressure call
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
@@ -438,7 +438,7 @@ class KPipeConsumerTest {
       .withProcessor(Function.identity())
       .build();
 
-    // Act & Assert: consumer builds and is usable without errors
+    // Act & Assert: consumer builds and is usable
     assertFalse(consumer.isRunning());
     assertDoesNotThrow(() -> consumer.processRecord(createRecord(0, "k", "v")));
     consumer.close();

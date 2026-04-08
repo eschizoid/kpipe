@@ -6,6 +6,7 @@ import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -99,7 +100,9 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
   private final BackpressureController backpressureController;
   private final AtomicLong inFlightCount = new AtomicLong(0);
-  private long backpressurePauseStartTime;
+  private final AtomicBoolean manualPause = new AtomicBoolean(false);
+  private final AtomicBoolean backpressurePaused = new AtomicBoolean(false);
+  private volatile long backpressurePauseStartTime;
 
   /// Represents an error that occurred during record processing. Contains the original record,
   /// the exception that was thrown, and the number of retry attempts made.
@@ -314,7 +317,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// Enables backpressure control using the default watermarks: high = 10,000 (pause) and
     /// low = 7,000 (resume). Use {@link #withBackpressure(long, long)} to configure custom values.
     ///
-    /// <p>Backpressure is disabled by default. Calling this method enables it.
+    /// <p>Backpressure is enabled by default.
     ///
     /// @return This builder instance for method chaining
     public Builder<K, V> withBackpressure() {
@@ -325,7 +328,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// in-flight messages reaches the high watermark, the consumer pauses Kafka polling. It
     /// resumes when the count drops to or below the low watermark (hysteresis).
     ///
-    /// <p>Backpressure is disabled by default. Calling this method enables it.
+    /// <p>Backpressure is enabled by default. Calling this method configures custom thresholds.
     ///
     /// @param highWatermark pause consumption when in-flight count reaches this value (must be
     ///     positive)
@@ -389,14 +392,25 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
     this.rebalanceListener = builder.rebalanceListener != null ? builder.rebalanceListener : null;
 
-    this.backpressureController =
+    this.backpressureController = (
       builder.backpressureController != null
-        ? builder.backpressureController.withStrategy(
-            this.sequentialProcessing
-              ? BackpressureController.lagStrategy()
-              : BackpressureController.inFlightStrategy(this.inFlightCount::get)
-          )
-        : null;
+        ? builder.backpressureController
+        : new BackpressureController(10_000, 7_000, null)
+    ).withStrategy(
+      this.sequentialProcessing
+        ? BackpressureController.lagStrategy()
+        : BackpressureController.inFlightStrategy(this.inFlightCount::get)
+    );
+
+    if (builder.backpressureController == null) {
+      LOGGER.log(
+        Level.INFO,
+        "Backpressure not configured: enabling default {0} strategy (high={1}, low={2})",
+        this.backpressureController.getMetricName(),
+        this.backpressureController.highWatermark(),
+        this.backpressureController.lowWatermark()
+      );
+    }
 
     if (enableMetrics) {
       metrics.putAll(
@@ -408,14 +422,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           METRIC_PROCESSING_ERRORS,
           new AtomicLong(0),
           METRIC_RETRIES,
+          new AtomicLong(0),
+          METRIC_BACKPRESSURE_PAUSE_COUNT,
+          new AtomicLong(0),
+          METRIC_BACKPRESSURE_TIME_MS,
           new AtomicLong(0)
         )
       );
-      if (backpressureController != null) {
-        metrics.putAll(
-          Map.of(METRIC_BACKPRESSURE_PAUSE_COUNT, new AtomicLong(0), METRIC_BACKPRESSURE_TIME_MS, new AtomicLong(0))
-        );
-      }
     }
   }
 
@@ -495,6 +508,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   ///
   /// <p>This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
+    manualPause.set(true);
+    internalPause();
+  }
+
+  private void internalPause() {
     if (state.get() == ConsumerState.PAUSED || state.get() == ConsumerState.CLOSED) return;
     commandQueue.offer(new ConsumerCommand.Pause());
     if (state.get() != ConsumerState.CLOSING) state.set(ConsumerState.PAUSED);
@@ -567,6 +585,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
+    manualPause.set(false);
+    if (!backpressurePaused.get()) internalResume();
+  }
+
+  private void internalResume() {
     if (state.get() == ConsumerState.RUNNING) return;
     commandQueue.offer(new ConsumerCommand.Resume());
     if (state.get() != ConsumerState.CLOSING) state.set(ConsumerState.RUNNING);
@@ -828,13 +851,16 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
         backpressurePauseStartTime = System.currentTimeMillis();
-        pause();
+        backpressurePaused.set(true);
+        internalPause();
       }
       case RESUME -> {
+        backpressurePaused.set(false);
+        if (manualPause.get()) break;
         final long duration = System.currentTimeMillis() - backpressurePauseStartTime;
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
         LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
-        resume();
+        internalResume();
       }
       case NONE -> {
       }
