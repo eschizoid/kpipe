@@ -171,7 +171,7 @@ class KPipeConsumerTest {
     final Function<String, String> failingProcessor = value -> {
       throw new RuntimeException("Always failing");
     };
-    Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler = mock(Consumer.class);
+    KPipeConsumer.ErrorHandler<String, String> errorHandler = mock(KPipeConsumer.ErrorHandler.class);
     var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)

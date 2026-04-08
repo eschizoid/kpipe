@@ -8,10 +8,12 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.TopicPartition;
+import org.kpipe.sink.MessageSink;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,10 +36,13 @@ class KPipeConsumerMockingTest {
   private KafkaConsumer<String, String> mockConsumer;
 
   @Mock
-  private Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler;
+  private KPipeConsumer.ErrorHandler<String, String> errorHandler;
 
   @Mock
   private KafkaOffsetManager<String, String> offsetManager;
+
+  @Mock
+  private MessageSink<String> messageSink;
 
   @Captor
   private ArgumentCaptor<List<String>> topicCaptor;
@@ -66,7 +71,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     try (functionalConsumer) {
@@ -92,7 +98,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Create a CountDownLatch to wait for async processing
@@ -141,7 +148,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Test - should not throw exception
@@ -167,7 +175,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
     functionalConsumer.start();
 
@@ -208,7 +217,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Process records
@@ -260,7 +270,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Process records
@@ -296,7 +307,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Action
@@ -325,7 +337,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Set up a paused state
@@ -360,7 +373,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Action
@@ -401,7 +415,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Process records
@@ -447,7 +462,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Process records
@@ -485,7 +501,7 @@ class KPipeConsumerMockingTest {
   void builderShouldRespectAllOptions() {
     // Setup
     final var pollTimeout = Duration.ofMillis(200);
-    final Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler = error -> {};
+    final KPipeConsumer.ErrorHandler<String, String> errorHandler = error -> {};
     final var maxRetries = 3;
     final var retryBackoff = Duration.ofMillis(100);
     final var enableMetrics = true;
@@ -535,7 +551,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Create empty records
@@ -574,7 +591,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Create record with null value
@@ -592,21 +610,24 @@ class KPipeConsumerMockingTest {
   }
 
   @Test
-  void shouldNotInterruptShutdownWithInFlightMessages() throws Exception {
-    // Setup - create a processor that takes time
-    final var processingStarted = new CountDownLatch(1);
-    final var processingBlocked = new AtomicBoolean(true);
+  void shouldHandleGracefulShutdownUnderHighLoad() throws Exception {
+    // Setup - create 100 in-flight messages
+    final int messageCount = 100;
+    final var startLatch = new CountDownLatch(messageCount);
+    final var finishLatch = new CountDownLatch(messageCount);
+    final var stopBlockedLatch = new CountDownLatch(1);
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     Function<String, String> slowProcessor = value -> {
-      processingStarted.countDown();
-      while (processingBlocked.get()) {
-        try {
-          Thread.sleep(10);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
+      startLatch.countDown();
+      try {
+        if (!stopBlockedLatch.await(5, TimeUnit.SECONDS)) {
+          throw new RuntimeException("Timed out waiting for stop signal");
         }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
+      finishLatch.countDown();
       return value;
     };
 
@@ -619,17 +640,175 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
+
+    // Create test records
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var recordsList = new ArrayList<ConsumerRecord<String, String>>();
+    for (int i = 0; i < messageCount; i++) {
+      recordsList.add(new ConsumerRecord<>(TOPIC, PARTITION, i, "key" + i, "value" + i));
+    }
+    final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
+
+    // Process records in virtual threads
+    CompletableFuture.runAsync(() -> functionalConsumer.executeProcessRecords(records));
+
+    // Wait for all messages to start processing
+    assertTrue(startLatch.await(5, TimeUnit.SECONDS), "Messages did not start processing in time");
 
     // Initiate close in a separate thread
     final var closeFuture = CompletableFuture.runAsync(functionalConsumer::close);
 
-    // Verify close doesn't complete immediately
+    // Verify close is blocked
     assertFalse(closeFuture.isDone(), "Close should wait for in-flight messages");
 
+    // Release the block
+    stopBlockedLatch.countDown();
+
+    // Verify all messages finished
+    assertTrue(finishLatch.await(5, TimeUnit.SECONDS), "Messages did not finish in time");
+
     // Verify close completes
-    closeFuture.get(1, TimeUnit.SECONDS);
+    closeFuture.get(5, TimeUnit.SECONDS);
+    assertFalse(functionalConsumer.isRunning());
+  }
+
+  @Test
+  void shouldHandleRebalanceDuringInFlightProcessing() throws Exception {
+    // Setup
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var startLatch = new CountDownLatch(1);
+    final var finishLatch = new CountDownLatch(1);
+    final var rebalanceLatch = new CountDownLatch(1);
+
+    Function<String, String> slowProcessor = value -> {
+      startLatch.countDown();
+      try {
+        rebalanceLatch.await(5, TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+      finishLatch.countDown();
+      return value;
+    };
+
+    // Use a real offset manager to test rebalance interaction
+    final var realOffsetManager = KafkaOffsetManager.builder(mockConsumer)
+      .withCommandQueue(commandQueue)
+      .build();
+
+    final var functionalConsumer = new TestableKPipeConsumer<>(
+      properties,
+      TOPIC,
+      slowProcessor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      realOffsetManager,
+      messageSink
+    );
+
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
+    final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
+
+    // Start processing
+    CompletableFuture.runAsync(() -> functionalConsumer.executeProcessRecords(records));
+    assertTrue(startLatch.await(2, TimeUnit.SECONDS), "Processing did not start");
+
+    // Trigger rebalance (revocation)
+    final var rebalanceListener = functionalConsumer.getRebalanceListener();
+    assertNotNull(rebalanceListener, "Rebalance listener should be set");
+    rebalanceListener.onPartitionsRevoked(List.of(partition));
+
+    // Allow processing to finish
+    rebalanceLatch.countDown();
+    assertTrue(finishLatch.await(2, TimeUnit.SECONDS), "Processing did not finish");
+
+    // Process any remaining commands (like markOffsetProcessed)
+    functionalConsumer.processCommands();
+
+    // Verify partition is cleaned up from offset manager maps
+    verify(mockConsumer).commitSync(anyMap());
+  }
+
+  @Test
+  void shouldHandleErrorHandlerFailure() throws Exception {
+    // Setup
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var processorError = new RuntimeException("Processor boom");
+    final var handlerError = new RuntimeException("Handler boom");
+    
+    // Configure processor to fail
+    when(processor.apply(anyString())).thenThrow(processorError);
+    
+    // Configure error handler to also fail
+    doThrow(handlerError).when(errorHandler).accept(any());
+
+    final var functionalConsumer = new TestableKPipeConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      offsetManager,
+      messageSink
+    );
+
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
+    final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
+
+    // Process record
+    functionalConsumer.executeProcessRecords(records);
+    
+    // Process commands
+    functionalConsumer.processCommands();
+
+    // Verify it was called
+    verify(errorHandler, timeout(1000)).accept(any());
+  }
+
+  @Test
+  void shouldHandleSinkFailure() throws Exception {
+    // Setup
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var sinkError = new RuntimeException("Sink boom");
+
+    // Configure sink to fail
+    doThrow(sinkError).when(messageSink).accept(anyString());
+
+    final var functionalConsumer = new TestableKPipeConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      errorHandler,
+      commandQueue,
+      offsetManager,
+      messageSink
+    );
+
+    when(processor.apply(anyString())).thenReturn("processed");
+
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
+    final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
+
+    // Process record
+    functionalConsumer.executeProcessRecords(records);
+
+    // Verify error handler was called due to sink failure
+    verify(errorHandler, timeout(1000)).accept(any());
   }
 
   @Test
@@ -646,7 +825,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     commandQueue.offer(new ConsumerCommand.Pause());
@@ -673,7 +853,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Check initial state
@@ -735,7 +916,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Start in a separate thread
@@ -832,7 +1014,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Create a record that will fail processing
@@ -877,7 +1060,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Start consumer
@@ -926,7 +1110,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Create an offset map to commit
@@ -962,7 +1147,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Configure mock to throw an exception on commit
@@ -1022,7 +1208,8 @@ class KPipeConsumerMockingTest {
       Duration.ofMillis(10),
       errorHandler,
       commandQueue,
-      offsetManager
+      offsetManager,
+      messageSink
     );
 
     // Create test records
@@ -1059,15 +1246,17 @@ class KPipeConsumerMockingTest {
       final KafkaConsumer<K, V> mockConsumer,
       final int maxRetries,
       final Duration retryBackoff,
-      final java.util.function.Consumer<KPipeConsumer.ProcessingError<K, V>> errorHandler,
+      final KPipeConsumer.ErrorHandler<K, V> errorHandler,
       final Queue<ConsumerCommand> mockCommandQueue,
-      final KafkaOffsetManager<K, V> mockOffsetManager
+      final KafkaOffsetManager<K, V> mockOffsetManager,
+      final MessageSink<V> mockMessageSink
     ) {
       super(
         KPipeConsumer.<K, V>builder()
           .withProperties(props)
           .withTopic(topic)
           .withProcessor(processor)
+          .withMessageSink(mockMessageSink)
           .withRetry(maxRetries, retryBackoff)
           .withErrorHandler(errorHandler)
           .withOffsetManager(mockOffsetManager)

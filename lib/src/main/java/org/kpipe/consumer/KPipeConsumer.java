@@ -91,7 +91,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final Duration executorTerminationTimeout;
   private final OffsetManager<K, V> offsetManager;
   private final ConsumerRebalanceListener rebalanceListener;
-  private final java.util.function.Consumer<ProcessingError<K, V>> errorHandler;
+  private final ErrorHandler<K, V> errorHandler;
   private final int maxRetries;
   private final Duration retryBackoff;
   private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.CREATED);
@@ -113,6 +113,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// @param exception the exception that occurred during processing
   /// @param retryCount the number of retry attempts made
   public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
+  
+  /// A functional interface for handling processing errors.
+  @FunctionalInterface
+  public interface ErrorHandler<K, V> extends java.util.function.Consumer<ProcessingError<K, V>> {}
 
   /// Creates a new builder for constructing {@link KPipeConsumer} instances.
   ///
@@ -135,7 +139,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private String topic;
     private Function<V, V> processor;
     private Duration pollTimeout = Duration.ofMillis(100);
-    private java.util.function.Consumer<ProcessingError<K, V>> errorHandler = e ->
+    private ErrorHandler<K, V> errorHandler = e ->
       LOGGER.log(
         Level.WARNING,
         "Failed at offset {0} after {1} retries: {2}",
@@ -208,7 +212,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param handler The consumer function that handles processing errors
     /// @return This builder instance for method chaining
-    public Builder<K, V> withErrorHandler(final java.util.function.Consumer<ProcessingError<K, V>> handler) {
+    public Builder<K, V> withErrorHandler(final ErrorHandler<K, V> handler) {
       this.errorHandler = handler;
       return this;
     }
@@ -386,11 +390,12 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     this.offsetManager =
       builder.offsetManager != null
         ? builder.offsetManager
-        : builder.offsetManagerProvider != null
-          ? builder.offsetManagerProvider.apply(this.kafkaConsumer)
-          : null;
+        : builder.offsetManagerProvider != null ? builder.offsetManagerProvider.apply(this.kafkaConsumer) : null;
     this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
-    this.rebalanceListener = builder.rebalanceListener != null ? builder.rebalanceListener : null;
+    this.rebalanceListener =
+      builder.rebalanceListener != null
+        ? builder.rebalanceListener
+        : (this.offsetManager != null ? this.offsetManager.createRebalanceListener() : null);
 
     this.backpressureController = (
       builder.backpressureController != null
@@ -621,6 +626,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
     snapshot.put("inFlight", inFlightCount.get());
     return snapshot;
+  }
+
+  /// @return the rebalance listener for this consumer
+  public ConsumerRebalanceListener getRebalanceListener() {
+    return rebalanceListener;
   }
 
   /// Returns whether the consumer is running.
@@ -875,23 +885,19 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   private ConsumerRecords<K, V> pollRecords() {
-    return Optional.ofNullable(kafkaConsumer)
-      .map(consumer -> {
-        try {
-          return consumer.poll(pollTimeout);
-        } catch (final WakeupException e) {
-          // Expected during shutdown, no need to log
-          return null;
-        } catch (final InterruptException e) {
-          // Propagate interruption
-          Thread.currentThread().interrupt();
-          return null;
-        } catch (final Exception e) {
-          // Only log if we're not shutting down
-          if (isRunning()) LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
-          return null;
-        }
-      })
-      .orElse(null);
+    try {
+      return kafkaConsumer.poll(pollTimeout);
+    } catch (final WakeupException e) {
+      // Expected during shutdown, no need to log
+      return null;
+    } catch (final InterruptException e) {
+      // Propagate interruption
+      Thread.currentThread().interrupt();
+      return null;
+    } catch (final Exception e) {
+      // Only log if we're not shutting down
+      if (isRunning()) LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
+      return null;
+    }
   }
 }
