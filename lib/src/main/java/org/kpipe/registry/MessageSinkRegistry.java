@@ -51,9 +51,7 @@ public class MessageSinkRegistry {
   public <T, E extends Enum<E> & MessageSink<T>> void registerEnum(final Class<T> type, final Class<E> enumClass) {
     Objects.requireNonNull(type, "Type cannot be null");
     Objects.requireNonNull(enumClass, "Enum class cannot be null");
-    for (final var constant : enumClass.getEnumConstants()) {
-      register(RegistryKey.of(constant.name(), type), constant);
-    }
+    for (final var constant : enumClass.getEnumConstants()) register(RegistryKey.of(constant.name(), type), constant);
   }
 
   /// Registers a new message sink with the specified key.

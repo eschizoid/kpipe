@@ -96,9 +96,7 @@ public class MessageProcessorRegistry {
   public <T, E extends Enum<E> & MessageSink<T>> void registerSinkEnum(final Class<T> type, final Class<E> enumClass) {
     Objects.requireNonNull(type, "Type cannot be null");
     Objects.requireNonNull(enumClass, "Enum class cannot be null");
-    for (final var constant : enumClass.getEnumConstants()) {
-      register(RegistryKey.of(constant.name(), type), constant);
-    }
+    for (final var constant : enumClass.getEnumConstants()) register(RegistryKey.of(constant.name(), type), constant);
   }
 
   /// Registers all constants of an Enum that implements UnaryOperator<T>.
@@ -140,11 +138,8 @@ public class MessageProcessorRegistry {
   public <T> MessageSink<T> getSink(final RegistryKey<T> key) {
     return input -> {
       final var entry = (RegistryEntry<MessageSink<T>>) registryMap.get(key);
-      if (entry != null) {
-        entry.accept(input);
-      } else {
-        sinkRegistry.get(key).accept(input);
-      }
+      if (entry != null) entry.accept(input);
+      else sinkRegistry.get(key).accept(input);
     };
   }
 

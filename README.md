@@ -227,8 +227,8 @@ KPipe provides a robust, multi-layered error handling mechanism:
 - **Built-in Retries**: Configure `.withRetry(maxRetries, backoff)` to automatically retry transient failures.
 - **Dead Letter Handling**: Provide a `.withErrorHandler()` to redirect messages that fail after all retries to an error
   topic or database.
-- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors with default
-  values or logging, preventing a single malformed message from blocking the partition.
+- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors or sinks with
+  default values or logging, preventing a single malformed message from blocking the partition.
 
 ### 6. Backpressure
 
@@ -434,7 +434,7 @@ final var pipeline = registry.pipeline(MessageFormat.JSON)
 The Avro processors provide operators (`UnaryOperator<GenericRecord>`) that work within optimized pipelines:
 
 ```java
-final var registry = new MessageProcessorRegistry("myApp", MessageFormat.AVRO);
+final var registry = new MessageProcessorRegistry("myApp");
 
 // Add schema (automatically registers addSource_user and addTimestamp_user)
 registry.addSchema("user", "com.kpipe.User", "schemas/user.avsc");
@@ -542,11 +542,12 @@ final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
 
 ### Message Sink Registry
 
-The `MessageSinkRegistry` provides a centralized repository for registering and retrieving message sinks:
+The `MessageProcessorRegistry` provides a centralized repository for registering and retrieving both processors and
+sinks:
 
 ```java
 // Create a registry
-final var registry = new MessageSinkRegistry();
+final var registry = new MessageProcessorRegistry("my-app");
 
 // Register sinks with explicit types
 final var dbKey = RegistryKey.of("database", Map.class);
@@ -561,11 +562,14 @@ final var pipeline = registry.pipeline(MessageFormat.JSON)
 
 ### Error Handling in Sinks
 
-The registry provides utilities for adding error handling to sinks:
+The registry provides utilities for adding error handling to both sinks and operators:
 
 ```java
 // Create a sink with error handling
-final var safeSink = MessageSinkRegistry.withErrorHandling(riskySink);
+final var safeSink = MessageProcessorRegistry.withErrorHandling(riskySink);
+
+// Create an operator with error handling
+final var safeOperator = MessageProcessorRegistry.withErrorHandling(riskyOperator);
 
 // Register and use the wrapped sink
 final var safeKey = RegistryKey.json("safeDatabase");
