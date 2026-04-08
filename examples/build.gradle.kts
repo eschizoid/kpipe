@@ -15,6 +15,7 @@ subprojects {
     implementation(rootProject.libs.kafkaClients)
     implementation(rootProject.libs.slf4jSimple)
 
+    testImplementation(project(":lib"))
     testImplementation(rootProject.libs.junitJupiter)
     testImplementation(rootProject.libs.testcontainers)
     testImplementation(rootProject.libs.testcontainersJunitJupiter)

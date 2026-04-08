@@ -113,8 +113,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// @param exception the exception that occurred during processing
   /// @param retryCount the number of retry attempts made
   public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
-  
+
   /// A functional interface for handling processing errors.
+  ///
+  /// @param <K> the type of the record key
+  /// @param <V> the type of the record value
   @FunctionalInterface
   public interface ErrorHandler<K, V> extends java.util.function.Consumer<ProcessingError<K, V>> {}
 
@@ -390,7 +393,9 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     this.offsetManager =
       builder.offsetManager != null
         ? builder.offsetManager
-        : builder.offsetManagerProvider != null ? builder.offsetManagerProvider.apply(this.kafkaConsumer) : null;
+        : builder.offsetManagerProvider != null
+          ? builder.offsetManagerProvider.apply(this.kafkaConsumer)
+          : null;
     this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
     this.rebalanceListener =
       builder.rebalanceListener != null
@@ -628,6 +633,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     return snapshot;
   }
 
+  /// Returns the rebalance listener for this consumer.
+  ///
   /// @return the rebalance listener for this consumer
   public ConsumerRebalanceListener getRebalanceListener() {
     return rebalanceListener;

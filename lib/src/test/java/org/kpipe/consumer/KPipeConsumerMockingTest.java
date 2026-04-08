@@ -6,17 +6,14 @@ import static org.mockito.Mockito.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.TopicPartition;
-import org.kpipe.sink.MessageSink;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kpipe.sink.MessageSink;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -653,6 +650,7 @@ class KPipeConsumerMockingTest {
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
     // Process records in virtual threads
+    functionalConsumer.start();
     CompletableFuture.runAsync(() -> functionalConsumer.executeProcessRecords(records));
 
     // Wait for all messages to start processing
@@ -695,9 +693,7 @@ class KPipeConsumerMockingTest {
     };
 
     // Use a real offset manager to test rebalance interaction
-    final var realOffsetManager = KafkaOffsetManager.builder(mockConsumer)
-      .withCommandQueue(commandQueue)
-      .build();
+    final var realOffsetManager = KafkaOffsetManager.builder(mockConsumer).withCommandQueue(commandQueue).build();
 
     final var functionalConsumer = new TestableKPipeConsumer<>(
       properties,
@@ -742,10 +738,10 @@ class KPipeConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
     final var processorError = new RuntimeException("Processor boom");
     final var handlerError = new RuntimeException("Handler boom");
-    
+
     // Configure processor to fail
     when(processor.apply(anyString())).thenThrow(processorError);
-    
+
     // Configure error handler to also fail
     doThrow(handlerError).when(errorHandler).accept(any());
 
@@ -768,7 +764,7 @@ class KPipeConsumerMockingTest {
 
     // Process record
     functionalConsumer.executeProcessRecords(records);
-    
+
     // Process commands
     functionalConsumer.processCommands();
 

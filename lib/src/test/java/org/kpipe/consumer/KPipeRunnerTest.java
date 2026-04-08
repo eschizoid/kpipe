@@ -10,7 +10,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kpipe.metrics.MetricsReporter;
+import org.kpipe.metrics.KPipeMetricsReporter;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -24,7 +24,7 @@ class KPipeRunnerTest {
   private MessageTracker mockTracker;
 
   @Mock
-  private MetricsReporter mockReporter;
+  private KPipeMetricsReporter mockReporter;
 
   private KPipeRunner<KPipeConsumer<String, String>> runner;
 

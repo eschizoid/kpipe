@@ -39,7 +39,7 @@ public record ConsumerMetricsReporter(
   Supplier<Map<String, Long>> metricsSupplier,
   Supplier<Long> uptimeSupplier,
   Consumer<String> reporter
-) implements MetricsReporter {
+) implements KPipeMetricsReporter {
   private static final Logger LOGGER = System.getLogger(ConsumerMetricsReporter.class.getName());
   private static final long APP_START_TIME = System.currentTimeMillis();
   private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";

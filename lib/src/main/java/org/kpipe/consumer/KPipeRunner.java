@@ -13,7 +13,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import org.kpipe.metrics.MetricsReporter;
+import org.kpipe.metrics.KPipeMetricsReporter;
 
 /// A thread-safe runner for {@link KPipeConsumer} instances that manages the consumer
 /// lifecycle.
@@ -61,7 +61,7 @@ public class KPipeRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable
   private final long shutdownTimeoutMs;
 
   // Metrics
-  private final List<MetricsReporter> metricsReporters;
+  private final List<KPipeMetricsReporter> metricsReporters;
   private final long metricsInterval;
   private volatile Thread metricsThread;
 
@@ -317,7 +317,7 @@ public class KPipeRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable
     private BiFunction<T, Long, Boolean> gracefulShutdown;
     private long shutdownTimeout = 30_000;
     private boolean useShutdownHook = false;
-    private final List<MetricsReporter> metricsReporters = new ArrayList<>();
+    private final List<KPipeMetricsReporter> metricsReporters = new ArrayList<>();
     private long metricsInterval = 60_000;
 
     private Builder(final T consumer) {
@@ -376,7 +376,7 @@ public class KPipeRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable
     ///
     /// @param reporters the collection of metrics reporters to add
     /// @return this builder instance
-    public Builder<T> withMetricsReporters(final Collection<MetricsReporter> reporters) {
+    public Builder<T> withMetricsReporters(final Collection<KPipeMetricsReporter> reporters) {
       this.metricsReporters.addAll(reporters);
       return this;
     }

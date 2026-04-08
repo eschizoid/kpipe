@@ -48,7 +48,7 @@ public record ProcessorMetricsReporter(
   Supplier<Set<RegistryKey<?>>> processorNamesSupplier,
   Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,
   Consumer<String> reporter
-) implements MetricsReporter {
+) implements KPipeMetricsReporter {
   private static final Logger LOGGER = System.getLogger(ProcessorMetricsReporter.class.getName());
 
   /// Creates a processor metrics reporter with custom components.
