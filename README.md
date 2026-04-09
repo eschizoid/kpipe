@@ -33,17 +33,20 @@ registry.register(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("passwo
 final var stampKey = RegistryKey.json("stamp");
 registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
 
-final var pipeline = registry.pipeline(MessageFormat.JSON)
-  .add(sanitizeKey, stampKey)
-  .toSink(MessageSinkRegistry.JSON_LOGGING)
-  .build();
+final var pipeline =
+    registry
+        .pipeline(MessageFormat.JSON)
+        .add(sanitizeKey, stampKey)
+        .toSink(MessageSinkRegistry.JSON_LOGGING)
+        .build();
 
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
-  .withProperties(kafkaProps)
-  .withTopic("users")
-  .withPipeline(pipeline)
-  .withRetry(3, Duration.ofSeconds(1))
-  .build();
+final var consumer =
+    KPipeConsumer.<byte[], byte[]>builder()
+        .withProperties(kafkaProps)
+        .withTopic("users")
+        .withPipeline(pipeline)
+        .withRetry(3, Duration.ofSeconds(1))
+        .build();
 
 // Use the runner to manage the consumer lifecycle
 final var runner = KPipeRunner.builder(consumer).build();
@@ -279,15 +282,16 @@ Where:
 #### Configuration
 
 ```java
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
-  .withProperties(kafkaProps)
-  .withTopic("events")
-  .withProcessor(pipeline)
-  // Enable backpressure with default watermarks (10k / 7k)
-  .withBackpressure()
-  // Or configure explicit watermarks:
-  // .withBackpressure(5_000, 3_000)
-  .build();
+final var consumer =
+    KPipeConsumer.<byte[], byte[]>builder()
+        .withProperties(kafkaProps)
+        .withTopic("events")
+        .withProcessor(pipeline)
+        // Enable backpressure with default watermarks (10k / 7k)
+        .withBackpressure()
+        // Or configure explicit watermarks:
+        // .withBackpressure(5_000, 3_000)
+        .build();
 ```
 
 **Backpressure is disabled by default** and opt-in via `.withBackpressure()`.
@@ -317,31 +321,35 @@ final var registry = new MessageProcessorRegistry("myApp");
 
 // Register a custom JSON operator for field transformations
 final var uppercaseKey = RegistryKey.json("uppercase");
-registry.register(uppercaseKey, map -> {
-    final var value = map.get("text");
-    if (value instanceof String text) map.put("text", text.toUpperCase());
-    return map;
-});
+registry.register(
+    uppercaseKey,
+    map -> {
+      final var value = map.get("text");
+      if (value instanceof String text) map.put("text", text.toUpperCase());
+      return map;
+    });
 
 // Built-in operators are also available
 final var envKey = RegistryKey.json("addEnvironment");
-registry.register(envKey,
-    JsonMessageProcessor.addFieldOperator("environment", "production"));
+registry.register(envKey, JsonMessageProcessor.addFieldOperator("environment", "production"));
 
 // Create a high-performance pipeline (single SerDe cycle)
-final var pipeline = registry.pipeline(MessageFormat.JSON)
-    .add(envKey)
-    .add(uppercaseKey)
-    .add(RegistryKey.json("addTimestamp"))
-    .build();
+final var pipeline =
+    registry
+        .pipeline(MessageFormat.JSON)
+        .add(envKey)
+        .add(uppercaseKey)
+        .add(RegistryKey.json("addTimestamp"))
+        .build();
 
 // Use the pipeline with a consumer
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
-    .withProperties(kafkaProps)
-    .withTopic("events")
-    .withPipeline(pipeline)
-    .withRetry(3, Duration.ofSeconds(1))
-    .build();
+final var consumer =
+    KPipeConsumer.<byte[], byte[]>builder()
+        .withProperties(kafkaProps)
+        .withTopic("events")
+        .withPipeline(pipeline)
+        .withRetry(3, Duration.ofSeconds(1))
+        .build();
 
 // Start processing messages
 consumer.start();
@@ -369,10 +377,12 @@ log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs
 Configure automatic metrics reporting:
 
 ```java
-final var runner = KPipeRunner.builder(consumer)
-  .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
-  .withMetricsInterval(30_000)
-  .build();
+final var runner =
+    KPipeRunner.builder(consumer)
+        .withMetricsReporters(
+            List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
+        .withMetricsInterval(30_000)
+        .build();
 
 runner.start();
 ```
@@ -392,9 +402,7 @@ if (allProcessed) log.log(Level.INFO, "All messages processed successfully befor
 else log.log(Level.WARNING, "Shutdown completed with some messages still in flight");
 
 // Register as JVM shutdown hook
-Runtime.getRuntime().addShutdownHook(
-  new Thread(() -> runner.close())
-);
+Runtime.getRuntime().addShutdownHook(new Thread(() -> runner.close()));
 ```
 
 ---
@@ -421,12 +429,10 @@ final var metadata = Map.of("version", "1.0", "env", "prod");
 final var metaKey = RegistryKey.json("addMetadata");
 registry.register(metaKey, JsonMessageProcessor.mergeWithOperator(metadata));
 
-// Build an optimized pipeline (one deserialization -> many transformations -> one serialization)
-final var pipeline = registry.pipeline(MessageFormat.JSON)
-    .add(sanitizeKey)
-    .add(stampKey)
-    .add(metaKey)
-    .build();
+// Build an optimized pipeline (one deserialization -> many transformations -> one
+// serialization)
+final var pipeline =
+    registry.pipeline(MessageFormat.JSON).add(sanitizeKey).add(stampKey).add(metaKey).build();
 ```
 
 ### Avro Processing
@@ -442,32 +448,40 @@ final var schema = AvroMessageProcessor.getSchema("user");
 
 // Register manual operators
 final var sanitizeKey = RegistryKey.avro("sanitize");
-registry.register(sanitizeKey,
-    AvroMessageProcessor.removeFieldsOperator(schema, "password", "creditCard"));
+registry.register(
+    sanitizeKey, AvroMessageProcessor.removeFieldsOperator(schema, "password", "creditCard"));
 
 // Transform fields
 final var upperKey = RegistryKey.avro("uppercaseName");
-registry.register(upperKey,
-    AvroMessageProcessor.transformFieldOperator(schema, "name", value -> {
-        if (value instanceof String text) return text.toUpperCase();
-        return value;
-    }));
+registry.register(
+    upperKey,
+    AvroMessageProcessor.transformFieldOperator(
+        schema,
+        "name",
+        value -> {
+          if (value instanceof String text) return text.toUpperCase();
+          return value;
+        }));
 
 // Build an optimized pipeline
 // This pipeline handles deserialization, all operators, and serialization in one pass
 final var avroFormat = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("user");
-final var pipeline = registry.pipeline(avroFormat)
-    .add(sanitizeKey)
-    .add(upperKey)
-    .add(RegistryKey.avro("addTimestamp_user"))
-    .build();
+final var pipeline =
+    registry
+        .pipeline(avroFormat)
+        .add(sanitizeKey)
+        .add(upperKey)
+        .add(RegistryKey.avro("addTimestamp_user"))
+        .build();
 
 // For data with magic bytes (e.g., Confluent Wire Format), specify an offset:
-final var confluentPipeline = registry.pipeline(avroFormat)
-    .skipBytes(5)
-    .add(sanitizeKey)
-    .add(RegistryKey.avro("addTimestamp_user"))
-    .build();
+final var confluentPipeline =
+    registry
+        .pipeline(avroFormat)
+        .skipBytes(5)
+        .add(sanitizeKey)
+        .add(RegistryKey.avro("addTimestamp_user"))
+        .build();
 ```
 
 ### POJO Processing
@@ -480,12 +494,12 @@ final var registry = new MessageProcessorRegistry("myApp");
 
 // Define a custom operator for your record
 final var userKey = RegistryKey.of("userTransform", UserRecord.class);
-registry.register(userKey, user -> new UserRecord(user.id(), user.name().toUpperCase(), user.email()));
+registry.register(
+    userKey, user -> new UserRecord(user.id(), user.name().toUpperCase(), user.email()));
 
 // Build an optimized POJO pipeline
-final var pipeline = registry.pipeline(MessageFormat.pojo(UserRecord.class))
-    .add(userKey)
-    .build();
+final var pipeline =
+    registry.pipeline(MessageFormat.pojo(UserRecord.class)).add(userKey).build();
 ```
 
 ---
@@ -514,11 +528,12 @@ final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
 final var avroConsoleSink = new AvroConsoleSink<GenericRecord>();
 
 // Use a sink directly in the pipeline
-final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
-  .add(RegistryKey.json("sanitize"))
-  .toSink(jsonConsoleSink)
-  .build();
+final var pipeline =
+    registry
+        .pipeline(MessageFormat.JSON)
+        .add(RegistryKey.json("sanitize"))
+        .toSink(jsonConsoleSink)
+        .build();
 ```
 
 ### Custom Sinks
@@ -527,17 +542,19 @@ You can create custom sinks using lambda expressions:
 
 ```java
 // Create a custom sink that writes to a database
-final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
-  try {
-    // Write to database
-    databaseService.insert(processedMap);
+final MessageSink<Map<String, Object>> databaseSink =
+    (processedMap) -> {
+      try {
+        // Write to database
+        databaseService.insert(processedMap);
 
-    // Log success
-    log.log(Level.INFO, "Successfully wrote message to database: " + processedMap.get("id"));
-  } catch (Exception e) {
-    log.log(Level.ERROR, "Failed to write message to database", e);
-  }
-};
+        // Log success
+        log.log(
+            Level.INFO, "Successfully wrote message to database: " + processedMap.get("id"));
+      } catch (Exception e) {
+        log.log(Level.ERROR, "Failed to write message to database", e);
+      }
+    };
 ```
 
 ### Message Sink Registry
@@ -554,10 +571,8 @@ final var dbKey = RegistryKey.of("database", Map.class);
 registry.register(dbKey, databaseSink);
 
 // Use the sink by key in the pipeline
-final var pipeline = registry.pipeline(MessageFormat.JSON)
-  .add(RegistryKey.json("enrich"))
-  .toSink(dbKey)
-  .build();
+final var pipeline =
+    registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("enrich")).toSink(dbKey).build();
 ```
 
 ### Error Handling in Sinks
@@ -575,9 +590,7 @@ final var safeOperator = MessageProcessorRegistry.withErrorHandling(riskyOperato
 final var safeKey = RegistryKey.json("safeDatabase");
 registry.register(safeKey, safeSink);
 
-final var pipeline = registry.pipeline(MessageFormat.JSON)
-  .toSink(safeKey)
-  .build();
+final var pipeline = registry.pipeline(MessageFormat.JSON).toSink(safeKey).build();
 ```
 
 ### Composite Sink (Broadcasting)
@@ -622,26 +635,31 @@ The `KPipeRunner` supports extensive configuration options:
 
 ```java
 // Create a consumer runner with advanced configuration
-final var runner = KPipeRunner.builder(consumer)
-  // Configure metrics reporting
-  .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
-  .withMetricsInterval(30_000) // Report metrics every 30 seconds
-  // Configure health checks
-  .withHealthCheck(KPipeConsumer::isRunning)
-  // Configure graceful shutdown
-  .withShutdownTimeout(10_000) // 10 seconds timeout for shutdown
-  .withShutdownHook(true) // Register JVM shutdown hook
-  // Configure custom start action
-  .withStartAction((c) -> {
-    log.log(Level.INFO, "Starting consumer");
-    c.start();
-  })
-  // Configure custom graceful shutdown
-  .withGracefulShutdown((c, timeoutMs) -> {
-    log.log(Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
-    return KPipeRunner.performGracefulConsumerShutdown(c, timeoutMs);
-  })
-  .build();
+final var runner =
+    KPipeRunner.builder(consumer)
+        // Configure metrics reporting
+        .withMetricsReporters(
+            List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
+        .withMetricsInterval(30_000) // Report metrics every 30 seconds
+        // Configure health checks
+        .withHealthCheck(KPipeConsumer::isRunning)
+        // Configure graceful shutdown
+        .withShutdownTimeout(10_000) // 10 seconds timeout for shutdown
+        .withShutdownHook(true) // Register JVM shutdown hook
+        // Configure custom start action
+        .withStartAction(
+            (c) -> {
+              log.log(Level.INFO, "Starting consumer");
+              c.start();
+            })
+        // Configure custom graceful shutdown
+        .withGracefulShutdown(
+            (c, timeoutMs) -> {
+              log.log(
+                  Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
+              return KPipeRunner.performGracefulConsumerShutdown(c, timeoutMs);
+            })
+        .build();
 ```
 
 ### Lifecycle Management
@@ -668,15 +686,14 @@ The `KPipeRunner` integrates with metrics reporting:
 
 ```java
 // Add multiple metrics reporters
-final var runner = KPipeRunner.builder(consumer)
-  .withMetricsReporters(
-    List.of(
-      ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
-      ProcessorMetricsReporter.forRegistry(processorRegistry)
-    )
-  )
-  .withMetricsInterval(60_000) // Report every minute
-  .build();
+final var runner =
+    KPipeRunner.builder(consumer)
+        .withMetricsReporters(
+            List.of(
+                ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
+                ProcessorMetricsReporter.forRegistry(processorRegistry)))
+        .withMetricsInterval(60_000) // Report every minute
+        .build();
 ```
 
 ### Using with AutoCloseable
@@ -723,34 +740,37 @@ public class KPipeApp implements AutoCloseable {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Create the functional consumer
-    final var functionalConsumer = KPipeConsumer.<byte[], byte[]>builder()
-      .withProperties(KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup()))
-      .withTopic(config.topic())
-      .withPipeline(
-        processorRegistry
-          .pipeline(MessageFormat.JSON)
-          .add(RegistryKey.json("addSource"))
-          .add(RegistryKey.json("markProcessed"))
-          .add(RegistryKey.json("addTimestamp"))
-          .toSink(MessageSinkRegistry.JSON_LOGGING)
-          .build()
-      )
-      .withCommandQueue(commandQueue)
-      .withOffsetManagerProvider((consumer) ->
-        KafkaOffsetManager.builder(consumer)
-          .withCommandQueue(commandQueue)
-          .withCommitInterval(Duration.ofSeconds(30))
-          .build()
-      )
-      .withMetrics(true)
-      .build();
+    final var functionalConsumer =
+        KPipeConsumer.<byte[], byte[]>builder()
+            .withProperties(
+                KafkaConsumerConfig.createConsumerConfig(
+                    config.bootstrapServers(), config.consumerGroup()))
+            .withTopic(config.topic())
+            .withPipeline(
+                processorRegistry
+                    .pipeline(MessageFormat.JSON)
+                    .add(RegistryKey.json("addSource"))
+                    .add(RegistryKey.json("markProcessed"))
+                    .add(RegistryKey.json("addTimestamp"))
+                    .toSink(MessageSinkRegistry.JSON_LOGGING)
+                    .build())
+            .withCommandQueue(commandQueue)
+            .withOffsetManagerProvider(
+                (consumer) ->
+                    KafkaOffsetManager.builder(consumer)
+                        .withCommandQueue(commandQueue)
+                        .withCommitInterval(Duration.ofSeconds(30))
+                        .build())
+            .withMetrics(true)
+            .build();
 
     // Set up the consumer runner with metrics and shutdown hooks
-    runner = KPipeRunner.builder(functionalConsumer)
-      .withMetricsInterval(config.metricsInterval().toMillis())
-      .withShutdownTimeout(config.shutdownTimeout().toMillis())
-      .withShutdownHook(true)
-      .build();
+    runner =
+        KPipeRunner.builder(functionalConsumer)
+            .withMetricsInterval(config.metricsInterval().toMillis())
+            .withShutdownTimeout(config.shutdownTimeout().toMillis())
+            .withShutdownHook(true)
+            .build();
   }
 
   public void start() {
@@ -879,18 +899,15 @@ final var registry = new MessageProcessorRegistry("myApp");
 
 // Create focused operator groups
 final var securityKey = RegistryKey.json("security");
-registry.register(securityKey,
-    JsonMessageProcessor.removeFieldsOperator("password", "creditCard"));
+registry.register(
+    securityKey, JsonMessageProcessor.removeFieldsOperator("password", "creditCard"));
 
 final var enrichmentKey = RegistryKey.json("enrichment");
-registry.register(enrichmentKey,
-    JsonMessageProcessor.addTimestampOperator("processedAt"));
+registry.register(enrichmentKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
 
 // Compose them into an optimized pipeline
-final var fullPipeline = registry.pipeline(MessageFormat.JSON)
-    .add(securityKey)
-    .add(enrichmentKey)
-    .build();
+final var fullPipeline =
+    registry.pipeline(MessageFormat.JSON).add(securityKey).add(enrichmentKey).build();
 ```
 
 ### Enum-Based Registry (Static Type Safety)
@@ -900,14 +917,19 @@ This allows for bulk registration and discoverability of standard processors:
 
 ```java
 public enum StandardProcessors implements UnaryOperator<Map<String, Object>> {
-    TIMESTAMP(JsonMessageProcessor.addTimestampOperator("ts")),
-    SOURCE(JsonMessageProcessor.addFieldOperator("src", "app"));
+  TIMESTAMP(JsonMessageProcessor.addTimestampOperator("ts")),
+  SOURCE(JsonMessageProcessor.addFieldOperator("src", "app"));
 
-    private final UnaryOperator<Map<String, Object>> op;
-    StandardProcessors(final UnaryOperator<Map<String, Object>> op) { this.op = op; }
+  private final UnaryOperator<Map<String, Object>> op;
 
-    @Override
-    public Map<String, Object> apply(final Map<String, Object> t) { return op.apply(t); }
+  StandardProcessors(final UnaryOperator<Map<String, Object>> op) {
+    this.op = op;
+  }
+
+  @Override
+  public Map<String, Object> apply(final Map<String, Object> t) {
+    return op.apply(t);
+  }
 }
 
 // Bulk register all enum constants
@@ -922,20 +944,20 @@ registry.registerEnum(Map.class, StandardProcessors.class);
 KPipe provides a fluent `when()` operator directly in the `TypedPipelineBuilder`:
 
 ```java
-final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
-  .when(
-    (map) -> "VIP".equals(map.get("level")),
-    (map) -> {
-      map.put("priority", "high");
-      return map;
-    },
-    (map) -> {
-      map.put("priority", "low");
-      return map;
-    }
-  )
-  .build();
+final var pipeline =
+    registry
+        .pipeline(MessageFormat.JSON)
+        .when(
+            (map) -> "VIP".equals(map.get("level")),
+            (map) -> {
+              map.put("priority", "high");
+              return map;
+            },
+            (map) -> {
+              map.put("priority", "low");
+              return map;
+            })
+        .build();
 ```
 
 Alternatively, for `byte[]` level branching, use the static `MessageProcessorRegistry.when()` utility:
@@ -946,12 +968,14 @@ To skip a message in a pipeline, return `null` in your operator. KPipe will trea
 the current record and will not send it to any downstream operators or sinks.
 
 ```java
-registry.register(RegistryKey.json("filter"), map -> {
-    if ("internal".equals(map.get("type"))) {
+registry.register(
+    RegistryKey.json("filter"),
+    map -> {
+      if ("internal".equals(map.get("type"))) {
         return null; // Skip this message
-    }
-    return map;
-});
+      }
+      return map;
+    });
 ```
 
 ### Header Propagation
@@ -959,12 +983,13 @@ registry.register(RegistryKey.json("filter"), map -> {
 You can access `ConsumerRecord` headers within a custom sink to propagate tracing or metadata:
 
 ```java
-MessageSink<byte[], byte[]> tracingSink = (record, processedValue) -> {
-  final var traceId = record.headers().lastHeader("X-Trace-Id");
-  if (traceId != null) {
-    // Use traceId.value() for logging or downstream calls
-  }
-};
+MessageSink<byte[], byte[]> tracingSink =
+    (record, processedValue) -> {
+      final var traceId = record.headers().lastHeader("X-Trace-Id");
+      if (traceId != null) {
+        // Use traceId.value() for logging or downstream calls
+      }
+    };
 ```
 
 ### Thread-Safety and Resource Management
