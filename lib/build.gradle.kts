@@ -43,9 +43,6 @@ dependencies {
   // Avro
   implementation(libs.avro)
 
-  // SLF4J API only
-  implementation(libs.slf4jApi)
-
   // Testing
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)

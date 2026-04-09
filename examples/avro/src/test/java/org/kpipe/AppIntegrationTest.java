@@ -115,8 +115,9 @@ class AppIntegrationTest {
     final var capturingSink = new CapturingSink();
 
     try (final var app = new App(config, srUrl)) {
+      final var registry = app.getProcessorRegistry();
       // Register the capturing sink
-      app.getProcessorRegistry().sinkRegistry().register(RegistryKey.avro("avroLogging"), capturingSink);
+      registry.register(RegistryKey.avro("avroLogging"), capturingSink);
 
       // Start the app
       final var appThread = Thread.ofVirtual().start(() -> {
@@ -129,9 +130,16 @@ class AppIntegrationTest {
       });
 
       final var producerProps = new Properties();
-      producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-      producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
-      producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+      producerProps.putAll(
+        Map.of(
+          ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
+          kafka.getBootstrapServers(),
+          ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+          ByteArraySerializer.class.getName(),
+          ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+          ByteArraySerializer.class.getName()
+        )
+      );
 
       // Retry produce during the warm-up window so we do not miss messages while the consumer
       // finishes initial group assignment.
@@ -145,10 +153,12 @@ class AppIntegrationTest {
 
       final var processedRecord = received.getFirst();
 
-      assertEquals(1L, processedRecord.get("id"));
-      assertEquals("Test User", processedRecord.get("name").toString());
-      assertEquals("test.user@example.com", processedRecord.get("email").toString());
-      assertEquals(true, processedRecord.get("active"));
+      assertAll(
+        () -> assertEquals(1L, processedRecord.get("id")),
+        () -> assertEquals("Test User", processedRecord.get("name").toString()),
+        () -> assertEquals("test.user@example.com", processedRecord.get("email").toString()),
+        () -> assertEquals(true, processedRecord.get("active"))
+      );
     }
   }
 

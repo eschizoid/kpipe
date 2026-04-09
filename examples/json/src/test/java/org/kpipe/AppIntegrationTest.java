@@ -53,24 +53,16 @@ class AppIntegrationTest {
     final var capturingSink = new CapturingSink();
 
     try (final var app = new App(config)) {
-      // Register the capturing sink
-      app.getProcessorRegistry().register(RegistryKey.json("jsonLogging"), capturingSink);
-      // Verify registration
-      final var sink = app.getProcessorRegistry().getSink(RegistryKey.json("jsonLogging"));
+      final var registry = app.getProcessorRegistry();
+      registry.register(RegistryKey.json("jsonLogging"), capturingSink);
 
       // Set up the processor registry
-      app
-        .getProcessorRegistry()
-        .register(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));
-      app
-        .getProcessorRegistry()
-        .register(
-          RegistryKey.json("markProcessed"),
-          JsonMessageProcessor.addFieldOperator("status", "processed")
-        );
-      app
-        .getProcessorRegistry()
-        .register(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
+      registry.register(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));
+      registry.register(
+        RegistryKey.json("markProcessed"),
+        JsonMessageProcessor.addFieldOperator("status", "processed")
+      );
+      registry.register(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
 
       // Start the app in a virtual thread
       final var appThread = Thread.ofVirtual().start(() -> {
@@ -84,10 +76,19 @@ class AppIntegrationTest {
 
       // Produce a message
       final var producerProps = new Properties();
-      producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-      producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
-      producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
-      final var message = "{\"id\":1,\"message\":\"Hello JSON\"}".getBytes(StandardCharsets.UTF_8);
+      producerProps.putAll(
+        Map.of(
+          ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
+          kafka.getBootstrapServers(),
+          ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+          ByteArraySerializer.class.getName(),
+          ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+          ByteArraySerializer.class.getName()
+        )
+      );
+
+      final var message = """
+        {"id":1,"message":"Hello JSON"}""".getBytes(StandardCharsets.UTF_8);
       produceUntilConsumed(message, producerProps, capturingSink, Duration.ofSeconds(10));
 
       // Verify the app is still running
@@ -98,12 +99,14 @@ class AppIntegrationTest {
       assertFalse(received.isEmpty(), "Should have received at least one message");
 
       final var processedMap = received.getFirst();
-
-      assertEquals(1.0, ((Number) processedMap.get("id")).doubleValue());
-      assertEquals("Hello JSON", processedMap.get("message"));
-      assertTrue(processedMap.containsKey("source"), "Should have 'source' field added by addSource");
-      assertTrue(processedMap.containsKey("status"), "Should have 'status' field added by markProcessed");
-      assertTrue(processedMap.containsKey("processedAt"), "Should have 'processedAt' field added by addTimestamp");
+      assertAll(
+        "Verify processed message fields",
+        () -> assertEquals(1.0, ((Number) processedMap.get("id")).doubleValue()),
+        () -> assertEquals("Hello JSON", processedMap.get("message")),
+        () -> assertEquals("test-app", processedMap.get("source")),
+        () -> assertEquals("processed", processedMap.get("status")),
+        () -> assertTrue(processedMap.containsKey("processedAt"))
+      );
     }
   }
 

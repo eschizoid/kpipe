@@ -2,8 +2,8 @@
 kafka = "4.2.0"
 avro = "1.12.1"
 dslJson = "2.0.2"
-slf4j = "2.0.9"
-junit = "5.10.0"
+slf4j = "2.0.16"
+junit = "5.11.0"
 junitPlatform = "1.10.0"
 mockito = "5.18.0"
 testcontainers = "2.0.4"
@@ -23,7 +23,6 @@ kafkaTestCommonRuntime = { module = "org.apache.kafka:kafka-test-common-runtime"
 avro = { module = "org.apache.avro:avro", version.ref = "avro" }
 dslJson = { module = "com.dslplatform:dsl-json", version.ref = "dslJson" }
 
-slf4jApi = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4jSimple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 
 junitBom = { module = "org.junit:junit-bom", version.ref = "junit" }

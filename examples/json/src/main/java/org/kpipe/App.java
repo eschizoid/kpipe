@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.config.AppConfig;
 import org.kpipe.config.KafkaConsumerConfig;
@@ -144,7 +145,7 @@ public class App implements AutoCloseable {
   /// @param registry the message processor registry
   /// @param config the application configuration
   /// @return a function that processes messages through the pipeline
-  private static java.util.function.UnaryOperator<byte[]> createJsonProcessorPipeline(
+  private static UnaryOperator<byte[]> createJsonProcessorPipeline(
     final MessageProcessorRegistry registry,
     final AppConfig config
   ) {
