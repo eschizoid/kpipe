@@ -282,16 +282,15 @@ Where:
 #### Configuration
 
 ```java
-final var consumer =
-    KPipeConsumer.<byte[], byte[]>builder()
-        .withProperties(kafkaProps)
-        .withTopic("events")
-        .withProcessor(pipeline)
-        // Enable backpressure with default watermarks (10k / 7k)
-        .withBackpressure()
-        // Or configure explicit watermarks:
-        // .withBackpressure(5_000, 3_000)
-        .build();
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+  .withProperties(kafkaProps)
+  .withTopic("events")
+  .withProcessor(pipeline)
+  // Enable backpressure with default watermarks (10k / 7k)
+  .withBackpressure()
+  // Or configure explicit watermarks:
+  // .withBackpressure(5_000, 3_000)
+  .build();
 ```
 
 **Backpressure is disabled by default** and opt-in via `.withBackpressure()`.
@@ -528,12 +527,11 @@ final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
 final var avroConsoleSink = new AvroConsoleSink<GenericRecord>();
 
 // Use a sink directly in the pipeline
-final var pipeline =
-    registry
-        .pipeline(MessageFormat.JSON)
-        .add(RegistryKey.json("sanitize"))
-        .toSink(jsonConsoleSink)
-        .build();
+final var pipeline = registry
+  .pipeline(MessageFormat.JSON)
+  .add(RegistryKey.json("sanitize"))
+  .toSink(jsonConsoleSink)
+  .build();
 ```
 
 ### Custom Sinks
@@ -542,19 +540,17 @@ You can create custom sinks using lambda expressions:
 
 ```java
 // Create a custom sink that writes to a database
-final MessageSink<Map<String, Object>> databaseSink =
-    (processedMap) -> {
-      try {
-        // Write to database
-        databaseService.insert(processedMap);
+final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
+  try {
+    // Write to database
+    databaseService.insert(processedMap);
 
-        // Log success
-        log.log(
-            Level.INFO, "Successfully wrote message to database: " + processedMap.get("id"));
-      } catch (Exception e) {
-        log.log(Level.ERROR, "Failed to write message to database", e);
-      }
-    };
+    // Log success
+    log.log(Level.INFO, "Successfully wrote message to database: " + processedMap.get("id"));
+  } catch (Exception e) {
+    log.log(Level.ERROR, "Failed to write message to database", e);
+  }
+};
 ```
 
 ### Message Sink Registry
@@ -635,31 +631,26 @@ The `KPipeRunner` supports extensive configuration options:
 
 ```java
 // Create a consumer runner with advanced configuration
-final var runner =
-    KPipeRunner.builder(consumer)
-        // Configure metrics reporting
-        .withMetricsReporters(
-            List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
-        .withMetricsInterval(30_000) // Report metrics every 30 seconds
-        // Configure health checks
-        .withHealthCheck(KPipeConsumer::isRunning)
-        // Configure graceful shutdown
-        .withShutdownTimeout(10_000) // 10 seconds timeout for shutdown
-        .withShutdownHook(true) // Register JVM shutdown hook
-        // Configure custom start action
-        .withStartAction(
-            (c) -> {
-              log.log(Level.INFO, "Starting consumer");
-              c.start();
-            })
-        // Configure custom graceful shutdown
-        .withGracefulShutdown(
-            (c, timeoutMs) -> {
-              log.log(
-                  Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
-              return KPipeRunner.performGracefulConsumerShutdown(c, timeoutMs);
-            })
-        .build();
+final var runner = KPipeRunner.builder(consumer)
+  // Configure metrics reporting
+  .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
+  .withMetricsInterval(30_000) // Report metrics every 30 seconds
+  // Configure health checks
+  .withHealthCheck(KPipeConsumer::isRunning)
+  // Configure graceful shutdown
+  .withShutdownTimeout(10_000) // 10 seconds timeout for shutdown
+  .withShutdownHook(true) // Register JVM shutdown hook
+  // Configure custom start action
+  .withStartAction((c) -> {
+    log.log(Level.INFO, "Starting consumer");
+    c.start();
+  })
+  // Configure custom graceful shutdown
+  .withGracefulShutdown((c, timeoutMs) -> {
+    log.log(Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
+    return KPipeRunner.performGracefulConsumerShutdown(c, timeoutMs);
+  })
+  .build();
 ```
 
 ### Lifecycle Management
@@ -686,14 +677,15 @@ The `KPipeRunner` integrates with metrics reporting:
 
 ```java
 // Add multiple metrics reporters
-final var runner =
-    KPipeRunner.builder(consumer)
-        .withMetricsReporters(
-            List.of(
-                ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
-                ProcessorMetricsReporter.forRegistry(processorRegistry)))
-        .withMetricsInterval(60_000) // Report every minute
-        .build();
+final var runner = KPipeRunner.builder(consumer)
+  .withMetricsReporters(
+    List.of(
+      ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
+      ProcessorMetricsReporter.forRegistry(processorRegistry)
+    )
+  )
+  .withMetricsInterval(60_000) // Report every minute
+  .build();
 ```
 
 ### Using with AutoCloseable
@@ -740,37 +732,34 @@ public class KPipeApp implements AutoCloseable {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Create the functional consumer
-    final var functionalConsumer =
-        KPipeConsumer.<byte[], byte[]>builder()
-            .withProperties(
-                KafkaConsumerConfig.createConsumerConfig(
-                    config.bootstrapServers(), config.consumerGroup()))
-            .withTopic(config.topic())
-            .withPipeline(
-                processorRegistry
-                    .pipeline(MessageFormat.JSON)
-                    .add(RegistryKey.json("addSource"))
-                    .add(RegistryKey.json("markProcessed"))
-                    .add(RegistryKey.json("addTimestamp"))
-                    .toSink(MessageSinkRegistry.JSON_LOGGING)
-                    .build())
-            .withCommandQueue(commandQueue)
-            .withOffsetManagerProvider(
-                (consumer) ->
-                    KafkaOffsetManager.builder(consumer)
-                        .withCommandQueue(commandQueue)
-                        .withCommitInterval(Duration.ofSeconds(30))
-                        .build())
-            .withMetrics(true)
-            .build();
+    final var functionalConsumer = KPipeConsumer.<byte[], byte[]>builder()
+      .withProperties(KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup()))
+      .withTopic(config.topic())
+      .withPipeline(
+        processorRegistry
+          .pipeline(MessageFormat.JSON)
+          .add(RegistryKey.json("addSource"))
+          .add(RegistryKey.json("markProcessed"))
+          .add(RegistryKey.json("addTimestamp"))
+          .toSink(MessageSinkRegistry.JSON_LOGGING)
+          .build()
+      )
+      .withCommandQueue(commandQueue)
+      .withOffsetManagerProvider((consumer) ->
+        KafkaOffsetManager.builder(consumer)
+          .withCommandQueue(commandQueue)
+          .withCommitInterval(Duration.ofSeconds(30))
+          .build()
+      )
+      .withMetrics(true)
+      .build();
 
     // Set up the consumer runner with metrics and shutdown hooks
-    runner =
-        KPipeRunner.builder(functionalConsumer)
-            .withMetricsInterval(config.metricsInterval().toMillis())
-            .withShutdownTimeout(config.shutdownTimeout().toMillis())
-            .withShutdownHook(true)
-            .build();
+    runner = KPipeRunner.builder(functionalConsumer)
+      .withMetricsInterval(config.metricsInterval().toMillis())
+      .withShutdownTimeout(config.shutdownTimeout().toMillis())
+      .withShutdownHook(true)
+      .build();
   }
 
   public void start() {
@@ -944,20 +933,20 @@ registry.registerEnum(Map.class, StandardProcessors.class);
 KPipe provides a fluent `when()` operator directly in the `TypedPipelineBuilder`:
 
 ```java
-final var pipeline =
-    registry
-        .pipeline(MessageFormat.JSON)
-        .when(
-            (map) -> "VIP".equals(map.get("level")),
-            (map) -> {
-              map.put("priority", "high");
-              return map;
-            },
-            (map) -> {
-              map.put("priority", "low");
-              return map;
-            })
-        .build();
+final var pipeline = registry
+  .pipeline(MessageFormat.JSON)
+  .when(
+    (map) -> "VIP".equals(map.get("level")),
+    (map) -> {
+      map.put("priority", "high");
+      return map;
+    },
+    (map) -> {
+      map.put("priority", "low");
+      return map;
+    }
+  )
+  .build();
 ```
 
 Alternatively, for `byte[]` level branching, use the static `MessageProcessorRegistry.when()` utility:
@@ -983,13 +972,12 @@ registry.register(
 You can access `ConsumerRecord` headers within a custom sink to propagate tracing or metadata:
 
 ```java
-MessageSink<byte[], byte[]> tracingSink =
-    (record, processedValue) -> {
-      final var traceId = record.headers().lastHeader("X-Trace-Id");
-      if (traceId != null) {
-        // Use traceId.value() for logging or downstream calls
-      }
-    };
+MessageSink<byte[], byte[]> tracingSink = (record, processedValue) -> {
+  final var traceId = record.headers().lastHeader("X-Trace-Id");
+  if (traceId != null) {
+    // Use traceId.value() for logging or downstream calls
+  }
+};
 ```
 
 ### Thread-Safety and Resource Management
