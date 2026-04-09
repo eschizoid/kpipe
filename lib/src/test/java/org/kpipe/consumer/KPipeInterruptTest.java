@@ -27,7 +27,7 @@ class KPipeInterruptTest {
   private MessageSink<String> messageSink;
 
   @Mock
-  private java.util.function.Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler;
+  private KPipeConsumer.ErrorHandler<String, String> errorHandler;
 
   @Mock
   private KafkaOffsetManager<String, String> offsetManager;

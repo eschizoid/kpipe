@@ -24,7 +24,7 @@ package org.kpipe.metrics;
 /// // Stop the reporter when done (optional, if implemented)
 /// reporter.stop();
 /// ```
-public interface MetricsReporter {
+public interface KPipeMetricsReporter {
   /// Reports collected metrics to the configured destination. This is the core method that
   /// implementations must provide.
   void reportMetrics();

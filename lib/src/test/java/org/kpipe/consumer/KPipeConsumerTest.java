@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -171,7 +170,7 @@ class KPipeConsumerTest {
     final Function<String, String> failingProcessor = value -> {
       throw new RuntimeException("Always failing");
     };
-    Consumer<KPipeConsumer.ProcessingError<String, String>> errorHandler = mock(Consumer.class);
+    KPipeConsumer.ErrorHandler<String, String> errorHandler = mock(KPipeConsumer.ErrorHandler.class);
     var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -413,7 +412,7 @@ class KPipeConsumerTest {
   }
 
   @Test
-  void withBackpressureShouldNotAddBackpressureMetricsWhenDisabled() {
+  void withBackpressureShouldAddBackpressureMetricsByDefault() {
     // Arrange: no withBackpressure call
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
@@ -421,16 +420,16 @@ class KPipeConsumerTest {
       .withProcessor(Function.identity())
       .build();
 
-    // Assert: backpressure metric keys are absent
+    // Assert: backpressure metric keys are present by default
     final var metrics = consumer.getMetrics();
-    assertFalse(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
-    assertFalse(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS));
+    assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
+    assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS));
 
     consumer.close();
   }
 
   @Test
-  void withBackpressureShouldNotAffectConsumerWhenDisabled() {
+  void withBackpressureShouldBeEnabledByDefault() {
     // Arrange: no withBackpressure call
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
@@ -438,7 +437,7 @@ class KPipeConsumerTest {
       .withProcessor(Function.identity())
       .build();
 
-    // Act & Assert: consumer builds and is usable without errors
+    // Act & Assert: consumer builds and is usable
     assertFalse(consumer.isRunning());
     assertDoesNotThrow(() -> consumer.processRecord(createRecord(0, "k", "v")));
     consumer.close();

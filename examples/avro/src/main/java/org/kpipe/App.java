@@ -17,7 +17,7 @@ import org.kpipe.config.KafkaConsumerConfig;
 import org.kpipe.consumer.*;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
-import org.kpipe.metrics.MetricsReporter;
+import org.kpipe.metrics.KPipeMetricsReporter;
 import org.kpipe.metrics.ProcessorMetricsReporter;
 import org.kpipe.metrics.SinkMetricsReporter;
 import org.kpipe.registry.AvroFormat;
@@ -94,9 +94,9 @@ public class App implements AutoCloseable {
   /// Creates the consumer runner with appropriate lifecycle hooks.
   private KPipeRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
-    final MetricsReporter consumerMetricsReporter,
-    final MetricsReporter processorMetricsReporter,
-    final MetricsReporter sinkMetricsReporter
+    final KPipeMetricsReporter consumerMetricsReporter,
+    final KPipeMetricsReporter processorMetricsReporter,
+    final KPipeMetricsReporter sinkMetricsReporter
   ) {
     return KPipeRunner.builder(functionalConsumer)
       .withStartAction(c -> {

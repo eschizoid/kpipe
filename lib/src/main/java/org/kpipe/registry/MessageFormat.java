@@ -106,7 +106,6 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
     try {
       // Check if HTTP URL
       if (location.startsWith("http://") || location.startsWith("https://")) {
-        final HttpResponse<String> response;
         try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
           final var request = HttpRequest.newBuilder()
             .uri(URI.create(location))
@@ -114,33 +113,33 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
             .GET()
             .build();
 
-          response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        }
+          final var response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-        if (response.statusCode() >= 200 && response.statusCode() < 300) {
-          final var responseBody = response.body();
-          if (responseBody == null || responseBody.isEmpty()) throw new IOException(
-            "Empty response from schema registry"
-          );
-
-          try {
-            final var dslJson = new DslJson<>();
-            final var bytes = responseBody.getBytes(StandardCharsets.UTF_8);
-            final var result = dslJson.deserialize(Map.class, new ByteArrayInputStream(bytes));
-
-            if (result == null) throw new IOException("Failed to deserialize schema registry response");
-
-            if (result.containsKey("schema")) return (String) result.get("schema");
-            else throw new IOException("Schema field not found in response");
-          } catch (final Exception e) {
-            throw new IOException(
-              "Error parsing schema registry response: " +
-                responseBody.substring(0, Math.min(100, responseBody.length())),
-              e
+          if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            final var responseBody = response.body();
+            if (responseBody == null || responseBody.isEmpty()) throw new IOException(
+              "Empty response from schema registry"
             );
+
+            try {
+              final var dslJson = new DslJson<>();
+              final var bytes = responseBody.getBytes(StandardCharsets.UTF_8);
+              final var result = dslJson.deserialize(Map.class, new ByteArrayInputStream(bytes));
+
+              if (result == null) throw new IOException("Failed to deserialize schema registry response");
+
+              if (result.containsKey("schema")) return (String) result.get("schema");
+              else throw new IOException("Schema field not found in response");
+            } catch (final Exception e) {
+              throw new IOException(
+                "Error parsing schema registry response: " +
+                  responseBody.substring(0, Math.min(100, responseBody.length())),
+                e
+              );
+            }
+          } else {
+            throw new IOException("Failed to fetch schema: HTTP %d".formatted(response.statusCode()));
           }
-        } else {
-          throw new IOException("Failed to fetch schema: HTTP %d".formatted(response.statusCode()));
         }
       }
       // Check if classpath resource

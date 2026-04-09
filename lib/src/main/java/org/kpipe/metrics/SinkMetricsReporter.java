@@ -48,7 +48,7 @@ public record SinkMetricsReporter(
   Supplier<Set<RegistryKey<?>>> sinkNamesSupplier,
   Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,
   Consumer<String> reporter
-) implements MetricsReporter {
+) implements KPipeMetricsReporter {
   private static final Logger LOGGER = System.getLogger(SinkMetricsReporter.class.getName());
 
   /// Creates a sink metrics reporter with custom components.

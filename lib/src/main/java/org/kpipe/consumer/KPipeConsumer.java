@@ -6,6 +6,7 @@ import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -90,7 +91,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final Duration executorTerminationTimeout;
   private final OffsetManager<K, V> offsetManager;
   private final ConsumerRebalanceListener rebalanceListener;
-  private final java.util.function.Consumer<ProcessingError<K, V>> errorHandler;
+  private final ErrorHandler<K, V> errorHandler;
   private final int maxRetries;
   private final Duration retryBackoff;
   private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.CREATED);
@@ -99,7 +100,9 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
   private final BackpressureController backpressureController;
   private final AtomicLong inFlightCount = new AtomicLong(0);
-  private long backpressurePauseStartTime;
+  private final AtomicBoolean manualPause = new AtomicBoolean(false);
+  private final AtomicBoolean backpressurePaused = new AtomicBoolean(false);
+  private volatile long backpressurePauseStartTime;
 
   /// Represents an error that occurred during record processing. Contains the original record,
   /// the exception that was thrown, and the number of retry attempts made.
@@ -110,6 +113,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// @param exception the exception that occurred during processing
   /// @param retryCount the number of retry attempts made
   public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
+
+  /// A functional interface for handling processing errors.
+  ///
+  /// @param <K> the type of the record key
+  /// @param <V> the type of the record value
+  @FunctionalInterface
+  public interface ErrorHandler<K, V> extends java.util.function.Consumer<ProcessingError<K, V>> {}
 
   /// Creates a new builder for constructing {@link KPipeConsumer} instances.
   ///
@@ -132,7 +142,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private String topic;
     private Function<V, V> processor;
     private Duration pollTimeout = Duration.ofMillis(100);
-    private java.util.function.Consumer<ProcessingError<K, V>> errorHandler = e ->
+    private ErrorHandler<K, V> errorHandler = e ->
       LOGGER.log(
         Level.WARNING,
         "Failed at offset {0} after {1} retries: {2}",
@@ -205,7 +215,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param handler The consumer function that handles processing errors
     /// @return This builder instance for method chaining
-    public Builder<K, V> withErrorHandler(final java.util.function.Consumer<ProcessingError<K, V>> handler) {
+    public Builder<K, V> withErrorHandler(final ErrorHandler<K, V> handler) {
       this.errorHandler = handler;
       return this;
     }
@@ -314,7 +324,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// Enables backpressure control using the default watermarks: high = 10,000 (pause) and
     /// low = 7,000 (resume). Use {@link #withBackpressure(long, long)} to configure custom values.
     ///
-    /// <p>Backpressure is disabled by default. Calling this method enables it.
+    /// <p>Backpressure is enabled by default.
     ///
     /// @return This builder instance for method chaining
     public Builder<K, V> withBackpressure() {
@@ -325,7 +335,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// in-flight messages reaches the high watermark, the consumer pauses Kafka polling. It
     /// resumes when the count drops to or below the low watermark (hysteresis).
     ///
-    /// <p>Backpressure is disabled by default. Calling this method enables it.
+    /// <p>Backpressure is enabled by default. Calling this method configures custom thresholds.
     ///
     /// @param highWatermark pause consumption when in-flight count reaches this value (must be
     ///     positive)
@@ -387,16 +397,30 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           ? builder.offsetManagerProvider.apply(this.kafkaConsumer)
           : null;
     this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
-    this.rebalanceListener = builder.rebalanceListener != null ? builder.rebalanceListener : null;
+    this.rebalanceListener =
+      builder.rebalanceListener != null
+        ? builder.rebalanceListener
+        : (this.offsetManager != null ? this.offsetManager.createRebalanceListener() : null);
 
-    this.backpressureController =
+    this.backpressureController = (
       builder.backpressureController != null
-        ? builder.backpressureController.withStrategy(
-            this.sequentialProcessing
-              ? BackpressureController.lagStrategy()
-              : BackpressureController.inFlightStrategy(this.inFlightCount::get)
-          )
-        : null;
+        ? builder.backpressureController
+        : new BackpressureController(10_000, 7_000, null)
+    ).withStrategy(
+      this.sequentialProcessing
+        ? BackpressureController.lagStrategy()
+        : BackpressureController.inFlightStrategy(this.inFlightCount::get)
+    );
+
+    if (builder.backpressureController == null) {
+      LOGGER.log(
+        Level.INFO,
+        "Backpressure not configured: enabling default {0} strategy (high={1}, low={2})",
+        this.backpressureController.getMetricName(),
+        this.backpressureController.highWatermark(),
+        this.backpressureController.lowWatermark()
+      );
+    }
 
     if (enableMetrics) {
       metrics.putAll(
@@ -408,14 +432,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           METRIC_PROCESSING_ERRORS,
           new AtomicLong(0),
           METRIC_RETRIES,
+          new AtomicLong(0),
+          METRIC_BACKPRESSURE_PAUSE_COUNT,
+          new AtomicLong(0),
+          METRIC_BACKPRESSURE_TIME_MS,
           new AtomicLong(0)
         )
       );
-      if (backpressureController != null) {
-        metrics.putAll(
-          Map.of(METRIC_BACKPRESSURE_PAUSE_COUNT, new AtomicLong(0), METRIC_BACKPRESSURE_TIME_MS, new AtomicLong(0))
-        );
-      }
     }
   }
 
@@ -495,6 +518,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   ///
   /// <p>This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
+    manualPause.set(true);
+    internalPause();
+  }
+
+  private void internalPause() {
     if (state.get() == ConsumerState.PAUSED || state.get() == ConsumerState.CLOSED) return;
     commandQueue.offer(new ConsumerCommand.Pause());
     if (state.get() != ConsumerState.CLOSING) state.set(ConsumerState.PAUSED);
@@ -567,6 +595,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
+    manualPause.set(false);
+    if (!backpressurePaused.get()) internalResume();
+  }
+
+  private void internalResume() {
     if (state.get() == ConsumerState.RUNNING) return;
     commandQueue.offer(new ConsumerCommand.Resume());
     if (state.get() != ConsumerState.CLOSING) state.set(ConsumerState.RUNNING);
@@ -598,6 +631,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
     snapshot.put("inFlight", inFlightCount.get());
     return snapshot;
+  }
+
+  /// Returns the rebalance listener for this consumer.
+  ///
+  /// @return the rebalance listener for this consumer
+  public ConsumerRebalanceListener getRebalanceListener() {
+    return rebalanceListener;
   }
 
   /// Returns whether the consumer is running.
@@ -828,13 +868,16 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
         backpressurePauseStartTime = System.currentTimeMillis();
-        pause();
+        backpressurePaused.set(true);
+        internalPause();
       }
       case RESUME -> {
+        backpressurePaused.set(false);
+        if (manualPause.get()) break;
         final long duration = System.currentTimeMillis() - backpressurePauseStartTime;
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
         LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
-        resume();
+        internalResume();
       }
       case NONE -> {
       }
@@ -849,23 +892,19 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   private ConsumerRecords<K, V> pollRecords() {
-    return Optional.ofNullable(kafkaConsumer)
-      .map(consumer -> {
-        try {
-          return consumer.poll(pollTimeout);
-        } catch (final WakeupException e) {
-          // Expected during shutdown, no need to log
-          return null;
-        } catch (final InterruptException e) {
-          // Propagate interruption
-          Thread.currentThread().interrupt();
-          return null;
-        } catch (final Exception e) {
-          // Only log if we're not shutting down
-          if (isRunning()) LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
-          return null;
-        }
-      })
-      .orElse(null);
+    try {
+      return kafkaConsumer.poll(pollTimeout);
+    } catch (final WakeupException e) {
+      // Expected during shutdown, no need to log
+      return null;
+    } catch (final InterruptException e) {
+      // Propagate interruption
+      Thread.currentThread().interrupt();
+      return null;
+    } catch (final Exception e) {
+      // Only log if we're not shutting down
+      if (isRunning()) LOGGER.log(Level.WARNING, "Error during Kafka poll operation", e);
+      return null;
+    }
   }
 }
