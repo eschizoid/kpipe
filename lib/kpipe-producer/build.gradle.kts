@@ -28,6 +28,7 @@ dependencies {
   testImplementation(libs.testcontainers)
   testImplementation(libs.testcontainersJunitJupiter)
   testImplementation(libs.testcontainersKafka)
+  testImplementation(libs.testcontainersPostgresql)
   testImplementation(libs.avro)
 }
 

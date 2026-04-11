@@ -100,29 +100,42 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 ### Maven
 
 ```xml
+<!-- Aggregate (includes both consumer and producer) -->
 <dependency>
     <groupId>io.github.eschizoid</groupId>
     <artifactId>kpipe</artifactId>
-    <version>1.5.1</version>
+    <version>1.7.0</version>
+</dependency>
+
+<!-- Or individual modules -->
+<dependency>
+    <groupId>io.github.eschizoid</groupId>
+    <artifactId>kpipe-consumer</artifactId>
+    <version>1.7.0</version>
+</dependency>
+<dependency>
+    <groupId>io.github.eschizoid</groupId>
+    <artifactId>kpipe-producer</artifactId>
+    <version>1.7.0</version>
 </dependency>
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'io.github.eschizoid:kpipe:1.6.0'
+implementation 'io.github.eschizoid:kpipe:1.7.0'
 ```
 
 ### Gradle (Kotlin)
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe:1.6.0")
+implementation("io.github.eschizoid:kpipe:1.7.0")
 ```
 
 ### SBT
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.6.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.7.0"
 ```
 
 ---
@@ -132,7 +145,25 @@ libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.6.0"
 KPipe is designed to be a lightweight, high-performance alternative to existing Kafka consumer libraries, focusing on
 modern Java 24+ features (Virtual Threads, Scoped Values) and predictable behavior.
 
-### 1. The "Single SerDe Cycle" Strategy
+### 1. Modular Architecture (JPMS)
+
+KPipe is split into two main modules to ensure a clean separation of concerns and to allow developers to include only what they need:
+
+- **kpipe-consumer**: The core processing library, containing the pipeline registry, backpressure controller, and virtual-thread-safe consumer.
+- **kpipe-producer**: A high-performance producer wrapper optimized for virtual threads, used for DLQ support and output sinks.
+
+The project is fully modular and supports the Java Platform Module System (JPMS). To use KPipe in a modular project, add the following to your `module-info.java`:
+
+```java
+module my.application {
+    requires org.kpipe; // When using the aggregate artifact
+    // or
+    requires org.kpipe.consumer;
+    requires org.kpipe.producer;
+}
+```
+
+### 2. The "Single SerDe Cycle" Strategy
 
 Unlike traditional pipelines that often perform `byte[] -> Object -> byte[]` at every transformation step, KPipe
 optimizes for throughput:
@@ -146,7 +177,7 @@ optimizes for throughput:
 
 This approach significantly reduces CPU overhead and GC pressure.
 
-### 2. Virtual Threads and Scoped Values
+### 3. Virtual Threads and Scoped Values
 
 KPipe uses **Java Virtual Threads** (Project Loom) for high-concurrency message processing.
 
@@ -158,7 +189,7 @@ KPipe uses **Java Virtual Threads** (Project Loom) for high-concurrency message 
 - **Thread-Per-Record**: Each message is processed in its own virtual thread, allowing KPipe to scale to millions of
   concurrent operations without the overhead of complex thread pools.
 
-### 3. Reliable "At-Least-Once" Delivery
+### 4. Reliable "At-Least-Once" Delivery
 
 KPipe implements a **Lowest Pending Offset** strategy to ensure reliability even with parallel processing:
 
@@ -172,7 +203,7 @@ KPipe implements a **Lowest Pending Offset** strategy to ensure reliability even
   result in some records being re-processed (standard "at-least-once" behavior), it guarantees no message is ever
   skipped.
 
-### 4. Parallel vs. Sequential Processing
+### 5. Parallel vs. Sequential Processing
 
 KPipe supports two modes of execution depending on your ordering and throughput requirements:
 
@@ -183,7 +214,7 @@ KPipe supports two modes of execution depending on your ordering and throughput 
   processed at a time. Backpressure is supported and operates by monitoring the **consumer lag** (the difference between
   the partition end-offset and the consumer's current position).
 
-### 5. External Offset Management
+### 6. External Offset Management
 
 While Kafka-based offset storage is the default, KPipe supports external storage (e.g., PostgreSQL) for **exactly-once
 processing** or specific architectural needs.
@@ -221,17 +252,21 @@ public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
 }
 ```
 
-### 5. Error Handling & Retries
+### 7. Error Handling & Retries
 
 KPipe provides a robust, multi-layered error handling mechanism:
 
 - **Built-in Retries**: Configure `.withRetry(maxRetries, backoff)` to automatically retry transient failures.
-- **Dead Letter Handling**: Provide a `.withErrorHandler()` to redirect messages that fail after all retries to an error
-  topic or database.
-- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors or sinks with
-  default values or logging, preventing a single malformed message from blocking the partition.
+- **Dead Letter Queue (DLQ)**: Enable high-reliability processing with built-in DLQ support:
+  ```java
+  final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+    .withDeadLetterTopic("events-dlq") // Automatically sends to DLQ after retries are exhausted
+    .build();
+  ```
+- **Dead Letter Handling**: Provide a custom `.withErrorHandler()` to redirect messages to an external database.
+- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors or sinks.
 
-### 6. Backpressure
+### 8. Backpressure
 
 When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe can automatically pause Kafka polling to
 prevent unbounded resource consumption or excessive lag.
@@ -296,7 +331,7 @@ final var consumer = KPipeConsumer.<byte[], byte[]>builder()
 **Observability:** backpressure events are logged (WARNING on pause, INFO on resume) and tracked via two dedicated
 metrics: `backpressurePauseCount` and `backpressureTimeMs`.
 
-### 7. Graceful Shutdown & Interrupt Handling
+### 9. Graceful Shutdown & Interrupt Handling
 
 KPipe respects JVM signals and ensures timely shutdown without data loss:
 
@@ -572,6 +607,20 @@ registry.register(safeKey, safeSink);
 final var pipeline = registry.pipeline(MessageFormat.JSON).toSink(safeKey).build();
 ```
 
+### Kafka Producer Sink
+
+KPipe includes a specialized `KafkaMessageSink` that allows you to produce processed messages back to a Kafka topic. This sink is designed to work seamlessly with virtual threads.
+
+```java
+final var producer = new KPipeProducer<>(kafkaProps);
+
+final var pipeline = registry
+  .pipeline(MessageFormat.JSON)
+  .add(RegistryKey.json("transform"))
+  .toSink(new KafkaMessageSink<>(producer, "output-topic", format::serialize))
+  .build();
+```
+
 ### Composite Sink (Broadcasting)
 
 You can broadcast processed messages to multiple destinations simultaneously using `CompositeMessageSink`. Failures in
@@ -718,6 +767,7 @@ public class KPipeApp implements AutoCloseable {
     final var functionalConsumer = KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup()))
       .withTopic(config.topic())
+      .withDeadLetterTopic(config.topic() + ".dlq")
       .withPipeline(
         processorRegistry
           .pipeline(MessageFormat.JSON)
