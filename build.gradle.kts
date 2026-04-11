@@ -89,6 +89,7 @@ allprojects {
           "plugins" to listOf("prettier-plugin-java"),
           "printWidth" to 120,
           "proseWrap" to "always",
+          "tabWidth" to 2,
         ),
       )
     }

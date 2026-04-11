@@ -16,7 +16,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
-import org.kpipe.config.AppConfig;
+import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.processor.JsonMessageProcessor;
 import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;

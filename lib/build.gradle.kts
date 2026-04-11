@@ -18,6 +18,34 @@ java {
   }
 }
 
+sourceSets {
+  main {
+    java {
+      srcDirs("src/main/java")
+      srcDir("kpipe-producer/src/main/java").apply {
+        exclude("module-info.java")
+      }
+      srcDir("kpipe-consumer/src/main/java").apply {
+        exclude("module-info.java")
+      }
+    }
+  }
+  test {
+    java {
+      srcDirs(
+        "kpipe-producer/src/test/java",
+        "kpipe-consumer/src/test/java",
+      )
+    }
+    resources {
+      srcDirs(
+        "kpipe-producer/src/test/resources",
+        "kpipe-consumer/src/test/resources",
+      )
+    }
+  }
+}
+
 repositories {
   mavenCentral()
   maven {
@@ -55,6 +83,7 @@ dependencies {
 
   testImplementation(libs.testcontainers)
   testImplementation(libs.testcontainersJunitJupiter)
+  testImplementation(libs.testcontainersKafka)
   testImplementation(libs.testcontainersPostgresql)
   testImplementation(libs.postgresql)
 }

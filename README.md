@@ -524,7 +524,7 @@ You can create custom sinks using lambda expressions:
 
 ```java
 // Create a custom sink that writes to a database
-final MessageSink<Map<String, Object>> databaseSink = processedMap -> {
+final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
   try {
     // Write to database
     databaseService.insert(processedMap);
@@ -624,7 +624,7 @@ final var runner = KPipeRunner.builder(consumer)
   .withShutdownTimeout(10_000) // 10 seconds timeout for shutdown
   .withShutdownHook(true) // Register JVM shutdown hook
   // Configure custom start action
-  .withStartAction(c -> {
+  .withStartAction((c) -> {
     log.log(Level.INFO, "Starting consumer");
     c.start();
   })
@@ -728,7 +728,7 @@ public class KPipeApp implements AutoCloseable {
           .build()
       )
       .withCommandQueue(commandQueue)
-      .withOffsetManagerProvider(consumer ->
+      .withOffsetManagerProvider((consumer) ->
         KafkaOffsetManager.builder(consumer)
           .withCommandQueue(commandQueue)
           .withCommitInterval(Duration.ofSeconds(30))
@@ -832,7 +832,7 @@ If you want to use Avro with a schema registry, follow these steps:
 # Register an Avro schema
 curl -X POST \
   -H "Content-Type: application/vnd.schemaregistry.v1+json" \
-  --data "{\"schema\": $(cat lib/src/test/resources/avro/customer.avsc | jq tostring)}" \
+  --data "{\"schema\": $(cat lib/kpipe-consumer/src/test/resources/avro/customer.avsc | jq tostring)}" \
   http://localhost:8081/subjects/com.kpipe.customer/versions
 
 # Read registered schema
@@ -840,7 +840,7 @@ curl -s http://localhost:8081/subjects/com.kpipe.customer/versions/latest | jq -
 
 # Produce an Avro message using kafka-avro-console-producer
 cat <<'JSON' | docker run -i --rm --network kpipe_default \
--v "$PWD/lib/src/test/resources/avro/customer.avsc:/tmp/customer.avsc:ro" \
+-v "$PWD/lib/kpipe-consumer/src/test/resources/avro/customer.avsc:/tmp/customer.avsc:ro" \
 confluentinc/cp-schema-registry:8.2.0 \
 sh -ec 'kafka-avro-console-producer \
   --bootstrap-server kafka:9092 \
@@ -917,12 +917,12 @@ KPipe provides a fluent `when()` operator directly in the `TypedPipelineBuilder`
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)
   .when(
-    map -> "VIP".equals(map.get("level")),
-    map -> {
+    (map) -> "VIP".equals(map.get("level")),
+    (map) -> {
       map.put("priority", "high");
       return map;
     },
-    map -> {
+    (map) -> {
       map.put("priority", "low");
       return map;
     }
@@ -939,9 +939,7 @@ the current record and will not send it to any downstream operators or sinks.
 
 ```java
 registry.register(RegistryKey.json("filter"), map -> {
-  if ("internal".equals(map.get("type"))) {
-    return null; // Skip this message
-  }
+  if ("internal".equals(map.get("type"))) return null; // Skip this message
   return map;
 });
 ```

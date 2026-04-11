@@ -1,13 +1,12 @@
-/// This module defines the core components of the KPipe library, including
-/// configuration, consumers, health checks, metrics, processors, registry,
-/// and sinks.
-module org.kpipe {
+module org.kpipe.consumer {
+  requires transitive org.kpipe.producer;
+  requires transitive kafka.clients;
+  requires transitive org.apache.avro;
+
   requires com.fasterxml.jackson.core;
   requires java.net.http;
   requires jdk.httpserver;
-  requires transitive org.apache.avro;
   requires dsl.json;
-  requires transitive kafka.clients;
 
   exports org.kpipe.consumer;
   exports org.kpipe.consumer.config;
@@ -15,9 +14,6 @@ module org.kpipe {
   exports org.kpipe.consumer.sink;
   exports org.kpipe.health;
   exports org.kpipe.metrics;
-  exports org.kpipe.producer;
-  exports org.kpipe.producer.config;
   exports org.kpipe.processor;
   exports org.kpipe.registry;
-  exports org.kpipe.sink;
 }
