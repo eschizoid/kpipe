@@ -110,17 +110,25 @@ public record RebalanceListener(
       .mapToObj(x -> commandQueue.poll())
       .takeWhile(Objects::nonNull)
       .forEachOrdered(currentCmd -> {
-        if (currentCmd instanceof ConsumerCommand.CommitOffsets commitCmd && !commitCmd.offsets().isEmpty()) {
-          final var filteredOffsets = commitCmd
-            .offsets()
-            .entrySet()
-            .stream()
-            .filter(entry -> !partitions.contains(entry.getKey()))
-            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-          if (!filteredOffsets.isEmpty()) remainingCommands.add(commitCmd.withOffsets(filteredOffsets));
-        } else {
-          remainingCommands.add(currentCmd);
+        switch (currentCmd) {
+          case ConsumerCommand.CommitOffsets commitCmd when !commitCmd.offsets().isEmpty() -> {
+            final var filteredOffsets = commitCmd
+              .offsets()
+              .entrySet()
+              .stream()
+              .filter(entry -> !partitions.contains(entry.getKey()))
+              .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            if (!filteredOffsets.isEmpty()) remainingCommands.add(commitCmd.withOffsets(filteredOffsets));
+          }
+          case ConsumerCommand.TrackOffset cmd -> {
+            final var partition = new TopicPartition(cmd.record().topic(), cmd.record().partition());
+            if (!partitions.contains(partition)) remainingCommands.add(currentCmd);
+          }
+          case ConsumerCommand.MarkOffsetProcessed cmd -> {
+            final var partition = new TopicPartition(cmd.record().topic(), cmd.record().partition());
+            if (!partitions.contains(partition)) remainingCommands.add(currentCmd);
+          }
+          default -> remainingCommands.add(currentCmd);
         }
       });
 

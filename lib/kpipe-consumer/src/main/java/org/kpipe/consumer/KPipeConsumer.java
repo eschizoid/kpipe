@@ -463,7 +463,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     if (builder.backpressureController == null) {
       LOGGER.log(
         Level.INFO,
-        "Backpressure not configured: enabling default {0} strategy (high={1}, low={2})",
+        "No backpressure configured, using default {0} strategy (high={1}, low={2})",
         this.backpressureController.getMetricName(),
         this.backpressureController.highWatermark(),
         this.backpressureController.lowWatermark()
@@ -837,7 +837,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           if (!success) {
             handleProcessingError(
               record,
-              new IllegalStateException("Pipeline returned null result for record at offset " + record.offset())
+              new IllegalStateException("Pipeline returned null result for record at offset " + record.offset()),
+              0
             );
           }
           return success;
@@ -854,7 +855,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         }
 
         if (attempt == maxRetries) {
-          handleProcessingError(record, e);
+          handleProcessingError(record, e, attempt);
           return false;
         }
       }
@@ -881,6 +882,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
   @SuppressWarnings("unchecked")
   private boolean processTypedRecord(final ConsumerRecord<K, V> record, final MessagePipeline typedPipeline) {
+    if (record.value() == null) return false;
     final var recordValue = (byte[]) record.value();
     final var deserialized = typedPipeline.deserialize(recordValue);
     if (deserialized == null) return false;
@@ -902,25 +904,23 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  private void handleProcessingError(final ConsumerRecord<K, V> record, final Exception e) {
+  private void handleProcessingError(final ConsumerRecord<K, V> record, final Exception e, final int retryCount) {
     if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
     LOGGER.log(
       Level.WARNING,
-      "Failed to process message at offset {0} after {1} attempts: {2}",
+      "Failed to process message at offset {0} after {1} attempt(s): {2}",
       record.offset(),
-      maxRetries + 1,
+      retryCount + 1,
       e.getMessage()
     );
     if (deadLetterTopic != null && kpipeProducer != null) {
       kpipeProducer.sendToDlq(deadLetterTopic, record, topic, e, enableMetrics ? metrics.get(METRIC_DLQ_SENT) : null);
     }
-    errorHandler.accept(new ProcessingError<>(record, e, maxRetries));
+    errorHandler.accept(new ProcessingError<>(record, e, retryCount));
     markOffsetProcessed(record);
   }
 
   private void checkBackpressure() {
-    if (backpressureController == null) return;
-
     switch (backpressureController.check(kafkaConsumer, isPaused())) {
       case PAUSE -> {
         final long value = backpressureController.getMetric(kafkaConsumer);
