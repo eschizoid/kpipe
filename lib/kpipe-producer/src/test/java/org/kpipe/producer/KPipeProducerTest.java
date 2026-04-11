@@ -212,8 +212,14 @@ class KPipeProducerTest {
     producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
     producerProps.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
 
-    assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", producerProps.getProperty("key.serializer"));
-    assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", producerProps.getProperty("value.serializer"));
+    assertEquals(
+      "org.apache.kafka.common.serialization.ByteArraySerializer",
+      producerProps.getProperty("key.serializer")
+    );
+    assertEquals(
+      "org.apache.kafka.common.serialization.ByteArraySerializer",
+      producerProps.getProperty("value.serializer")
+    );
   }
 
   @Test

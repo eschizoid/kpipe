@@ -91,8 +91,10 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       }
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
       final var producerProps = new Properties(props);
-      if (producerProps.containsKey("client.id"))
-        producerProps.setProperty("client.id", producerProps.getProperty("client.id") + "-producer");
+      if (producerProps.containsKey("client.id")) producerProps.setProperty(
+        "client.id",
+        producerProps.getProperty("client.id") + "-producer"
+      );
       producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
       producerProps.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
       return new KPipeProducer<>(new KafkaProducer<>(producerProps), true);
