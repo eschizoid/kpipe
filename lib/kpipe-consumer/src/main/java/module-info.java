@@ -4,6 +4,8 @@ module org.kpipe.consumer {
   requires java.net.http;
   requires jdk.httpserver;
   requires dsl.json;
+  requires kafka.clients;
+  requires org.apache.avro;
 
   exports org.kpipe.consumer;
   exports org.kpipe.consumer.config;
