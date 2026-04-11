@@ -5,11 +5,11 @@ plugins {
   java
   `maven-publish`
   signing
-  jacoco
   alias(libs.plugins.jreleaser)
 }
 
 description = "KPipe - Lightweight Kafka processing library for modern Java"
+
 java {
   withSourcesJar()
   withJavadocJar()
@@ -28,77 +28,6 @@ repositories {
         ?: project.properties["mavencentralSonatypePassword"]?.toString()
     }
     url = uri("https://central.sonatype.com/")
-  }
-}
-
-dependencies {
-  // Kafka
-  implementation(libs.kafkaClients)
-
-  // DSL-JSON
-  implementation(libs.dslJson)
-  annotationProcessor(libs.dslJson)
-  testAnnotationProcessor(libs.dslJson)
-
-  // Avro
-  implementation(libs.avro)
-
-  // Testing
-  testImplementation(platform(libs.junitBom))
-  testImplementation(libs.junitJupiter)
-  testRuntimeOnly(libs.junitPlatformLauncher)
-
-  testImplementation(libs.mockitoCore)
-  testImplementation(libs.mockitoJunitJupiter)
-
-  testImplementation(libs.slf4jSimple)
-
-  testImplementation(libs.testcontainers)
-  testImplementation(libs.testcontainersJunitJupiter)
-  testImplementation(libs.testcontainersPostgresql)
-  testImplementation(libs.postgresql)
-}
-
-tasks.test {
-  useJUnitPlatform()
-
-  if (project.hasProperty("excludeTests")) {
-    val excludePattern = project.property("excludeTests").toString()
-    exclude("**/${excludePattern.replace(".", "/")}.class")
-  }
-
-  minHeapSize = "7g"
-  maxHeapSize = "7g"
-  maxParallelForks = 1
-  forkEvery = 200
-}
-
-tasks.compileJava {
-  doFirst {
-    options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
-    classpath = files()
-  }
-}
-
-tasks.javadoc {
-  doFirst {
-    val javadocOptions = options as StandardJavadocDocletOptions
-    javadocOptions.addMultilineStringsOption("-module-path").value = listOf(classpath.asPath)
-    classpath = files()
-  }
-}
-
-tasks.jacocoTestReport {
-  reports {
-    csv.required.set(true)
-    xml.required.set(true)
-    html.required.set(true)
-  }
-}
-
-afterEvaluate {
-  tasks.withType<Jar>().configureEach {
-    archiveBaseName.set("kpipe")
   }
 }
 

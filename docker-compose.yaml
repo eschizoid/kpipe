@@ -73,7 +73,7 @@ services:
         condition: service_healthy
     volumes:
       - ./scripts/register-schema.sh:/scripts/register-schema.sh:ro
-      - ./lib/src/test/resources/avro/customer.avsc:/schemas/customer.avsc:ro
+      - ./lib/kpipe-consumer/src/test/resources/avro/customer.avsc:/schemas/customer.avsc:ro
     command:
       - sh
       - -ec
