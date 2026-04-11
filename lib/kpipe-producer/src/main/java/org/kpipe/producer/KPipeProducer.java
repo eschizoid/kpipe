@@ -86,9 +86,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     /// @throws NullPointerException if neither {@link #withProducer(Producer)} nor
     ///     {@link #withProperties(Properties)} was called
     public KPipeProducer<K, V> build() {
-      if (producer != null) {
-        return new KPipeProducer<>(producer, false);
-      }
+      if (producer != null) return new KPipeProducer<>(producer, false);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
       final var producerProps = new Properties(props);
       if (producerProps.containsKey("client.id")) producerProps.setProperty(

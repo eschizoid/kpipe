@@ -716,6 +716,11 @@ class KPipeConsumerMockingTest {
     CompletableFuture.runAsync(() -> functionalConsumer.executeProcessRecords(records));
     assertTrue(startLatch.await(2, TimeUnit.SECONDS), "Processing did not start");
 
+    // Drain TrackOffset into pendingOffsets before the rebalance fires. Without this,
+    // the virtual thread may countDown startLatch before the async thread reaches
+    // processCommands(), causing onPartitionsRevoked to see empty pendingOffsets.
+    functionalConsumer.processCommands();
+
     // Trigger rebalance (revocation)
     final var rebalanceListener = functionalConsumer.getRebalanceListener();
     assertNotNull(rebalanceListener, "Rebalance listener should be set");

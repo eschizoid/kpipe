@@ -1,5 +1,5 @@
 module org.kpipe.producer {
-  requires transitive kafka.clients;
+  requires kafka.clients;
 
   exports org.kpipe.producer;
   exports org.kpipe.producer.config;
