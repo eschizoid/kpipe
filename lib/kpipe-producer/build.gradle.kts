@@ -32,12 +32,6 @@ dependencies {
   testImplementation(libs.avro)
 }
 
-tasks.test {
-  useJUnitPlatform()
-  minHeapSize = "1g"
-  maxHeapSize = "2g"
-}
-
 tasks.compileJava {
   doFirst {
     options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))

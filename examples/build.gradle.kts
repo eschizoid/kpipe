@@ -11,11 +11,11 @@ subprojects {
   apply(plugin = "com.gradleup.shadow")
 
   dependencies {
-    implementation(project(":lib"))
+    implementation(project(":lib:kpipe-consumer"))
     implementation(rootProject.libs.kafkaClients)
     implementation(rootProject.libs.slf4jSimple)
 
-    testImplementation(project(":lib"))
+    testImplementation(project(":lib:kpipe-consumer"))
     testImplementation(rootProject.libs.junitJupiter)
     testImplementation(rootProject.libs.testcontainers)
     testImplementation(rootProject.libs.testcontainersJunitJupiter)

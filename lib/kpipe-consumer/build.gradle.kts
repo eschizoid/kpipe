@@ -41,15 +41,6 @@ dependencies {
   testImplementation(libs.postgresql)
 }
 
-tasks.test {
-  useJUnitPlatform()
-
-  minHeapSize = "4g"
-  maxHeapSize = "4g"
-  maxParallelForks = 1
-  forkEvery = 200
-}
-
 tasks.compileJava {
   doFirst {
     options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))

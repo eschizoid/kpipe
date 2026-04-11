@@ -147,19 +147,23 @@ modern Java 24+ features (Virtual Threads, Scoped Values) and predictable behavi
 
 ### 1. Modular Architecture (JPMS)
 
-KPipe is split into two main modules to ensure a clean separation of concerns and to allow developers to include only what they need:
+KPipe is split into two main modules to ensure a clean separation of concerns and to allow developers to include only
+what they need:
 
-- **kpipe-consumer**: The core processing library, containing the pipeline registry, backpressure controller, and virtual-thread-safe consumer.
-- **kpipe-producer**: A high-performance producer wrapper optimized for virtual threads, used for DLQ support and output sinks.
+- **kpipe-consumer**: The core processing library, containing the pipeline registry, backpressure controller, and
+  virtual-thread-safe consumer.
+- **kpipe-producer**: A high-performance producer wrapper optimized for virtual threads, used for DLQ support and output
+  sinks.
 
-The project is fully modular and supports the Java Platform Module System (JPMS). To use KPipe in a modular project, add the following to your `module-info.java`:
+The project is fully modular and supports the Java Platform Module System (JPMS). To use KPipe in a modular project, add
+the following to your `module-info.java`:
 
 ```java
 module my.application {
-    requires org.kpipe; // When using the aggregate artifact
-    // or
-    requires org.kpipe.consumer;
-    requires org.kpipe.producer;
+  requires org.kpipe; // When using the aggregate artifact
+  // or
+  requires org.kpipe.consumer;
+  requires org.kpipe.producer;
 }
 ```
 
@@ -609,7 +613,8 @@ final var pipeline = registry.pipeline(MessageFormat.JSON).toSink(safeKey).build
 
 ### Kafka Producer Sink
 
-KPipe includes a specialized `KafkaMessageSink` that allows you to produce processed messages back to a Kafka topic. This sink is designed to work seamlessly with virtual threads.
+KPipe includes a specialized `KafkaMessageSink` that allows you to produce processed messages back to a Kafka topic.
+This sink is designed to work seamlessly with virtual threads.
 
 ```java
 final var producer = new KPipeProducer<>(kafkaProps);

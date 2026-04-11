@@ -12,9 +12,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
+import org.kpipe.consumer.*;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
-import org.kpipe.consumer.*;
+import org.kpipe.consumer.sink.JsonConsoleSink;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.KPipeMetricsReporter;
@@ -23,7 +24,6 @@ import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
-import org.kpipe.consumer.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable

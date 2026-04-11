@@ -18,34 +18,6 @@ java {
   }
 }
 
-sourceSets {
-  main {
-    java {
-      srcDirs("src/main/java")
-      srcDir("kpipe-producer/src/main/java").apply {
-        exclude("module-info.java")
-      }
-      srcDir("kpipe-consumer/src/main/java").apply {
-        exclude("module-info.java")
-      }
-    }
-  }
-  test {
-    java {
-      srcDirs(
-        "kpipe-producer/src/test/java",
-        "kpipe-consumer/src/test/java",
-      )
-    }
-    resources {
-      srcDirs(
-        "kpipe-producer/src/test/resources",
-        "kpipe-consumer/src/test/resources",
-      )
-    }
-  }
-}
-
 repositories {
   mavenCentral()
   maven {
@@ -100,21 +72,6 @@ tasks.test {
   maxHeapSize = "7g"
   maxParallelForks = 1
   forkEvery = 200
-}
-
-tasks.compileJava {
-  doFirst {
-    options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
-    classpath = files()
-  }
-}
-
-tasks.javadoc {
-  doFirst {
-    val javadocOptions = options as StandardJavadocDocletOptions
-    javadocOptions.addMultilineStringsOption("-module-path").value = listOf(classpath.asPath)
-    classpath = files()
-  }
 }
 
 tasks.jacocoTestReport {
