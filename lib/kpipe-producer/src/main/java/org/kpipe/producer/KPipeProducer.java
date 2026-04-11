@@ -33,6 +33,91 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     this.ownProducer = ownProducer;
   }
 
+  /// Creates a new builder for constructing [KPipeProducer] instances.
+  ///
+  /// @param <K> the type of keys in the produced records
+  /// @param <V> the type of values in the produced records
+  /// @return a new builder instance
+  public static <K, V> Builder<K, V> builder() {
+    return new Builder<>();
+  }
+
+  /// Builder for creating and configuring [KPipeProducer] instances.
+  ///
+  /// <p>Either {@link #withProducer(Producer)} or {@link #withProperties(Properties)} must be
+  /// called before {@link #build()}. When properties are provided, only the connection, security,
+  /// and serialization keys are forwarded to the underlying Kafka producer.
+  ///
+  /// @param <K> the type of keys in the produced records
+  /// @param <V> the type of values in the produced records
+  public static class Builder<K, V> {
+
+    private Builder() {}
+
+    private Properties props;
+    private Producer<K, V> producer;
+
+    /// Sets the Kafka consumer properties from which the producer configuration is derived.
+    ///
+    /// <p>Only connection ({@code bootstrap.servers}), security ({@code sasl.*},
+    /// {@code security.*}, {@code ssl.*}), client identity ({@code client.id}), and
+    /// serialization ({@code key.serializer}, {@code value.serializer}, {@code acks}) keys are
+    /// forwarded. Consumer-only keys such as {@code group.id} or {@code *.deserializer} are
+    /// silently dropped. {@code ByteArraySerializer} is used for both key and value unless
+    /// explicit serializers are already present. If a {@code client.id} is present,
+    /// {@code "-producer"} is appended to distinguish the producer from the consumer.
+    ///
+    /// @param props the source configuration (typically consumer properties)
+    /// @return this builder instance for method chaining
+    public Builder<K, V> withProperties(final Properties props) {
+      this.props = Objects.requireNonNull(props, "Properties cannot be null");
+      return this;
+    }
+
+    /// Sets an existing Kafka producer to wrap. The wrapper does not own this producer and will
+    /// not close it.
+    ///
+    /// @param producer the Kafka producer to wrap
+    /// @return this builder instance for method chaining
+    public Builder<K, V> withProducer(final Producer<K, V> producer) {
+      this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
+      return this;
+    }
+
+    /// Builds a new [KPipeProducer].
+    ///
+    /// @return a new KPipeProducer instance
+    /// @throws NullPointerException if neither {@link #withProducer(Producer)} nor
+    ///     {@link #withProperties(Properties)} was called
+    public KPipeProducer<K, V> build() {
+      if (producer != null) {
+        return new KPipeProducer<>(producer, false);
+      }
+      Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
+      final var producerProps = new Properties();
+      props.forEach((k, v) -> {
+        final String key = k.toString();
+        if (
+          key.startsWith("bootstrap.servers") ||
+          key.startsWith("sasl.") ||
+          key.startsWith("security.") ||
+          key.startsWith("ssl.") ||
+          key.startsWith("client.id") ||
+          key.equals("key.serializer") ||
+          key.equals("value.serializer") ||
+          key.equals("acks")
+        ) {
+          producerProps.put(k, v);
+        }
+      });
+      if (producerProps.containsKey("client.id"))
+        producerProps.setProperty("client.id", producerProps.getProperty("client.id") + "-producer");
+      producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
+      producerProps.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
+      return new KPipeProducer<>(new KafkaProducer<>(producerProps), true);
+    }
+  }
+
   /// Sends a consumer record that failed processing to a dead-letter topic.
   ///
   /// <p>This method synchronously sends the record to Kafka with enrichment headers containing
@@ -97,56 +182,6 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @return a future that will contain the record metadata
   public Future<RecordMetadata> sendAsync(final ProducerRecord<K, V> record) {
     return producer.send(record);
-  }
-
-  /// Creates a Kafka producer derived from consumer configuration properties.
-  ///
-  /// <p>Only security, connection, and serialization properties are forwarded from the source
-  /// config. If the source config contains a {@code client.id}, {@code "-producer"} is appended
-  /// to distinguish the producer from the consumer. {@code ByteArraySerializer} is used for both
-  /// key and value unless explicit serializers are already present in the source config.
-  ///
-  /// @param props       the source configuration (typically consumer properties)
-  /// @param context     a descriptive label for logging (e.g. "DLQ")
-  /// @param targetTopic the target topic name for logging
-  /// @return a new Kafka producer instance
-  public static <K, V> Producer<K, V> createDefaultProducer(
-    final Properties props,
-    final String context,
-    final String targetTopic
-  ) {
-    final var producerProps = new Properties();
-    props.forEach((k, v) -> {
-      final String key = k.toString();
-      if (
-        key.startsWith("bootstrap.servers") ||
-        key.startsWith("sasl.") ||
-        key.startsWith("security.") ||
-        key.startsWith("ssl.") ||
-        key.startsWith("client.id") ||
-        key.equals("key.serializer") ||
-        key.equals("value.serializer") ||
-        key.equals("acks")
-      ) {
-        producerProps.put(k, v);
-      }
-    });
-
-    if (producerProps.containsKey("client.id"))
-      producerProps.setProperty("client.id", producerProps.getProperty("client.id") + "-producer");
-
-    producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-    producerProps.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-
-    LOGGER.log(Level.INFO, "Creating Kafka producer for {0} on topic {1}", context, targetTopic);
-    return new KafkaProducer<>(producerProps);
-  }
-
-  /// Returns the underlying Kafka producer.
-  ///
-  /// @return the Kafka producer
-  public Producer<K, V> getProducer() {
-    return producer;
   }
 
   @Override

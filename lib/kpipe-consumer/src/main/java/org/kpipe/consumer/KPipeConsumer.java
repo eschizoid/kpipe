@@ -171,7 +171,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private ConsumerRebalanceListener rebalanceListener;
     private BackpressureController backpressureController;
     private String deadLetterTopic;
-    private Producer<K, V> kafkaProducer;
+    private KPipeProducer<K, V> kpipeProducer;
 
     /// Sets the properties for the Kafka consumer.
     ///
@@ -370,7 +370,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// @param producer The Kafka producer to use
     /// @return This builder instance for method chaining
     public Builder<K, V> withKafkaProducer(final Producer<K, V> producer) {
-      this.kafkaProducer = producer;
+      this.kpipeProducer = KPipeProducer.<K, V>builder().withProducer(producer).build();
       return this;
     }
 
@@ -379,7 +379,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// @param producer The KPipe producer wrapper to use
     /// @return This builder instance for method chaining
     public Builder<K, V> withKafkaProducer(final KPipeProducer<K, V> producer) {
-      this.kafkaProducer = producer.getProducer();
+      this.kpipeProducer = Objects.requireNonNull(producer, "Producer cannot be null");
       return this;
     }
 
@@ -449,13 +449,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     );
 
     this.deadLetterTopic = builder.deadLetterTopic;
-    if (builder.kafkaProducer != null) {
-      this.kpipeProducer = new KPipeProducer<>(builder.kafkaProducer, false);
+    if (builder.kpipeProducer != null) {
+      this.kpipeProducer = builder.kpipeProducer;
     } else if (this.deadLetterTopic != null) {
-      this.kpipeProducer = new KPipeProducer<>(
-        KPipeProducer.createDefaultProducer(builder.kafkaProps, "DLQ", this.deadLetterTopic),
-        true
-      );
+      this.kpipeProducer = KPipeProducer.<K, V>builder().withProperties(builder.kafkaProps).build();
     } else {
       this.kpipeProducer = null;
     }

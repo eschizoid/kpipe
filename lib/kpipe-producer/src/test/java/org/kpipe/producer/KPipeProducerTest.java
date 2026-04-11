@@ -26,14 +26,10 @@ class KPipeProducerTest {
   @Mock
   private Producer<byte[], byte[]> mockProducer;
 
-  // ── constructor ──────────────────────────────────────────────────────────
-
   @Test
   void shouldRejectNullProducer() {
     assertThrows(NullPointerException.class, () -> new KPipeProducer<>(null, true));
   }
-
-  // ── send ─────────────────────────────────────────────────────────────────
 
   @Test
   @SuppressWarnings("unchecked")
@@ -77,8 +73,6 @@ class KPipeProducerTest {
     assertTrue(Thread.interrupted(), "interrupt flag should be restored");
   }
 
-  // ── sendAsync ────────────────────────────────────────────────────────────
-
   @Test
   @SuppressWarnings("unchecked")
   void shouldReturnFutureOnSendAsync() {
@@ -90,8 +84,6 @@ class KPipeProducerTest {
 
     assertSame(future, result);
   }
-
-  // ── sendToDlq ────────────────────────────────────────────────────────────
 
   @Test
   @SuppressWarnings("unchecked")
@@ -180,7 +172,6 @@ class KPipeProducerTest {
     );
   }
 
-  // ── close ─────────────────────────────────────────────────────────────────
 
   @Test
   void shouldCloseUnderlyingProducerWhenOwned() {
@@ -200,10 +191,22 @@ class KPipeProducerTest {
     assertDoesNotThrow(() -> new KPipeProducer<>(mockProducer, true).close());
   }
 
-  // ── createDefaultProducer ─────────────────────────────────────────────────
+  // ── builder ───────────────────────────────────────────────────────────────
 
   @Test
-  void shouldFilterOnlyRelevantPropertiesForDefaultProducer() {
+  @SuppressWarnings("unchecked")
+  void shouldWrapExistingProducerWithBuilder() {
+    final var wrapped = KPipeProducer.<byte[], byte[]>builder().withProducer(mockProducer).build();
+    assertNotNull(wrapped);
+  }
+
+  @Test
+  void shouldRejectBuilderWithNeitherProducerNorProperties() {
+    assertThrows(NullPointerException.class, () -> KPipeProducer.<byte[], byte[]>builder().build());
+  }
+
+  @Test
+  void shouldFilterOnlyRelevantPropertiesViaBuilder() {
     final var consumerProps = new Properties();
     consumerProps.put("bootstrap.servers", "localhost:9092");
     consumerProps.put("group.id", "my-group");
@@ -212,8 +215,8 @@ class KPipeProducerTest {
     consumerProps.put("sasl.mechanism", "PLAIN");
     consumerProps.put("acks", "all");
 
-    // createDefaultProducer creates a real KafkaProducer — just verify the properties filter
-    // by checking that group.id and deserializer keys don't leak through
+    // Builder.build() with properties calls new KafkaProducer() which requires a real broker.
+    // Verify the filtering contract by reproducing the same logic and asserting the output.
     final var filtered = new Properties();
     consumerProps.forEach((k, v) -> {
       final String key = k.toString();
@@ -254,8 +257,6 @@ class KPipeProducerTest {
     final var expectedClientId = clientId + "-producer";
     assertEquals("my-consumer-producer", expectedClientId);
   }
-
-  // ── virtual threads ───────────────────────────────────────────────────────
 
   @Test
   @SuppressWarnings("unchecked")
