@@ -252,7 +252,6 @@ class KPipeProducerTest {
     props.put("bootstrap.servers", "localhost:9092");
     props.put("client.id", "my-consumer");
 
-    // verify the suffix logic directly (without constructing a real KafkaProducer)
     final var clientId = props.getProperty("client.id");
     final var expectedClientId = clientId + "-producer";
     assertEquals("my-consumer-producer", expectedClientId);
