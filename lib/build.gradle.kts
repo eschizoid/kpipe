@@ -5,11 +5,11 @@ plugins {
   java
   `maven-publish`
   signing
-  jacoco
   alias(libs.plugins.jreleaser)
 }
 
 description = "KPipe - Lightweight Kafka processing library for modern Java"
+
 java {
   withSourcesJar()
   withJavadocJar()
@@ -28,49 +28,6 @@ repositories {
         ?: project.properties["mavencentralSonatypePassword"]?.toString()
     }
     url = uri("https://central.sonatype.com/")
-  }
-}
-
-dependencies {
-  // Kafka
-  implementation(libs.kafkaClients)
-
-  // DSL-JSON
-  implementation(libs.dslJson)
-  annotationProcessor(libs.dslJson)
-  testAnnotationProcessor(libs.dslJson)
-
-  // Avro
-  implementation(libs.avro)
-
-  // Testing
-  testImplementation(platform(libs.junitBom))
-  testImplementation(libs.junitJupiter)
-  testRuntimeOnly(libs.junitPlatformLauncher)
-
-  testImplementation(libs.mockitoCore)
-  testImplementation(libs.mockitoJunitJupiter)
-
-  testImplementation(libs.slf4jSimple)
-
-  testImplementation(libs.testcontainers)
-  testImplementation(libs.testcontainersJunitJupiter)
-  testImplementation(libs.testcontainersKafka)
-  testImplementation(libs.testcontainersPostgresql)
-  testImplementation(libs.postgresql)
-}
-
-tasks.jacocoTestReport {
-  reports {
-    csv.required.set(true)
-    xml.required.set(true)
-    html.required.set(true)
-  }
-}
-
-afterEvaluate {
-  tasks.withType<Jar>().configureEach {
-    archiveBaseName.set("kpipe")
   }
 }
 

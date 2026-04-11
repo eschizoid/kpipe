@@ -31,11 +31,13 @@ jobs:
           ./gradlew build test --stacktrace --no-daemon --max-workers=2
 
       - name: Jacoco
-        run: ./gradlew :lib:jacocoTestReport
+        run: ./gradlew :lib:kpipe-consumer:jacocoTestReport :lib:kpipe-producer:jacocoTestReport
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: eschizoid/kpipe
-          files: ./lib/build/reports/jacoco/test/jacocoTestReport.xml
+          files: |
+            ./lib/kpipe-consumer/build/reports/jacoco/test/jacocoTestReport.xml
+            ./lib/kpipe-producer/build/reports/jacoco/test/jacocoTestReport.xml

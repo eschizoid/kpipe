@@ -1,9 +1,13 @@
 plugins {
-  java
+  `java-library`
+  jacoco
 }
 
 java {
   modularity.inferModulePath.set(true)
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(25)
+  }
 }
 
 repositories {
@@ -14,9 +18,6 @@ dependencies {
   // Kafka
   implementation(libs.kafkaClients)
 
-  // slf4j for tests if needed
-  testImplementation(libs.slf4jSimple)
-
   // Testing
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
@@ -24,6 +25,8 @@ dependencies {
 
   testImplementation(libs.mockitoCore)
   testImplementation(libs.mockitoJunitJupiter)
+
+  testImplementation(libs.slf4jSimple)
 
   testImplementation(libs.testcontainers)
   testImplementation(libs.testcontainersJunitJupiter)
@@ -44,6 +47,14 @@ tasks.test {
   maxHeapSize = "7g"
   maxParallelForks = 1
   forkEvery = 200
+}
+
+tasks.jacocoTestReport {
+  reports {
+    csv.required.set(true)
+    xml.required.set(true)
+    html.required.set(true)
+  }
 }
 
 tasks.compileJava {
