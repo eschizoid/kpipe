@@ -34,8 +34,9 @@ class KPipeDlqTest {
   @SuppressWarnings("unchecked")
   void shouldSendToDlqAfterMaxRetries() throws Exception {
     final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value");
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
 
     try (
       final var consumer = KPipeConsumer.<String, String>builder()
@@ -91,8 +92,9 @@ class KPipeDlqTest {
   @SuppressWarnings("unchecked")
   void shouldSendToDlqWhenPipelineReturnsNull() {
     final var record = new ConsumerRecord<>(TOPIC, 0, 200L, "key".getBytes(), "value".getBytes());
-    when(mockByteProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
+    when(mockByteProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
 
     try (
       final var consumer = KPipeConsumer.<byte[], byte[]>builder()
@@ -105,10 +107,12 @@ class KPipeDlqTest {
     ) {
       consumer.processRecord(record);
 
-      verify(mockByteProducer).send(argThat(r -> {
-        assertEquals(DLQ_TOPIC, r.topic());
-        return true;
-      }));
+      verify(mockByteProducer).send(
+        argThat(r -> {
+          assertEquals(DLQ_TOPIC, r.topic());
+          return true;
+        })
+      );
     }
   }
 

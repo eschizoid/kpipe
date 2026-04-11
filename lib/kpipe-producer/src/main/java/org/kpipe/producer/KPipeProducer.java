@@ -2,6 +2,7 @@ package org.kpipe.producer;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -11,7 +12,6 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
-import org.kpipe.producer.config.KafkaProducerConfig;
 
 /// A functional wrapper around a Kafka [Producer] used by KPipe for DLQ and output sinks.
 ///
@@ -29,20 +29,22 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @param producer    the Kafka producer to wrap
   /// @param ownProducer whether this wrapper owns the producer and should close it
   public KPipeProducer(final Producer<K, V> producer, final boolean ownProducer) {
-    this.producer = producer;
+    this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
     this.ownProducer = ownProducer;
   }
 
   /// Sends a consumer record that failed processing to a dead-letter topic.
   ///
-  /// <p>This method synchronously sends the record to Kafka with additional enrichment headers
-  /// containing information about the original topic, partition, offset, and error.
+  /// <p>This method synchronously sends the record to Kafka with enrichment headers containing
+  /// information about the original topic, partition, offset, and error. The send is synchronous
+  /// to ensure reliability in the error path — when called from a virtual thread this does not
+  /// block the underlying carrier thread.
   ///
-  /// @param dlqTopic       the name of the dead-letter topic
-  /// @param record         the original consumer record that failed
-  /// @param sourceTopic    the original source topic name
-  /// @param exception      the exception that caused the processing failure
-  /// @param dlqMetric      optional metric to increment on success
+  /// @param dlqTopic    the name of the dead-letter topic
+  /// @param record      the original consumer record that failed
+  /// @param sourceTopic the original source topic name
+  /// @param exception   the exception that caused the processing failure
+  /// @param dlqMetric   optional metric counter to increment on successful DLQ send
   public void sendToDlq(
     final String dlqTopic,
     final ConsumerRecord<K, V> record,
@@ -50,7 +52,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     final Exception exception,
     final AtomicLong dlqMetric
   ) {
-    if (dlqTopic == null || producer == null) return;
+    if (dlqTopic == null) return;
 
     final var producerRecord = new ProducerRecord<>(dlqTopic, record.key(), record.value());
     producerRecord.headers().add("x-dlq-exception-class", exception.getClass().getName().getBytes());
@@ -62,23 +64,22 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     producerRecord.headers().add("x-dlq-source-offset", String.valueOf(record.offset()).getBytes());
 
     try {
-      send(producerRecord); // Synchronous to ensure reliability in error path
+      send(producerRecord);
       if (dlqMetric != null) dlqMetric.incrementAndGet();
-      LOGGER.log(Level.INFO, "Successfully sent message to DLQ topic {0}", dlqTopic);
+      LOGGER.log(Level.INFO, "Sent record to DLQ topic {0}", dlqTopic);
     } catch (final Exception ex) {
-      LOGGER.log(Level.ERROR, "Failed to send message to DLQ topic " + dlqTopic, ex);
+      LOGGER.log(Level.ERROR, "Failed to send record to DLQ topic " + dlqTopic, ex);
     }
   }
 
-  /// Sends a record to a Kafka topic synchronously.
+  /// Sends a record to a Kafka topic synchronously and returns the resulting metadata.
   ///
-  /// <p>This method blocks the current thread until the send is complete and returns the
-  /// [RecordMetadata]. When called from a virtual thread, it is highly efficient as it
-  /// does not block the underlying carrier thread.
+  /// <p>When called from a virtual thread this is highly efficient — blocking on the future
+  /// parks the virtual thread without pinning its carrier thread.
   ///
   /// @param record the record to send
   /// @return the metadata for the record that was sent
-  /// @throws RuntimeException if the send fails
+  /// @throws RuntimeException if the send is interrupted or fails
   public RecordMetadata send(final ProducerRecord<K, V> record) {
     try {
       return producer.send(record).get();
@@ -98,13 +99,15 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     return producer.send(record);
   }
 
-  /// Creates a default Kafka producer based on the provided configuration properties.
+  /// Creates a Kafka producer derived from consumer configuration properties.
   ///
-  /// <p>This method filters the provided properties to include only those relevant to a producer,
-  /// such as bootstrap servers, security settings, and client identification.
+  /// <p>Only security, connection, and serialization properties are forwarded from the source
+  /// config. If the source config contains a {@code client.id}, {@code "-producer"} is appended
+  /// to distinguish the producer from the consumer. {@code ByteArraySerializer} is used for both
+  /// key and value unless explicit serializers are already present in the source config.
   ///
-  /// @param props the base configuration properties
-  /// @param context a descriptive context for logging (e.g., "DLQ")
+  /// @param props       the source configuration (typically consumer properties)
+  /// @param context     a descriptive label for logging (e.g. "DLQ")
   /// @param targetTopic the target topic name for logging
   /// @return a new Kafka producer instance
   public static <K, V> Producer<K, V> createDefaultProducer(
@@ -129,43 +132,14 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       }
     });
 
-    // If client.id is set, append "-producer" to distinguish it
-    final String clientId = producerProps.getProperty("client.id");
-    if (clientId != null) {
-      producerProps.setProperty("client.id", clientId + "-producer");
-    }
+    if (producerProps.containsKey("client.id"))
+      producerProps.setProperty("client.id", producerProps.getProperty("client.id") + "-producer");
 
-    // Default to ByteArraySerializer if not specified and types are byte[]
-    final var finalProps = KafkaProducerConfig.producerBuilder()
-      .with(p -> {
-        p.putAll(producerProps);
-        return p;
-      })
-      .withByteArraySerializers() // Only sets if not already present in the builder's logic?
-      // No, builder overrides.
-      .build();
+    producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
+    producerProps.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
 
-    // Re-apply original serializers if they were explicitly provided in producerProps
-    if (producerProps.containsKey("key.serializer")) {
-      finalProps.put("key.serializer", producerProps.get("key.serializer"));
-    }
-    if (producerProps.containsKey("value.serializer")) {
-      finalProps.put("value.serializer", producerProps.get("value.serializer"));
-    }
-
-    LOGGER.log(Level.INFO, "Creating default Kafka producer for {0} on topic {1}", context, targetTopic);
-    return new KafkaProducer<>(finalProps);
-  }
-
-  @Override
-  public void close() {
-    if (ownProducer && producer != null) {
-      try {
-        producer.close();
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Error closing Kafka producer", e);
-      }
-    }
+    LOGGER.log(Level.INFO, "Creating Kafka producer for {0} on topic {1}", context, targetTopic);
+    return new KafkaProducer<>(producerProps);
   }
 
   /// Returns the underlying Kafka producer.
@@ -173,5 +147,16 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @return the Kafka producer
   public Producer<K, V> getProducer() {
     return producer;
+  }
+
+  @Override
+  public void close() {
+    if (ownProducer) {
+      try {
+        producer.close();
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error closing Kafka producer", e);
+      }
+    }
   }
 }
