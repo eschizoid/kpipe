@@ -833,7 +833,14 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
       try {
         if (processor instanceof MessagePipeline typedPipeline) {
-          return processTypedRecord(record, typedPipeline);
+          final var success = processTypedRecord(record, typedPipeline);
+          if (!success) {
+            handleProcessingError(
+              record,
+              new IllegalStateException("Pipeline returned null result for record at offset " + record.offset())
+            );
+          }
+          return success;
         }
 
         final var processedValue = processor.apply(record.value());
