@@ -41,6 +41,20 @@ dependencies {
   testImplementation(libs.postgresql)
 }
 
+tasks.test {
+  useJUnitPlatform()
+
+  if (project.hasProperty("excludeTests")) {
+    val excludePattern = project.property("excludeTests").toString()
+    exclude("**/${excludePattern.replace(".", "/")}.class")
+  }
+
+  minHeapSize = "7g"
+  maxHeapSize = "7g"
+  maxParallelForks = 1
+  forkEvery = 200
+}
+
 tasks.compileJava {
   doFirst {
     options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))

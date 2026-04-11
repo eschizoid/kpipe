@@ -1,6 +1,5 @@
 package org.kpipe.consumer.sink;
 
-import org.kpipe.sink.MessageSink;
 import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -11,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.kpipe.sink.MessageSink;
 
 /// A sink that logs processed messages with JSON formatting.
 ///

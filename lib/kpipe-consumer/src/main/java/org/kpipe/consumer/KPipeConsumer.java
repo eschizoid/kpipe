@@ -18,9 +18,9 @@ import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.enums.ConsumerState;
+import org.kpipe.consumer.sink.JsonConsoleSink;
 import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
-import org.kpipe.consumer.sink.JsonConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /// A functional-style Kafka consumer that processes records using a provided function.

@@ -1,6 +1,5 @@
 package org.kpipe.consumer.sink;
 
-import org.kpipe.sink.MessageSink;
 import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -16,6 +15,7 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.EncoderFactory;
 import org.kpipe.processor.AvroMessageProcessor;
+import org.kpipe.sink.MessageSink;
 
 /// A sink that logs processed messages with Avro formatting.
 ///
