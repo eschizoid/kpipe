@@ -28,7 +28,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   ///
   /// @param producer    the Kafka producer to wrap
   /// @param ownProducer whether this wrapper owns the producer and should close it
-  public KPipeProducer(final Producer<K, V> producer, final boolean ownProducer) {
+  KPipeProducer(final Producer<K, V> producer, final boolean ownProducer) {
     this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
     this.ownProducer = ownProducer;
   }
@@ -57,17 +57,13 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     private Properties props;
     private Producer<K, V> producer;
 
-    /// Sets the Kafka consumer properties from which the producer configuration is derived.
+    /// Sets the properties used to create the underlying Kafka producer.
     ///
-    /// <p>Only connection ({@code bootstrap.servers}), security ({@code sasl.*},
-    /// {@code security.*}, {@code ssl.*}), client identity ({@code client.id}), and
-    /// serialization ({@code key.serializer}, {@code value.serializer}, {@code acks}) keys are
-    /// forwarded. Consumer-only keys such as {@code group.id} or {@code *.deserializer} are
-    /// silently dropped. {@code ByteArraySerializer} is used for both key and value unless
-    /// explicit serializers are already present. If a {@code client.id} is present,
+    /// <p>All properties are forwarded as-is. {@code ByteArraySerializer} is set for key and
+    /// value unless explicit serializers are already present. If a {@code client.id} is present,
     /// {@code "-producer"} is appended to distinguish the producer from the consumer.
     ///
-    /// @param props the source configuration (typically consumer properties)
+    /// @param props the Kafka producer properties (or consumer properties to derive from)
     /// @return this builder instance for method chaining
     public Builder<K, V> withProperties(final Properties props) {
       this.props = Objects.requireNonNull(props, "Properties cannot be null");
@@ -94,22 +90,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
         return new KPipeProducer<>(producer, false);
       }
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
-      final var producerProps = new Properties();
-      props.forEach((k, v) -> {
-        final String key = k.toString();
-        if (
-          key.startsWith("bootstrap.servers") ||
-          key.startsWith("sasl.") ||
-          key.startsWith("security.") ||
-          key.startsWith("ssl.") ||
-          key.startsWith("client.id") ||
-          key.equals("key.serializer") ||
-          key.equals("value.serializer") ||
-          key.equals("acks")
-        ) {
-          producerProps.put(k, v);
-        }
-      });
+      final var producerProps = new Properties(props);
       if (producerProps.containsKey("client.id"))
         producerProps.setProperty("client.id", producerProps.getProperty("client.id") + "-producer");
       producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");

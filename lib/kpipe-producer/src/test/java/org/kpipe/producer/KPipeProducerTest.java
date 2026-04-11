@@ -35,11 +35,11 @@ class KPipeProducerTest {
   @SuppressWarnings("unchecked")
   void shouldReturnMetadataOnSend() {
     final var expected = mock(RecordMetadata.class);
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.completedFuture(expected));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(expected));
 
-    final var result = new KPipeProducer<>(mockProducer, false)
-      .send(new ProducerRecord<>(TOPIC, "k".getBytes(), "v".getBytes()));
+    final var result = new KPipeProducer<>(mockProducer, false).send(
+      new ProducerRecord<>(TOPIC, "k".getBytes(), "v".getBytes())
+    );
 
     assertSame(expected, result);
   }
@@ -47,12 +47,12 @@ class KPipeProducerTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldWrapExecutionExceptionAsSendFailed() {
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.failedFuture(new RuntimeException("broker down")));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.failedFuture(new RuntimeException("broker down"))
+    );
 
-    final var ex = assertThrows(
-      RuntimeException.class,
-      () -> new KPipeProducer<>(mockProducer, false).send(new ProducerRecord<>(TOPIC, null, "v".getBytes()))
+    final var ex = assertThrows(RuntimeException.class, () ->
+      new KPipeProducer<>(mockProducer, false).send(new ProducerRecord<>(TOPIC, null, "v".getBytes()))
     );
     assertEquals("Send failed", ex.getMessage());
   }
@@ -66,10 +66,7 @@ class KPipeProducerTest {
 
     final var producer = new KPipeProducer<>(mockProducer, false);
 
-    assertThrows(
-      RuntimeException.class,
-      () -> producer.send(new ProducerRecord<>(TOPIC, null, "v".getBytes()))
-    );
+    assertThrows(RuntimeException.class, () -> producer.send(new ProducerRecord<>(TOPIC, null, "v".getBytes())));
     assertTrue(Thread.interrupted(), "interrupt flag should be restored");
   }
 
@@ -79,8 +76,9 @@ class KPipeProducerTest {
     final var future = CompletableFuture.completedFuture(mock(RecordMetadata.class));
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(future);
 
-    final var result = new KPipeProducer<>(mockProducer, false)
-      .sendAsync(new ProducerRecord<>(TOPIC, null, "v".getBytes()));
+    final var result = new KPipeProducer<>(mockProducer, false).sendAsync(
+      new ProducerRecord<>(TOPIC, null, "v".getBytes())
+    );
 
     assertSame(future, result);
   }
@@ -88,12 +86,12 @@ class KPipeProducerTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendDlqRecordWithAllHeaders() {
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
 
     final var record = new ConsumerRecord<>(TOPIC, 2, 42L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false)
-      .sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("boom"), null);
+    new KPipeProducer<>(mockProducer, false).sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("boom"), null);
 
     verify(mockProducer).send(
       argThat(r -> {
@@ -116,13 +114,13 @@ class KPipeProducerTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldIncrementDlqMetricOnSuccess() {
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
 
     final var metric = new AtomicLong(0);
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false)
-      .sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail"), metric);
+    new KPipeProducer<>(mockProducer, false).sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail"), metric);
 
     assertEquals(1, metric.get());
   }
@@ -130,13 +128,13 @@ class KPipeProducerTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldNotIncrementDlqMetricOnSendFailure() {
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.failedFuture(new RuntimeException("broker down")));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.failedFuture(new RuntimeException("broker down"))
+    );
 
     final var metric = new AtomicLong(0);
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false)
-      .sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail"), metric);
+    new KPipeProducer<>(mockProducer, false).sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail"), metric);
 
     assertEquals(0, metric.get());
     verify(mockProducer).send(any());
@@ -145,8 +143,7 @@ class KPipeProducerTest {
   @Test
   void shouldBeNoOpWhenDlqTopicIsNull() {
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false)
-      .sendToDlq(null, record, TOPIC, new RuntimeException("fail"), null);
+    new KPipeProducer<>(mockProducer, false).sendToDlq(null, record, TOPIC, new RuntimeException("fail"), null);
 
     verifyNoInteractions(mockProducer);
   }
@@ -154,14 +151,20 @@ class KPipeProducerTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldHandleNullExceptionMessage() {
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
 
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
     // Exception with null message should not throw
-    assertDoesNotThrow(
-      () -> new KPipeProducer<>(mockProducer, false)
-        .sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException((String) null), null)
+    assertDoesNotThrow(() ->
+      new KPipeProducer<>(mockProducer, false).sendToDlq(
+        DLQ_TOPIC,
+        record,
+        TOPIC,
+        new RuntimeException((String) null),
+        null
+      )
     );
 
     verify(mockProducer).send(
@@ -171,7 +174,6 @@ class KPipeProducerTest {
       })
     );
   }
-
 
   @Test
   void shouldCloseUnderlyingProducerWhenOwned() {
@@ -191,10 +193,7 @@ class KPipeProducerTest {
     assertDoesNotThrow(() -> new KPipeProducer<>(mockProducer, true).close());
   }
 
-  // ── builder ───────────────────────────────────────────────────────────────
-
   @Test
-  @SuppressWarnings("unchecked")
   void shouldWrapExistingProducerWithBuilder() {
     final var wrapped = KPipeProducer.<byte[], byte[]>builder().withProducer(mockProducer).build();
     assertNotNull(wrapped);
@@ -206,44 +205,15 @@ class KPipeProducerTest {
   }
 
   @Test
-  void shouldFilterOnlyRelevantPropertiesViaBuilder() {
-    final var consumerProps = new Properties();
-    consumerProps.put("bootstrap.servers", "localhost:9092");
-    consumerProps.put("group.id", "my-group");
-    consumerProps.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-    consumerProps.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-    consumerProps.put("sasl.mechanism", "PLAIN");
-    consumerProps.put("acks", "all");
+  void shouldAddDefaultSerializersWhenNotPresent() {
+    final var props = new Properties();
+    // Simulate what the builder does when building from properties
+    final var producerProps = new Properties(props);
+    producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
+    producerProps.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
 
-    // Builder.build() with properties calls new KafkaProducer() which requires a real broker.
-    // Verify the filtering contract by reproducing the same logic and asserting the output.
-    final var filtered = new Properties();
-    consumerProps.forEach((k, v) -> {
-      final String key = k.toString();
-      if (
-        key.startsWith("bootstrap.servers") ||
-        key.startsWith("sasl.") ||
-        key.startsWith("security.") ||
-        key.startsWith("ssl.") ||
-        key.startsWith("client.id") ||
-        key.equals("key.serializer") ||
-        key.equals("value.serializer") ||
-        key.equals("acks")
-      ) filtered.put(k, v);
-    });
-    filtered.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-    filtered.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-
-    assertFalse(filtered.containsKey("group.id"));
-    assertFalse(filtered.containsKey("key.deserializer"));
-    assertFalse(filtered.containsKey("value.deserializer"));
-    assertEquals("localhost:9092", filtered.getProperty("bootstrap.servers"));
-    assertEquals("PLAIN", filtered.getProperty("sasl.mechanism"));
-    assertEquals("all", filtered.getProperty("acks"));
-    assertEquals(
-      "org.apache.kafka.common.serialization.ByteArraySerializer",
-      filtered.getProperty("key.serializer")
-    );
+    assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", producerProps.getProperty("key.serializer"));
+    assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", producerProps.getProperty("value.serializer"));
   }
 
   @Test
@@ -260,8 +230,9 @@ class KPipeProducerTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSupportConcurrentSendsFromVirtualThreads() throws Exception {
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
 
     final var producer = new KPipeProducer<>(mockProducer, false);
     final var errors = new CopyOnWriteArrayList<Throwable>();
@@ -288,8 +259,9 @@ class KPipeProducerTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSupportConcurrentDlqSendsFromVirtualThreads() throws Exception {
-    when(mockProducer.send(any(ProducerRecord.class)))
-      .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
 
     final var kpipeProducer = new KPipeProducer<>(mockProducer, false);
     final var metric = new AtomicLong(0);
@@ -302,7 +274,11 @@ class KPipeProducerTest {
       virtualThreads[i] = Thread.ofVirtual().unstarted(() -> {
         try {
           final var record = new ConsumerRecord<>(
-            TOPIC, 0, index, ("k-" + index).getBytes(), ("v-" + index).getBytes()
+            TOPIC,
+            0,
+            index,
+            ("k-" + index).getBytes(),
+            ("v-" + index).getBytes()
           );
           kpipeProducer.sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail-" + index), metric);
         } catch (final Throwable t) {

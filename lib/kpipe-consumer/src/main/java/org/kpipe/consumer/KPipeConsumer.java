@@ -449,13 +449,12 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     );
 
     this.deadLetterTopic = builder.deadLetterTopic;
-    if (builder.kpipeProducer != null) {
-      this.kpipeProducer = builder.kpipeProducer;
-    } else if (this.deadLetterTopic != null) {
-      this.kpipeProducer = KPipeProducer.<K, V>builder().withProperties(builder.kafkaProps).build();
-    } else {
-      this.kpipeProducer = null;
-    }
+    this.kpipeProducer =
+      builder.kpipeProducer != null
+        ? builder.kpipeProducer
+        : this.deadLetterTopic != null
+          ? KPipeProducer.<K, V>builder().withProperties(builder.kafkaProps).build()
+          : null;
 
     if (builder.backpressureController == null) {
       LOGGER.log(
