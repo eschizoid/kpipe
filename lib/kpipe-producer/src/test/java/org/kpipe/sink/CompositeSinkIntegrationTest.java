@@ -16,7 +16,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class CompositeSinkIntegrationTest {
 
   @Container
-  static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18")
+  static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17")
     .withDatabaseName("kpipe_test")
     .withUsername("test")
     .withPassword("test");

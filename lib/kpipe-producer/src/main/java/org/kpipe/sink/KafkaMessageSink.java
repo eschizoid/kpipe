@@ -16,10 +16,10 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
   private final Function<T, byte[]> valueMapper;
 
   public KafkaMessageSink(
-    Producer<byte[], byte[]> producer,
-    String topic,
-    Function<T, byte[]> keyMapper,
-    Function<T, byte[]> valueMapper
+    final Producer<byte[], byte[]> producer,
+    final String topic,
+    final Function<T, byte[]> keyMapper,
+    final Function<T, byte[]> valueMapper
   ) {
     this.producer = Objects.requireNonNull(producer, "producer cannot be null");
     this.topic = Objects.requireNonNull(topic, "topic cannot be null");
