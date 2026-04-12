@@ -712,14 +712,12 @@ class KPipeConsumerMockingTest {
     final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value");
     final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
 
-    // Start processing
-    CompletableFuture.runAsync(() -> functionalConsumer.executeProcessRecords(records));
+    // processRecords() submits virtual threads and returns immediately — no blocking.
+    // Calling executeProcessRecords() synchronously ensures processCommands() runs on the
+    // main thread and drains TrackOffset into pendingOffsets before startLatch.await() even
+    // returns, making the sequence deterministic with no race against onPartitionsRevoked.
+    functionalConsumer.executeProcessRecords(records);
     assertTrue(startLatch.await(2, TimeUnit.SECONDS), "Processing did not start");
-
-    // Drain TrackOffset into pendingOffsets before the rebalance fires. Without this,
-    // the virtual thread may countDown startLatch before the async thread reaches
-    // processCommands(), causing onPartitionsRevoked to see empty pendingOffsets.
-    functionalConsumer.processCommands();
 
     // Trigger rebalance (revocation)
     final var rebalanceListener = functionalConsumer.getRebalanceListener();
