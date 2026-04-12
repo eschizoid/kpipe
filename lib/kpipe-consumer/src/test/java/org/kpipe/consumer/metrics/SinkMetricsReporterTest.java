@@ -1,4 +1,4 @@
-package org.kpipe.metrics;
+package org.kpipe.consumer.metrics;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -35,7 +35,6 @@ class SinkMetricsReporterTest {
   @Captor
   private ArgumentCaptor<String> reportCaptor;
 
-  private SinkMetricsReporter metricsReporter;
   private Set<RegistryKey<?>> sinkKeys;
   private Map<String, Object> testMetrics;
 
@@ -52,33 +51,24 @@ class SinkMetricsReporterTest {
 
   @Test
   void shouldWorkWithFluentApi() {
-    // Arrange
     final var sinkMap = new HashMap<RegistryKey<?>, Object>();
-    for (final var key : sinkKeys) {
-      sinkMap.put(key, new Object());
-    }
+    for (final var key : sinkKeys) sinkMap.put(key, new Object());
     doReturn(sinkMap).when(registry).getAll();
     doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
-    // Act
     SinkMetricsReporter.forRegistry(registry).toConsumer(reporter).reportMetrics();
 
-    // Assert
     verify(reporter, times(sinkKeys.size())).accept(anyString());
   }
 
   @Test
   void shouldSupportSelectiveReporting() {
-    // Arrange
     final RegistryKey<?> selectedKey = RegistryKey.of("selected", byte[].class);
     final Set<RegistryKey<?>> selectedKeys = Collections.singleton(selectedKey);
     doReturn(testMetrics).when(registry).getMetrics(selectedKey);
 
-    // Act
-    final var reporterInstance = SinkMetricsReporter.forRegistry(registry, selectedKeys).toConsumer(reporter);
-    reporterInstance.reportMetrics();
+    SinkMetricsReporter.forRegistry(registry, selectedKeys).toConsumer(reporter).reportMetrics();
 
-    // Assert
     verify(reporter, times(1)).accept(contains("selected"));
     verify(registry, never()).getAll();
   }

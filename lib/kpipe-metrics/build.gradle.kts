@@ -15,10 +15,7 @@ repositories {
 }
 
 dependencies {
-  api(project(":lib:kpipe-metrics"))
-
-  // Kafka
-  implementation(libs.kafkaClients)
+  api(libs.opentelemetryApi)
 
   // Testing
   testImplementation(platform(libs.junitBom))
@@ -27,15 +24,6 @@ dependencies {
 
   testImplementation(libs.mockitoCore)
   testImplementation(libs.mockitoJunitJupiter)
-
-  testImplementation(libs.slf4jSimple)
-
-  testImplementation(libs.testcontainers)
-  testImplementation(libs.testcontainersJunitJupiter)
-  testImplementation(libs.testcontainersKafka)
-  testImplementation(libs.testcontainersPostgresql)
-  testImplementation(libs.postgresql)
-  testImplementation(libs.avro)
 }
 
 tasks.test {
@@ -45,11 +33,6 @@ tasks.test {
     val excludePattern = project.property("excludeTests").toString()
     exclude("**/${excludePattern.replace(".", "/")}.class")
   }
-
-  minHeapSize = "7g"
-  maxHeapSize = "7g"
-  maxParallelForks = 1
-  forkEvery = 200
 }
 
 tasks.jacocoTestReport {

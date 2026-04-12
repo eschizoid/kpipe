@@ -1,4 +1,4 @@
-package org.kpipe.metrics;
+package org.kpipe.consumer.metrics;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.kpipe.metrics.KPipeMetricsReporter;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 
@@ -33,14 +34,6 @@ import org.kpipe.registry.RegistryKey;
 /// reporter.reportMetrics();
 /// ```
 ///
-/// **Example 3:** Fluent usage with custom reporter:
-///
-/// ```java
-/// final var reporter = ProcessorMetricsReporter.forRegistry(registry)
-///     .toConsumer(System.out::println);
-/// reporter.reportMetrics();
-/// ```
-///
 /// @param processorNamesSupplier supplier of processor names
 /// @param metricsFetcher function to fetch metrics for a processor name
 /// @param reporter consumer for reporting metrics (defaults to logger if null)
@@ -51,14 +44,6 @@ public record ProcessorMetricsReporter(
 ) implements KPipeMetricsReporter {
   private static final Logger LOGGER = System.getLogger(ProcessorMetricsReporter.class.getName());
 
-  /// Creates a processor metrics reporter with custom components.
-  ///
-  /// This constructor is intended for internal use or advanced customization.
-  /// Use {@link #forRegistry} for a more ergonomic API.
-  ///
-  /// @param processorNamesSupplier supplier of processor names
-  /// @param metricsFetcher function to fetch metrics for a processor name
-  /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public ProcessorMetricsReporter(
     final Supplier<Set<RegistryKey<?>>> processorNamesSupplier,
     final Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,
@@ -69,15 +54,7 @@ public record ProcessorMetricsReporter(
     this.reporter = reporter != null ? reporter : this::logMetrics;
   }
 
-  /// Reports metrics for all processors.
-  ///
-  /// The reporting process:
-  ///
-  /// 1. Retrieves all processor names from the supplier
-  /// 2. For each name, fetches its metrics using the metrics fetcher
-  /// 3. Reports non-empty metrics using the configured reporter
-  ///
-  /// Exceptions during processing are caught and logged but don't interrupt the reporting flow.
+  @Override
   public void reportMetrics() {
     try {
       processorNamesSupplier
@@ -95,11 +72,11 @@ public record ProcessorMetricsReporter(
     }
   }
 
-  private void logMetrics(String metrics) {
+  private void logMetrics(final String metrics) {
     LOGGER.log(Level.INFO, metrics);
   }
 
-  /// Creates a fluent builder-like starting point for a processor metrics reporter.
+  /// Creates a reporter for all processors in the registry.
   ///
   /// @param registry the message processor registry
   /// @return a new reporter that can be further customized
@@ -107,7 +84,7 @@ public record ProcessorMetricsReporter(
     return new ProcessorMetricsReporter(registry::getKeys, registry::getMetrics, null);
   }
 
-  /// Creates a fluent builder-like starting point for selective processor metrics reporting.
+  /// Creates a reporter for a specific subset of processors.
   ///
   /// @param registry the message processor registry
   /// @param keys the specific processor keys to report on
@@ -119,7 +96,7 @@ public record ProcessorMetricsReporter(
     return new ProcessorMetricsReporter(() -> keys, registry::getMetrics, null);
   }
 
-  /// Creates a new reporter with the specified consumer for output.
+  /// Creates a new reporter with the specified output consumer.
   ///
   /// @param reporter the consumer for reporting metrics
   /// @return a new ProcessorMetricsReporter instance

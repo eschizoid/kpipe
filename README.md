@@ -118,6 +118,11 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
     <artifactId>kpipe-producer</artifactId>
     <version>1.7.0</version>
 </dependency>
+<dependency>
+    <groupId>io.github.eschizoid</groupId>
+    <artifactId>kpipe-metrics</artifactId>
+    <version>1.7.0</version>
+</dependency>
 ```
 
 ### Gradle (Groovy)
@@ -143,27 +148,29 @@ libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.7.0"
 ## Architecture and Reliability
 
 KPipe is designed to be a lightweight, high-performance alternative to existing Kafka consumer libraries, focusing on
-modern Java 24+ features (Virtual Threads, Scoped Values) and predictable behavior.
+modern Java 25+ features (Virtual Threads, Scoped Values) and predictable behavior.
 
 ### 1. Modular Architecture (JPMS)
 
-KPipe is split into two main modules to ensure a clean separation of concerns and to allow developers to include only
-what they need:
+KPipe is split into three modules with a clear dependency chain:
 
-- **kpipe-consumer**: The core processing library, containing the pipeline registry, backpressure controller, and
-  virtual-thread-safe consumer.
-- **kpipe-producer**: A high-performance producer wrapper optimized for virtual threads, used for DLQ support and output
-  sinks.
+```
+kpipe-metrics  ←  kpipe-producer  ←  kpipe-consumer
+```
 
-The project is fully modular and supports the Java Platform Module System (JPMS). To use KPipe in a modular project, add
-the following to your `module-info.java`:
+- **kpipe-metrics**: OTel instruments (`ProducerMetrics`, `ConsumerMetrics`) and log-based reporters (`ConsumerMetricsReporter`). No Kafka dependency.
+- **kpipe-producer**: High-performance producer wrapper optimized for virtual threads, used for DLQ support and output sinks.
+- **kpipe-consumer**: Core processing library — pipeline registry, backpressure controller, virtual-thread-safe consumer.
+
+The project fully supports the Java Platform Module System (JPMS). To use KPipe in a modular project:
 
 ```java
 module my.application {
   requires org.kpipe; // When using the aggregate artifact
-  // or
-  requires org.kpipe.consumer;
-  requires org.kpipe.producer;
+  // or individually:
+  requires org.kpipe.consumer; // includes producer and metrics transitively
+  requires org.kpipe.producer; // includes metrics transitively
+  requires org.kpipe.metrics;  // OTel instruments only
 }
 ```
 
@@ -244,7 +251,7 @@ public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
     return new ConsumerRebalanceListener() {
       @Override
       public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
-        for (var tp : partitions) {
+        for (final var tp : partitions) {
           long lastOffset = fetchFromDb(tp);
           consumer.seek(tp, lastOffset + 1);
         }
@@ -391,10 +398,11 @@ consumer.start();
 
 ## Built-in Metrics
 
-Monitor your consumer with built-in metrics:
+### Programmatic Access
+
+Monitor your consumer with built-in metrics via `getMetrics()`:
 
 ```java
-// Access consumer metrics
 final var metrics = consumer.getMetrics();
 final var log = System.getLogger("org.kpipe.metrics");
 log.log(Level.INFO, "Messages received: " + metrics.get("messagesReceived"));
@@ -406,7 +414,9 @@ log.log(Level.INFO, "Backpressure pauses: " + metrics.get("backpressurePauseCoun
 log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs"));
 ```
 
-Configure automatic metrics reporting:
+### Log-Based Reporter
+
+Configure automatic log-based metrics reporting via `KPipeRunner`:
 
 ```java
 final var runner = KPipeRunner.builder(consumer)
@@ -416,6 +426,38 @@ final var runner = KPipeRunner.builder(consumer)
 
 runner.start();
 ```
+
+### OpenTelemetry Integration
+
+KPipe ships a `kpipe-metrics` module with first-class [OpenTelemetry](https://opentelemetry.io/) support.
+Add your OTel SDK at runtime — KPipe only depends on `opentelemetry-api`:
+
+```java
+// Wire your OTel SDK instance into the consumer builder
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+  .withProperties(kafkaProps)
+  .withTopic("events")
+  .withOpenTelemetry(openTelemetry)  // defaults to OpenTelemetry.noop() if omitted
+  .build();
+
+// And for the producer (e.g. for DLQ)
+final var producer = KPipeProducer.<byte[], byte[]>builder()
+  .withProperties(kafkaProps)
+  .withOpenTelemetry(openTelemetry)
+  .build();
+```
+
+Metrics exported automatically:
+
+| Instrument                           | Type      | Description                     |
+|--------------------------------------|-----------|---------------------------------|
+| `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka       |
+| `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed  |
+| `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing  |
+| `kpipe.consumer.processing.duration` | Histogram | Per-record processing time (ms) |
+| `kpipe.producer.messages.sent`       | Counter   | Records successfully produced   |
+| `kpipe.producer.messages.failed`     | Counter   | Records that failed to produce  |
+| `kpipe.producer.dlq.sent`            | Counter   | Records sent to DLQ             |
 
 ---
 
@@ -617,7 +659,9 @@ KPipe includes a specialized `KafkaMessageSink` that allows you to produce proce
 This sink is designed to work seamlessly with virtual threads.
 
 ```java
-final var producer = new KPipeProducer<>(kafkaProps);
+final var producer = KPipeProducer.<byte[], byte[]>builder()
+  .withProperties(kafkaProps)
+  .build();
 
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)
@@ -713,7 +757,8 @@ runner.close();
 The `KPipeRunner` integrates with metrics reporting:
 
 ```java
-// Add multiple metrics reporters
+// ConsumerMetricsReporter is in org.kpipe.metrics (kpipe-metrics module)
+// ProcessorMetricsReporter is in org.kpipe.consumer.metrics (kpipe-consumer module)
 final var runner = KPipeRunner.builder(consumer)
   .withMetricsReporters(
     List.of(
@@ -841,8 +886,7 @@ export SHUTDOWN_TIMEOUT_SEC=5
 
 ## Requirements
 
-- **Java 24+** (Note: Ensure `--enable-preview` is used as `ScopedValue` and Virtual Thread optimizations continue to
-  evolve).
+- **Java 25+**
 - Gradle (for building the project)
 - [kcat](https://github.com/edenhill/kcat) (for testing)
 - Docker (for local Kafka setup)
@@ -857,11 +901,13 @@ directory that starts a full local environment including Kafka, Zookeeper, and C
 ### Build and Run
 
 ```bash
-# Format code and build the library module
-./gradlew clean :lib:spotlessApply :lib:build
+# Format code and build all modules
+./gradlew clean spotlessApply build
 
-# Format code and build the applications module
-./gradlew :app:clean :app:spotlessApply :app:build
+# Build individual modules
+./gradlew :lib:kpipe-metrics:build
+./gradlew :lib:kpipe-producer:build
+./gradlew :lib:kpipe-consumer:build
 
 # Build the consumer app container and start all services
 docker compose build --no-cache --build-arg MESSAGE_FORMAT=<json|avro|protobuf>

@@ -118,14 +118,11 @@ public class MessageTracker {
       // Use an atomic reference to track the completion state
       return waitUntil(deadline, Duration.ofMillis(Math.min(500, timeoutMs / 10)), this::isProcessingComplete).map(
         completed -> {
-          if (completed) {
-            LOGGER.log(Level.INFO, "All in-flight messages completed");
-          } else {
-            LOGGER.log(
-              Level.WARNING,
-              "Timeout reached with %s messages still in-flight".formatted(getInFlightMessageCount())
-            );
-          }
+          if (completed) LOGGER.log(Level.INFO, "All in-flight messages completed");
+          else LOGGER.log(
+            Level.WARNING,
+            "Timeout reached with %s messages still in-flight".formatted(getInFlightMessageCount())
+          );
           return completed;
         }
       );

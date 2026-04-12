@@ -48,14 +48,6 @@ public record ConsumerMetricsReporter(
   private static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
   private static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
 
-  /// Creates a consumer metrics reporter with custom components.
-  ///
-  /// This constructor is intended for internal use or advanced customization.
-  /// Use {@link #forConsumer} for a more ergonomic API.
-  ///
-  /// @param metricsSupplier supplier of consumer metrics
-  /// @param uptimeSupplier supplier of application uptime in ms
-  /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public ConsumerMetricsReporter(
     final Supplier<Map<String, Long>> metricsSupplier,
     final Supplier<Long> uptimeSupplier,
@@ -66,15 +58,6 @@ public record ConsumerMetricsReporter(
     this.reporter = reporter != null ? reporter : this::logMetrics;
   }
 
-  /// Reports consumer metrics.
-  ///
-  /// The reporting process:
-  ///
-  /// 1. Retrieves current metrics from the metrics supplier
-  /// 2. Formats key metrics (messages received/processed/errors) and uptime
-  /// 3. Passes the formatted report to the configured reporter
-  ///
-  /// If metrics retrieval fails, the error is logged without interrupting application flow.
   @Override
   public void reportMetrics() {
     try {
@@ -109,7 +92,7 @@ public record ConsumerMetricsReporter(
     LOGGER.log(Level.INFO, metrics);
   }
 
-  /// Creates a fluent builder-like starting point for a consumer metrics reporter.
+  /// Creates a consumer metrics reporter with default logging.
   ///
   /// @param metricsSupplier supplier of consumer metrics
   /// @return a new reporter that can be further customized
@@ -117,7 +100,7 @@ public record ConsumerMetricsReporter(
     return new ConsumerMetricsReporter(metricsSupplier, () -> System.currentTimeMillis() - APP_START_TIME, null);
   }
 
-  /// Creates a fluent builder-like starting point for a consumer metrics reporter.
+  /// Creates a consumer metrics reporter with custom uptime supplier.
   ///
   /// @param metricsSupplier supplier of consumer metrics
   /// @param uptimeSupplier supplier of application uptime in ms
@@ -129,7 +112,7 @@ public record ConsumerMetricsReporter(
     return new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, null);
   }
 
-  /// Creates a new reporter with the specified consumer for output.
+  /// Creates a new reporter with the specified output consumer.
   ///
   /// @param reporter the consumer for reporting metrics
   /// @return a new ConsumerMetricsReporter instance

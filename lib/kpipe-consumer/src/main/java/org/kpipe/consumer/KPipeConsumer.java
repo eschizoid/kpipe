@@ -813,9 +813,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
     try {
       final var result = tryProcessRecord(record);
-      if (result) {
-        if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-      }
+      if (result) if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
     } finally {
       inFlightCount.decrementAndGet();
     }
@@ -823,9 +821,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
   private boolean tryProcessRecord(final ConsumerRecord<K, V> record) {
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) {
-        if (!handleRetry(record, attempt)) return false;
-      }
+      if (attempt > 0) if (!handleRetry(record, attempt)) return false;
 
       try {
         if (processor instanceof MessagePipeline typedPipeline) {
@@ -895,9 +891,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   private void markOffsetProcessed(final ConsumerRecord<K, V> record) {
-    if (offsetManager != null) {
-      commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
-    }
+    if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
   }
 
   private void handleProcessingError(final ConsumerRecord<K, V> record, final Exception e, final int retryCount) {
@@ -909,9 +903,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       retryCount + 1,
       e.getMessage()
     );
-    if (deadLetterTopic != null && kpipeProducer != null) {
-      kpipeProducer.sendToDlq(deadLetterTopic, record, topic, e, enableMetrics ? metrics.get(METRIC_DLQ_SENT) : null);
-    }
+    if (deadLetterTopic != null && kpipeProducer != null) kpipeProducer.sendToDlq(
+      deadLetterTopic,
+      record,
+      topic,
+      e,
+      enableMetrics ? metrics.get(METRIC_DLQ_SENT) : null
+    );
     errorHandler.accept(new ProcessingError<>(record, e, retryCount));
     markOffsetProcessed(record);
   }

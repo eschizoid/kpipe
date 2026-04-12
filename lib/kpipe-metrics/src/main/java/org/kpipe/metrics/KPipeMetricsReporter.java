@@ -13,7 +13,7 @@ package org.kpipe.metrics;
 ///
 /// ```java
 /// // Create and use a metrics reporter
-/// final var reporter = ProcessorMetricsReporter.forRegistry(registry);
+/// final var reporter = ConsumerMetricsReporter.forConsumer(consumer::getMetrics);
 ///
 /// // Start the reporter (optional, if implemented)
 /// reporter.start();
@@ -25,19 +25,12 @@ package org.kpipe.metrics;
 /// reporter.stop();
 /// ```
 public interface KPipeMetricsReporter {
-  /// Reports collected metrics to the configured destination. This is the core method that
-  /// implementations must provide.
+  /// Reports collected metrics to the configured destination.
   void reportMetrics();
 
-  /// Starts the metrics reporter.
-  ///
-  /// Implementations may use this method to initialize resources, schedule periodic reporting, or
-  /// connect to external systems. The default implementation does nothing.
-  default void start() {} // Optional operations with default implementations
+  /// Starts the metrics reporter. No-op by default.
+  default void start() {}
 
-  /// Stops the metrics reporter.
-  ///
-  /// Implementations may use this method to release resources, cancel scheduled tasks, or
-  /// disconnect from external systems. The default implementation does nothing.
+  /// Stops the metrics reporter. No-op by default.
   default void stop() {}
 }
