@@ -106,23 +106,6 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
     <artifactId>kpipe</artifactId>
     <version>1.7.0</version>
 </dependency>
-
-<!-- Or individual modules -->
-<dependency>
-    <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe-consumer</artifactId>
-    <version>1.7.0</version>
-</dependency>
-<dependency>
-    <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe-producer</artifactId>
-    <version>1.7.0</version>
-</dependency>
-<dependency>
-    <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe-metrics</artifactId>
-    <version>1.7.0</version>
-</dependency>
 ```
 
 ### Gradle (Groovy)
@@ -158,9 +141,12 @@ KPipe is split into three modules with a clear dependency chain:
 kpipe-metrics  ←  kpipe-producer  ←  kpipe-consumer
 ```
 
-- **kpipe-metrics**: OTel instruments (`ProducerMetrics`, `ConsumerMetrics`) and log-based reporters (`ConsumerMetricsReporter`). No Kafka dependency.
-- **kpipe-producer**: High-performance producer wrapper optimized for virtual threads, used for DLQ support and output sinks.
-- **kpipe-consumer**: Core processing library — pipeline registry, backpressure controller, virtual-thread-safe consumer.
+- **kpipe-metrics**: OTel instruments (`ProducerMetrics`, `ConsumerMetrics`) and log-based reporters
+  (`ConsumerMetricsReporter`). No Kafka dependency.
+- **kpipe-producer**: High-performance producer wrapper optimized for virtual threads, used for DLQ support and output
+  sinks.
+- **kpipe-consumer**: Core processing library — pipeline registry, backpressure controller, virtual-thread-safe
+  consumer.
 
 The project fully supports the Java Platform Module System (JPMS). To use KPipe in a modular project:
 
@@ -170,7 +156,7 @@ module my.application {
   // or individually:
   requires org.kpipe.consumer; // includes producer and metrics transitively
   requires org.kpipe.producer; // includes metrics transitively
-  requires org.kpipe.metrics;  // OTel instruments only
+  requires org.kpipe.metrics; // OTel instruments only
 }
 ```
 
@@ -429,15 +415,15 @@ runner.start();
 
 ### OpenTelemetry Integration
 
-KPipe ships a `kpipe-metrics` module with first-class [OpenTelemetry](https://opentelemetry.io/) support.
-Add your OTel SDK at runtime — KPipe only depends on `opentelemetry-api`:
+KPipe ships a `kpipe-metrics` module with first-class [OpenTelemetry](https://opentelemetry.io/) support. Add your OTel
+SDK at runtime — KPipe only depends on `opentelemetry-api`:
 
 ```java
 // Wire your OTel SDK instance into the consumer builder
 final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
-  .withOpenTelemetry(openTelemetry)  // defaults to OpenTelemetry.noop() if omitted
+  .withOpenTelemetry(openTelemetry) // defaults to OpenTelemetry.noop() if omitted
   .build();
 
 // And for the producer (e.g. for DLQ)
