@@ -18,6 +18,10 @@ java {
   }
 }
 
+base {
+  archivesName.set("kpipe")
+}
+
 repositories {
   mavenCentral()
   maven {
