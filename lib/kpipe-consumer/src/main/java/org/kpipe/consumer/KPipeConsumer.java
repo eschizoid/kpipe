@@ -9,6 +9,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -503,9 +504,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     }
 
     this.otelMetrics =
-      builder.consumerMetrics != null
-        ? builder.consumerMetrics
-        : ConsumerMetrics.noop(this.inFlightCount::get);
+      builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop(this.inFlightCount::get);
   }
 
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
@@ -544,8 +543,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       .name("kafka-consumer-%s-%s".formatted(topic, UUID.randomUUID().toString().substring(0, 8)))
       .uncaughtExceptionHandler((t, e) -> {
         LOGGER.log(Level.ERROR, "Uncaught exception in thread {0}", t.getName(), e);
-        state.compareAndSet(ConsumerState.RUNNING, ConsumerState.CLOSING);
-        state.compareAndSet(ConsumerState.PAUSED, ConsumerState.CLOSING);
+        transitionToClosing();
       })
       .start(() -> {
         try {
@@ -554,15 +552,15 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
             checkBackpressure();
             if (!isRunning()) break;
             if (isPaused()) {
-              Thread.sleep(100);
+              processCommands();
+              LockSupport.park();
+              if (Thread.interrupted()) break;
               continue;
             }
 
             final var records = pollRecords();
             if (records != null && !records.isEmpty()) processRecords(records);
           }
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
         } catch (final Exception e) {
           if (isRunning()) LOGGER.log(Level.WARNING, "Error in consumer thread", e);
         } finally {
@@ -591,10 +589,9 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   private void internalPause() {
-    if (
-      state.compareAndSet(ConsumerState.RUNNING, ConsumerState.PAUSED) ||
-      state.compareAndSet(ConsumerState.CREATED, ConsumerState.PAUSED)
-    ) {
+    final var current = state.get();
+    if (current != ConsumerState.RUNNING && current != ConsumerState.CREATED) return;
+    if (state.compareAndSet(current, ConsumerState.PAUSED)) {
       commandQueue.offer(new ConsumerCommand.Pause());
     }
   }
@@ -673,6 +670,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private void internalResume() {
     if (!state.compareAndSet(ConsumerState.PAUSED, ConsumerState.RUNNING)) return;
     commandQueue.offer(new ConsumerCommand.Resume());
+    final var thread = consumerThread.get();
+    if (thread != null) LockSupport.unpark(thread);
   }
 
   /// Returns whether the consumer is currently paused.
@@ -692,7 +691,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// * `retries` - count of retry attempts made for failed records
   /// * `inFlight` - current number of messages being processed
   ///
-  /// @return a map of metric names to their current values, or an empty map if metrics are disabled
+  /// @return an unmodifiable map of metric names to their current values, or an empty map if
+  // metrics are disabled
   public Map<String, Long> getMetrics() {
     if (!enableMetrics) return Map.of();
     final var snapshot = metrics
@@ -700,7 +700,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       .stream()
       .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(), (a, _) -> a, HashMap::new));
     snapshot.put("inFlight", inFlightCount.get());
-    return snapshot;
+    return Collections.unmodifiableMap(snapshot);
   }
 
   /// Returns the rebalance listener for this consumer.
@@ -717,6 +717,16 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   public boolean isRunning() {
     final var s = state.get();
     return s == ConsumerState.RUNNING || s == ConsumerState.PAUSED;
+  }
+
+  /// Atomically transitions from any active state (RUNNING or PAUSED) to CLOSING.
+  /// Uses a single-read CAS to avoid the double-CAS window.
+  ///
+  /// @return true if the transition succeeded, false if the state was not active
+  private boolean transitionToClosing() {
+    final var current = state.get();
+    if (current != ConsumerState.RUNNING && current != ConsumerState.PAUSED) return false;
+    return state.compareAndSet(current, ConsumerState.CLOSING);
   }
 
   /// Closes this consumer, stopping message consumption and processing.
@@ -737,10 +747,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// <p>This method is idempotent - calling it multiple times has no additional effect.
   @Override
   public void close() {
-    if (
-      !state.compareAndSet(ConsumerState.RUNNING, ConsumerState.CLOSING) &&
-      !state.compareAndSet(ConsumerState.PAUSED, ConsumerState.CLOSING)
-    ) return;
+    if (!transitionToClosing()) return;
 
     final var tracker = (waitForMessagesTimeout.toMillis() > 0 && enableMetrics) ? createMessageTracker() : null;
     pause();
@@ -760,6 +767,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     }
 
     final var thread = consumerThread.get();
+    if (thread != null) LockSupport.unpark(thread);
+
     if (thread != null && thread.isAlive()) {
       try {
         thread.join(threadTerminationTimeout.toMillis());
@@ -814,8 +823,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
             try {
               errorHandler.accept(new ProcessingError<>(record, e, 0));
             } catch (final Exception ex) {
-              LOGGER.log(Level.ERROR, "Error handler threw while handling rejected task at offset {0}: {1}",
-                record.offset(), ex.getMessage(), ex);
+              LOGGER.log(
+                Level.ERROR,
+                "Error handler threw while handling rejected task at offset {0}: {1}",
+                record.offset(),
+                ex.getMessage(),
+                ex
+              );
             }
           }
         }
@@ -853,6 +867,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       }
     } finally {
       inFlightCount.decrementAndGet();
+      if (backpressurePaused.get()) {
+        final var thread = consumerThread.get();
+        if (thread != null) LockSupport.unpark(thread);
+      }
     }
   }
 
@@ -908,7 +926,9 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
     final var recordValue = (byte[]) record.value();
     final var deserialized = typedPipeline.deserialize(recordValue);
-    if (deserialized == null) throw new IllegalStateException("Pipeline deserialization returned null at offset " + record.offset());
+    if (deserialized == null) throw new IllegalStateException(
+      "Pipeline deserialization returned null at offset " + record.offset()
+    );
 
     final var processed = typedPipeline.process(deserialized);
     if (processed == null) {
@@ -953,8 +973,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     try {
       errorHandler.accept(new ProcessingError<>(record, e, retryCount));
     } catch (final Exception ex) {
-      LOGGER.log(Level.ERROR, "Error handler threw while handling failure at offset {0}: {1}",
-        record.offset(), ex.getMessage(), ex);
+      LOGGER.log(
+        Level.ERROR,
+        "Error handler threw while handling failure at offset {0}: {1}",
+        record.offset(),
+        ex.getMessage(),
+        ex
+      );
     }
   }
 
@@ -980,7 +1005,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
         otelMetrics.recordBackpressureTime(duration);
         if (manualPause.get()) {
-          LOGGER.log(Level.INFO, "Backpressure resolved (paused for {0} ms), but consumer remains manually paused", duration);
+          LOGGER.log(
+            Level.INFO,
+            "Backpressure resolved (paused for {0} ms), but consumer remains manually paused",
+            duration
+          );
           break;
         }
         LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
