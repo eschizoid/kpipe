@@ -544,7 +544,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       .name("kafka-consumer-%s-%s".formatted(topic, UUID.randomUUID().toString().substring(0, 8)))
       .uncaughtExceptionHandler((t, e) -> {
         LOGGER.log(Level.ERROR, "Uncaught exception in thread {0}", t.getName(), e);
-        state.set(ConsumerState.CLOSING);
+        state.compareAndSet(ConsumerState.RUNNING, ConsumerState.CLOSING);
+        state.compareAndSet(ConsumerState.PAUSED, ConsumerState.CLOSING);
       })
       .start(() -> {
         try {
@@ -567,10 +568,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         } finally {
           try {
             kafkaConsumer.close();
-            state.set(ConsumerState.CLOSED);
             LOGGER.log(Level.INFO, "Consumer closed for topic {0}", topic);
           } catch (final Exception e) {
             LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
+          } finally {
+            state.set(ConsumerState.CLOSED);
           }
         }
       });
@@ -589,9 +591,12 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   private void internalPause() {
-    if (state.get() == ConsumerState.PAUSED || state.get() == ConsumerState.CLOSED) return;
-    commandQueue.offer(new ConsumerCommand.Pause());
-    if (state.get() != ConsumerState.CLOSING) state.set(ConsumerState.PAUSED);
+    if (
+      state.compareAndSet(ConsumerState.RUNNING, ConsumerState.PAUSED) ||
+      state.compareAndSet(ConsumerState.CREATED, ConsumerState.PAUSED)
+    ) {
+      commandQueue.offer(new ConsumerCommand.Pause());
+    }
   }
 
   /// Processes pending commands from the command queue.
@@ -606,7 +611,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// Commands are processed in the order they were submitted to the queue. If an exception occurs
   /// while processing a command, it will be caught and logged, allowing subsequent commands to be
   /// processed.
-  public void processCommands() {
+  void processCommands() {
     ConsumerCommand command;
 
     while ((command = commandQueue.poll()) != null) {
@@ -648,8 +653,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
             }
           }
         }
-      } catch (Exception e) {
-        LOGGER.log(Level.WARNING, "Error processing consumer command: {0}", command);
+      } catch (final Exception e) {
+        LOGGER.log(Level.ERROR, "Error processing consumer command: {0}", command, e);
       }
     }
   }
@@ -666,9 +671,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   private void internalResume() {
-    if (state.get() == ConsumerState.RUNNING) return;
+    if (!state.compareAndSet(ConsumerState.PAUSED, ConsumerState.RUNNING)) return;
     commandQueue.offer(new ConsumerCommand.Resume());
-    if (state.get() != ConsumerState.CLOSING) state.set(ConsumerState.RUNNING);
   }
 
   /// Returns whether the consumer is currently paused.
@@ -694,7 +698,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     final var snapshot = metrics
       .entrySet()
       .stream()
-      .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get()));
+      .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(), (a, _) -> a, HashMap::new));
     snapshot.put("inFlight", inFlightCount.get());
     return snapshot;
   }
@@ -711,7 +715,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// @return `true` if the consumer is running, `false` if it has been closed or not
   ///     started
   public boolean isRunning() {
-    return (state.get() == ConsumerState.RUNNING || state.get() == ConsumerState.PAUSED);
+    final var s = state.get();
+    return s == ConsumerState.RUNNING || s == ConsumerState.PAUSED;
   }
 
   /// Closes this consumer, stopping message consumption and processing.
@@ -806,7 +811,12 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
             LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
             if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
             otelMetrics.recordProcessingError();
-            errorHandler.accept(new ProcessingError<>(record, e, 0));
+            try {
+              errorHandler.accept(new ProcessingError<>(record, e, 0));
+            } catch (final Exception ex) {
+              LOGGER.log(Level.ERROR, "Error handler threw while handling rejected task at offset {0}: {1}",
+                record.offset(), ex.getMessage(), ex);
+            }
           }
         }
       }
@@ -852,15 +862,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
       try {
         if (processor instanceof MessagePipeline typedPipeline) {
-          final var success = processTypedRecord(record, typedPipeline);
-          if (!success) {
-            handleProcessingError(
-              record,
-              new IllegalStateException("Pipeline returned null result for record at offset " + record.offset()),
-              0
-            );
-          }
-          return success;
+          processTypedRecord(record, typedPipeline);
+          return true;
         }
 
         final var processedValue = processor.apply(record.value());
@@ -900,21 +903,29 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   }
 
   @SuppressWarnings("unchecked")
-  private boolean processTypedRecord(final ConsumerRecord<K, V> record, final MessagePipeline typedPipeline) {
-    if (record.value() == null) return false;
+  private void processTypedRecord(final ConsumerRecord<K, V> record, final MessagePipeline typedPipeline) {
+    if (record.value() == null) throw new IllegalStateException("Record value is null at offset " + record.offset());
+
     final var recordValue = (byte[]) record.value();
     final var deserialized = typedPipeline.deserialize(recordValue);
-    if (deserialized == null) return false;
+    if (deserialized == null) throw new IllegalStateException("Pipeline deserialization returned null at offset " + record.offset());
 
     final var processed = typedPipeline.process(deserialized);
-    if (processed == null) return false;
+    if (processed == null) {
+      // Null process result is treated as intentional filtering
+      markOffsetProcessed(record);
+      return;
+    }
 
     final var sink = typedPipeline.getSink();
-    if (sink != null) sink.accept(processed);
-    else messageSink.accept((V) processed);
+    if (sink != null) {
+      sink.accept(processed);
+    } else {
+      final var serialized = typedPipeline.serialize(processed);
+      messageSink.accept((V) serialized);
+    }
 
     markOffsetProcessed(record);
-    return true;
   }
 
   private void markOffsetProcessed(final ConsumerRecord<K, V> record) {
@@ -938,8 +949,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       e,
       enableMetrics ? metrics.get(METRIC_DLQ_SENT) : null
     );
-    errorHandler.accept(new ProcessingError<>(record, e, retryCount));
     markOffsetProcessed(record);
+    try {
+      errorHandler.accept(new ProcessingError<>(record, e, retryCount));
+    } catch (final Exception ex) {
+      LOGGER.log(Level.ERROR, "Error handler threw while handling failure at offset {0}: {1}",
+        record.offset(), ex.getMessage(), ex);
+    }
   }
 
   private void checkBackpressure() {
@@ -960,10 +976,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       }
       case RESUME -> {
         backpressurePaused.set(false);
-        if (manualPause.get()) break;
         final long duration = System.currentTimeMillis() - backpressurePauseStartTime;
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
         otelMetrics.recordBackpressureTime(duration);
+        if (manualPause.get()) {
+          LOGGER.log(Level.INFO, "Backpressure resolved (paused for {0} ms), but consumer remains manually paused", duration);
+          break;
+        }
         LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
         internalResume();
       }
