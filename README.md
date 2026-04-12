@@ -84,7 +84,7 @@ need.
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
 | Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-| -------------------------------- | ------------- | ------------- | ----- |
+|----------------------------------|---------------|---------------|-------|
 | Full stream processing framework | Yes           | No            | No    |
 | Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
 | Virtual-thread friendly          | No            | No            | Yes   |
@@ -433,7 +433,7 @@ final var producer = KPipeProducer.<byte[], byte[]>builder()
   .build();
 ```
 
-Metrics exported automatically:
+Metrics are exported automatically:
 
 | Instrument                           | Type      | Description                     |
 |--------------------------------------|-----------|---------------------------------|
@@ -645,9 +645,7 @@ KPipe includes a specialized `KafkaMessageSink` that allows you to produce proce
 This sink is designed to work seamlessly with virtual threads.
 
 ```java
-final var producer = KPipeProducer.<byte[], byte[]>builder()
-  .withProperties(kafkaProps)
-  .build();
+final var producer = KPipeProducer.<byte[], byte[]>builder().withProperties(kafkaProps).build();
 
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)

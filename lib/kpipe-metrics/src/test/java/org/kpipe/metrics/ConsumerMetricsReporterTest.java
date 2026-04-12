@@ -1,12 +1,11 @@
 package org.kpipe.metrics;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 class ConsumerMetricsReporterTest {
 
@@ -19,10 +18,10 @@ class ConsumerMetricsReporterTest {
 
     reporter.reportMetrics();
 
-    assertTrue(output.size() == 1);
-    assertTrue(output.get(0).contains("messages received: 10"));
-    assertTrue(output.get(0).contains("messages processed: 8"));
-    assertTrue(output.get(0).contains("errors: 2"));
+    assertEquals(1, output.size());
+    assertTrue(output.getFirst().contains("messages received: 10"));
+    assertTrue(output.getFirst().contains("messages processed: 8"));
+    assertTrue(output.getFirst().contains("errors: 2"));
   }
 
   @Test
@@ -45,8 +44,8 @@ class ConsumerMetricsReporterTest {
 
     reporter.reportMetrics();
 
-    assertTrue(output.get(0).contains("backpressure pauses: 3"));
-    assertTrue(output.get(0).contains("backpressure time: 150 ms"));
+    assertTrue(output.getFirst().contains("backpressure pauses: 3"));
+    assertTrue(output.getFirst().contains("backpressure time: 150 ms"));
   }
 
   @Test
@@ -91,6 +90,6 @@ class ConsumerMetricsReporterTest {
 
     reporter.reportMetrics();
 
-    assertTrue(output.get(0).contains("uptime: 9999 ms"));
+    assertTrue(output.getFirst().contains("uptime: 9999 ms"));
   }
 }

@@ -87,7 +87,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     /// Sets the OpenTelemetry metrics instruments for this producer.
     ///
-    /// <p>Use {@link ProducerMetrics#of(io.opentelemetry.api.OpenTelemetry)} to create an
+    /// Use {@link ProducerMetrics#ProducerMetrics(io.opentelemetry.api.OpenTelemetry)} to create an
     /// instrumented instance, or {@link ProducerMetrics#noop()} for a no-op default.
     ///
     /// @param metrics the producer metrics instruments

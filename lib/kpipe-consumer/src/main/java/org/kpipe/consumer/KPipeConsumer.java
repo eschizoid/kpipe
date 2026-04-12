@@ -388,7 +388,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
     /// Sets the OpenTelemetry metrics instruments for this consumer.
     ///
-    /// <p>Use {@link ConsumerMetrics#of(io.opentelemetry.api.OpenTelemetry)} to create an
+    /// Use {@link ConsumerMetrics#ConsumerMetrics(io.opentelemetry.api.OpenTelemetry)} to create an
     /// instrumented instance, or {@link ConsumerMetrics#noop()} for a no-op default.
     ///
     /// @param metrics the consumer metrics instruments
@@ -502,7 +502,10 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       );
     }
 
-    this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
+    this.otelMetrics =
+      builder.consumerMetrics != null
+        ? builder.consumerMetrics
+        : ConsumerMetrics.noop(this.inFlightCount::get);
   }
 
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
@@ -950,6 +953,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           value
         );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
+        otelMetrics.recordBackpressurePause();
         backpressurePauseStartTime = System.currentTimeMillis();
         backpressurePaused.set(true);
         internalPause();
@@ -959,6 +963,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         if (manualPause.get()) break;
         final long duration = System.currentTimeMillis() - backpressurePauseStartTime;
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
+        otelMetrics.recordBackpressureTime(duration);
         LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
         internalResume();
       }

@@ -40,9 +40,7 @@ signing {
   val signingPassword =
     System.getenv("JRELEASER_GPG_PASSPHRASE") ?: project.properties["signing.password"]?.toString()
 
-  if (signingKey != null && signingPassword != null) {
-    useInMemoryPgpKeys(signingKey, signingPassword)
-  }
+  if (signingKey != null && signingPassword != null) useInMemoryPgpKeys(signingKey, signingPassword)
 }
 
 publishing {

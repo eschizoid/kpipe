@@ -10,7 +10,7 @@ class ProducerMetricsTest {
 
   @Test
   void shouldCreateWithOpenTelemetry() {
-    assertNotNull(new ProducerMetrics(OpenTelemetry.noop()));
+      new ProducerMetrics(OpenTelemetry.noop());
   }
 
   @Test
@@ -40,7 +40,7 @@ class ProducerMetricsTest {
   void shouldSupportConcurrentRecordingFromVirtualThreads() throws InterruptedException {
     final var metrics = ProducerMetrics.noop();
     final var threads = new Thread[50];
-    for (int i = 0; i < threads.length; i++) {
+    for (var i = 0; i < threads.length; i++) {
       threads[i] = Thread.ofVirtual().start(() -> {
         metrics.recordMessageSent();
         metrics.recordMessageFailed();
