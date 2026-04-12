@@ -108,7 +108,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final AtomicLong inFlightCount = new AtomicLong(0);
   private final AtomicBoolean manualPause = new AtomicBoolean(false);
   private final AtomicBoolean backpressurePaused = new AtomicBoolean(false);
-  private volatile long backpressurePauseStartTime;
+  private volatile long backpressurePauseStartNanos;
 
   private final String deadLetterTopic;
   private final KPipeProducer<K, V> kpipeProducer;
@@ -995,13 +995,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
         otelMetrics.recordBackpressurePause();
-        backpressurePauseStartTime = System.currentTimeMillis();
+        backpressurePauseStartNanos = System.nanoTime();
         backpressurePaused.set(true);
         internalPause();
       }
       case RESUME -> {
         backpressurePaused.set(false);
-        final long duration = System.currentTimeMillis() - backpressurePauseStartTime;
+        final long duration = Math.max(1, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos));
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
         otelMetrics.recordBackpressureTime(duration);
         if (manualPause.get()) {
