@@ -19,6 +19,7 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.enums.ConsumerState;
 import org.kpipe.consumer.sink.JsonConsoleSink;
+import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.sink.MessageSink;
@@ -101,6 +102,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final boolean enableMetrics;
   private final boolean sequentialProcessing;
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
+  private final ConsumerMetrics otelMetrics;
   private final BackpressureController backpressureController;
   private final AtomicLong inFlightCount = new AtomicLong(0);
   private final AtomicBoolean manualPause = new AtomicBoolean(false);
@@ -172,6 +174,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private BackpressureController backpressureController;
     private String deadLetterTopic;
     private KPipeProducer<K, V> kpipeProducer;
+    private ConsumerMetrics consumerMetrics;
 
     /// Sets the properties for the Kafka consumer.
     ///
@@ -383,6 +386,18 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
+    /// Sets the OpenTelemetry metrics instruments for this consumer.
+    ///
+    /// <p>Use {@link ConsumerMetrics#of(io.opentelemetry.api.OpenTelemetry)} to create an
+    /// instrumented instance, or {@link ConsumerMetrics#noop()} for a no-op default.
+    ///
+    /// @param metrics the consumer metrics instruments
+    /// @return This builder instance for method chaining
+    public Builder<K, V> withMetrics(final ConsumerMetrics metrics) {
+      this.consumerMetrics = metrics;
+      return this;
+    }
+
     /// Builds a new KPipeConsumer with the configured settings.
     ///
     /// @return a new KPipeConsumer instance
@@ -486,6 +501,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         )
       );
     }
+
+    this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
   }
 
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
@@ -785,6 +802,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           if (isRunning()) {
             LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
             if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+            otelMetrics.recordProcessingError();
             errorHandler.accept(new ProcessingError<>(record, e, 0));
           }
         }
@@ -810,10 +828,16 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// @param record The Kafka consumer record to process
   protected void processRecord(final ConsumerRecord<K, V> record) {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
+    otelMetrics.recordMessageReceived();
 
+    final long startTime = System.currentTimeMillis();
     try {
       final var result = tryProcessRecord(record);
-      if (result) if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+      if (result) {
+        if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+        otelMetrics.recordMessageProcessed();
+        otelMetrics.recordProcessingDuration(System.currentTimeMillis() - startTime);
+      }
     } finally {
       inFlightCount.decrementAndGet();
     }
@@ -896,6 +920,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
   private void handleProcessingError(final ConsumerRecord<K, V> record, final Exception e, final int retryCount) {
     if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+    otelMetrics.recordProcessingError();
     LOGGER.log(
       Level.WARNING,
       "Failed to process message at offset {0} after {1} attempt(s): {2}",

@@ -28,7 +28,7 @@ class KPipeProducerTest {
 
   @Test
   void shouldRejectNullProducer() {
-    assertThrows(NullPointerException.class, () -> new KPipeProducer<>(null, true));
+    assertThrows(NullPointerException.class, () -> new KPipeProducer<>(null, true, null));
   }
 
   @Test
@@ -37,7 +37,7 @@ class KPipeProducerTest {
     final var expected = mock(RecordMetadata.class);
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(expected));
 
-    final var result = new KPipeProducer<>(mockProducer, false).send(
+    final var result = new KPipeProducer<>(mockProducer, false, null).send(
       new ProducerRecord<>(TOPIC, "k".getBytes(), "v".getBytes())
     );
 
@@ -52,7 +52,7 @@ class KPipeProducerTest {
     );
 
     final var ex = assertThrows(RuntimeException.class, () ->
-      new KPipeProducer<>(mockProducer, false).send(new ProducerRecord<>(TOPIC, null, "v".getBytes()))
+      new KPipeProducer<>(mockProducer, false, null).send(new ProducerRecord<>(TOPIC, null, "v".getBytes()))
     );
     assertEquals("Send failed", ex.getMessage());
   }
@@ -64,7 +64,7 @@ class KPipeProducerTest {
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(future);
     when(future.get()).thenThrow(new InterruptedException());
 
-    final var producer = new KPipeProducer<>(mockProducer, false);
+    final var producer = new KPipeProducer<>(mockProducer, false, null);
 
     assertThrows(RuntimeException.class, () -> producer.send(new ProducerRecord<>(TOPIC, null, "v".getBytes())));
     assertTrue(Thread.interrupted(), "interrupt flag should be restored");
@@ -76,7 +76,7 @@ class KPipeProducerTest {
     final var future = CompletableFuture.completedFuture(mock(RecordMetadata.class));
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(future);
 
-    final var result = new KPipeProducer<>(mockProducer, false).sendAsync(
+    final var result = new KPipeProducer<>(mockProducer, false, null).sendAsync(
       new ProducerRecord<>(TOPIC, null, "v".getBytes())
     );
 
@@ -91,7 +91,13 @@ class KPipeProducerTest {
     );
 
     final var record = new ConsumerRecord<>(TOPIC, 2, 42L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false).sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("boom"), null);
+    new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+      DLQ_TOPIC,
+      record,
+      TOPIC,
+      new RuntimeException("boom"),
+      null
+    );
 
     verify(mockProducer).send(
       argThat(r -> {
@@ -120,7 +126,13 @@ class KPipeProducerTest {
 
     final var metric = new AtomicLong(0);
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false).sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail"), metric);
+    new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+      DLQ_TOPIC,
+      record,
+      TOPIC,
+      new RuntimeException("fail"),
+      metric
+    );
 
     assertEquals(1, metric.get());
   }
@@ -134,7 +146,13 @@ class KPipeProducerTest {
 
     final var metric = new AtomicLong(0);
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false).sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail"), metric);
+    new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+      DLQ_TOPIC,
+      record,
+      TOPIC,
+      new RuntimeException("fail"),
+      metric
+    );
 
     assertEquals(0, metric.get());
     verify(mockProducer).send(any());
@@ -143,7 +161,7 @@ class KPipeProducerTest {
   @Test
   void shouldBeNoOpWhenDlqTopicIsNull() {
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false).sendToDlq(null, record, TOPIC, new RuntimeException("fail"), null);
+    new KPipeProducer<>(mockProducer, false, null).sendToDlq(null, record, TOPIC, new RuntimeException("fail"), null);
 
     verifyNoInteractions(mockProducer);
   }
@@ -158,7 +176,7 @@ class KPipeProducerTest {
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
     // Exception with null message should not throw
     assertDoesNotThrow(() ->
-      new KPipeProducer<>(mockProducer, false).sendToDlq(
+      new KPipeProducer<>(mockProducer, false, null).sendToDlq(
         DLQ_TOPIC,
         record,
         TOPIC,
@@ -177,20 +195,20 @@ class KPipeProducerTest {
 
   @Test
   void shouldCloseUnderlyingProducerWhenOwned() {
-    new KPipeProducer<>(mockProducer, true).close();
+    new KPipeProducer<>(mockProducer, true, null).close();
     verify(mockProducer).close();
   }
 
   @Test
   void shouldNotCloseUnderlyingProducerWhenNotOwned() {
-    new KPipeProducer<>(mockProducer, false).close();
+    new KPipeProducer<>(mockProducer, false, null).close();
     verify(mockProducer, never()).close();
   }
 
   @Test
   void shouldHandleExceptionDuringClose() {
     doThrow(new RuntimeException("close failed")).when(mockProducer).close();
-    assertDoesNotThrow(() -> new KPipeProducer<>(mockProducer, true).close());
+    assertDoesNotThrow(() -> new KPipeProducer<>(mockProducer, true, null).close());
   }
 
   @Test
@@ -240,7 +258,7 @@ class KPipeProducerTest {
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
 
-    final var producer = new KPipeProducer<>(mockProducer, false);
+    final var producer = new KPipeProducer<>(mockProducer, false, null);
     final var errors = new CopyOnWriteArrayList<Throwable>();
     final int threadCount = 100;
 
@@ -269,7 +287,7 @@ class KPipeProducerTest {
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
 
-    final var kpipeProducer = new KPipeProducer<>(mockProducer, false);
+    final var kpipeProducer = new KPipeProducer<>(mockProducer, false, null);
     final var metric = new AtomicLong(0);
     final var errors = new CopyOnWriteArrayList<Throwable>();
     final int threadCount = 50;

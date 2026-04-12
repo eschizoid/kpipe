@@ -12,6 +12,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.kpipe.metrics.ProducerMetrics;
 
 /// A functional wrapper around a Kafka [Producer] used by KPipe for DLQ and output sinks.
 ///
@@ -23,14 +24,17 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
   private final Producer<K, V> producer;
   private final boolean ownProducer;
+  private final ProducerMetrics otelMetrics;
 
   /// Creates a new KPipeProducer that wraps an existing Kafka producer.
   ///
   /// @param producer    the Kafka producer to wrap
   /// @param ownProducer whether this wrapper owns the producer and should close it
-  KPipeProducer(final Producer<K, V> producer, final boolean ownProducer) {
+  /// @param otelMetrics OpenTelemetry metrics instruments; uses noop if null
+  KPipeProducer(final Producer<K, V> producer, final boolean ownProducer, final ProducerMetrics otelMetrics) {
     this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
     this.ownProducer = ownProducer;
+    this.otelMetrics = otelMetrics != null ? otelMetrics : ProducerMetrics.noop();
   }
 
   /// Creates a new builder for constructing [KPipeProducer] instances.
@@ -56,6 +60,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     private Properties props;
     private Producer<K, V> producer;
+    private ProducerMetrics metrics;
 
     /// Sets the properties used to create the underlying Kafka producer.
     ///
@@ -80,13 +85,25 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       return this;
     }
 
+    /// Sets the OpenTelemetry metrics instruments for this producer.
+    ///
+    /// <p>Use {@link ProducerMetrics#of(io.opentelemetry.api.OpenTelemetry)} to create an
+    /// instrumented instance, or {@link ProducerMetrics#noop()} for a no-op default.
+    ///
+    /// @param metrics the producer metrics instruments
+    /// @return this builder instance for method chaining
+    public Builder<K, V> withMetrics(final ProducerMetrics metrics) {
+      this.metrics = metrics;
+      return this;
+    }
+
     /// Builds a new [KPipeProducer].
     ///
     /// @return a new KPipeProducer instance
     /// @throws NullPointerException if neither {@link #withProducer(Producer)} nor
     ///     {@link #withProperties(Properties)} was called
     public KPipeProducer<K, V> build() {
-      if (producer != null) return new KPipeProducer<>(producer, false);
+      if (producer != null) return new KPipeProducer<>(producer, false, metrics);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
       final var producerProps = new Properties(props);
       if (producerProps.containsKey("client.id")) producerProps.setProperty(
@@ -95,7 +112,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       );
       producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
       producerProps.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-      return new KPipeProducer<>(new KafkaProducer<>(producerProps), true);
+      return new KPipeProducer<>(new KafkaProducer<>(producerProps), true, metrics);
     }
   }
 
@@ -131,6 +148,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     try {
       send(producerRecord);
+      otelMetrics.recordDlqSent();
       if (dlqMetric != null) dlqMetric.incrementAndGet();
       LOGGER.log(Level.INFO, "Sent record to DLQ topic {0}", dlqTopic);
     } catch (final Exception ex) {
@@ -148,11 +166,15 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @throws RuntimeException if the send is interrupted or fails
   public RecordMetadata send(final ProducerRecord<K, V> record) {
     try {
-      return producer.send(record).get();
+      final var metadata = producer.send(record).get();
+      otelMetrics.recordMessageSent();
+      return metadata;
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
+      otelMetrics.recordMessageFailed();
       throw new RuntimeException("Send interrupted", e);
     } catch (final ExecutionException e) {
+      otelMetrics.recordMessageFailed();
       throw new RuntimeException("Send failed", e.getCause());
     }
   }
