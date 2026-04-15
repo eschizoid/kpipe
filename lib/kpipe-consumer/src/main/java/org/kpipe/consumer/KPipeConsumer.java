@@ -108,7 +108,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final AtomicLong inFlightCount = new AtomicLong(0);
   private final AtomicBoolean manualPause = new AtomicBoolean(false);
   private final AtomicBoolean backpressurePaused = new AtomicBoolean(false);
-  private volatile long backpressurePauseStartTime;
+  private volatile long backpressurePauseStartNanos;
 
   private final String deadLetterTopic;
   private final KPipeProducer<K, V> kpipeProducer;
@@ -761,7 +761,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     if (kafkaConsumer != null) {
       try {
         kafkaConsumer.wakeup();
-      } catch (Exception e) {
+      } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Error during wakeup", e);
       }
     }
@@ -772,16 +772,16 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     if (thread != null && thread.isAlive()) {
       try {
         thread.join(threadTerminationTimeout.toMillis());
-      } catch (InterruptedException e) {
+      } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
       }
     }
 
     try {
       virtualThreadExecutor.shutdown();
-      if (!virtualThreadExecutor.awaitTermination(executorTerminationTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
-        LOGGER.log(Level.WARNING, "{0} tasks not processed", virtualThreadExecutor.shutdownNow().size());
-      }
+      if (
+        !virtualThreadExecutor.awaitTermination(executorTerminationTimeout.toMillis(), TimeUnit.MILLISECONDS)
+      ) LOGGER.log(Level.WARNING, "{0} tasks not processed", virtualThreadExecutor.shutdownNow().size());
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       virtualThreadExecutor.shutdownNow();
@@ -905,11 +905,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
   private boolean handleRetry(final ConsumerRecord<K, V> record, final int attempt) {
     if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
-    LOGGER.log(
-      Level.INFO,
-      "Retrying message at offset {0} (attempt {1} of {2})",
-      new Object[] { record.offset(), attempt, maxRetries }
-    );
+    LOGGER.log(Level.INFO, "Retrying message at offset {0} (attempt {1} of {2})", record.offset(), attempt, maxRetries);
 
     try {
       Thread.sleep(retryBackoff.toMillis());
@@ -995,13 +991,16 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
         otelMetrics.recordBackpressurePause();
-        backpressurePauseStartTime = System.currentTimeMillis();
+        backpressurePauseStartNanos = System.nanoTime();
         backpressurePaused.set(true);
         internalPause();
       }
       case RESUME -> {
         backpressurePaused.set(false);
-        final long duration = System.currentTimeMillis() - backpressurePauseStartTime;
+        final long duration = Math.max(
+          1,
+          TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos)
+        );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
         otelMetrics.recordBackpressureTime(duration);
         if (manualPause.get()) {

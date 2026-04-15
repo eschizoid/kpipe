@@ -102,46 +102,27 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 ```xml
 <dependency>
     <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe-consumer</artifactId>
-    <version>1.7.0</version>
+    <artifactId>kpipe</artifactId>
+    <version>1.8.2</version>
 </dependency>
 ```
 
 `kpipe-consumer` transitively includes `kpipe-producer` and `kpipe-metrics`. If you only need a subset:
 
-```xml
-<dependency>
-    <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe-producer</artifactId>
-    <version>1.7.0</version>
-</dependency>
-
-<dependency>
-    <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe-metrics</artifactId>
-    <version>1.7.0</version>
-</dependency>
+```groovy
+implementation 'io.github.eschizoid:kpipe:1.8.2'
 ```
 
 ### Gradle (Kotlin)
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe-consumer:1.7.0") // includes producer + metrics transitively
-// or individually:
-implementation("io.github.eschizoid:kpipe-producer:1.7.0") // includes metrics transitively
-implementation("io.github.eschizoid:kpipe-metrics:1.7.0")  // OTel instruments only
-```
-
-### Gradle (Groovy)
-
-```groovy
-implementation 'io.github.eschizoid:kpipe-consumer:1.7.0'
+implementation("io.github.eschizoid:kpipe:1.8.2")
 ```
 
 ### SBT
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe-consumer" % "1.7.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.8.2"
 ```
 
 ---
