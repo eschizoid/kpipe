@@ -15,6 +15,12 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
   private final Function<T, byte[]> keyMapper;
   private final Function<T, byte[]> valueMapper;
 
+  /// Creates a new KafkaMessageSink.
+  ///
+  /// @param producer    the Kafka producer to use
+  /// @param topic       the destination topic
+  /// @param keyMapper   function to serialize the key (may be null for null keys)
+  /// @param valueMapper function to serialize the value
   public KafkaMessageSink(
     final Producer<byte[], byte[]> producer,
     final String topic,

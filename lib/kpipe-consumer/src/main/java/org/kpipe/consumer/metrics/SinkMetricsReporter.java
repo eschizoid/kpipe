@@ -44,6 +44,11 @@ public record SinkMetricsReporter(
 ) implements KPipeMetricsReporter {
   private static final Logger LOGGER = System.getLogger(SinkMetricsReporter.class.getName());
 
+  /// Creates a new SinkMetricsReporter, defaulting to log-based reporting when reporter is null.
+  ///
+  /// @param sinkNamesSupplier supplier of sink names
+  /// @param metricsFetcher function to fetch metrics for a sink name
+  /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public SinkMetricsReporter(
     final Supplier<Set<RegistryKey<?>>> sinkNamesSupplier,
     final Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,

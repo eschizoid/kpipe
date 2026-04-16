@@ -71,12 +71,6 @@ tasks.jacocoTestReport {
   }
 }
 
-afterEvaluate {
-  tasks.withType<Jar>().configureEach {
-    archiveBaseName.set("kpipe")
-  }
-}
-
 tasks.compileJava {
   doFirst {
     options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))

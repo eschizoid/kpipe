@@ -28,6 +28,9 @@ public final class ProducerMetrics {
   private final LongCounter messagesFailed;
   private final LongCounter dlqSent;
 
+  /// Creates a fully-instrumented instance.
+  ///
+  /// @param openTelemetry the OTel entry point
   public ProducerMetrics(final OpenTelemetry openTelemetry) {
     final var meter = openTelemetry.getMeter("org.kpipe.producer");
     messagesSent = meter
@@ -48,18 +51,23 @@ public final class ProducerMetrics {
   }
 
   /// Creates a no-op instance — use when OTel is not configured.
+  ///
+  /// @return a no-op ProducerMetrics instance
   public static ProducerMetrics noop() {
     return new ProducerMetrics(OpenTelemetry.noop());
   }
 
+  /// Records that a message was successfully sent.
   public void recordMessageSent() {
     messagesSent.add(1);
   }
 
+  /// Records that a message failed to send.
   public void recordMessageFailed() {
     messagesFailed.add(1);
   }
 
+  /// Records that a message was sent to the dead-letter queue.
   public void recordDlqSent() {
     dlqSent.add(1);
   }

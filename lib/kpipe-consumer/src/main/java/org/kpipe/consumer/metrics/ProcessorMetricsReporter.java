@@ -44,6 +44,11 @@ public record ProcessorMetricsReporter(
 ) implements KPipeMetricsReporter {
   private static final Logger LOGGER = System.getLogger(ProcessorMetricsReporter.class.getName());
 
+  /// Creates a new ProcessorMetricsReporter, defaulting to log-based reporting when reporter is null.
+  ///
+  /// @param processorNamesSupplier supplier of processor names
+  /// @param metricsFetcher function to fetch metrics for a processor name
+  /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public ProcessorMetricsReporter(
     final Supplier<Set<RegistryKey<?>>> processorNamesSupplier,
     final Function<RegistryKey<?>, Map<String, Object>> metricsFetcher,

@@ -91,6 +91,8 @@ public final class ConsumerMetrics {
   }
 
   /// Creates a no-op instance with no in-flight tracking.
+  ///
+  /// @return a no-op ConsumerMetrics instance
   public static ConsumerMetrics noop() {
     return noop(() -> 0L);
   }

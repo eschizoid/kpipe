@@ -153,7 +153,7 @@ The project fully supports the Java Platform Module System (JPMS). To use KPipe 
 module my.application {
   requires org.kpipe.consumer; // includes producer and metrics transitively
   requires org.kpipe.producer; // includes metrics transitively
-  requires org.kpipe.metrics;  // OTel instruments only
+  requires org.kpipe.metrics; // OTel instruments only
 }
 ```
 
@@ -436,18 +436,18 @@ allocation overhead, no SDK required.
 
 Metrics are exported automatically:
 
-| Instrument                              | Type      | Description                            |
-| --------------------------------------- | --------- | -------------------------------------- |
-| `kpipe.consumer.messages.received`      | Counter   | Records polled from Kafka              |
-| `kpipe.consumer.messages.processed`     | Counter   | Records successfully processed         |
-| `kpipe.consumer.messages.errors`        | Counter   | Records that failed processing         |
-| `kpipe.consumer.processing.duration`    | Histogram | Per-record processing time (ms)        |
-| `kpipe.consumer.messages.inflight`      | Gauge     | Current number of in-flight messages   |
-| `kpipe.consumer.backpressure.pauses`    | Counter   | Times backpressure paused the consumer |
-| `kpipe.consumer.backpressure.time`      | Counter   | Total time paused due to backpressure  |
-| `kpipe.producer.messages.sent`          | Counter   | Records successfully produced          |
-| `kpipe.producer.messages.failed`        | Counter   | Records that failed to produce         |
-| `kpipe.producer.dlq.sent`              | Counter   | Records sent to DLQ                    |
+| Instrument                           | Type      | Description                            |
+|--------------------------------------|-----------|----------------------------------------|
+| `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
+| `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
+| `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |
+| `kpipe.consumer.processing.duration` | Histogram | Per-record processing time (ms)        |
+| `kpipe.consumer.messages.inflight`   | Gauge     | Current number of in-flight messages   |
+| `kpipe.consumer.backpressure.pauses` | Counter   | Times backpressure paused the consumer |
+| `kpipe.consumer.backpressure.time`   | Counter   | Total time paused due to backpressure  |
+| `kpipe.producer.messages.sent`       | Counter   | Records successfully produced          |
+| `kpipe.producer.messages.failed`     | Counter   | Records that failed to produce         |
+| `kpipe.producer.dlq.sent`            | Counter   | Records sent to DLQ                    |
 
 ---
 

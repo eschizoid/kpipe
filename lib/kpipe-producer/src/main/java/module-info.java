@@ -1,3 +1,4 @@
+/// KPipe producer module — Kafka producer and message sink abstractions.
 module org.kpipe.producer {
   requires transitive org.kpipe.metrics;
   requires kafka.clients;

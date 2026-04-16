@@ -48,6 +48,11 @@ public record ConsumerMetricsReporter(
   private static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
   private static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
 
+  /// Creates a new ConsumerMetricsReporter, defaulting to log-based reporting when reporter is null.
+  ///
+  /// @param metricsSupplier supplier of consumer metrics
+  /// @param uptimeSupplier supplier of application uptime in ms
+  /// @param reporter consumer for reporting metrics (defaults to logger if null)
   public ConsumerMetricsReporter(
     final Supplier<Map<String, Long>> metricsSupplier,
     final Supplier<Long> uptimeSupplier,

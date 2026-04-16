@@ -1,3 +1,4 @@
+/// KPipe consumer module — Kafka consumer pipeline, processing, and sink infrastructure.
 module org.kpipe.consumer {
   requires transitive org.kpipe.producer;
   requires com.fasterxml.jackson.core;
