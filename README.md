@@ -100,7 +100,6 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 ### Maven
 
 ```xml
-<!-- Aggregate (includes both consumer and producer) -->
 <dependency>
     <groupId>io.github.eschizoid</groupId>
     <artifactId>kpipe</artifactId>
@@ -108,7 +107,7 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 </dependency>
 ```
 
-### Gradle (Groovy)
+`kpipe-consumer` transitively includes `kpipe-producer` and `kpipe-metrics`. If you only need a subset:
 
 ```groovy
 implementation 'io.github.eschizoid:kpipe:1.8.2'
@@ -152,11 +151,9 @@ The project fully supports the Java Platform Module System (JPMS). To use KPipe 
 
 ```java
 module my.application {
-  requires org.kpipe; // When using the aggregate artifact
-  // or individually:
   requires org.kpipe.consumer; // includes producer and metrics transitively
   requires org.kpipe.producer; // includes metrics transitively
-  requires org.kpipe.metrics; // OTel instruments only
+  requires org.kpipe.metrics;  // OTel instruments only
 }
 ```
 
@@ -423,27 +420,34 @@ SDK at runtime — KPipe only depends on `opentelemetry-api`:
 final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
-  .withOpenTelemetry(openTelemetry) // defaults to OpenTelemetry.noop() if omitted
+  .withPipeline(pipeline)
+  .withMetrics(new ConsumerMetrics(openTelemetry, inFlightCount::get))
   .build();
 
 // And for the producer (e.g. for DLQ)
 final var producer = KPipeProducer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
-  .withOpenTelemetry(openTelemetry)
+  .withMetrics(new ProducerMetrics(openTelemetry))
   .build();
 ```
 
+When no `ConsumerMetrics` or `ProducerMetrics` is provided, `OpenTelemetry.noop()` is used automatically — zero
+allocation overhead, no SDK required.
+
 Metrics are exported automatically:
 
-| Instrument                           | Type      | Description                     |
-|--------------------------------------|-----------|---------------------------------|
-| `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka       |
-| `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed  |
-| `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing  |
-| `kpipe.consumer.processing.duration` | Histogram | Per-record processing time (ms) |
-| `kpipe.producer.messages.sent`       | Counter   | Records successfully produced   |
-| `kpipe.producer.messages.failed`     | Counter   | Records that failed to produce  |
-| `kpipe.producer.dlq.sent`            | Counter   | Records sent to DLQ             |
+| Instrument                              | Type      | Description                            |
+| --------------------------------------- | --------- | -------------------------------------- |
+| `kpipe.consumer.messages.received`      | Counter   | Records polled from Kafka              |
+| `kpipe.consumer.messages.processed`     | Counter   | Records successfully processed         |
+| `kpipe.consumer.messages.errors`        | Counter   | Records that failed processing         |
+| `kpipe.consumer.processing.duration`    | Histogram | Per-record processing time (ms)        |
+| `kpipe.consumer.messages.inflight`      | Gauge     | Current number of in-flight messages   |
+| `kpipe.consumer.backpressure.pauses`    | Counter   | Times backpressure paused the consumer |
+| `kpipe.consumer.backpressure.time`      | Counter   | Total time paused due to backpressure  |
+| `kpipe.producer.messages.sent`          | Counter   | Records successfully produced          |
+| `kpipe.producer.messages.failed`        | Counter   | Records that failed to produce         |
+| `kpipe.producer.dlq.sent`              | Counter   | Records sent to DLQ                    |
 
 ---
 

@@ -60,7 +60,11 @@ jobs:
 
       - name: Build project
         run: |
-          ./gradlew clean :lib:build :lib:publish -x :lib:test
+          ./gradlew clean \
+            :lib:kpipe-metrics:build :lib:kpipe-metrics:publish \
+            :lib:kpipe-producer:build :lib:kpipe-producer:publish \
+            :lib:kpipe-consumer:build :lib:kpipe-consumer:publish \
+            -x test
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
