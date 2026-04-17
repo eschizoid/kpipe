@@ -19,11 +19,9 @@ import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.enums.ConsumerState;
-import org.kpipe.consumer.sink.JsonConsoleSink;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
-import org.kpipe.sink.MessageSink;
 
 /// A functional-style Kafka consumer that processes records using a provided function.
 ///
@@ -89,7 +87,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final Function<V, V> processor;
   private final ExecutorService virtualThreadExecutor;
   private final Duration pollTimeout;
-  private final MessageSink<V> messageSink;
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
   private final Duration waitForMessagesTimeout;
   private final Duration threadTerminationTimeout;
@@ -163,7 +160,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private Duration retryBackoff = Duration.ofMillis(500);
     private boolean enableMetrics = true;
     private boolean sequentialProcessing = false;
-    private MessageSink<V> messageSink;
     private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
     private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
@@ -252,14 +248,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /// Sets the message sink that receives processed messages.
-    ///
-    /// @param messageSink The sink that handles successfully processed messages
-    /// @return This builder instance for method chaining
-    public Builder<K, V> withMessageSink(final MessageSink<V> messageSink) {
-      this.messageSink = messageSink;
-      return this;
-    }
 
     /// Sets the timeout for waiting for in-flight messages during shutdown.
     ///
@@ -427,7 +415,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     this.retryBackoff = builder.retryBackoff;
     this.enableMetrics = builder.enableMetrics;
     this.sequentialProcessing = builder.sequentialProcessing;
-    this.messageSink = builder.messageSink != null ? builder.messageSink : new JsonConsoleSink<>();
     this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
     this.executorTerminationTimeout = builder.executorTerminationTimeout;
@@ -875,7 +862,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         }
 
         final var processedValue = processor.apply(record.value());
-        messageSink.accept(processedValue);
         markOffsetProcessed(record);
         return true;
       } catch (final Exception e) {
@@ -926,9 +912,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     final var sink = typedPipeline.getSink();
     if (sink != null) {
       sink.accept(processed);
-    } else {
-      final var serialized = typedPipeline.serialize(processed);
-      messageSink.accept((V) serialized);
     }
 
     markOffsetProcessed(record);

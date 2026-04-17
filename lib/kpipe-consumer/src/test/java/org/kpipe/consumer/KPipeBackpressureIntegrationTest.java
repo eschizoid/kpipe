@@ -49,14 +49,14 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> v)
-        .withMessageSink(value -> {
+        .withPipeline(v -> {
           sinkStarted.countDown();
           try {
             sinkRelease.await(5, TimeUnit.SECONDS);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
+          return v;
         })
         .withBackpressure(3, 1)
         .withConsumer(() -> mockConsumer)
@@ -65,7 +65,7 @@ class KPipeBackpressureIntegrationTest {
       // Act: start the real consumer loop
       consumer.start();
 
-      // Wait for all 5 sink calls to be in-flight (in-flight=5 >= highWatermark=3)
+      // Wait for all 5 pipeline calls to be in-flight (in-flight=5 >= highWatermark=3)
       assertTrue(sinkStarted.await(3, TimeUnit.SECONDS), "All 5 records should be in-flight");
 
       // Give the consumer loop time to call checkBackpressure()
@@ -95,14 +95,14 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> v)
-        .withMessageSink(value -> {
+        .withPipeline(v -> {
           sinkStarted.countDown();
           try {
             sinkRelease.await(5, TimeUnit.SECONDS);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
+          return v;
         })
         .withBackpressure(2, 1)
         .withConsumer(() -> mockConsumer)
@@ -136,8 +136,10 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> v)
-        .withMessageSink(value -> sinkDone.countDown())
+        .withPipeline(v -> {
+          sinkDone.countDown();
+          return v;
+        })
         .withBackpressure(10, 5)
         .withConsumer(() -> mockConsumer)
         .build();
@@ -178,14 +180,14 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> v)
-        .withMessageSink(value -> {
+        .withPipeline(v -> {
           sinkStarted.countDown();
           try {
             sinkRelease.await(5, TimeUnit.SECONDS);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
+          return v;
         })
         .withBackpressure(3, 1)
         .withConsumer(() -> mc)

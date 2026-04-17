@@ -24,7 +24,6 @@ import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
-import org.kpipe.sink.MessageSink;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
 /// pipeline of message processors.
@@ -111,7 +110,6 @@ public class App implements AutoCloseable {
       .withProperties(kafkaProps)
       .withTopic(config.topic())
       .withPipeline(createJsonProcessorPipeline(processorRegistry, config))
-      .withMessageSink((MessageSink<byte[]>) (MessageSink<?>) createSinksPipeline(processorRegistry))
       .withPollTimeout(config.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
@@ -132,13 +130,6 @@ public class App implements AutoCloseable {
       KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }
 
-  /// Creates a message sink pipeline using the provided registry.
-  ///
-  /// @param registry the message processor registry
-  /// @return a message sink that processes messages through the pipeline
-  private static MessageSink<Map<String, Object>> createSinksPipeline(final MessageProcessorRegistry registry) {
-    return registry.getSink(MessageSinkRegistry.JSON_LOGGING);
-  }
 
   /// Creates a processor pipeline using the provided registry.
   ///

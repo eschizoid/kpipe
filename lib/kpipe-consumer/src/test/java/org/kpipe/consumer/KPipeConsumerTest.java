@@ -17,7 +17,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kpipe.sink.MessageSink;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -303,15 +302,16 @@ class KPipeConsumerTest {
   }
 
   @Test
-  void customMessageSinkShouldReceiveProcessedMessages() {
+  void pipelineShouldProcessMessages() {
     // Arrange
-    @SuppressWarnings("unchecked")
-    final var sink = mock(MessageSink.class);
+    final var processed = new java.util.ArrayList<String>();
     var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withPipeline(s -> s + "-processed")
-      .withMessageSink(sink)
+      .withPipeline(s -> {
+        processed.add(s + "-processed");
+        return s + "-processed";
+      })
       .build();
     var record = createRecord(1, "k", "v");
 
@@ -319,7 +319,7 @@ class KPipeConsumerTest {
     consumer.processRecord(record);
 
     // Assert
-    verify(sink).accept(eq("v-processed"));
+    assertEquals(List.of("v-processed"), processed);
     consumer.close();
   }
 
@@ -349,13 +349,13 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withPipeline(Function.identity())
-      .withMessageSink(value -> {
+      .withPipeline(value -> {
         try {
           Thread.sleep(500);
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         }
+        return value;
       })
       .withBackpressure(2, 1)
       .withCommandQueue(commandQueue)
@@ -384,13 +384,13 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withPipeline(Function.identity())
-      .withMessageSink(value -> {
+      .withPipeline(value -> {
         try {
           Thread.sleep(500);
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         }
+        return value;
       })
       .withBackpressure(2, 1)
       .build();
