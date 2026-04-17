@@ -84,7 +84,7 @@ need.
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
 | Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-|----------------------------------|---------------|---------------|-------|
+| -------------------------------- | ------------- | ------------- | ----- |
 | Full stream processing framework | Yes           | No            | No    |
 | Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
 | Virtual-thread friendly          | No            | No            | Yes   |
@@ -104,7 +104,7 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-consumer</artifactId>
   <version>1.8.3</version>
-</dependency>  
+</dependency>
 
 <dependency>
   <groupId>io.github.eschizoid</groupId>
@@ -277,7 +277,8 @@ KPipe provides a robust, multi-layered error handling mechanism:
     .build();
   ```
 - **Dead Letter Handling**: Provide a custom `.withErrorHandler()` to redirect messages to an external database.
-- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors, or `MessageSinkRegistry.withErrorHandling()` to wrap sinks.
+- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors, or
+  `MessageSinkRegistry.withErrorHandling()` to wrap sinks.
 
 ### 8. Backpressure
 
@@ -456,7 +457,7 @@ allocation overhead, no SDK required.
 Metrics are exported automatically:
 
 | Instrument                           | Type      | Description                            |
-|--------------------------------------|-----------|----------------------------------------|
+| ------------------------------------ | --------- | -------------------------------------- |
 | `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
 | `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
 | `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |

@@ -22,7 +22,6 @@ import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.KPipeMetricsReporter;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
@@ -129,7 +128,6 @@ public class App implements AutoCloseable {
     return consumer ->
       KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }
-
 
   /// Creates a processor pipeline using the provided registry.
   ///

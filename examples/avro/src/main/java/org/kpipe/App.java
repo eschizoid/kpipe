@@ -148,7 +148,6 @@ public class App implements AutoCloseable {
       KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }
 
-
   /// Creates a processor pipeline using the provided registry.
   ///
   /// @param registry the message processor registry
