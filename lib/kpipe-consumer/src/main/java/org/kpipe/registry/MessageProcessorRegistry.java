@@ -76,7 +76,6 @@ public class MessageProcessorRegistry {
     registryMap.put(key, new RegistryEntry<>(operator));
   }
 
-
   /// Registers all constants of an Enum that implements UnaryOperator<T>.
   ///
   /// Each constant's name is used as the key.
@@ -194,7 +193,6 @@ public class MessageProcessorRegistry {
     if (entry != null) return entry.getMetrics();
     return sinkRegistry.getMetrics(key);
   }
-
 
   /// Wraps an operator with error handling logic that suppresses exceptions and returns the
   /// original input.

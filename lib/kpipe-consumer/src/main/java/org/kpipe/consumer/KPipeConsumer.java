@@ -248,7 +248,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
-
     /// Sets the timeout for waiting for in-flight messages during shutdown.
     ///
     /// @param timeout Maximum time to wait for in-flight messages to complete

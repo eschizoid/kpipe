@@ -37,7 +37,6 @@ class KPipeConsumerMockingTest {
   @Mock
   private KafkaOffsetManager<String, String> offsetManager;
 
-
   @Captor
   private ArgumentCaptor<List<String>> topicCaptor;
 
