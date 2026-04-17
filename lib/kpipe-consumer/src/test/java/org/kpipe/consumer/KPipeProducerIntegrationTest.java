@@ -45,7 +45,7 @@ class KPipeProducerIntegrationTest {
     final var consumer = KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(props)
       .withTopic(topic)
-      .withProcessor(v -> {
+      .withPipeline(v -> {
         if (new String(v).equals("bad-value")) throw new RuntimeException("Simulated failure");
         return v;
       })
@@ -88,7 +88,7 @@ class KPipeProducerIntegrationTest {
     final var consumer = KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(props)
       .withTopic(topic)
-      .withProcessor(v -> {
+      .withPipeline(v -> {
         if (new String(v).equals("bad-external")) throw new RuntimeException("Simulated failure");
         return v;
       })
@@ -125,17 +125,19 @@ class KPipeProducerIntegrationTest {
     }
 
     // 2. Start consumer with KafkaMessageSink
+    final var kafkaSink = KafkaMessageSink.<byte[]>of(
+      new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer()),
+      outputTopic,
+      v -> v
+    );
     final var consumer = KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(props)
       .withTopic(topic)
-      .withProcessor(v -> ("processed-" + new String(v)).getBytes())
-      .withMessageSink(
-        KafkaMessageSink.of(
-          new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer()),
-          outputTopic,
-          v -> v
-        )
-      )
+      .withPipeline(v -> {
+        final var processed = ("processed-" + new String(v)).getBytes();
+        kafkaSink.accept(processed);
+        return processed;
+      })
       .build();
 
     final var consumerThread = Thread.ofVirtual().start(consumer::start);

@@ -17,7 +17,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kpipe.sink.MessageSink;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -47,7 +46,7 @@ class KPipeConsumerTest {
     return KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(processor)
+      .withPipeline(processor)
       .build();
   }
 
@@ -63,7 +62,7 @@ class KPipeConsumerTest {
       KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(mockProcessor)
+        .withPipeline(mockProcessor)
         .withPollTimeout(POLL_TIMEOUT)
         .build()
     );
@@ -74,17 +73,17 @@ class KPipeConsumerTest {
     // Arrange & Act & Assert
     assertThrows(NullPointerException.class, () -> KPipeConsumer.<String, String>builder().build());
     assertThrows(NullPointerException.class, () ->
-      KPipeConsumer.<String, String>builder().withProperties(null).withTopic(TOPIC).withProcessor(mockProcessor).build()
+      KPipeConsumer.<String, String>builder().withProperties(null).withTopic(TOPIC).withPipeline(mockProcessor).build()
     );
     assertThrows(NullPointerException.class, () ->
       KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(null)
-        .withProcessor(mockProcessor)
+        .withPipeline(mockProcessor)
         .build()
     );
     assertThrows(NullPointerException.class, () ->
-      KPipeConsumer.<String, String>builder().withProperties(properties).withTopic(TOPIC).withProcessor(null).build()
+      KPipeConsumer.<String, String>builder().withProperties(properties).withTopic(TOPIC).withPipeline(null).build()
     );
   }
 
@@ -145,9 +144,9 @@ class KPipeConsumerTest {
     var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(retryProcessor)
+      .withPipeline(retryProcessor)
       .withRetry(2, Duration.ofMillis(10))
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
     final var record = createRecord(0, "key", "hello");
 
@@ -174,10 +173,10 @@ class KPipeConsumerTest {
     var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(failingProcessor)
+      .withPipeline(failingProcessor)
       .withRetry(2, Duration.ofMillis(10))
       .withErrorHandler(errorHandler)
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
     final var record = createRecord(0, "key", "hello");
 
@@ -211,9 +210,9 @@ class KPipeConsumerTest {
     var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(intermittentProcessor)
+      .withPipeline(intermittentProcessor)
       .withRetry(5, Duration.ofMillis(10))
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
 
     // Act
@@ -239,7 +238,7 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(mockProcessor)
+      .withPipeline(mockProcessor)
       .withCommandQueue(commandQueue)
       .build();
 
@@ -258,7 +257,7 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(mockProcessor)
+      .withPipeline(mockProcessor)
       .withCommandQueue(commandQueue)
       .build();
     consumer.pause();
@@ -278,7 +277,7 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(mockProcessor)
+      .withPipeline(mockProcessor)
       .withCommandQueue(commandQueue)
       .build();
 
@@ -303,15 +302,16 @@ class KPipeConsumerTest {
   }
 
   @Test
-  void customMessageSinkShouldReceiveProcessedMessages() {
+  void pipelineShouldProcessMessages() {
     // Arrange
-    @SuppressWarnings("unchecked")
-    final var sink = mock(MessageSink.class);
+    final var processed = new java.util.ArrayList<String>();
     var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(s -> s + "-processed")
-      .withMessageSink(sink)
+      .withPipeline(s -> {
+        processed.add(s + "-processed");
+        return s + "-processed";
+      })
       .build();
     var record = createRecord(1, "k", "v");
 
@@ -319,7 +319,7 @@ class KPipeConsumerTest {
     consumer.processRecord(record);
 
     // Assert
-    verify(sink).accept(eq("v-processed"));
+    assertEquals(List.of("v-processed"), processed);
     consumer.close();
   }
 
@@ -329,8 +329,8 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(s -> s)
-      .withMetrics(false)
+      .withPipeline(s -> s)
+      .enableMetrics(false)
       .build();
     final var record = createRecord(1, "k", "v");
 
@@ -349,13 +349,13 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(Function.identity())
-      .withMessageSink(value -> {
+      .withPipeline(value -> {
         try {
           Thread.sleep(500);
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         }
+        return value;
       })
       .withBackpressure(2, 1)
       .withCommandQueue(commandQueue)
@@ -384,13 +384,13 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(Function.identity())
-      .withMessageSink(value -> {
+      .withPipeline(value -> {
         try {
           Thread.sleep(500);
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         }
+        return value;
       })
       .withBackpressure(2, 1)
       .build();
@@ -417,7 +417,7 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(Function.identity())
+      .withPipeline(Function.identity())
       .build();
 
     // Assert: backpressure metric keys are present by default
@@ -434,7 +434,7 @@ class KPipeConsumerTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(Function.identity())
+      .withPipeline(Function.identity())
       .build();
 
     // Act & Assert: consumer builds and is usable
@@ -450,7 +450,7 @@ class KPipeConsumerTest {
       KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(Function.identity())
+        .withPipeline(Function.identity())
         .withBackpressure()
         .build()
         .close()
@@ -463,7 +463,7 @@ class KPipeConsumerTest {
       KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(Function.identity())
+        .withPipeline(Function.identity())
         .withBackpressure(1000, 1000)
         .build()
     );
@@ -475,7 +475,7 @@ class KPipeConsumerTest {
       KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(Function.identity())
+        .withPipeline(Function.identity())
         .withBackpressure(500, 1000)
         .build()
     );
@@ -487,8 +487,8 @@ class KPipeConsumerTest {
       KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(Function.identity())
-        .withMetrics(false)
+        .withPipeline(Function.identity())
+        .enableMetrics(false)
         .withBackpressure(10_000, 7_000)
         .build()
     );
@@ -501,7 +501,7 @@ class KPipeConsumerTest {
     var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(s -> {
+      .withPipeline(s -> {
         processed.add(s);
         return s;
       })

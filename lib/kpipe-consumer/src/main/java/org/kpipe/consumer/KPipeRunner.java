@@ -30,7 +30,7 @@ import org.kpipe.metrics.KPipeMetricsReporter;
 /// ```java
 /// final var consumer = new KPipeConsumer.Builder<>()
 ///     .withTopic("my-topic")
-///     .withProcessor(message -> processMessage(message))
+///     .withPipeline(message -> processMessage(message))
 ///     .build();
 ///
 /// final var runner = KPipeRunner.builder(consumer)

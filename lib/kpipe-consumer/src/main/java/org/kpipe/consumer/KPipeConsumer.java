@@ -19,11 +19,9 @@ import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.enums.ConsumerState;
-import org.kpipe.consumer.sink.JsonConsoleSink;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
-import org.kpipe.sink.MessageSink;
 
 /// A functional-style Kafka consumer that processes records using a provided function.
 ///
@@ -89,7 +87,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private final Function<V, V> processor;
   private final ExecutorService virtualThreadExecutor;
   private final Duration pollTimeout;
-  private final MessageSink<V> messageSink;
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
   private final Duration waitForMessagesTimeout;
   private final Duration threadTerminationTimeout;
@@ -149,7 +146,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
     private Properties kafkaProps;
     private String topic;
-    private Function<V, V> processor;
+    private Function<V, V> pipeline;
     private Duration pollTimeout = Duration.ofMillis(100);
     private ErrorHandler<K, V> errorHandler = e ->
       LOGGER.log(
@@ -163,7 +160,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private Duration retryBackoff = Duration.ofMillis(500);
     private boolean enableMetrics = true;
     private boolean sequentialProcessing = false;
-    private MessageSink<V> messageSink;
     private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
     private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
@@ -195,23 +191,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /// Sets the function to process each consumed message value.
-    ///
-    /// @param processor The function that transforms message values
-    /// @return This builder instance for method chaining
-    public Builder<K, V> withProcessor(final Function<V, V> processor) {
-      this.processor = processor;
-      return this;
-    }
-
     /// Sets the pipeline to process each consumed message.
-    ///
-    /// This is equivalent to `withProcessor` but emphasizes the use of a typed pipeline.
     ///
     /// @param pipeline The pipeline to apply to message values
     /// @return This builder instance for method chaining
     public Builder<K, V> withPipeline(final Function<V, V> pipeline) {
-      return withProcessor(pipeline);
+      this.pipeline = pipeline;
+      return this;
     }
 
     /// Sets the timeout duration for the consumer's poll operation.
@@ -247,7 +233,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param enable Whether to enable a metrics collection
     /// @return This builder instance for method chaining
-    public Builder<K, V> withMetrics(final boolean enable) {
+    public Builder<K, V> enableMetrics(final boolean enable) {
       this.enableMetrics = enable;
       return this;
     }
@@ -259,15 +245,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// @return This builder instance for method chaining
     public Builder<K, V> withSequentialProcessing(final boolean sequential) {
       this.sequentialProcessing = sequential;
-      return this;
-    }
-
-    /// Sets the message sink that receives processed messages.
-    ///
-    /// @param messageSink The sink that handles successfully processed messages
-    /// @return This builder instance for method chaining
-    public Builder<K, V> withMessageSink(final MessageSink<V> messageSink) {
-      this.messageSink = messageSink;
       return this;
     }
 
@@ -405,7 +382,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     public KPipeConsumer<K, V> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
       Objects.requireNonNull(topic, "Topic must be provided");
-      Objects.requireNonNull(processor, "Processor function must be provided");
+      Objects.requireNonNull(pipeline, "Pipeline function must be provided");
       if (maxRetries < 0) throw new IllegalArgumentException("Max retries cannot be negative");
       if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
         "Poll timeout must be positive"
@@ -430,14 +407,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         ? builder.consumerProvider.get()
         : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
     this.topic = Objects.requireNonNull(builder.topic);
-    this.processor = Objects.requireNonNull(builder.processor);
+    this.processor = Objects.requireNonNull(builder.pipeline);
     this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
     this.errorHandler = builder.errorHandler;
     this.maxRetries = builder.maxRetries;
     this.retryBackoff = builder.retryBackoff;
     this.enableMetrics = builder.enableMetrics;
     this.sequentialProcessing = builder.sequentialProcessing;
-    this.messageSink = builder.messageSink != null ? builder.messageSink : new JsonConsoleSink<>();
     this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
     this.executorTerminationTimeout = builder.executorTerminationTimeout;
@@ -885,7 +861,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         }
 
         final var processedValue = processor.apply(record.value());
-        messageSink.accept(processedValue);
         markOffsetProcessed(record);
         return true;
       } catch (final Exception e) {
@@ -936,9 +911,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     final var sink = typedPipeline.getSink();
     if (sink != null) {
       sink.accept(processed);
-    } else {
-      final var serialized = typedPipeline.serialize(processed);
-      messageSink.accept((V) serialized);
     }
 
     markOffsetProcessed(record);

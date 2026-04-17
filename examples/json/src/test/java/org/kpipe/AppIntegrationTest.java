@@ -54,7 +54,7 @@ class AppIntegrationTest {
 
     try (final var app = new App(config)) {
       final var registry = app.getProcessorRegistry();
-      registry.register(RegistryKey.json("jsonLogging"), capturingSink);
+      registry.sinkRegistry().register(RegistryKey.json("jsonLogging"), capturingSink);
 
       // Set up the processor registry
       registry.register(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));

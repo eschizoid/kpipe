@@ -23,8 +23,8 @@ import org.kpipe.sink.MessageSink;
 /// registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("addTimestamp")).build();
 ///
 /// // Optional: Wrap with error handling
-/// final var safeSink = MessageProcessorRegistry.withErrorHandling(new MySink());
-/// registry.register(RegistryKey.json("safeSink"), safeSink);
+/// final var safeSink = MessageSinkRegistry.withErrorHandling(new MySink());
+/// registry.sinkRegistry().register(RegistryKey.json("safeSink"), safeSink);
 /// ```
 public class MessageProcessorRegistry {
 
@@ -76,29 +76,6 @@ public class MessageProcessorRegistry {
     registryMap.put(key, new RegistryEntry<>(operator));
   }
 
-  /// Registers a message sink using a type-safe RegistryKey.
-  ///
-  /// @param <T>  The type of data the sink processes
-  /// @param key  The type-safe key to register under
-  /// @param sink The sink implementation to register
-  public <T> void register(final RegistryKey<T> key, final MessageSink<T> sink) {
-    registryMap.put(key, new RegistryEntry<>(sink));
-  }
-
-  /// Registers all constants of an Enum that implements MessageSink<T>.
-  ///
-  /// Each constant's name is used as the key.
-  ///
-  /// @param <T>       The type of data the sink processes
-  /// @param <E>       The Enum type that implements MessageSink<T>
-  /// @param type      The class representing the data type
-  /// @param enumClass The Enum class to register
-  public <T, E extends Enum<E> & MessageSink<T>> void registerSinkEnum(final Class<T> type, final Class<E> enumClass) {
-    Objects.requireNonNull(type, "Type cannot be null");
-    Objects.requireNonNull(enumClass, "Enum class cannot be null");
-    for (final var constant : enumClass.getEnumConstants()) register(RegistryKey.of(constant.name(), type), constant);
-  }
-
   /// Registers all constants of an Enum that implements UnaryOperator<T>.
   ///
   /// Each constant's name is used as the key.
@@ -129,18 +106,13 @@ public class MessageProcessorRegistry {
     };
   }
 
-  /// Retrieves a message sink from the registry.
+  /// Retrieves a message sink from the sink registry.
   ///
   /// @param <T> The type of data the sink processes.
   /// @param key The type-safe key to retrieve.
   /// @return The registered sink, or a no-op sink if not found.
-  @SuppressWarnings("unchecked")
   public <T> MessageSink<T> getSink(final RegistryKey<T> key) {
-    return input -> {
-      final var entry = (RegistryEntry<MessageSink<T>>) registryMap.get(key);
-      if (entry != null) entry.accept(input);
-      else sinkRegistry.get(key).accept(input);
-    };
+    return sinkRegistry.get(key);
   }
 
   /// Creates a new registry with JSON as the default message format.
@@ -220,15 +192,6 @@ public class MessageProcessorRegistry {
     final var entry = registryMap.get(key);
     if (entry != null) return entry.getMetrics();
     return sinkRegistry.getMetrics(key);
-  }
-
-  /// Wraps a sink with error handling logic that suppresses exceptions.
-  ///
-  /// @param sink The sink to wrap with error handling
-  /// @param <T>  The type of message value
-  /// @return A sink that handles errors during processing
-  public static <T> MessageSink<T> withErrorHandling(final MessageSink<T> sink) {
-    return RegistryFunctions.withConsumerErrorHandling(sink, LOGGER)::accept;
   }
 
   /// Wraps an operator with error handling logic that suppresses exceptions and returns the

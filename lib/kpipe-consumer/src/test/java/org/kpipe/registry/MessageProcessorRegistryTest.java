@@ -113,7 +113,7 @@ class MessageProcessorRegistryTest {
     final MessageSink<Map<String, Object>> sink = message -> {
       throw new RuntimeException("Test exception");
     };
-    final var safeSink = MessageProcessorRegistry.withErrorHandling(sink);
+    final var safeSink = MessageSinkRegistry.withErrorHandling(sink);
 
     // Act & Assert
     // Should not throw exception
@@ -135,7 +135,7 @@ class MessageProcessorRegistryTest {
     // Act
     final var pipeline = registry
       .pipeline(MessageFormat.JSON)
-      .when(obj -> obj.size() > 0, trueOp, falseOp)
+      .when(obj -> !obj.isEmpty(), trueOp, falseOp)
       .build();
 
     // Assert

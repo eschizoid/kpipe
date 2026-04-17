@@ -84,7 +84,7 @@ need.
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
 | Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-|----------------------------------|---------------|---------------|-------|
+| -------------------------------- | ------------- | ------------- | ----- |
 | Full stream processing framework | Yes           | No            | No    |
 | Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
 | Virtual-thread friendly          | No            | No            | Yes   |
@@ -101,28 +101,47 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 
 ```xml
 <dependency>
-    <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe</artifactId>
-    <version>1.8.2</version>
+  <groupId>io.github.eschizoid</groupId>
+  <artifactId>kpipe-consumer</artifactId>
+  <version>1.8.3</version>
 </dependency>
+
+<dependency>
+  <groupId>io.github.eschizoid</groupId>
+  <artifactId>kpipe-producer</artifactId>
+  <version>1.8.3</version>
+</dependency>
+
+<dependency>
+  <groupId>io.github.eschizoid</groupId>
+  <artifactId>kpipe-metrics</artifactId>
+  <version>1.8.3</version>
+</dependency>
+
 ```
 
 `kpipe-consumer` transitively includes `kpipe-producer` and `kpipe-metrics`. If you only need a subset:
 
 ```groovy
-implementation 'io.github.eschizoid:kpipe:1.8.2'
+implementation 'io.github.eschizoid:kpipe-consumer:1.8.3'
+implementation 'io.github.eschizoid:kpipe-producer:1.8.3'
+implementation 'io.github.eschizoid:kpipe-metrics:1.8.3'
 ```
 
 ### Gradle (Kotlin)
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe:1.8.2")
+implementation("io.github.eschizoid:kpipe:1.8.3-consumer")
+implementation("io.github.eschizoid:kpipe:1.8.3-producer")
+implementation("io.github.eschizoid:kpipe:1.8.3-metrics")
 ```
 
 ### SBT
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.8.2"
+libraryDependencies += "io.github.eschizoid" % "kpipe-consumer" % "1.8.3"
+libraryDependencies += "io.github.eschizoid" % "kpipe-producer" % "1.8.3"
+libraryDependencies += "io.github.eschizoid" % "kpipe-metrics" % "1.8.3"
 ```
 
 ---
@@ -258,7 +277,8 @@ KPipe provides a robust, multi-layered error handling mechanism:
     .build();
   ```
 - **Dead Letter Handling**: Provide a custom `.withErrorHandler()` to redirect messages to an external database.
-- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors or sinks.
+- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors, or
+  `MessageSinkRegistry.withErrorHandling()` to wrap sinks.
 
 ### 8. Backpressure
 
@@ -312,7 +332,7 @@ Where:
 final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
-  .withProcessor(pipeline)
+  .withPipeline(pipeline)
   // Enable backpressure with default watermarks (10k / 7k)
   .withBackpressure()
   // Or configure explicit watermarks:
@@ -437,7 +457,7 @@ allocation overhead, no SDK required.
 Metrics are exported automatically:
 
 | Instrument                           | Type      | Description                            |
-|--------------------------------------|-----------|----------------------------------------|
+| ------------------------------------ | --------- | -------------------------------------- |
 | `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
 | `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
 | `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |
@@ -619,7 +639,7 @@ final var registry = new MessageProcessorRegistry("my-app");
 
 // Register sinks with explicit types
 final var dbKey = RegistryKey.of("database", Map.class);
-registry.register(dbKey, databaseSink);
+registry.sinkRegistry().register(dbKey, databaseSink);
 
 // Use the sink by key in the pipeline
 final var pipeline = registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("enrich")).toSink(dbKey).build();
@@ -631,14 +651,14 @@ The registry provides utilities for adding error handling to both sinks and oper
 
 ```java
 // Create a sink with error handling
-final var safeSink = MessageProcessorRegistry.withErrorHandling(riskySink);
+final var safeSink = MessageSinkRegistry.withErrorHandling(riskySink);
 
 // Create an operator with error handling
 final var safeOperator = MessageProcessorRegistry.withErrorHandling(riskyOperator);
 
 // Register and use the wrapped sink
 final var safeKey = RegistryKey.json("safeDatabase");
-registry.register(safeKey, safeSink);
+registry.sinkRegistry().register(safeKey, safeSink);
 
 final var pipeline = registry.pipeline(MessageFormat.JSON).toSink(safeKey).build();
 ```
@@ -822,7 +842,7 @@ public class KPipeApp implements AutoCloseable {
           .withCommitInterval(Duration.ofSeconds(30))
           .build()
       )
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
 
     // Set up the consumer runner with metrics and shutdown hooks
