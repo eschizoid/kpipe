@@ -147,7 +147,7 @@ class KPipeConsumerTest {
       .withTopic(TOPIC)
       .withPipeline(retryProcessor)
       .withRetry(2, Duration.ofMillis(10))
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
     final var record = createRecord(0, "key", "hello");
 
@@ -177,7 +177,7 @@ class KPipeConsumerTest {
       .withPipeline(failingProcessor)
       .withRetry(2, Duration.ofMillis(10))
       .withErrorHandler(errorHandler)
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
     final var record = createRecord(0, "key", "hello");
 
@@ -213,7 +213,7 @@ class KPipeConsumerTest {
       .withTopic(TOPIC)
       .withPipeline(intermittentProcessor)
       .withRetry(5, Duration.ofMillis(10))
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
 
     // Act
@@ -330,7 +330,7 @@ class KPipeConsumerTest {
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(s -> s)
-      .withMetrics(false)
+      .enableMetrics(false)
       .build();
     final var record = createRecord(1, "k", "v");
 
@@ -488,7 +488,7 @@ class KPipeConsumerTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(Function.identity())
-        .withMetrics(false)
+        .enableMetrics(false)
         .withBackpressure(10_000, 7_000)
         .build()
     );

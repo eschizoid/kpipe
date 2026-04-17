@@ -59,7 +59,7 @@ public class App implements AutoCloseable {
   public App(final AppConfig config) {
     this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
     // Pre-register loggers
-    processorRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
+    processorRegistry.sinkRegistry().register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
 
     this.kpipeConsumer = createConsumer(config, processorRegistry);
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
@@ -115,7 +115,7 @@ public class App implements AutoCloseable {
       .withPollTimeout(config.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
   }
 

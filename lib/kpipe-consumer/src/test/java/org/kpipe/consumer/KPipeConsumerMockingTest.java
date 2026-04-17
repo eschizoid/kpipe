@@ -486,7 +486,7 @@ class KPipeConsumerMockingTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(s -> s)
-        .withMetrics(false)
+        .enableMetrics(false)
         .build()
     ) {
       assertTrue(consumer.getMetrics().isEmpty(), "Metrics should be empty when disabled");
@@ -511,7 +511,7 @@ class KPipeConsumerMockingTest {
       .withPollTimeout(pollTimeout)
       .withErrorHandler(errorHandler)
       .withRetry(maxRetries, retryBackoff)
-      .withMetrics(enableMetrics)
+      .enableMetrics(enableMetrics)
       .build();
 
     // Assert

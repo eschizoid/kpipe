@@ -237,7 +237,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param enable Whether to enable a metrics collection
     /// @return This builder instance for method chaining
-    public Builder<K, V> withMetrics(final boolean enable) {
+    public Builder<K, V> enableMetrics(final boolean enable) {
       this.enableMetrics = enable;
       return this;
     }

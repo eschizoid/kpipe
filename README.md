@@ -277,7 +277,7 @@ KPipe provides a robust, multi-layered error handling mechanism:
     .build();
   ```
 - **Dead Letter Handling**: Provide a custom `.withErrorHandler()` to redirect messages to an external database.
-- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors or sinks.
+- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors, or `MessageSinkRegistry.withErrorHandling()` to wrap sinks.
 
 ### 8. Backpressure
 
@@ -638,7 +638,7 @@ final var registry = new MessageProcessorRegistry("my-app");
 
 // Register sinks with explicit types
 final var dbKey = RegistryKey.of("database", Map.class);
-registry.register(dbKey, databaseSink);
+registry.sinkRegistry().register(dbKey, databaseSink);
 
 // Use the sink by key in the pipeline
 final var pipeline = registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("enrich")).toSink(dbKey).build();
@@ -650,14 +650,14 @@ The registry provides utilities for adding error handling to both sinks and oper
 
 ```java
 // Create a sink with error handling
-final var safeSink = MessageProcessorRegistry.withErrorHandling(riskySink);
+final var safeSink = MessageSinkRegistry.withErrorHandling(riskySink);
 
 // Create an operator with error handling
 final var safeOperator = MessageProcessorRegistry.withErrorHandling(riskyOperator);
 
 // Register and use the wrapped sink
 final var safeKey = RegistryKey.json("safeDatabase");
-registry.register(safeKey, safeSink);
+registry.sinkRegistry().register(safeKey, safeSink);
 
 final var pipeline = registry.pipeline(MessageFormat.JSON).toSink(safeKey).build();
 ```
@@ -841,7 +841,7 @@ public class KPipeApp implements AutoCloseable {
           .withCommitInterval(Duration.ofSeconds(30))
           .build()
       )
-      .withMetrics(true)
+      .enableMetrics(true)
       .build();
 
     // Set up the consumer runner with metrics and shutdown hooks
