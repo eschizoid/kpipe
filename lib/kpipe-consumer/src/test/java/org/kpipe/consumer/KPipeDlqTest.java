@@ -42,7 +42,7 @@ class KPipeDlqTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(stringProperties())
         .withTopic(TOPIC)
-        .withProcessor(v -> {
+        .withPipeline(v -> {
           throw new RuntimeException("fail");
         })
         .withRetry(1, Duration.ofMillis(1))
@@ -72,7 +72,7 @@ class KPipeDlqTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(stringProperties())
         .withTopic(TOPIC)
-        .withProcessor(v -> {
+        .withPipeline(v -> {
           if (attempts.getAndIncrement() == 0) throw new RuntimeException("fail first time");
           return v;
         })

@@ -149,7 +149,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
 
     private Properties kafkaProps;
     private String topic;
-    private Function<V, V> processor;
+    private Function<V, V> pipeline;
     private Duration pollTimeout = Duration.ofMillis(100);
     private ErrorHandler<K, V> errorHandler = e ->
       LOGGER.log(
@@ -195,23 +195,13 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /// Sets the function to process each consumed message value.
-    ///
-    /// @param processor The function that transforms message values
-    /// @return This builder instance for method chaining
-    public Builder<K, V> withProcessor(final Function<V, V> processor) {
-      this.processor = processor;
-      return this;
-    }
-
     /// Sets the pipeline to process each consumed message.
-    ///
-    /// This is equivalent to `withProcessor` but emphasizes the use of a typed pipeline.
     ///
     /// @param pipeline The pipeline to apply to message values
     /// @return This builder instance for method chaining
     public Builder<K, V> withPipeline(final Function<V, V> pipeline) {
-      return withProcessor(pipeline);
+      this.pipeline = pipeline;
+      return this;
     }
 
     /// Sets the timeout duration for the consumer's poll operation.
@@ -405,7 +395,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     public KPipeConsumer<K, V> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
       Objects.requireNonNull(topic, "Topic must be provided");
-      Objects.requireNonNull(processor, "Processor function must be provided");
+      Objects.requireNonNull(pipeline, "Pipeline function must be provided");
       if (maxRetries < 0) throw new IllegalArgumentException("Max retries cannot be negative");
       if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
         "Poll timeout must be positive"
@@ -430,7 +420,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
         ? builder.consumerProvider.get()
         : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
     this.topic = Objects.requireNonNull(builder.topic);
-    this.processor = Objects.requireNonNull(builder.processor);
+    this.processor = Objects.requireNonNull(builder.pipeline);
     this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
     this.errorHandler = builder.errorHandler;
     this.maxRetries = builder.maxRetries;

@@ -54,7 +54,7 @@ class KPipeSequentialBackpressureIntegrationTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(v -> {
+      .withPipeline(v -> {
         processedCount.incrementAndGet();
         try {
           // Slow down processing to allow backpressure loop to see the lag

@@ -49,7 +49,7 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(v -> v)
+        .withPipeline(v -> v)
         .withMessageSink(value -> {
           sinkStarted.countDown();
           try {
@@ -95,7 +95,7 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(v -> v)
+        .withPipeline(v -> v)
         .withMessageSink(value -> {
           sinkStarted.countDown();
           try {
@@ -136,7 +136,7 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(v -> v)
+        .withPipeline(v -> v)
         .withMessageSink(value -> sinkDone.countDown())
         .withBackpressure(10, 5)
         .withConsumer(() -> mockConsumer)
@@ -178,7 +178,7 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(v -> v)
+        .withPipeline(v -> v)
         .withMessageSink(value -> {
           sinkStarted.countDown();
           try {
@@ -245,7 +245,7 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(v -> v)
+        .withPipeline(v -> v)
         .withConsumer(() -> mc)
         .build();
 
@@ -306,7 +306,7 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(v -> {
+        .withPipeline(v -> {
           try {
             // Slow down processing to allow backpressure loop to see the lag
             Thread.sleep(200);
@@ -339,7 +339,7 @@ class KPipeBackpressureIntegrationTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(v -> v)
+        .withPipeline(v -> v)
         .withSequentialProcessing(true)
         .withBackpressure(10_000, 7_000)
         .build();

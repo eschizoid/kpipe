@@ -46,7 +46,7 @@ class KPipeInterruptTest {
     return KPipeConsumer.<String, String>builder()
       .withProperties(props)
       .withTopic("test-topic")
-      .withProcessor(processor)
+      .withPipeline(processor)
       .withMessageSink(messageSink)
       .withRetry(maxRetries, backoff)
       .withErrorHandler(errorHandler)

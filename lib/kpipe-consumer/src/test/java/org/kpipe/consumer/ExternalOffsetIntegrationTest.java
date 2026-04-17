@@ -218,7 +218,7 @@ class ExternalOffsetIntegrationTest {
       .withTopic(TOPIC)
       .withConsumer(() -> mc)
       .withOffsetManager(dbManager)
-      .withProcessor(val -> val)
+      .withPipeline(val -> val)
       .withSequentialProcessing(true)
       .withMessageSink(_ -> {
         latch.countDown();

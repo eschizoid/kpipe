@@ -1,5 +1,5 @@
-#!/usr/bin/env sh
-set -eu
+#!/bin/bash
+set -eu pipefail
 
 SCHEMA_FILE="${1:-/schemas/customer.avsc}"
 SUBJECT="${2:-com.kpipe.customer}"

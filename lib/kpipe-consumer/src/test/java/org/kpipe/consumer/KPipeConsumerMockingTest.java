@@ -485,7 +485,7 @@ class KPipeConsumerMockingTest {
       final var consumer = KPipeConsumer.<String, String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withProcessor(s -> s)
+        .withPipeline(s -> s)
         .withMetrics(false)
         .build()
     ) {
@@ -507,7 +507,7 @@ class KPipeConsumerMockingTest {
     final var consumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(s -> s)
+      .withPipeline(s -> s)
       .withPollTimeout(pollTimeout)
       .withErrorHandler(errorHandler)
       .withRetry(maxRetries, retryBackoff)
@@ -945,7 +945,7 @@ class KPipeConsumerMockingTest {
     final var functionalConsumer = KPipeConsumer.<String, String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withProcessor(s -> s)
+      .withPipeline(s -> s)
       .build();
 
     // Initial state
@@ -1254,7 +1254,7 @@ class KPipeConsumerMockingTest {
         KPipeConsumer.<K, V>builder()
           .withProperties(props)
           .withTopic(topic)
-          .withProcessor(processor)
+          .withPipeline(processor)
           .withMessageSink(mockMessageSink)
           .withRetry(maxRetries, retryBackoff)
           .withErrorHandler(errorHandler)

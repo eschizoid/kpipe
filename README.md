@@ -101,28 +101,47 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 
 ```xml
 <dependency>
-    <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe</artifactId>
-    <version>1.8.2</version>
+  <groupId>io.github.eschizoid</groupId>
+  <artifactId>kpipe-consumer</artifactId>
+  <version>1.8.3</version>
+</dependency>  
+
+<dependency>
+  <groupId>io.github.eschizoid</groupId>
+  <artifactId>kpipe-producer</artifactId>
+  <version>1.8.3</version>
 </dependency>
+
+<dependency>
+  <groupId>io.github.eschizoid</groupId>
+  <artifactId>kpipe-metrics</artifactId>
+  <version>1.8.3</version>
+</dependency>
+
 ```
 
 `kpipe-consumer` transitively includes `kpipe-producer` and `kpipe-metrics`. If you only need a subset:
 
 ```groovy
-implementation 'io.github.eschizoid:kpipe:1.8.2'
+implementation 'io.github.eschizoid:kpipe-consumer:1.8.3'
+implementation 'io.github.eschizoid:kpipe-producer:1.8.3'
+implementation 'io.github.eschizoid:kpipe-metrics:1.8.3'
 ```
 
 ### Gradle (Kotlin)
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe:1.8.2")
+implementation("io.github.eschizoid:kpipe:1.8.3-consumer")
+implementation("io.github.eschizoid:kpipe:1.8.3-producer")
+implementation("io.github.eschizoid:kpipe:1.8.3-metrics")
 ```
 
 ### SBT
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe" % "1.8.2"
+libraryDependencies += "io.github.eschizoid" % "kpipe-consumer" % "1.8.3"
+libraryDependencies += "io.github.eschizoid" % "kpipe-producer" % "1.8.3"
+libraryDependencies += "io.github.eschizoid" % "kpipe-metrics" % "1.8.3"
 ```
 
 ---
@@ -312,7 +331,7 @@ Where:
 final var consumer = KPipeConsumer.<byte[], byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
-  .withProcessor(pipeline)
+  .withPipeline(pipeline)
   // Enable backpressure with default watermarks (10k / 7k)
   .withBackpressure()
   // Or configure explicit watermarks:
