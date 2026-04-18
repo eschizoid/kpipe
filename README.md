@@ -20,84 +20,48 @@ It is designed for Kafka consumer services performing transformations, enrichmen
 
 ---
 
-# Quick Example
+## Getting Started
 
-Create a pipeline and start a Kafka consumer in a few lines:
+### 1. Add the dependency
 
-```java
-final var registry = new MessageProcessorRegistry("demo");
+Most users only need `kpipe-consumer` — it transitively includes `kpipe-producer` and `kpipe-metrics`:
 
-final var sanitizeKey = RegistryKey.json("sanitize");
-registry.register(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password"));
-
-final var stampKey = RegistryKey.json("stamp");
-registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
-
-final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
-  .add(sanitizeKey, stampKey)
-  .toSink(MessageSinkRegistry.JSON_LOGGING)
-  .build();
-
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
-  .withProperties(kafkaProps)
-  .withTopic("users")
-  .withPipeline(pipeline)
-  .withRetry(3, Duration.ofSeconds(1))
-  .build();
-
-// Use the runner to manage the consumer lifecycle
-final var runner = KPipeRunner.builder(consumer).build();
-runner.start();
+```kotlin
+// Gradle (Kotlin)
+implementation("io.github.eschizoid:kpipe-consumer:1.8.3")
 ```
 
-KPipe handles:
+```xml
+<!-- Maven -->
+<dependency>
+  <groupId>io.github.eschizoid</groupId>
+  <artifactId>kpipe-consumer</artifactId>
+  <version>1.8.3</version>
+</dependency>
+```
 
-- record processing
-- retries
-- metrics
-- offset tracking
-- safe commits
+> **Tip:** Check the [latest release](https://github.com/eschizoid/kpipe/releases/latest) for the current version.
 
----
+<details>
+<summary>Individual modules & other build tools</summary>
 
-# When to Use KPipe
+**Gradle (Kotlin)**
 
-KPipe works well for:
+```kotlin
+implementation("io.github.eschizoid:kpipe-consumer:1.8.3")
+implementation("io.github.eschizoid:kpipe-producer:1.8.3")
+implementation("io.github.eschizoid:kpipe-metrics:1.8.3")
+```
 
-- Kafka consumer microservices
-- event enrichment pipelines
-- lightweight transformation services
-- I/O-bound processing (REST calls, database lookups)
-- teams adopting **modern Java concurrency**
+**Gradle (Groovy)**
 
-KPipe is not intended to replace large streaming frameworks. It focuses on **simple, composable Kafka consumer
-pipelines.**
+```groovy
+implementation 'io.github.eschizoid:kpipe-consumer:1.8.3'
+implementation 'io.github.eschizoid:kpipe-producer:1.8.3'
+implementation 'io.github.eschizoid:kpipe-metrics:1.8.3'
+```
 
----
-
-# Why Not Just Use Kafka Streams?
-
-Kafka Streams is powerful but introduces a full topology framework and state management layer that many services do not
-need.
-
-KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
-
-| Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-| -------------------------------- | ------------- | ------------- | ----- |
-| Full stream processing framework | Yes           | No            | No    |
-| Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
-| Virtual-thread friendly          | No            | No            | Yes   |
-| Functional pipeline API          | Yes           | Yes           | Yes   |
-| Minimal dependencies             | No            | Yes           | Yes   |
-
-KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
-
----
-
-## Installation
-
-### Maven
+**Maven**
 
 ```xml
 <dependency>
@@ -117,32 +81,85 @@ KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
   <artifactId>kpipe-metrics</artifactId>
   <version>1.8.3</version>
 </dependency>
-
 ```
 
-`kpipe-consumer` transitively includes `kpipe-producer` and `kpipe-metrics`. If you only need a subset:
-
-```groovy
-implementation 'io.github.eschizoid:kpipe-consumer:1.8.3'
-implementation 'io.github.eschizoid:kpipe-producer:1.8.3'
-implementation 'io.github.eschizoid:kpipe-metrics:1.8.3'
-```
-
-### Gradle (Kotlin)
-
-```kotlin
-implementation("io.github.eschizoid:kpipe:1.8.3-consumer")
-implementation("io.github.eschizoid:kpipe:1.8.3-producer")
-implementation("io.github.eschizoid:kpipe:1.8.3-metrics")
-```
-
-### SBT
+**SBT**
 
 ```sbt
 libraryDependencies += "io.github.eschizoid" % "kpipe-consumer" % "1.8.3"
 libraryDependencies += "io.github.eschizoid" % "kpipe-producer" % "1.8.3"
 libraryDependencies += "io.github.eschizoid" % "kpipe-metrics" % "1.8.3"
 ```
+
+</details>
+
+### 2. Build a pipeline
+
+```java
+final var registry = new MessageProcessorRegistry("demo");
+
+final var sanitizeKey = RegistryKey.json("sanitize");
+registry.register(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password"));
+
+final var stampKey = RegistryKey.json("stamp");
+registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
+
+final var pipeline = registry
+  .pipeline(MessageFormat.JSON)
+  .add(sanitizeKey, stampKey)
+  .toSink(MessageSinkRegistry.JSON_LOGGING)
+  .build();
+```
+
+### 3. Start the consumer
+
+```java
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+  .withProperties(kafkaProps)
+  .withTopic("users")
+  .withPipeline(pipeline)
+  .withRetry(3, Duration.ofSeconds(1))
+  .build();
+
+final var runner = KPipeRunner.builder(consumer).build();
+runner.start();
+```
+
+KPipe handles record processing, retries, metrics, offset tracking, and safe commits.
+
+---
+
+## When to Use KPipe
+
+KPipe works well for:
+
+- Kafka consumer microservices
+- event enrichment pipelines
+- lightweight transformation services
+- I/O-bound processing (REST calls, database lookups)
+- teams adopting **modern Java concurrency**
+
+KPipe is not intended to replace large streaming frameworks. It focuses on **simple, composable Kafka consumer
+pipelines.**
+
+---
+
+## Why Not Just Use Kafka Streams?
+
+Kafka Streams is powerful but introduces a full topology framework and state management layer that many services do not
+need.
+
+KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
+
+| Capability                       | Kafka Streams | Reactor Kafka | KPipe |
+| -------------------------------- | ------------- | ------------- | ----- |
+| Full stream processing framework | Yes           | No            | No    |
+| Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
+| Virtual-thread friendly          | No            | No            | Yes   |
+| Functional pipeline API          | Yes           | Yes           | Yes   |
+| Minimal dependencies             | No            | Yes           | Yes   |
+
+KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
 
 ---
 
@@ -355,135 +372,11 @@ KPipe respects JVM signals and ensures timely shutdown without data loss:
   offset is NOT marked as processed. This ensures it will be safely picked up by the next consumer instance,
   guaranteeing "at-least-once" delivery even during shutdown.
 
----
-
-## Example: Add Custom Processor
-
-Extend the registry like this:
-
 ```java
-// Create a registry
-final var registry = new MessageProcessorRegistry("myApp");
-
-// Register a custom JSON operator for field transformations
-final var uppercaseKey = RegistryKey.json("uppercase");
-registry.register(uppercaseKey, map -> {
-  final var value = map.get("text");
-  if (value instanceof String text) map.put("text", text.toUpperCase());
-  return map;
-});
-
-// Built-in operators are also available
-final var envKey = RegistryKey.json("addEnvironment");
-registry.register(envKey, JsonMessageProcessor.addFieldOperator("environment", "production"));
-
-// Create a high-performance pipeline (single SerDe cycle)
-final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
-  .add(envKey)
-  .add(uppercaseKey)
-  .add(RegistryKey.json("addTimestamp"))
-  .build();
-
-// Use the pipeline with a consumer
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
-  .withProperties(kafkaProps)
-  .withTopic("events")
-  .withPipeline(pipeline)
-  .withRetry(3, Duration.ofSeconds(1))
-  .build();
-
-// Start processing messages
-consumer.start();
-```
-
----
-
-## Built-in Metrics
-
-### Programmatic Access
-
-Monitor your consumer with built-in metrics via `getMetrics()`:
-
-```java
-final var metrics = consumer.getMetrics();
-final var log = System.getLogger("org.kpipe.metrics");
-log.log(Level.INFO, "Messages received: " + metrics.get("messagesReceived"));
-log.log(Level.INFO, "Successfully processed: " + metrics.get("messagesProcessed"));
-log.log(Level.INFO, "Processing errors: " + metrics.get("processingErrors"));
-log.log(Level.INFO, "Messages in-flight: " + metrics.get("inFlight"));
-// Backpressure metrics (present only when withBackpressure() is configured)
-log.log(Level.INFO, "Backpressure pauses: " + metrics.get("backpressurePauseCount"));
-log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs"));
-```
-
-### Log-Based Reporter
-
-Configure automatic log-based metrics reporting via `KPipeRunner`:
-
-```java
-final var runner = KPipeRunner.builder(consumer)
-  .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
-  .withMetricsInterval(30_000)
-  .build();
-
-runner.start();
-```
-
-### OpenTelemetry Integration
-
-KPipe ships a `kpipe-metrics` module with first-class [OpenTelemetry](https://opentelemetry.io/) support. Add your OTel
-SDK at runtime — KPipe only depends on `opentelemetry-api`:
-
-```java
-// Wire your OTel SDK instance into the consumer builder
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
-  .withProperties(kafkaProps)
-  .withTopic("events")
-  .withPipeline(pipeline)
-  .withMetrics(new ConsumerMetrics(openTelemetry, inFlightCount::get))
-  .build();
-
-// And for the producer (e.g. for DLQ)
-final var producer = KPipeProducer.<byte[], byte[]>builder()
-  .withProperties(kafkaProps)
-  .withMetrics(new ProducerMetrics(openTelemetry))
-  .build();
-```
-
-When no `ConsumerMetrics` or `ProducerMetrics` is provided, `OpenTelemetry.noop()` is used automatically — zero
-allocation overhead, no SDK required.
-
-Metrics are exported automatically:
-
-| Instrument                           | Type      | Description                            |
-| ------------------------------------ | --------- | -------------------------------------- |
-| `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
-| `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
-| `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |
-| `kpipe.consumer.processing.duration` | Histogram | Per-record processing time (ms)        |
-| `kpipe.consumer.messages.inflight`   | Gauge     | Current number of in-flight messages   |
-| `kpipe.consumer.backpressure.pauses` | Counter   | Times backpressure paused the consumer |
-| `kpipe.consumer.backpressure.time`   | Counter   | Total time paused due to backpressure  |
-| `kpipe.producer.messages.sent`       | Counter   | Records successfully produced          |
-| `kpipe.producer.messages.failed`     | Counter   | Records that failed to produce         |
-| `kpipe.producer.dlq.sent`            | Counter   | Records sent to DLQ                    |
-
----
-
-## Graceful Shutdown
-
-The consumer supports graceful shutdown with in-flight message handling:
-
-```java
-final var log = System.getLogger("org.kpipe.app.Shutdown");
-
 // Initiate graceful shutdown with 5-second timeout
 boolean allProcessed = runner.shutdownGracefully(5000);
-if (allProcessed) log.log(Level.INFO, "All messages processed successfully before shutdown");
-else log.log(Level.WARNING, "Shutdown completed with some messages still in flight");
 
-// Register as JVM shutdown hook
+// Or register as JVM shutdown hook (KPipeRunner handles this with .withShutdownHook(true))
 Runtime.getRuntime().addShutdownHook(new Thread(() -> runner.close()));
 ```
 
@@ -581,50 +474,34 @@ final var pipeline = registry.pipeline(MessageFormat.pojo(UserRecord.class)).add
 ## Message Sinks
 
 Message sinks provide destinations for processed messages. The `MessageSink` interface is a functional interface that
-defines a single method:
+extends `Consumer<T>`:
 
 ```java
 @FunctionalInterface
-public interface MessageSink<T> {
-  void accept(final T processedValue);
-}
+public interface MessageSink<T> extends Consumer<T> {}
 ```
 
 ### Built-in Sinks
 
-KPipe provides several built-in sinks:
-
 ```java
-// Create a JSON console sink (Map-typed)
-final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
-
-// Create an Avro console sink (GenericRecord-typed)
-final var avroConsoleSink = new AvroConsoleSink<GenericRecord>();
-
-// Use a sink directly in the pipeline
+// Use pre-registered sinks via the pipeline builder
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)
   .add(RegistryKey.json("sanitize"))
-  .toSink(jsonConsoleSink)
+  .toSink(MessageSinkRegistry.JSON_LOGGING) // or AVRO_LOGGING
   .build();
+
+// Or instantiate directly
+final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
+
+final var avroConsoleSink = new AvroConsoleSink<GenericRecord>();
 ```
 
 ### Custom Sinks
 
-You can create custom sinks using lambda expressions:
-
 ```java
-// Create a custom sink that writes to a database
 final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
-  try {
-    // Write to database
-    databaseService.insert(processedMap);
-
-    // Log success
-    log.log(Level.INFO, "Successfully wrote message to database: " + processedMap.get("id"));
-  } catch (Exception e) {
-    log.log(Level.ERROR, "Failed to write message to database", e);
-  }
+  databaseService.insert(processedMap);
 };
 ```
 
@@ -647,26 +524,17 @@ final var pipeline = registry.pipeline(MessageFormat.JSON).add(RegistryKey.json(
 
 ### Error Handling in Sinks
 
-The registry provides utilities for adding error handling to both sinks and operators:
-
 ```java
-// Create a sink with error handling
+// Wrap a sink or operator with error handling (suppresses exceptions, logs errors)
 final var safeSink = MessageSinkRegistry.withErrorHandling(riskySink);
-
-// Create an operator with error handling
 final var safeOperator = MessageProcessorRegistry.withErrorHandling(riskyOperator);
 
-// Register and use the wrapped sink
-final var safeKey = RegistryKey.json("safeDatabase");
-registry.sinkRegistry().register(safeKey, safeSink);
-
-final var pipeline = registry.pipeline(MessageFormat.JSON).toSink(safeKey).build();
+registry.sinkRegistry().register(RegistryKey.json("safeDatabase"), safeSink);
 ```
 
 ### Kafka Producer Sink
 
-KPipe includes a specialized `KafkaMessageSink` that allows you to produce processed messages back to a Kafka topic.
-This sink is designed to work seamlessly with virtual threads.
+Produce processed messages back to a Kafka topic:
 
 ```java
 final var producer = KPipeProducer.<byte[], byte[]>builder().withProperties(kafkaProps).build();
@@ -674,127 +542,107 @@ final var producer = KPipeProducer.<byte[], byte[]>builder().withProperties(kafk
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)
   .add(RegistryKey.json("transform"))
-  .toSink(new KafkaMessageSink<>(producer, "output-topic", format::serialize))
+  .toSink(KafkaMessageSink.of(producer.getProducer(), "output-topic", format::serialize))
   .build();
 ```
 
 ### Composite Sink (Broadcasting)
 
-You can broadcast processed messages to multiple destinations simultaneously using `CompositeMessageSink`. Failures in
-one sink (e.g., a database timeout) do not prevent other sinks from receiving the data.
+Broadcast processed messages to multiple destinations simultaneously. Failures in one sink do not prevent other sinks
+from receiving the data:
 
 ```java
-// Create multiple sinks
-final var postgresSink = new MyPostgresSink();
-
-final var consoleSink = new JsonConsoleSink<Map<String, Object>>();
-
-// Broadcast to both
 final var compositeSink = new CompositeMessageSink<>(List.of(postgresSink, consoleSink));
 
-// Use in pipeline
 final var pipeline = registry.pipeline(MessageFormat.JSON).toSink(compositeSink).build();
 ```
 
 ---
 
-## KPipe Runner
+## Built-in Metrics
 
-The `KPipeRunner` provides a high-level management layer for Kafka consumers, handling lifecycle, metrics, and graceful
-shutdown:
+### Programmatic Access
 
 ```java
-// Create a consumer runner with default settings
-final var runner = KPipeRunner.builder(consumer).build();
+final var metrics = consumer.getMetrics();
+log.log(Level.INFO, "Messages received: " + metrics.get("messagesReceived"));
+log.log(Level.INFO, "Successfully processed: " + metrics.get("messagesProcessed"));
+log.log(Level.INFO, "Processing errors: " + metrics.get("processingErrors"));
+log.log(Level.INFO, "Messages in-flight: " + metrics.get("inFlight"));
+// Backpressure metrics (present only when withBackpressure() is configured)
+log.log(Level.INFO, "Backpressure pauses: " + metrics.get("backpressurePauseCount"));
+log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs"));
+```
 
-// Start the consumer
+### OpenTelemetry Integration
+
+KPipe ships a `kpipe-metrics` module with first-class [OpenTelemetry](https://opentelemetry.io/) support. Add your OTel
+SDK at runtime — KPipe only depends on `opentelemetry-api`:
+
+```java
+final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+  .withProperties(kafkaProps)
+  .withTopic("events")
+  .withPipeline(pipeline)
+  .withMetrics(new ConsumerMetrics(openTelemetry, inFlightCount::get))
+  .build();
+```
+
+When no `ConsumerMetrics` or `ProducerMetrics` is provided, `OpenTelemetry.noop()` is used automatically — zero
+allocation overhead, no SDK required.
+
+| Instrument                           | Type      | Description                            |
+| ------------------------------------ | --------- | -------------------------------------- |
+| `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
+| `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
+| `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |
+| `kpipe.consumer.processing.duration` | Histogram | Per-record processing time (ms)        |
+| `kpipe.consumer.messages.inflight`   | Gauge     | Current number of in-flight messages   |
+| `kpipe.consumer.backpressure.pauses` | Counter   | Times backpressure paused the consumer |
+| `kpipe.consumer.backpressure.time`   | Counter   | Total time paused due to backpressure  |
+| `kpipe.producer.messages.sent`       | Counter   | Records successfully produced          |
+| `kpipe.producer.messages.failed`     | Counter   | Records that failed to produce         |
+| `kpipe.producer.dlq.sent`            | Counter   | Records sent to DLQ                    |
+
+---
+
+## KPipe Runner
+
+The `KPipeRunner` provides lifecycle management, metrics reporting, and graceful shutdown for Kafka consumers:
+
+```java
+final var runner = KPipeRunner.builder(consumer)
+  .withMetricsReporters(List.of(
+    ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
+    ProcessorMetricsReporter.forRegistry(processorRegistry)
+  ))
+  .withMetricsInterval(30_000)
+  .withHealthCheck(KPipeConsumer::isRunning)
+  .withShutdownTimeout(10_000)
+  .withShutdownHook(true)
+  .build();
+
 runner.start();
-
-// Wait for shutdown
 runner.awaitShutdown();
 ```
 
-### Advanced Configuration
-
-The `KPipeRunner` supports extensive configuration options:
-
-```java
-// Create a consumer runner with advanced configuration
-final var runner = KPipeRunner.builder(consumer)
-  // Configure metrics reporting
-  .withMetricsReporters(List.of(ConsumerMetricsReporter.forConsumer(consumer::getMetrics)))
-  .withMetricsInterval(30_000) // Report metrics every 30 seconds
-  // Configure health checks
-  .withHealthCheck(KPipeConsumer::isRunning)
-  // Configure graceful shutdown
-  .withShutdownTimeout(10_000) // 10 seconds timeout for shutdown
-  .withShutdownHook(true) // Register JVM shutdown hook
-  // Configure custom start action
-  .withStartAction((c) -> {
-    log.log(Level.INFO, "Starting consumer");
-    c.start();
-  })
-  // Configure custom graceful shutdown
-  .withGracefulShutdown((c, timeoutMs) -> {
-    log.log(Level.INFO, "Initiating graceful shutdown with timeout: " + timeoutMs + "ms");
-    return KPipeRunner.performGracefulConsumerShutdown(c, timeoutMs);
-  })
-  .build();
-```
-
-### Lifecycle Management
-
-The `KPipeRunner` manages the complete lifecycle of a consumer:
-
-```java
-// Start the consumer (idempotent - safe to call multiple times)
-runner.start();
-
-// Check if the consumer is healthy
-boolean isHealthy = runner.isHealthy();
-
-// Wait for shutdown (blocks until shutdown completes)
-boolean cleanShutdown = runner.awaitShutdown();
-
-// Initiate shutdown
-runner.close();
-```
-
-### Metrics Integration
-
-The `KPipeRunner` integrates with metrics reporting:
-
-```java
-// ConsumerMetricsReporter is in org.kpipe.metrics (kpipe-metrics module)
-// ProcessorMetricsReporter is in org.kpipe.consumer.metrics (kpipe-consumer module)
-final var runner = KPipeRunner.builder(consumer)
-  .withMetricsReporters(
-    List.of(
-      ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
-      ProcessorMetricsReporter.forRegistry(processorRegistry)
-    )
-  )
-  .withMetricsInterval(60_000) // Report every minute
-  .build();
-```
-
-### Using with AutoCloseable
-
-The `KPipeRunner` implements `AutoCloseable` for use with try-with-resources:
+The runner implements `AutoCloseable` for use with try-with-resources:
 
 ```java
 try (final var runner = KPipeRunner.builder(consumer).build()) {
   runner.start();
-  // Application logic here
-  // Runner will be automatically closed when exiting the try block
+  runner.awaitShutdown();
 }
 ```
 
 ---
 
-## Application Example
+## Full Application Example
 
-Here's a concise example of a KPipe application:
+For complete working applications, see the [`examples/`](examples/) directory.
+
+<details>
+<summary>Expand condensed application example</summary>
 
 ```java
 public class KPipeApp implements AutoCloseable {
@@ -803,9 +651,7 @@ public class KPipeApp implements AutoCloseable {
   private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
 
   static void main() {
-    // Load configuration from environment variables
     final var config = AppConfig.fromEnv();
-
     try (final var app = new KPipeApp(config)) {
       app.start();
       app.awaitShutdown();
@@ -816,12 +662,9 @@ public class KPipeApp implements AutoCloseable {
   }
 
   public KPipeApp(final AppConfig config) {
-    // Create processor and sink registries
     final var processorRegistry = new MessageProcessorRegistry(config.appName());
-    final var sinkRegistry = new MessageSinkRegistry();
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    // Create the functional consumer
     final var functionalConsumer = KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup()))
       .withTopic(config.topic())
@@ -829,9 +672,7 @@ public class KPipeApp implements AutoCloseable {
       .withPipeline(
         processorRegistry
           .pipeline(MessageFormat.JSON)
-          .add(RegistryKey.json("addSource"))
-          .add(RegistryKey.json("markProcessed"))
-          .add(RegistryKey.json("addTimestamp"))
+          .add(RegistryKey.json("addSource"), RegistryKey.json("markProcessed"), RegistryKey.json("addTimestamp"))
           .toSink(MessageSinkRegistry.JSON_LOGGING)
           .build()
       )
@@ -845,7 +686,6 @@ public class KPipeApp implements AutoCloseable {
       .enableMetrics(true)
       .build();
 
-    // Set up the consumer runner with metrics and shutdown hooks
     runner = KPipeRunner.builder(functionalConsumer)
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())
@@ -867,21 +707,9 @@ public class KPipeApp implements AutoCloseable {
 }
 ```
 
-**Key Components:**
-
-- Configuration from environment variables
-- Processor and sink registries for message handling
-- Processing pipeline with error handling
-- Metrics reporting and graceful shutdown
-
-**To Run:**
+**Environment variables:**
 
 ```bash
-# Set configuration
-export HEALTH_HTTP_ENABLED=true
-export HEALTH_HTTP_HOST=0.0.0.0
-export HEALTH_HTTP_PORT=8080
-export HEALTH_HTTP_PATH=/health
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 export KAFKA_CONSUMER_GROUP=my-group
 export KAFKA_TOPIC=json-events
@@ -889,6 +717,8 @@ export PROCESSOR_PIPELINE=addSource,markProcessed,addTimestamp
 export METRICS_INTERVAL_SEC=30
 export SHUTDOWN_TIMEOUT_SEC=5
 ```
+
+</details>
 
 ---
 
@@ -903,39 +733,25 @@ export SHUTDOWN_TIMEOUT_SEC=5
 
 ## Testing
 
-Follow these steps to test the KPipe Kafka Consumer. KPipe includes a pre-configured `docker-compose.yaml` in the root
-directory that starts a full local environment including Kafka, Zookeeper, and Confluent Schema Registry.
-
-### Build and Run
+KPipe includes a pre-configured `docker-compose.yaml` that starts a full local environment including Kafka, Zookeeper,
+and Confluent Schema Registry.
 
 ```bash
 # Format code and build all modules
 ./gradlew clean spotlessApply build
-
-# Build individual modules
-./gradlew :lib:kpipe-metrics:build
-./gradlew :lib:kpipe-producer:build
-./gradlew :lib:kpipe-consumer:build
 
 # Build the consumer app container and start all services
 docker compose build --no-cache --build-arg MESSAGE_FORMAT=<json|avro|protobuf>
 docker compose down -v
 docker compose up -d
 
-# Publish a simple JSON message to the json-topic
-echo '{"message":"Hello world"}' | kcat -P -b kafka:9092 -t json-topic
-
-# For complex JSON messages, use a file
-cat test-message.json | kcat -P -b kafka:9092 -t json-topic
-
-# Publish multiple test messages
+# Publish test messages
 for i in {1..10}; do echo "{\"id\":$i,\"message\":\"Test message $i\"}" | \
   kcat -P -b kafka:9092 -t json-topic; done
 ```
 
-### Working with the Schema Registry and Avro
-
-If you want to use Avro with a schema registry, follow these steps:
+<details>
+<summary>Working with the Schema Registry and Avro</summary>
 
 ```bash
 # Register an Avro schema
@@ -960,39 +776,15 @@ sh -ec 'kafka-avro-console-producer \
 JSON
 ```
 
-Kafka consumer will:
-
-- Connect to `localhost:9092`
-- Subscribe to `avro-topic|json-topic|protobuf-topic`
-- Compose the processing pipeline from configured processors
-- Process each message concurrently using virtual threads
+</details>
 
 ---
 
-## Best Practices & Advanced Patterns
-
-### Composing Complex Processing Pipelines
-
-For maintainable pipelines, you can compose multiple pipelines or operators:
-
-```java
-final var registry = new MessageProcessorRegistry("myApp");
-
-// Create focused operator groups
-final var securityKey = RegistryKey.json("security");
-registry.register(securityKey, JsonMessageProcessor.removeFieldsOperator("password", "creditCard"));
-
-final var enrichmentKey = RegistryKey.json("enrichment");
-registry.register(enrichmentKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
-
-// Compose them into an optimized pipeline
-final var fullPipeline = registry.pipeline(MessageFormat.JSON).add(securityKey).add(enrichmentKey).build();
-```
+## Advanced Patterns
 
 ### Enum-Based Registry (Static Type Safety)
 
-For the highest level of type safety, you can define your operators as an `Enum` that implements `UnaryOperator<T>`.
-This allows for bulk registration and discoverability of standard processors:
+Define operators as an `Enum` that implements `UnaryOperator<T>` for bulk registration and discoverability:
 
 ```java
 public enum StandardProcessors implements UnaryOperator<Map<String, Object>> {
@@ -1020,8 +812,6 @@ registry.registerEnum(Map.class, StandardProcessors.class);
 
 ### Conditional Processing
 
-KPipe provides a fluent `when()` operator directly in the `TypedPipelineBuilder`:
-
 ```java
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)
@@ -1039,31 +829,16 @@ final var pipeline = registry
   .build();
 ```
 
-Alternatively, for `byte[]` level branching, use the static `MessageProcessorRegistry.when()` utility:
-
 ### Filtering Messages
 
-To skip a message in a pipeline, return `null` in your operator. KPipe will treat `null` as a signal to stop processing
-the current record and will not send it to any downstream operators or sinks.
+Return `null` from an operator to skip a message. KPipe will stop processing the current record and will not send it to
+any downstream operators or sinks:
 
 ```java
 registry.register(RegistryKey.json("filter"), map -> {
   if ("internal".equals(map.get("type"))) return null; // Skip this message
   return map;
 });
-```
-
-### Header Propagation
-
-You can access `ConsumerRecord` headers within a custom sink to propagate tracing or metadata:
-
-```java
-MessageSink<byte[], byte[]> tracingSink = (record, processedValue) -> {
-  final var traceId = record.headers().lastHeader("X-Trace-Id");
-  if (traceId != null) {
-    // Use traceId.value() for logging or downstream calls
-  }
-};
 ```
 
 ### Thread-Safety and Resource Management
@@ -1074,17 +849,9 @@ MessageSink<byte[], byte[]> tracingSink = (record, processedValue) -> {
 - For processors with side effects (like database calls), ensure they are compatible with high-concurrency virtual
   threads.
 
-### Performance Optimization
-
-- Register frequently used processor combinations as single processors
-- For very large messages, consider streaming JSON processors
-- Profile your processor pipeline to identify bottlenecks
-
 ---
 
-## Performance Notes
-
-### High-Performance Architecture
+## Performance
 
 KPipe is designed for high-throughput, low-overhead Kafka processing using modern Java features and pipeline
 optimizations. Performance depends on workload shape (I/O vs CPU bound), partitioning, and message size.
@@ -1094,9 +861,9 @@ optimizations. Performance depends on workload shape (I/O vs CPU bound), partiti
   operations.
 - **DslJson Integration**: Uses a high-performance JSON library to reduce parsing overhead and GC pressure.
 
-Latest parallel benchmark snapshot (see `benchmarks/README.md`) shows a throughput edge for KPipe in that scenario, with
-a higher allocation footprint than Confluent Parallel Consumer. Treat these as scenario-specific results, not universal
-guarantees.
+Latest parallel benchmark snapshot (see [`benchmarks/README.md`](benchmarks/README.md)) shows a throughput edge for
+KPipe over Confluent Parallel Consumer, with a higher allocation footprint. Treat these as scenario-specific results,
+not universal guarantees.
 
 ---
 
@@ -1133,5 +900,3 @@ If you're a team using this library, feel free to:
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
----
