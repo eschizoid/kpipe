@@ -74,12 +74,14 @@ services:
     volumes:
       - ./scripts/register-schema.sh:/scripts/register-schema.sh:ro
       - ./lib/kpipe-consumer/src/test/resources/avro/customer.avsc:/schemas/customer.avsc:ro
+      - ./lib/kpipe-consumer/src/test/resources/protobuf/customer.proto:/schemas/customer.proto:ro
     command:
       - sh
       - -ec
       - |
         apk add --no-cache curl jq
-        sh /scripts/register-schema.sh /schemas/customer.avsc com.kpipe.customer http://schema-registry:8081
+        sh /scripts/register-schema.sh /schemas/customer.avsc com.kpipe.customer http://schema-registry:8081 AVRO
+        sh /scripts/register-schema.sh /schemas/customer.proto com.kpipe.customer-protobuf http://schema-registry:8081 PROTOBUF
     restart: "no"
 
   kafka-consumer-app:

@@ -85,6 +85,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   public void clearSchemas() {
     schemas.clear();
     descriptors.clear();
+    defaultDescriptorKey = null;
   }
 
   /// Adds a schema to this format. For Protobuf, prefer [addDescriptor] which registers the

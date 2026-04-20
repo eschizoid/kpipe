@@ -108,7 +108,7 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
     try {
       // Check if HTTP URL
       if (location.startsWith("http://") || location.startsWith("https://")) {
-        try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
+        try (final var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
           final var request = HttpRequest.newBuilder()
             .uri(URI.create(location))
             .timeout(Duration.ofSeconds(10))
