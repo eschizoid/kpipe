@@ -69,7 +69,7 @@ class OptimizedPipelineTest {
     registry.register(addStatus, AvroMessageProcessor.addFieldOperator("status", "processed"));
 
     // Create optimized pipeline
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("user");
+    final var format = MessageFormat.AVRO.withDefaultSchema("user");
     final var pipeline = registry.pipeline(format).add(addSource, addStatus).build();
 
     // Create input record
@@ -144,7 +144,7 @@ class OptimizedPipelineTest {
     registry.register(RegistryKey.avro("markProcessed"), AvroMessageProcessor.addFieldOperator("processed", "true"));
     registry.register(RegistryKey.avro("addTimestamp"), AvroMessageProcessor.addTimestampOperator("timestamp"));
 
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("user");
+    final var format = MessageFormat.AVRO.withDefaultSchema("user");
     final var pipeline = registry
       .pipeline(format)
       .add(RegistryKey.avro("addSource"), RegistryKey.avro("markProcessed"), RegistryKey.avro("addTimestamp"))
@@ -194,7 +194,7 @@ class OptimizedPipelineTest {
     registry.register(addSource, AvroMessageProcessor.addFieldOperator("source", SOURCE_APP));
 
     // Create optimized pipeline with offset 5 (simulating magic bytes)
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("userOffset");
+    final var format = MessageFormat.AVRO.withDefaultSchema("userOffset");
     final var pipeline = registry.pipeline(format).skipBytes(5).add(addSource).build();
 
     // Create input record

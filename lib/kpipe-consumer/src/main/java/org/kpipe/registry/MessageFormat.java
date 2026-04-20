@@ -13,7 +13,6 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Predicate;
-import org.apache.avro.generic.GenericRecord;
 
 /// Represents a message format abstraction for KPipe pipelines.
 ///
@@ -25,6 +24,7 @@ import org.apache.avro.generic.GenericRecord;
 /// ```java
 /// MessageFormat<Map<String, Object>> json = MessageFormat.JSON;
 /// MessageFormat<GenericRecord> avro = MessageFormat.AVRO;
+/// MessageFormat<Message> protobuf = MessageFormat.PROTOBUF;
 /// ```
 ///
 /// @param <T> the type of data handled by this message format
@@ -33,10 +33,10 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
   MessageFormat<Map<String, Object>> JSON = new JsonFormat();
 
   /// AVRO message format with support for schema retrieval from HTTP endpoints and file system.
-  MessageFormat<GenericRecord> AVRO = new AvroFormat(MessageFormat::readAvroSchema);
+  AvroFormat AVRO = new AvroFormat(MessageFormat::readAvroSchema);
 
-  /// Protocol Buffers message format.
-  MessageFormat<Object> PROTOBUF = new ProtobufFormat();
+  /// Protocol Buffers message format with support for descriptor registration and management.
+  ProtobufFormat PROTOBUF = new ProtobufFormat();
 
   /// Creates a new POJO message format based on JSON.
   ///
@@ -106,7 +106,7 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
     try {
       // Check if HTTP URL
       if (location.startsWith("http://") || location.startsWith("https://")) {
-        try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
+        try (final var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
           final var request = HttpRequest.newBuilder()
             .uri(URI.create(location))
             .timeout(Duration.ofSeconds(10))

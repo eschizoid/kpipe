@@ -2,6 +2,7 @@
 kafka = "4.2.0"
 otel = "1.44.1"
 avro = "1.12.1"
+protobuf = "4.29.3"
 dslJson = "2.0.2"
 slf4j = "2.0.16"
 junit = "5.11.0"
@@ -20,9 +21,14 @@ jgit = "6.10.0.202406032230-r"
 [libraries]
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
 opentelemetryApi = { module = "io.opentelemetry:opentelemetry-api", version.ref = "otel" }
+opentelemetrySdk = { module = "io.opentelemetry:opentelemetry-sdk", version.ref = "otel" }
+opentelemetryExporterOtlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "otel" }
+opentelemetryAutoconfigure = { module = "io.opentelemetry:opentelemetry-sdk-extension-autoconfigure", version.ref = "otel" }
 kafkaTestCommonRuntime = { module = "org.apache.kafka:kafka-test-common-runtime", version.ref = "kafka" }
 
 avro = { module = "org.apache.avro:avro", version.ref = "avro" }
+protobufJava = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+protobufUtil = { module = "com.google.protobuf:protobuf-java-util", version.ref = "protobuf" }
 dslJson = { module = "com.dslplatform:dsl-json", version.ref = "dslJson" }
 
 slf4jSimple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }

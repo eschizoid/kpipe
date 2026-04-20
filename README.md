@@ -436,7 +436,7 @@ registry.register(
 
 // Build an optimized pipeline
 // This pipeline handles deserialization, all operators, and serialization in one pass
-final var avroFormat = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("user");
+final var avroFormat = MessageFormat.AVRO.withDefaultSchema("user");
 final var pipeline = registry
   .pipeline(avroFormat)
   .add(sanitizeKey)
@@ -469,6 +469,41 @@ registry.register(userKey, user -> new UserRecord(user.id(), user.name().toUpper
 final var pipeline = registry.pipeline(MessageFormat.pojo(UserRecord.class)).add(userKey).build();
 ```
 
+### Protobuf Processing
+
+The Protobuf processors provide operators (`UnaryOperator<Message>`) that work within optimized pipelines:
+
+```java
+final var registry = new MessageProcessorRegistry("myApp", MessageFormat.PROTOBUF);
+
+// Register a descriptor from your generated Protobuf class
+final var protoFormat = MessageFormat.PROTOBUF;
+protoFormat.addDescriptor("customer", CustomerProto.Customer.getDescriptor());
+protoFormat.withDefaultDescriptor("customer");
+
+// Register manual operators
+final var sanitizeKey = RegistryKey.protobuf("sanitize");
+registry.register(sanitizeKey, ProtobufMessageProcessor.removeFieldsOperator("email", "address"));
+
+// Transform fields
+final var upperKey = RegistryKey.protobuf("uppercaseName");
+registry.register(
+  upperKey,
+  ProtobufMessageProcessor.transformFieldOperator("name", value -> {
+    if (value instanceof String text) return text.toUpperCase();
+    return value;
+  })
+);
+
+// Build an optimized pipeline
+final var pipeline = registry
+  .pipeline(protoFormat)
+  .add(sanitizeKey)
+  .add(upperKey)
+  .toSink(MessageSinkRegistry.PROTOBUF_LOGGING)
+  .build();
+```
+
 ---
 
 ## Message Sinks
@@ -488,13 +523,15 @@ public interface MessageSink<T> extends Consumer<T> {}
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)
   .add(RegistryKey.json("sanitize"))
-  .toSink(MessageSinkRegistry.JSON_LOGGING) // or AVRO_LOGGING
+  .toSink(MessageSinkRegistry.JSON_LOGGING) // or AVRO_LOGGING or PROTOBUF_LOGGING
   .build();
 
 // Or instantiate directly
 final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
 
 final var avroConsoleSink = new AvroConsoleSink<GenericRecord>();
+
+final var protobufConsoleSink = new ProtobufConsoleSink<Message>();
 ```
 
 ### Custom Sinks
@@ -778,6 +815,33 @@ JSON
 
 </details>
 
+<details>
+<summary>Working with the Schema Registry and Protobuf</summary>
+
+```bash
+# Register a Protobuf schema
+curl -X POST \
+  -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+  --data "{\"schemaType\": \"PROTOBUF\", \"schema\": $(cat lib/kpipe-consumer/src/test/resources/protobuf/customer.proto | jq -Rs .)}" \
+  http://localhost:8081/subjects/com.kpipe.customer-protobuf/versions
+
+# Read registered schema
+curl -s http://localhost:8081/subjects/com.kpipe.customer-protobuf/versions/latest | jq '.'
+
+# Produce a Protobuf message using kafka-protobuf-console-producer
+cat <<'JSON' | docker run -i --rm --network kpipe_default \
+confluentinc/cp-schema-registry:8.2.0 \
+sh -ec 'kafka-protobuf-console-producer \
+  --bootstrap-server kafka:9092 \
+  --topic protobuf-topic \
+  --property schema.registry.url=http://schema-registry:8081 \
+  --property value.schema.id=1'
+{"id":"1","name":"Mariano Gonzalez","email":"mariano@example.com","active":true,"registrationDate":"1635724800000","tags":["premium","verified"],"preferences":{"notifications":"email"}}
+JSON
+```
+
+</details>
+
 ---
 
 ## Advanced Patterns
@@ -878,6 +942,54 @@ For systems like **payment processors** where the order of operations (Authorize
 
 ---
 
+## Metrics Dashboard
+
+KPipe ships a local observability stack under `infra/observability/` that spins up with Docker Compose:
+
+- **OpenTelemetry Collector** — receives OTLP metrics from KPipe and exports to Prometheus.
+- **Prometheus** — scrapes the collector and stores time-series data.
+- **Grafana** — pre-provisioned with a **KPipe Overview** dashboard covering all consumer and producer metrics.
+
+The stack is automatically included when you run any example via `docker compose`. To point your own OTel Collector at a
+running KPipe app, configure the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4318
+OTEL_METRICS_EXPORTER=otlp
+```
+
+Once running, open Grafana at [http://localhost:3000](http://localhost:3000) (admin/admin) to view the KPipe Overview
+dashboard.
+
+---
+
+## Running the Demo
+
+The `examples/demo` module runs JSON, Avro, and Protobuf pipelines concurrently in a single application, with full
+observability wired in.
+
+```bash
+# Build and start everything (Kafka, Schema Registry, OTel, Prometheus, Grafana, demo app, seed data)
+./scripts/run-demo.sh
+
+# Or manually:
+cd examples/demo
+docker compose up --build
+```
+
+This will:
+
+1. Start Kafka (KRaft) and Schema Registry
+2. Create topics and register Avro + Protobuf schemas
+3. Start the observability stack (OTel Collector → Prometheus → Grafana)
+4. Build and start the demo application with all three pipelines
+5. Seed JSON messages for immediate processing
+
+Open [http://localhost:3000](http://localhost:3000) to view metrics in Grafana, or
+[http://localhost:8080/health](http://localhost:8080/health) to check the app health endpoint.
+
+---
+
 ## Inspiration
 
 This library is inspired by the best practices from:
@@ -889,7 +1001,7 @@ This library is inspired by the best practices from:
 
 ## Contributing
 
-If you're a team using this library, feel free to:
+If you're using this library, feel free to:
 
 - Register custom processors
 - Add metrics/observability hooks

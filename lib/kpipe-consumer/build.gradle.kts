@@ -32,6 +32,10 @@ dependencies {
   // Avro
   implementation(libs.avro)
 
+  // Protobuf
+  implementation(libs.protobufJava)
+  implementation(libs.protobufUtil)
+
   // Testing
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)

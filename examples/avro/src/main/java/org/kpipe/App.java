@@ -4,10 +4,8 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -19,7 +17,6 @@ import org.kpipe.consumer.metrics.SinkMetricsReporter;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.KPipeMetricsReporter;
-import org.kpipe.registry.AvroFormat;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
@@ -32,10 +29,9 @@ public class App implements AutoCloseable {
   private static final Logger LOGGER = System.getLogger(App.class.getName());
   private static final String DEFAULT_SCHEMA_REGISTRY_URL = "http://schema-registry:8081";
 
-  private final KPipeConsumer<byte[], byte[]> functionalConsumer;
+  private final KPipeConsumer<byte[], byte[]> kpipeConsumer;
   private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
   private final HttpHealthServer healthServer;
-  private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
 
@@ -67,17 +63,17 @@ public class App implements AutoCloseable {
   public App(final AppConfig config, final String schemaRegistryUrl) {
     processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
     sinkRegistry = processorRegistry.sinkRegistry();
-    functionalConsumer = createConsumer(config, processorRegistry, schemaRegistryUrl);
+    kpipeConsumer = createConsumer(config, processorRegistry, schemaRegistryUrl);
 
-    final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(functionalConsumer::getMetrics);
+    final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
 
     final var processorMetricsReporter = ProcessorMetricsReporter.forRegistry(processorRegistry);
     final var sinkMetricsReporter = SinkMetricsReporter.forRegistry(sinkRegistry);
     runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter);
     healthServer = HttpHealthServer.fromEnv(
       runner::isHealthy,
-      () -> functionalConsumer.getMetrics().getOrDefault("inFlight", 0L),
-      functionalConsumer::isPaused,
+      () -> kpipeConsumer.getMetrics().getOrDefault("inFlight", 0L),
+      kpipeConsumer::isPaused,
       config.appName()
     ).orElse(null);
   }
@@ -96,7 +92,7 @@ public class App implements AutoCloseable {
     final KPipeMetricsReporter processorMetricsReporter,
     final KPipeMetricsReporter sinkMetricsReporter
   ) {
-    return KPipeRunner.builder(functionalConsumer)
+    return KPipeRunner.builder(kpipeConsumer)
       .withStartAction(c -> {
         c.start();
         LOGGER.log(Level.INFO, "Kafka consumer application started successfully");
@@ -159,7 +155,7 @@ public class App implements AutoCloseable {
     final AppConfig config,
     final String schemaRegistryUrl
   ) {
-    final var avroFormat = (AvroFormat) MessageFormat.AVRO;
+    final var avroFormat = MessageFormat.AVRO;
     // Register schema for the test/app
     avroFormat.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
     avroFormat.withDefaultSchema("1");
@@ -192,10 +188,6 @@ public class App implements AutoCloseable {
 
   boolean awaitShutdown() {
     return runner.awaitShutdown();
-  }
-
-  private Map<String, Long> getMetrics() {
-    return currentMetrics.get();
   }
 
   @Override

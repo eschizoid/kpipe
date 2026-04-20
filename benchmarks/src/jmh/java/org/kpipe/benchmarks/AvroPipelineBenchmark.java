@@ -10,7 +10,6 @@ import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.io.EncoderFactory;
 import org.kpipe.processor.AvroMessageProcessor;
-import org.kpipe.registry.AvroFormat;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
@@ -80,7 +79,7 @@ public class AvroPipelineBenchmark {
     System.arraycopy(avroBytes, 0, avroWithMagicBytes, 5, avroBytes.length);
 
     final var registry = new MessageProcessorRegistry("benchmark-app", MessageFormat.AVRO);
-    final var format = (AvroFormat) MessageFormat.AVRO;
+    final var format = MessageFormat.AVRO;
     format.addSchema("user", "com.kpipe.User", schemaJson);
     format.withDefaultSchema("user");
 
@@ -110,7 +109,7 @@ public class AvroPipelineBenchmark {
   public void manualAvroMagicHandling(final Blackhole bh) {
     // This mimics the manual way of handling magic bytes with copying
     final var stripped = Arrays.copyOfRange(avroWithMagicBytes, 5, avroWithMagicBytes.length);
-    final var format = (AvroFormat) MessageFormat.AVRO;
+    final var format = MessageFormat.AVRO;
     final var record = format.deserialize(stripped);
     if (record != null) {
       record.put("processed", true);

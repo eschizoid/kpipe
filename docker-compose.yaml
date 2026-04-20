@@ -1,3 +1,6 @@
+include:
+  - path: infra/observability/docker-compose.yaml
+
 services:
   kafka:
     image: confluentinc/cp-kafka:8.2.0
@@ -74,12 +77,14 @@ services:
     volumes:
       - ./scripts/register-schema.sh:/scripts/register-schema.sh:ro
       - ./lib/kpipe-consumer/src/test/resources/avro/customer.avsc:/schemas/customer.avsc:ro
+      - ./lib/kpipe-consumer/src/test/resources/protobuf/customer.proto:/schemas/customer.proto:ro
     command:
       - sh
       - -ec
       - |
         apk add --no-cache curl jq
-        sh /scripts/register-schema.sh /schemas/customer.avsc com.kpipe.customer http://schema-registry:8081
+        sh /scripts/register-schema.sh /schemas/customer.avsc com.kpipe.customer http://schema-registry:8081 AVRO
+        sh /scripts/register-schema.sh /schemas/customer.proto com.kpipe.customer-protobuf http://schema-registry:8081 PROTOBUF
     restart: "no"
 
   kafka-consumer-app:
@@ -96,6 +101,11 @@ services:
       - KAFKA_TOPIC=${MESSAGE_FORMAT:-avro}-topic
       - APP_NAME=kafka-consumer-app
       - HEALTH_HTTP_PORT=8080
+      - OTEL_SERVICE_NAME=kpipe-consumer
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_TRACES_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
     depends_on:
       schema-registry:
         condition: service_healthy
