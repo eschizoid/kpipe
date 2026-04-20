@@ -12,4 +12,5 @@ description = "KPipe - Kafka Consumer Application Using Protobuf"
 
 dependencies {
   implementation(rootProject.libs.protobufJava)
+  implementation(rootProject.libs.protobufUtil)
 }

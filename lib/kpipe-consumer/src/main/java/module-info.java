@@ -8,6 +8,7 @@ module org.kpipe.consumer {
   requires kafka.clients;
   requires org.apache.avro;
   requires com.google.protobuf;
+  requires com.google.protobuf.util;
 
   exports org.kpipe.consumer;
   exports org.kpipe.consumer.config;

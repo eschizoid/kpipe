@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package com.kpipe.customer;
+
+option java_package = "com.kpipe.customer";
+option java_outer_classname = "CustomerProto";
+
+message Customer {
+  int64 id = 1;
+  string name = 2;
+  string email = 3;
+  bool active = 4;
+  int64 registration_date = 5;
+  Address address = 6;
+  repeated string tags = 7;
+  map<string, string> preferences = 8;
+}
+
+message Address {
+  string street = 1;
+  string city = 2;
+  string zip_code = 3;
+  string country = 4;
+}
+

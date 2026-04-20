@@ -1,5 +1,7 @@
 package org.kpipe;
 
+import com.google.protobuf.DescriptorProtos;
+import com.google.protobuf.Descriptors;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
@@ -20,6 +22,7 @@ import org.kpipe.metrics.KPipeMetricsReporter;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.RegistryKey;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
 /// pipeline of message processors.
@@ -105,7 +108,7 @@ public class App implements AutoCloseable {
     return KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
-      .withPipeline(createProtobufProcessorPipeline(processorRegistry))
+      .withPipeline(createProtobufProcessorPipeline(processorRegistry, config))
       .withPollTimeout(config.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
@@ -129,9 +132,61 @@ public class App implements AutoCloseable {
   /// Creates a processor pipeline using the provided registry.
   ///
   /// @param registry the message processor registry
+  /// @param config the application configuration
   /// @return a function that processes messages through the pipeline
-  private static UnaryOperator<byte[]> createProtobufProcessorPipeline(final MessageProcessorRegistry registry) {
-    return registry.pipeline(MessageFormat.PROTOBUF).build();
+  private static UnaryOperator<byte[]> createProtobufProcessorPipeline(
+    final MessageProcessorRegistry registry,
+    final AppConfig config
+  ) {
+    final var protoFormat = MessageFormat.PROTOBUF;
+    // Register the Customer descriptor programmatically
+    protoFormat.addDescriptor("customer", buildCustomerDescriptor());
+    protoFormat.withDefaultDescriptor("customer");
+
+    final var builder = registry.pipeline(protoFormat);
+    for (final var name : config.processors()) builder.add(RegistryKey.protobuf(name));
+    builder.toSink(RegistryKey.protobuf("protobufLogging"));
+    return builder.build();
+  }
+
+  /// Builds a Customer descriptor programmatically (no protoc codegen required).
+  ///
+  /// @return The Customer message descriptor
+  static Descriptors.Descriptor buildCustomerDescriptor() {
+    try {
+      final var customerMsg = DescriptorProtos.DescriptorProto.newBuilder()
+        .setName("Customer")
+        .addField(field("id", 1, DescriptorProtos.FieldDescriptorProto.Type.TYPE_INT64))
+        .addField(field("name", 2, DescriptorProtos.FieldDescriptorProto.Type.TYPE_STRING))
+        .addField(field("email", 3, DescriptorProtos.FieldDescriptorProto.Type.TYPE_STRING))
+        .addField(field("active", 4, DescriptorProtos.FieldDescriptorProto.Type.TYPE_BOOL))
+        .addField(field("registration_date", 5, DescriptorProtos.FieldDescriptorProto.Type.TYPE_INT64))
+        .build();
+
+      final var fileProto = DescriptorProtos.FileDescriptorProto.newBuilder()
+        .setName("customer.proto")
+        .setPackage("com.kpipe.customer")
+        .setSyntax("proto3")
+        .addMessageType(customerMsg)
+        .build();
+
+      final var fileDescriptor = Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0]);
+      return fileDescriptor.findMessageTypeByName("Customer");
+    } catch (final Descriptors.DescriptorValidationException e) {
+      throw new RuntimeException("Failed to build Customer descriptor", e);
+    }
+  }
+
+  private static DescriptorProtos.FieldDescriptorProto field(
+    final String name,
+    final int number,
+    final DescriptorProtos.FieldDescriptorProto.Type type
+  ) {
+    return DescriptorProtos.FieldDescriptorProto.newBuilder()
+      .setName(name)
+      .setNumber(number)
+      .setType(type)
+      .build();
   }
 
   /// Gets the processor registry used by this application.

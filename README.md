@@ -469,6 +469,41 @@ registry.register(userKey, user -> new UserRecord(user.id(), user.name().toUpper
 final var pipeline = registry.pipeline(MessageFormat.pojo(UserRecord.class)).add(userKey).build();
 ```
 
+### Protobuf Processing
+
+The Protobuf processors provide operators (`UnaryOperator<Message>`) that work within optimized pipelines:
+
+```java
+final var registry = new MessageProcessorRegistry("myApp", MessageFormat.PROTOBUF);
+
+// Register a descriptor from your generated Protobuf class
+final var protoFormat = MessageFormat.PROTOBUF;
+protoFormat.addDescriptor("customer", CustomerProto.Customer.getDescriptor());
+protoFormat.withDefaultDescriptor("customer");
+
+// Register manual operators
+final var sanitizeKey = RegistryKey.protobuf("sanitize");
+registry.register(sanitizeKey, ProtobufMessageProcessor.removeFieldsOperator("email", "address"));
+
+// Transform fields
+final var upperKey = RegistryKey.protobuf("uppercaseName");
+registry.register(
+  upperKey,
+  ProtobufMessageProcessor.transformFieldOperator("name", value -> {
+    if (value instanceof String text) return text.toUpperCase();
+    return value;
+  })
+);
+
+// Build an optimized pipeline
+final var pipeline = registry
+  .pipeline(protoFormat)
+  .add(sanitizeKey)
+  .add(upperKey)
+  .toSink(MessageSinkRegistry.PROTOBUF_LOGGING)
+  .build();
+```
+
 ---
 
 ## Message Sinks
@@ -488,13 +523,15 @@ public interface MessageSink<T> extends Consumer<T> {}
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)
   .add(RegistryKey.json("sanitize"))
-  .toSink(MessageSinkRegistry.JSON_LOGGING) // or AVRO_LOGGING
+  .toSink(MessageSinkRegistry.JSON_LOGGING) // or AVRO_LOGGING or PROTOBUF_LOGGING
   .build();
 
 // Or instantiate directly
 final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
 
 final var avroConsoleSink = new AvroConsoleSink<GenericRecord>();
+
+final var protobufConsoleSink = new ProtobufConsoleSink<Message>();
 ```
 
 ### Custom Sinks
@@ -773,6 +810,33 @@ sh -ec 'kafka-avro-console-producer \
   --property schema.registry.url=http://schema-registry:8081 \
   --property value.schema="$(cat /tmp/customer.avsc)"'
 {"id":1,"name":"Mariano Gonzalez","email":{"string":"mariano@example.com"},"active":true,"registrationDate":1635724800000,"address":{"com.kpipe.customer.Address":{"street":"123 Main St","city":"Chicago","zipCode":"00000","country":"USA"}},"tags":["premium","verified"],"preferences":{"notifications":"email"}}
+JSON
+```
+
+</details>
+
+<details>
+<summary>Working with the Schema Registry and Protobuf</summary>
+
+```bash
+# Register a Protobuf schema
+curl -X POST \
+  -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+  --data "{\"schemaType\": \"PROTOBUF\", \"schema\": $(cat lib/kpipe-consumer/src/test/resources/protobuf/customer.proto | jq -Rs .)}" \
+  http://localhost:8081/subjects/com.kpipe.customer-protobuf/versions
+
+# Read registered schema
+curl -s http://localhost:8081/subjects/com.kpipe.customer-protobuf/versions/latest | jq '.'
+
+# Produce a Protobuf message using kafka-protobuf-console-producer
+cat <<'JSON' | docker run -i --rm --network kpipe_default \
+confluentinc/cp-schema-registry:8.2.0 \
+sh -ec 'kafka-protobuf-console-producer \
+  --bootstrap-server kafka:9092 \
+  --topic protobuf-topic \
+  --property schema.registry.url=http://schema-registry:8081 \
+  --property value.schema.id=1'
+{"id":"1","name":"Mariano Gonzalez","email":"mariano@example.com","active":true,"registrationDate":"1635724800000","tags":["premium","verified"],"preferences":{"notifications":"email"}}
 JSON
 ```
 
