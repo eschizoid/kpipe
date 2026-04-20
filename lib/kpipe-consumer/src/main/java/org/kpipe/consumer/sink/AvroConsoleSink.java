@@ -16,7 +16,7 @@ import org.kpipe.sink.MessageSink;
 
 /// A sink that logs processed messages with Avro formatting.
 ///
-/// @param <T> The type of message to log
+/// @param <T> The type of the processed object
 /// @param schema The Avro schema used to decode byte array messages
 public record AvroConsoleSink<T>(Schema schema) implements MessageSink<T> {
   private static final Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());

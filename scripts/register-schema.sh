@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 set -eu pipefail
 
 SCHEMA_FILE="${1:-/schemas/customer.avsc}"

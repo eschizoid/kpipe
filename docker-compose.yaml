@@ -1,3 +1,6 @@
+include:
+  - path: infra/observability/docker-compose.yaml
+
 services:
   kafka:
     image: confluentinc/cp-kafka:8.2.0
@@ -98,6 +101,11 @@ services:
       - KAFKA_TOPIC=${MESSAGE_FORMAT:-avro}-topic
       - APP_NAME=kafka-consumer-app
       - HEALTH_HTTP_PORT=8080
+      - OTEL_SERVICE_NAME=kpipe-consumer
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_TRACES_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
     depends_on:
       schema-registry:
         condition: service_healthy

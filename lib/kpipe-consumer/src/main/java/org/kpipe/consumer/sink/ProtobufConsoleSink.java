@@ -1,3 +1,4 @@
+
 package org.kpipe.consumer.sink;
 
 import com.google.protobuf.Message;
@@ -8,7 +9,7 @@ import org.kpipe.sink.MessageSink;
 
 /// A sink that logs processed messages with Protobuf formatting.
 ///
-/// @param <T> The type of message to log
+/// @param <T> The type of the processed object
 public record ProtobufConsoleSink<T>() implements MessageSink<T> {
   private static final Logger LOGGER = System.getLogger(ProtobufConsoleSink.class.getName());
   private static final JsonFormat.Printer PROTO_PRINTER = JsonFormat.printer().omittingInsignificantWhitespace();
@@ -25,8 +26,12 @@ public record ProtobufConsoleSink<T>() implements MessageSink<T> {
         return PROTO_PRINTER.print(message);
       } catch (final Exception e) {
         LOGGER.log(Level.ERROR, "Failed to format Protobuf message as JSON", e);
-        return value.toString();
+        return message.toString();
       }
+    }
+    if (value instanceof byte[] bytes) {
+      if (bytes.length == 0) return "empty";
+      return "[binary protobuf data]";
     }
     return String.valueOf(value);
   }

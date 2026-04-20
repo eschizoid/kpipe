@@ -15,6 +15,10 @@ subprojects {
     implementation(rootProject.libs.kafkaClients)
     implementation(rootProject.libs.slf4jSimple)
 
+    runtimeOnly(rootProject.libs.opentelemetrySdk)
+    runtimeOnly(rootProject.libs.opentelemetryExporterOtlp)
+    runtimeOnly(rootProject.libs.opentelemetryAutoconfigure)
+
     testImplementation(project(":lib:kpipe-consumer"))
     testImplementation(rootProject.libs.junitJupiter)
     testImplementation(rootProject.libs.testcontainers)

@@ -1,0 +1,72 @@
+include:
+  - path: ../../docker-compose.yaml
+
+services:
+  demo-app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        MESSAGE_FORMAT: demo
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_CONSUMER_GROUP=kpipe-demo
+      - SCHEMA_REGISTRY_URL=http://schema-registry:8081
+      - JSON_TOPIC=json-topic
+      - AVRO_TOPIC=avro-topic
+      - PROTO_TOPIC=proto-topic
+      - APP_NAME=kpipe-demo
+      - HEALTH_HTTP_PORT=8080
+      - OTEL_SERVICE_NAME=kpipe-demo
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_TRACES_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+    ports:
+      - "8080:8080"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  demo-seed:
+    image: confluentinc/cp-schema-registry:8.2.0
+    depends_on:
+      demo-app:
+        condition: service_started
+    volumes:
+      - ../../lib/kpipe-consumer/src/test/resources/avro/customer.avsc:/schemas/customer.avsc:ro
+    command:
+      - sh
+      - -ec
+      - |
+        echo "=== Waiting for demo-app to start ==="
+        sleep 10
+
+        echo "=== Seeding JSON messages ==="
+        for i in $$(seq 1 10); do
+          echo "{\"id\":$$i,\"name\":\"User $$i\",\"email\":\"user$$i@example.com\",\"password\":\"secret\",\"active\":true}" | \
+            kafka-console-producer --bootstrap-server kafka:9092 --topic json-topic
+        done
+
+        echo "=== Seeding Avro messages ==="
+        SCHEMA=$$(cat /schemas/customer.avsc)
+        for i in $$(seq 1 10); do
+          echo "{\"id\":$$i,\"name\":\"User $$i\",\"email\":{\"string\":\"user$$i@example.com\"},\"active\":true,\"registrationDate\":1635724800000,\"address\":{\"com.kpipe.customer.Address\":{\"street\":\"$$i Main St\",\"city\":\"Chicago\",\"zipCode\":\"60601\",\"country\":\"USA\"}},\"tags\":[\"demo\"],\"preferences\":{\"theme\":\"dark\"}}"
+        done | kafka-avro-console-producer \
+          --bootstrap-server kafka:9092 \
+          --topic avro-topic \
+          --property schema.registry.url=http://schema-registry:8081 \
+          --property value.schema="$$SCHEMA"
+
+        echo "=== Seeding Protobuf messages ==="
+        for i in $$(seq 1 10); do
+          echo "{\"id\":\"$$i\",\"name\":\"User $$i\",\"email\":\"user$$i@example.com\",\"active\":true,\"registration_date\":\"1635724800000\"}"
+        done | kafka-protobuf-console-producer \
+          --bootstrap-server kafka:9092 \
+          --topic proto-topic \
+          --property schema.registry.url=http://schema-registry:8081 \
+          --property value.schema='syntax = "proto3"; package com.kpipe.customer; message Customer { int64 id = 1; string name = 2; string email = 3; bool active = 4; int64 registration_date = 5; }'
+
+        echo "=== Seed complete ==="
+    restart: "no"

@@ -152,7 +152,7 @@ need.
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
 | Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-|----------------------------------|---------------|---------------|-------|
+| -------------------------------- | ------------- | ------------- | ----- |
 | Full stream processing framework | Yes           | No            | No    |
 | Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
 | Virtual-thread friendly          | No            | No            | Yes   |
@@ -629,7 +629,7 @@ When no `ConsumerMetrics` or `ProducerMetrics` is provided, `OpenTelemetry.noop(
 allocation overhead, no SDK required.
 
 | Instrument                           | Type      | Description                            |
-|--------------------------------------|-----------|----------------------------------------|
+| ------------------------------------ | --------- | -------------------------------------- |
 | `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
 | `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
 | `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |
@@ -942,6 +942,54 @@ For systems like **payment processors** where the order of operations (Authorize
 
 ---
 
+## Metrics Dashboard
+
+KPipe ships a local observability stack under `infra/observability/` that spins up with Docker Compose:
+
+- **OpenTelemetry Collector** — receives OTLP metrics from KPipe and exports to Prometheus.
+- **Prometheus** — scrapes the collector and stores time-series data.
+- **Grafana** — pre-provisioned with a **KPipe Overview** dashboard covering all consumer and producer metrics.
+
+The stack is automatically included when you run any example via `docker compose`. To point your own OTel Collector at a
+running KPipe app, configure the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4318
+OTEL_METRICS_EXPORTER=otlp
+```
+
+Once running, open Grafana at [http://localhost:3000](http://localhost:3000) (admin/admin) to view the KPipe Overview
+dashboard.
+
+---
+
+## Running the Demo
+
+The `examples/demo` module runs JSON, Avro, and Protobuf pipelines concurrently in a single application, with full
+observability wired in.
+
+```bash
+# Build and start everything (Kafka, Schema Registry, OTel, Prometheus, Grafana, demo app, seed data)
+./scripts/run-demo.sh
+
+# Or manually:
+cd examples/demo
+docker compose up --build
+```
+
+This will:
+
+1. Start Kafka (KRaft) and Schema Registry
+2. Create topics and register Avro + Protobuf schemas
+3. Start the observability stack (OTel Collector → Prometheus → Grafana)
+4. Build and start the demo application with all three pipelines
+5. Seed JSON messages for immediate processing
+
+Open [http://localhost:3000](http://localhost:3000) to view metrics in Grafana, or
+[http://localhost:8080/health](http://localhost:8080/health) to check the app health endpoint.
+
+---
+
 ## Inspiration
 
 This library is inspired by the best practices from:
@@ -953,7 +1001,7 @@ This library is inspired by the best practices from:
 
 ## Contributing
 
-If you're a team using this library, feel free to:
+If you're using this library, feel free to:
 
 - Register custom processors
 - Add metrics/observability hooks

@@ -21,6 +21,9 @@ jgit = "6.10.0.202406032230-r"
 [libraries]
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
 opentelemetryApi = { module = "io.opentelemetry:opentelemetry-api", version.ref = "otel" }
+opentelemetrySdk = { module = "io.opentelemetry:opentelemetry-sdk", version.ref = "otel" }
+opentelemetryExporterOtlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "otel" }
+opentelemetryAutoconfigure = { module = "io.opentelemetry:opentelemetry-sdk-extension-autoconfigure", version.ref = "otel" }
 kafkaTestCommonRuntime = { module = "org.apache.kafka:kafka-test-common-runtime", version.ref = "kafka" }
 
 avro = { module = "org.apache.avro:avro", version.ref = "avro" }

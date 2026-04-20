@@ -14,8 +14,8 @@ import org.kpipe.sink.MessageSink;
 ///
 /// @param <T> The type of the processed object
 public record JsonConsoleSink<T>() implements MessageSink<T> {
-  private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private static final Logger LOGGER = System.getLogger(JsonConsoleSink.class.getName());
+  private static final DslJson<Object> DSL_JSON = new DslJson<>();
 
   @Override
   public void accept(final T processedValue) {

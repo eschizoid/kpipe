@@ -9,5 +9,6 @@ include("examples")
 include("examples:json")
 include("examples:avro")
 include("examples:protobuf")
+include("examples:demo")
 
 include("benchmarks")
