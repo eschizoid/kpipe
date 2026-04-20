@@ -70,13 +70,13 @@ class ProtobufFormatTest {
 
   @Test
   void shouldThrowWhenNoDefaultDescriptor() {
-    assertThrows(UnsupportedOperationException.class, () -> format.deserialize(new byte[] {1, 2, 3}));
+    assertThrows(UnsupportedOperationException.class, () -> format.deserialize(new byte[] { 1, 2, 3 }));
   }
 
   @Test
   void shouldThrowWhenDescriptorKeyNotFound() {
     format.withDefaultDescriptor("missing");
-    assertThrows(IllegalArgumentException.class, () -> format.deserialize(new byte[] {1, 2, 3}));
+    assertThrows(IllegalArgumentException.class, () -> format.deserialize(new byte[] { 1, 2, 3 }));
   }
 
   @Test
@@ -84,7 +84,7 @@ class ProtobufFormatTest {
     format.addDescriptor("test", descriptor);
     format.withDefaultDescriptor("test");
     // Invalid protobuf bytes — field tag with wrong wire type
-    assertThrows(RuntimeException.class, () -> format.deserialize(new byte[] {(byte) 0xFF, (byte) 0xFF}));
+    assertThrows(RuntimeException.class, () -> format.deserialize(new byte[] { (byte) 0xFF, (byte) 0xFF }));
   }
 
   @Test
@@ -190,8 +190,8 @@ class ProtobufFormatTest {
       .addMessageType(msg)
       .build();
 
-    return Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0])
-      .findMessageTypeByName("TestMessage");
+    return Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0]).findMessageTypeByName(
+      "TestMessage"
+    );
   }
 }
-

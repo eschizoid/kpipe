@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
-import com.google.protobuf.Message;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -116,9 +115,8 @@ class ProtobufMessageProcessorTest {
 
   @Test
   void shouldTransformField() {
-    final var operator = ProtobufMessageProcessor.transformFieldOperator(
-      "name",
-      value -> ((String) value).toUpperCase()
+    final var operator = ProtobufMessageProcessor.transformFieldOperator("name", value ->
+      ((String) value).toUpperCase()
     );
     final var result = operator.apply(createTestMessage());
 
@@ -128,10 +126,7 @@ class ProtobufMessageProcessorTest {
 
   @Test
   void shouldTransformNumericField() {
-    final var operator = ProtobufMessageProcessor.transformFieldOperator(
-      "id",
-      value -> ((Long) value) * 2
-    );
+    final var operator = ProtobufMessageProcessor.transformFieldOperator("id", value -> ((Long) value) * 2);
     final var result = operator.apply(createTestMessage());
 
     assertEquals(84L, result.getField(descriptor.findFieldByName("id")));
@@ -167,14 +162,8 @@ class ProtobufMessageProcessorTest {
 
   @Test
   void shouldChainOperatorsViaPipeline() {
-    registry.register(
-      RegistryKey.protobuf("setName"),
-      ProtobufMessageProcessor.addFieldOperator("name", "Processed")
-    );
-    registry.register(
-      RegistryKey.protobuf("deactivate"),
-      ProtobufMessageProcessor.addFieldOperator("active", false)
-    );
+    registry.register(RegistryKey.protobuf("setName"), ProtobufMessageProcessor.addFieldOperator("name", "Processed"));
+    registry.register(RegistryKey.protobuf("deactivate"), ProtobufMessageProcessor.addFieldOperator("active", false));
 
     final var pipeline = registry
       .pipeline(MessageFormat.PROTOBUF)
@@ -221,8 +210,9 @@ class ProtobufMessageProcessorTest {
       .addMessageType(msg)
       .build();
 
-    return Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0])
-      .findMessageTypeByName("TestMessage");
+    return Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0]).findMessageTypeByName(
+      "TestMessage"
+    );
   }
 
   private static DescriptorProtos.FieldDescriptorProto field(
@@ -230,11 +220,6 @@ class ProtobufMessageProcessorTest {
     final int number,
     final DescriptorProtos.FieldDescriptorProto.Type type
   ) {
-    return DescriptorProtos.FieldDescriptorProto.newBuilder()
-      .setName(name)
-      .setNumber(number)
-      .setType(type)
-      .build();
+    return DescriptorProtos.FieldDescriptorProto.newBuilder().setName(name).setNumber(number).setType(type).build();
   }
 }
-

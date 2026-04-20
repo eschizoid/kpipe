@@ -1,11 +1,11 @@
 package org.kpipe.registry;
 
+import com.google.protobuf.Message;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import com.google.protobuf.Message;
 import org.apache.avro.generic.GenericRecord;
 import org.kpipe.consumer.sink.AvroConsoleSink;
 import org.kpipe.consumer.sink.JsonConsoleSink;

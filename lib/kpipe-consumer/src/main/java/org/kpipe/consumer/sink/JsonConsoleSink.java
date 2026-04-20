@@ -3,11 +3,9 @@ package org.kpipe.consumer.sink;
 import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.kpipe.sink.MessageSink;
@@ -18,31 +16,12 @@ import org.kpipe.sink.MessageSink;
 public record JsonConsoleSink<T>() implements MessageSink<T> {
   private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private static final Logger LOGGER = System.getLogger(JsonConsoleSink.class.getName());
-  private static final Level LOG_LEVEL = Level.INFO;
 
-  /// Logs a processed value.
-  ///
-  /// @param processedValue The value after processing
   @Override
   public void accept(final T processedValue) {
-    try {
-      // Skip if the logging level doesn't require it
-      if (!LOGGER.isLoggable(LOG_LEVEL)) return;
-      final var logData = LinkedHashMap.newLinkedHashMap(1);
-      logData.put("processedMessage", formatValue(processedValue));
-
-      try (final var out = new ByteArrayOutputStream()) {
-        DSL_JSON.serialize(logData, out);
-        LOGGER.log(LOG_LEVEL, out.toString(StandardCharsets.UTF_8));
-      } catch (final IOException e) {
-        LOGGER.log(Level.WARNING, "Failed to serialize log data");
-      }
-    } catch (final Exception e) {
-      LOGGER.log(Level.ERROR, "Error in ConsoleSink while processing message", e);
-    }
+    ConsoleSinkSupport.log(LOGGER, processedValue, this::formatValue);
   }
 
-  /// Formats a value for logging with special handling for different types.
   private String formatValue(final T value) {
     if (value == null) return "null";
     if (value instanceof byte[] bytes) {

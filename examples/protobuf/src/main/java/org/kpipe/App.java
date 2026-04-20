@@ -182,11 +182,7 @@ public class App implements AutoCloseable {
     final int number,
     final DescriptorProtos.FieldDescriptorProto.Type type
   ) {
-    return DescriptorProtos.FieldDescriptorProto.newBuilder()
-      .setName(name)
-      .setNumber(number)
-      .setType(type)
-      .build();
+    return DescriptorProtos.FieldDescriptorProto.newBuilder().setName(name).setNumber(number).setType(type).build();
   }
 
   /// Gets the processor registry used by this application.

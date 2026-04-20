@@ -13,8 +13,6 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Predicate;
-import org.apache.avro.generic.GenericRecord;
-import com.google.protobuf.Message;
 
 /// Represents a message format abstraction for KPipe pipelines.
 ///

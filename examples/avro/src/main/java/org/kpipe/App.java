@@ -190,7 +190,6 @@ public class App implements AutoCloseable {
     return runner.awaitShutdown();
   }
 
-
   @Override
   public void close() {
     if (healthServer != null) healthServer.close();

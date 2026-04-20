@@ -1,13 +1,10 @@
 package org.kpipe.consumer.sink;
 
-import com.dslplatform.json.DslJson;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericDatumWriter;
@@ -22,9 +19,7 @@ import org.kpipe.sink.MessageSink;
 /// @param <T> The type of message to log
 /// @param schema The Avro schema used to decode byte array messages
 public record AvroConsoleSink<T>(Schema schema) implements MessageSink<T> {
-  private static final DslJson<Object> DSL_JSON = new DslJson<>();
   private static final Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());
-  private static final Level LOG_LEVEL = Level.INFO;
 
   /// Creates an `AvroConsoleSink` using the default schema version "1".
   public AvroConsoleSink() {
@@ -33,20 +28,7 @@ public record AvroConsoleSink<T>(Schema schema) implements MessageSink<T> {
 
   @Override
   public void accept(final T processedValue) {
-    try {
-      if (!LOGGER.isLoggable(LOG_LEVEL)) return;
-      final var logData = LinkedHashMap.newLinkedHashMap(1);
-      logData.put("processedMessage", formatValue(processedValue));
-
-      try (final var out = new ByteArrayOutputStream()) {
-        DSL_JSON.serialize(logData, out);
-        LOGGER.log(LOG_LEVEL, out.toString(StandardCharsets.UTF_8));
-      } catch (final IOException e) {
-        LOGGER.log(Level.WARNING, "Failed to serialize log data");
-      }
-    } catch (final Exception e) {
-      LOGGER.log(Level.ERROR, "Error in AvroConsoleSink while processing message", e);
-    }
+    ConsoleSinkSupport.log(LOGGER, processedValue, this::formatValue);
   }
 
   private String formatValue(final T value) {

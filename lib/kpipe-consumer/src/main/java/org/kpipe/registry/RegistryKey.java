@@ -1,7 +1,7 @@
 package org.kpipe.registry;
 
-import java.util.Map;
 import com.google.protobuf.Message;
+import java.util.Map;
 import org.apache.avro.generic.GenericRecord;
 
 /// Type-safe identifier for registry entries in KPipe.

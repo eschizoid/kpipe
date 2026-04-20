@@ -152,4 +152,3 @@ public class ProtobufMessageProcessor {
     DESCRIPTOR_REGISTRY.clear();
   }
 }
-

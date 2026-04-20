@@ -4,7 +4,6 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
@@ -167,7 +166,6 @@ public class App implements AutoCloseable {
   boolean awaitShutdown() {
     return runner.awaitShutdown();
   }
-
 
   @Override
   public void close() {

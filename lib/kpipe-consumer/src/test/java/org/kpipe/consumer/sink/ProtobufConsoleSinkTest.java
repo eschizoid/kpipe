@@ -123,8 +123,8 @@ class ProtobufConsoleSinkTest {
       .addMessageType(msg)
       .build();
 
-    return Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0])
-      .findMessageTypeByName("TestMessage");
+    return Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0]).findMessageTypeByName(
+      "TestMessage"
+    );
   }
 }
-
