@@ -7,10 +7,12 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.consumer.*;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
@@ -25,7 +27,6 @@ import org.kpipe.processor.JsonMessageProcessor;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
-import org.apache.kafka.clients.consumer.Consumer;
 
 /// Demo application that runs JSON, Avro, and Protobuf consumer pipelines concurrently.
 public class DemoApp implements AutoCloseable {
@@ -199,9 +200,10 @@ public class DemoApp implements AutoCloseable {
       .build();
   }
 
-  private static Function<Consumer<byte[], byte[]>,
-    OffsetManager<byte[], byte[]>
-  > createOffsetManagerProvider(final Duration commitInterval, final Queue<ConsumerCommand> commandQueue) {
+  private static Function<Consumer<byte[], byte[]>, OffsetManager<byte[], byte[]>> createOffsetManagerProvider(
+    final Duration commitInterval,
+    final Queue<ConsumerCommand> commandQueue
+  ) {
     return consumer ->
       KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
   }

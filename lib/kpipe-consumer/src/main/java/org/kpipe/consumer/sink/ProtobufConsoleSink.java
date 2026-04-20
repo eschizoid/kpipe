@@ -1,4 +1,3 @@
-
 package org.kpipe.consumer.sink;
 
 import com.google.protobuf.Message;
