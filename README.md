@@ -152,7 +152,7 @@ need.
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
 | Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-| -------------------------------- | ------------- | ------------- | ----- |
+|----------------------------------|---------------|---------------|-------|
 | Full stream processing framework | Yes           | No            | No    |
 | Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
 | Virtual-thread friendly          | No            | No            | Yes   |
@@ -436,7 +436,7 @@ registry.register(
 
 // Build an optimized pipeline
 // This pipeline handles deserialization, all operators, and serialization in one pass
-final var avroFormat = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("user");
+final var avroFormat = MessageFormat.AVRO.withDefaultSchema("user");
 final var pipeline = registry
   .pipeline(avroFormat)
   .add(sanitizeKey)
@@ -592,7 +592,7 @@ When no `ConsumerMetrics` or `ProducerMetrics` is provided, `OpenTelemetry.noop(
 allocation overhead, no SDK required.
 
 | Instrument                           | Type      | Description                            |
-| ------------------------------------ | --------- | -------------------------------------- |
+|--------------------------------------|-----------|----------------------------------------|
 | `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
 | `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
 | `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |

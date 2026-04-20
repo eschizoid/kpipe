@@ -1,6 +1,7 @@
 package org.kpipe.registry;
 
 import java.util.Map;
+import com.google.protobuf.Message;
 import org.apache.avro.generic.GenericRecord;
 
 /// Type-safe identifier for registry entries in KPipe.
@@ -43,5 +44,13 @@ public record RegistryKey<T>(String name, Class<T> type) {
   /// @return A new RegistryKey for Avro GenericRecord data.
   public static RegistryKey<GenericRecord> avro(final String name) {
     return of(name, GenericRecord.class);
+  }
+
+  /// Convenience factory for Protobuf Message keys.
+  ///
+  /// @param name The unique name of the registry entry.
+  /// @return A new RegistryKey for Protobuf Message data.
+  public static RegistryKey<Message> protobuf(final String name) {
+    return of(name, Message.class);
   }
 }

@@ -16,7 +16,6 @@ import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.EncoderFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.kpipe.registry.AvroFormat;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 
@@ -45,7 +44,7 @@ class AvroMessageProcessorTest {
     final var schema = AvroMessageProcessor.getSchema("simpleSchema");
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("simpleSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("simpleSchema");
     final var pipeline = REGISTRY.pipeline(format).build();
     byte[] result = pipeline.apply(invalidAvroBytes);
 
@@ -78,7 +77,7 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("simpleSchema", schemaJson);
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("simpleSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("simpleSchema");
     final var pipeline = REGISTRY.pipeline(format).build();
     final var result = pipeline.apply(avroBytes);
 
@@ -112,7 +111,7 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("testSchema", schemaJson);
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("testSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("testSchema");
     final var pipeline = REGISTRY.pipeline(format).build();
     final var result = pipeline.apply(avroBytes);
 
@@ -151,7 +150,7 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("sourceSchema", schemaJson);
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("sourceSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("sourceSchema");
     final var pipeline = REGISTRY.pipeline(format)
       .add(AvroMessageProcessor.addFieldOperator("source", "test-app"))
       .build();
@@ -192,7 +191,7 @@ class AvroMessageProcessorTest {
     AvroMessageProcessor.registerSchema("timestampSchema", schemaJson);
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("timestampSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("timestampSchema");
     final var pipeline = REGISTRY.pipeline(format).add(AvroMessageProcessor.addTimestampOperator("timestamp")).build();
     final var result = pipeline.apply(avroBytes);
 
@@ -236,7 +235,7 @@ class AvroMessageProcessorTest {
     }
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("testSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("testSchema");
     final var pipeline = REGISTRY.pipeline(format)
       .add(AvroMessageProcessor.removeFieldsOperator(schema, "source", "remove_source"))
       .build();
@@ -276,7 +275,7 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("transformSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("transformSchema");
     final var pipeline = REGISTRY.pipeline(format)
       .add(
         AvroMessageProcessor.transformFieldOperator(schema, "value", value ->
@@ -321,7 +320,7 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("ageSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("ageSchema");
     final var pipeline = REGISTRY.pipeline(format)
       .add(
         AvroMessageProcessor.transformFieldOperator(schema, "age", value ->
@@ -366,7 +365,7 @@ class AvroMessageProcessorTest {
     final var avroBytes = outputStream.toByteArray();
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("unionSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("unionSchema");
     final var pipeline = REGISTRY.pipeline(format)
       .add(
         AvroMessageProcessor.transformFieldOperator(schema, "comment", value ->
@@ -423,7 +422,7 @@ class AvroMessageProcessorTest {
     );
 
     // Act
-    final var format = ((AvroFormat) MessageFormat.AVRO).withDefaultSchema("multiFieldSchema");
+    final var format = MessageFormat.AVRO.withDefaultSchema("multiFieldSchema");
     final var pipeline = REGISTRY.pipeline(format).add(AvroMessageProcessor.addFieldsOperator(fieldsToAdd)).build();
     final var result = pipeline.apply(avroBytes);
 

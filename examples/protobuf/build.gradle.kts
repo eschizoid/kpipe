@@ -9,3 +9,7 @@ tasks.named<ShadowJar>("shadowJar") {
 }
 
 description = "KPipe - Kafka Consumer Application Using Protobuf"
+
+dependencies {
+  implementation(rootProject.libs.protobufJava)
+}

@@ -7,8 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -16,12 +14,14 @@ import org.kpipe.consumer.*;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.consumer.metrics.ProcessorMetricsReporter;
+import org.kpipe.consumer.metrics.SinkMetricsReporter;
 import org.kpipe.consumer.sink.JsonConsoleSink;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.KPipeMetricsReporter;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
@@ -30,12 +30,11 @@ public class App implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(App.class.getName());
 
-  private final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
   private final KPipeConsumer<byte[], byte[]> kpipeConsumer;
   private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
   private final HttpHealthServer healthServer;
-  private final AtomicReference<Map<String, Long>> currentMetrics = new AtomicReference<>();
   private final MessageProcessorRegistry processorRegistry;
+  private final MessageSinkRegistry sinkRegistry;
 
   /// Main entry point for the Kafka consumer application.
   static void main() {
@@ -55,16 +54,17 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
-    this.processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
+    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
+    sinkRegistry = processorRegistry.sinkRegistry();
     // Pre-register loggers
-    processorRegistry.sinkRegistry().register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
+    sinkRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
 
-    this.kpipeConsumer = createConsumer(config, processorRegistry);
+    kpipeConsumer = createConsumer(config, processorRegistry);
     final var consumerMetricsReporter = ConsumerMetricsReporter.forConsumer(kpipeConsumer::getMetrics);
 
     final var processorMetricsReporter = ProcessorMetricsReporter.forRegistry(processorRegistry);
-
-    runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter);
+    final var sinkMetricsReporter = SinkMetricsReporter.forRegistry(sinkRegistry);
+    runner = createConsumerRunner(config, consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter);
     healthServer = HttpHealthServer.fromEnv(
       runner::isHealthy,
       () -> kpipeConsumer.getMetrics().getOrDefault("inFlight", 0L),
@@ -77,7 +77,8 @@ public class App implements AutoCloseable {
   private KPipeRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
     final AppConfig config,
     final KPipeMetricsReporter consumerMetricsReporter,
-    final KPipeMetricsReporter processorMetricsReporter
+    final KPipeMetricsReporter processorMetricsReporter,
+    final KPipeMetricsReporter sinkMetricsReporter
   ) {
     return KPipeRunner.builder(kpipeConsumer)
       .withStartAction(c -> {
@@ -86,7 +87,7 @@ public class App implements AutoCloseable {
       })
       .withHealthCheck(KPipeConsumer::isRunning)
       .withGracefulShutdown(KPipeRunner::performGracefulConsumerShutdown)
-      .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter))
+      .withMetricsReporters(List.of(consumerMetricsReporter, processorMetricsReporter, sinkMetricsReporter))
       .withMetricsInterval(config.metricsInterval().toMillis())
       .withShutdownTimeout(config.shutdownTimeout().toMillis())
       .withShutdownHook(true)
@@ -151,6 +152,13 @@ public class App implements AutoCloseable {
     return processorRegistry;
   }
 
+  /// Gets the sink registry used by this application.
+  ///
+  /// @return the message sink registry
+  public MessageSinkRegistry getSinkRegistry() {
+    return sinkRegistry;
+  }
+
   void start() {
     if (healthServer != null) healthServer.start();
     runner.start();
@@ -160,9 +168,6 @@ public class App implements AutoCloseable {
     return runner.awaitShutdown();
   }
 
-  private Map<String, Long> getMetrics() {
-    return currentMetrics.get();
-  }
 
   @Override
   public void close() {
