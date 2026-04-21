@@ -41,14 +41,14 @@ import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.ConfluentKafkaContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
 class AppIntegrationTest {
 
   private static final Logger log = System.getLogger(AppIntegrationTest.class.getName());
-  private static final String CONFLUENT_PLATFORM_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
   private static final String AVRO_TOPIC = "avro-topic";
   private static final String SCHEMA_CONTENT_TYPE = "application/vnd.schemaregistry.v1+json";
   private static final String SCHEMA_SUBJECT = "com.kpipe.customer";
@@ -72,8 +72,9 @@ class AppIntegrationTest {
   private static HttpServer schemaRegistryStub;
 
   @Container
-  static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
-    DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_PLATFORM_VERSION))
+  static KafkaContainer kafka = new KafkaContainer(
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
+                   .asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   @BeforeAll
