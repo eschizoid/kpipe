@@ -13,8 +13,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_consumer_messages_received_total[1m])",
-          "legendFormat": "{{job}}",
+          "expr": "sum by (pipeline) (rate(kpipe_consumer_messages_received_total[30s]))",
+          "legendFormat": "{{pipeline}}",
           "refId": "A"
         }
       ],
@@ -33,8 +33,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_consumer_messages_processed_total[1m])",
-          "legendFormat": "{{job}}",
+          "expr": "sum by (pipeline) (rate(kpipe_consumer_messages_processed_total[30s]))",
+          "legendFormat": "{{pipeline}}",
           "refId": "A"
         }
       ],
@@ -53,13 +53,13 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, rate(kpipe_consumer_processing_duration_bucket[1m]))",
-          "legendFormat": "{{job}} p99",
+          "expr": "histogram_quantile(0.99, sum by (pipeline, le) (rate(kpipe_consumer_processing_duration_milliseconds_bucket[30s])))",
+          "legendFormat": "{{pipeline}} p99",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.50, rate(kpipe_consumer_processing_duration_bucket[1m]))",
-          "legendFormat": "{{job}} p50",
+          "expr": "histogram_quantile(0.50, sum by (pipeline, le) (rate(kpipe_consumer_processing_duration_milliseconds_bucket[30s])))",
+          "legendFormat": "{{pipeline}} p50",
           "refId": "B"
         }
       ],
@@ -78,8 +78,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "kpipe_consumer_messages_inflight",
-          "legendFormat": "{{job}}",
+          "expr": "sum by (pipeline) (kpipe_consumer_messages_inflight)",
+          "legendFormat": "{{pipeline}}",
           "refId": "A"
         }
       ],
@@ -98,8 +98,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_consumer_messages_errors_total[1m])",
-          "legendFormat": "{{job}}",
+          "expr": "sum by (pipeline) (rate(kpipe_consumer_messages_errors_total[30s])) or on() vector(0)",
+          "legendFormat": "{{pipeline}}",
           "refId": "A"
         }
       ],
@@ -107,6 +107,7 @@
         "defaults": {
           "unit": "ops",
           "color": { "mode": "palette-classic" },
+          "noValue": "0",
           "thresholds": {
             "steps": [
               { "color": "green", "value": null },
@@ -124,19 +125,20 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_consumer_backpressure_pauses_total[1m])",
-          "legendFormat": "{{job}} pauses",
+          "expr": "sum by (pipeline) (rate(kpipe_consumer_backpressure_pauses_total[30s])) or on() vector(0)",
+          "legendFormat": "{{pipeline}} pauses",
           "refId": "A"
         },
         {
-          "expr": "rate(kpipe_consumer_backpressure_time_total[1m])",
-          "legendFormat": "{{job}} pause time",
+          "expr": "sum by (pipeline) (rate(kpipe_consumer_backpressure_time_total[30s])) or on() vector(0)",
+          "legendFormat": "{{pipeline}} pause time",
           "refId": "B"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" }
+          "color": { "mode": "palette-classic" },
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -148,20 +150,21 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_producer_messages_sent_total[1m])",
-          "legendFormat": "{{job}} sent",
+          "expr": "rate(kpipe_producer_messages_sent_total[30s]) or on() vector(0)",
+          "legendFormat": "sent",
           "refId": "A"
         },
         {
-          "expr": "rate(kpipe_producer_messages_failed_total[1m])",
-          "legendFormat": "{{job}} failed",
+          "expr": "rate(kpipe_producer_messages_failed_total[30s]) or on() vector(0)",
+          "legendFormat": "failed",
           "refId": "B"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "color": { "mode": "palette-classic" }
+          "color": { "mode": "palette-classic" },
+          "noValue": "0"
         },
         "overrides": []
       }
@@ -173,8 +176,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_producer_dlq_sent_total[1m])",
-          "legendFormat": "{{job}}",
+          "expr": "rate(kpipe_producer_dlq_sent_total[30s]) or on() vector(0)",
+          "legendFormat": "dlq",
           "refId": "A"
         }
       ],
@@ -182,6 +185,7 @@
         "defaults": {
           "unit": "ops",
           "color": { "mode": "palette-classic" },
+          "noValue": "0",
           "thresholds": {
             "steps": [
               { "color": "green", "value": null },
@@ -196,8 +200,8 @@
   "schemaVersion": 39,
   "tags": ["kpipe", "kafka"],
   "templating": { "list": [] },
-  "time": { "from": "now-1h", "to": "now" },
+  "time": { "from": "now-15m", "to": "now" },
   "title": "KPipe Overview",
   "uid": "kpipe-overview",
-  "version": 1
+  "version": 2
 }

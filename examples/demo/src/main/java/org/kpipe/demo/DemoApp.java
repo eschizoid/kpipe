@@ -118,7 +118,7 @@ public class DemoApp implements AutoCloseable {
       "demo-json",
       List.of("addSource", "markProcessed", "addTimestamp", "removeSecrets")
     );
-    final var consumer = buildConsumer(appConfig, pipeline.build());
+    final var consumer = buildConsumer(appConfig, pipeline.build(), "json");
     return buildRunner(appConfig, consumer, registry);
   }
 
@@ -141,7 +141,7 @@ public class DemoApp implements AutoCloseable {
     pipeline.toSink(RegistryKey.avro("avroLogging"));
 
     final var appConfig = toAppConfig(config, config.avroTopic(), "demo-avro", List.of());
-    final var consumer = buildConsumer(appConfig, pipeline.build());
+    final var consumer = buildConsumer(appConfig, pipeline.build(), "avro");
     return buildRunner(appConfig, consumer, registry);
   }
 
@@ -170,7 +170,7 @@ public class DemoApp implements AutoCloseable {
     pipeline.toSink(RegistryKey.protobuf("protobufLogging"));
 
     final var appConfig = toAppConfig(config, config.protoTopic(), "demo-protobuf", List.of());
-    final var consumer = buildConsumer(appConfig, pipeline.build());
+    final var consumer = buildConsumer(appConfig, pipeline.build(), "proto");
     return buildRunner(appConfig, consumer, registry);
   }
 
@@ -178,13 +178,15 @@ public class DemoApp implements AutoCloseable {
 
   private static KPipeConsumer<byte[], byte[]> buildConsumer(
     final AppConfig appConfig,
-    final UnaryOperator<byte[]> pipeline
+    final UnaryOperator<byte[]> pipeline,
+    final String pipelineLabel
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(
       appConfig.bootstrapServers(),
       appConfig.consumerGroup()
     );
     final Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
+    final var otel = SHARED_OTEL != null ? SHARED_OTEL : GlobalOpenTelemetry.get();
 
     return KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
@@ -193,7 +195,7 @@ public class DemoApp implements AutoCloseable {
       .withPollTimeout(appConfig.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
-      .withMetrics(new ConsumerMetrics(SHARED_OTEL != null ? SHARED_OTEL : GlobalOpenTelemetry.get()))
+      .withMetrics(new ConsumerMetrics(otel, pipelineLabel))
       .enableMetrics(true)
       .build();
   }

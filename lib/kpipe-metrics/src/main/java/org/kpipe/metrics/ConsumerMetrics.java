@@ -1,6 +1,8 @@
 package org.kpipe.metrics;
 
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.DoubleHistogram;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
@@ -22,6 +24,8 @@ import java.util.function.LongSupplier;
 /// automatically — zero allocation overhead, no SDK required.
 public final class ConsumerMetrics {
 
+  private static final AttributeKey<String> PIPELINE_KEY = AttributeKey.stringKey("pipeline");
+
   private final LongCounter messagesReceived;
   private final LongCounter messagesProcessed;
   private final LongCounter processingErrors;
@@ -30,13 +34,20 @@ public final class ConsumerMetrics {
   private final LongCounter backpressureTime;
   @SuppressWarnings("unused")
   private final ObservableLongGauge inFlight;
+  private final Attributes attributes;
 
   /// Creates a fully-instrumented instance with an in-flight gauge backed by the given supplier.
   ///
   /// @param openTelemetry the OTel entry point
   /// @param inFlightSupplier supplies the current number of in-flight messages
-  public ConsumerMetrics(final OpenTelemetry openTelemetry, final LongSupplier inFlightSupplier) {
+  /// @param pipelineName optional pipeline name attached as a `pipeline` attribute on all metrics; pass null to omit
+  public ConsumerMetrics(
+    final OpenTelemetry openTelemetry,
+    final LongSupplier inFlightSupplier,
+    final String pipelineName
+  ) {
     final var meter = openTelemetry.getMeter("org.kpipe.consumer");
+    attributes = pipelineName == null ? Attributes.empty() : Attributes.of(PIPELINE_KEY, pipelineName);
     messagesReceived = meter
       .counterBuilder("kpipe.consumer.messages.received")
       .setDescription("Number of messages received from Kafka")
@@ -72,14 +83,24 @@ public final class ConsumerMetrics {
       .setDescription("Current number of messages being processed")
       .setUnit("{message}")
       .ofLongs()
-      .buildWithCallback(obs -> obs.record(inFlightSupplier.getAsLong()));
+      .buildWithCallback(obs -> obs.record(inFlightSupplier.getAsLong(), attributes));
+  }
+
+  /// Creates a fully-instrumented instance without a pipeline label.
+  public ConsumerMetrics(final OpenTelemetry openTelemetry, final LongSupplier inFlightSupplier) {
+    this(openTelemetry, inFlightSupplier, null);
   }
 
   /// Creates an instance without an in-flight gauge.
   ///
   /// @param openTelemetry the OTel entry point
   public ConsumerMetrics(final OpenTelemetry openTelemetry) {
-    this(openTelemetry, () -> 0L);
+    this(openTelemetry, () -> 0L, null);
+  }
+
+  /// Creates an instance without an in-flight gauge, labeled with a pipeline name.
+  public ConsumerMetrics(final OpenTelemetry openTelemetry, final String pipelineName) {
+    this(openTelemetry, () -> 0L, pipelineName);
   }
 
   /// Creates a no-op instance — use when OTel is not configured.
@@ -87,7 +108,7 @@ public final class ConsumerMetrics {
   /// @param inFlightSupplier supplies the current number of in-flight messages
   /// @return a no-op ConsumerMetrics wired to the in-flight count
   public static ConsumerMetrics noop(final LongSupplier inFlightSupplier) {
-    return new ConsumerMetrics(OpenTelemetry.noop(), inFlightSupplier);
+    return new ConsumerMetrics(OpenTelemetry.noop(), inFlightSupplier, null);
   }
 
   /// Creates a no-op instance with no in-flight tracking.
@@ -99,35 +120,35 @@ public final class ConsumerMetrics {
 
   /// Records that a message was received from Kafka.
   public void recordMessageReceived() {
-    messagesReceived.add(1);
+    messagesReceived.add(1, attributes);
   }
 
   /// Records that a message was successfully processed.
   public void recordMessageProcessed() {
-    messagesProcessed.add(1);
+    messagesProcessed.add(1, attributes);
   }
 
   /// Records that a message failed processing.
   public void recordProcessingError() {
-    processingErrors.add(1);
+    processingErrors.add(1, attributes);
   }
 
   /// Records the time taken to process a single message.
   ///
   /// @param millis processing duration in milliseconds
   public void recordProcessingDuration(final long millis) {
-    processingDuration.record(millis);
+    processingDuration.record(millis, attributes);
   }
 
   /// Records that backpressure paused the consumer.
   public void recordBackpressurePause() {
-    backpressurePauses.add(1);
+    backpressurePauses.add(1, attributes);
   }
 
   /// Records time the consumer spent paused due to backpressure.
   ///
   /// @param millis pause duration in milliseconds
   public void recordBackpressureTime(final long millis) {
-    backpressureTime.add(millis);
+    backpressureTime.add(millis, attributes);
   }
 }
