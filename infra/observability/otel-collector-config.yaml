@@ -22,5 +22,3 @@ service:
       receivers: [ otlp ]
       processors: [ batch ]
       exporters: [ prometheus, debug ]
-
-file_format: "0.2"

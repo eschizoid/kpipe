@@ -17,7 +17,7 @@ dependencies {
   implementation(rootProject.libs.protobufUtil)
   implementation(project(":lib:kpipe-producer"))
 
-  runtimeOnly(rootProject.libs.opentelemetrySdk)
-  runtimeOnly(rootProject.libs.opentelemetryExporterOtlp)
-  runtimeOnly(rootProject.libs.opentelemetryAutoconfigure)
+  implementation(rootProject.libs.opentelemetrySdk)
+  implementation(rootProject.libs.opentelemetryExporterOtlp)
+  implementation(rootProject.libs.opentelemetryAutoconfigure)
 }

@@ -4,11 +4,11 @@ RUN apt-get update && apt-get install -y procps curl && rm -rf /var/lib/apt/list
 
 WORKDIR /app
 
-ARG MESSAGE_FORMAT
+ARG APP
 
 RUN mkdir -p /app/config
 
-COPY examples/${MESSAGE_FORMAT}/build/libs/kpipe-*.jar /app/app.jar
+COPY examples/${APP}/build/libs/kpipe-*.jar /app/app.jar
 
 ENV KAFKA_BOOTSTRAP_SERVERS=kafka:9092 \
     KAFKA_CONSUMER_GROUP=kpipe-group \
