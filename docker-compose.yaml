@@ -124,8 +124,7 @@ services:
       - sh
       - -ec
       - |
-        echo "=== Waiting for app to start ==="
-        sleep 10
+        sleep 2
         echo "=== Seeding JSON messages ==="
         for i in $$(seq 1 10); do
           echo "{\"id\":$$i,\"name\":\"User $$i\",\"email\":\"user$$i@example.com\",\"password\":\"secret\",\"active\":true}" | \
@@ -134,7 +133,7 @@ services:
         echo "=== JSON seed complete ==="
     restart: "no"
 
-  seed-avro-proto:
+  seed-avro:
     image: confluentinc/cp-schema-registry:8.2.0
     depends_on:
       app:
@@ -145,9 +144,7 @@ services:
       - sh
       - -ec
       - |
-        echo "=== Waiting for app to start ==="
-        sleep 10
-
+        sleep 2
         echo "=== Seeding Avro messages ==="
         SCHEMA=$$(cat /schemas/customer.avsc)
         for i in $$(seq 1 10); do
@@ -157,7 +154,19 @@ services:
           --topic avro-topic \
           --property schema.registry.url=http://schema-registry:8081 \
           --property value.schema="$$SCHEMA"
+        echo "=== Avro seed complete ==="
+    restart: "no"
 
+  seed-proto:
+    image: confluentinc/cp-schema-registry:8.2.0
+    depends_on:
+      app:
+        condition: service_started
+    command:
+      - sh
+      - -ec
+      - |
+        sleep 2
         echo "=== Seeding Protobuf messages ==="
         for i in $$(seq 1 10); do
           echo "{\"id\":\"$$i\",\"name\":\"User $$i\",\"email\":\"user$$i@example.com\",\"active\":true,\"registration_date\":\"1635724800000\"}"
@@ -166,8 +175,7 @@ services:
           --topic proto-topic \
           --property schema.registry.url=http://schema-registry:8081 \
           --property value.schema='syntax = "proto3"; package com.kpipe.customer; message Customer { int64 id = 1; string name = 2; string email = 3; bool active = 4; int64 registration_date = 5; }'
-
-        echo "=== Avro/Protobuf seed complete ==="
+        echo "=== Protobuf seed complete ==="
     restart: "no"
 
 volumes:
