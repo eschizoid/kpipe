@@ -51,7 +51,7 @@ public class MessageProcessorRegistry {
   /// Example usage:
   /// ```java
   /// final var registry = new MessageProcessorRegistry("my-app");
-  /// final var pipeline = registry.pipeline(MessageFormat.JSON)
+  /// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
   ///     .add(RegistryKey.json("addTimestamp"))
   ///     .build();
   /// ```

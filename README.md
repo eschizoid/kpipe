@@ -22,73 +22,99 @@ It is designed for Kafka consumer services performing transformations, enrichmen
 
 ## Getting Started
 
-### 1. Add the dependency
+### 1. Add the dependencies
 
-Most users only need `kpipe-consumer` — it transitively includes `kpipe-producer` and `kpipe-metrics`:
+KPipe 1.9.0 is split into focused modules. Most users want `kpipe-consumer` plus the format module(s) they actually need
+(`kpipe-format-json`, `kpipe-format-avro`, `kpipe-format-protobuf`):
 
 ```kotlin
-// Gradle (Kotlin)
-implementation("io.github.eschizoid:kpipe-consumer:1.8.3")
+// Gradle (Kotlin) — JSON example
+implementation("io.github.eschizoid:kpipe-consumer:1.9.0")
+implementation("io.github.eschizoid:kpipe-format-json:1.9.0")
 ```
 
 ```xml
-<!-- Maven -->
+<!-- Maven — JSON example -->
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-consumer</artifactId>
-  <version>1.8.3</version>
+  <version>1.9.0</version>
+</dependency>
+<dependency>
+  <groupId>io.github.eschizoid</groupId>
+  <artifactId>kpipe-format-json</artifactId>
+  <version>1.9.0</version>
 </dependency>
 ```
 
-> **Tip:** Check the [latest release](https://github.com/eschizoid/kpipe/releases/latest) for the current version.
+> **Tip:** A `kpipe-bom` is published so you only pin one version across modules. Use it via `dependencyManagement`
+> (Maven) or `enforcedPlatform` (Gradle) and drop versions from individual `kpipe-*` dependencies.
 
 <details>
-<summary>Individual modules & other build tools</summary>
+<summary>Module catalog & other build tools</summary>
 
-**Gradle (Kotlin)**
+| Module                  | What it gives you                                                               |
+|-------------------------|---------------------------------------------------------------------------------|
+| `kpipe-bom`             | Maven BOM — pins all `kpipe-*` artifacts to matching versions                   |
+| `kpipe-core`            | Format-agnostic pipeline machinery (registries, `MessageFormat`, `MessageSink`) |
+| `kpipe-metrics`         | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters |
+| `kpipe-metrics-otel`    | OpenTelemetry-backed implementation (opt-in)                                    |
+| `kpipe-producer`        | Kafka producer wrapper, `KafkaMessageSink`                                      |
+| `kpipe-consumer`        | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`                        |
+| `kpipe-format-json`     | `JsonFormat`, `JsonMessageProcessor`, `JsonConsoleSink`                         |
+| `kpipe-format-avro`     | `AvroFormat`, `AvroMessageProcessor`, `AvroConsoleSink`                         |
+| `kpipe-format-protobuf` | `ProtobufFormat`, `ProtobufMessageProcessor`, `ProtobufConsoleSink`             |
+
+**Gradle (Kotlin) with BOM**
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe-consumer:1.8.3")
-implementation("io.github.eschizoid:kpipe-producer:1.8.3")
-implementation("io.github.eschizoid:kpipe-metrics:1.8.3")
+implementation(platform("io.github.eschizoid:kpipe-bom:1.9.0"))
+implementation("io.github.eschizoid:kpipe-consumer")
+implementation("io.github.eschizoid:kpipe-format-json")
+// add kpipe-metrics-otel only if you want OpenTelemetry-backed metrics
+implementation("io.github.eschizoid:kpipe-metrics-otel")
 ```
 
 **Gradle (Groovy)**
 
 ```groovy
-implementation 'io.github.eschizoid:kpipe-consumer:1.8.3'
-implementation 'io.github.eschizoid:kpipe-producer:1.8.3'
-implementation 'io.github.eschizoid:kpipe-metrics:1.8.3'
+implementation platform('io.github.eschizoid:kpipe-bom:1.9.0')
+implementation 'io.github.eschizoid:kpipe-consumer'
+implementation 'io.github.eschizoid:kpipe-format-json'
 ```
 
-**Maven**
+**Maven (with BOM)**
 
 ```xml
-<dependency>
-  <groupId>io.github.eschizoid</groupId>
-  <artifactId>kpipe-consumer</artifactId>
-  <version>1.8.3</version>
-</dependency>
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.github.eschizoid</groupId>
+      <artifactId>kpipe-bom</artifactId>
+      <version>1.9.0</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
 
-<dependency>
-  <groupId>io.github.eschizoid</groupId>
-  <artifactId>kpipe-producer</artifactId>
-  <version>1.8.3</version>
-</dependency>
-
-<dependency>
-  <groupId>io.github.eschizoid</groupId>
-  <artifactId>kpipe-metrics</artifactId>
-  <version>1.8.3</version>
-</dependency>
+<dependencies>
+  <dependency>
+    <groupId>io.github.eschizoid</groupId>
+    <artifactId>kpipe-consumer</artifactId>
+  </dependency>
+  <dependency>
+    <groupId>io.github.eschizoid</groupId>
+    <artifactId>kpipe-format-json</artifactId>
+  </dependency>
+</dependencies>
 ```
 
 **SBT**
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe-consumer" % "1.8.3"
-libraryDependencies += "io.github.eschizoid" % "kpipe-producer" % "1.8.3"
-libraryDependencies += "io.github.eschizoid" % "kpipe-metrics" % "1.8.3"
+libraryDependencies += "io.github.eschizoid" % "kpipe-consumer" % "1.9.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.9.0"
 ```
 
 </details>
@@ -96,6 +122,13 @@ libraryDependencies += "io.github.eschizoid" % "kpipe-metrics" % "1.8.3"
 ### 2. Build a pipeline
 
 ```java
+import org.kpipe.format.json.JsonFormat;
+import org.kpipe.format.json.JsonMessageProcessor;
+import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.RegistryKey;
+import org.kpipe.format.json.JsonConsoleSink;
+
 final var registry = new MessageProcessorRegistry("demo");
 
 final var sanitizeKey = RegistryKey.json("sanitize");
@@ -104,8 +137,11 @@ registry.register(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("passwo
 final var stampKey = RegistryKey.json("stamp");
 registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
 
+// Register a sink for the pipeline's terminal step
+registry.sinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, new JsonConsoleSink<>());
+
 final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
+  .pipeline(JsonFormat.INSTANCE)
   .add(sanitizeKey, stampKey)
   .toSink(MessageSinkRegistry.JSON_LOGGING)
   .build();
@@ -128,7 +164,8 @@ runner.start();
 KPipe handles record processing, retries, metrics, offset tracking, and safe commits.
 
 > The consumer's type parameter `<K>` is the Kafka record key type. Values are always `byte[]` per the
-> [byte-boundary architecture](#architecture-and-reliability) — the pipeline takes care of deserialization.
+> [byte-boundary architecture](#architecture-and-reliability) — the pipeline handles deserialization. (As of 1.9.0,
+> `KPipeConsumer<K>` no longer carries a separate value type parameter.)
 
 ### 4. Common operator patterns
 
@@ -139,7 +176,7 @@ import static org.kpipe.registry.Operators.filter;
 import static org.kpipe.registry.Operators.tap;
 
 final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
+  .pipeline(JsonFormat.INSTANCE)
   .add(filter((msg) -> "active".equals(msg.get("status")))) // drop inactive
   .add(tap((msg) -> log.info("processing {}", msg.get("id")))) // log without modifying
   .add(stampKey)
@@ -184,7 +221,7 @@ need.
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
 | Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-| -------------------------------- | ------------- | ------------- | ----- |
+|----------------------------------|---------------|---------------|-------|
 | Full stream processing framework | Yes           | No            | No    |
 | Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
 | Virtual-thread friendly          | No            | No            | Yes   |
@@ -202,26 +239,36 @@ modern Java 25+ features (Virtual Threads, Scoped Values) and predictable behavi
 
 ### 1. Modular Architecture (JPMS)
 
-KPipe is split into three modules with a clear dependency chain:
+KPipe ships eight focused JPMS modules with a clean dependency direction (no cycles, no sideways leaks):
 
 ```
-kpipe-metrics  ←  kpipe-producer  ←  kpipe-consumer
+kpipe-metrics ← kpipe-core ← kpipe-consumer
+                          ← kpipe-producer
+                          ← kpipe-format-{json, avro, protobuf}
+kpipe-metrics-otel ← kpipe-metrics      (opt-in OTel implementation)
+kpipe-bom                                (Maven BOM — pins versions)
 ```
 
-- **kpipe-metrics**: OTel instruments (`ProducerMetrics`, `ConsumerMetrics`) and log-based reporters
-  (`ConsumerMetricsReporter`). No Kafka dependency.
-- **kpipe-producer**: High-performance producer wrapper optimized for virtual threads, used for DLQ support and output
-  sinks.
-- **kpipe-consumer**: Core processing library — pipeline registry, backpressure controller, virtual-thread-safe
-  consumer.
+- **kpipe-core**: format-agnostic pipeline machinery — `MessageFormat`, `MessagePipeline`, `MessageProcessorRegistry`,
+  `MessageSinkRegistry`, `MessageSink`, `CompositeMessageSink`, `RegistryKey`, `RegistryFunctions`. No Kafka, no
+  third-party runtime deps.
+- **kpipe-metrics**: pure interfaces (`ProducerMetrics`, `ConsumerMetrics`) plus log-based reporters. No OTel API on the
+  classpath.
+- **kpipe-metrics-otel**: OpenTelemetry implementation (`OtelConsumerMetrics`, `OtelProducerMetrics`). Add this only if
+  you want OTel-backed metrics.
+- **kpipe-producer**: Kafka producer wrapper, `KafkaMessageSink` (in `org.kpipe.producer.sink`).
+- **kpipe-consumer**: `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `KafkaOffsetManager`,
+  `HttpHealthServer`, `consumer.metrics` reporters.
+- **kpipe-format-json / -avro / -protobuf**: per-format `XFormat.INSTANCE`, processors, and console sinks. Pull only the
+  format(s) you need.
 
-The project fully supports the Java Platform Module System (JPMS). To use KPipe in a modular project:
+Use KPipe in a modular project:
 
 ```java
 module my.application {
-  requires org.kpipe.consumer; // includes producer and metrics transitively
-  requires org.kpipe.producer; // includes metrics transitively
-  requires org.kpipe.metrics; // OTel instruments only
+  requires org.kpipe.consumer; // includes core + producer + metrics transitively
+  requires org.kpipe.format.json; // add only the formats you use
+  requires org.kpipe.metrics.otel; // optional — enables OTel-backed metrics
 }
 ```
 
@@ -321,7 +368,7 @@ KPipe provides a robust, multi-layered error handling mechanism:
 - **Built-in Retries**: Configure `.withRetry(maxRetries, backoff)` to automatically retry transient failures.
 - **Dead Letter Queue (DLQ)**: Enable high-reliability processing with built-in DLQ support:
   ```java
-  final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+  final var consumer = KPipeConsumer.<byte[]>builder()
     .withDeadLetterTopic("events-dlq") // Automatically sends to DLQ after retries are exhausted
     .build();
   ```
@@ -344,7 +391,7 @@ Backpressure uses **two configurable watermarks** (hysteresis) to avoid rapid pa
 KPipe automatically selects the optimal backpressure strategy based on your processing mode:
 
 | Mode                   | Strategy         | Metric Monitored               | Use Case                                                       |
-| :--------------------- | :--------------- | :----------------------------- | :------------------------------------------------------------- |
+|:-----------------------|:-----------------|:-------------------------------|:---------------------------------------------------------------|
 | **Parallel** (Default) | **In-Flight**    | Total active virtual threads   | Prevent memory exhaustion from too many concurrent tasks.      |
 | **Sequential**         | **Consumer Lag** | Total unread messages in Kafka | Prevent the consumer from falling too far behind the producer. |
 
@@ -378,7 +425,7 @@ Where:
 #### Configuration
 
 ```java
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+final var consumer = KPipeConsumer.<byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
   .withPipeline(pipeline)
@@ -418,13 +465,16 @@ Runtime.getRuntime().addShutdownHook(new Thread(() -> runner.close()));
 
 ### JSON Processing
 
-The JSON processors provide operators (`UnaryOperator<Map<String, Object>>`) that can be composed into high-performance
-pipelines:
+Add `kpipe-format-json`. Operators are `UnaryOperator<Map<String, Object>>`:
 
 ```java
+import org.kpipe.format.json.JsonFormat;
+import org.kpipe.format.json.JsonMessageProcessor;
+import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.RegistryKey;
+
 final var registry = new MessageProcessorRegistry("myApp");
 
-// Operators are pure functions that modify a Map
 final var stampKey = RegistryKey.json("addTimestamp");
 registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
 
@@ -436,28 +486,32 @@ final var metadata = Map.of("version", "1.0", "env", "prod");
 final var metaKey = RegistryKey.json("addMetadata");
 registry.register(metaKey, JsonMessageProcessor.mergeWithOperator(metadata));
 
-// Build an optimized pipeline (one deserialization -> many transformations -> one
-// serialization)
-final var pipeline = registry.pipeline(MessageFormat.JSON).add(sanitizeKey).add(stampKey).add(metaKey).build();
+// Single deserialization → many transformations → single serialization
+final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(sanitizeKey).add(stampKey).add(metaKey).build();
 ```
 
 ### Avro Processing
 
-The Avro processors provide operators (`UnaryOperator<GenericRecord>`) that work within optimized pipelines:
+Add `kpipe-format-avro`. Operators are `UnaryOperator<GenericRecord>`:
 
 ```java
+import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.format.avro.AvroMessageProcessor;
+import org.kpipe.format.avro.AvroRegistryKey;
+import org.kpipe.registry.MessageProcessorRegistry;
+
 final var registry = new MessageProcessorRegistry("myApp");
 
-// Add schema (automatically registers addSource_user and addTimestamp_user)
-registry.addSchema("user", "com.kpipe.User", "schemas/user.avsc");
+// Register the schema directly on the format
+AvroFormat.INSTANCE.addSchema("user", "com.kpipe.User", "schemas/user.avsc");
+AvroFormat.INSTANCE.withDefaultSchema("user");
 final var schema = AvroMessageProcessor.getSchema("user");
 
-// Register manual operators
-final var sanitizeKey = RegistryKey.avro("sanitize");
+// Register operators with type-safe keys via AvroRegistryKey.of(...)
+final var sanitizeKey = AvroRegistryKey.of("sanitize");
 registry.register(sanitizeKey, AvroMessageProcessor.removeFieldsOperator(schema, "password", "creditCard"));
 
-// Transform fields
-final var upperKey = RegistryKey.avro("uppercaseName");
+final var upperKey = AvroRegistryKey.of("uppercaseName");
 registry.register(
   upperKey,
   AvroMessageProcessor.transformFieldOperator(schema, "name", value -> {
@@ -466,59 +520,50 @@ registry.register(
   })
 );
 
-// Build an optimized pipeline
-// This pipeline handles deserialization, all operators, and serialization in one pass
-final var avroFormat = MessageFormat.AVRO.withDefaultSchema("user");
-final var pipeline = registry
-  .pipeline(avroFormat)
-  .add(sanitizeKey)
-  .add(upperKey)
-  .add(RegistryKey.avro("addTimestamp_user"))
-  .build();
+final var pipeline = registry.pipeline(AvroFormat.INSTANCE).add(sanitizeKey).add(upperKey).build();
 
-// For data with magic bytes (e.g., Confluent Wire Format), specify an offset:
-final var confluentPipeline = registry
-  .pipeline(avroFormat)
-  .skipBytes(5)
-  .add(sanitizeKey)
-  .add(RegistryKey.avro("addTimestamp_user"))
-  .build();
+// For Confluent Wire Format (1 magic byte + 4-byte schema ID), skip the prefix:
+final var confluentPipeline = registry.pipeline(AvroFormat.INSTANCE).skipBytes(5).add(sanitizeKey).build();
 ```
 
 ### POJO Processing
 
-For high-performance processing of Java records or POJOs, use the `PojoFormat` and `TypedPipelineBuilder`. This
+For high-performance processing of Java records or POJOs, use `JsonFormat.pojo(...)` from `kpipe-format-json`. This
 leverages DSL-JSON annotation processing for near-native performance.
 
 ```java
+import org.kpipe.format.json.JsonFormat;
+import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.RegistryKey;
+
 final var registry = new MessageProcessorRegistry("myApp");
 
-// Define a custom operator for your record
 final var userKey = RegistryKey.of("userTransform", UserRecord.class);
 registry.register(userKey, user -> new UserRecord(user.id(), user.name().toUpperCase(), user.email()));
 
-// Build an optimized POJO pipeline
-final var pipeline = registry.pipeline(MessageFormat.pojo(UserRecord.class)).add(userKey).build();
+final var pipeline = registry.pipeline(JsonFormat.pojo(UserRecord.class)).add(userKey).build();
 ```
 
 ### Protobuf Processing
 
-The Protobuf processors provide operators (`UnaryOperator<Message>`) that work within optimized pipelines:
+Add `kpipe-format-protobuf`. Operators are `UnaryOperator<Message>`:
 
 ```java
-final var registry = new MessageProcessorRegistry("myApp", MessageFormat.PROTOBUF);
+import org.kpipe.format.protobuf.ProtobufFormat;
+import org.kpipe.format.protobuf.ProtobufMessageProcessor;
+import org.kpipe.format.protobuf.ProtobufRegistryKey;
+import org.kpipe.registry.MessageProcessorRegistry;
+
+final var registry = new MessageProcessorRegistry("myApp", ProtobufFormat.INSTANCE);
 
 // Register a descriptor from your generated Protobuf class
-final var protoFormat = MessageFormat.PROTOBUF;
-protoFormat.addDescriptor("customer", CustomerProto.Customer.getDescriptor());
-protoFormat.withDefaultDescriptor("customer");
+ProtobufFormat.INSTANCE.addDescriptor("customer", CustomerProto.Customer.getDescriptor());
+ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
 
-// Register manual operators
-final var sanitizeKey = RegistryKey.protobuf("sanitize");
+final var sanitizeKey = ProtobufRegistryKey.of("sanitize");
 registry.register(sanitizeKey, ProtobufMessageProcessor.removeFieldsOperator("email", "address"));
 
-// Transform fields
-final var upperKey = RegistryKey.protobuf("uppercaseName");
+final var upperKey = ProtobufRegistryKey.of("uppercaseName");
 registry.register(
   upperKey,
   ProtobufMessageProcessor.transformFieldOperator("name", value -> {
@@ -527,12 +572,15 @@ registry.register(
   })
 );
 
-// Build an optimized pipeline
+// Register the protobuf console sink yourself (defaults are no longer auto-registered)
+final var protoLoggingKey = ProtobufRegistryKey.of("protobufLogging");
+registry.sinkRegistry().register(protoLoggingKey, new org.kpipe.format.protobuf.ProtobufConsoleSink<>());
+
 final var pipeline = registry
-  .pipeline(protoFormat)
+  .pipeline(ProtobufFormat.INSTANCE)
   .add(sanitizeKey)
   .add(upperKey)
-  .toSink(MessageSinkRegistry.PROTOBUF_LOGGING)
+  .toSink(protoLoggingKey)
   .build();
 ```
 
@@ -550,20 +598,26 @@ public interface MessageSink<T> extends Consumer<T> {}
 
 ### Built-in Sinks
 
+Console sinks live in their format modules. The registry no longer auto-registers them — register the ones you want:
+
 ```java
-// Use pre-registered sinks via the pipeline builder
-final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
-  .add(RegistryKey.json("sanitize"))
-  .toSink(MessageSinkRegistry.JSON_LOGGING) // or AVRO_LOGGING or PROTOBUF_LOGGING
-  .build();
+import org.kpipe.format.json.JsonConsoleSink;
+import org.kpipe.format.avro.AvroConsoleSink;
+import org.kpipe.format.protobuf.ProtobufConsoleSink;
 
-// Or instantiate directly
+// Direct instantiation
 final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
-
-final var avroConsoleSink = new AvroConsoleSink<GenericRecord>();
-
+final var avroConsoleSink = new AvroConsoleSink<GenericRecord>(schema);
 final var protobufConsoleSink = new ProtobufConsoleSink<Message>();
+
+// Register and use via the pipeline builder
+registry.sinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, jsonConsoleSink);
+
+final var pipeline = registry
+  .pipeline(JsonFormat.INSTANCE)
+  .add(RegistryKey.json("sanitize"))
+  .toSink(MessageSinkRegistry.JSON_LOGGING)
+  .build();
 ```
 
 ### Custom Sinks
@@ -576,19 +630,19 @@ final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
 
 ### Message Sink Registry
 
-The `MessageProcessorRegistry` provides a centralized repository for registering and retrieving both processors and
-sinks:
+`MessageProcessorRegistry` exposes a `sinkRegistry()` accessor — sink and processor registries are separate components
+with parallel APIs (`register` / `unregister` / `getMetrics`):
 
 ```java
 // Create a registry
 final var registry = new MessageProcessorRegistry("my-app");
 
-// Register sinks with explicit types
+// Register sinks with explicit types via the sink registry
 final var dbKey = RegistryKey.of("database", Map.class);
 registry.sinkRegistry().register(dbKey, databaseSink);
 
 // Use the sink by key in the pipeline
-final var pipeline = registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("enrich")).toSink(dbKey).build();
+final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json("enrich")).toSink(dbKey).build();
 ```
 
 ### Error Handling in Sinks
@@ -603,27 +657,32 @@ registry.sinkRegistry().register(RegistryKey.json("safeDatabase"), safeSink);
 
 ### Kafka Producer Sink
 
-Produce processed messages back to a Kafka topic:
+Produce processed messages back to a Kafka topic. `KafkaMessageSink` lives in `org.kpipe.producer.sink`:
 
 ```java
+import org.kpipe.producer.KPipeProducer;
+import org.kpipe.producer.sink.KafkaMessageSink;
+
 final var producer = KPipeProducer.<byte[], byte[]>builder().withProperties(kafkaProps).build();
 
 final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
+  .pipeline(JsonFormat.INSTANCE)
   .add(RegistryKey.json("transform"))
-  .toSink(KafkaMessageSink.of(producer.getProducer(), "output-topic", format::serialize))
+  .toSink(KafkaMessageSink.of(producer.getProducer(), "output-topic", JsonFormat.INSTANCE::serialize))
   .build();
 ```
 
 ### Composite Sink (Broadcasting)
 
-Broadcast processed messages to multiple destinations simultaneously. Failures in one sink do not prevent other sinks
-from receiving the data:
+`CompositeMessageSink` (in `org.kpipe.sink`, part of `kpipe-core`) broadcasts to multiple sinks. Failures in one sink do
+not prevent other sinks from receiving the data:
 
 ```java
+import org.kpipe.sink.CompositeMessageSink;
+
 final var compositeSink = new CompositeMessageSink<>(List.of(postgresSink, consoleSink));
 
-final var pipeline = registry.pipeline(MessageFormat.JSON).toSink(compositeSink).build();
+final var pipeline = registry.pipeline(JsonFormat.INSTANCE).toSink(compositeSink).build();
 ```
 
 ---
@@ -645,23 +704,26 @@ log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs
 
 ### OpenTelemetry Integration
 
-KPipe ships a `kpipe-metrics` module with first-class [OpenTelemetry](https://opentelemetry.io/) support. Add your OTel
-SDK at runtime — KPipe only depends on `opentelemetry-api`:
+OTel support is opt-in via the `kpipe-metrics-otel` module. `kpipe-metrics` itself only ships interfaces — it does not
+pull `opentelemetry-api` onto your classpath. Add `kpipe-metrics-otel` (and your OTel SDK at runtime) to enable real
+telemetry:
 
 ```java
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+import org.kpipe.metrics.otel.OtelConsumerMetrics;
+
+final var consumer = KPipeConsumer.<byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
   .withPipeline(pipeline)
-  .withMetrics(new ConsumerMetrics(openTelemetry, inFlightCount::get))
+  .withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))
   .build();
 ```
 
-When no `ConsumerMetrics` or `ProducerMetrics` is provided, `OpenTelemetry.noop()` is used automatically — zero
-allocation overhead, no SDK required.
+When `withMetrics(...)` is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` is used automatically — zero
+allocation overhead, no OTel API on the classpath.
 
 | Instrument                           | Type      | Description                            |
-| ------------------------------------ | --------- | -------------------------------------- |
+|--------------------------------------|-----------|----------------------------------------|
 | `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
 | `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
 | `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |
@@ -717,7 +779,7 @@ For complete working applications, see the [`examples/`](examples/) directory.
 public class KPipeApp implements AutoCloseable {
 
   private static final System.Logger LOGGER = System.getLogger(KPipeApp.class.getName());
-  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
+  private final KPipeRunner<KPipeConsumer<byte[]>> runner;
 
   static void main() {
     final var config = AppConfig.fromEnv();
@@ -732,15 +794,17 @@ public class KPipeApp implements AutoCloseable {
 
   public KPipeApp(final AppConfig config) {
     final var processorRegistry = new MessageProcessorRegistry(config.appName());
+    processorRegistry.sinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, new JsonConsoleSink<>());
+
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    final var functionalConsumer = KPipeConsumer.<byte[], byte[]>builder()
+    final var functionalConsumer = KPipeConsumer.<byte[]>builder()
       .withProperties(KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup()))
       .withTopic(config.topic())
       .withDeadLetterTopic(config.topic() + ".dlq")
       .withPipeline(
         processorRegistry
-          .pipeline(MessageFormat.JSON)
+          .pipeline(JsonFormat.INSTANCE)
           .add(RegistryKey.json("addSource"), RegistryKey.json("markProcessed"), RegistryKey.json("addTimestamp"))
           .toSink(MessageSinkRegistry.JSON_LOGGING)
           .build()
@@ -910,7 +974,7 @@ registry.registerEnum(Map.class, StandardProcessors.class);
 
 ```java
 final var pipeline = registry
-  .pipeline(MessageFormat.JSON)
+  .pipeline(JsonFormat.INSTANCE)
   .when(
     (map) -> "VIP".equals(map.get("level")),
     (map) -> {

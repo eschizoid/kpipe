@@ -35,8 +35,8 @@ import org.apache.avro.util.Utf8;
 /// AvroMessageProcessor.registerSchema("userSchema", userSchemaJson);
 ///
 /// // Create an optimized pipeline using these processors
-/// final var pipeline = registry.pipeline(MessageFormat.AVRO)
-///     .add(RegistryKey.avro("addTimestamp_userSchema"))
+/// final var pipeline = registry.pipeline(AvroFormat.INSTANCE)
+///     .add(AvroRegistryKey.of("addTimestamp_userSchema"))
 ///     .build();
 ///
 /// // Process a message

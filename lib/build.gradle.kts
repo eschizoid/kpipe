@@ -7,6 +7,81 @@ plugins {
 
 description = "KPipe - Lightweight Kafka processing library for modern Java"
 
+// Shared publishing + signing config for every kpipe-* lib subproject.
+// Each module sets its own `description` (used in the POM) and applies the right plugin
+// (`java-library` for normal modules, `java-platform` for `kpipe-bom`); everything else lives here.
+subprojects {
+  apply(plugin = "maven-publish")
+  apply(plugin = "signing")
+
+  group = rootProject.group
+  version = rootProject.version
+
+  afterEvaluate {
+    extensions.configure<PublishingExtension> {
+      publications {
+        create<MavenPublication>("maven") {
+          groupId = "io.github.eschizoid"
+          artifactId = project.name
+
+          // BOM publishes the platform component; everything else publishes the java component.
+          val component = if (plugins.hasPlugin("java-platform")) {
+            components["javaPlatform"]
+          } else {
+            components["java"]
+          }
+          from(component)
+
+          pom {
+            name.set(project.name)
+            description.set(
+              project.description ?: "KPipe ${project.name} module",
+            )
+            url.set("https://github.com/eschizoid/kpipe")
+            inceptionYear.set("2025")
+            if (project.name == "kpipe-bom") packaging = "pom"
+
+            licenses {
+              license {
+                name.set("Apache License 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0")
+              }
+            }
+            developers {
+              developer {
+                id.set("eschizoid")
+                name.set("Mariano Gonzalez")
+                email.set("mariano.gonzalez.mx@gmail.com")
+              }
+            }
+            scm {
+              connection.set("scm:git:git://github.com/eschizoid/kpipe.git")
+              developerConnection.set("scm:git:ssh://github.com/eschizoid/kpipe.git")
+              url.set("https://github.com/eschizoid/kpipe")
+            }
+          }
+        }
+      }
+      repositories {
+        maven {
+          url = uri(layout.buildDirectory.dir("staging-deploy"))
+        }
+      }
+    }
+
+    val signingKey =
+      System.getenv("JRELEASER_GPG_SECRET_KEY") ?: project.properties["signing.secretKey"]?.toString()
+    val signingPassword =
+      System.getenv("JRELEASER_GPG_PASSPHRASE") ?: project.properties["signing.password"]?.toString()
+
+    extensions.configure<SigningExtension> {
+      isRequired = signingKey != null && signingPassword != null
+      sign(extensions.getByType<PublishingExtension>().publications["maven"])
+      if (signingKey != null && signingPassword != null) useInMemoryPgpKeys(signingKey, signingPassword)
+    }
+  }
+}
+
 jreleaser {
 
   gitRootSearch.set(true)
@@ -23,6 +98,8 @@ jreleaser {
     tags.set(listOf("kafka", "consumer", "functional", "java"))
   }
 
+  // Signing is delegated to Gradle's `signing` plugin (configured per-module via the `subprojects {}`
+  // block above). JReleaser only handles deployment, so its signing stage is intentionally disabled.
   signing {
     active.set(NEVER)
   }
@@ -109,46 +186,6 @@ jreleaser {
         formatted.set(ALWAYS)
         preset.set("conventional-commits")
       }
-    }
-  }
-
-  files {
-    artifact {
-      path.set(project(":lib:kpipe-bom").layout.buildDirectory.file("libs/kpipe-bom-{{projectVersion}}.pom"))
-    }
-    artifact {
-      path.set(project(":lib:kpipe-core").layout.buildDirectory.file("libs/kpipe-core-{{projectVersion}}.jar"))
-    }
-    artifact {
-      path.set(project(":lib:kpipe-metrics").layout.buildDirectory.file("libs/kpipe-metrics-{{projectVersion}}.jar"))
-    }
-    artifact {
-      path.set(
-        project(":lib:kpipe-metrics-otel").layout.buildDirectory.file("libs/kpipe-metrics-otel-{{projectVersion}}.jar"),
-      )
-    }
-    artifact {
-      path.set(project(":lib:kpipe-producer").layout.buildDirectory.file("libs/kpipe-producer-{{projectVersion}}.jar"))
-    }
-    artifact {
-      path.set(project(":lib:kpipe-consumer").layout.buildDirectory.file("libs/kpipe-consumer-{{projectVersion}}.jar"))
-    }
-    artifact {
-      path.set(
-        project(":lib:kpipe-format-json").layout.buildDirectory.file("libs/kpipe-format-json-{{projectVersion}}.jar"),
-      )
-    }
-    artifact {
-      path.set(
-        project(":lib:kpipe-format-avro").layout.buildDirectory.file("libs/kpipe-format-avro-{{projectVersion}}.jar"),
-      )
-    }
-    artifact {
-      path.set(
-        project(":lib:kpipe-format-protobuf")
-          .layout.buildDirectory
-          .file("libs/kpipe-format-protobuf-{{projectVersion}}.jar"),
-      )
     }
   }
 }

@@ -12,7 +12,7 @@ import java.util.function.UnaryOperator;
 /// ```java
 /// import static org.kpipe.registry.Operators.filter;
 ///
-/// registry.pipeline(MessageFormat.JSON)
+/// registry.pipeline(JsonFormat.INSTANCE)
 ///     .add(filter(msg -> "active".equals(msg.get("status"))))
 ///     .toSink(activeMessageSink)
 ///     .build();

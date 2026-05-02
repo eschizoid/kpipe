@@ -13,7 +13,7 @@ import java.util.function.UnaryOperator;
 ///
 /// ```java
 /// // Create an optimized pipeline using these processors
-/// final var pipeline = registry.pipeline(MessageFormat.JSON)
+/// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
 ///     .add(RegistryKey.json("addTimestamp"))
 ///     .add(RegistryKey.json("sanitizeData"))
 ///     .build();

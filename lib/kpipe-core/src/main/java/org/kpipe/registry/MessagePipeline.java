@@ -108,8 +108,8 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
   ///
   /// Example — chain enrichment then validation:
   /// ```java
-  /// final var enrich = registry.pipeline(MessageFormat.JSON).add(addTimestamp).build();
-  /// final var validate = registry.pipeline(MessageFormat.JSON).add(checkRequiredFields).build();
+  /// final var enrich = registry.pipeline(JsonFormat.INSTANCE).add(addTimestamp).build();
+  /// final var validate = registry.pipeline(JsonFormat.INSTANCE).add(checkRequiredFields).build();
   /// final var combined = enrich.then(validate);
   /// ```
   ///

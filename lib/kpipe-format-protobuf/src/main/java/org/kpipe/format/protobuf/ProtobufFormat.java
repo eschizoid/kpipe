@@ -17,7 +17,7 @@ import org.kpipe.registry.MessageFormat;
 ///
 /// Example:
 /// ```java
-/// final var protoFormat = MessageFormat.PROTOBUF;
+/// final var protoFormat = ProtobufFormat.INSTANCE;
 /// protoFormat.addDescriptor("user", UserProto.getDescriptor());
 /// protoFormat.withDefaultDescriptor("user");
 /// byte[] bytes = protoFormat.serialize(message);

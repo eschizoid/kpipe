@@ -51,7 +51,7 @@ import org.kpipe.registry.MessagePipeline;
 /// Example usage:
 ///
 /// ```java
-/// final var pipeline = registry.pipeline(MessageFormat.JSON)
+/// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
 ///     .add(sanitizeKey)
 ///     .toSink(MessageSinkRegistry.JSON_LOGGING)
 ///     .build();
