@@ -184,14 +184,16 @@ class ProtobufMessageProcessorTest {
 
   @Test
   void shouldHandleNullInputInPipeline() {
+    // Per MessagePipeline contract, null input is a contract violation; throw rather than swallow.
     final var pipeline = registry.pipeline(MessageFormat.PROTOBUF).build();
-    assertNull(pipeline.apply(null));
+    assertThrows(RuntimeException.class, () -> pipeline.apply(null));
   }
 
   @Test
   void shouldHandleEmptyInputInPipeline() {
+    // Empty bytes are not a valid Protobuf message; throw rather than swallow.
     final var pipeline = registry.pipeline(MessageFormat.PROTOBUF).build();
-    assertNull(pipeline.apply(new byte[0]));
+    assertThrows(RuntimeException.class, () -> pipeline.apply(new byte[0]));
   }
 
   private static Descriptors.Descriptor buildTestDescriptor() throws Descriptors.DescriptorValidationException {

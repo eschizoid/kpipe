@@ -46,10 +46,9 @@ class AvroMessageProcessorTest {
     // Act
     final var format = MessageFormat.AVRO.withDefaultSchema("simpleSchema");
     final var pipeline = REGISTRY.pipeline(format).build();
-    byte[] result = pipeline.apply(invalidAvroBytes);
 
-    // Assert
-    assertNull(result);
+    // Assert — per MessagePipeline contract, malformed Avro input throws.
+    assertThrows(RuntimeException.class, () -> pipeline.apply(invalidAvroBytes));
   }
 
   @Test

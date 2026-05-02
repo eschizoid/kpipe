@@ -54,10 +54,9 @@ class JsonMessageProcessorTest {
 
     // Act
     final var pipeline = REGISTRY.pipeline(MessageFormat.JSON).build();
-    final var result = pipeline.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
 
-    // Assert
-    assertNull(result);
+    // Assert — per MessagePipeline contract, malformed input throws.
+    assertThrows(RuntimeException.class, () -> pipeline.apply(invalidJson.getBytes(StandardCharsets.UTF_8)));
   }
 
   @Test
@@ -95,10 +94,9 @@ class JsonMessageProcessorTest {
     final var pipeline = REGISTRY.pipeline(MessageFormat.JSON)
       .add(JsonMessageProcessor.addFieldOperator("newKey", "newValue"))
       .build();
-    final var result = pipeline.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
 
-    // Assert
-    assertNull(result);
+    // Assert — per MessagePipeline contract, malformed input throws.
+    assertThrows(RuntimeException.class, () -> pipeline.apply(invalidJson.getBytes(StandardCharsets.UTF_8)));
   }
 
   @Test
@@ -112,10 +110,9 @@ class JsonMessageProcessorTest {
     final var pipeline = REGISTRY.pipeline(MessageFormat.JSON)
       .add(JsonMessageProcessor.addFieldOperator("newKey", "newValue"))
       .build();
-    final var result = pipeline.apply(jsonArray.getBytes(StandardCharsets.UTF_8));
 
-    // Assert
-    assertNull(result);
+    // Assert — non-object JSON cannot be processed as a field-bearing message.
+    assertThrows(RuntimeException.class, () -> pipeline.apply(jsonArray.getBytes(StandardCharsets.UTF_8)));
   }
 
   @Test
@@ -136,10 +133,9 @@ class JsonMessageProcessorTest {
     // Arrange
     // Act
     final var pipeline = REGISTRY.pipeline(MessageFormat.JSON).build();
-    final var result = pipeline.apply(null);
 
-    // Assert
-    assertNull(result);
+    // Assert — null input is a contract violation; throw rather than swallow.
+    assertThrows(RuntimeException.class, () -> pipeline.apply(null));
   }
 
   @Test
@@ -193,10 +189,9 @@ class JsonMessageProcessorTest {
     final var pipeline = REGISTRY.pipeline(MessageFormat.JSON)
       .add(JsonMessageProcessor.addTimestampOperator("timestamp"))
       .build();
-    final var result = pipeline.apply(invalidJson.getBytes(StandardCharsets.UTF_8));
 
-    // Assert
-    assertNull(result);
+    // Assert — per MessagePipeline contract, malformed input throws.
+    assertThrows(RuntimeException.class, () -> pipeline.apply(invalidJson.getBytes(StandardCharsets.UTF_8)));
   }
 
   @Test

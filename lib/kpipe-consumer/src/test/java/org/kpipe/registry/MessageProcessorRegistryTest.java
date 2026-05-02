@@ -78,8 +78,9 @@ class MessageProcessorRegistryTest {
   }
 
   @Test
-  void shouldHandleErrorsGracefully() {
-    // Arrange
+  void shouldPropagateExceptionsFromOperators() {
+    // Arrange — operator that fails. Per MessagePipeline's contract, exceptions propagate
+    // so callers (KPipeConsumer, etc.) can route them to error metrics / DLQ.
     UnaryOperator<Map<String, Object>> operator = message -> {
       throw new RuntimeException("Test exception");
     };
@@ -87,8 +88,8 @@ class MessageProcessorRegistryTest {
     final var pipeline = registry.pipeline(MessageFormat.JSON).add(operator).build();
 
     // Act & Assert
-    // Pipeline itself catches errors in TypedPipelineBuilder's implementation
-    assertNull(pipeline.apply("{}".getBytes()));
+    final var ex = assertThrows(RuntimeException.class, () -> pipeline.apply("{}".getBytes()));
+    assertEquals("Test exception", ex.getMessage());
   }
 
   @Test
