@@ -19,14 +19,9 @@ repositories {
 }
 
 dependencies {
-  api(project(":lib:kpipe-core"))
+  // Core has no kpipe deps and no third-party runtime deps.
+  // Pure pipeline machinery: registries, MessageFormat / MessagePipeline / MessageSink interfaces.
 
-  // DSL-JSON for fast Map<String, Object> SerDe
-  implementation(libs.dslJson)
-  annotationProcessor(libs.dslJson)
-  testAnnotationProcessor(libs.dslJson)
-
-  // Testing
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
   testRuntimeOnly(libs.junitPlatformLauncher)
@@ -63,12 +58,12 @@ publishing {
   publications {
     create<MavenPublication>("maven") {
       groupId = "io.github.eschizoid"
-      artifactId = "kpipe-format-json"
+      artifactId = "kpipe-core"
       from(components["java"])
 
       pom {
-        name.set("kpipe-format-json")
-        description.set("KPipe JSON format support — JsonFormat, JSON processors, and console sink")
+        name.set("kpipe-core")
+        description.set("KPipe Core - Format-agnostic pipeline machinery for KPipe")
         url.set("https://github.com/eschizoid/kpipe")
         inceptionYear.set("2025")
 

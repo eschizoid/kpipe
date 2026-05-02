@@ -1,9 +1,10 @@
-package org.kpipe.sink;
+package org.kpipe.producer.sink;
 
 import java.util.Objects;
 import java.util.function.Function;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.kpipe.sink.MessageSink;
 
 /// A [MessageSink] that sends processed messages to a Kafka topic.
 ///

@@ -3,6 +3,7 @@
 /// Format-specific runtimes (DSL-JSON, Avro, Protobuf) are provided by separate modules:
 /// `kpipe-format-json`, `kpipe-format-avro`, `kpipe-format-protobuf`.
 module org.kpipe.consumer {
+  requires transitive org.kpipe.core;
   requires transitive org.kpipe.producer;
   requires java.net.http;
   requires jdk.httpserver;
@@ -14,5 +15,4 @@ module org.kpipe.consumer {
   exports org.kpipe.consumer.metrics;
   exports org.kpipe.consumer.sink;
   exports org.kpipe.health;
-  exports org.kpipe.registry;
 }

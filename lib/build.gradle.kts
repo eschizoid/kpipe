@@ -40,6 +40,12 @@ jreleaser {
               .asFile.absolutePath,
           )
           stagingRepository(
+            project(":lib:kpipe-core").layout.buildDirectory
+              .dir("staging-deploy")
+              .get()
+              .asFile.absolutePath,
+          )
+          stagingRepository(
             project(":lib:kpipe-metrics").layout.buildDirectory
               .dir("staging-deploy")
               .get()
@@ -107,6 +113,9 @@ jreleaser {
   }
 
   files {
+    artifact {
+      path.set(project(":lib:kpipe-core").layout.buildDirectory.file("libs/kpipe-core-{{projectVersion}}.jar"))
+    }
     artifact {
       path.set(project(":lib:kpipe-metrics").layout.buildDirectory.file("libs/kpipe-metrics-{{projectVersion}}.jar"))
     }

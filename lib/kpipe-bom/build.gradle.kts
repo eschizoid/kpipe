@@ -8,6 +8,7 @@ description = "KPipe BOM — pins all kpipe-* artifacts to matching versions"
 
 dependencies {
   constraints {
+    api(project(":lib:kpipe-core"))
     api(project(":lib:kpipe-metrics"))
     api(project(":lib:kpipe-metrics-otel"))
     api(project(":lib:kpipe-consumer"))

@@ -19,7 +19,7 @@ repositories {
 }
 
 dependencies {
-  api(project(":lib:kpipe-consumer"))
+  api(project(":lib:kpipe-core"))
   implementation(libs.protobufJava)
   implementation(libs.protobufUtil)
 
