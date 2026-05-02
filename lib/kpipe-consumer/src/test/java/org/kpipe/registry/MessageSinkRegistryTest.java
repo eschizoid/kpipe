@@ -17,15 +17,8 @@ class MessageSinkRegistryTest {
   }
 
   @Test
-  void shouldHaveDefaultConsoleSink() {
-    // Act
-    final var allSinks = registry.getAll();
-
-    // Assert
-    assertTrue(allSinks.containsKey(MessageSinkRegistry.AVRO_LOGGING));
-    assertTrue(allSinks.containsKey(MessageSinkRegistry.JSON_LOGGING));
-    assertTrue(allSinks.get(MessageSinkRegistry.AVRO_LOGGING).contains("AvroConsoleSink"));
-    assertTrue(allSinks.get(MessageSinkRegistry.JSON_LOGGING).contains("JsonConsoleSink"));
+  void shouldStartEmpty() {
+    assertTrue(registry.getAll().isEmpty());
   }
 
   @Test
