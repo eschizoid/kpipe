@@ -6,7 +6,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.*;
-import org.kpipe.sink.MessageSink;
 
 /// Registry for managing and composing message processors in KPipe.
 ///
@@ -99,15 +98,6 @@ public class MessageProcessorRegistry {
     };
   }
 
-  /// Retrieves a message sink from the sink registry.
-  ///
-  /// @param <T> The type of data the sink processes.
-  /// @param key The type-safe key to retrieve.
-  /// @return The registered sink, or a no-op sink if not found.
-  public <T> MessageSink<T> getSink(final RegistryKey<T> key) {
-    return sinkRegistry.get(key);
-  }
-
   /// Creates a new registry with the byte-passthrough format as the default.
   ///
   /// Most users should pass an explicit format via the two-arg constructor — this convenience
@@ -139,28 +129,17 @@ public class MessageProcessorRegistry {
     return sourceAppName;
   }
 
-  /// Adds a schema and registers its processors.
-  ///
-  /// @param key                The schema key
-  /// @param fullyQualifiedName The fully qualified name of the schema
-  /// @param location           The schema location or content
-  public void addSchema(final String key, final String fullyQualifiedName, final String location) {
-    // Register the schema with MessageFormat
-    messageFormat.addSchema(key, fullyQualifiedName, location);
-  }
-
-  /// Unregisters a processor or sink.
+  /// Unregisters a processor by key. Sinks are managed via [#sinkRegistry()].
   ///
   /// @param key The key to remove
-  /// @return true if it was removed, false if it wasn't found
+  /// @return true if a processor was removed, false otherwise
   public boolean unregister(final RegistryKey<?> key) {
-    return registryMap.remove(key) != null || sinkRegistry.unregister(key);
+    return registryMap.remove(key) != null;
   }
 
-  /// Clears all processors and sinks from the registry.
+  /// Clears all processors. Sinks are managed via [#sinkRegistry()].
   public void clear() {
     registryMap.clear();
-    sinkRegistry.clear();
   }
 
   /// Returns an unmodifiable set of all registered processor keys.
@@ -170,9 +149,9 @@ public class MessageProcessorRegistry {
     return Collections.unmodifiableSet(registryMap.keySet());
   }
 
-  /// Returns an unmodifiable map of all registered processors and sinks.
+  /// Returns an unmodifiable map of all registered processors.
   ///
-  /// @return Unmodifiable map of all keys and their simple class names
+  /// @return Unmodifiable map of all processor keys and their simple class names
   public Map<RegistryKey<?>, String> getAll() {
     return RegistryFunctions.createUnmodifiableView(registryMap, value -> {
       final var entry = (RegistryEntry<?>) value;
@@ -180,14 +159,15 @@ public class MessageProcessorRegistry {
     });
   }
 
-  /// Gets performance metrics for a specific processor or sink.
+  /// Gets performance metrics for a specific processor. For sink metrics use
+  /// [#sinkRegistry()] then [MessageSinkRegistry#getMetrics(RegistryKey)].
   ///
-  /// @param key The key to look up
+  /// @param key The processor key to look up
   /// @return Map containing metrics or empty map if not found
   public Map<String, Object> getMetrics(final RegistryKey<?> key) {
     final var entry = registryMap.get(key);
     if (entry != null) return entry.getMetrics();
-    return sinkRegistry.getMetrics(key);
+    return Map.of();
   }
 
   /// Wraps an operator with error handling logic that suppresses exceptions and returns the

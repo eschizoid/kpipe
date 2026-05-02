@@ -114,6 +114,9 @@ jreleaser {
 
   files {
     artifact {
+      path.set(project(":lib:kpipe-bom").layout.buildDirectory.file("libs/kpipe-bom-{{projectVersion}}.pom"))
+    }
+    artifact {
       path.set(project(":lib:kpipe-core").layout.buildDirectory.file("libs/kpipe-core-{{projectVersion}}.jar"))
     }
     artifact {
@@ -129,6 +132,23 @@ jreleaser {
     }
     artifact {
       path.set(project(":lib:kpipe-consumer").layout.buildDirectory.file("libs/kpipe-consumer-{{projectVersion}}.jar"))
+    }
+    artifact {
+      path.set(
+        project(":lib:kpipe-format-json").layout.buildDirectory.file("libs/kpipe-format-json-{{projectVersion}}.jar"),
+      )
+    }
+    artifact {
+      path.set(
+        project(":lib:kpipe-format-avro").layout.buildDirectory.file("libs/kpipe-format-avro-{{projectVersion}}.jar"),
+      )
+    }
+    artifact {
+      path.set(
+        project(":lib:kpipe-format-protobuf")
+          .layout.buildDirectory
+          .file("libs/kpipe-format-protobuf-{{projectVersion}}.jar"),
+      )
     }
   }
 }

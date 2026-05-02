@@ -98,7 +98,7 @@ public final class TypedPipelineBuilder<T> {
   /// @return This builder.
   @SafeVarargs
   public final TypedPipelineBuilder<T> toSink(final RegistryKey<T>... sinkKeys) {
-    for (final var key : sinkKeys) toSink(registry.getSink(key));
+    for (final var key : sinkKeys) toSink(registry.sinkRegistry().get(key));
     return this;
   }
 

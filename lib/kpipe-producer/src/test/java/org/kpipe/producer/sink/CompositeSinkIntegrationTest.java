@@ -1,8 +1,5 @@
 package org.kpipe.producer.sink;
 
-import org.kpipe.sink.CompositeMessageSink;
-import org.kpipe.sink.MessageSink;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.sql.DriverManager;
@@ -11,6 +8,8 @@ import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.kpipe.sink.CompositeMessageSink;
+import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
