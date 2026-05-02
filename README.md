@@ -114,7 +114,7 @@ final var pipeline = registry
 ### 3. Start the consumer
 
 ```java
-final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+final var consumer = KPipeConsumer.<String>builder()
   .withProperties(kafkaProps)
   .withTopic("users")
   .withPipeline(pipeline)
@@ -126,6 +126,42 @@ runner.start();
 ```
 
 KPipe handles record processing, retries, metrics, offset tracking, and safe commits.
+
+> The consumer's type parameter `<K>` is the Kafka record key type. Values are
+> always `byte[]` per the [byte-boundary architecture](#architecture-and-reliability) —
+> the pipeline takes care of deserialization.
+
+### 4. Common operator patterns
+
+Use the helpers in `Operators` for filter/drop/tap without writing a full operator class:
+
+```java
+import static org.kpipe.registry.Operators.filter;
+import static org.kpipe.registry.Operators.tap;
+
+final var pipeline = registry
+  .pipeline(MessageFormat.JSON)
+  .add(filter(msg -> "active".equals(msg.get("status"))))    // drop inactive
+  .add(tap(msg -> log.info("processing {}", msg.get("id")))) // log without modifying
+  .add(stampKey)
+  .toSink(MessageSinkRegistry.JSON_LOGGING)
+  .build();
+```
+
+If you don't need a real format (tests, benchmarks, byte-level routing), use `MessageFormat.bytes()`:
+
+```java
+final var passthrough = registry
+  .pipeline(MessageFormat.bytes())
+  .add(tap(b -> metrics.inc()))
+  .build();
+```
+
+Two same-T pipelines compose with `then`:
+
+```java
+final var combined = enrichPipeline.then(validatePipeline);
+```
 
 ---
 

@@ -95,4 +95,57 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
     final var sink = getSink();
     if (sink != null) sink.accept(processed);
   }
+
+  /// Composes this pipeline with another of the same type T, running this pipeline's
+  /// processors first then `next`'s. Both pipelines must operate on the same domain
+  /// type. The composed pipeline reuses this pipeline's deserializer/serializer; only
+  /// the [#process] and [#getSink] steps from `next` are chained.
+  ///
+  /// If this pipeline's `process` returns null (intentional filter), the next pipeline
+  /// is not invoked and the composed pipeline returns null.
+  ///
+  /// If `next` has a sink, it runs after this pipeline's sink.
+  ///
+  /// Example — chain enrichment then validation:
+  /// ```java
+  /// final var enrich = registry.pipeline(MessageFormat.JSON).add(addTimestamp).build();
+  /// final var validate = registry.pipeline(MessageFormat.JSON).add(checkRequiredFields).build();
+  /// final var combined = enrich.then(validate);
+  /// ```
+  ///
+  /// @param next the pipeline to run after this one
+  /// @return a composed MessagePipeline driving both stages
+  default MessagePipeline<T> then(final MessagePipeline<T> next) {
+    final MessagePipeline<T> self = this;
+    return new MessagePipeline<>() {
+      @Override
+      public T deserialize(final byte[] data) {
+        return self.deserialize(data);
+      }
+
+      @Override
+      public byte[] serialize(final T data) {
+        return self.serialize(data);
+      }
+
+      @Override
+      public T process(final T data) {
+        final var first = self.process(data);
+        if (first == null) return null;
+        return next.process(first);
+      }
+
+      @Override
+      public MessageSink<T> getSink() {
+        final var firstSink = self.getSink();
+        final var nextSink = next.getSink();
+        if (firstSink == null) return nextSink;
+        if (nextSink == null) return firstSink;
+        return value -> {
+          firstSink.accept(value);
+          nextSink.accept(value);
+        };
+      }
+    };
+  }
 }

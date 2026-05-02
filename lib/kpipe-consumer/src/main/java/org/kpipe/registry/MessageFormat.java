@@ -28,7 +28,7 @@ import java.util.function.Predicate;
 /// ```
 ///
 /// @param <T> the type of data handled by this message format
-public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, ProtobufFormat, PojoFormat {
+public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, ProtobufFormat, PojoFormat, BytesFormat {
   /// JSON message format.
   MessageFormat<Map<String, Object>> JSON = new JsonFormat();
 
@@ -45,6 +45,16 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
   /// @return A new MessageFormat for the specified POJO type
   static <T> MessageFormat<T> pojo(final Class<T> clazz) {
     return new PojoFormat<>(clazz);
+  }
+
+  /// Returns the identity-passthrough [MessageFormat] for `byte[]` payloads.
+  ///
+  /// Use with the [TypedPipelineBuilder] when you want fluent operator chaining
+  /// without real deserialization — tests, benchmarks, byte-level routing pipelines.
+  ///
+  /// @return a singleton MessageFormat<byte[]> whose deserialize/serialize are identity
+  static MessageFormat<byte[]> bytes() {
+    return BytesFormat.INSTANCE;
   }
 
   /// Returns an unmodifiable view of all schemas registered with this format.

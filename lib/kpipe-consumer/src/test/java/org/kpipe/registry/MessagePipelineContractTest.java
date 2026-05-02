@@ -108,6 +108,45 @@ class MessagePipelineContractTest {
   }
 
   @Test
+  void thenShouldChainProcessOfBothPipelines() {
+    final var first = new TestPipeline<>(_ -> "raw", s -> s + "-A", _ -> INPUT, null);
+    final var second = new TestPipeline<>(_ -> "raw", s -> s + "-B", _ -> INPUT, null);
+
+    final var composed = first.then(second);
+
+    assertEquals("raw-A-B", composed.process("raw"));
+  }
+
+  @Test
+  void thenShouldShortCircuitOnFilterFromFirstPipeline() {
+    final var captured = new AtomicReference<String>();
+    final var first = new TestPipeline<String>(_ -> "raw", _ -> null, _ -> INPUT, null);
+    final var second = new TestPipeline<>(_ -> "raw", s -> {
+      captured.set("should-not-run");
+      return s;
+    }, _ -> INPUT, null);
+
+    final var composed = first.then(second);
+
+    assertNull(composed.process("raw"));
+    assertNull(captured.get(), "second pipeline must not run when first filters");
+  }
+
+  @Test
+  void thenShouldComposeSinksWhenBothPresent() {
+    final var firstCalled = new AtomicReference<>(false);
+    final var secondCalled = new AtomicReference<>(false);
+    final var first = new TestPipeline<>(_ -> "raw", s -> s, _ -> INPUT, _ -> firstCalled.set(true));
+    final var second = new TestPipeline<>(_ -> "raw", s -> s, _ -> INPUT, _ -> secondCalled.set(true));
+
+    final var composed = first.then(second);
+
+    composed.processToSink(INPUT);
+    assertTrue(firstCalled.get(), "first sink must run");
+    assertTrue(secondCalled.get(), "second sink must run");
+  }
+
+  @Test
   void processToSinkShouldNoopWhenSinkAbsent() {
     // No sink configured; processToSink runs deserialize/process and returns silently.
     final var pipeline = new TestPipeline<String>(_ -> "v", s -> s, _ -> INPUT, null);

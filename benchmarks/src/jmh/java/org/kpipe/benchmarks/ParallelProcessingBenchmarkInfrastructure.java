@@ -21,7 +21,8 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.test.KafkaClusterTestKit;
 import org.apache.kafka.common.test.TestKitNodes;
 import org.kpipe.consumer.KPipeConsumer;
-import org.kpipe.registry.MessagePipeline;
+import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.MessageProcessorRegistry;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
@@ -174,6 +175,8 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   @State(Scope.Thread)
   public static class KpipeInvocationContext {
 
+    private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry("benchmark");
+
     private AtomicInteger processedCount;
     private KPipeConsumer<byte[]> consumer;
 
@@ -183,23 +186,12 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       final var kpipeProps = kafkaContext.consumerProps("kpipe-group");
       kpipeProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
-      final MessagePipeline<byte[]> pipeline = new MessagePipeline<>() {
-        @Override
-        public byte[] deserialize(final byte[] data) {
-          return data;
-        }
-
-        @Override
-        public byte[] serialize(final byte[] data) {
-          return data;
-        }
-
-        @Override
-        public byte[] process(final byte[] data) {
+      final var pipeline = REGISTRY.pipeline(MessageFormat.bytes())
+        .add(b -> {
           processedCount.incrementAndGet();
-          return data;
-        }
-      };
+          return b;
+        })
+        .build();
 
       consumer = KPipeConsumer.<byte[]>builder()
         .withProperties(kpipeProps)
