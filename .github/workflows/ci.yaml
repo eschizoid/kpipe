@@ -34,6 +34,9 @@ jobs:
         run: |
           ./gradlew :lib:kpipe-metrics:jacocoTestReport \
             :lib:kpipe-metrics-otel:jacocoTestReport \
+            :lib:kpipe-format-avro:jacocoTestReport \
+            :lib:kpipe-format-json:jacocoTestReport \
+            :lib:kpipe-metrics-protobuf:jacocoTestReport \
             :lib:kpipe-consumer:jacocoTestReport \
             :lib:kpipe-producer:jacocoTestReport
 
@@ -45,5 +48,8 @@ jobs:
           files: |
             ./lib/kpipe-metrics/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-metrics-otel/build/reports/jacoco/test/jacocoTestReport.xml
+            ./lib/kpipe-format-avro/build/reports/jacoco/test/jacocoTestReport.xml
+            ./lib/kpipe-format-json/build/reports/jacoco/test/jacocoTestReport.xml
+            ./lib/kpipe-format-protobuf/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-consumer/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-producer/build/reports/jacoco/test/jacocoTestReport.xml

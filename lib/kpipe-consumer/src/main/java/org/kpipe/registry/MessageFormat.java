@@ -1,52 +1,27 @@
 package org.kpipe.registry;
 
-import com.dslplatform.json.DslJson;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.time.Duration;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Predicate;
 
 /// Represents a message format abstraction for KPipe pipelines.
 ///
-/// This sealed interface defines the contract for supported message formats (JSON, Avro, Protobuf,
-/// POJO), including schema management, serialization, and deserialization. Implementations provide
-/// format-specific logic for working with Kafka message data and schema registries.
+/// Implementations live in their own modules so users only pull in the format runtimes they
+/// actually use:
 ///
-/// Example usage:
-/// ```java
-/// MessageFormat<Map<String, Object>> json = MessageFormat.JSON;
-/// MessageFormat<GenericRecord> avro = MessageFormat.AVRO;
-/// MessageFormat<Message> protobuf = MessageFormat.PROTOBUF;
-/// ```
+/// - `org.kpipe.format.json.JsonFormat.INSTANCE` — JSON via DSL-JSON (`kpipe-format-json`)
+/// - `org.kpipe.format.avro.AvroFormat.INSTANCE` — Avro (`kpipe-format-avro`)
+/// - `org.kpipe.format.protobuf.ProtobufFormat.INSTANCE` — Protobuf (`kpipe-format-protobuf`)
+/// - [#bytes] — identity passthrough for byte[] payloads (`kpipe-consumer`)
+///
+/// Custom formats can implement this interface directly. Schema operations are optional —
+/// formats without schemas should return empty collections from [#getSchemas]/[#findSchema]
+/// and treat [#addSchema] as a no-op.
 ///
 /// @param <T> the type of data handled by this message format
-public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, ProtobufFormat, PojoFormat, BytesFormat {
-  /// JSON message format.
-  MessageFormat<Map<String, Object>> JSON = new JsonFormat();
-
-  /// AVRO message format with support for schema retrieval from HTTP endpoints and file system.
-  AvroFormat AVRO = new AvroFormat(MessageFormat::readAvroSchema);
-
-  /// Protocol Buffers message format with support for descriptor registration and management.
-  ProtobufFormat PROTOBUF = new ProtobufFormat();
-
-  /// Creates a new POJO message format based on JSON.
-  ///
-  /// @param <T> The POJO type
-  /// @param clazz The POJO class
-  /// @return A new MessageFormat for the specified POJO type
-  static <T> MessageFormat<T> pojo(final Class<T> clazz) {
-    return new PojoFormat<>(clazz);
-  }
-
+public interface MessageFormat<T> {
   /// Returns the identity-passthrough [MessageFormat] for `byte[]` payloads.
   ///
   /// Use with the [TypedPipelineBuilder] when you want fluent operator chaining
@@ -108,73 +83,6 @@ public sealed interface MessageFormat<T> permits JsonFormat, AvroFormat, Protobu
     public SchemaInfo {
       Objects.requireNonNull(fullyQualifiedName, "Fully qualified name cannot be null");
       Objects.requireNonNull(location, "Location cannot be null");
-    }
-  }
-
-  /// Internal helper to read Avro schema from various locations.
-  private static String readAvroSchema(final String location) {
-    try {
-      // Check if HTTP URL
-      if (location.startsWith("http://") || location.startsWith("https://")) {
-        try (final var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
-          final var request = HttpRequest.newBuilder()
-            .uri(URI.create(location))
-            .timeout(Duration.ofSeconds(10))
-            .GET()
-            .build();
-
-          final var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-          if (response.statusCode() >= 200 && response.statusCode() < 300) {
-            final var responseBody = response.body();
-            if (responseBody == null || responseBody.isEmpty()) throw new IOException(
-              "Empty response from schema registry"
-            );
-
-            try {
-              final var dslJson = new DslJson<>();
-              final var bytes = responseBody.getBytes(StandardCharsets.UTF_8);
-              final var result = dslJson.deserialize(Map.class, new ByteArrayInputStream(bytes));
-
-              if (result == null) throw new IOException("Failed to deserialize schema registry response");
-
-              if (result.containsKey("schema")) return (String) result.get("schema");
-              else throw new IOException("Schema field not found in response");
-            } catch (final Exception e) {
-              throw new IOException(
-                "Error parsing schema registry response: " +
-                  responseBody.substring(0, Math.min(100, responseBody.length())),
-                e
-              );
-            }
-          } else {
-            throw new IOException("Failed to fetch schema: HTTP %d".formatted(response.statusCode()));
-          }
-        }
-      }
-      // Check if classpath resource
-      else if (location.startsWith("classpath:")) {
-        final var resourcePath = location.substring("classpath:".length());
-        try (final var inputStream = MessageFormat.class.getResourceAsStream(resourcePath)) {
-          if (inputStream == null) throw new IOException("Classpath resource not found: %s".formatted(resourcePath));
-          return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-        }
-      }
-      // Check if file path
-      else if (
-        location.startsWith("file://") ||
-        location.startsWith("/") ||
-        location.endsWith(".json") ||
-        location.endsWith(".avsc") ||
-        Files.exists(Paths.get(location))
-      ) {
-        final var filePath = location.startsWith("file://") ? location.substring(7) : location;
-        return Files.readString(Paths.get(filePath));
-      }
-      // Treat as inline schema
-      return location;
-    } catch (final Exception e) {
-      throw new RuntimeException("Failed to read schema from location: %s".formatted(location), e);
     }
   }
 }

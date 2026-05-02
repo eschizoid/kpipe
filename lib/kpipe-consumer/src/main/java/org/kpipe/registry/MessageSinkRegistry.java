@@ -1,15 +1,10 @@
 package org.kpipe.registry;
 
-import com.google.protobuf.Message;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import org.apache.avro.generic.GenericRecord;
-import org.kpipe.consumer.sink.AvroConsoleSink;
-import org.kpipe.consumer.sink.JsonConsoleSink;
-import org.kpipe.consumer.sink.ProtobufConsoleSink;
 import org.kpipe.sink.MessageSink;
 
 /// Registry for managing message sinks in KPipe pipelines.
@@ -31,19 +26,14 @@ public class MessageSinkRegistry {
   private static final Logger LOGGER = System.getLogger(MessageSinkRegistry.class.getName());
   private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> registry = new ConcurrentHashMap<>();
 
-  /// Pre-defined key for the JSON logging sink (Map based).
+  /// Pre-defined key for the JSON logging sink (Map based) — registered by users via the
+  /// `kpipe-format-json` module's helpers.
   public static final RegistryKey<Map<String, Object>> JSON_LOGGING = RegistryKey.json("jsonLogging");
-  /// Pre-defined key for the Avro logging sink (GenericRecord based).
-  public static final RegistryKey<GenericRecord> AVRO_LOGGING = RegistryKey.avro("avroLogging");
-  /// Pre-defined key for the Protobuf logging sink (Message based).
-  public static final RegistryKey<Message> PROTOBUF_LOGGING = RegistryKey.protobuf("protobufLogging");
 
-  /// Constructs a new `MessageSinkRegistry` object with default logging sinks.
-  public MessageSinkRegistry() {
-    register(JSON_LOGGING, new JsonConsoleSink<>());
-    register(AVRO_LOGGING, new AvroConsoleSink<>());
-    register(PROTOBUF_LOGGING, new ProtobufConsoleSink<>());
-  }
+  /// Constructs a new empty `MessageSinkRegistry`. Users register their own sinks via
+  /// [#register] — the format modules provide pre-built console sinks (e.g.
+  /// `JsonConsoleSink`, `AvroConsoleSink`, `ProtobufConsoleSink`) that can be registered as needed.
+  public MessageSinkRegistry() {}
 
   /// Registers all constants of an Enum that implements MessageSink<T>.
   ///

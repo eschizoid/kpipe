@@ -1,14 +1,20 @@
 package org.kpipe.registry;
 
-import com.google.protobuf.Message;
 import java.util.Map;
-import org.apache.avro.generic.GenericRecord;
 
 /// Type-safe identifier for registry entries in KPipe.
 ///
 /// This record combines a name and a type to uniquely identify entries in registries (processors,
 /// sinks, etc.). It ensures type safety and clarity when retrieving or registering components in
 /// the pipeline system.
+///
+/// Format-specific convenience factories live in their respective modules:
+///
+/// - `org.kpipe.format.avro.AvroRegistryKey.of(name)` — `RegistryKey<GenericRecord>`
+/// - `org.kpipe.format.protobuf.ProtobufRegistryKey.of(name)` — `RegistryKey<Message>`
+///
+/// JSON keys are provided here directly because `Map<String, Object>` is a JDK type with no
+/// format runtime dependency.
 ///
 /// Example:
 /// ```java
@@ -36,21 +42,5 @@ public record RegistryKey<T>(String name, Class<T> type) {
   @SuppressWarnings("unchecked")
   public static RegistryKey<Map<String, Object>> json(final String name) {
     return of(name, (Class<Map<String, Object>>) (Class<?>) Map.class);
-  }
-
-  /// Convenience factory for Avro GenericRecord keys.
-  ///
-  /// @param name The unique name of the registry entry.
-  /// @return A new RegistryKey for Avro GenericRecord data.
-  public static RegistryKey<GenericRecord> avro(final String name) {
-    return of(name, GenericRecord.class);
-  }
-
-  /// Convenience factory for Protobuf Message keys.
-  ///
-  /// @param name The unique name of the registry entry.
-  /// @return A new RegistryKey for Protobuf Message data.
-  public static RegistryKey<Message> protobuf(final String name) {
-    return of(name, Message.class);
   }
 }

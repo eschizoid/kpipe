@@ -19,43 +19,22 @@ repositories {
 }
 
 dependencies {
-  api(project(":lib:kpipe-producer"))
-
-  // Kafka
-  implementation(libs.kafkaClients)
-
-  // Format-specific dependencies (DSL-JSON, Avro, Protobuf) live in their dedicated modules:
-  // kpipe-format-json, kpipe-format-avro, kpipe-format-protobuf.
+  api(project(":lib:kpipe-consumer"))
+  implementation(libs.avro)
+  // DSL-JSON is used to parse Confluent Schema Registry responses (`{"schema": "..."}`).
+  implementation(libs.dslJson)
 
   // Testing
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
   testRuntimeOnly(libs.junitPlatformLauncher)
-
   testImplementation(libs.mockitoCore)
   testImplementation(libs.mockitoJunitJupiter)
-
   testImplementation(libs.slf4jSimple)
-
-  testImplementation(libs.testcontainers)
-  testImplementation(libs.testcontainersJunitJupiter)
-  testImplementation(libs.testcontainersKafka)
-  testImplementation(libs.testcontainersPostgresql)
-  testImplementation(libs.postgresql)
 }
 
 tasks.test {
   useJUnitPlatform()
-
-  if (project.hasProperty("excludeTests")) {
-    val excludePattern = project.property("excludeTests").toString()
-    exclude("**/${excludePattern.replace(".", "/")}.class")
-  }
-
-  minHeapSize = "7g"
-  maxHeapSize = "7g"
-  maxParallelForks = 1
-  forkEvery = 200
 }
 
 tasks.jacocoTestReport {
@@ -82,12 +61,12 @@ publishing {
   publications {
     create<MavenPublication>("maven") {
       groupId = "io.github.eschizoid"
-      artifactId = "kpipe-consumer"
+      artifactId = "kpipe-format-avro"
       from(components["java"])
 
       pom {
-        name.set("kpipe-consumer")
-        description.set("KPipe Consumer - Functional Kafka consumer with virtual threads")
+        name.set("kpipe-format-avro")
+        description.set("KPipe Avro format support — AvroFormat, Avro processors, and console sink")
         url.set("https://github.com/eschizoid/kpipe")
         inceptionYear.set("2025")
 

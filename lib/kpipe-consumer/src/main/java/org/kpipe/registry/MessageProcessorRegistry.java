@@ -6,21 +6,21 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.*;
-import org.kpipe.processor.JsonMessageProcessor;
 import org.kpipe.sink.MessageSink;
 
 /// Registry for managing and composing message processors in KPipe.
 ///
-/// This class allows registration, retrieval, and composition of message processors for different
-/// formats (JSON, Avro, Protobuf, POJO). It supports type-safe pipelines for Kafka message
-/// processing and provides utilities for building and composing processing chains via
-/// [TypedPipelineBuilder].
+/// This class allows registration, retrieval, and composition of message processors for any
+/// supported format (JSON via `kpipe-format-json`, Avro via `kpipe-format-avro`, Protobuf via
+/// `kpipe-format-protobuf`, or a custom [MessageFormat] implementation). It supports type-safe
+/// pipelines for Kafka message processing and provides utilities for building and composing
+/// processing chains via [TypedPipelineBuilder].
 ///
 /// Example usage:
 /// ```java
-/// final var registry = new MessageProcessorRegistry("my-app");
+/// final var registry = new MessageProcessorRegistry("my-app", JsonFormat.INSTANCE);
 /// var pipeline =
-/// registry.pipeline(MessageFormat.JSON).add(RegistryKey.json("addTimestamp")).build();
+///   registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json("addTimestamp")).build();
 ///
 /// // Optional: Wrap with error handling
 /// final var safeSink = MessageSinkRegistry.withErrorHandling(new MySink());
@@ -29,13 +29,6 @@ import org.kpipe.sink.MessageSink;
 public class MessageProcessorRegistry {
 
   private static final System.Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
-
-  /// Pre-defined key for adding a source field to JSON messages.
-  public static final RegistryKey<Map<String, Object>> JSON_ADD_SOURCE = RegistryKey.json("addSource");
-  /// Pre-defined key for adding a timestamp field to JSON messages.
-  public static final RegistryKey<Map<String, Object>> JSON_ADD_TIMESTAMP = RegistryKey.json("addTimestamp");
-  /// Pre-defined key for marking JSON messages as processed.
-  public static final RegistryKey<Map<String, Object>> JSON_MARK_PROCESSED = RegistryKey.json("markProcessed");
 
   private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> registryMap = new ConcurrentHashMap<>();
   private final String sourceAppName;
@@ -115,32 +108,35 @@ public class MessageProcessorRegistry {
     return sinkRegistry.get(key);
   }
 
-  /// Creates a new registry with JSON as the default message format.
+  /// Creates a new registry with the byte-passthrough format as the default.
+  ///
+  /// Most users should pass an explicit format via the two-arg constructor — this convenience
+  /// constructor is intended for tests, byte-level routing, and custom format scenarios where the
+  /// passthrough is sufficient.
   ///
   /// @param sourceAppName Application name to use as source identifier
   public MessageProcessorRegistry(final String sourceAppName) {
-    this(sourceAppName, MessageFormat.JSON);
+    this(sourceAppName, MessageFormat.bytes());
   }
 
   /// Creates a new registry with the specified message format.
   ///
   /// @param sourceAppName Application name to use as source identifier
-  /// @param messageFormat Message format to use (JSON, AVRO, PROTOBUF)
+  /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `AvroFormat.INSTANCE`,
+  ///                      `ProtobufFormat.INSTANCE`, `MessageFormat.bytes()`, or a custom impl)
   public MessageProcessorRegistry(final String sourceAppName, final MessageFormat<?> messageFormat) {
     this.sourceAppName = Objects.requireNonNull(sourceAppName, "Source app name cannot be null");
     this.messageFormat = Objects.requireNonNull(messageFormat, "Message format cannot be null");
-
-    registerDefaultProcessors();
   }
 
-  /// Registers default processors based on the configured message format.
-  private void registerDefaultProcessors() {
-    // Register default operators for optimized pipelines
-    if (messageFormat == MessageFormat.JSON) {
-      register(JSON_ADD_SOURCE, JsonMessageProcessor.addFieldOperator("source", sourceAppName));
-      register(JSON_ADD_TIMESTAMP, JsonMessageProcessor.addTimestampOperator("timestamp"));
-      register(JSON_MARK_PROCESSED, JsonMessageProcessor.addFieldOperator("processed", "true"));
-    }
+  /// Returns the source application name this registry was created with — useful for
+  // format-specific
+  /// helper modules that register default operators (e.g. an "addSource" processor that stamps the
+  /// app name onto each message).
+  ///
+  /// @return the source app name
+  public String sourceAppName() {
+    return sourceAppName;
   }
 
   /// Adds a schema and registers its processors.

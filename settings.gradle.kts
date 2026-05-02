@@ -1,10 +1,14 @@
 rootProject.name = "kpipe"
 
 include("lib")
+include("lib:kpipe-bom")
 include("lib:kpipe-metrics")
 include("lib:kpipe-metrics-otel")
 include("lib:kpipe-consumer")
 include("lib:kpipe-producer")
+include("lib:kpipe-format-json")
+include("lib:kpipe-format-avro")
+include("lib:kpipe-format-protobuf")
 
 include("examples")
 include("examples:json")
