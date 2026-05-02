@@ -127,9 +127,8 @@ runner.start();
 
 KPipe handles record processing, retries, metrics, offset tracking, and safe commits.
 
-> The consumer's type parameter `<K>` is the Kafka record key type. Values are
-> always `byte[]` per the [byte-boundary architecture](#architecture-and-reliability) —
-> the pipeline takes care of deserialization.
+> The consumer's type parameter `<K>` is the Kafka record key type. Values are always `byte[]` per the
+> [byte-boundary architecture](#architecture-and-reliability) — the pipeline takes care of deserialization.
 
 ### 4. Common operator patterns
 
@@ -141,8 +140,8 @@ import static org.kpipe.registry.Operators.tap;
 
 final var pipeline = registry
   .pipeline(MessageFormat.JSON)
-  .add(filter(msg -> "active".equals(msg.get("status"))))    // drop inactive
-  .add(tap(msg -> log.info("processing {}", msg.get("id")))) // log without modifying
+  .add(filter((msg) -> "active".equals(msg.get("status")))) // drop inactive
+  .add(tap((msg) -> log.info("processing {}", msg.get("id")))) // log without modifying
   .add(stampKey)
   .toSink(MessageSinkRegistry.JSON_LOGGING)
   .build();
@@ -151,10 +150,7 @@ final var pipeline = registry
 If you don't need a real format (tests, benchmarks, byte-level routing), use `MessageFormat.bytes()`:
 
 ```java
-final var passthrough = registry
-  .pipeline(MessageFormat.bytes())
-  .add(tap(b -> metrics.inc()))
-  .build();
+final var passthrough = registry.pipeline(MessageFormat.bytes()).add(tap((b) -> metrics.inc())).build();
 ```
 
 Two same-T pipelines compose with `then`:

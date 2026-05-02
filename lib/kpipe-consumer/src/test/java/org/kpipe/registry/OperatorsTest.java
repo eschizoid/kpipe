@@ -55,10 +55,12 @@ class OperatorsTest {
     final var pipeline = registry
       .pipeline(MessageFormat.bytes())
       .add(Operators.filter(b -> new String(b).startsWith("keep-")))
-      .add(Operators.tap(b -> {
-        // This should not be invoked for filtered messages.
-        if (new String(b).startsWith("drop-")) throw new AssertionError("filter did not short-circuit");
-      }))
+      .add(
+        Operators.tap(b -> {
+          // This should not be invoked for filtered messages.
+          if (new String(b).startsWith("drop-")) throw new AssertionError("filter did not short-circuit");
+        })
+      )
       .build();
 
     assertNull(pipeline.apply("drop-this".getBytes()));

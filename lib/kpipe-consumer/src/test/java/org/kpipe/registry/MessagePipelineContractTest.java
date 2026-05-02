@@ -121,10 +121,15 @@ class MessagePipelineContractTest {
   void thenShouldShortCircuitOnFilterFromFirstPipeline() {
     final var captured = new AtomicReference<String>();
     final var first = new TestPipeline<String>(_ -> "raw", _ -> null, _ -> INPUT, null);
-    final var second = new TestPipeline<>(_ -> "raw", s -> {
-      captured.set("should-not-run");
-      return s;
-    }, _ -> INPUT, null);
+    final var second = new TestPipeline<>(
+      _ -> "raw",
+      s -> {
+        captured.set("should-not-run");
+        return s;
+      },
+      _ -> INPUT,
+      null
+    );
 
     final var composed = first.then(second);
 
