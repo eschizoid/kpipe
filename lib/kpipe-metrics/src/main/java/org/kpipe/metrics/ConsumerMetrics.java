@@ -32,15 +32,18 @@ public final class ConsumerMetrics {
   private final DoubleHistogram processingDuration;
   private final LongCounter backpressurePauses;
   private final LongCounter backpressureTime;
+
   @SuppressWarnings("unused")
   private final ObservableLongGauge inFlight;
+
   private final Attributes attributes;
 
   /// Creates a fully-instrumented instance with an in-flight gauge backed by the given supplier.
   ///
   /// @param openTelemetry the OTel entry point
   /// @param inFlightSupplier supplies the current number of in-flight messages
-  /// @param pipelineName optional pipeline name attached as a `pipeline` attribute on all metrics; pass null to omit
+  /// @param pipelineName optional pipeline name attached as a `pipeline` attribute on all metrics;
+  // pass null to omit
   public ConsumerMetrics(
     final OpenTelemetry openTelemetry,
     final LongSupplier inFlightSupplier,
@@ -87,6 +90,9 @@ public final class ConsumerMetrics {
   }
 
   /// Creates a fully-instrumented instance without a pipeline label.
+  ///
+  /// @param openTelemetry the OTel entry point
+  /// @param inFlightSupplier supplies the current number of in-flight messages
   public ConsumerMetrics(final OpenTelemetry openTelemetry, final LongSupplier inFlightSupplier) {
     this(openTelemetry, inFlightSupplier, null);
   }
@@ -99,6 +105,9 @@ public final class ConsumerMetrics {
   }
 
   /// Creates an instance without an in-flight gauge, labeled with a pipeline name.
+  ///
+  /// @param openTelemetry the OTel entry point
+  /// @param pipelineName pipeline name attached as a `pipeline` attribute on all metrics
   public ConsumerMetrics(final OpenTelemetry openTelemetry, final String pipelineName) {
     this(openTelemetry, () -> 0L, pipelineName);
   }

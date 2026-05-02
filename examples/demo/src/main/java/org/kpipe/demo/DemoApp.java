@@ -210,7 +210,8 @@ public class DemoApp implements AutoCloseable {
 
     // Use the gRPC exporter (collector is configured to listen on 4317 for gRPC).
     final var metricExporter = OtlpGrpcMetricExporter.builder().setEndpoint(endpoint).build();
-    final var reader = PeriodicMetricReader.builder(metricExporter).build();
+    // Export every 10s so Grafana's [30s] rate window always sees fresh data points.
+    final var reader = PeriodicMetricReader.builder(metricExporter).setInterval(Duration.ofSeconds(10)).build();
     final var meterProvider = SdkMeterProvider.builder().registerMetricReader(reader).build();
 
     final var sdk = OpenTelemetrySdk.builder().setMeterProvider(meterProvider).buildAndRegisterGlobal();
