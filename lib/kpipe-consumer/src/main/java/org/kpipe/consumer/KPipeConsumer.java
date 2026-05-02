@@ -365,8 +365,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Sets the OpenTelemetry metrics instruments for this consumer.
     ///
-    /// Use {@link ConsumerMetrics#ConsumerMetrics(io.opentelemetry.api.OpenTelemetry)} to create an
-    /// instrumented instance, or {@link ConsumerMetrics#noop()} for a no-op default.
+    /// Use [org.kpipe.metrics.ConsumerMetrics] to create an instrumented instance, or
+    /// [ConsumerMetrics#noop()] for a no-op default.
     ///
     /// @param metrics the consumer metrics instruments
     /// @return This builder instance for method chaining
