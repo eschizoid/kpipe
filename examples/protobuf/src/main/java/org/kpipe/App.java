@@ -15,14 +15,14 @@ import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.consumer.metrics.ProcessorMetricsReporter;
 import org.kpipe.consumer.metrics.SinkMetricsReporter;
+import org.kpipe.format.protobuf.ProtobufFormat;
+import org.kpipe.format.protobuf.ProtobufRegistryKey;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.KPipeMetricsReporter;
-import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
-import org.kpipe.registry.RegistryKey;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
 /// pipeline of message processors.
@@ -54,7 +54,7 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.PROTOBUF);
+    processorRegistry = new MessageProcessorRegistry(config.appName(), ProtobufFormat.INSTANCE);
     sinkRegistry = processorRegistry.sinkRegistry();
 
     kpipeConsumer = createConsumer(config, processorRegistry);
@@ -138,14 +138,14 @@ public class App implements AutoCloseable {
     final MessageProcessorRegistry registry,
     final AppConfig config
   ) {
-    final var protoFormat = MessageFormat.PROTOBUF;
+    final var protoFormat = ProtobufFormat.INSTANCE;
     // Register the Customer descriptor programmatically
     protoFormat.addDescriptor("customer", buildCustomerDescriptor());
     protoFormat.withDefaultDescriptor("customer");
 
     final var builder = registry.pipeline(protoFormat);
-    for (final var name : config.processors()) builder.add(RegistryKey.protobuf(name));
-    builder.toSink(RegistryKey.protobuf("protobufLogging"));
+    for (final var name : config.processors()) builder.add(ProtobufRegistryKey.of(name));
+    builder.toSink(ProtobufRegistryKey.of("protobufLogging"));
     return builder.build();
   }
 

@@ -6,6 +6,8 @@ plugins {
 dependencies {
   // Benchmarks consume public API from :lib
   implementation(project(":lib:kpipe-consumer"))
+  implementation(project(":lib:kpipe-format-json"))
+  implementation(project(":lib:kpipe-format-avro"))
 
   // Benchmark targets
   implementation(libs.kafkaClients)

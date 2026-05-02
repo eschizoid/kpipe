@@ -9,10 +9,10 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.io.EncoderFactory;
-import org.kpipe.processor.AvroMessageProcessor;
-import org.kpipe.registry.MessageFormat;
+import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.format.avro.AvroMessageProcessor;
+import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.RegistryKey;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -78,14 +78,14 @@ public class AvroPipelineBenchmark {
     avroWithMagicBytes[4] = 1;
     System.arraycopy(avroBytes, 0, avroWithMagicBytes, 5, avroBytes.length);
 
-    final var registry = new MessageProcessorRegistry("benchmark-app", MessageFormat.AVRO);
-    final var format = MessageFormat.AVRO;
+    final var registry = new MessageProcessorRegistry("benchmark-app", AvroFormat.INSTANCE);
+    final var format = AvroFormat.INSTANCE;
     format.addSchema("user", "com.kpipe.User", schemaJson);
     format.withDefaultSchema("user");
 
     // Register operators
-    final var op1 = RegistryKey.avro("op1");
-    final var op2 = RegistryKey.avro("op2");
+    final var op1 = AvroRegistryKey.of("op1");
+    final var op2 = AvroRegistryKey.of("op2");
 
     registry.register(op1, AvroMessageProcessor.addFieldOperator("processed", true));
     registry.register(op2, AvroMessageProcessor.addFieldOperator("name", "PROCESSED"));
@@ -109,7 +109,7 @@ public class AvroPipelineBenchmark {
   public void manualAvroMagicHandling(final Blackhole bh) {
     // This mimics the manual way of handling magic bytes with copying
     final var stripped = Arrays.copyOfRange(avroWithMagicBytes, 5, avroWithMagicBytes.length);
-    final var format = MessageFormat.AVRO;
+    final var format = AvroFormat.INSTANCE;
     final var record = format.deserialize(stripped);
     if (record != null) {
       record.put("processed", true);

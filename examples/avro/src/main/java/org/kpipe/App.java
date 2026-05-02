@@ -13,14 +13,14 @@ import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.consumer.metrics.ProcessorMetricsReporter;
 import org.kpipe.consumer.metrics.SinkMetricsReporter;
+import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.KPipeMetricsReporter;
-import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
-import org.kpipe.registry.RegistryKey;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
 /// pipeline of message processors.
@@ -61,7 +61,7 @@ public class App implements AutoCloseable {
   /// @param config The application configuration
   /// @param schemaRegistryUrl Schema Registry base URL
   public App(final AppConfig config, final String schemaRegistryUrl) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
+    processorRegistry = new MessageProcessorRegistry(config.appName(), AvroFormat.INSTANCE);
     sinkRegistry = processorRegistry.sinkRegistry();
     kpipeConsumer = createConsumer(config, processorRegistry, schemaRegistryUrl);
 
@@ -155,15 +155,15 @@ public class App implements AutoCloseable {
     final AppConfig config,
     final String schemaRegistryUrl
   ) {
-    final var avroFormat = MessageFormat.AVRO;
+    final var avroFormat = AvroFormat.INSTANCE;
     // Register schema for the test/app
     avroFormat.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
     avroFormat.withDefaultSchema("1");
 
     final var builder = registry.pipeline(avroFormat);
     builder.skipBytes(5);
-    for (final var name : config.processors()) builder.add(RegistryKey.avro(name));
-    builder.toSink(RegistryKey.avro("avroLogging"));
+    for (final var name : config.processors()) builder.add(AvroRegistryKey.of(name));
+    builder.toSink(AvroRegistryKey.of("avroLogging"));
     return builder.build();
   }
 

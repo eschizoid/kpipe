@@ -3,7 +3,7 @@ package org.kpipe.benchmarks;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
-import org.kpipe.registry.MessageFormat;
+import org.kpipe.format.json.JsonFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 import org.openjdk.jmh.annotations.*;
@@ -51,7 +51,7 @@ public class JsonPipelineBenchmark {
       }
       """.getBytes(StandardCharsets.UTF_8);
 
-    final var registry = new MessageProcessorRegistry("benchmark-app", MessageFormat.JSON);
+    final var registry = new MessageProcessorRegistry("benchmark-app", JsonFormat.INSTANCE);
     // Register some operators
     final var op1 = RegistryKey.json("op1");
     final var op2 = RegistryKey.json("op2");
@@ -70,7 +70,7 @@ public class JsonPipelineBenchmark {
       return map;
     });
 
-    kpipePipeline = registry.pipeline(MessageFormat.JSON).add(op1, op2, op3).build();
+    kpipePipeline = registry.pipeline(JsonFormat.INSTANCE).add(op1, op2, op3).build();
   }
 
   @Benchmark
@@ -81,7 +81,7 @@ public class JsonPipelineBenchmark {
   @Benchmark
   public void manualJsonSerDeChained(final Blackhole bh) {
     // This mimics the "bad" way of chaining byte-to-byte functions
-    final var format = MessageFormat.JSON;
+    final var format = JsonFormat.INSTANCE;
 
     // Step 1
     final var map1 = format.deserialize(jsonBytes);
@@ -117,7 +117,7 @@ public class JsonPipelineBenchmark {
     // 2. Logic
     // 3. Serialization
 
-    final var format = MessageFormat.JSON;
+    final var format = JsonFormat.INSTANCE;
     final var map = format.deserialize(jsonBytes);
     if (map != null) {
       map.put("processed_by", "manual");

@@ -18,8 +18,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.consumer.config.AppConfig;
-import org.kpipe.processor.ProtobufMessageProcessor;
-import org.kpipe.registry.RegistryKey;
+import org.kpipe.format.protobuf.ProtobufMessageProcessor;
+import org.kpipe.format.protobuf.ProtobufRegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -58,16 +58,16 @@ class AppIntegrationTest {
 
       // Register processors
       registry.register(
-        RegistryKey.protobuf("addSource"),
+        ProtobufRegistryKey.of("addSource"),
         ProtobufMessageProcessor.addFieldOperator("name", "processed-by-kpipe")
       );
       registry.register(
-        RegistryKey.protobuf("markProcessed"),
+        ProtobufRegistryKey.of("markProcessed"),
         ProtobufMessageProcessor.addFieldOperator("active", true)
       );
 
       // Register the capturing sink
-      registry.sinkRegistry().register(RegistryKey.protobuf("protobufLogging"), capturingSink);
+      registry.sinkRegistry().register(ProtobufRegistryKey.of("protobufLogging"), capturingSink);
 
       // Start the app in a virtual thread
       final var appThread = Thread.ofVirtual().start(() -> {

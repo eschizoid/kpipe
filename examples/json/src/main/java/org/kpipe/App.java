@@ -13,11 +13,11 @@ import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.consumer.metrics.ProcessorMetricsReporter;
 import org.kpipe.consumer.metrics.SinkMetricsReporter;
-import org.kpipe.consumer.sink.JsonConsoleSink;
+import org.kpipe.format.json.JsonConsoleSink;
+import org.kpipe.format.json.JsonFormat;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.KPipeMetricsReporter;
-import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
@@ -53,7 +53,7 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.JSON);
+    processorRegistry = new MessageProcessorRegistry(config.appName(), JsonFormat.INSTANCE);
     sinkRegistry = processorRegistry.sinkRegistry();
     // Pre-register loggers
     sinkRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
@@ -138,7 +138,7 @@ public class App implements AutoCloseable {
     final MessageProcessorRegistry registry,
     final AppConfig config
   ) {
-    final var builder = registry.pipeline(MessageFormat.JSON);
+    final var builder = registry.pipeline(JsonFormat.INSTANCE);
     for (final var name : config.processors()) builder.add(RegistryKey.json(name));
     builder.toSink(RegistryKey.json("jsonLogging"));
     return builder.build();
