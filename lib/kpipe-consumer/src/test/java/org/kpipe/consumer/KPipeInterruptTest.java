@@ -18,21 +18,21 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class KPipeInterruptTest {
 
   @Mock
-  private Function<String, String> processor;
+  private Function<byte[], byte[]> processor;
 
   @Mock
-  private KafkaConsumer<String, String> mockConsumer;
+  private KafkaConsumer<String, byte[]> mockConsumer;
 
   @Mock
-  private MessageSink<String> messageSink;
+  private MessageSink<byte[]> messageSink;
 
   @Mock
-  private KPipeConsumer.ErrorHandler<String, String> errorHandler;
+  private KPipeConsumer.ErrorHandler<String> errorHandler;
 
   @Mock
-  private KafkaOffsetManager<String, String> offsetManager;
+  private KafkaOffsetManager<String> offsetManager;
 
-  private KPipeConsumer<String, String> createConsumer(
+  private KPipeConsumer<String> createConsumer(
     final Queue<ConsumerCommand> commandQueue,
     final int maxRetries,
     final Duration backoff
@@ -41,16 +41,18 @@ class KPipeInterruptTest {
     props.put("bootstrap.servers", "localhost:9092");
     props.put("group.id", "test-group");
     props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-    props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+    props.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
 
-    return KPipeConsumer.<String, String>builder()
+    return KPipeConsumer.<String>builder()
       .withProperties(props)
       .withTopic("test-topic")
-      .withPipeline(value -> {
-        final var result = processor.apply(value);
-        messageSink.accept(result);
-        return result;
-      })
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          final var result = processor.apply(value);
+          messageSink.accept(result);
+          return result;
+        })
+      )
       .withRetry(maxRetries, backoff)
       .withErrorHandler(errorHandler)
       .withCommandQueue(commandQueue)
@@ -73,12 +75,13 @@ class KPipeInterruptTest {
   @Test
   void interruptDuringRetryShouldNotMarkOffsetAsProcessed() throws Exception {
     final var topic = "test-topic";
-    final var record = new ConsumerRecord<>(topic, 0, 123L, "key", "value");
+    final var value = "value".getBytes();
+    final var record = new ConsumerRecord<>(topic, 0, 123L, "key", value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
 
     final var consumer = createConsumer(commandQueue, 1, Duration.ofMillis(1000));
 
-    when(processor.apply("value")).thenThrow(new RuntimeException("first failure"));
+    when(processor.apply(value)).thenThrow(new RuntimeException("first failure"));
 
     final var threadStarted = new CountDownLatch(1);
     final var threadFinished = new CountDownLatch(1);
@@ -105,11 +108,12 @@ class KPipeInterruptTest {
   @Test
   void interruptionRelatedExceptionShouldNotMarkOffsetAsProcessed() throws Exception {
     final var topic = "test-topic";
-    final var record = new ConsumerRecord<>(topic, 0, 456L, "key", "value");
+    final var value = "value".getBytes();
+    final var record = new ConsumerRecord<>(topic, 0, 456L, "key", value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 
-    when(processor.apply("value")).thenThrow(new RuntimeException(new InterruptedException("interrupted")));
+    when(processor.apply(value)).thenThrow(new RuntimeException(new InterruptedException("interrupted")));
 
     final var interruptedFlag = new CompletableFuture<Boolean>();
     final var done = new CountDownLatch(1);
@@ -136,11 +140,12 @@ class KPipeInterruptTest {
   @Test
   void terminalNonInterruptFailureShouldReportAndMarkOffset() {
     final var topic = "test-topic";
-    final var record = new ConsumerRecord<>(topic, 0, 789L, "key", "value");
+    final var value = "value".getBytes();
+    final var record = new ConsumerRecord<>(topic, 0, 789L, "key", value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 
-    when(processor.apply("value")).thenThrow(new RuntimeException("boom"));
+    when(processor.apply(value)).thenThrow(new RuntimeException("boom"));
 
     consumer.processRecord(record);
 
@@ -152,15 +157,17 @@ class KPipeInterruptTest {
   @Test
   void successShouldSendAndMarkOffset() {
     final var topic = "test-topic";
-    final var record = new ConsumerRecord<>(topic, 0, 999L, "key", "value");
+    final var value = "value".getBytes();
+    final var processed = "processed".getBytes();
+    final var record = new ConsumerRecord<>(topic, 0, 999L, "key", value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 
-    when(processor.apply("value")).thenReturn("processed");
+    when(processor.apply(value)).thenReturn(processed);
 
     consumer.processRecord(record);
 
-    verify(messageSink, times(1)).accept("processed");
+    verify(messageSink, times(1)).accept(processed);
     verify(errorHandler, never()).accept(any());
     assertTrue(hasMarkOffsetProcessed(commandQueue, 999L));
   }

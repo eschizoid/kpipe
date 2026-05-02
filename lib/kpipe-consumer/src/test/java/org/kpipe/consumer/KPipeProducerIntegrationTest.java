@@ -42,13 +42,15 @@ class KPipeProducerIntegrationTest {
     }
 
     // 2. Start consumer with DLQ
-    final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+    final var consumer = KPipeConsumer.<byte[]>builder()
       .withProperties(props)
       .withTopic(topic)
-      .withPipeline(v -> {
-        if (new String(v).equals("bad-value")) throw new RuntimeException("Simulated failure");
-        return v;
-      })
+      .withPipeline(
+        TestPipelines.sideEffect(v -> {
+          if (new String(v).equals("bad-value")) throw new RuntimeException("Simulated failure");
+          return v;
+        })
+      )
       .withRetry(1, Duration.ofMillis(100))
       .withDeadLetterTopic(dlqTopic)
       .build();
@@ -85,13 +87,15 @@ class KPipeProducerIntegrationTest {
     }
 
     // 2. Start consumer with DLQ and external producer
-    final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+    final var consumer = KPipeConsumer.<byte[]>builder()
       .withProperties(props)
       .withTopic(topic)
-      .withPipeline(v -> {
-        if (new String(v).equals("bad-external")) throw new RuntimeException("Simulated failure");
-        return v;
-      })
+      .withPipeline(
+        TestPipelines.sideEffect(v -> {
+          if (new String(v).equals("bad-external")) throw new RuntimeException("Simulated failure");
+          return v;
+        })
+      )
       .withRetry(0, Duration.ZERO)
       .withDeadLetterTopic(dlqTopic)
       .withKafkaProducer(externalProducer)
@@ -130,14 +134,16 @@ class KPipeProducerIntegrationTest {
       outputTopic,
       v -> v
     );
-    final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+    final var consumer = KPipeConsumer.<byte[]>builder()
       .withProperties(props)
       .withTopic(topic)
-      .withPipeline(v -> {
-        final var processed = ("processed-" + new String(v)).getBytes();
-        kafkaSink.accept(processed);
-        return processed;
-      })
+      .withPipeline(
+        TestPipelines.sideEffect(v -> {
+          final var processed = ("processed-" + new String(v)).getBytes();
+          kafkaSink.accept(processed);
+          return processed;
+        })
+      )
       .build();
 
     final var consumerThread = Thread.ofVirtual().start(consumer::start);

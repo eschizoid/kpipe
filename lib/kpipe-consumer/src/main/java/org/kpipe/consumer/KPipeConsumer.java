@@ -69,7 +69,7 @@ import org.kpipe.registry.MessagePipeline;
 ///
 /// @param <K> the type of keys in the consumed records
 /// @param <V> the type of values in the consumed records
-public class KPipeConsumer<K, byte[]> implements AutoCloseable {
+public class KPipeConsumer<K> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
 
@@ -383,7 +383,7 @@ public class KPipeConsumer<K, byte[]> implements AutoCloseable {
     /// Builds a new KPipeConsumer with the configured settings.
     ///
     /// @return a new KPipeConsumer instance
-    public KPipeConsumer<K, byte[]> build() {
+    public KPipeConsumer<K> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
       Objects.requireNonNull(topic, "Topic must be provided");
       Objects.requireNonNull(pipeline, "Pipeline function must be provided");

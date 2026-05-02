@@ -33,12 +33,12 @@ class KafkaOffsetManagerTest {
   private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
 
   @Mock
-  private Consumer<String, String> mockConsumer;
+  private Consumer<String, byte[]> mockConsumer;
 
   @Captor
   private ArgumentCaptor<Map<TopicPartition, OffsetAndMetadata>> offsetCaptor;
 
-  private KafkaOffsetManager<String, String> offsetManager;
+  private KafkaOffsetManager<String> offsetManager;
   private BlockingQueue<ConsumerCommand> commandQueue;
 
   @BeforeEach
@@ -84,7 +84,7 @@ class KafkaOffsetManagerTest {
       final long expectedOffsetAfterSecondCommit
     ) throws Exception {
       // Initialize with the first record
-      final var record = new ConsumerRecord<>(TOPIC, 0, initialOffset, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, initialOffset, "key", "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
@@ -103,7 +103,7 @@ class KafkaOffsetManagerTest {
       );
 
       // Track and process record with gap offset
-      final var largeGapRecord = new ConsumerRecord<>(TOPIC, 0, gapOffset, "key", "value");
+      final var largeGapRecord = new ConsumerRecord<>(TOPIC, 0, gapOffset, "key", "value".getBytes());
       offsetManager.trackOffset(largeGapRecord);
       offsetManager.markOffsetProcessed(largeGapRecord);
 
@@ -130,7 +130,7 @@ class KafkaOffsetManagerTest {
       final var expectedOffsetAfterCommit = 5L;
 
       offsetsPending.forEach(offset -> {
-        final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value");
+        final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value".getBytes());
         offsetManager.trackOffset(record);
         if (offsetsProcessed.contains(offset)) {
           offsetManager.markOffsetProcessed(record);
@@ -158,7 +158,7 @@ class KafkaOffsetManagerTest {
       final var expectedOffsetAfterCommit = 4L;
 
       offsetsPending.forEach(offset -> {
-        final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value");
+        final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value".getBytes());
         offsetManager.trackOffset(record);
         if (offsetsProcessed.contains(offset)) {
           offsetManager.markOffsetProcessed(record);
@@ -186,7 +186,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldHandleRebalances() {
       // Init with first record
-      final var record0 = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value");
+      final var record0 = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes());
       offsetManager.trackOffset(record0);
 
       // Get rebalance listener
@@ -207,7 +207,7 @@ class KafkaOffsetManagerTest {
       listener.onPartitionsAssigned(List.of(PARTITION));
 
       // Verify tracking starts over
-      final var record1 = new ConsumerRecord<>(TOPIC, 0, 200L, "key", "value");
+      final var record1 = new ConsumerRecord<>(TOPIC, 0, 200L, "key", "value".getBytes());
       offsetManager.trackOffset(record1);
 
       final var stateAfterAssign = offsetManager.getPartitionState(PARTITION);
@@ -221,13 +221,13 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldCommitCorrectlyAfterPartitionRebalance() {
       // Simulate partition rebalance by clearing and re-tracking
-      final var record0 = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      final var record0 = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       offsetManager.trackOffset(record0);
       offsetManager.markOffsetProcessed(record0);
 
       try {
         // Track new offsets after rebalance
-        var record1 = new ConsumerRecord<>(TOPIC, 0, 501L, "key", "value");
+        var record1 = new ConsumerRecord<>(TOPIC, 0, 501L, "key", "value".getBytes());
         offsetManager.trackOffset(record1);
         offsetManager.markOffsetProcessed(record1);
 
@@ -264,7 +264,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldHandleConsumerExceptions() throws Exception {
       // Track and mark offset as processed
-      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
@@ -296,7 +296,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldHandleConsumerClosedDuringOperation() throws Exception {
       // Track and process an offset
-      var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       offsetManager.markOffsetProcessed(record);
 
       // Act - initiate commit
@@ -336,7 +336,7 @@ class KafkaOffsetManagerTest {
         asyncManager.start();
 
         // Track and process an offset
-        final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+        final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
         asyncManager.trackOffset(record);
         asyncManager.markOffsetProcessed(record);
 
@@ -364,7 +364,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldCloseGracefullyWhenCommitFails() {
       // Track and mark offset
-      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
@@ -413,7 +413,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldHandleMultipleCloseCalls() throws Exception {
       // Track and mark an offset
-      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
@@ -455,7 +455,7 @@ class KafkaOffsetManagerTest {
         autoCommitManager.start();
 
         // Track and mark an offset
-        final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+        final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
         autoCommitManager.trackOffset(record);
         autoCommitManager.markOffsetProcessed(record);
 
@@ -477,7 +477,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldHandleCommitSyncWithTimeout() throws Exception {
       // Arrange
-      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
@@ -513,7 +513,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldHandleTrackingBeforeConsumerPosition() throws Exception {
       // Track a low offset (regardless of consumer position)
-      final var record = new ConsumerRecord<>(TOPIC, 0, 99L, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 99L, "key", "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
@@ -545,7 +545,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldHandleProcessingOfUnknownOffset() {
       // Act - process offset that wasn't tracked
-      final var record = new ConsumerRecord<>(TOPIC, 0, 999L, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 999L, "key", "value".getBytes());
       offsetManager.markOffsetProcessed(record);
 
       // Assert - should not throw exceptions or cause issues
@@ -555,7 +555,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldIgnoreDuplicateOffsetTracking() throws Exception {
       // Track the same offset multiple times
-      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.trackOffset(record); // Duplicate
       offsetManager.markOffsetProcessed(record);
@@ -595,8 +595,8 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldHandleMultiplePartitions() throws Exception {
       // Arrange - create multiple partitions
-      final var record0 = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
-      final var record1 = new ConsumerRecord<>(TOPIC, 1, 201L, "key", "value");
+      final var record0 = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
+      final var record1 = new ConsumerRecord<>(TOPIC, 1, 201L, "key", "value".getBytes());
       final var partition0 = new TopicPartition(TOPIC, 0);
       final var partition1 = new TopicPartition(TOPIC, 1);
 
@@ -646,7 +646,7 @@ class KafkaOffsetManagerTest {
               // Each thread processes its own range of offsets
               for (int j = 0; j < offsetsPerThread; j++) {
                 final var offset = threadId * offsetsPerThread + j;
-                final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value");
+                final var record = new ConsumerRecord<>(TOPIC, 0, offset, "key", "value".getBytes());
                 concurrentManager.trackOffset(record);
                 concurrentManager.markOffsetProcessed(record);
               }
@@ -690,7 +690,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldRespectBuilderConfigurations() {
       // Create a manager with custom configuration
-      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       final var customManager = KafkaOffsetManager.builder(mockConsumer)
         .withCommandQueue(commandQueue)
         .withCommitInterval(Duration.ofMillis(200))

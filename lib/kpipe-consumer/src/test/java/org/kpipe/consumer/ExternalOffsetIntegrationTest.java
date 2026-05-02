@@ -54,16 +54,16 @@ class ExternalOffsetIntegrationTest {
   }
 
   /// A Database-backed Offset Manager using PostgreSQL.
-  static class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
+  static class PostgresOffsetManager<K> implements OffsetManager<K> {
 
     private final String jdbcUrl;
     private final String username;
     private final String password;
     private OffsetState state = OffsetState.CREATED;
-    private final MockConsumer<K, V> consumer;
+    private final MockConsumer<K, byte[]> consumer;
 
     public PostgresOffsetManager(
-      final MockConsumer<K, V> consumer,
+      final MockConsumer<K, byte[]> consumer,
       final String jdbcUrl,
       final String username,
       final String password
@@ -75,22 +75,22 @@ class ExternalOffsetIntegrationTest {
     }
 
     @Override
-    public OffsetManager<K, V> start() {
+    public OffsetManager<K> start() {
       this.state = OffsetState.RUNNING;
       return this;
     }
 
     @Override
-    public OffsetManager<K, V> stop() {
+    public OffsetManager<K> stop() {
       this.state = OffsetState.STOPPED;
       return this;
     }
 
     @Override
-    public void trackOffset(ConsumerRecord<K, V> record) {}
+    public void trackOffset(ConsumerRecord<K, byte[]> record) {}
 
     @Override
-    public void markOffsetProcessed(ConsumerRecord<K, V> record) {
+    public void markOffsetProcessed(ConsumerRecord<K, byte[]> record) {
       try (
         final var conn = DriverManager.getConnection(jdbcUrl, username, password);
         final var stmt = conn.prepareStatement(
@@ -198,7 +198,7 @@ class ExternalOffsetIntegrationTest {
   @Test
   void shouldResumeFromPostgresOffset() throws InterruptedException, SQLException {
     // 1. Setup Mock Kafka Consumer
-    final var mc = new MockConsumer<String, String>("earliest");
+    final var mc = new MockConsumer<String, byte[]>("earliest");
     mc.updateBeginningOffsets(Map.of(PARTITION, 0L));
 
     // 2. Pre-populate DB with an existing offset (e.g., we already finished up to offset 4)
@@ -213,15 +213,17 @@ class ExternalOffsetIntegrationTest {
     final var latch = new CountDownLatch(5); // Expecting 5, 6, 7, 8, 9
 
     // 4. Build KPipeConsumer with the custom DB Offset Manager
-    final var consumer = KPipeConsumer.<String, String>builder()
+    final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withConsumer(() -> mc)
       .withOffsetManager(dbManager)
-      .withPipeline(val -> {
-        latch.countDown();
-        return val;
-      })
+      .withPipeline(
+        TestPipelines.sideEffect(val -> {
+          latch.countDown();
+          return val;
+        })
+      )
       .withSequentialProcessing(true)
       .build();
 
@@ -233,7 +235,7 @@ class ExternalOffsetIntegrationTest {
 
     // 3. Populate Kafka with messages 0-9
     for (int i = 0; i < 10; i++) {
-      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
     }
 
     // 6. Verify processing starts from offset 5

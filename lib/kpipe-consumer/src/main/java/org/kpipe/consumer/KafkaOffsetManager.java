@@ -82,7 +82,6 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   /// Builder class for KafkaOffsetManager.
   ///
   /// @param <K> The type of the key
-  /// @param <V> The type of the value
   public static class Builder<K> {
 
     private final Consumer<K, byte[]> kafkaConsumer;

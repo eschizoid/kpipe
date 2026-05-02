@@ -33,7 +33,7 @@ class KPipeSequentialBackpressureIntegrationTest {
   @Test
   void shouldPauseWhenLagExceedsHighWatermarkInSequentialMode() throws InterruptedException {
     // Arrange: 10 records in Kafka, highWatermark=5
-    final var mockConsumer = new MockConsumer<String, String>("earliest") {
+    final var mockConsumer = new MockConsumer<String, byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -45,25 +45,27 @@ class KPipeSequentialBackpressureIntegrationTest {
 
     // Initial 10 records
     for (int i = 0; i < 10; i++) {
-      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
     }
     mockConsumer.updateEndOffsets(Map.of(PARTITION, 10L));
 
     final var processedCount = new AtomicLong(0);
 
-    final var consumer = KPipeConsumer.<String, String>builder()
+    final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withPipeline(v -> {
-        processedCount.incrementAndGet();
-        try {
-          // Slow down processing to allow backpressure loop to see the lag
-          Thread.sleep(200);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-        return v;
-      })
+      .withPipeline(
+        TestPipelines.sideEffect(v -> {
+          processedCount.incrementAndGet();
+          try {
+            // Slow down processing to allow backpressure loop to see the lag
+            Thread.sleep(200);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+          return v;
+        })
+      )
       // Low watermark=2, High watermark=5
       .withBackpressure(5, 2)
       .withSequentialProcessing(true)
@@ -104,11 +106,11 @@ class KPipeSequentialBackpressureIntegrationTest {
 
   @Test
   void testMockConsumerLag() {
-    final var mc = new MockConsumer<String, String>("earliest");
+    final var mc = new MockConsumer<String, byte[]>("earliest");
     mc.assign(List.of(PARTITION));
     mc.updateBeginningOffsets(Map.of(PARTITION, 0L));
-    mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 0, "k", "v"));
-    mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 1, "k", "v"));
+    mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 0, "k", "v".getBytes()));
+    mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 1, "k", "v".getBytes()));
     mc.updateEndOffsets(Map.of(PARTITION, 10L));
 
     assertEquals(0, mc.position(PARTITION));
