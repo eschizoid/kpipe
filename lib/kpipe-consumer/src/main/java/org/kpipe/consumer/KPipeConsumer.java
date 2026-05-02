@@ -56,7 +56,7 @@ import org.kpipe.registry.MessagePipeline;
 ///     .toSink(MessageSinkRegistry.JSON_LOGGING)
 ///     .build();
 ///
-/// final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+/// final var consumer = KPipeConsumer.<String>builder()
 ///     .withProperties(kafkaProps)
 ///     .withTopic("example-topic")
 ///     .withPipeline(pipeline)
@@ -68,7 +68,6 @@ import org.kpipe.registry.MessagePipeline;
 /// ```
 ///
 /// @param <K> the type of keys in the consumed records
-/// @param <V> the type of values in the consumed records
 public class KPipeConsumer<K> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
@@ -114,7 +113,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// the exception that was thrown, and the number of retry attempts made.
   ///
   /// @param <K> the type of the record key
-  /// @param <V> the type of the record value
   /// @param record the Kafka record that failed processing
   /// @param exception the exception that occurred during processing
   /// @param retryCount the number of retry attempts made
@@ -123,14 +121,12 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// A functional interface for handling processing errors.
   ///
   /// @param <K> the type of the record key
-  /// @param <V> the type of the record value
   @FunctionalInterface
   public interface ErrorHandler<K> extends java.util.function.Consumer<ProcessingError<K>> {}
 
   /// Creates a new builder for constructing {@link KPipeConsumer} instances.
   ///
   /// @param <K> the type of keys in the consumed records
-  /// @param <V> the type of values in the consumed records
   /// @return a new builder instance
   public static <K> Builder<K> builder() {
     return new Builder<>();
@@ -139,7 +135,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// Builder for creating and configuring {@link KPipeConsumer} instances.
   ///
   /// @param <K> the type of keys in the consumed records
-  /// @param <V> the type of values in the consumed records
   public static class Builder<K> {
 
     private Builder() {}
