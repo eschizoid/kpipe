@@ -11,7 +11,7 @@ import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.EncoderFactory;
-import org.kpipe.consumer.sink.ConsoleSinkSupport;
+import org.kpipe.sink.ConsoleSinkSupport;
 import org.kpipe.sink.MessageSink;
 
 /// A sink that logs processed messages with Avro formatting.

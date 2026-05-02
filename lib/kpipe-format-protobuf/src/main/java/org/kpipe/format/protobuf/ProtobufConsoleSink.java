@@ -4,7 +4,7 @@ import com.google.protobuf.Message;
 import com.google.protobuf.util.JsonFormat;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import org.kpipe.consumer.sink.ConsoleSinkSupport;
+import org.kpipe.sink.ConsoleSinkSupport;
 import org.kpipe.sink.MessageSink;
 
 /// A sink that logs processed messages with Protobuf formatting.

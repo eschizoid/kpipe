@@ -8,7 +8,7 @@ import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import org.kpipe.consumer.sink.ConsoleSinkSupport;
+import org.kpipe.sink.ConsoleSinkSupport;
 import org.kpipe.sink.MessageSink;
 
 /// A sink that logs processed messages with JSON formatting.
