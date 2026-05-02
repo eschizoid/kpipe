@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
-set -eu pipefail
+set -eu
 
 SCHEMA_FILE="${1:-/schemas/customer.avsc}"
 SUBJECT="${2:-com.kpipe.customer}"

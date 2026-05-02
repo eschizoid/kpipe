@@ -778,7 +778,7 @@ and Confluent Schema Registry.
 ./gradlew clean spotlessApply build
 
 # Build the consumer app container and start all services
-docker compose build --no-cache --build-arg MESSAGE_FORMAT=<json|avro|protobuf>
+docker compose build --no-cache --build-arg APP=<json|avro|protobuf|demo>
 docker compose down -v
 docker compose up -d
 

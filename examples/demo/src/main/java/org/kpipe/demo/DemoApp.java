@@ -3,11 +3,15 @@ package org.kpipe.demo;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.exporter.otlp.metrics.OtlpGrpcMetricExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.metrics.SdkMeterProvider;
+import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
@@ -39,8 +43,23 @@ public class DemoApp implements AutoCloseable {
   private final KPipeRunner<KPipeConsumer<byte[], byte[]>> protoRunner;
 
   /// Main entry point.
+  /// Shared OpenTelemetry instance for the demo app (initialized in main)
+  private static OpenTelemetry SHARED_OTEL;
+
   static void main() {
     final var config = DemoConfig.fromEnv();
+
+    // Initialize OpenTelemetry SDK so ConsumerMetrics send to the collector.
+    try {
+      SHARED_OTEL = initOpenTelemetry();
+    } catch (final Exception e) {
+      LOGGER.log(
+        Level.WARNING,
+        "Failed to initialize OpenTelemetry, falling back to GlobalOpenTelemetry: {0}",
+        e.getMessage()
+      );
+      SHARED_OTEL = GlobalOpenTelemetry.get();
+    }
 
     try (final var app = new DemoApp(config)) {
       app.start();
@@ -99,7 +118,7 @@ public class DemoApp implements AutoCloseable {
       "demo-json",
       List.of("addSource", "markProcessed", "addTimestamp", "removeSecrets")
     );
-    final var consumer = buildConsumer(appConfig, pipeline.build());
+    final var consumer = buildConsumer(appConfig, pipeline.build(), "json");
     return buildRunner(appConfig, consumer, registry);
   }
 
@@ -122,7 +141,7 @@ public class DemoApp implements AutoCloseable {
     pipeline.toSink(RegistryKey.avro("avroLogging"));
 
     final var appConfig = toAppConfig(config, config.avroTopic(), "demo-avro", List.of());
-    final var consumer = buildConsumer(appConfig, pipeline.build());
+    final var consumer = buildConsumer(appConfig, pipeline.build(), "avro");
     return buildRunner(appConfig, consumer, registry);
   }
 
@@ -145,11 +164,13 @@ public class DemoApp implements AutoCloseable {
     protoFormat.withDefaultDescriptor("customer");
 
     final var pipeline = registry.pipeline(protoFormat);
-    pipeline.skipBytes(5); // Skip Confluent Schema Registry wire-format prefix
+    // Confluent protobuf wire format: 1 magic byte + 4-byte schema ID + varint message index.
+    // For a single top-level message type, the index is one zero byte → 6 total.
+    pipeline.skipBytes(6);
     pipeline.toSink(RegistryKey.protobuf("protobufLogging"));
 
     final var appConfig = toAppConfig(config, config.protoTopic(), "demo-protobuf", List.of());
-    final var consumer = buildConsumer(appConfig, pipeline.build());
+    final var consumer = buildConsumer(appConfig, pipeline.build(), "proto");
     return buildRunner(appConfig, consumer, registry);
   }
 
@@ -157,13 +178,15 @@ public class DemoApp implements AutoCloseable {
 
   private static KPipeConsumer<byte[], byte[]> buildConsumer(
     final AppConfig appConfig,
-    final UnaryOperator<byte[]> pipeline
+    final UnaryOperator<byte[]> pipeline,
+    final String pipelineLabel
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(
       appConfig.bootstrapServers(),
       appConfig.consumerGroup()
     );
     final Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
+    final var otel = SHARED_OTEL != null ? SHARED_OTEL : GlobalOpenTelemetry.get();
 
     return KPipeConsumer.<byte[], byte[]>builder()
       .withProperties(kafkaProps)
@@ -172,9 +195,37 @@ public class DemoApp implements AutoCloseable {
       .withPollTimeout(appConfig.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
-      .withMetrics(new ConsumerMetrics(GlobalOpenTelemetry.get()))
+      .withMetrics(new ConsumerMetrics(otel, pipelineLabel))
       .enableMetrics(true)
       .build();
+  }
+
+  ///
+  /// Initialize a simple OpenTelemetry SDK that exports metrics via OTLP/gRPC to the collector.
+  /// Reads endpoint from OTEL_EXPORTER_OTLP_ENDPOINT env var (defaults to
+  /// "http://otel-collector:4317").
+  ///
+  private static OpenTelemetry initOpenTelemetry() {
+    final var endpoint = System.getenv().getOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317");
+
+    // Use the gRPC exporter (collector is configured to listen on 4317 for gRPC).
+    final var metricExporter = OtlpGrpcMetricExporter.builder().setEndpoint(endpoint).build();
+    // Export every 10s so Grafana's [30s] rate window always sees fresh data points.
+    final var reader = PeriodicMetricReader.builder(metricExporter).setInterval(Duration.ofSeconds(10)).build();
+    final var meterProvider = SdkMeterProvider.builder().registerMetricReader(reader).build();
+
+    final var sdk = OpenTelemetrySdk.builder().setMeterProvider(meterProvider).buildAndRegisterGlobal();
+
+    // Ensure SDK is shutdown on JVM exit to flush metrics
+    Runtime.getRuntime().addShutdownHook(
+      new Thread(() -> {
+        try {
+          meterProvider.close();
+        } catch (final Exception ignored) {}
+      })
+    );
+
+    return sdk;
   }
 
   private static KPipeRunner<KPipeConsumer<byte[], byte[]>> buildRunner(

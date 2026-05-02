@@ -10,11 +10,11 @@
       "title": "Messages Received (rate/s)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_consumer_messages_received_total[1m])",
-          "legendFormat": "{{job}}",
+          "expr": "sum by (pipeline) (rate(kpipe_consumer_messages_received_total[30s]))",
+          "legendFormat": "{{pipeline}}",
           "refId": "A"
         }
       ],
@@ -30,11 +30,11 @@
       "title": "Messages Processed (rate/s)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_consumer_messages_processed_total[1m])",
-          "legendFormat": "{{job}}",
+          "expr": "sum by (pipeline) (rate(kpipe_consumer_messages_processed_total[30s]))",
+          "legendFormat": "{{pipeline}}",
           "refId": "A"
         }
       ],
@@ -49,18 +49,13 @@
     {
       "title": "Processing Duration (p99)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, rate(kpipe_consumer_processing_duration_bucket[1m]))",
-          "legendFormat": "{{job}} p99",
+          "expr": "histogram_quantile(0.99, sum by (pipeline, le) (rate(kpipe_consumer_processing_duration_milliseconds_bucket[30s])))",
+          "legendFormat": "{{pipeline}}",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.50, rate(kpipe_consumer_processing_duration_bucket[1m]))",
-          "legendFormat": "{{job}} p50",
-          "refId": "B"
         }
       ],
       "fieldConfig": {
@@ -72,42 +67,23 @@
       }
     },
     {
-      "title": "In-Flight Messages",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "title": "Total Errors",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "kpipe_consumer_messages_inflight",
-          "legendFormat": "{{job}}",
+          "expr": "sum(kpipe_consumer_messages_errors_total) or on() vector(0)",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "title": "Processing Errors (rate/s)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [
-        {
-          "expr": "rate(kpipe_consumer_messages_errors_total[1m])",
-          "legendFormat": "{{job}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "color": { "mode": "palette-classic" },
+          "noValue": "0",
+          "color": { "mode": "thresholds" },
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
               { "color": "red", "value": 1 }
@@ -115,74 +91,67 @@
           }
         },
         "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       }
     },
     {
-      "title": "Backpressure Pauses (rate/s)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "title": "In-Flight",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "rate(kpipe_consumer_backpressure_pauses_total[1m])",
-          "legendFormat": "{{job}} pauses",
-          "refId": "A"
-        },
-        {
-          "expr": "rate(kpipe_consumer_backpressure_time_total[1m])",
-          "legendFormat": "{{job}} pause time",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "title": "Producer Messages Sent (rate/s)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [
-        {
-          "expr": "rate(kpipe_producer_messages_sent_total[1m])",
-          "legendFormat": "{{job}} sent",
-          "refId": "A"
-        },
-        {
-          "expr": "rate(kpipe_producer_messages_failed_total[1m])",
-          "legendFormat": "{{job}} failed",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "color": { "mode": "palette-classic" }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "title": "DLQ Messages (rate/s)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [
-        {
-          "expr": "rate(kpipe_producer_dlq_sent_total[1m])",
-          "legendFormat": "{{job}}",
+          "expr": "sum(kpipe_consumer_messages_inflight) or on() vector(0)",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
-          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "noValue": "0",
+          "color": { "mode": "thresholds" },
           "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "title": "Backpressure Pauses",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kpipe_consumer_backpressure_pauses_total) or on() vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
               { "color": "orange", "value": 1 }
@@ -190,23 +159,56 @@
           }
         },
         "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "title": "Lag (received − processed)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kpipe_consumer_messages_received_total) - sum(kpipe_consumer_messages_processed_total) or on() vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 100 },
+              { "color": "red", "value": 1000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       }
     }
   ],
   "schemaVersion": 39,
   "tags": ["kpipe", "kafka"],
-  "templating": {
-    "list": [
-      {
-        "name": "DS_PROMETHEUS",
-        "type": "datasource",
-        "query": "prometheus",
-        "current": { "selected": true, "text": "Prometheus", "value": "Prometheus" }
-      }
-    ]
-  },
-  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
   "title": "KPipe Overview",
   "uid": "kpipe-overview",
-  "version": 1
+  "version": 3
 }
