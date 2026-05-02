@@ -1,4 +1,4 @@
-package org.kpipe.consumer.sink;
+package org.kpipe.sink;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;

@@ -1,4 +1,7 @@
-package org.kpipe.sink;
+package org.kpipe.producer.sink;
+
+import org.kpipe.sink.CompositeMessageSink;
+import org.kpipe.sink.MessageSink;
 
 import static org.junit.jupiter.api.Assertions.*;
 

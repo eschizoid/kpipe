@@ -1,4 +1,6 @@
-package org.kpipe.sink;
+package org.kpipe.producer.sink;
+
+import org.kpipe.sink.MessageSink;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
