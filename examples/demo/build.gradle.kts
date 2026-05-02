@@ -16,6 +16,7 @@ dependencies {
   implementation(rootProject.libs.protobufJava)
   implementation(rootProject.libs.protobufUtil)
   implementation(project(":lib:kpipe-producer"))
+  implementation(project(":lib:kpipe-metrics-otel"))
 
   implementation(rootProject.libs.opentelemetrySdk)
   implementation(rootProject.libs.opentelemetryExporterOtlp)

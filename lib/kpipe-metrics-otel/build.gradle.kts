@@ -19,9 +19,8 @@ repositories {
 }
 
 dependencies {
-  // No production dependencies — kpipe-metrics is a pure interface module so users
-  // can plug in any telemetry backend (or none). Add `kpipe-metrics-otel` for the
-  // OpenTelemetry-backed implementation.
+  api(project(":lib:kpipe-metrics"))
+  api(libs.opentelemetryApi)
 
   // Testing
   testImplementation(platform(libs.junitBom))
@@ -65,12 +64,12 @@ publishing {
   publications {
     create<MavenPublication>("maven") {
       groupId = "io.github.eschizoid"
-      artifactId = "kpipe-metrics"
+      artifactId = "kpipe-metrics-otel"
       from(components["java"])
 
       pom {
-        name.set("kpipe-metrics")
-        description.set("KPipe Metrics - telemetry interfaces for KPipe (no-op default; bring your own backend)")
+        name.set("kpipe-metrics-otel")
+        description.set("KPipe Metrics OTel - OpenTelemetry-backed implementation of kpipe-metrics interfaces")
         url.set("https://github.com/eschizoid/kpipe")
         inceptionYear.set("2025")
 

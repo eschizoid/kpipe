@@ -62,6 +62,7 @@ jobs:
         run: |
           ./gradlew clean \
             :lib:kpipe-metrics:build :lib:kpipe-metrics:publish \
+            :lib:kpipe-metrics-otel:build :lib:kpipe-metrics:publish \
             :lib:kpipe-producer:build :lib:kpipe-producer:publish \
             :lib:kpipe-consumer:build :lib:kpipe-consumer:publish \
             -x test

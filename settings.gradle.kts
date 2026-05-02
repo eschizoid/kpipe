@@ -2,6 +2,7 @@ rootProject.name = "kpipe"
 
 include("lib")
 include("lib:kpipe-metrics")
+include("lib:kpipe-metrics-otel")
 include("lib:kpipe-consumer")
 include("lib:kpipe-producer")
 

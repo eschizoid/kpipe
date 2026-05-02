@@ -24,8 +24,8 @@ import org.kpipe.consumer.metrics.SinkMetricsReporter;
 import org.kpipe.consumer.sink.AvroConsoleSink;
 import org.kpipe.consumer.sink.JsonConsoleSink;
 import org.kpipe.consumer.sink.ProtobufConsoleSink;
-import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.metrics.ConsumerMetricsReporter;
+import org.kpipe.metrics.otel.OtelConsumerMetrics;
 import org.kpipe.processor.JsonMessageProcessor;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessagePipeline;
@@ -195,7 +195,7 @@ public class DemoApp implements AutoCloseable {
       .withPollTimeout(appConfig.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
-      .withMetrics(new ConsumerMetrics(otel, pipelineLabel))
+      .withMetrics(new OtelConsumerMetrics(otel, pipelineLabel))
       .enableMetrics(true)
       .build();
   }

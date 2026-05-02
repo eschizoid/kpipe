@@ -2,26 +2,24 @@ package org.kpipe.metrics;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
-import io.opentelemetry.api.OpenTelemetry;
 import org.junit.jupiter.api.Test;
 
 class ConsumerMetricsTest {
 
   @Test
-  void shouldCreateWithOpenTelemetry() {
-      new ConsumerMetrics(OpenTelemetry.noop());
-  }
-
-  @Test
-  void shouldCreateWithInFlightSupplier() {
-    final var metrics = new ConsumerMetrics(OpenTelemetry.noop(), () -> 42L);
-    assertNotNull(metrics);
-  }
-
-  @Test
-  void shouldCreateNoop() {
+  void shouldReturnNoopSingleton() {
     assertNotNull(ConsumerMetrics.noop());
+    assertSame(ConsumerMetrics.noop(), ConsumerMetrics.noop(), "noop() should return a singleton");
+  }
+
+  @Test
+  void shouldReturnNoopWithInFlightSupplierSingleton() {
+    final var metrics = ConsumerMetrics.noop(() -> 42L);
+    assertNotNull(metrics);
+    // The inFlightSupplier is ignored by the no-op impl — the call returns the same singleton.
+    assertSame(ConsumerMetrics.noop(), metrics);
   }
 
   @Test
