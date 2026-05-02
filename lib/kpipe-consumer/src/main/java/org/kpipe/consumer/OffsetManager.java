@@ -11,23 +11,22 @@ import org.kpipe.consumer.enums.OffsetState;
 /// or using external storage.
 ///
 /// @param <K> The type of the record key
-/// @param <V> The type of the record value
-public interface OffsetManager<K, V> extends AutoCloseable {
+public interface OffsetManager<K> extends AutoCloseable {
   /// Starts the offset manager.
   /// @return The started OffsetManager instance
-  OffsetManager<K, V> start();
+  OffsetManager<K> start();
 
   /// Stops the offset manager.
   /// @return The stopped OffsetManager instance
-  OffsetManager<K, V> stop();
+  OffsetManager<K> stop();
 
   /// Tracks an offset that is about to be processed.
   /// @param record The consumer record whose offset is being tracked
-  void trackOffset(final ConsumerRecord<K, V> record);
+  void trackOffset(final ConsumerRecord<K, byte[]> record);
 
   /// Marks an offset as successfully processed.
   /// @param record The consumer record whose offset is marked as processed
-  void markOffsetProcessed(final ConsumerRecord<K, V> record);
+  void markOffsetProcessed(final ConsumerRecord<K, byte[]> record);
 
   /// Notifies the offset manager that a commit operation has completed.
   /// @param commitId The ID of the commit operation

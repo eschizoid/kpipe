@@ -37,7 +37,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.kpipe.consumer.config.AppConfig;
-import org.kpipe.registry.RegistryKey;
+import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -117,7 +117,7 @@ class AppIntegrationTest {
     try (final var app = new App(config, srUrl)) {
       final var registry = app.getProcessorRegistry();
       // Register the capturing sink
-      registry.sinkRegistry().register(RegistryKey.avro("avroLogging"), capturingSink);
+      registry.sinkRegistry().register(AvroRegistryKey.of("avroLogging"), capturingSink);
 
       // Start the app
       final var appThread = Thread.ofVirtual().start(() -> {

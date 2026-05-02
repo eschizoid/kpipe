@@ -46,18 +46,20 @@ class KPipeBackpressureIntegrationTest {
       final var sinkStarted = new CountDownLatch(5);
       final var sinkRelease = new CountDownLatch(1);
 
-      final var consumer = KPipeConsumer.<String, String>builder()
+      final var consumer = KPipeConsumer.<String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> {
-          sinkStarted.countDown();
-          try {
-            sinkRelease.await(5, TimeUnit.SECONDS);
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-          return v;
-        })
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            sinkStarted.countDown();
+            try {
+              sinkRelease.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+            return v;
+          })
+        )
         .withBackpressure(3, 1)
         .withConsumer(() -> mockConsumer)
         .build();
@@ -92,18 +94,20 @@ class KPipeBackpressureIntegrationTest {
       final var sinkStarted = new CountDownLatch(4);
       final var sinkRelease = new CountDownLatch(1);
 
-      final var consumer = KPipeConsumer.<String, String>builder()
+      final var consumer = KPipeConsumer.<String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> {
-          sinkStarted.countDown();
-          try {
-            sinkRelease.await(5, TimeUnit.SECONDS);
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-          return v;
-        })
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            sinkStarted.countDown();
+            try {
+              sinkRelease.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+            return v;
+          })
+        )
         .withBackpressure(2, 1)
         .withConsumer(() -> mockConsumer)
         .build();
@@ -133,13 +137,15 @@ class KPipeBackpressureIntegrationTest {
       final var mockConsumer = buildMockConsumer(2);
       final var sinkDone = new CountDownLatch(2);
 
-      final var consumer = KPipeConsumer.<String, String>builder()
+      final var consumer = KPipeConsumer.<String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> {
-          sinkDone.countDown();
-          return v;
-        })
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            sinkDone.countDown();
+            return v;
+          })
+        )
         .withBackpressure(10, 5)
         .withConsumer(() -> mockConsumer)
         .build();
@@ -159,7 +165,7 @@ class KPipeBackpressureIntegrationTest {
     @Test
     void shouldNotPollNewRecordsWhilePaused() throws InterruptedException {
       // Arrange: 10 records total, but we add them in batches
-      final var mc = new MockConsumer<String, String>("earliest") {
+      final var mc = new MockConsumer<String, byte[]>("earliest") {
         @Override
         public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -171,24 +177,26 @@ class KPipeBackpressureIntegrationTest {
 
       // Add first 5 records
       for (int i = 0; i < 5; i++) {
-        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
       }
 
       final var sinkStarted = new CountDownLatch(5);
       final var sinkRelease = new CountDownLatch(1);
 
-      final var consumer = KPipeConsumer.<String, String>builder()
+      final var consumer = KPipeConsumer.<String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> {
-          sinkStarted.countDown();
-          try {
-            sinkRelease.await(5, TimeUnit.SECONDS);
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-          return v;
-        })
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            sinkStarted.countDown();
+            try {
+              sinkRelease.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+            return v;
+          })
+        )
         .withBackpressure(3, 1)
         .withConsumer(() -> mc)
         .build();
@@ -206,7 +214,7 @@ class KPipeBackpressureIntegrationTest {
 
       // Now add more records while it's paused
       for (int i = 5; i < 10; i++) {
-        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
       }
 
       // Wait some time while paused to ensure no more records are polled
@@ -229,7 +237,7 @@ class KPipeBackpressureIntegrationTest {
     @Test
     void shouldStopPollingWhenManuallyPaused() throws InterruptedException {
       // Arrange: 10 records total
-      final var mc = new MockConsumer<String, String>("earliest") {
+      final var mc = new MockConsumer<String, byte[]>("earliest") {
         @Override
         public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -241,13 +249,13 @@ class KPipeBackpressureIntegrationTest {
 
       // Add records in two batches
       for (int i = 0; i < 5; i++) {
-        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
       }
 
-      final var consumer = KPipeConsumer.<String, String>builder()
+      final var consumer = KPipeConsumer.<String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> v)
+        .withPipeline(TestPipelines.identity())
         .withConsumer(() -> mc)
         .build();
 
@@ -265,7 +273,7 @@ class KPipeBackpressureIntegrationTest {
 
       // Now add more records while it's paused
       for (int i = 5; i < 10; i++) {
-        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+        mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
       }
 
       // Wait some more to ensure no more are polled while paused
@@ -289,7 +297,7 @@ class KPipeBackpressureIntegrationTest {
     @Test
     void shouldPauseWhenLagExceedsHighWatermarkInSequentialMode() throws InterruptedException {
       // Arrange: 10 records in Kafka, highWatermark=5
-      final var mockConsumer = new MockConsumer<String, String>("earliest") {
+      final var mockConsumer = new MockConsumer<String, byte[]>("earliest") {
         @Override
         public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -301,22 +309,24 @@ class KPipeBackpressureIntegrationTest {
 
       // Initial 10 records
       for (int i = 0; i < 10; i++) {
-        mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+        mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
       }
       mockConsumer.updateEndOffsets(Map.of(PARTITION, 10L));
 
-      final var consumer = KPipeConsumer.<String, String>builder()
+      final var consumer = KPipeConsumer.<String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> {
-          try {
-            // Slow down processing to allow backpressure loop to see the lag
-            Thread.sleep(200);
-          } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-          return v;
-        })
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            try {
+              // Slow down processing to allow backpressure loop to see the lag
+              Thread.sleep(200);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+            return v;
+          })
+        )
         // Low watermark=2, High watermark=5
         .withBackpressure(5, 2)
         .withSequentialProcessing(true)
@@ -338,10 +348,10 @@ class KPipeBackpressureIntegrationTest {
 
     @Test
     void withBackpressureAndSequentialProcessingShouldSwitchToLagMonitoringAtBuildTime() {
-      final var consumer = KPipeConsumer.<String, String>builder()
+      final var consumer = KPipeConsumer.<String>builder()
         .withProperties(properties)
         .withTopic(TOPIC)
-        .withPipeline(v -> v)
+        .withPipeline(TestPipelines.identity())
         .withSequentialProcessing(true)
         .withBackpressure(10_000, 7_000)
         .build();
@@ -351,11 +361,11 @@ class KPipeBackpressureIntegrationTest {
 
     @Test
     void testMockConsumerLag() {
-      final var mc = new MockConsumer<String, String>("earliest");
+      final var mc = new MockConsumer<String, byte[]>("earliest");
       mc.assign(List.of(PARTITION));
       mc.updateBeginningOffsets(Map.of(PARTITION, 0L));
-      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 0, "k", "v"));
-      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 1, "k", "v"));
+      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 0, "k", "v".getBytes()));
+      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 1, "k", "v".getBytes()));
       mc.updateEndOffsets(Map.of(PARTITION, 10L));
 
       assertEquals(0, mc.position(PARTITION));
@@ -370,8 +380,8 @@ class KPipeBackpressureIntegrationTest {
   /// Builds a MockConsumer that is pre-assigned to the test partition. The subscribe()
   /// override is a no-op so that KPipeConsumer's start() doesn't conflict with the
   /// existing assignment.
-  private MockConsumer<String, String> buildMockConsumer(final int recordCount) {
-    final var mc = new MockConsumer<String, String>("earliest") {
+  private MockConsumer<String, byte[]> buildMockConsumer(final int recordCount) {
+    final var mc = new MockConsumer<String, byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {
         // no-op: partition is pre-assigned in buildMockConsumer
@@ -385,7 +395,7 @@ class KPipeBackpressureIntegrationTest {
     mc.assign(List.of(PARTITION));
     mc.updateBeginningOffsets(Map.of(PARTITION, 0L));
     for (int i = 0; i < recordCount; i++) {
-      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, "v" + i));
+      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
     }
     return mc;
   }

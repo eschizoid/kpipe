@@ -19,6 +19,7 @@ repositories {
 }
 
 dependencies {
+  api(project(":lib:kpipe-core"))
   api(project(":lib:kpipe-metrics"))
 
   // Kafka

@@ -15,20 +15,24 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
-import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.consumer.*;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.consumer.metrics.ProcessorMetricsReporter;
 import org.kpipe.consumer.metrics.SinkMetricsReporter;
-import org.kpipe.consumer.sink.AvroConsoleSink;
-import org.kpipe.consumer.sink.JsonConsoleSink;
-import org.kpipe.consumer.sink.ProtobufConsoleSink;
-import org.kpipe.metrics.ConsumerMetrics;
+import org.kpipe.format.avro.AvroConsoleSink;
+import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.format.avro.AvroRegistryKey;
+import org.kpipe.format.json.JsonConsoleSink;
+import org.kpipe.format.json.JsonFormat;
+import org.kpipe.format.json.JsonMessageProcessor;
+import org.kpipe.format.protobuf.ProtobufConsoleSink;
+import org.kpipe.format.protobuf.ProtobufFormat;
+import org.kpipe.format.protobuf.ProtobufRegistryKey;
 import org.kpipe.metrics.ConsumerMetricsReporter;
-import org.kpipe.processor.JsonMessageProcessor;
-import org.kpipe.registry.MessageFormat;
+import org.kpipe.metrics.otel.OtelConsumerMetrics;
+import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 
@@ -38,9 +42,9 @@ public class DemoApp implements AutoCloseable {
   private static final Logger LOGGER = System.getLogger(DemoApp.class.getName());
   private static final String TEST_AVRO_SCHEMA_PATH = "build/resources/test/avro/customer.avsc";
 
-  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> jsonRunner;
-  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> avroRunner;
-  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> protoRunner;
+  private final KPipeRunner<KPipeConsumer<byte[]>> jsonRunner;
+  private final KPipeRunner<KPipeConsumer<byte[]>> avroRunner;
+  private final KPipeRunner<KPipeConsumer<byte[]>> protoRunner;
 
   /// Main entry point.
   /// Shared OpenTelemetry instance for the demo app (initialized in main)
@@ -94,8 +98,8 @@ public class DemoApp implements AutoCloseable {
 
   /// ── JSON pipeline ──────────────────────────────────────────────────────
 
-  private static KPipeRunner<KPipeConsumer<byte[], byte[]>> buildJsonPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry("demo-json", MessageFormat.JSON);
+  private static KPipeRunner<KPipeConsumer<byte[]>> buildJsonPipeline(final DemoConfig config) {
+    final var registry = new MessageProcessorRegistry("demo-json", JsonFormat.INSTANCE);
     final var sinkRegistry = registry.sinkRegistry();
     sinkRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
 
@@ -105,7 +109,7 @@ public class DemoApp implements AutoCloseable {
     registry.register(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
     registry.register(RegistryKey.json("removeSecrets"), JsonMessageProcessor.removeFieldsOperator("password", "ssn"));
 
-    final var pipeline = registry.pipeline(MessageFormat.JSON);
+    final var pipeline = registry.pipeline(JsonFormat.INSTANCE);
     pipeline.add(RegistryKey.json("addSource"));
     pipeline.add(RegistryKey.json("markProcessed"));
     pipeline.add(RegistryKey.json("addTimestamp"));
@@ -124,12 +128,12 @@ public class DemoApp implements AutoCloseable {
 
   /// ── Avro pipeline ─────────────────────────────────────────────────────
 
-  private static KPipeRunner<KPipeConsumer<byte[], byte[]>> buildAvroPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry("demo-avro", MessageFormat.AVRO);
+  private static KPipeRunner<KPipeConsumer<byte[]>> buildAvroPipeline(final DemoConfig config) {
+    final var registry = new MessageProcessorRegistry("demo-avro", AvroFormat.INSTANCE);
     final var sinkRegistry = registry.sinkRegistry();
-    sinkRegistry.register(RegistryKey.avro("avroLogging"), new AvroConsoleSink<>());
+    sinkRegistry.register(AvroRegistryKey.of("avroLogging"), new AvroConsoleSink<>());
 
-    final var avroFormat = MessageFormat.AVRO;
+    final var avroFormat = AvroFormat.INSTANCE;
     final String avroSchemaLocation = isTestMode()
       ? TEST_AVRO_SCHEMA_PATH
       : config.schemaRegistryUrl() + "/subjects/com.kpipe.customer/versions/latest";
@@ -138,7 +142,7 @@ public class DemoApp implements AutoCloseable {
 
     final var pipeline = registry.pipeline(avroFormat);
     pipeline.skipBytes(5); // Skip Confluent Schema Registry wire-format prefix
-    pipeline.toSink(RegistryKey.avro("avroLogging"));
+    pipeline.toSink(AvroRegistryKey.of("avroLogging"));
 
     final var appConfig = toAppConfig(config, config.avroTopic(), "demo-avro", List.of());
     final var consumer = buildConsumer(appConfig, pipeline.build(), "avro");
@@ -154,12 +158,12 @@ public class DemoApp implements AutoCloseable {
   }
 
   /// ── Protobuf pipeline ─────────────────────────────────────────────────
-  private static KPipeRunner<KPipeConsumer<byte[], byte[]>> buildProtobufPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry("demo-protobuf", MessageFormat.PROTOBUF);
+  private static KPipeRunner<KPipeConsumer<byte[]>> buildProtobufPipeline(final DemoConfig config) {
+    final var registry = new MessageProcessorRegistry("demo-protobuf", ProtobufFormat.INSTANCE);
     final var sinkRegistry = registry.sinkRegistry();
-    sinkRegistry.register(RegistryKey.protobuf("protobufLogging"), new ProtobufConsoleSink<>());
+    sinkRegistry.register(ProtobufRegistryKey.of("protobufLogging"), new ProtobufConsoleSink<>());
 
-    final var protoFormat = MessageFormat.PROTOBUF;
+    final var protoFormat = ProtobufFormat.INSTANCE;
     protoFormat.addDescriptor("customer", buildCustomerDescriptor());
     protoFormat.withDefaultDescriptor("customer");
 
@@ -167,7 +171,7 @@ public class DemoApp implements AutoCloseable {
     // Confluent protobuf wire format: 1 magic byte + 4-byte schema ID + varint message index.
     // For a single top-level message type, the index is one zero byte → 6 total.
     pipeline.skipBytes(6);
-    pipeline.toSink(RegistryKey.protobuf("protobufLogging"));
+    pipeline.toSink(ProtobufRegistryKey.of("protobufLogging"));
 
     final var appConfig = toAppConfig(config, config.protoTopic(), "demo-protobuf", List.of());
     final var consumer = buildConsumer(appConfig, pipeline.build(), "proto");
@@ -176,9 +180,9 @@ public class DemoApp implements AutoCloseable {
 
   /// ── Shared helpers ────────────────────────────────────────────────────
 
-  private static KPipeConsumer<byte[], byte[]> buildConsumer(
+  private static KPipeConsumer<byte[]> buildConsumer(
     final AppConfig appConfig,
-    final UnaryOperator<byte[]> pipeline,
+    final MessagePipeline<?> pipeline,
     final String pipelineLabel
   ) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(
@@ -188,14 +192,14 @@ public class DemoApp implements AutoCloseable {
     final Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
     final var otel = SHARED_OTEL != null ? SHARED_OTEL : GlobalOpenTelemetry.get();
 
-    return KPipeConsumer.<byte[], byte[]>builder()
+    return KPipeConsumer.<byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(appConfig.topic())
       .withPipeline(pipeline)
       .withPollTimeout(appConfig.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
-      .withMetrics(new ConsumerMetrics(otel, pipelineLabel))
+      .withMetrics(new OtelConsumerMetrics(otel, pipelineLabel))
       .enableMetrics(true)
       .build();
   }
@@ -228,9 +232,9 @@ public class DemoApp implements AutoCloseable {
     return sdk;
   }
 
-  private static KPipeRunner<KPipeConsumer<byte[], byte[]>> buildRunner(
+  private static KPipeRunner<KPipeConsumer<byte[]>> buildRunner(
     final AppConfig appConfig,
-    final KPipeConsumer<byte[], byte[]> consumer,
+    final KPipeConsumer<byte[]> consumer,
     final MessageProcessorRegistry registry
   ) {
     final var consumerMetrics = ConsumerMetricsReporter.forConsumer(consumer::getMetrics);
@@ -251,7 +255,7 @@ public class DemoApp implements AutoCloseable {
       .build();
   }
 
-  private static Function<Consumer<byte[], byte[]>, OffsetManager<byte[], byte[]>> createOffsetManagerProvider(
+  private static Function<Consumer<byte[], byte[]>, OffsetManager<byte[]>> createOffsetManagerProvider(
     final Duration commitInterval,
     final Queue<ConsumerCommand> commandQueue
   ) {

@@ -7,20 +7,20 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
-import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.kpipe.consumer.*;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.consumer.metrics.ProcessorMetricsReporter;
 import org.kpipe.consumer.metrics.SinkMetricsReporter;
+import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.health.HttpHealthServer;
 import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.KPipeMetricsReporter;
-import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.MessageSinkRegistry;
-import org.kpipe.registry.RegistryKey;
 
 /// Application that consumes messages from a Kafka topic and processes them using a configurable
 /// pipeline of message processors.
@@ -29,8 +29,8 @@ public class App implements AutoCloseable {
   private static final Logger LOGGER = System.getLogger(App.class.getName());
   private static final String DEFAULT_SCHEMA_REGISTRY_URL = "http://schema-registry:8081";
 
-  private final KPipeConsumer<byte[], byte[]> kpipeConsumer;
-  private final KPipeRunner<KPipeConsumer<byte[], byte[]>> runner;
+  private final KPipeConsumer<byte[]> kpipeConsumer;
+  private final KPipeRunner<KPipeConsumer<byte[]>> runner;
   private final HttpHealthServer healthServer;
   private final MessageProcessorRegistry processorRegistry;
   private final MessageSinkRegistry sinkRegistry;
@@ -61,7 +61,7 @@ public class App implements AutoCloseable {
   /// @param config The application configuration
   /// @param schemaRegistryUrl Schema Registry base URL
   public App(final AppConfig config, final String schemaRegistryUrl) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), MessageFormat.AVRO);
+    processorRegistry = new MessageProcessorRegistry(config.appName(), AvroFormat.INSTANCE);
     sinkRegistry = processorRegistry.sinkRegistry();
     kpipeConsumer = createConsumer(config, processorRegistry, schemaRegistryUrl);
 
@@ -86,7 +86,7 @@ public class App implements AutoCloseable {
   }
 
   /// Creates the consumer runner with appropriate lifecycle hooks.
-  private KPipeRunner<KPipeConsumer<byte[], byte[]>> createConsumerRunner(
+  private KPipeRunner<KPipeConsumer<byte[]>> createConsumerRunner(
     final AppConfig config,
     final KPipeMetricsReporter consumerMetricsReporter,
     final KPipeMetricsReporter processorMetricsReporter,
@@ -112,7 +112,7 @@ public class App implements AutoCloseable {
   /// @param processorRegistry Map of processor functions
   /// @param schemaRegistryUrl Schema Registry base URL
   /// @return A configured functional consumer
-  public static KPipeConsumer<byte[], byte[]> createConsumer(
+  public static KPipeConsumer<byte[]> createConsumer(
     final AppConfig config,
     final MessageProcessorRegistry processorRegistry,
     final String schemaRegistryUrl
@@ -120,7 +120,7 @@ public class App implements AutoCloseable {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    return KPipeConsumer.<byte[], byte[]>builder()
+    return KPipeConsumer.<byte[]>builder()
       .withProperties(kafkaProps)
       .withTopic(config.topic())
       .withPipeline(createAvroProcessorPipeline(processorRegistry, config, schemaRegistryUrl))
@@ -136,7 +136,7 @@ public class App implements AutoCloseable {
   /// @param commitInterval The interval at which to automatically commit offsets
   /// @param commandQueue The command queue
   /// @return A function that creates an OffsetManager when given a Consumer
-  private static Function<Consumer<byte[], byte[]>, OffsetManager<byte[], byte[]>> createOffsetManagerProvider(
+  private static Function<Consumer<byte[], byte[]>, OffsetManager<byte[]>> createOffsetManagerProvider(
     final Duration commitInterval,
     final Queue<ConsumerCommand> commandQueue
   ) {
@@ -150,20 +150,20 @@ public class App implements AutoCloseable {
   /// @param config the application configuration
   /// @param schemaRegistryUrl the schema registry URL
   /// @return a function that processes messages through the pipeline
-  private static UnaryOperator<byte[]> createAvroProcessorPipeline(
+  private static MessagePipeline<?> createAvroProcessorPipeline(
     final MessageProcessorRegistry registry,
     final AppConfig config,
     final String schemaRegistryUrl
   ) {
-    final var avroFormat = MessageFormat.AVRO;
+    final var avroFormat = AvroFormat.INSTANCE;
     // Register schema for the test/app
     avroFormat.addSchema("1", "com.kpipe.customer", schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest");
     avroFormat.withDefaultSchema("1");
 
     final var builder = registry.pipeline(avroFormat);
     builder.skipBytes(5);
-    for (final var name : config.processors()) builder.add(RegistryKey.avro(name));
-    builder.toSink(RegistryKey.avro("avroLogging"));
+    for (final var name : config.processors()) builder.add(AvroRegistryKey.of(name));
+    builder.toSink(AvroRegistryKey.of("avroLogging"));
     return builder.build();
   }
 

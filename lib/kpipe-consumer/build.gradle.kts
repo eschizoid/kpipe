@@ -19,22 +19,14 @@ repositories {
 }
 
 dependencies {
+  api(project(":lib:kpipe-core"))
   api(project(":lib:kpipe-producer"))
 
   // Kafka
   implementation(libs.kafkaClients)
 
-  // DSL-JSON
-  implementation(libs.dslJson)
-  annotationProcessor(libs.dslJson)
-  testAnnotationProcessor(libs.dslJson)
-
-  // Avro
-  implementation(libs.avro)
-
-  // Protobuf
-  implementation(libs.protobufJava)
-  implementation(libs.protobufUtil)
+  // Format-specific dependencies (DSL-JSON, Avro, Protobuf) live in their dedicated modules:
+  // kpipe-format-json, kpipe-format-avro, kpipe-format-protobuf.
 
   // Testing
   testImplementation(platform(libs.junitBom))

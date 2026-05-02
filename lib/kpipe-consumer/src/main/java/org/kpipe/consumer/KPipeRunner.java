@@ -44,7 +44,7 @@ import org.kpipe.metrics.KPipeMetricsReporter;
 /// ```
 ///
 /// @param <T> the type of consumer being managed, must extend KPipeConsumer
-public class KPipeRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable {
+public class KPipeRunner<T extends KPipeConsumer<?>> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(KPipeRunner.class.getName());
 
@@ -82,7 +82,7 @@ public class KPipeRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable
   /// @param <T> the type of consumer to run
   /// @param consumer the consumer instance to manage
   /// @return a new builder instance
-  public static <T extends KPipeConsumer<?, ?>> Builder<T> builder(final T consumer) {
+  public static <T extends KPipeConsumer<?>> Builder<T> builder(final T consumer) {
     return new Builder<>(consumer);
   }
 
@@ -202,7 +202,7 @@ public class KPipeRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable
   /// @return `true` if all in-flight messages were successfully processed before shutdown,
   ///     `false` if the timeout was reached with messages still in-flight
   /// @throws RuntimeException if an exception occurs during the shutdown process
-  public static <T extends KPipeConsumer<?, ?>> boolean performGracefulConsumerShutdown(
+  public static <T extends KPipeConsumer<?>> boolean performGracefulConsumerShutdown(
     final T consumer,
     final long timeoutMs
   ) {
@@ -309,7 +309,7 @@ public class KPipeRunner<T extends KPipeConsumer<?, ?>> implements AutoCloseable
   /// Builder for creating KPipeRunner instances with custom configuration.
   ///
   /// @param <T> the type of consumer being managed
-  public static class Builder<T extends KPipeConsumer<?, ?>> {
+  public static class Builder<T extends KPipeConsumer<?>> {
 
     private final T consumer;
     private Consumer<T> startAction;

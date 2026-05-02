@@ -2,20 +2,16 @@ package org.kpipe.metrics;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
-import io.opentelemetry.api.OpenTelemetry;
 import org.junit.jupiter.api.Test;
 
 class ProducerMetricsTest {
 
   @Test
-  void shouldCreateWithOpenTelemetry() {
-      new ProducerMetrics(OpenTelemetry.noop());
-  }
-
-  @Test
-  void shouldCreateNoop() {
+  void shouldReturnNoopSingleton() {
     assertNotNull(ProducerMetrics.noop());
+    assertSame(ProducerMetrics.noop(), ProducerMetrics.noop(), "noop() should return a singleton");
   }
 
   @Test

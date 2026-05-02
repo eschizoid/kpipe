@@ -25,7 +25,7 @@ class KPipeDlqTest {
   private static final String DLQ_TOPIC = "test-dlq-topic";
 
   @Mock
-  private Producer<String, String> mockProducer;
+  private Producer<String, byte[]> mockProducer;
 
   @Mock
   private Producer<byte[], byte[]> mockByteProducer;
@@ -33,18 +33,20 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToDlqAfterMaxRetries() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value");
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes());
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
 
     try (
-      final var consumer = KPipeConsumer.<String, String>builder()
-        .withProperties(stringProperties())
+      final var consumer = KPipeConsumer.<String>builder()
+        .withProperties(byteProperties())
         .withTopic(TOPIC)
-        .withPipeline(v -> {
-          throw new RuntimeException("fail");
-        })
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            throw new RuntimeException("fail");
+          })
+        )
         .withRetry(1, Duration.ofMillis(1))
         .withDeadLetterTopic(DLQ_TOPIC)
         .withKafkaProducer(mockProducer)
@@ -56,7 +58,7 @@ class KPipeDlqTest {
         argThat(r -> {
           assertEquals(DLQ_TOPIC, r.topic());
           assertEquals("key", r.key());
-          assertEquals("value", r.value());
+          assertEquals("value", new String(r.value()));
           return true;
         })
       );
@@ -65,17 +67,19 @@ class KPipeDlqTest {
 
   @Test
   void shouldNotSendToDlqIfProcessingSucceedsAfterRetry() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value");
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes());
     final var attempts = new AtomicInteger(0);
 
     try (
-      final var consumer = KPipeConsumer.<String, String>builder()
-        .withProperties(stringProperties())
+      final var consumer = KPipeConsumer.<String>builder()
+        .withProperties(byteProperties())
         .withTopic(TOPIC)
-        .withPipeline(v -> {
-          if (attempts.getAndIncrement() == 0) throw new RuntimeException("fail first time");
-          return v;
-        })
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            if (attempts.getAndIncrement() == 0) throw new RuntimeException("fail first time");
+            return v;
+          })
+        )
         .withRetry(1, Duration.ofMillis(1))
         .withDeadLetterTopic(DLQ_TOPIC)
         .withKafkaProducer(mockProducer)
@@ -97,7 +101,7 @@ class KPipeDlqTest {
     );
 
     try (
-      final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+      final var consumer = KPipeConsumer.<byte[]>builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(nullDeserializePipeline())

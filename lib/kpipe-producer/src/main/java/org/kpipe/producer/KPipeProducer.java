@@ -87,8 +87,8 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     /// Sets the OpenTelemetry metrics instruments for this producer.
     ///
-    /// Use {@link ProducerMetrics#ProducerMetrics(io.opentelemetry.api.OpenTelemetry)} to create an
-    /// instrumented instance, or {@link ProducerMetrics#noop()} for a no-op default.
+    /// Use `org.kpipe.metrics.otel.OtelProducerMetrics` to create an instrumented instance, or
+    /// [ProducerMetrics#noop()] for a no-op default.
     ///
     /// @param metrics the producer metrics instruments
     /// @return this builder instance for method chaining

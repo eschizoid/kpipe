@@ -9,3 +9,7 @@ tasks.named<ShadowJar>("shadowJar") {
 }
 
 description = "KPipe - Kafka Consumer Application Using JSON"
+
+dependencies {
+  implementation(project(":lib:kpipe-format-json"))
+}

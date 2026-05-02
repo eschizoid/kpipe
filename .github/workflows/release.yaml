@@ -61,9 +61,15 @@ jobs:
       - name: Build project
         run: |
           ./gradlew clean \
+            :lib:kpipe-bom:publish \
+            :lib:kpipe-core:build :lib:kpipe-core:publish \
             :lib:kpipe-metrics:build :lib:kpipe-metrics:publish \
+            :lib:kpipe-metrics-otel:build :lib:kpipe-metrics-otel:publish \
             :lib:kpipe-producer:build :lib:kpipe-producer:publish \
             :lib:kpipe-consumer:build :lib:kpipe-consumer:publish \
+            :lib:kpipe-format-json:build :lib:kpipe-format-json:publish \
+            :lib:kpipe-format-avro:build :lib:kpipe-format-avro:publish \
+            :lib:kpipe-format-protobuf:build :lib:kpipe-format-protobuf:publish \
             -x test
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}

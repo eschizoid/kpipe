@@ -56,7 +56,7 @@ import org.kpipe.registry.MessagePipeline;
 ///     .toSink(MessageSinkRegistry.JSON_LOGGING)
 ///     .build();
 ///
-/// final var consumer = KPipeConsumer.<byte[], byte[]>builder()
+/// final var consumer = KPipeConsumer.<String>builder()
 ///     .withProperties(kafkaProps)
 ///     .withTopic("example-topic")
 ///     .withPipeline(pipeline)
@@ -68,8 +68,7 @@ import org.kpipe.registry.MessagePipeline;
 /// ```
 ///
 /// @param <K> the type of keys in the consumed records
-/// @param <V> the type of values in the consumed records
-public class KPipeConsumer<K, V> implements AutoCloseable {
+public class KPipeConsumer<K> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
 
@@ -82,18 +81,18 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private static final String METRIC_DLQ_SENT = "dlqSent";
 
   private final Queue<ConsumerCommand> commandQueue;
-  private final Consumer<K, V> kafkaConsumer;
+  private final Consumer<K, byte[]> kafkaConsumer;
   private final String topic;
-  private final Function<V, V> processor;
+  private final MessagePipeline<?> processor;
   private final ExecutorService virtualThreadExecutor;
   private final Duration pollTimeout;
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
   private final Duration waitForMessagesTimeout;
   private final Duration threadTerminationTimeout;
   private final Duration executorTerminationTimeout;
-  private final OffsetManager<K, V> offsetManager;
+  private final OffsetManager<K> offsetManager;
   private final ConsumerRebalanceListener rebalanceListener;
-  private final ErrorHandler<K, V> errorHandler;
+  private final ErrorHandler<K> errorHandler;
   private final int maxRetries;
   private final Duration retryBackoff;
   private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.CREATED);
@@ -108,47 +107,43 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   private volatile long backpressurePauseStartNanos;
 
   private final String deadLetterTopic;
-  private final KPipeProducer<K, V> kpipeProducer;
+  private final KPipeProducer<K, byte[]> kpipeProducer;
 
   /// Represents an error that occurred during record processing. Contains the original record,
   /// the exception that was thrown, and the number of retry attempts made.
   ///
   /// @param <K> the type of the record key
-  /// @param <V> the type of the record value
   /// @param record the Kafka record that failed processing
   /// @param exception the exception that occurred during processing
   /// @param retryCount the number of retry attempts made
-  public record ProcessingError<K, V>(ConsumerRecord<K, V> record, Exception exception, int retryCount) {}
+  public record ProcessingError<K>(ConsumerRecord<K, byte[]> record, Exception exception, int retryCount) {}
 
   /// A functional interface for handling processing errors.
   ///
   /// @param <K> the type of the record key
-  /// @param <V> the type of the record value
   @FunctionalInterface
-  public interface ErrorHandler<K, V> extends java.util.function.Consumer<ProcessingError<K, V>> {}
+  public interface ErrorHandler<K> extends java.util.function.Consumer<ProcessingError<K>> {}
 
   /// Creates a new builder for constructing {@link KPipeConsumer} instances.
   ///
   /// @param <K> the type of keys in the consumed records
-  /// @param <V> the type of values in the consumed records
   /// @return a new builder instance
-  public static <K, V> Builder<K, V> builder() {
+  public static <K> Builder<K> builder() {
     return new Builder<>();
   }
 
   /// Builder for creating and configuring {@link KPipeConsumer} instances.
   ///
   /// @param <K> the type of keys in the consumed records
-  /// @param <V> the type of values in the consumed records
-  public static class Builder<K, V> {
+  public static class Builder<K> {
 
     private Builder() {}
 
     private Properties kafkaProps;
     private String topic;
-    private Function<V, V> pipeline;
+    private MessagePipeline<?> pipeline;
     private Duration pollTimeout = Duration.ofMillis(100);
-    private ErrorHandler<K, V> errorHandler = e ->
+    private ErrorHandler<K> errorHandler = e ->
       LOGGER.log(
         Level.WARNING,
         "Failed at offset {0} after {1} retries: {2}",
@@ -163,21 +158,21 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
     private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
-    private OffsetManager<K, V> offsetManager;
-    private Function<Consumer<K, V>, OffsetManager<K, V>> offsetManagerProvider;
-    private Supplier<Consumer<K, V>> consumerProvider;
+    private OffsetManager<K> offsetManager;
+    private Function<Consumer<K, byte[]>, OffsetManager<K>> offsetManagerProvider;
+    private Supplier<Consumer<K, byte[]>> consumerProvider;
     private Queue<ConsumerCommand> commandQueue;
     private ConsumerRebalanceListener rebalanceListener;
     private BackpressureController backpressureController;
     private String deadLetterTopic;
-    private KPipeProducer<K, V> kpipeProducer;
+    private KPipeProducer<K, byte[]> kpipeProducer;
     private ConsumerMetrics consumerMetrics;
 
     /// Sets the properties for the Kafka consumer.
     ///
     /// @param props The Kafka consumer properties
     /// @return This builder instance for method chaining
-    public Builder<K, V> withProperties(final Properties props) {
+    public Builder<K> withProperties(final Properties props) {
       this.kafkaProps = props;
       return this;
     }
@@ -186,16 +181,20 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param topic The topic name
     /// @return This builder instance for method chaining
-    public Builder<K, V> withTopic(final String topic) {
+    public Builder<K> withTopic(final String topic) {
       this.topic = topic;
       return this;
     }
 
     /// Sets the pipeline to process each consumed message.
     ///
+    /// Per the byte-boundary architecture (CLAUDE.md §1), the consumer always operates on
+    /// `byte[]`. The pipeline must be a [MessagePipeline] — typically produced by
+    /// `MessageProcessorRegistry.pipeline(format).build()`.
+    ///
     /// @param pipeline The pipeline to apply to message values
     /// @return This builder instance for method chaining
-    public Builder<K, V> withPipeline(final Function<V, V> pipeline) {
+    public Builder<K> withPipeline(final MessagePipeline<?> pipeline) {
       this.pipeline = pipeline;
       return this;
     }
@@ -204,7 +203,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param timeout The maximum time to wait for messages in each poll
     /// @return This builder instance for method chaining
-    public Builder<K, V> withPollTimeout(final Duration timeout) {
+    public Builder<K> withPollTimeout(final Duration timeout) {
       this.pollTimeout = timeout;
       return this;
     }
@@ -213,7 +212,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param handler The consumer function that handles processing errors
     /// @return This builder instance for method chaining
-    public Builder<K, V> withErrorHandler(final ErrorHandler<K, V> handler) {
+    public Builder<K> withErrorHandler(final ErrorHandler<K> handler) {
       this.errorHandler = handler;
       return this;
     }
@@ -223,7 +222,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// @param maxRetries Maximum number of retry attempts
     /// @param backoff Duration to wait between retry attempts
     /// @return This builder instance for method chaining
-    public Builder<K, V> withRetry(final int maxRetries, final Duration backoff) {
+    public Builder<K> withRetry(final int maxRetries, final Duration backoff) {
       this.maxRetries = maxRetries;
       this.retryBackoff = backoff;
       return this;
@@ -233,7 +232,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param enable Whether to enable a metrics collection
     /// @return This builder instance for method chaining
-    public Builder<K, V> enableMetrics(final boolean enable) {
+    public Builder<K> enableMetrics(final boolean enable) {
       this.enableMetrics = enable;
       return this;
     }
@@ -243,7 +242,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// @param sequential If true, messages will be processed in order; if false, parallel
     ///     processing is used
     /// @return This builder instance for method chaining
-    public Builder<K, V> withSequentialProcessing(final boolean sequential) {
+    public Builder<K> withSequentialProcessing(final boolean sequential) {
       this.sequentialProcessing = sequential;
       return this;
     }
@@ -252,7 +251,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param timeout Maximum time to wait for in-flight messages to complete
     /// @return This builder instance for method chaining
-    public Builder<K, V> withWaitForMessagesTimeout(final Duration timeout) {
+    public Builder<K> withWaitForMessagesTimeout(final Duration timeout) {
       this.waitForMessagesTimeout = Objects.requireNonNull(timeout);
       return this;
     }
@@ -261,7 +260,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param timeout Maximum time to wait for the consumer thread to finish
     /// @return This builder instance for method chaining
-    public Builder<K, V> withThreadTerminationTimeout(final Duration timeout) {
+    public Builder<K> withThreadTerminationTimeout(final Duration timeout) {
       this.threadTerminationTimeout = Objects.requireNonNull(timeout);
       return this;
     }
@@ -271,7 +270,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param provider A function that creates an OffsetManager given the consumer instance
     /// @return This builder instance for method chaining
-    public Builder<K, V> withOffsetManagerProvider(final Function<Consumer<K, V>, OffsetManager<K, V>> provider) {
+    public Builder<K> withOffsetManagerProvider(final Function<Consumer<K, byte[]>, OffsetManager<K>> provider) {
       this.offsetManagerProvider = consumer -> {
         final var offsetManager = Objects.requireNonNull(provider.apply(consumer), "OffsetManager cannot be null");
         this.rebalanceListener = offsetManager.createRebalanceListener();
@@ -285,7 +284,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param manager The custom offset manager to use
     /// @return This builder instance for method chaining
-    public Builder<K, V> withOffsetManager(final OffsetManager<K, V> manager) {
+    public Builder<K> withOffsetManager(final OffsetManager<K> manager) {
       this.offsetManager = Objects.requireNonNull(manager, "OffsetManager cannot be null");
       this.rebalanceListener = manager.createRebalanceListener();
       return this;
@@ -295,7 +294,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param commandQueue the queue to use for consumer commands
     /// @return this Builder instance for method chaining
-    public Builder<K, V> withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
+    public Builder<K> withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
       this.commandQueue = Objects.requireNonNull(commandQueue, "Command queue cannot be null");
       return this;
     }
@@ -305,7 +304,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// @param provider A supplier that returns a Consumer instance configured for processing
     ///     messages
     /// @return This builder instance for method chaining
-    public Builder<K, V> withConsumer(final Supplier<Consumer<K, V>> provider) {
+    public Builder<K> withConsumer(final Supplier<Consumer<K, byte[]>> provider) {
       this.consumerProvider = provider;
       return this;
     }
@@ -316,7 +315,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// <p>Backpressure is enabled by default.
     ///
     /// @return This builder instance for method chaining
-    public Builder<K, V> withBackpressure() {
+    public Builder<K> withBackpressure() {
       return withBackpressure(10_000, 7_000);
     }
 
@@ -331,7 +330,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// @param lowWatermark  resume consumption when in-flight count drops to this value (must be
     ///     less than highWatermark)
     /// @return This builder instance for method chaining
-    public Builder<K, V> withBackpressure(final long highWatermark, final long lowWatermark) {
+    public Builder<K> withBackpressure(final long highWatermark, final long lowWatermark) {
       this.backpressureController = new BackpressureController(highWatermark, lowWatermark, null);
       return this;
     }
@@ -340,7 +339,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param topic The name of the DLQ topic
     /// @return This builder instance for method chaining
-    public Builder<K, V> withDeadLetterTopic(final String topic) {
+    public Builder<K> withDeadLetterTopic(final String topic) {
       this.deadLetterTopic = topic;
       return this;
     }
@@ -350,8 +349,8 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param producer The Kafka producer to use
     /// @return This builder instance for method chaining
-    public Builder<K, V> withKafkaProducer(final Producer<K, V> producer) {
-      this.kpipeProducer = KPipeProducer.<K, V>builder().withProducer(producer).build();
+    public Builder<K> withKafkaProducer(final Producer<K, byte[]> producer) {
+      this.kpipeProducer = KPipeProducer.<K, byte[]>builder().withProducer(producer).build();
       return this;
     }
 
@@ -359,19 +358,19 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     ///
     /// @param producer The KPipe producer wrapper to use
     /// @return This builder instance for method chaining
-    public Builder<K, V> withKafkaProducer(final KPipeProducer<K, V> producer) {
+    public Builder<K> withKafkaProducer(final KPipeProducer<K, byte[]> producer) {
       this.kpipeProducer = Objects.requireNonNull(producer, "Producer cannot be null");
       return this;
     }
 
     /// Sets the OpenTelemetry metrics instruments for this consumer.
     ///
-    /// Use {@link ConsumerMetrics#ConsumerMetrics(io.opentelemetry.api.OpenTelemetry)} to create an
-    /// instrumented instance, or {@link ConsumerMetrics#noop()} for a no-op default.
+    /// Use [org.kpipe.metrics.ConsumerMetrics] to create an instrumented instance, or
+    /// [ConsumerMetrics#noop()] for a no-op default.
     ///
     /// @param metrics the consumer metrics instruments
     /// @return This builder instance for method chaining
-    public Builder<K, V> withMetrics(final ConsumerMetrics metrics) {
+    public Builder<K> withMetrics(final ConsumerMetrics metrics) {
       this.consumerMetrics = metrics;
       return this;
     }
@@ -379,7 +378,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     /// Builds a new KPipeConsumer with the configured settings.
     ///
     /// @return a new KPipeConsumer instance
-    public KPipeConsumer<K, V> build() {
+    public KPipeConsumer<K> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
       Objects.requireNonNull(topic, "Topic must be provided");
       Objects.requireNonNull(pipeline, "Pipeline function must be provided");
@@ -401,7 +400,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// Creates a new KPipeConsumer using the provided builder.
   ///
   /// @param builder the builder containing the consumer configuration
-  public KPipeConsumer(final Builder<K, V> builder) {
+  public KPipeConsumer(final Builder<K> builder) {
     this.kafkaConsumer =
       builder.consumerProvider != null
         ? builder.consumerProvider.get()
@@ -445,7 +444,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
       builder.kpipeProducer != null
         ? builder.kpipeProducer
         : this.deadLetterTopic != null
-          ? KPipeProducer.<K, V>builder().withProperties(builder.kafkaProps).build()
+          ? KPipeProducer.<K, byte[]>builder().withProperties(builder.kafkaProps).build()
           : null;
 
     if (builder.backpressureController == null) {
@@ -605,14 +604,14 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           case ConsumerCommand.TrackOffset cmd -> {
             if (offsetManager != null) {
               @SuppressWarnings("unchecked")
-              final var record = (ConsumerRecord<K, V>) cmd.record();
+              final var record = (ConsumerRecord<K, byte[]>) cmd.record();
               offsetManager.trackOffset(record);
             }
           }
           case ConsumerCommand.MarkOffsetProcessed cmd -> {
             if (offsetManager != null) {
               @SuppressWarnings("unchecked")
-              final var record = (ConsumerRecord<K, V>) cmd.record();
+              final var record = (ConsumerRecord<K, byte[]>) cmd.record();
               offsetManager.markOffsetProcessed(record);
             }
           }
@@ -780,7 +779,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// Processes multiple Kafka records by submitting each one to the virtual thread executor.
   ///
   /// @param records the batch of records to process
-  protected void processRecords(final ConsumerRecords<K, V> records) {
+  protected void processRecords(final ConsumerRecords<K, byte[]> records) {
     for (final var record : records.records(topic)) {
       if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
       inFlightCount.incrementAndGet();
@@ -829,7 +828,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
   /// </ul>
   ///
   /// @param record The Kafka consumer record to process
-  protected void processRecord(final ConsumerRecord<K, V> record) {
+  protected void processRecord(final ConsumerRecord<K, byte[]> record) {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
     otelMetrics.recordMessageReceived();
 
@@ -850,17 +849,12 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  private boolean tryProcessRecord(final ConsumerRecord<K, V> record) {
+  private boolean tryProcessRecord(final ConsumerRecord<K, byte[]> record) {
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) if (!handleRetry(record, attempt)) return false;
 
       try {
-        if (processor instanceof MessagePipeline typedPipeline) {
-          processTypedRecord(record, typedPipeline);
-          return true;
-        }
-
-        final var processedValue = processor.apply(record.value());
+        processor.processToSink(record.value());
         markOffsetProcessed(record);
         return true;
       } catch (final Exception e) {
@@ -868,7 +862,6 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
           Thread.currentThread().interrupt();
           return false;
         }
-
         if (attempt == maxRetries) {
           handleProcessingError(record, e, attempt);
           return false;
@@ -878,7 +871,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     return false;
   }
 
-  private boolean handleRetry(final ConsumerRecord<K, V> record, final int attempt) {
+  private boolean handleRetry(final ConsumerRecord<K, byte[]> record, final int attempt) {
     if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
     LOGGER.log(Level.INFO, "Retrying message at offset {0} (attempt {1} of {2})", record.offset(), attempt, maxRetries);
 
@@ -891,36 +884,11 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     }
   }
 
-  @SuppressWarnings("unchecked")
-  private void processTypedRecord(final ConsumerRecord<K, V> record, final MessagePipeline typedPipeline) {
-    if (record.value() == null) throw new IllegalStateException("Record value is null at offset " + record.offset());
-
-    final var recordValue = (byte[]) record.value();
-    final var deserialized = typedPipeline.deserialize(recordValue);
-    if (deserialized == null) throw new IllegalStateException(
-      "Pipeline deserialization returned null at offset " + record.offset()
-    );
-
-    final var processed = typedPipeline.process(deserialized);
-    if (processed == null) {
-      // Null process result is treated as intentional filtering
-      markOffsetProcessed(record);
-      return;
-    }
-
-    final var sink = typedPipeline.getSink();
-    if (sink != null) {
-      sink.accept(processed);
-    }
-
-    markOffsetProcessed(record);
-  }
-
-  private void markOffsetProcessed(final ConsumerRecord<K, V> record) {
+  private void markOffsetProcessed(final ConsumerRecord<K, byte[]> record) {
     if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
   }
 
-  private void handleProcessingError(final ConsumerRecord<K, V> record, final Exception e, final int retryCount) {
+  private void handleProcessingError(final ConsumerRecord<K, byte[]> record, final Exception e, final int retryCount) {
     if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
     otelMetrics.recordProcessingError();
     LOGGER.log(
@@ -998,7 +966,7 @@ public class KPipeConsumer<K, V> implements AutoCloseable {
     return false;
   }
 
-  private ConsumerRecords<K, V> pollRecords() {
+  private ConsumerRecords<K, byte[]> pollRecords() {
     try {
       return kafkaConsumer.poll(pollTimeout);
     } catch (final WakeupException e) {

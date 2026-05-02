@@ -12,5 +12,7 @@ tasks.named<ShadowJar>("shadowJar") {
 description = "KPipe - Kafka Consumer Application Using Avro"
 
 dependencies {
+  implementation(project(":lib:kpipe-format-avro"))
   implementation(libs.avro)
+  testImplementation(rootProject.libs.dslJson)
 }

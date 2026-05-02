@@ -19,7 +19,9 @@ repositories {
 }
 
 dependencies {
-  api(libs.opentelemetryApi)
+  // No production dependencies — kpipe-metrics is a pure interface module so users
+  // can plug in any telemetry backend (or none). Add `kpipe-metrics-otel` for the
+  // OpenTelemetry-backed implementation.
 
   // Testing
   testImplementation(platform(libs.junitBom))
@@ -68,7 +70,7 @@ publishing {
 
       pom {
         name.set("kpipe-metrics")
-        description.set("KPipe Metrics - OpenTelemetry instrumentation for KPipe")
+        description.set("KPipe Metrics - telemetry interfaces for KPipe (no-op default; bring your own backend)")
         url.set("https://github.com/eschizoid/kpipe")
         inceptionYear.set("2025")
 

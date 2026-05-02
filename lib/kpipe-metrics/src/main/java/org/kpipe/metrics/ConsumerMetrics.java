@@ -1,163 +1,66 @@
 package org.kpipe.metrics;
 
-import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.metrics.DoubleHistogram;
-import io.opentelemetry.api.metrics.LongCounter;
-import io.opentelemetry.api.metrics.ObservableLongGauge;
 import java.util.function.LongSupplier;
 
-/// OTel instrument holder for KPipe consumer metrics.
+/// Metrics interface for KPipe consumers — captures message counts, processing duration,
+/// in-flight gauge, and backpressure events.
 ///
-/// Usage — wire via the consumer builder:
+/// `kpipe-metrics` provides only the interface and a no-op default implementation so the
+/// library can run without any telemetry dependency. To wire OpenTelemetry-backed metrics,
+/// add the `kpipe-metrics-otel` module and pass an `OtelConsumerMetrics` instance to the
+/// consumer builder.
+///
+/// Example — no-op (default, zero overhead):
 ///
 /// ```java
-/// KPipeConsumer.builder()
-///   .withProperties(props)
-///   .withTopic(topic)
-///   .withOpenTelemetry(openTelemetry)
+/// KPipeConsumer.<byte[]>builder()
+///   .withMetrics(ConsumerMetrics.noop())
 ///   .build();
 /// ```
 ///
-/// When no {@link OpenTelemetry} instance is provided, {@link OpenTelemetry#noop()} is used
-/// automatically — zero allocation overhead, no SDK required.
-public final class ConsumerMetrics {
-
-  private static final AttributeKey<String> PIPELINE_KEY = AttributeKey.stringKey("pipeline");
-
-  private final LongCounter messagesReceived;
-  private final LongCounter messagesProcessed;
-  private final LongCounter processingErrors;
-  private final DoubleHistogram processingDuration;
-  private final LongCounter backpressurePauses;
-  private final LongCounter backpressureTime;
-
-  @SuppressWarnings("unused")
-  private final ObservableLongGauge inFlight;
-
-  private final Attributes attributes;
-
-  /// Creates a fully-instrumented instance with an in-flight gauge backed by the given supplier.
-  ///
-  /// @param openTelemetry the OTel entry point
-  /// @param inFlightSupplier supplies the current number of in-flight messages
-  /// @param pipelineName optional pipeline name attached as a `pipeline` attribute on all metrics;
-  // pass null to omit
-  public ConsumerMetrics(
-    final OpenTelemetry openTelemetry,
-    final LongSupplier inFlightSupplier,
-    final String pipelineName
-  ) {
-    final var meter = openTelemetry.getMeter("org.kpipe.consumer");
-    attributes = pipelineName == null ? Attributes.empty() : Attributes.of(PIPELINE_KEY, pipelineName);
-    messagesReceived = meter
-      .counterBuilder("kpipe.consumer.messages.received")
-      .setDescription("Number of messages received from Kafka")
-      .setUnit("{message}")
-      .build();
-    messagesProcessed = meter
-      .counterBuilder("kpipe.consumer.messages.processed")
-      .setDescription("Number of messages successfully processed")
-      .setUnit("{message}")
-      .build();
-    processingErrors = meter
-      .counterBuilder("kpipe.consumer.messages.errors")
-      .setDescription("Number of messages that failed processing")
-      .setUnit("{message}")
-      .build();
-    processingDuration = meter
-      .histogramBuilder("kpipe.consumer.processing.duration")
-      .setDescription("Time taken to process a single message")
-      .setUnit("ms")
-      .build();
-    backpressurePauses = meter
-      .counterBuilder("kpipe.consumer.backpressure.pauses")
-      .setDescription("Number of times backpressure paused the consumer")
-      .setUnit("{pause}")
-      .build();
-    backpressureTime = meter
-      .counterBuilder("kpipe.consumer.backpressure.time")
-      .setDescription("Total time spent paused due to backpressure")
-      .setUnit("ms")
-      .build();
-    inFlight = meter
-      .gaugeBuilder("kpipe.consumer.messages.inflight")
-      .setDescription("Current number of messages being processed")
-      .setUnit("{message}")
-      .ofLongs()
-      .buildWithCallback(obs -> obs.record(inFlightSupplier.getAsLong(), attributes));
-  }
-
-  /// Creates a fully-instrumented instance without a pipeline label.
-  ///
-  /// @param openTelemetry the OTel entry point
-  /// @param inFlightSupplier supplies the current number of in-flight messages
-  public ConsumerMetrics(final OpenTelemetry openTelemetry, final LongSupplier inFlightSupplier) {
-    this(openTelemetry, inFlightSupplier, null);
-  }
-
-  /// Creates an instance without an in-flight gauge.
-  ///
-  /// @param openTelemetry the OTel entry point
-  public ConsumerMetrics(final OpenTelemetry openTelemetry) {
-    this(openTelemetry, () -> 0L, null);
-  }
-
-  /// Creates an instance without an in-flight gauge, labeled with a pipeline name.
-  ///
-  /// @param openTelemetry the OTel entry point
-  /// @param pipelineName pipeline name attached as a `pipeline` attribute on all metrics
-  public ConsumerMetrics(final OpenTelemetry openTelemetry, final String pipelineName) {
-    this(openTelemetry, () -> 0L, pipelineName);
-  }
-
-  /// Creates a no-op instance — use when OTel is not configured.
-  ///
-  /// @param inFlightSupplier supplies the current number of in-flight messages
-  /// @return a no-op ConsumerMetrics wired to the in-flight count
-  public static ConsumerMetrics noop(final LongSupplier inFlightSupplier) {
-    return new ConsumerMetrics(OpenTelemetry.noop(), inFlightSupplier, null);
-  }
-
-  /// Creates a no-op instance with no in-flight tracking.
+/// Example — OpenTelemetry-backed (requires `kpipe-metrics-otel`):
+///
+/// ```java
+/// KPipeConsumer.<byte[]>builder()
+///   .withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))
+///   .build();
+/// ```
+public interface ConsumerMetrics {
+  /// Returns a no-op instance with no in-flight tracking. Zero allocation overhead.
   ///
   /// @return a no-op ConsumerMetrics instance
-  public static ConsumerMetrics noop() {
-    return noop(() -> 0L);
+  static ConsumerMetrics noop() {
+    return NoopConsumerMetrics.INSTANCE;
+  }
+
+  /// Returns a no-op instance whose in-flight gauge would observe the given supplier
+  /// when wired to a real backend. The supplier is ignored by the no-op impl.
+  ///
+  /// @param inFlightSupplier supplies the current number of in-flight messages
+  /// @return a no-op ConsumerMetrics instance
+  static ConsumerMetrics noop(final LongSupplier inFlightSupplier) {
+    return NoopConsumerMetrics.INSTANCE;
   }
 
   /// Records that a message was received from Kafka.
-  public void recordMessageReceived() {
-    messagesReceived.add(1, attributes);
-  }
+  void recordMessageReceived();
 
   /// Records that a message was successfully processed.
-  public void recordMessageProcessed() {
-    messagesProcessed.add(1, attributes);
-  }
+  void recordMessageProcessed();
 
   /// Records that a message failed processing.
-  public void recordProcessingError() {
-    processingErrors.add(1, attributes);
-  }
+  void recordProcessingError();
 
   /// Records the time taken to process a single message.
   ///
   /// @param millis processing duration in milliseconds
-  public void recordProcessingDuration(final long millis) {
-    processingDuration.record(millis, attributes);
-  }
+  void recordProcessingDuration(long millis);
 
   /// Records that backpressure paused the consumer.
-  public void recordBackpressurePause() {
-    backpressurePauses.add(1, attributes);
-  }
+  void recordBackpressurePause();
 
   /// Records time the consumer spent paused due to backpressure.
   ///
   /// @param millis pause duration in milliseconds
-  public void recordBackpressureTime(final long millis) {
-    backpressureTime.add(millis, attributes);
-  }
+  void recordBackpressureTime(long millis);
 }

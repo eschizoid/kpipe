@@ -18,7 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class KPipeRunnerTest {
 
   @Mock
-  private KPipeConsumer<String, String> mockConsumer;
+  private KPipeConsumer<String> mockConsumer;
 
   @Mock
   private MessageTracker mockTracker;
@@ -26,7 +26,7 @@ class KPipeRunnerTest {
   @Mock
   private KPipeMetricsReporter mockReporter;
 
-  private KPipeRunner<KPipeConsumer<String, String>> runner;
+  private KPipeRunner<KPipeConsumer<String>> runner;
 
   @Test
   void shouldStartConsumer() {
@@ -127,7 +127,7 @@ class KPipeRunnerTest {
   void shouldUseCustomGracefulShutdown() {
     // Arrange
     final var customShutdownCalled = new AtomicBoolean(false);
-    final BiFunction<KPipeConsumer<String, String>, Long, Boolean> customShutdown = (consumer, timeout) -> {
+    final BiFunction<KPipeConsumer<String>, Long, Boolean> customShutdown = (consumer, timeout) -> {
       customShutdownCalled.set(true);
       return true;
     };
@@ -231,7 +231,7 @@ class KPipeRunnerTest {
     // Arrange
     final var customTimeout = 5000L;
     final var timeoutCaptured = new AtomicBoolean(false);
-    final BiFunction<KPipeConsumer<String, String>, Long, Boolean> timeoutCapturingShutdown = (consumer, timeout) -> {
+    final BiFunction<KPipeConsumer<String>, Long, Boolean> timeoutCapturingShutdown = (consumer, timeout) -> {
       timeoutCaptured.set(timeout == customTimeout);
       return true;
     };
@@ -348,7 +348,7 @@ class KPipeRunnerTest {
   void shouldUseCustomStartAction() {
     // Arrange
     final var customStartActionCalled = new AtomicBoolean(false);
-    final Consumer<KPipeConsumer<String, String>> customStartAction = consumer -> {
+    final Consumer<KPipeConsumer<String>> customStartAction = consumer -> {
       customStartActionCalled.set(true);
       consumer.start();
     };

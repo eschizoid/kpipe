@@ -21,6 +21,8 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.test.KafkaClusterTestKit;
 import org.apache.kafka.common.test.TestKitNodes;
 import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.MessageProcessorRegistry;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
@@ -173,8 +175,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   @State(Scope.Thread)
   public static class KpipeInvocationContext {
 
+    private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry("benchmark");
+
     private AtomicInteger processedCount;
-    private KPipeConsumer<byte[], byte[]> consumer;
+    private KPipeConsumer<byte[]> consumer;
 
     @Setup(Level.Invocation)
     public void setup(final KafkaContext kafkaContext) {
@@ -182,13 +186,17 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       final var kpipeProps = kafkaContext.consumerProps("kpipe-group");
       kpipeProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
-      consumer = KPipeConsumer.<byte[], byte[]>builder()
+      final var pipeline = REGISTRY.pipeline(MessageFormat.bytes())
+        .add(b -> {
+          processedCount.incrementAndGet();
+          return b;
+        })
+        .build();
+
+      consumer = KPipeConsumer.<byte[]>builder()
         .withProperties(kpipeProps)
         .withTopic(TOPIC)
-        .withPipeline(val -> {
-          processedCount.incrementAndGet();
-          return val;
-        })
+        .withPipeline(pipeline)
         .withSequentialProcessing(false)
         .build();
     }
