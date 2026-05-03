@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /// builds. The pipeline is constructed up to (but not through) `start()` so the test can run
 /// without a real Kafka broker; the operator chain is then exercised manually to prove the
 /// transformations are wired correctly.
-class HelloWorldExampleTest {
+class KPipeApiTest {
 
   /// Mimic of the `Operators.removeFields(...)` helper that the brief references — kept inline so
   /// this test does not need a new public API.

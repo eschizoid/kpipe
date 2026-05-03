@@ -1,14 +1,10 @@
 package org.kpipe;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 import com.google.protobuf.Message;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,7 +30,7 @@ class KPipeFacadeBuildTest {
   void jsonFactoryReturnsStream() {
     final Stream<Map<String, Object>> stream = KPipe.json("events", props());
     assertNotNull(stream);
-    assertTrue(stream instanceof DefaultStream<?>);
+    assertInstanceOf(DefaultStream.class, stream);
   }
 
   @Test
@@ -100,10 +96,9 @@ class KPipeFacadeBuildTest {
     final var ops = stream.operators();
     assertEquals(3, ops.size());
 
-    final Map<String, Object> seed = new HashMap<>();
-    Map<String, Object> v = seed;
+    Map<String, Object> v = new HashMap<>();
     for (final var op : ops) v = op.apply(v);
-    assertEquals(java.util.List.of(1, 2, 3), trace);
+    assertEquals(List.of(1, 2, 3), trace);
   }
 
   @Test
@@ -148,7 +143,7 @@ class KPipeFacadeBuildTest {
       .pipe(m -> m)
       .toCustom(ref::set);
     assertNotNull(sink);
-    assertTrue(sink instanceof DefaultSink<?>);
+    assertInstanceOf(DefaultSink.class, sink);
   }
 
   @Test
