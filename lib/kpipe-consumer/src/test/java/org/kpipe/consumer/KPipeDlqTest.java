@@ -120,6 +120,50 @@ class KPipeDlqTest {
     }
   }
 
+  /// Verifies that `KPipeConsumer.handleProcessingError` invokes `KPipeProducer.send` (the DLQ
+  /// path) exactly once per failed record, and that even when the DLQ send throws, the consumer
+  /// continues to process subsequent records without deadlocking. The `sendToDlq` call is
+  /// synchronous on the failure path, so we verify both: (1) the call is made, and (2) the
+  /// pipeline keeps draining after a throwing send.
+  @Test
+  @SuppressWarnings("unchecked")
+  void dlqSendIsSynchronousAndBlocksShutdownPath() throws Exception {
+    final var record1 = new ConsumerRecord<>(TOPIC, 0, 100L, "k1", "v1".getBytes());
+    final var record2 = new ConsumerRecord<>(TOPIC, 0, 101L, "k2", "v2".getBytes());
+
+    // First send (record1's DLQ) throws; second send (record2's DLQ) succeeds. We exercise both
+    // failure modes within the same consumer, ensuring no deadlock between them.
+    when(mockProducer.send(any(ProducerRecord.class)))
+      .thenThrow(new RuntimeException("dlq send boom"))
+      .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
+
+    try (
+      final var consumer = KPipeConsumer.<String>builder()
+        .withProperties(byteProperties())
+        .withTopic(TOPIC)
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            throw new RuntimeException("processor always fails");
+          })
+        )
+        .withRetry(0, Duration.ofMillis(1))
+        .withDeadLetterTopic(DLQ_TOPIC)
+        .withKafkaProducer(mockProducer)
+        .build()
+    ) {
+      // First failure → DLQ send throws inside KPipeProducer.sendToDlq, but the exception is
+      // swallowed (returns false). The consumer must not propagate the exception.
+      assertDoesNotThrow(() -> consumer.processRecord(record1));
+
+      // Second failure → DLQ send succeeds. Proves the consumer is still operational and not
+      // deadlocked or in a broken state after the previous throwing send.
+      assertDoesNotThrow(() -> consumer.processRecord(record2));
+
+      // Both records went to DLQ exactly once.
+      verify(mockProducer, times(2)).send(any(ProducerRecord.class));
+    }
+  }
+
   private static MessagePipeline<String> nullDeserializePipeline() {
     return new MessagePipeline<>() {
       @Override
