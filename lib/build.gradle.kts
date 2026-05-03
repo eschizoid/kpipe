@@ -162,6 +162,12 @@ jreleaser {
               .get()
               .asFile.absolutePath,
           )
+          stagingRepository(
+            project(":lib:kpipe-facade").layout.buildDirectory
+              .dir("staging-deploy")
+              .get()
+              .asFile.absolutePath,
+          )
           enabled.set(true)
           sign.set(false)
           maxRetries.set(60)
