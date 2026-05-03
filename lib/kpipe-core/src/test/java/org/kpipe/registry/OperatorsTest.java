@@ -48,6 +48,23 @@ class OperatorsTest {
   }
 
   @Test
+  void mapShouldApplyFunction() {
+    final var op = Operators.map((String s) -> s.toUpperCase());
+    assertEquals("HELLO", op.apply("hello"));
+  }
+
+  @Test
+  void peekShouldRunSideEffectAndPassThrough() {
+    final var captured = new AtomicReference<String>();
+    final var op = Operators.peek((String s) -> captured.set(s));
+
+    final var result = op.apply("original");
+
+    assertSame("original", result);
+    assertEquals("original", captured.get());
+  }
+
+  @Test
   void filterShouldComposeInPipeline() {
     // Verify the operator actually integrates with TypedPipelineBuilder's
     // null-handling — filtered messages short-circuit the chain.
