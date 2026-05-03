@@ -5,9 +5,11 @@
 **KPipe is a lightweight Kafka processing library for modern Java that lets you build safe, high‑performance message
 pipelines using virtual threads and a functional API.**
 
-[![GitHub release](https://img.shields.io/github/release/eschizoid/kpipe.svg?style=flat-square)](https://github.com/eschizoid/kpipe/releases/latest)
+[![JVM 25+](https://img.shields.io/badge/JVM-25%2B-brightgreen.svg?&logo=openjdk)](https://openjdk.org/projects/jdk/25/)
+[![Build](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
 [![Codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
-[![Build Status](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.eschizoid/kpipe-consumer.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.eschizoid/kpipe-consumer)
+[![Javadoc](https://javadoc.io/badge2/io.github.eschizoid/kpipe-consumer/javadoc.svg?color=purple)](https://javadoc.io/doc/io.github.eschizoid/kpipe-consumer)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 - **Modern Java concurrency** (virtual threads)
