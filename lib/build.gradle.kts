@@ -7,7 +7,6 @@ plugins {
 
 description = "KPipe - Lightweight Kafka processing library for modern Java"
 
-
 subprojects {
   apply(plugin = "maven-publish")
   apply(plugin = "signing")
@@ -158,6 +157,12 @@ jreleaser {
           )
           stagingRepository(
             project(":lib:kpipe-format-protobuf").layout.buildDirectory
+              .dir("staging-deploy")
+              .get()
+              .asFile.absolutePath,
+          )
+          stagingRepository(
+            project(":lib:kpipe-api").layout.buildDirectory
               .dir("staging-deploy")
               .get()
               .asFile.absolutePath,

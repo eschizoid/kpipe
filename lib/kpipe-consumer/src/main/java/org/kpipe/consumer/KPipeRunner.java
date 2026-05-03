@@ -88,7 +88,7 @@ public class KPipeRunner<T extends KPipeConsumer<?>> implements AutoCloseable {
 
   /// Starts the consumer if it hasn't been started already.
   ///
-  /// <p>This method is idempotent - calling it multiple times has no effect after the first call.
+  /// This method is idempotent - calling it multiple times has no effect after the first call.
   ///
   /// @throws RuntimeException if the consumer fails to start
   public void start() {
@@ -146,7 +146,7 @@ public class KPipeRunner<T extends KPipeConsumer<?>> implements AutoCloseable {
   /// Waits for the consumer to be shutdown, either by this thread or another thread calling {@link
   /// #close()} or {@link #shutdownGracefully(long)}.
   ///
-  /// <p>This is a convenience method that delegates to {@link #awaitShutdown(long)} with a timeout
+  /// This is a convenience method that delegates to {@link #awaitShutdown(long)} with a timeout
   /// of 0, meaning it will wait indefinitely.
   ///
   /// @return true if the shutdown completed normally, false if the wait was interrupted
@@ -174,7 +174,7 @@ public class KPipeRunner<T extends KPipeConsumer<?>> implements AutoCloseable {
 
   /// Closes this consumer runner, performing a graceful shutdown.
   ///
-  /// <p>This implementation delegates to {@link #shutdownGracefully(long)} with the configured
+  /// This implementation delegates to {@link #shutdownGracefully(long)} with the configured
   /// timeout. It follows functional programming principles by using a declarative approach.
   @Override
   public void close() {
@@ -392,7 +392,7 @@ public class KPipeRunner<T extends KPipeConsumer<?>> implements AutoCloseable {
 
     /// Applies a custom configuration function to this builder.
     ///
-    /// <p>This method allows for composing multiple configuration steps.
+    /// This method allows for composing multiple configuration steps.
     ///
     /// @param configurer a function that applies configuration to this builder
     /// @return this builder instance

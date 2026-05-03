@@ -9,25 +9,21 @@
 
 ## Priority Ladder (TL;DR)
 
-| # | Finding                                                         | Severity    | Breaking?    | Effort | Status     |
-|---|-----------------------------------------------------------------|-------------|--------------|--------|------------|
-| 1 | `MessagePipeline.apply()` swallows all exceptions               | 🔴 Critical | No (bug fix) | S      | ✅ Done     |
-| 2 | `kpipe-consumer` is a kitchen-sink module (all formats bundled) | 🟠 High     | Yes          | L      | ✅ Done     |
-| 3 | OTel API leaks through `api()` chain — forced on every user     | 🟠 High     | Yes          | M      | ✅ Done     |
-| 4 | `MessageSink` lives in the wrong module                         | 🟡 Medium   | Yes          | M      | ✅ Done     |
-| 5 | `MessageProcessorRegistry` has too many responsibilities        | 🟡 Medium   | Yes          | M      | ✅ Done     |
-| 6 | Build/test config smells (7G heap, Postgres deps, single fork)  | 🟢 Low      | No           | S      | ⏳ Pending  |
+| # | Finding                                                         | Severity    | Breaking?     | Effort | Status         |
+|---|-----------------------------------------------------------------|-------------|---------------|--------|----------------|
+| 1 | `MessagePipeline.apply()` swallows all exceptions               | 🔴 Critical | No (bug fix)  | S      | ✅ Done         |
+| 2 | `kpipe-consumer` is a kitchen-sink module (all formats bundled) | 🟠 High     | Yes           | L      | ✅ Done         |
+| 3 | OTel API leaks through `api()` chain — forced on every user     | 🟠 High     | Yes           | M      | ✅ Done         |
+| 4 | `MessageSink` lives in the wrong module                         | 🟡 Medium   | Yes           | M      | ✅ Done         |
+| 5 | `MessageProcessorRegistry` has too many responsibilities        | 🟡 Medium   | Yes           | M      | ✅ Done         |
+| 6 | Build/test config smells (7G heap, Postgres deps, single fork)  | 🟢 Low      | No            | S      | ⏳ Pending      |
+| 7 | Common-path API ergonomics — 10/10 fluent facade                | 🟠 High     | No (additive) | M      | 🚧 In progress |
 
-### Current 2.0 work order (active)
+### Current work order
 
-1. **#2 residual** — extract `kpipe-core` from `kpipe-consumer` (registry/pipeline/sink machinery). Format modules and
-   producer rebase onto core.
-2. **#4 residual** — once core exists, move `MessageSink` interface from `kpipe-producer` to `kpipe-core`. Producer
-   becomes a peer of consumer, not a base.
-3. **#5** — decompose `MessageProcessorRegistry` into focused classes (lands cleaner once it lives in `kpipe-core`).
-4. **#6** — test infra cleanup, can ship anytime.
-
-Items 2, 3, 4, 5 break the public API. Already bundled into the in-progress 2.0 branch.
+1. **#2 / #3 / #4 / #5** — all done as of 1.10.0 (merged via PR #92).
+2. **#7 — KPipe fluent facade for 10/10 common-path ergonomics** (in progress, see below). Targets 1.11.0.
+3. **#6** — test infra cleanup. Non-breaking, can ship anytime.
 
 ---
 
@@ -391,6 +387,74 @@ modules.
 3. **Is there an actual user demand for "consumer without OTel"?** This drives whether #3 is high or medium priority.
 4. **Are there existing 1.x users in production?** Affects whether 2.0 should ship a compatibility shim package or
    hard-break.
+
+---
+
+## 7. 🟠 Common-path API ergonomics — 10/10 fluent facade
+
+After the 1.10.0 ergonomics pass, the public API is rated **7/10 common-path, 8/10 customization, 6/10 discovery**. The
+remaining ceiling lives in repetition + discovery, not in correctness or structure. To get to 9.5/10 (Java's realistic
+ceiling) without breaking 1.x users, we add an **additive** fluent facade layered on top of the existing
+`MessageProcessorRegistry` / `KPipeConsumer.Builder` / `KPipeRunner.Builder` stack.
+
+### Target experience
+
+A complete JSON consumer in five lines:
+
+```java
+KPipe.json("events", kafkaProps)
+    .pipe(msg -> { msg.put("ts", System.currentTimeMillis()); return msg; })
+    .pipe(Operators.removeFields("password"))
+    .toConsole()
+    .start();
+```
+
+Type-inferred. No explicit registry. No `MessageFormat.INSTANCE` repetition. No separate Builder/Runner steps. The
+fluent chain configures pipeline + consumer + runner in one place, and `.start()` returns an `AutoCloseable` handle
+that exposes metrics and graceful shutdown.
+
+### New types (additive — no existing API changes)
+
+- **`org.kpipe.Stream<T>`** in `kpipe-core` — single fluent type for pipeline composition. Methods: `pipe`, `filter`,
+  `peek`, `when`, `withRetry`, `withBackpressure`, `withDeadLetterQueue`, `withMetrics`, plus terminal `toConsole`,
+  `toKafka`, `toCustom`, `toMulti` (returning `Sink<T>`).
+- **`org.kpipe.Sink<T>`** in `kpipe-core` — terminal type that exposes `start()` returning a `Handle`.
+- **`org.kpipe.Handle`** in `kpipe-core` — `AutoCloseable` runtime handle exposing `isHealthy()`, `metrics()`,
+  `awaitShutdown()`, `shutdownGracefully()`.
+- **`org.kpipe.KPipe`** in a new `kpipe-facade` module that depends on consumer + producer + all formats. Static
+  factories: `json(...)`, `avro(...)`, `protobuf(...)`, `bytes(...)`, `custom(format, ...)`. Each returns a
+  `Stream<T>`.
+
+### What stays unchanged
+
+The existing `MessageProcessorRegistry`, `KPipeConsumer.Builder`, `KPipeRunner.Builder`, and `TypedPipelineBuilder`
+remain the **explicit, advanced-use API**. Anyone who needs custom registries, shared pipelines, or programmatic
+runner config keeps using them. The facade just delegates to them under the hood for the typical composition.
+
+### Discovery / IDE-driven design
+
+`KPipe.json("topic", props).` — IDE auto-complete after the first `.` shows the entire usable surface. No need to
+read the README to find the next method. That alone moves discovery from 6/10 → 9/10.
+
+### Module layout
+
+```
+kpipe-facade   ← new module: KPipe class + DefaultStream<T> impl
+   ↓
+kpipe-consumer ← unchanged
+   ↓
+kpipe-core     ← Stream<T> / Sink<T> / Handle interfaces (additive)
+```
+
+### Effort
+
+**Medium.** ~1 week real time. Interfaces + impl + tests + README rewrite. Non-breaking; ships as **1.11.0**.
+
+### Why now
+
+The 1.10.0 ergonomics pass smoothed surface friction (no-arg ctors, format helpers, DLQ bundle, Operators.map/peek)
+but left the big-picture verbosity untouched. A fluent facade is the correct shape to attack it; doing this work
+piecemeal on the existing API would dilute it. Better one focused 1.11.0 with a clean new entry point.
 
 ---
 

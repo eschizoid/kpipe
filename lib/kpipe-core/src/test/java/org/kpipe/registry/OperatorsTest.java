@@ -1,10 +1,16 @@
 package org.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /// Verifies the operator factories in [Operators] behave as documented:
@@ -83,5 +89,115 @@ class OperatorsTest {
     assertNull(pipeline.apply("drop-this".getBytes()));
     final var kept = pipeline.apply("keep-this".getBytes());
     assertEquals("keep-this", new String(kept));
+  }
+
+  @Test
+  void safeShouldReturnInputOnException() {
+    final UnaryOperator<String> throwing = s -> {
+      throw new RuntimeException("boom");
+    };
+    final var op = Operators.safe(throwing);
+    assertEquals("input", op.apply("input"));
+  }
+
+  @Test
+  void requireFieldShouldKeepWhenPresent() {
+    final var op = Operators.requireField("id");
+    final Map<String, Object> msg = new HashMap<>();
+    msg.put("id", 42);
+    assertSame(msg, op.apply(msg));
+  }
+
+  @Test
+  void requireFieldShouldFilterWhenMissing() {
+    final var op = Operators.requireField("id");
+    final Map<String, Object> msg = new HashMap<>();
+    msg.put("name", "alice");
+    assertNull(op.apply(msg));
+  }
+
+  @Test
+  void renameShouldMoveKey() {
+    final var op = Operators.rename("ts", "timestamp");
+    final Map<String, Object> msg = new HashMap<>();
+    msg.put("ts", 1234L);
+    msg.put("name", "alice");
+
+    final var result = op.apply(msg);
+
+    assertSame(msg, result);
+    assertFalse(result.containsKey("ts"));
+    assertEquals(1234L, result.get("timestamp"));
+    assertEquals("alice", result.get("name"));
+  }
+
+  @Test
+  void renameShouldNoopWhenSourceMissing() {
+    final var op = Operators.rename("ts", "timestamp");
+    final Map<String, Object> msg = new HashMap<>();
+    msg.put("name", "alice");
+
+    final var result = op.apply(msg);
+
+    assertSame(msg, result);
+    assertFalse(result.containsKey("timestamp"));
+    assertEquals("alice", result.get("name"));
+  }
+
+  @Test
+  void composeShouldChainInOrder() {
+    final UnaryOperator<String> addA = s -> s + "a";
+    final UnaryOperator<String> addB = s -> s + "b";
+
+    final var op = Operators.compose(addA, addB);
+
+    assertEquals("xab", op.apply("x"));
+  }
+
+  @Test
+  void composeShouldShortCircuitOnNull() {
+    final var downstreamCalled = new AtomicBoolean(false);
+
+    final UnaryOperator<String> first = s -> s + "a";
+    final UnaryOperator<String> filter = s -> null;
+    final UnaryOperator<String> downstream = s -> {
+      downstreamCalled.set(true);
+      return s + "b";
+    };
+
+    final var op = Operators.compose(first, filter, downstream);
+
+    assertNull(op.apply("x"));
+    assertFalse(downstreamCalled.get(), "downstream operator must not be called after a null result");
+  }
+
+  @Test
+  void composeWithEmptyArrayShouldBeIdentity() {
+    final UnaryOperator<String> op = Operators.compose();
+    assertEquals("hello", op.apply("hello"));
+  }
+
+  @Test
+  void removeFieldsShouldDropAllListed() {
+    final var op = Operators.removeFields("password", "secret");
+    final Map<String, Object> msg = new HashMap<>();
+    msg.put("id", 1);
+    msg.put("password", "p");
+    msg.put("secret", "s");
+    msg.put("keep", "yes");
+
+    final var result = op.apply(msg);
+
+    assertSame(msg, result);
+    assertFalse(result.containsKey("password"));
+    assertFalse(result.containsKey("secret"));
+    assertTrue(result.containsKey("id"));
+    assertTrue(result.containsKey("keep"));
+  }
+
+  @Test
+  void removeFieldsShouldHandleNullInput() {
+    final var op = Operators.removeFields("password");
+    assertNull(op.apply(null));
   }
 }

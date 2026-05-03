@@ -91,13 +91,7 @@ class KPipeProducerTest {
     );
 
     final var record = new ConsumerRecord<>(TOPIC, 2, 42L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false, null).sendToDlq(
-      DLQ_TOPIC,
-      record,
-      TOPIC,
-      new RuntimeException("boom"),
-      null
-    );
+    new KPipeProducer<>(mockProducer, false, null).sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("boom"));
 
     verify(mockProducer).send(
       argThat(r -> {
@@ -119,50 +113,52 @@ class KPipeProducerTest {
 
   @Test
   @SuppressWarnings("unchecked")
-  void shouldIncrementDlqMetricOnSuccess() {
+  void shouldReturnTrueOnSuccessfulSend() {
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
 
-    final var metric = new AtomicLong(0);
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+    final var sent = new KPipeProducer<>(mockProducer, false, null).sendToDlq(
       DLQ_TOPIC,
       record,
       TOPIC,
-      new RuntimeException("fail"),
-      metric
+      new RuntimeException("fail")
     );
 
-    assertEquals(1, metric.get());
+    assertTrue(sent);
   }
 
   @Test
   @SuppressWarnings("unchecked")
-  void shouldNotIncrementDlqMetricOnSendFailure() {
+  void shouldReturnFalseOnSendFailure() {
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.failedFuture(new RuntimeException("broker down"))
     );
 
-    final var metric = new AtomicLong(0);
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+    final var sent = new KPipeProducer<>(mockProducer, false, null).sendToDlq(
       DLQ_TOPIC,
       record,
       TOPIC,
-      new RuntimeException("fail"),
-      metric
+      new RuntimeException("fail")
     );
 
-    assertEquals(0, metric.get());
+    assertFalse(sent);
     verify(mockProducer).send(any());
   }
 
   @Test
-  void shouldBeNoOpWhenDlqTopicIsNull() {
+  void shouldReturnFalseAndBeNoOpWhenDlqTopicIsNull() {
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false, null).sendToDlq(null, record, TOPIC, new RuntimeException("fail"), null);
+    final var sent = new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+      null,
+      record,
+      TOPIC,
+      new RuntimeException("fail")
+    );
 
+    assertFalse(sent);
     verifyNoInteractions(mockProducer);
   }
 
@@ -180,8 +176,7 @@ class KPipeProducerTest {
         DLQ_TOPIC,
         record,
         TOPIC,
-        new RuntimeException((String) null),
-        null
+        new RuntimeException((String) null)
       )
     );
 
@@ -288,7 +283,7 @@ class KPipeProducerTest {
     );
 
     final var kpipeProducer = new KPipeProducer<>(mockProducer, false, null);
-    final var metric = new AtomicLong(0);
+    final var successCount = new AtomicLong(0);
     final var errors = new CopyOnWriteArrayList<Throwable>();
     final int threadCount = 50;
 
@@ -304,7 +299,9 @@ class KPipeProducerTest {
             ("k-" + index).getBytes(),
             ("v-" + index).getBytes()
           );
-          kpipeProducer.sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail-" + index), metric);
+          if (kpipeProducer.sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail-" + index))) {
+            successCount.incrementAndGet();
+          }
         } catch (final Throwable t) {
           errors.add(t);
         }
@@ -314,7 +311,7 @@ class KPipeProducerTest {
     for (final var t : virtualThreads) t.join();
 
     assertTrue(errors.isEmpty(), "No errors expected from concurrent DLQ sends: " + errors);
-    assertEquals(threadCount, metric.get());
+    assertEquals(threadCount, successCount.get());
     verify(mockProducer, times(threadCount)).send(any(ProducerRecord.class));
   }
 }

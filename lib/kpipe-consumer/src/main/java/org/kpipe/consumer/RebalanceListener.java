@@ -15,7 +15,7 @@ import org.kpipe.consumer.enums.OffsetState;
 /// Implementation of Kafka's ConsumerRebalanceListener that handles partition rebalance events for
 /// the KafkaOffsetManager.
 ///
-/// <p>This listener manages offset tracking state during partition assignments and revocations,
+/// This listener manages offset tracking state during partition assignments and revocations,
 /// ensuring that:
 ///
 /// <ul>
@@ -25,7 +25,7 @@ import org.kpipe.consumer.enums.OffsetState;
 ///   <li>Memory is reclaimed for partitions no longer assigned
 /// </ul>
 ///
-/// <p>The listener coordinates with the KafkaOffsetManager to maintain accurate offset tracking
+/// The listener coordinates with the KafkaOffsetManager to maintain accurate offset tracking
 // during
 /// consumer group rebalancing operations, preventing duplicate message processing or data loss when
 /// partitions are reassigned between consumer instances.
@@ -55,8 +55,16 @@ public record RebalanceListener(
 
     partitions.forEach(partition -> {
       final var pending = pendingOffsets.get(partition);
+      Long lowestPending = null;
       if (pending != null && !pending.isEmpty()) {
-        offsetsToCommit.put(partition, new OffsetAndMetadata(pending.first()));
+        try {
+          lowestPending = pending.first();
+        } catch (final NoSuchElementException ignored) {
+          // raced with concurrent removal; fall through to highestProcessed
+        }
+      }
+      if (lowestPending != null) {
+        offsetsToCommit.put(partition, new OffsetAndMetadata(lowestPending));
       } else {
         final var highestProcessed = highestProcessedOffsets.get(partition);
         if (highestProcessed != null) offsetsToCommit.put(partition, new OffsetAndMetadata(highestProcessed + 1));
@@ -92,7 +100,7 @@ public record RebalanceListener(
 
   /// Processes the command queue when partitions are being revoked from this consumer.
   ///
-  /// <p>This method iterates through all commands in the queue and filters out any references to
+  /// This method iterates through all commands in the queue and filters out any references to
   /// revoked partitions. For offset commit commands, it preserves the command if it contains
   /// offsets
   /// for partitions still assigned to this consumer, while removing references to revoked

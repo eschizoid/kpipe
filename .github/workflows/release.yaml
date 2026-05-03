@@ -70,6 +70,8 @@ jobs:
             :lib:kpipe-format-json:build :lib:kpipe-format-json:publish \
             :lib:kpipe-format-avro:build :lib:kpipe-format-avro:publish \
             :lib:kpipe-format-protobuf:build :lib:kpipe-format-protobuf:publish \
+            :lib:kpipe-api:build \
+            :lib:kpipe-api:publish \
             -x test
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.JRELEASER_GITHUB_TOKEN }}

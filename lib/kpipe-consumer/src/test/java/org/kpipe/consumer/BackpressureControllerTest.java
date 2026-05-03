@@ -80,7 +80,7 @@ class BackpressureControllerTest {
     final var assignment = Set.of(tp1, tp2);
 
     when(consumer.assignment()).thenReturn(assignment);
-    when(consumer.endOffsets(assignment)).thenReturn(Map.of(tp1, 100L, tp2, 200L));
+    when(consumer.endOffsets(assignment, java.time.Duration.ofSeconds(2))).thenReturn(Map.of(tp1, 100L, tp2, 200L));
     when(consumer.position(tp1)).thenReturn(90L); // lag 10
     when(consumer.position(tp2)).thenReturn(150L); // lag 50
 
@@ -105,7 +105,7 @@ class BackpressureControllerTest {
     final var assignment = Set.of(tp);
 
     when(consumer.assignment()).thenReturn(assignment);
-    when(consumer.endOffsets(assignment)).thenReturn(Map.of(tp, 100L));
+    when(consumer.endOffsets(assignment, java.time.Duration.ofSeconds(2))).thenReturn(Map.of(tp, 100L));
     when(consumer.position(tp)).thenReturn(80L);
 
     assertEquals(20, strategy.getMetric(consumer));

@@ -1,8 +1,11 @@
 package org.kpipe.consumer;
 
-import java.util.Optional;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
+import java.time.Duration;
 import java.util.function.LongSupplier;
 import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.common.errors.InterruptException;
 
 /// Controls backpressure for a Kafka consumer by monitoring a metric (in-flight or lag)
 /// and deciding when to pause or resume consumption.
@@ -19,6 +22,11 @@ import org.apache.kafka.clients.consumer.Consumer;
 ///                      be less than highWatermark)
 /// @param strategy      the strategy to use for calculating the metric
 public record BackpressureController(long highWatermark, long lowWatermark, Strategy strategy) {
+  private static final Logger LOGGER = System.getLogger(BackpressureController.class.getName());
+
+  /// Bounded timeout used for the `endOffsets()` broker call inside the lag strategy. Caps how
+  /// long the consumer thread can be blocked when the broker is slow or unreachable.
+  private static final Duration LAG_QUERY_TIMEOUT = Duration.ofSeconds(2);
   /// Creates a new BackpressureController with the same watermarks but a different strategy.
   ///
   /// @param strategy the new strategy to use
@@ -141,24 +149,26 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   /// @param consumer the Kafka consumer to calculate lag for
   /// @return the total lag, or 0 if no partitions are assigned or an error occurs
   public static long calculateTotalLag(final Consumer<?, ?> consumer) {
-    return Optional.ofNullable(consumer)
-      .map(c -> {
-        try {
-          final var assignment = c.assignment();
-          if (assignment.isEmpty()) return 0L;
+    if (consumer == null) return 0L;
+    try {
+      final var assignment = consumer.assignment();
+      if (assignment.isEmpty()) return 0L;
 
-          final var endOffsets = c.endOffsets(assignment);
-          long totalLag = 0L;
-          for (final var tp : assignment) {
-            final long position = c.position(tp);
-            final long endOffset = endOffsets.getOrDefault(tp, position);
-            totalLag += Math.max(0, endOffset - position);
-          }
-          return totalLag;
-        } catch (final Exception e) {
-          return 0L;
-        }
-      })
-      .orElse(0L);
+      final var endOffsets = consumer.endOffsets(assignment, LAG_QUERY_TIMEOUT);
+      long totalLag = 0L;
+      for (final var tp : assignment) {
+        final long position = consumer.position(tp);
+        final long endOffset = endOffsets.getOrDefault(tp, position);
+        totalLag += Math.max(0, endOffset - position);
+      }
+      return totalLag;
+    } catch (final InterruptException e) {
+      Thread.currentThread().interrupt();
+      LOGGER.log(Level.DEBUG, "Lag query interrupted", e);
+      return 0L;
+    } catch (final Exception e) {
+      LOGGER.log(Level.WARNING, "Lag query failed; treating partition lag as 0 for this check: {0}", e.getMessage());
+      return 0L;
+    }
   }
 }

@@ -475,7 +475,11 @@ class KPipeConsumerMockingTest {
         .build()
     ) {
       assertTrue(consumer.getMetrics().isEmpty(), "Metrics should be empty when disabled");
-      assertNull(consumer.createMessageTracker(), "MessageTracker should be null when metrics are disabled");
+      assertThrows(
+        IllegalStateException.class,
+        consumer::createMessageTracker,
+        "createMessageTracker() must throw when metrics are disabled (no counters to read)"
+      );
     }
   }
 
