@@ -9,7 +9,7 @@ pipelines using virtual threads and a functional API.**
 [![Build](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
 [![Codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.eschizoid/kpipe-consumer.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.eschizoid/kpipe-consumer)
-[![Javadoc](https://javadoc.io/badge2/io.github.eschizoid/kpipe-consumer/javadoc.svg?color=purple)](https://javadoc.io/doc/io.github.eschizoid/kpipe-consumer)
+[![Javadoc](https://javadoc.io/badge2/io.github.eschizoid/kpipe-api/javadoc.svg?color=purple)](https://javadoc.io/doc/io.github.eschizoid/kpipe-api)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 - **Modern Java concurrency** (virtual threads)
@@ -19,6 +19,17 @@ pipelines using virtual threads and a functional API.**
 - **High throughput with minimal framework overhead**
 
 It is designed for Kafka consumer services performing transformations, enrichment, or routing.
+
+### Two API surfaces
+
+KPipe ships **two public surfaces** so you can pick the one that fits your use case:
+
+| Surface | What it gives you | When to use |
+| --- | --- | --- |
+| **`KPipe` fluent facade** (`kpipe-api`) | 5-line `KPipe.json("topic", props).pipe(...).toConsole().start()`. Returns a `Stream<T>` → `Sink<T>` → `Handle` chain. Immutable, IDE-discoverable. | The common path — most users start here. |
+| **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumer.Builder` + `KPipeRunner.Builder`. Multi-step, supports custom registries, shared pipelines, programmatic runner config. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
+
+The facade delegates to the explicit API under the hood, so escaping from one to the other has no cost.
 
 ---
 
