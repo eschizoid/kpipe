@@ -57,18 +57,18 @@ explicit registry / builder API (see "Advanced API" further down) — for that c
 <details>
 <summary>Module catalog & other build tools</summary>
 
-| Module                  | What it gives you                                                               |
-|-------------------------|---------------------------------------------------------------------------------|
-| `kpipe-api`             | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`        |
-| `kpipe-bom`             | Maven BOM — pins all `kpipe-*` artifacts to matching versions                   |
+| Module                  | What it gives you                                                                |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `kpipe-api`             | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`         |
+| `kpipe-bom`             | Maven BOM — pins all `kpipe-*` artifacts to matching versions                    |
 | `kpipe-core`            | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators |
-| `kpipe-metrics`         | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters |
-| `kpipe-metrics-otel`    | OpenTelemetry-backed implementation (opt-in)                                    |
-| `kpipe-producer`        | Kafka producer wrapper, `KafkaMessageSink`                                      |
-| `kpipe-consumer`        | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`                        |
-| `kpipe-format-json`     | `JsonFormat`, `JsonMessageProcessor`, `JsonConsoleSink`                         |
-| `kpipe-format-avro`     | `AvroFormat`, `AvroMessageProcessor`, `AvroConsoleSink`                         |
-| `kpipe-format-protobuf` | `ProtobufFormat`, `ProtobufMessageProcessor`, `ProtobufConsoleSink`             |
+| `kpipe-metrics`         | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters  |
+| `kpipe-metrics-otel`    | OpenTelemetry-backed implementation (opt-in)                                     |
+| `kpipe-producer`        | Kafka producer wrapper, `KafkaMessageSink`                                       |
+| `kpipe-consumer`        | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`                         |
+| `kpipe-format-json`     | `JsonFormat`, `JsonMessageProcessor`, `JsonConsoleSink`                          |
+| `kpipe-format-avro`     | `AvroFormat`, `AvroMessageProcessor`, `AvroConsoleSink`                          |
+| `kpipe-format-protobuf` | `ProtobufFormat`, `ProtobufMessageProcessor`, `ProtobufConsoleSink`              |
 
 **Gradle (Kotlin) with BOM**
 
@@ -137,26 +137,26 @@ KPipe.json("events", kafkaProps)
     .start();   // returns AutoCloseable Handle (call .close() to shut down)
 ```
 
-That's it — a working JSON Kafka consumer that strips the `password` field, stamps a timestamp, and logs to console.
-The chain auto-builds the underlying `MessageProcessorRegistry`, `KPipeConsumer`, and `KPipeRunner` for you.
+That's it — a working JSON Kafka consumer that strips the `password` field, stamps a timestamp, and logs to console. The
+chain auto-builds the underlying `MessageProcessorRegistry`, `KPipeConsumer`, and `KPipeRunner` for you.
 
 ### 3. The full fluent surface
 
-The `Stream<T>` returned by `KPipe.json/avro/protobuf/bytes/custom(...)` exposes the entire usable API in one place
-(IDE auto-complete after `.` shows you everything you need):
+The `Stream<T>` returned by `KPipe.json/avro/protobuf/bytes/custom(...)` exposes the entire usable API in one place (IDE
+auto-complete after `.` shows you everything you need):
 
-| Method | What it does |
-|---|---|
-| `.pipe(UnaryOperator<T> op)` | append an operator to the pipeline |
-| `.filter(Predicate<T> keep)` | drop messages where predicate returns false |
-| `.peek(Consumer<T> sideEffect)` | observe without modifying (logging, metrics) |
-| `.when(Predicate, ifTrue, ifFalse)` | branch the pipeline conditionally |
-| `.withRetry(int max, Duration backoff)` | configure retry behavior |
+| Method                                                 | What it does                                            |
+| ------------------------------------------------------ | ------------------------------------------------------- |
+| `.pipe(UnaryOperator<T> op)`                           | append an operator to the pipeline                      |
+| `.filter(Predicate<T> keep)`                           | drop messages where predicate returns false             |
+| `.peek(Consumer<T> sideEffect)`                        | observe without modifying (logging, metrics)            |
+| `.when(Predicate, ifTrue, ifFalse)`                    | branch the pipeline conditionally                       |
+| `.withRetry(int max, Duration backoff)`                | configure retry behavior                                |
 | `.withBackpressure()` / `.withBackpressure(high, low)` | enable backpressure with default or explicit watermarks |
-| `.withSequentialProcessing(boolean)` | force one-at-a-time per partition |
-| `.toConsole()` | terminate with the format-appropriate console sink |
-| `.toCustom(MessageSink<T> sink)` | terminate with your own sink |
-| `.toMulti(MessageSink<T>... sinks)` | fan-out to multiple sinks |
+| `.withSequentialProcessing(boolean)`                   | force one-at-a-time per partition                       |
+| `.toConsole()`                                         | terminate with the format-appropriate console sink      |
+| `.toCustom(MessageSink<T> sink)`                       | terminate with your own sink                            |
+| `.toMulti(MessageSink<T>... sinks)`                    | fan-out to multiple sinks                               |
 
 The terminal `Sink<T>.start()` returns a `Handle` exposing `isHealthy()`, `metrics()`, `awaitShutdown(Duration)`,
 `shutdownGracefully(Duration)`, and `close()`.
@@ -421,7 +421,8 @@ final var consumer = KPipeConsumer.<byte[]>builder()
   .build();
 ```
 
-**Backpressure is disabled by default** and opt-in via `.withBackpressure()`.
+**Backpressure is enabled by default** with watermarks 10,000 (high) / 7,000 (low). Call `.withBackpressure(high, low)`
+to override the watermarks for your workload.
 
 **Observability:** backpressure events are logged (WARNING on pause, INFO on resume) and tracked via two dedicated
 metrics: `backpressurePauseCount` and `backpressureTimeMs`.

@@ -6,12 +6,12 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.kpipe.metrics.ProducerMetrics;
 
 /// A functional wrapper around a Kafka [Producer] used by KPipe for DLQ and output sinks.
@@ -48,7 +48,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
   /// Builder for creating and configuring [KPipeProducer] instances.
   ///
-  /// <p>Either {@link #withProducer(Producer)} or {@link #withProperties(Properties)} must be
+  /// Either {@link #withProducer(Producer)} or {@link #withProperties(Properties)} must be
   /// called before {@link #build()}. When properties are provided, only the connection, security,
   /// and serialization keys are forwarded to the underlying Kafka producer.
   ///
@@ -64,7 +64,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     /// Sets the properties used to create the underlying Kafka producer.
     ///
-    /// <p>All properties are forwarded as-is. {@code ByteArraySerializer} is set for key and
+    /// All properties are forwarded as-is. {@code ByteArraySerializer} is set for key and
     /// value unless explicit serializers are already present. If a {@code client.id} is present,
     /// {@code "-producer"} is appended to distinguish the producer from the consumer.
     ///
@@ -105,37 +105,42 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     public KPipeProducer<K, V> build() {
       if (producer != null) return new KPipeProducer<>(producer, false, metrics);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
-      final var producerProps = new Properties(props);
+      // Note: `new Properties(parent)` makes parent a fallback for getProperty() rather than copying
+      // entries; subsequent putIfAbsent on the new instance ignores the parent's existing keys and
+      // can shadow them. Copy entries explicitly via clone() so user-supplied serializers win.
+      final var producerProps = (Properties) props.clone();
       if (producerProps.containsKey("client.id")) producerProps.setProperty(
         "client.id",
         producerProps.getProperty("client.id") + "-producer"
       );
-      producerProps.putIfAbsent("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-      producerProps.putIfAbsent("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
+      producerProps.putIfAbsent("key.serializer", ByteArraySerializer.class.getName());
+      producerProps.putIfAbsent("value.serializer", ByteArraySerializer.class.getName());
       return new KPipeProducer<>(new KafkaProducer<>(producerProps), true, metrics);
     }
   }
 
   /// Sends a consumer record that failed processing to a dead-letter topic.
   ///
-  /// <p>This method synchronously sends the record to Kafka with enrichment headers containing
-  /// information about the original topic, partition, offset, and error. The send is synchronous
-  /// to ensure reliability in the error path — when called from a virtual thread this does not
-  /// block the underlying carrier thread.
+  /// Synchronously sends the record to Kafka with enrichment headers containing the original
+  /// topic, partition, offset, exception class, and exception message. The send is synchronous to
+  /// ensure reliability in the error path — when called from a virtual thread this does not block
+  /// the underlying carrier thread.
   ///
-  /// @param dlqTopic    the name of the dead-letter topic
+  /// @param dlqTopic    the name of the dead-letter topic; if null this method is a no-op and
+  ///                    returns false
   /// @param record      the original consumer record that failed
   /// @param sourceTopic the original source topic name
   /// @param exception   the exception that caused the processing failure
-  /// @param dlqMetric   optional metric counter to increment on successful DLQ send
-  public void sendToDlq(
+  /// @return true if the record was successfully sent to the DLQ, false otherwise (DLQ disabled or
+  ///         send failed). Callers can use the return value to update their own counters or
+  ///         trigger fallback handling.
+  public boolean sendToDlq(
     final String dlqTopic,
     final ConsumerRecord<K, V> record,
     final String sourceTopic,
-    final Exception exception,
-    final AtomicLong dlqMetric
+    final Exception exception
   ) {
-    if (dlqTopic == null) return;
+    if (dlqTopic == null) return false;
 
     final var producerRecord = new ProducerRecord<>(dlqTopic, record.key(), record.value());
     producerRecord.headers().add("x-dlq-exception-class", exception.getClass().getName().getBytes());
@@ -149,16 +154,17 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     try {
       send(producerRecord);
       otelMetrics.recordDlqSent();
-      if (dlqMetric != null) dlqMetric.incrementAndGet();
       LOGGER.log(Level.INFO, "Sent record to DLQ topic {0}", dlqTopic);
+      return true;
     } catch (final Exception ex) {
       LOGGER.log(Level.ERROR, "Failed to send record to DLQ topic " + dlqTopic, ex);
+      return false;
     }
   }
 
   /// Sends a record to a Kafka topic synchronously and returns the resulting metadata.
   ///
-  /// <p>When called from a virtual thread this is highly efficient — blocking on the future
+  /// When called from a virtual thread this is highly efficient — blocking on the future
   /// parks the virtual thread without pinning its carrier thread.
   ///
   /// @param record the record to send

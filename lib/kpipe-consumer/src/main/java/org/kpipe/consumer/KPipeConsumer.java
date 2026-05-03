@@ -348,7 +348,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// Enables backpressure control using the default watermarks: high = 10,000 (pause) and
     /// low = 7,000 (resume). Use {@link #withBackpressure(long, long)} to configure custom values.
     ///
-    /// <p>Backpressure is enabled by default.
+    /// Backpressure is enabled by default.
     ///
     /// @return This builder instance for method chaining
     public Builder<K> withBackpressure() {
@@ -359,7 +359,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// in-flight messages reaches the high watermark, the consumer pauses Kafka polling. It
     /// resumes when the count drops to or below the low watermark (hysteresis).
     ///
-    /// <p>Backpressure is enabled by default. Calling this method configures custom thresholds.
+    /// Backpressure is enabled by default. Calling this method configures custom thresholds.
     ///
     /// @param highWatermark pause consumption when in-flight count reaches this value (must be
     ///     positive)
@@ -374,8 +374,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// Sets the Dead Letter Queue (DLQ) topic to send failed records after all retries.
     ///
     /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] which sets the topic and producer
-    /// atomically. Setting only the topic without also providing a producer (via
-    /// [#withKafkaProducer]) will silently no-op at runtime.
+    /// atomically. When only the topic is set (no producer), the consumer auto-builds a producer
+    /// from the configured Kafka properties at construction time — fine for simple cases, but
+    /// `withDeadLetterQueue(...)` is preferred when you have an existing producer to share.
     ///
     /// @param topic The name of the DLQ topic
     /// @return This builder instance for method chaining
@@ -548,13 +549,13 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// uses the consumer's metrics to determine how many messages have been received versus
   /// processed.
   ///
-  /// @return a new {@link MessageTracker} instance, or null if metrics are disabled
+  /// @return a new [MessageTracker] instance
+  /// @throws IllegalStateException if metrics are disabled (the tracker has no counters to read)
   public MessageTracker createMessageTracker() {
-    if (!enableMetrics) {
-      LOGGER.log(Level.INFO, "Cannot create MessageTracker: metrics are disabled");
-      return null;
-    }
-
+    if (!enableMetrics) throw new IllegalStateException(
+      "Cannot create MessageTracker: metrics are disabled. Remove the disableMetrics() call from " +
+      "the builder, or do not call createMessageTracker()."
+    );
     return MessageTracker.builder()
       .withMetrics(this::getMetrics)
       .withReceivedMetricKey(METRIC_MESSAGES_RECEIVED)
@@ -619,7 +620,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// Pauses consumption from the topic. Any in-flight messages will continue processing, but no new
   /// messages will be consumed until {@link #resume()} is called.
   ///
-  /// <p>This method is idempotent - calling it multiple times has no additional effect.
+  /// This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
     manualPause.set(true);
     internalPause();
@@ -695,7 +696,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Resumes consumption from the topic after being paused.
   ///
-  /// <p>This method is idempotent - calling it multiple times has no additional effect.
+  /// This method is idempotent - calling it multiple times has no additional effect.
   ///
   /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
@@ -768,7 +769,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Closes this consumer, stopping message consumption and processing.
   ///
-  /// <p>This method performs a graceful shutdown by:
+  /// This method performs a graceful shutdown by:
   ///
   /// <ol>
   ///   <li>Setting the state to CLOSING to prevent new operations
@@ -781,7 +782,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///   <li>Setting the state to CLOSED
   /// </ol>
   ///
-  /// <p>This method is idempotent - calling it multiple times has no additional effect.
+  /// This method is idempotent - calling it multiple times has no additional effect.
   @Override
   public void close() {
     if (!transitionToClosing()) return;
@@ -876,11 +877,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Processes a single Kafka consumer record using the configured processor function.
   ///
-  /// <p>This method applies the processor function to transform the record value while handling
+  /// This method applies the processor function to transform the record value while handling
   /// exceptions with configurable retry logic. Processing occurs in the current virtual thread
   /// without blocking operations that would impact carrier thread performance.
   ///
-  /// <p>Metrics tracked during processing:
+  /// Metrics tracked during processing:
   ///
   /// <ul>
   ///   <li>messagesReceived - Incremented when a record is received
@@ -960,13 +961,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
       retryCount + 1,
       e.getMessage()
     );
-    if (deadLetterTopic != null && kpipeProducer != null) kpipeProducer.sendToDlq(
-      deadLetterTopic,
-      record,
-      topic,
-      e,
-      enableMetrics ? metrics.get(METRIC_DLQ_SENT) : null
-    );
+    if (deadLetterTopic != null && kpipeProducer != null) {
+      final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, topic, e);
+      if (sent && enableMetrics) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+    }
     markOffsetProcessed(record);
     try {
       errorHandler.accept(new ProcessingError<>(record, e, retryCount));
