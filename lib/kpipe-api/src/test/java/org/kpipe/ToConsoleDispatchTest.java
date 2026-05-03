@@ -83,4 +83,17 @@ class ToConsoleDispatchTest {
     assertNotNull(sink.terminalSink());
     assertTrue(sink.terminalSink() instanceof org.kpipe.sink.CompositeMessageSink<?>);
   }
+
+  /// Asserts that `KPipe.avro(...).toConsole()` fails fast when no default Avro schema has been
+  /// registered under key `"1"` in [AvroMessageProcessor]. The schema registry is process-wide
+  /// state, so we explicitly clear it before constructing the stream to make this test
+  /// deterministic regardless of test ordering within the same JVM.
+  @Test
+  void avroToConsoleThrowsWhenNoDefaultSchemaRegistered() {
+    AvroMessageProcessor.clearSchemaRegistry();
+    final var stream = KPipe.avro("topic", props());
+    final var ex = assertThrows(IllegalStateException.class, stream::toConsole);
+    assertTrue(ex.getMessage().contains("Avro"), () -> "expected message to mention Avro: " + ex.getMessage());
+    assertTrue(ex.getMessage().contains("schema"), () -> "expected message to mention schema: " + ex.getMessage());
+  }
 }
