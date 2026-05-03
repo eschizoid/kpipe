@@ -221,7 +221,7 @@ need.
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
 | Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-|----------------------------------|---------------|---------------|-------|
+| -------------------------------- | ------------- | ------------- | ----- |
 | Full stream processing framework | Yes           | No            | No    |
 | Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
 | Virtual-thread friendly          | No            | No            | Yes   |
@@ -391,7 +391,7 @@ Backpressure uses **two configurable watermarks** (hysteresis) to avoid rapid pa
 KPipe automatically selects the optimal backpressure strategy based on your processing mode:
 
 | Mode                   | Strategy         | Metric Monitored               | Use Case                                                       |
-|:-----------------------|:-----------------|:-------------------------------|:---------------------------------------------------------------|
+| :--------------------- | :--------------- | :----------------------------- | :------------------------------------------------------------- |
 | **Parallel** (Default) | **In-Flight**    | Total active virtual threads   | Prevent memory exhaustion from too many concurrent tasks.      |
 | **Sequential**         | **Consumer Lag** | Total unread messages in Kafka | Prevent the consumer from falling too far behind the producer. |
 
@@ -723,7 +723,7 @@ When `withMetrics(...)` is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.
 allocation overhead, no OTel API on the classpath.
 
 | Instrument                           | Type      | Description                            |
-|--------------------------------------|-----------|----------------------------------------|
+| ------------------------------------ | --------- | -------------------------------------- |
 | `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
 | `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
 | `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |

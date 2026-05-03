@@ -170,3 +170,23 @@ repeating past discussions.
 - **Thread Safety Boundaries**: `processCommands()` is package-private — external callers cannot invoke
   `kafkaConsumer.pause()`/`resume()`/`commitSync()` from arbitrary threads. `isRunning()` snapshots `state.get()` into a
   local variable before comparing.
+
+### 12. Explicit Pipeline Error Semantics — No Silent Failures
+
+- **Decision (1.9.0)**: `MessagePipeline.apply()` no longer overloads `null` as both "filtered" and "failed". Failures
+  throw; `null` means exactly one thing — intentional filtering by `process()`.
+- **Reasoning**: The pre-1.9.0 implementation caught all exceptions in `apply()` and returned `null`. The downstream
+  `KPipeConsumer.processTypedRecord` then treated `processed == null` as intentional filtering and incremented
+  `messagesProcessed` — masking deserialization errors as successes. The only signal something was wrong was a gauge
+  mismatch (`messagesProcessed` rising while `sinkInvocationCount` stayed at 0).
+- **Real-world burn**: Discovered during the Grafana dashboard session — protobuf seed messages all failed
+  deserialization because `skipBytes(5)` was wrong, but the consumer reported them as processed. ~10 minutes wasted on
+  a bug that should have been a single error log.
+- **Implementation invariants**:
+    - Null record value throws `IllegalStateException` with a specific message (retryable via the normal exception path).
+    - Null deserialization result throws `IllegalStateException` (implementations must throw, not return null).
+    - Null `process()` result is the *only* legitimate filter signal — mark offset processed, count as success, no error.
+- **Generalizable rule**: When composing `Function<T, R>` chains, never use `null`/`Optional.empty()` to signal both
+  "filtered" and "failed". If both states exist, model them as distinct types (sealed `Result<T>` or distinct
+  exceptions). Triage heuristic: when a "processed" counter rises but downstream invocations stay at 0, suspect
+  overloaded null semantics first.

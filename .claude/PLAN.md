@@ -1,6 +1,7 @@
 # KPipe — Architectural Review & Refactor Plan
 
 **Reviewed:** 2026-05-02
+**Last updated:** 2026-05-02 (status reconciliation)
 **Branch state at review:** `fix/grafana-emetrics`
 **Scope:** module boundaries, public API surface, dependency direction, error semantics, build configuration.
 
@@ -8,19 +9,25 @@
 
 ## Priority Ladder (TL;DR)
 
-| # | Finding                                                         | Severity    | Breaking?    | Effort |
-|---|-----------------------------------------------------------------|-------------|--------------|--------|
-| 1 | `MessagePipeline.apply()` swallows all exceptions               | 🔴 Critical | No (bug fix) | S      |
-| 2 | `kpipe-consumer` is a kitchen-sink module (all formats bundled) | 🟠 High     | Yes          | L      |
-| 3 | OTel API leaks through `api()` chain — forced on every user     | 🟠 High     | Yes          | M      |
-| 4 | `MessageSink` lives in the wrong module                         | 🟡 Medium   | Yes          | M      |
-| 5 | `MessageProcessorRegistry` has too many responsibilities        | 🟡 Medium   | Yes          | M      |
-| 6 | Build/test config smells (7G heap, Postgres deps, single fork)  | 🟢 Low      | No           | S      |
+| # | Finding                                                         | Severity    | Breaking?    | Effort | Status     |
+|---|-----------------------------------------------------------------|-------------|--------------|--------|------------|
+| 1 | `MessagePipeline.apply()` swallows all exceptions               | 🔴 Critical | No (bug fix) | S      | ✅ Done     |
+| 2 | `kpipe-consumer` is a kitchen-sink module (all formats bundled) | 🟠 High     | Yes          | L      | ✅ Done     |
+| 3 | OTel API leaks through `api()` chain — forced on every user     | 🟠 High     | Yes          | M      | ✅ Done     |
+| 4 | `MessageSink` lives in the wrong module                         | 🟡 Medium   | Yes          | M      | ✅ Done     |
+| 5 | `MessageProcessorRegistry` has too many responsibilities        | 🟡 Medium   | Yes          | M      | ✅ Done     |
+| 6 | Build/test config smells (7G heap, Postgres deps, single fork)  | 🟢 Low      | No           | S      | ⏳ Pending  |
 
-**Order to attack:** 1 → 3 → 2 → 4 → 5 → 6.
+### Current 2.0 work order (active)
 
-Items 2, 3, 4, 5 break the public API. Bundle them into a single 2.0 release rather than dribbling out breaking changes
-across 1.x.
+1. **#2 residual** — extract `kpipe-core` from `kpipe-consumer` (registry/pipeline/sink machinery). Format modules and
+   producer rebase onto core.
+2. **#4 residual** — once core exists, move `MessageSink` interface from `kpipe-producer` to `kpipe-core`. Producer
+   becomes a peer of consumer, not a base.
+3. **#5** — decompose `MessageProcessorRegistry` into focused classes (lands cleaner once it lives in `kpipe-core`).
+4. **#6** — test infra cleanup, can ship anytime.
+
+Items 2, 3, 4, 5 break the public API. Already bundled into the in-progress 2.0 branch.
 
 ---
 
@@ -38,7 +45,7 @@ These design decisions are working well and should not be regressed during refac
 
 ---
 
-## 1. 🔴 `MessagePipeline.apply()` swallows all exceptions
+## 1. 🔴 `MessagePipeline.apply()` swallows all exceptions — ✅ DONE
 
 **File:** `lib/kpipe-consumer/src/main/java/org/kpipe/registry/MessagePipeline.java:41-51`
 
@@ -387,5 +394,66 @@ modules.
 
 ---
 
-*Generated from architectural review session on 2026-05-02. Update this file as items are completed; remove items rather
-than crossing them out so the priority ladder stays scannable.*
+## Completed Initiatives (merged from `.junie/PLAN.md`)
+
+These shipped earlier. Listed for completeness so the roadmap stays a single source of truth.
+
+### P1 — OTel Observability Dashboard ✅
+
+- ✅ Local stack: `docker-compose.yaml` runs OpenTelemetry Collector + Prometheus + Grafana.
+- ✅ Provisioned dashboard: `infra/observability/grafana/dashboards/kpipe-overview.json` covers consumer / backpressure /
+  producer panels.
+- ✅ README "Metrics Dashboard" section with `docker compose up` instructions.
+
+### P2 — Full Demo Application ✅
+
+- ✅ `examples/demo` module with `DemoApp.java` exercising JSON + Avro + Protobuf pipelines and demo sinks.
+- ✅ Docker compose wiring + `scripts/run-demo.sh`.
+- ✅ `examples/demo/src/test/java/org/kpipe/demo/DemoAppIntegrationTest.java` (Testcontainers).
+- ✅ README "Running the Demo" section.
+
+---
+
+## P3 — Benchmark Improvements (pending)
+
+Inherited from `.junie/PLAN.md`. Independent of the 2.0 module split; can ship anytime.
+
+### B1 — Fairness Contract
+
+- Align KPipe and Confluent Parallel Consumer benchmarks on concurrency, partitioning, key distribution, commit strategy,
+  ordering guarantees, retry behavior.
+- Add a side-by-side config table in benchmark sources so the comparison is reproducible.
+
+### B2 — Parameterized Workload Matrix
+
+- Add JMH parameters for payload size, partition count, processing cost profile, and concurrency levels.
+
+### B3 — Latency Coverage
+
+- Add latency metrics (p50/p95/p99) alongside throughput.
+
+### B4 — Allocation and GC Profiling
+
+- Dedicated profiling runs to capture allocation rate and GC behavior.
+
+### B5 — Statistical Rigor and Reporting
+
+- Increase iteration defaults for comparison runs.
+- Export machine-readable outputs (CSV/JSON) for automated analysis.
+
+### B6 — Real Kafka Validation
+
+- Re-run a selected matrix on non-embedded Kafka to confirm the embedded results.
+
+---
+
+## P4 — Future Features (pending, post-2.0)
+
+1. **Batch Sinks** — batching interface for `MessageSink` to improve throughput for database / HTTP targets.
+2. **Multi-topic Support** — subscribe to multiple topics with topic-specific processors.
+3. **Circuit Breaker** — circuit-breaker logic for sinks to prevent excessive retries when targets are down.
+
+---
+
+*Generated from architectural review session on 2026-05-02. Merged with `.junie/PLAN.md` content on the same date. Update
+this file as items are completed; remove items rather than crossing them out so the priority ladder stays scannable.*
