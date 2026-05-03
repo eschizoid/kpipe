@@ -8,6 +8,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.MessageSinkRegistry;
 
 /// JSON implementation of MessageFormat for KPipe.
 ///
@@ -28,6 +30,13 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
 
   /// Shared singleton instance — use this rather than constructing a new JsonFormat
   /// unless you need an isolated schema scope.
+  ///
+  /// **Footgun warning:** this `INSTANCE` is a JVM-global mutable singleton. Calls to
+  /// [#addSchema(String, String, String)] (and [#clearSchemas()]) mutate process-wide state, so
+  /// two pipelines that register different schemas under the same key on `INSTANCE` will collide
+  /// and the last writer wins. For libraries, tests, or any code that needs an isolated schema
+  /// scope, construct a dedicated instance with `new JsonFormat()` instead and pass it explicitly
+  /// to the registry / pipeline that owns it.
   public static final JsonFormat INSTANCE = new JsonFormat();
 
   /// Constructs a new JsonFormat instance.
@@ -42,6 +51,27 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   /// @return A new MessageFormat for the specified POJO type
   public static <T> MessageFormat<T> pojo(final Class<T> clazz) {
     return new PojoFormat<>(clazz);
+  }
+
+  /// Creates a new [MessageProcessorRegistry] pre-wired with [JsonFormat#INSTANCE] and a
+  /// [JsonConsoleSink] registered under [MessageSinkRegistry#JSON_LOGGING].
+  ///
+  /// Convenience for the common case of "give me a JSON registry with a logging sink"; users who
+  /// need an isolated schema scope or a custom source app name should build the registry
+  /// directly via `new MessageProcessorRegistry(sourceAppName, new JsonFormat())`.
+  ///
+  /// @return a new pre-configured registry
+  public static MessageProcessorRegistry newRegistry() {
+    final var registry = new MessageProcessorRegistry("kpipe-format-json", INSTANCE);
+    registry.sinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, new JsonConsoleSink<>());
+    return registry;
+  }
+
+  /// Creates a new [JsonConsoleSink] for `Map<String, Object>` payloads.
+  ///
+  /// @return a new console sink
+  public static JsonConsoleSink<Map<String, Object>> consoleSink() {
+    return new JsonConsoleSink<>();
   }
 
   private final Map<String, SchemaInfo> schemas = new ConcurrentHashMap<>();

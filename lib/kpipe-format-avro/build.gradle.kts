@@ -21,7 +21,6 @@ repositories {
 dependencies {
   api(project(":lib:kpipe-core"))
   implementation(libs.avro)
-  // DSL-JSON is used to parse Confluent Schema Registry responses (`{"schema": "..."}`).
   implementation(libs.dslJson)
 
   testImplementation(platform(libs.junitBom))

@@ -16,10 +16,13 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.EncoderFactory;
 import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.RegistryKey;
 
 /// Avro implementation of MessageFormat for KPipe.
 ///
@@ -41,7 +44,18 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   /// Shared singleton instance using the default HTTP/file/classpath schema reader.
   /// Use this rather than constructing a new AvroFormat unless you need a custom schema source
   /// or an isolated schema-registration scope.
+  ///
+  /// **Footgun warning:** this `INSTANCE` is a JVM-global mutable singleton, and
+  /// [#addSchema(String, String, String)] additionally registers the parsed schema into the
+  /// process-wide [AvroMessageProcessor] schema cache. Two pipelines that register different
+  /// schemas under the same key on `INSTANCE` (or on the shared processor cache) will collide and
+  /// the last writer wins. For libraries, tests, or any code that needs an isolated schema scope,
+  /// construct a dedicated instance with `new AvroFormat()` (or `new AvroFormat(reader)`) and use
+  /// distinct schema keys.
   public static final AvroFormat INSTANCE = new AvroFormat();
+
+  /// Registry key for the pre-built Avro logging sink registered by [#newRegistry()].
+  public static final RegistryKey<GenericRecord> AVRO_LOGGING = AvroRegistryKey.of("avroLogging");
 
   private final Map<String, SchemaInfo> schemas = new ConcurrentHashMap<>();
   private final Function<String, String> schemaReader;
@@ -58,6 +72,28 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   /// @param schemaReader Function to read schema content from a location
   public AvroFormat(final Function<String, String> schemaReader) {
     this.schemaReader = schemaReader;
+  }
+
+  /// Creates a new [MessageProcessorRegistry] pre-wired with [AvroFormat#INSTANCE] and an
+  /// [AvroConsoleSink] registered under [#AVRO_LOGGING].
+  ///
+  /// The default `AvroConsoleSink` uses the schema registered under key `"1"` in the shared
+  /// [AvroMessageProcessor] cache; callers who use a different schema key should build the
+  /// registry directly and register a sink with the appropriate schema instead.
+  ///
+  /// @return a new pre-configured registry
+  public static MessageProcessorRegistry newRegistry() {
+    final var registry = new MessageProcessorRegistry("kpipe-format-avro", INSTANCE);
+    registry.sinkRegistry().register(AVRO_LOGGING, new AvroConsoleSink<>());
+    return registry;
+  }
+
+  /// Creates a new [AvroConsoleSink] for the given Avro schema.
+  ///
+  /// @param schema the Avro schema used to decode incoming `byte[]` payloads
+  /// @return a new console sink
+  public static AvroConsoleSink<GenericRecord> consoleSink(final Schema schema) {
+    return new AvroConsoleSink<>(schema);
   }
 
   /// Sets the default schema key to use for deserialization.

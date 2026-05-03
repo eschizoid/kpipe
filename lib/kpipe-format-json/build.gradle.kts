@@ -21,7 +21,6 @@ repositories {
 dependencies {
   api(project(":lib:kpipe-core"))
 
-  // DSL-JSON for fast Map<String, Object> SerDe
   implementation(libs.dslJson)
   annotationProcessor(libs.dslJson)
   testAnnotationProcessor(libs.dslJson)

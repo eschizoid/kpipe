@@ -126,6 +126,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Creates a new builder for constructing {@link KPipeConsumer} instances.
   ///
+  /// Note: `<K>` is the Kafka record KEY type. Per the byte-boundary architecture, values are
+  /// always `byte[]` — the pipeline handles deserialization.
+  ///
   /// @param <K> the type of keys in the consumed records
   /// @return a new builder instance
   public static <K> Builder<K> builder() {
@@ -161,7 +164,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     private OffsetManager<K> offsetManager;
     private Function<Consumer<K, byte[]>, OffsetManager<K>> offsetManagerProvider;
     private Supplier<Consumer<K, byte[]>> consumerProvider;
-    private Queue<ConsumerCommand> commandQueue;
+    private Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
     private ConsumerRebalanceListener rebalanceListener;
     private BackpressureController backpressureController;
     private String deadLetterTopic;
@@ -230,10 +233,24 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Enables or disables metrics collection.
     ///
+    /// As of `1.10.0`, metrics are enabled by default. Prefer [#disableMetrics()] to opt out;
+    /// this overload is retained for backwards compatibility.
+    ///
     /// @param enable Whether to enable a metrics collection
     /// @return This builder instance for method chaining
+    /// @deprecated since `1.10.0` — metrics default to enabled. Call [#disableMetrics()] to turn
+    ///     them off; no replacement is needed when leaving them enabled.
+    @Deprecated(since = "1.10.0")
     public Builder<K> enableMetrics(final boolean enable) {
       this.enableMetrics = enable;
+      return this;
+    }
+
+    /// Disables metrics collection. Metrics are enabled by default as of `1.10.0`.
+    ///
+    /// @return This builder instance for method chaining
+    public Builder<K> disableMetrics() {
+      this.enableMetrics = false;
       return this;
     }
 
@@ -292,11 +309,30 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Sets a custom command queue for the consumer.
     ///
+    /// A command queue is auto-created in the builder, so most users do not need to call this
+    /// method. Use it only when you need to share an externally owned queue (for example, when
+    /// constructing an {@link OffsetManager} outside of [#withOffsetManagerProvider] and wiring
+    /// it to the same queue the consumer will read from). To grab the auto-created queue from
+    /// inside an [#withOffsetManagerProvider] lambda, call [#getCommandQueue()] on the builder.
+    ///
     /// @param commandQueue the queue to use for consumer commands
     /// @return this Builder instance for method chaining
     public Builder<K> withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
       this.commandQueue = Objects.requireNonNull(commandQueue, "Command queue cannot be null");
       return this;
+    }
+
+    /// Returns the {@link ConsumerCommand} queue this builder will hand to the consumer. By
+    /// default the builder auto-creates a {@link ConcurrentLinkedQueue}; callers that supplied
+    /// their own queue via [#withCommandQueue] will see that instance instead.
+    ///
+    /// This getter is intended for use inside an [#withOffsetManagerProvider] lambda, so the
+    /// offset manager and the consumer share the same queue without forcing the caller to
+    /// construct one upfront.
+    ///
+    /// @return the command queue this builder will pass to the consumer
+    public Queue<ConsumerCommand> getCommandQueue() {
+      return commandQueue;
     }
 
     /// Sets the supplier for providing a consumer instance.
@@ -337,6 +373,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Sets the Dead Letter Queue (DLQ) topic to send failed records after all retries.
     ///
+    /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] which sets the topic and producer
+    /// atomically. Setting only the topic without also providing a producer (via
+    /// [#withKafkaProducer]) will silently no-op at runtime.
+    ///
     /// @param topic The name of the DLQ topic
     /// @return This builder instance for method chaining
     public Builder<K> withDeadLetterTopic(final String topic) {
@@ -347,6 +387,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// Sets the Kafka producer to use for DLQ and Kafka sinks. If not provided but a DLQ topic is
     /// set, a new producer will be created using the consumer's configuration.
     ///
+    /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] when configuring a DLQ — it sets the
+    /// topic and producer atomically.
+    ///
     /// @param producer The Kafka producer to use
     /// @return This builder instance for method chaining
     public Builder<K> withKafkaProducer(final Producer<K, byte[]> producer) {
@@ -356,10 +399,29 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Sets the KPipe producer wrapper to use for DLQ and Kafka sinks.
     ///
+    /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] when configuring a DLQ — it sets the
+    /// topic and producer atomically.
+    ///
     /// @param producer The KPipe producer wrapper to use
     /// @return This builder instance for method chaining
     public Builder<K> withKafkaProducer(final KPipeProducer<K, byte[]> producer) {
       this.kpipeProducer = Objects.requireNonNull(producer, "Producer cannot be null");
+      return this;
+    }
+
+    /// Configures the Dead Letter Queue (DLQ) by setting both the topic and the producer
+    /// atomically. Failed records will be sent to `topic` via `producer` after all retries are
+    /// exhausted.
+    ///
+    /// Prefer this method over calling [#withDeadLetterTopic] and [#withKafkaProducer]
+    /// separately — it ensures the two settings cannot drift out of sync.
+    ///
+    /// @param topic The name of the DLQ topic (non-null)
+    /// @param producer The KPipe producer wrapper to use for DLQ sends (non-null)
+    /// @return This builder instance for method chaining
+    public Builder<K> withDeadLetterQueue(final String topic, final KPipeProducer<K, byte[]> producer) {
+      this.deadLetterTopic = Objects.requireNonNull(topic, "DLQ topic cannot be null");
+      this.kpipeProducer = Objects.requireNonNull(producer, "DLQ producer cannot be null");
       return this;
     }
 

@@ -1,5 +1,6 @@
 package org.kpipe.registry;
 
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
@@ -75,5 +76,31 @@ public final class Operators {
       sideEffect.accept(value);
       return value;
     };
+  }
+
+  /// Maps each element via the given function. Equivalent to passing the function directly to
+  /// `.add(...)`, but reads more naturally for inline transformations.
+  ///
+  /// Example:
+  /// ```java
+  /// registry.pipeline(JsonFormat.INSTANCE)
+  ///     .add(Operators.map(msg -> { msg.put("processed", true); return msg; }))
+  ///     .build();
+  /// ```
+  ///
+  /// @param mapper the function to apply to each value
+  /// @param <T> the operator's value type
+  /// @return an operator that returns `mapper.apply(input)`
+  public static <T> UnaryOperator<T> map(final Function<T, T> mapper) {
+    return value -> mapper.apply(value);
+  }
+
+  /// Alias for [#tap] using the Stream API vocabulary.
+  ///
+  /// @param sideEffect the action to run on each value
+  /// @param <T> the operator's value type
+  /// @return an operator that runs `sideEffect.accept(input)` and returns input unchanged
+  public static <T> UnaryOperator<T> peek(final java.util.function.Consumer<T> sideEffect) {
+    return tap(sideEffect);
   }
 }
