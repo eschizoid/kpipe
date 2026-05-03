@@ -1,8 +1,6 @@
 package org.kpipe;
 
 import java.util.Objects;
-import org.kpipe.Handle;
-import org.kpipe.Sink;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.KPipeRunner;
 import org.kpipe.registry.MessageProcessorRegistry;

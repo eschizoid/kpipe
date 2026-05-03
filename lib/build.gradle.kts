@@ -7,7 +7,6 @@ plugins {
 
 description = "KPipe - Lightweight Kafka processing library for modern Java"
 
-
 subprojects {
   apply(plugin = "maven-publish")
   apply(plugin = "signing")

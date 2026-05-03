@@ -554,7 +554,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   public MessageTracker createMessageTracker() {
     if (!enableMetrics) throw new IllegalStateException(
       "Cannot create MessageTracker: metrics are disabled. Remove the disableMetrics() call from " +
-      "the builder, or do not call createMessageTracker()."
+        "the builder, or do not call createMessageTracker()."
     );
     return MessageTracker.builder()
       .withMetrics(this::getMetrics)

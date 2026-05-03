@@ -9,8 +9,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
-import org.kpipe.Sink;
-import org.kpipe.Stream;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.Operators;
 import org.kpipe.sink.CompositeMessageSink;

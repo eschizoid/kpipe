@@ -119,8 +119,12 @@ class KPipeProducerTest {
     );
 
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    final var sent = new KPipeProducer<>(mockProducer, false, null)
-      .sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail"));
+    final var sent = new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+      DLQ_TOPIC,
+      record,
+      TOPIC,
+      new RuntimeException("fail")
+    );
 
     assertTrue(sent);
   }
@@ -133,8 +137,12 @@ class KPipeProducerTest {
     );
 
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    final var sent = new KPipeProducer<>(mockProducer, false, null)
-      .sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("fail"));
+    final var sent = new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+      DLQ_TOPIC,
+      record,
+      TOPIC,
+      new RuntimeException("fail")
+    );
 
     assertFalse(sent);
     verify(mockProducer).send(any());
@@ -143,8 +151,12 @@ class KPipeProducerTest {
   @Test
   void shouldReturnFalseAndBeNoOpWhenDlqTopicIsNull() {
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    final var sent = new KPipeProducer<>(mockProducer, false, null)
-      .sendToDlq(null, record, TOPIC, new RuntimeException("fail"));
+    final var sent = new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+      null,
+      record,
+      TOPIC,
+      new RuntimeException("fail")
+    );
 
     assertFalse(sent);
     verifyNoInteractions(mockProducer);
@@ -160,8 +172,12 @@ class KPipeProducerTest {
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
     // Exception with null message should not throw
     assertDoesNotThrow(() ->
-      new KPipeProducer<>(mockProducer, false, null)
-        .sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException((String) null))
+      new KPipeProducer<>(mockProducer, false, null).sendToDlq(
+        DLQ_TOPIC,
+        record,
+        TOPIC,
+        new RuntimeException((String) null)
+      )
     );
 
     verify(mockProducer).send(

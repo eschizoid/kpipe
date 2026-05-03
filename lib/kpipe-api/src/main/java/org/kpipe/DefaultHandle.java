@@ -5,7 +5,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import org.kpipe.Handle;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.KPipeRunner;
 

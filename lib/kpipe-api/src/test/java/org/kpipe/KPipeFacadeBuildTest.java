@@ -14,8 +14,6 @@ import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.avro.generic.GenericRecord;
 import org.junit.jupiter.api.Test;
-import org.kpipe.Sink;
-import org.kpipe.Stream;
 import org.kpipe.format.json.JsonFormat;
 import org.kpipe.registry.MessageFormat;
 
@@ -112,10 +110,7 @@ class KPipeFacadeBuildTest {
   void withRetryAndBackpressureAndSequentialAreCaptured() {
     final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
 
-    stream
-      .withRetry(5, java.time.Duration.ofMillis(100))
-      .withBackpressure(2_000, 1_000)
-      .withSequentialProcessing(true);
+    stream.withRetry(5, java.time.Duration.ofMillis(100)).withBackpressure(2_000, 1_000).withSequentialProcessing(true);
 
     assertEquals(5, stream.maxRetries());
     assertEquals(java.time.Duration.ofMillis(100), stream.retryBackoff());

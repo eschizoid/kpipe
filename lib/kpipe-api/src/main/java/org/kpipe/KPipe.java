@@ -8,7 +8,6 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.Properties;
 import org.apache.avro.generic.GenericRecord;
-import org.kpipe.Stream;
 import org.kpipe.format.avro.AvroConsoleSink;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.avro.AvroMessageProcessor;
@@ -68,8 +67,8 @@ public final class KPipe {
       final var schema = AvroMessageProcessor.getSchema("1");
       if (schema == null) throw new IllegalStateException(
         "AvroFormat.toConsole() requires a default Avro schema registered under key \"1\" in " +
-        "AvroMessageProcessor; register a schema (e.g. via AvroFormat.INSTANCE.addSchema(\"1\", ...)) " +
-        "or use toCustom(new AvroConsoleSink<>(schema))."
+          "AvroMessageProcessor; register a schema (e.g. via AvroFormat.INSTANCE.addSchema(\"1\", ...)) " +
+          "or use toCustom(new AvroConsoleSink<>(schema))."
       );
       return new AvroConsoleSink<>(schema);
     });
@@ -106,11 +105,7 @@ public final class KPipe {
   /// @param format the message format
   /// @param <T> the deserialized message type
   /// @return a fluent [Stream] for the supplied format
-  public static <T> Stream<T> custom(
-    final String topic,
-    final Properties kafkaProps,
-    final MessageFormat<T> format
-  ) {
+  public static <T> Stream<T> custom(final String topic, final Properties kafkaProps, final MessageFormat<T> format) {
     return new DefaultStream<>(topic, kafkaProps, format, _ -> value -> LOGGER.log(Level.INFO, "{0}", value));
   }
 

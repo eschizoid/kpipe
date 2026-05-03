@@ -9,8 +9,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
-import org.kpipe.Sink;
-import org.kpipe.Stream;
 
 /// Compile-time witness that the 5-line "hello world" example from the facade brief actually
 /// builds. The pipeline is constructed up to (but not through) `start()` so the test can run
