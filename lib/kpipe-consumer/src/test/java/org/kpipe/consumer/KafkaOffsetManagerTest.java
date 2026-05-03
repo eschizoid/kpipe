@@ -776,4 +776,109 @@ class KafkaOffsetManagerTest {
       )
     );
   }
+
+  /// Locks in the `computeIfPresent` + `safeFirst` race fixes from the audit pass: hammers
+  /// `trackOffset` and `markOffsetProcessed` from many virtual threads on the same partition
+  /// and asserts that no offsets are silently dropped from the commit map.
+  @Nested
+  class ConcurrencyStressTests {
+
+    @Test
+    void shouldNotDropOffsetsUnderConcurrentTrackAndMark() throws Exception {
+      final var manager = KafkaOffsetManager.builder(mockConsumer)
+        .withCommandQueue(new LinkedBlockingQueue<>())
+        .build();
+      manager.start();
+
+      final int threadCount = 32;
+      final int offsetsPerThread = 250;
+      final var totalOffsets = threadCount * offsetsPerThread;
+      final var startGate = new CountDownLatch(1);
+      final var doneLatch = new CountDownLatch(threadCount);
+      final var errors = new CopyOnWriteArrayList<Throwable>();
+
+      try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        for (int t = 0; t < threadCount; t++) {
+          final int threadId = t;
+          executor.submit(() -> {
+            try {
+              startGate.await();
+              for (int i = 0; i < offsetsPerThread; i++) {
+                final var offset = (long) (threadId * offsetsPerThread + i);
+                final var record = new ConsumerRecord<>(TOPIC, 0, offset, "k", "v".getBytes());
+                manager.trackOffset(record);
+                manager.markOffsetProcessed(record);
+              }
+            } catch (final Throwable e) {
+              errors.add(e);
+            } finally {
+              doneLatch.countDown();
+            }
+          });
+        }
+
+        startGate.countDown();
+        assertTrue(doneLatch.await(15, TimeUnit.SECONDS), "all worker threads should finish in 15s");
+      }
+
+      assertTrue(errors.isEmpty(), "no thread should fail: " + errors);
+
+      final var stats = manager.getStatistics();
+      assertEquals(0, (int) stats.get("totalPendingOffsets"), "all tracked offsets should be marked");
+
+      // The "highest processed" offset must equal the last offset across all threads.
+      final var partitionState = manager.getPartitionState(PARTITION);
+      assertEquals(totalOffsets - 1L, partitionState.get("highestProcessedOffset"));
+      manager.close();
+    }
+
+    @Test
+    void prepareOffsetsToCommitShouldNeverThrowUnderRace() throws Exception {
+      final var manager = KafkaOffsetManager.builder(mockConsumer)
+        .withCommandQueue(new LinkedBlockingQueue<>())
+        .build();
+      manager.start();
+
+      final var stop = new AtomicBoolean(false);
+      final var errors = new CopyOnWriteArrayList<Throwable>();
+
+      try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Continuous track / mark churn on partition 0.
+        executor.submit(() -> {
+          long offset = 0;
+          while (!stop.get()) {
+            try {
+              final var record = new ConsumerRecord<>(TOPIC, 0, offset++, "k", "v".getBytes());
+              manager.trackOffset(record);
+              manager.markOffsetProcessed(record);
+            } catch (final Throwable e) {
+              errors.add(e);
+              return;
+            }
+          }
+        });
+
+        // Concurrent reader: hammer getPartitionState (also goes through pending.first()).
+        for (int i = 0; i < 4; i++) {
+          executor.submit(() -> {
+            while (!stop.get()) {
+              try {
+                manager.getPartitionState(PARTITION);
+              } catch (final Throwable e) {
+                errors.add(e);
+                return;
+              }
+            }
+          });
+        }
+
+        // Run the race for 500ms — long enough for hundreds of thousands of iterations.
+        Thread.sleep(500);
+        stop.set(true);
+      }
+
+      assertTrue(errors.isEmpty(), "pending.first() race must not throw NoSuchElementException: " + errors);
+      manager.close();
+    }
+  }
 }

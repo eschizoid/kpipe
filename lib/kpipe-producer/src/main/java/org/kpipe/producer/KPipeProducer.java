@@ -105,14 +105,22 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     public KPipeProducer<K, V> build() {
       if (producer != null) return new KPipeProducer<>(producer, false, metrics);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
-      final var producerProps = (Properties) props.clone();
+      return new KPipeProducer<>(new KafkaProducer<>(buildProducerProperties(props)), true, metrics);
+    }
+
+    /// Builds the effective producer Properties from a source `Properties`. Visible for testing.
+    /// User-supplied serializers are preserved (clones the source so `putIfAbsent` actually
+    /// sees the parent entries — `new Properties(parent)` does not, which would cause the
+    /// defaults to silently shadow user serializers).
+    static Properties buildProducerProperties(final Properties source) {
+      final var producerProps = (Properties) source.clone();
       if (producerProps.containsKey("client.id")) producerProps.setProperty(
         "client.id",
         producerProps.getProperty("client.id") + "-producer"
       );
       producerProps.putIfAbsent("key.serializer", ByteArraySerializer.class.getName());
       producerProps.putIfAbsent("value.serializer", ByteArraySerializer.class.getName());
-      return new KPipeProducer<>(new KafkaProducer<>(producerProps), true, metrics);
+      return producerProps;
     }
   }
 

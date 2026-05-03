@@ -375,7 +375,6 @@ class KPipeBackpressureIntegrationTest {
     }
   }
 
-  // --- helpers ---
 
   /// Builds a MockConsumer that is pre-assigned to the test partition. The subscribe()
   /// override is a no-op so that KPipeConsumer's start() doesn't conflict with the

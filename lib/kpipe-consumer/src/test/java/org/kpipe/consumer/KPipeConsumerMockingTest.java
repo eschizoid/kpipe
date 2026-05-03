@@ -1200,6 +1200,54 @@ class KPipeConsumerMockingTest {
     assertTrue(maxConcurrent.get() > 1, "Records should be processed concurrently");
   }
 
+  @Test
+  void throwingErrorHandlerShouldNotCrashConsumerOrLeakInFlight() throws Exception {
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+
+    doThrow(new RuntimeException("processor boom")).when(processor).apply(any(byte[].class));
+
+    final var handlerLatch = new CountDownLatch(2);
+    final KPipeConsumer.ErrorHandler<String> throwingHandler = e -> {
+      handlerLatch.countDown();
+      throw new RuntimeException("handler kaboom");
+    };
+
+    final var record1 = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "k1", "v1".getBytes());
+    final var record2 = new ConsumerRecord<>(TOPIC, PARTITION, 1L, "k2", "v2".getBytes());
+    final var partition = new TopicPartition(TOPIC, PARTITION);
+    final var records = new ConsumerRecords<>(Map.of(partition, List.of(record1, record2)), Map.of());
+
+    final var consumer = new TestableKPipeConsumer<>(
+      properties,
+      TOPIC,
+      processor,
+      mockConsumer,
+      0,
+      Duration.ofMillis(10),
+      throwingHandler,
+      commandQueue,
+      offsetManager
+    );
+
+    assertDoesNotThrow(() -> consumer.executeProcessRecords(records));
+    assertTrue(handlerLatch.await(2, TimeUnit.SECONDS), "throwing handler must be invoked for every failed record");
+
+    final long deadline = System.currentTimeMillis() + 1000;
+    long inFlight;
+    do {
+      inFlight = consumer.getMetrics().getOrDefault("inFlight", 0L);
+      if (inFlight == 0L) break;
+      Thread.sleep(10);
+    } while (System.currentTimeMillis() < deadline);
+    assertEquals(0L, inFlight, "in-flight must drain to 0 even when handler throws");
+
+    final long marked = commandQueue
+      .stream()
+      .filter(cmd -> cmd instanceof ConsumerCommand.MarkOffsetProcessed)
+      .count();
+    assertEquals(2, marked, "both failed records must still be marked as processed before the handler runs");
+  }
+
   public static class TestableKPipeConsumer<K> extends KPipeConsumer<K> {
 
     private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";

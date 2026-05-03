@@ -45,7 +45,6 @@ final class DefaultSink<T> implements Sink<T> {
     return new DefaultHandle(runner, consumer);
   }
 
-  // -- package-private accessors for tests --
 
   DefaultStream<T> stream() {
     return stream;
