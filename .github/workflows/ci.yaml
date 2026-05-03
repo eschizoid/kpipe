@@ -32,7 +32,8 @@ jobs:
 
       - name: Jacoco
         run: |
-          ./gradlew :lib:kpipe-core:jacocoTestReport \
+          ./gradlew :lib:kpipe-api:jacocoTestReport \
+            :lib:kpipe-core:jacocoTestReport \
             :lib:kpipe-metrics:jacocoTestReport \
             :lib:kpipe-metrics-otel:jacocoTestReport \
             :lib:kpipe-format-avro:jacocoTestReport \
@@ -47,6 +48,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: eschizoid/kpipe
           files: |
+            ./lib/kpipe-api/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-core/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-metrics/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-metrics-otel/build/reports/jacoco/test/jacocoTestReport.xml

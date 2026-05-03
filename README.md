@@ -26,19 +26,19 @@ It is designed for Kafka consumer services performing transformations, enrichmen
 
 ### 1. Add the dependencies
 
-For the 5-line fluent path (recommended), pull `kpipe-facade` plus the format module(s) you need:
+For the 5-line fluent path (recommended), pull `kpipe-api` plus the format module(s) you need:
 
 ```kotlin
-// Gradle (Kotlin) — JSON via the fluent facade
-implementation("io.github.eschizoid:kpipe-facade:1.11.0")
+// Gradle (Kotlin) — JSON via the fluent API
+implementation("io.github.eschizoid:kpipe-api:1.11.0")
 implementation("io.github.eschizoid:kpipe-format-json:1.11.0")
 ```
 
 ```xml
-<!-- Maven — JSON via the fluent facade -->
+<!-- Maven — JSON via the fluent API -->
 <dependency>
   <groupId>io.github.eschizoid</groupId>
-  <artifactId>kpipe-facade</artifactId>
+  <artifactId>kpipe-api</artifactId>
   <version>1.11.0</version>
 </dependency>
 <dependency>
@@ -48,7 +48,7 @@ implementation("io.github.eschizoid:kpipe-format-json:1.11.0")
 </dependency>
 ```
 
-`kpipe-facade` transitively pulls `kpipe-consumer` + `kpipe-producer` + `kpipe-core`. Skip the facade if you want the
+`kpipe-api` transitively pulls `kpipe-consumer` + `kpipe-producer` + `kpipe-core`. Skip `kpipe-api` only if you want the
 explicit registry / builder API (see "Advanced API" further down) — for that case, depend on `kpipe-consumer` directly.
 
 > **Tip:** A `kpipe-bom` is published so you only pin one version across modules. Use it via `dependencyManagement`
@@ -59,8 +59,9 @@ explicit registry / builder API (see "Advanced API" further down) — for that c
 
 | Module                  | What it gives you                                                               |
 |-------------------------|---------------------------------------------------------------------------------|
+| `kpipe-api`             | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`        |
 | `kpipe-bom`             | Maven BOM — pins all `kpipe-*` artifacts to matching versions                   |
-| `kpipe-core`            | Format-agnostic pipeline machinery (registries, `MessageFormat`, `MessageSink`) |
+| `kpipe-core`            | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators |
 | `kpipe-metrics`         | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters |
 | `kpipe-metrics-otel`    | OpenTelemetry-backed implementation (opt-in)                                    |
 | `kpipe-producer`        | Kafka producer wrapper, `KafkaMessageSink`                                      |
@@ -72,8 +73,8 @@ explicit registry / builder API (see "Advanced API" further down) — for that c
 **Gradle (Kotlin) with BOM**
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.9.0"))
-implementation("io.github.eschizoid:kpipe-consumer")
+implementation(platform("io.github.eschizoid:kpipe-bom:1.11.0"))
+implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")
 // add kpipe-metrics-otel only if you want OpenTelemetry-backed metrics
 implementation("io.github.eschizoid:kpipe-metrics-otel")
@@ -82,8 +83,8 @@ implementation("io.github.eschizoid:kpipe-metrics-otel")
 **Gradle (Groovy)**
 
 ```groovy
-implementation platform('io.github.eschizoid:kpipe-bom:1.9.0')
-implementation 'io.github.eschizoid:kpipe-consumer'
+implementation platform('io.github.eschizoid:kpipe-bom:1.11.0')
+implementation 'io.github.eschizoid:kpipe-api'
 implementation 'io.github.eschizoid:kpipe-format-json'
 ```
 
@@ -95,7 +96,7 @@ implementation 'io.github.eschizoid:kpipe-format-json'
     <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe-bom</artifactId>
-      <version>1.9.0</version>
+      <version>1.11.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -105,7 +106,7 @@ implementation 'io.github.eschizoid:kpipe-format-json'
 <dependencies>
   <dependency>
     <groupId>io.github.eschizoid</groupId>
-    <artifactId>kpipe-consumer</artifactId>
+    <artifactId>kpipe-api</artifactId>
   </dependency>
   <dependency>
     <groupId>io.github.eschizoid</groupId>
@@ -117,88 +118,68 @@ implementation 'io.github.eschizoid:kpipe-format-json'
 **SBT**
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe-consumer" % "1.9.0"
-libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.9.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.11.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.11.0"
 ```
 
 </details>
 
-### 2. Build a pipeline
+### 2. Hello, KPipe — five lines
 
 ```java
-import org.kpipe.format.json.JsonFormat;
-import org.kpipe.format.json.JsonMessageProcessor;
-import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.MessageSinkRegistry;
-import org.kpipe.registry.RegistryKey;
-import org.kpipe.format.json.JsonConsoleSink;
+import org.kpipe.KPipe;
+import static org.kpipe.registry.Operators.removeFields;
 
-final var registry = new MessageProcessorRegistry("demo");
-
-final var sanitizeKey = RegistryKey.json("sanitize");
-registry.register(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password"));
-
-final var stampKey = RegistryKey.json("stamp");
-registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
-
-// Register a sink for the pipeline's terminal step
-registry.sinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, new JsonConsoleSink<>());
-
-final var pipeline = registry
-  .pipeline(JsonFormat.INSTANCE)
-  .add(sanitizeKey, stampKey)
-  .toSink(MessageSinkRegistry.JSON_LOGGING)
-  .build();
+KPipe.json("events", kafkaProps)
+    .pipe(msg -> { msg.put("ts", System.currentTimeMillis()); return msg; })
+    .pipe(removeFields("password"))
+    .toConsole()
+    .start();   // returns AutoCloseable Handle (call .close() to shut down)
 ```
 
-### 3. Start the consumer
+That's it — a working JSON Kafka consumer that strips the `password` field, stamps a timestamp, and logs to console.
+The chain auto-builds the underlying `MessageProcessorRegistry`, `KPipeConsumer`, and `KPipeRunner` for you.
 
-```java
-final var consumer = KPipeConsumer.<String>builder()
-  .withProperties(kafkaProps)
-  .withTopic("users")
-  .withPipeline(pipeline)
-  .withRetry(3, Duration.ofSeconds(1))
-  .build();
+### 3. The full fluent surface
 
-final var runner = KPipeRunner.builder(consumer).build();
-runner.start();
-```
+The `Stream<T>` returned by `KPipe.json/avro/protobuf/bytes/custom(...)` exposes the entire usable API in one place
+(IDE auto-complete after `.` shows you everything you need):
 
-KPipe handles record processing, retries, metrics, offset tracking, and safe commits.
+| Method | What it does |
+|---|---|
+| `.pipe(UnaryOperator<T> op)` | append an operator to the pipeline |
+| `.filter(Predicate<T> keep)` | drop messages where predicate returns false |
+| `.peek(Consumer<T> sideEffect)` | observe without modifying (logging, metrics) |
+| `.when(Predicate, ifTrue, ifFalse)` | branch the pipeline conditionally |
+| `.withRetry(int max, Duration backoff)` | configure retry behavior |
+| `.withBackpressure()` / `.withBackpressure(high, low)` | enable backpressure with default or explicit watermarks |
+| `.withSequentialProcessing(boolean)` | force one-at-a-time per partition |
+| `.toConsole()` | terminate with the format-appropriate console sink |
+| `.toCustom(MessageSink<T> sink)` | terminate with your own sink |
+| `.toMulti(MessageSink<T>... sinks)` | fan-out to multiple sinks |
 
-> The consumer's type parameter `<K>` is the Kafka record key type. Values are always `byte[]` per the
-> [byte-boundary architecture](#architecture-and-reliability) — the pipeline handles deserialization. (As of 1.9.0,
-> `KPipeConsumer<K>` no longer carries a separate value type parameter.)
+The terminal `Sink<T>.start()` returns a `Handle` exposing `isHealthy()`, `metrics()`, `awaitShutdown(Duration)`,
+`shutdownGracefully(Duration)`, and `close()`.
 
 ### 4. Common operator patterns
 
-Use the helpers in `Operators` for filter/drop/tap without writing a full operator class:
+`org.kpipe.registry.Operators` exposes pure-function helpers ready to drop into `.pipe(...)`:
 
 ```java
-import static org.kpipe.registry.Operators.filter;
-import static org.kpipe.registry.Operators.tap;
+import static org.kpipe.registry.Operators.*;
 
-final var pipeline = registry
-  .pipeline(JsonFormat.INSTANCE)
-  .add(filter((msg) -> "active".equals(msg.get("status")))) // drop inactive
-  .add(tap((msg) -> log.info("processing {}", msg.get("id")))) // log without modifying
-  .add(stampKey)
-  .toSink(MessageSinkRegistry.JSON_LOGGING)
-  .build();
+KPipe.json("events", kafkaProps)
+    .filter(msg -> "active".equals(msg.get("status")))            // drop inactive
+    .peek(msg -> log.info("processing {}", msg.get("id")))        // log without modifying
+    .pipe(rename("user_id", "userId"))                            // rename a field
+    .pipe(removeFields("password", "ssn"))                        // strip sensitive fields
+    .pipe(safe(msg -> riskyEnrich(msg)))                          // wrap in error-handling
+    .toConsole()
+    .start();
 ```
 
-If you don't need a real format (tests, benchmarks, byte-level routing), use `MessageFormat.bytes()`:
-
-```java
-final var passthrough = registry.pipeline(MessageFormat.bytes()).add(tap((b) -> metrics.inc())).build();
-```
-
-Two same-T pipelines compose with `then`:
-
-```java
-final var combined = enrichPipeline.then(validatePipeline);
-```
+The full operator vocabulary: `filter`, `drop`, `tap`, `peek`, `map`, `compose`, `safe`, `requireField`, `rename`,
+`removeFields`. All return `UnaryOperator<T>` (or `UnaryOperator<Map<String, Object>>` for the JSON-specific ones).
 
 ---
 
