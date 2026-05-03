@@ -1,4 +1,4 @@
-package org.kpipe.facade;
+package org.kpipe;
 
 import com.google.protobuf.Message;
 import java.lang.System.Logger;

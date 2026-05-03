@@ -237,3 +237,4 @@ gradle-app.setting
 ### Jenv ###
 .java-version
 /.token-savior-cache.json
+.claude/worktrees/

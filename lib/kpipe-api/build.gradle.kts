@@ -3,7 +3,7 @@ plugins {
   jacoco
 }
 
-description = "KPipe Facade — fluent top-level KPipe API for the common consumer path"
+description = "KPipe API — fluent top-level KPipe entry point for the common consumer path"
 
 java {
   withSourcesJar()

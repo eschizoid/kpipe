@@ -1,4 +1,4 @@
-package org.kpipe.facade;
+package org.kpipe;
 
 import java.util.Objects;
 import org.kpipe.Handle;

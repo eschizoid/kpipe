@@ -1,4 +1,4 @@
-package org.kpipe.facade;
+package org.kpipe;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -43,7 +43,7 @@ class ToConsoleDispatchTest {
   void avroToConsoleSucceedsWithRegisteredSchema() {
     AvroMessageProcessor.clearSchemaRegistry();
     final var schema = SchemaBuilder.record("Test")
-      .namespace("org.kpipe.facade.test")
+      .namespace("org.kpipe.test")
       .fields()
       .requiredString("id")
       .endRecord();

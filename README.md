@@ -26,28 +26,30 @@ It is designed for Kafka consumer services performing transformations, enrichmen
 
 ### 1. Add the dependencies
 
-KPipe 1.9.0 is split into focused modules. Most users want `kpipe-consumer` plus the format module(s) they actually need
-(`kpipe-format-json`, `kpipe-format-avro`, `kpipe-format-protobuf`):
+For the 5-line fluent path (recommended), pull `kpipe-facade` plus the format module(s) you need:
 
 ```kotlin
-// Gradle (Kotlin) — JSON example
-implementation("io.github.eschizoid:kpipe-consumer:1.9.0")
-implementation("io.github.eschizoid:kpipe-format-json:1.9.0")
+// Gradle (Kotlin) — JSON via the fluent facade
+implementation("io.github.eschizoid:kpipe-facade:1.11.0")
+implementation("io.github.eschizoid:kpipe-format-json:1.11.0")
 ```
 
 ```xml
-<!-- Maven — JSON example -->
+<!-- Maven — JSON via the fluent facade -->
 <dependency>
   <groupId>io.github.eschizoid</groupId>
-  <artifactId>kpipe-consumer</artifactId>
-  <version>1.9.0</version>
+  <artifactId>kpipe-facade</artifactId>
+  <version>1.11.0</version>
 </dependency>
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-format-json</artifactId>
-  <version>1.9.0</version>
+  <version>1.11.0</version>
 </dependency>
 ```
+
+`kpipe-facade` transitively pulls `kpipe-consumer` + `kpipe-producer` + `kpipe-core`. Skip the facade if you want the
+explicit registry / builder API (see "Advanced API" further down) — for that case, depend on `kpipe-consumer` directly.
 
 > **Tip:** A `kpipe-bom` is published so you only pin one version across modules. Use it via `dependencyManagement`
 > (Maven) or `enforcedPlatform` (Gradle) and drop versions from individual `kpipe-*` dependencies.

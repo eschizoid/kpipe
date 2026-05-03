@@ -1,4 +1,4 @@
-package org.kpipe.facade;
+package org.kpipe;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;

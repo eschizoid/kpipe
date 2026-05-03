@@ -163,7 +163,7 @@ jreleaser {
               .asFile.absolutePath,
           )
           stagingRepository(
-            project(":lib:kpipe-facade").layout.buildDirectory
+            project(":lib:kpipe-api").layout.buildDirectory
               .dir("staging-deploy")
               .get()
               .asFile.absolutePath,
