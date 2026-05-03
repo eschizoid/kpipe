@@ -190,3 +190,64 @@ repeating past discussions.
   "filtered" and "failed". If both states exist, model them as distinct types (sealed `Result<T>` or distinct
   exceptions). Triage heuristic: when a "processed" counter rises but downstream invocations stay at 0, suspect
   overloaded null semantics first.
+
+### 13. KPipe Fluent Facade (1.11.0) — Layered API Strategy
+
+- **Decision (1.11.0)**: ship a top-level `KPipe` fluent facade in a new `kpipe-api` module that delegates to the
+  existing `MessageProcessorRegistry` / `KPipeConsumer.Builder` / `KPipeRunner.Builder` stack. The facade is purely
+  additive — no public 1.x API was changed.
+- **Reasoning**: The 1.10.0 ergonomics pass smoothed surface friction (no-arg ctors, format helpers, DLQ bundle, etc.)
+  but left the typical "build a JSON consumer" path at ~10 lines of registry + builder + runner. The fluent facade
+  gets the common case to 5 lines without breaking anyone.
+- **Layered API rule**: the codebase now exposes TWO public surfaces:
+    1. **`org.kpipe.KPipe.json/avro/protobuf/bytes/custom(...)`** — fluent, immutable, returns `Stream<T>` →
+       `Sink<T>` → `Handle`. The 80% path. Discoverable via IDE auto-complete after the first `.`.
+    2. **`MessageProcessorRegistry` + `KPipeConsumer.Builder` + `KPipeRunner.Builder`** — explicit, multi-step,
+       supports custom registries, shared pipelines, programmatic runner config. The 20% path.
+- **Module placement (JPMS):** `Stream<T>`, `Sink<T>`, `Handle` interfaces live in `kpipe-api` (package
+  `org.kpipe`). Private impls (`DefaultStream`, `DefaultSink`, `DefaultHandle`) also in `org.kpipe`, package-private.
+  This keeps the user-facing import path clean (`import org.kpipe.KPipe;`) and avoids the `org.kpipe.facade` split-
+  package cost while still letting `kpipe-core` own the registry/sink/format types in `org.kpipe.registry` and
+  `org.kpipe.sink`.
+- **Immutability contract on `Stream<T>`**: every fluent method returns a NEW `DefaultStream` instance carrying the
+  updated configuration. The original is never mutated. Branching from a common root is safe — `s.pipe(a)` and
+  `s.pipe(b)` produce independent streams. Operators are stored as an immutable `List.copyOf(...)`. This matches the
+  Java Stream API's functional style; the alternative (mutate-and-return-this, like `StringBuilder`) is a foot gun
+  for users who reuse the root reference.
+- **`Handle` is `AutoCloseable`** with a default `close()` that performs `shutdownGracefully(Duration.ofSeconds(5))`.
+  Use try-with-resources to guarantee cleanup. `metrics()` returns `Map<String, Long>` (typed), not `Map<String,
+  Object>`.
+- **`toConsole()` dispatch** uses a per-factory `Function<T, MessageSink<T>>` lambda baked into the `DefaultStream`
+  at construction time. No `instanceof MessageFormat` checks. Avro's factory throws `IllegalStateException` if no
+  default schema is registered.
+- **Test contract**: facade has both unit tests (composition + dispatch) and a Testcontainers end-to-end test that
+  spins up a real broker and verifies the entire chain through `start()` / `Handle.metrics()` / `shutdownGracefully()`.
+
+### 14. Audit-Derived Concurrency Patterns
+
+These patterns came out of the deep internal audit during the 1.10.0 / 1.11.0 work and should be preserved across
+the codebase:
+
+- **Atomic remove-if-empty on `ConcurrentHashMap` of mutable collections**: NEVER do
+  `if (set.isEmpty()) map.remove(key)` after a separate `set.remove(value)` — the check-then-act is non-atomic and
+  a concurrent `computeIfAbsent` can repopulate the set between the check and the map removal. Always use
+  `map.computeIfPresent(key, (k, v) -> { v.remove(value); return v.isEmpty() ? null : v; })`. The bucket lock makes
+  the whole sequence atomic.
+- **`ConcurrentSkipListSet.first()` is a check-then-act trap**: pattern `if (!set.isEmpty()) set.first()` can throw
+  `NoSuchElementException` under contention. Wrap in a `safeFirst` helper that returns `null` on
+  `NoSuchElementException`. Apply the same pattern for `last()`.
+- **`(Properties) parent.clone()`, NOT `new Properties(parent)`**: `new Properties(parent)` makes the parent a
+  *fallback for `getProperty()`*, not a copy. `putIfAbsent` operates on the new instance only and silently shadows
+  parent entries. Always `clone()` when you intend to derive a copy.
+- **CAS-to-CAS happens-before doesn't extend to post-CAS field writes**: if `start()` does
+  `state.compareAndSet(...)` then assigns `scheduler = ...`, a concurrent `close()` that does its own
+  `state.compareAndSet(...)` is NOT guaranteed to see `scheduler` (the assignment is after the CAS in program order).
+  Mark such fields `volatile`, or move the assignment into the CAS-protected critical section.
+- **`Kafka.endOffsets(...)` without a `Duration`** uses the consumer's `default.api.timeout.ms` (60s default). On a
+  hot path (every consumer-loop iteration), a slow broker stalls the entire consumer. Always pass a bounded timeout.
+- **`catch (Exception) { return defaultValue; }` is a silent-failure trap**: never swallow without logging at
+  WARNING. If you catch `InterruptException` (Kafka) or `InterruptedException`, **always** call
+  `Thread.currentThread().interrupt()` to restore the flag for downstream code.
+- **Don't expose internal counters through public APIs**: if a method takes an `AtomicLong` parameter for
+  "optionally update this counter on success," it's leaking implementation detail. Return a `boolean` and let the
+  caller update its own counter.

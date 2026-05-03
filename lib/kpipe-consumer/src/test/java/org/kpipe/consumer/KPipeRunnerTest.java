@@ -512,4 +512,34 @@ class KPipeRunnerTest {
     // Act & Assert - Consumer not started
     assertFalse(runner.isHealthy());
   }
+
+  /// Verifies that when the user-supplied graceful shutdown function blocks past the requested
+  /// timeout (simulating in-flight messages that won't drain), `shutdownGracefully` returns
+  /// `false`, and the underlying consumer is still asked to close — i.e. the runner does not
+  /// leak the consumer when a timeout is reached.
+  @Test
+  void shutdownGracefullyReturnsFalseWhenInFlightExceedsTimeout() {
+    // Arrange: a graceful-shutdown function that simulates blocked in-flight by sleeping past
+    // the requested timeout, then returning false (meaning "did not finish in time"). It also
+    // closes the consumer to model the "even on timeout, cleanup is attempted" guarantee.
+    final BiFunction<KPipeConsumer<String>, Long, Boolean> blockingShutdown = (consumer, timeoutMs) -> {
+      try {
+        Thread.sleep(timeoutMs + 50);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+      consumer.close();
+      return false;
+    };
+
+    runner = KPipeRunner.builder(mockConsumer).withGracefulShutdown(blockingShutdown).build();
+    runner.start();
+
+    // Act
+    final var result = runner.shutdownGracefully(100);
+
+    // Assert
+    assertFalse(result, "shutdownGracefully should return false when the in-flight drain exceeds the timeout");
+    verify(mockConsumer).close();
+  }
 }

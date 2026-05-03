@@ -881,4 +881,140 @@ class KafkaOffsetManagerTest {
       manager.close();
     }
   }
+
+  /// Verifies the JLS visibility fix on `private volatile ScheduledExecutorService scheduler` /
+  /// `scheduledCommitTask`: a `close()` racing against a concurrent `start()` must always observe
+  /// the scheduler reference written by `start()` and shut it down — never leak the
+  /// `offset-commit-scheduler` platform thread.
+  @Nested
+  class SchedulerVisibilityTests {
+
+    /// Races `start()` on one virtual thread against `close()` on another for many iterations.
+    /// After every iteration finishes, asserts that no orphan `offset-commit-scheduler` thread
+    /// remains alive in the JVM. Without `volatile` on the scheduler field, `close()` could read
+    /// a stale `null` and skip `scheduler.shutdown()`, leaving the daemon thread parked forever.
+    ///
+    /// To exercise the JLS visibility guarantee specifically (without conflating it with the
+    /// independent state-machine ordering question of "what if close() CASes before start()
+    /// publishes the scheduler reference"), each iteration awaits `start()` returning before
+    /// firing `close()` from another thread. The volatile contract is what makes that
+    /// cross-thread read of `scheduler` safe.
+    @Test
+    void concurrentStartAndCloseDoesNotLeakScheduler() throws Exception {
+      final var iterations = 20;
+      final var errors = new CopyOnWriteArrayList<Throwable>();
+
+      // Baseline: the @BeforeEach manager has its own "offset-commit-scheduler" thread alive.
+      // We assert iterations don't increase the count, not that the count is zero.
+      final var baselineAliveSchedulers = countAliveSchedulerThreads();
+
+      for (int i = 0; i < iterations; i++) {
+        final var manager = KafkaOffsetManager.builder(mockConsumer)
+          .withCommandQueue(new LinkedBlockingQueue<>())
+          .withCommitInterval(Duration.ofMillis(50))
+          .build();
+
+        // start() runs to completion on a virtual thread; close() then races on another.
+        // The cross-thread handoff is the moment the volatile semantics matter.
+        final var startedLatch = new CountDownLatch(1);
+        final var doneLatch = new CountDownLatch(1);
+
+        Thread.ofVirtual().start(() -> {
+          try {
+            manager.start();
+          } catch (final Throwable e) {
+            errors.add(e);
+          } finally {
+            startedLatch.countDown();
+          }
+        });
+
+        assertTrue(startedLatch.await(5, TimeUnit.SECONDS), "start() should complete in iteration " + i);
+
+        Thread.ofVirtual().start(() -> {
+          try {
+            manager.close();
+          } catch (final Throwable e) {
+            errors.add(e);
+          } finally {
+            doneLatch.countDown();
+          }
+        });
+
+        assertTrue(doneLatch.await(10, TimeUnit.SECONDS), "close() should complete in iteration " + i);
+      }
+
+      assertTrue(errors.isEmpty(), "no exception should escape start/close handoff: " + errors);
+
+      // Load-bearing assertion: scan the live JVM thread set for any thread whose name matches
+      // the scheduler factory's name. The count must return to baseline — every scheduler
+      // created by `start()` was observed and shut down by `close()`. If the count exceeds
+      // baseline, close() failed to observe the volatile scheduler reference.
+      assertEventually(
+        () -> countAliveSchedulerThreads() <= baselineAliveSchedulers,
+        Duration.ofSeconds(10),
+        "scheduler thread count must return to baseline (=" +
+        baselineAliveSchedulers +
+        ") — no orphan offset-commit-scheduler threads after start/close races"
+      );
+    }
+
+    private static long countAliveSchedulerThreads() {
+      return Thread.getAllStackTraces()
+        .keySet()
+        .stream()
+        .filter(t -> "offset-commit-scheduler".equals(t.getName()) && t.isAlive())
+        .count();
+    }
+  }
+
+  /// Verifies that `commitSyncAndWait` honors its timeout and cleans up its
+  /// `commitFutures` entry when `notifyCommitComplete` never arrives.
+  @Nested
+  class CommitTimeoutTests {
+
+    /// When a commit command is enqueued but no `notifyCommitComplete` callback ever fires,
+    /// `commitSyncAndWait` must:
+    /// 1. Return `false` once the timeout elapses (not block forever).
+    /// 2. Remove its `CompletableFuture` from `commitFutures`, so `getStatistics()` reports
+    ///    `pendingCommits == 0` afterwards.
+    @Test
+    void commitSyncAndWaitReturnsFalseWhenNotifyDoesNotArrive() throws Exception {
+      // Arrange: track and mark a single offset so commitSyncAndWait actually enqueues a command.
+      final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
+
+      // Act: invoke commitSyncAndWait on a worker thread with a 1-second timeout.
+      final var startNanos = System.nanoTime();
+      final var commitFuture = CompletableFuture.supplyAsync(() -> {
+        try {
+          return offsetManager.commitSyncAndWait(1);
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+          return null;
+        }
+      });
+
+      // Confirm the command was enqueued — but intentionally do NOT call notifyCommitComplete.
+      final var command = pollCommitCommand(Duration.ofSeconds(2));
+      assertNotNull(command, "commitSyncAndWait should have enqueued a CommitOffsets command");
+
+      // Assert: commitSyncAndWait returns false within ~1.5s of the 1s timeout firing.
+      final var result = commitFuture.get(2500, TimeUnit.MILLISECONDS);
+      final var elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000L;
+      assertEquals(Boolean.FALSE, result, "commitSyncAndWait should return false on timeout");
+      assertTrue(
+        elapsedMillis >= 900 && elapsedMillis <= 2500,
+        "commitSyncAndWait should fire near its 1s timeout, elapsed=" + elapsedMillis + "ms"
+      );
+
+      // Assert: future was cleaned up via the finally block in performCommit().
+      assertEquals(
+        0,
+        ((Number) offsetManager.getStatistics().get("pendingCommits")).intValue(),
+        "pendingCommits should be 0 after timeout cleanup"
+      );
+    }
+  }
 }

@@ -2,13 +2,20 @@ package org.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InterruptException;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -125,5 +132,74 @@ class BackpressureControllerTest {
   @Test
   void inFlightStrategyShouldRejectNullSupplier() {
     assertThrows(IllegalArgumentException.class, () -> BackpressureController.inFlightStrategy(null));
+  }
+
+  /// Coverage for the audit-driven hardening of `calculateTotalLag(...)`:
+  ///
+  /// 1. `endOffsets` is invoked with the bounded 2-second timeout overload.
+  /// 2. `InterruptException` returns 0L AND restores the interrupt flag.
+  /// 3. Generic `RuntimeException` from `endOffsets` is swallowed (returns 0L).
+  /// 4. Generic `RuntimeException` from `position()` is swallowed (returns 0L).
+  @Nested
+  class LagFixCoverage {
+
+    @Test
+    void endOffsetsIsCalledWithTwoSecondTimeout() {
+      final var consumer = Mockito.mock(Consumer.class);
+      final var tp = new TopicPartition("test", 0);
+      final var assignment = Set.of(tp);
+
+      when(consumer.assignment()).thenReturn(assignment);
+      when(consumer.endOffsets(assignment, Duration.ofSeconds(2))).thenReturn(Map.of(tp, 100L));
+      when(consumer.position(tp)).thenReturn(80L);
+
+      assertEquals(20L, BackpressureController.calculateTotalLag(consumer));
+      verify(consumer).endOffsets(any(), eq(Duration.ofSeconds(2)));
+    }
+
+    @Test
+    void interruptExceptionFromEndOffsetsReturnsZeroAndRestoresInterruptFlag() {
+      final var consumer = Mockito.mock(Consumer.class);
+      final var tp = new TopicPartition("test", 0);
+      final var assignment = Set.of(tp);
+
+      when(consumer.assignment()).thenReturn(assignment);
+      when(consumer.endOffsets(assignment, Duration.ofSeconds(2))).thenThrow(new InterruptException("interrupted"));
+
+      try {
+        assertEquals(0L, BackpressureController.calculateTotalLag(consumer));
+        // Thread.interrupted() both returns and clears the interrupt flag — assert it was set.
+        assertTrue(Thread.interrupted(), "Expected interrupt flag to be restored after InterruptException");
+      } finally {
+        // Defensive: ensure no stray interrupt leaks to other tests if the assertion above failed.
+        Thread.interrupted();
+      }
+    }
+
+    @Test
+    void runtimeExceptionFromEndOffsetsReturnsZero() {
+      final var consumer = Mockito.mock(Consumer.class);
+      final var tp = new TopicPartition("test", 0);
+      final var assignment = Set.of(tp);
+
+      when(consumer.assignment()).thenReturn(assignment);
+      when(consumer.endOffsets(assignment, Duration.ofSeconds(2))).thenThrow(new RuntimeException("broker down"));
+
+      assertEquals(0L, BackpressureController.calculateTotalLag(consumer));
+      assertEquals(false, Thread.interrupted(), "Generic RuntimeException must NOT set interrupt flag");
+    }
+
+    @Test
+    void runtimeExceptionFromPositionReturnsZero() {
+      final var consumer = Mockito.mock(Consumer.class);
+      final var tp = new TopicPartition("test", 0);
+      final var assignment = Set.of(tp);
+
+      when(consumer.assignment()).thenReturn(assignment);
+      when(consumer.endOffsets(assignment, Duration.ofSeconds(2))).thenReturn(Map.of(tp, 100L));
+      when(consumer.position(tp)).thenThrow(new RuntimeException("position unavailable"));
+
+      assertEquals(0L, BackpressureController.calculateTotalLag(consumer));
+    }
   }
 }
