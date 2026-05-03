@@ -8,6 +8,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.RegistryKey;
 
 /// Protobuf implementation of MessageFormat for KPipe.
 ///
@@ -27,7 +29,18 @@ public final class ProtobufFormat implements MessageFormat<Message> {
 
   /// Shared singleton instance — use this rather than constructing a new ProtobufFormat
   /// unless you need an isolated descriptor scope.
+  ///
+  /// **Footgun warning:** this `INSTANCE` is a JVM-global mutable singleton, and
+  /// [#addDescriptor(String, com.google.protobuf.Descriptors.Descriptor)] additionally registers
+  /// the descriptor into the process-wide [ProtobufMessageProcessor] cache. Two pipelines that
+  /// register different descriptors under the same key on `INSTANCE` (or on the shared processor
+  /// cache) will collide and the last writer wins. For libraries, tests, or any code that needs
+  /// an isolated descriptor scope, construct a dedicated instance with `new ProtobufFormat()`
+  /// and use distinct descriptor keys.
   public static final ProtobufFormat INSTANCE = new ProtobufFormat();
+
+  /// Registry key for the pre-built Protobuf logging sink registered by [#newRegistry()].
+  public static final RegistryKey<Message> PROTOBUF_LOGGING = ProtobufRegistryKey.of("protobufLogging");
 
   private final Map<String, SchemaInfo> schemas = new ConcurrentHashMap<>();
   private final Map<String, Descriptors.Descriptor> descriptors = new ConcurrentHashMap<>();
@@ -36,6 +49,27 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// Constructs a new ProtobufFormat instance.
   public ProtobufFormat() {
     // Default constructor
+  }
+
+  /// Creates a new [MessageProcessorRegistry] pre-wired with [ProtobufFormat#INSTANCE] and a
+  /// [ProtobufConsoleSink] registered under [#PROTOBUF_LOGGING].
+  ///
+  /// Convenience for the common case of "give me a Protobuf registry with a logging sink"; users
+  /// who need an isolated descriptor scope or a custom source app name should build the registry
+  /// directly via `new MessageProcessorRegistry(sourceAppName, new ProtobufFormat())`.
+  ///
+  /// @return a new pre-configured registry
+  public static MessageProcessorRegistry newRegistry() {
+    final var registry = new MessageProcessorRegistry("kpipe-format-protobuf", INSTANCE);
+    registry.sinkRegistry().register(PROTOBUF_LOGGING, new ProtobufConsoleSink<>());
+    return registry;
+  }
+
+  /// Creates a new [ProtobufConsoleSink] for [Message] payloads.
+  ///
+  /// @return a new console sink
+  public static ProtobufConsoleSink<Message> consoleSink() {
+    return new ProtobufConsoleSink<>();
   }
 
   /// Registers a Protobuf descriptor with this format.

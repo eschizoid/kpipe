@@ -7,9 +7,7 @@ plugins {
 
 description = "KPipe - Lightweight Kafka processing library for modern Java"
 
-// Shared publishing + signing config for every kpipe-* lib subproject.
-// Each module sets its own `description` (used in the POM) and applies the right plugin
-// (`java-library` for normal modules, `java-platform` for `kpipe-bom`); everything else lives here.
+
 subprojects {
   apply(plugin = "maven-publish")
   apply(plugin = "signing")

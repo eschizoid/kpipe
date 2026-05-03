@@ -19,10 +19,6 @@ repositories {
 }
 
 dependencies {
-  // No production dependencies — kpipe-metrics is a pure interface module so users
-  // can plug in any telemetry backend (or none). Add `kpipe-metrics-otel` for the
-  // OpenTelemetry-backed implementation.
-
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
   testRuntimeOnly(libs.junitPlatformLauncher)

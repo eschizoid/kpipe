@@ -19,9 +19,6 @@ repositories {
 }
 
 dependencies {
-  // Core has no kpipe deps and no third-party runtime deps.
-  // Pure pipeline machinery: registries, MessageFormat / MessagePipeline / MessageSink interfaces.
-
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
   testRuntimeOnly(libs.junitPlatformLauncher)

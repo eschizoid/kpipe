@@ -24,9 +24,6 @@ dependencies {
 
   implementation(libs.kafkaClients)
 
-  // Format-specific dependencies (DSL-JSON, Avro, Protobuf) live in their dedicated modules:
-  // kpipe-format-json, kpipe-format-avro, kpipe-format-protobuf.
-
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
   testRuntimeOnly(libs.junitPlatformLauncher)
