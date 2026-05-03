@@ -42,7 +42,7 @@ public interface Stream<T> {
   ///     message (see [org.kpipe.registry.MessagePipeline] error semantics).
   /// @return a new stream with `op` appended
   /// @throws NullPointerException if `op` is null
-  Stream<T> pipe(UnaryOperator<T> op);
+  Stream<T> pipe(final UnaryOperator<T> op);
 
   /// Returns a new stream with a filter operator appended. Messages for which `keep.test(msg)`
   /// returns false are dropped (the operator returns null, short-circuiting downstream).
@@ -51,7 +51,7 @@ public interface Stream<T> {
   /// @param keep predicate; messages for which it returns true are passed downstream
   /// @return a new stream with the filter appended
   /// @throws NullPointerException if `keep` is null
-  Stream<T> filter(Predicate<T> keep);
+  Stream<T> filter(final Predicate<T> keep);
 
   /// Returns a new stream that runs `sideEffect` on each message and passes it through
   /// unchanged. Useful for logging, metrics, or other observation. Equivalent to
@@ -60,7 +60,7 @@ public interface Stream<T> {
   /// @param sideEffect the side-effect to run on each message
   /// @return a new stream with the peek appended
   /// @throws NullPointerException if `sideEffect` is null
-  Stream<T> peek(Consumer<T> sideEffect);
+  Stream<T> peek(final Consumer<T> sideEffect);
 
   /// Returns a new stream with a conditional-branch operator appended. Each message is sent
   /// through `ifTrue` when `cond.test(msg)` is true, otherwise through `ifFalse`.
@@ -70,7 +70,7 @@ public interface Stream<T> {
   /// @param ifFalse operator applied when `cond.test(msg)` is false
   /// @return a new stream with the branch appended
   /// @throws NullPointerException if any argument is null
-  Stream<T> when(Predicate<T> cond, UnaryOperator<T> ifTrue, UnaryOperator<T> ifFalse);
+  Stream<T> when(final Predicate<T> cond, final UnaryOperator<T> ifTrue, final UnaryOperator<T> ifFalse);
 
   /// Returns a new stream with retry behavior configured. After a processing exception, the
   /// pipeline retries up to `maxRetries` times, waiting `backoff` between attempts. When
@@ -81,7 +81,7 @@ public interface Stream<T> {
   /// @return a new stream with the retry policy configured
   /// @throws IllegalArgumentException if `maxRetries` is negative
   /// @throws NullPointerException if `backoff` is null
-  Stream<T> withRetry(int maxRetries, Duration backoff);
+  Stream<T> withRetry(final int maxRetries, final Duration backoff);
 
   /// Returns a new stream with backpressure enabled using default watermarks (pause at 10,000
   /// in-flight messages, resume at 7,000). The strategy is in-flight in parallel mode and
@@ -101,7 +101,7 @@ public interface Stream<T> {
   /// @param low resume threshold (must be ≥ 0 and strictly less than `high`)
   /// @return a new stream with the backpressure thresholds configured
   /// @throws IllegalArgumentException if the watermarks are invalid
-  Stream<T> withBackpressure(long high, long low);
+  Stream<T> withBackpressure(final long high, final long low);
 
   /// Returns a new stream with the processing mode set. Sequential mode processes one message
   /// per partition at a time and uses lag-based backpressure; parallel mode (the default) uses
@@ -109,7 +109,7 @@ public interface Stream<T> {
   ///
   /// @param sequential true for sequential per-partition processing; false for parallel
   /// @return a new stream with the processing mode configured
-  Stream<T> withSequentialProcessing(boolean sequential);
+  Stream<T> withSequentialProcessing(final boolean sequential);
 
   /// Terminates the stream with a format-appropriate console sink and returns a [Sink] ready
   /// to start. For Avro streams this requires that a default schema has been registered; see
@@ -125,7 +125,7 @@ public interface Stream<T> {
   /// @param sink the terminal sink (must not be null)
   /// @return a [Sink] ready to start
   /// @throws NullPointerException if `sink` is null
-  Sink<T> toCustom(MessageSink<T> sink);
+  Sink<T> toCustom(final MessageSink<T> sink);
 
   /// Terminates the stream by fanning out to multiple sinks. Each delivered message is
   /// dispatched to every sink; an exception in one sink does not prevent the others from
@@ -136,5 +136,5 @@ public interface Stream<T> {
   /// @throws IllegalArgumentException if `sinks` is empty
   /// @throws NullPointerException if `sinks` is null
   @SuppressWarnings("unchecked")
-  Sink<T> toMulti(MessageSink<T>... sinks);
+  Sink<T> toMulti(final MessageSink<T>... sinks);
 }

@@ -329,34 +329,39 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     final var state = new HashMap<String, Object>();
     final var pending = pendingOffsets.get(partition);
     final var highestProcessed = highestProcessedOffsets.get(partition);
+    final var lowestPending = pending != null ? safeFirst(pending) : null;
 
-    // Determine nextOffsetToCommit
-    if (pending != null && !pending.isEmpty()) {
-      state.put("nextOffsetToCommit", pending.first());
+    if (lowestPending != null) {
+      state.put("nextOffsetToCommit", lowestPending);
     } else if (highestProcessed != null) {
       state.put("nextOffsetToCommit", highestProcessed + 1);
     } else {
       state.put("nextOffsetToCommit", -1L);
     }
 
-    // Highest processed offset
     state.put("highestProcessedOffset", highestProcessed != null ? highestProcessed : -1L);
-
-    // Manager state
     state.put("managerState", this.state.get().name());
 
-    // Pending offsets info
     if (pending != null) {
       state.put("pendingCount", pending.size());
-      if (!pending.isEmpty()) {
-        state.put("lowestPendingOffset", pending.first());
-        state.put("highestPendingOffset", pending.last());
+      if (lowestPending != null) {
+        state.put("lowestPendingOffset", lowestPending);
+        final var highestPending = safeLast(pending);
+        if (highestPending != null) state.put("highestPendingOffset", highestPending);
       }
     } else {
       state.put("pendingCount", 0);
     }
 
     return state;
+  }
+
+  private static Long safeLast(final SortedSet<Long> set) {
+    try {
+      return set.isEmpty() ? null : set.last();
+    } catch (final NoSuchElementException e) {
+      return null;
+    }
   }
 
   /// Returns overall statistics about all partitions being managed.

@@ -314,4 +314,59 @@ class KPipeProducerTest {
     assertEquals(threadCount, successCount.get());
     verify(mockProducer, times(threadCount)).send(any(ProducerRecord.class));
   }
+
+  @Test
+  void buildProducerPropertiesPreservesUserSuppliedSerializers() {
+    final var userProps = new Properties();
+    userProps.setProperty("bootstrap.servers", "broker:9092");
+    userProps.setProperty("key.serializer", "com.example.CustomKeySerializer");
+    userProps.setProperty("value.serializer", "com.example.CustomValueSerializer");
+
+    final var built = KPipeProducer.Builder.buildProducerProperties(userProps);
+
+    assertEquals(
+      "com.example.CustomKeySerializer",
+      built.getProperty("key.serializer"),
+      "user-set key.serializer must not be shadowed by the ByteArraySerializer default"
+    );
+    assertEquals(
+      "com.example.CustomValueSerializer",
+      built.getProperty("value.serializer"),
+      "user-set value.serializer must not be shadowed by the ByteArraySerializer default"
+    );
+    assertEquals("broker:9092", built.getProperty("bootstrap.servers"));
+  }
+
+  @Test
+  void buildProducerPropertiesAddsDefaultsWhenNoneSet() {
+    final var userProps = new Properties();
+    userProps.setProperty("bootstrap.servers", "broker:9092");
+
+    final var built = KPipeProducer.Builder.buildProducerProperties(userProps);
+
+    assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", built.getProperty("key.serializer"));
+    assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", built.getProperty("value.serializer"));
+  }
+
+  @Test
+  void buildProducerPropertiesAppendsProducerSuffixToClientId() {
+    final var userProps = new Properties();
+    userProps.setProperty("client.id", "my-app");
+
+    final var built = KPipeProducer.Builder.buildProducerProperties(userProps);
+
+    assertEquals("my-app-producer", built.getProperty("client.id"));
+  }
+
+  @Test
+  void buildProducerPropertiesDoesNotMutateSource() {
+    final var userProps = new Properties();
+    userProps.setProperty("bootstrap.servers", "broker:9092");
+    userProps.setProperty("client.id", "my-app");
+
+    KPipeProducer.Builder.buildProducerProperties(userProps);
+
+    assertEquals("my-app", userProps.getProperty("client.id"), "source Properties must not be mutated");
+    assertNull(userProps.getProperty("key.serializer"), "source Properties must not be mutated");
+  }
 }

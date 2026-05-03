@@ -200,8 +200,6 @@ final class DefaultStream<T> implements Stream<T> {
     return new DefaultSink<>(this, new CompositeMessageSink<>(List.of(sinks)));
   }
 
-  // -- package-private accessors used by DefaultSink --
-
   String topic() {
     return topic;
   }

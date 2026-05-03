@@ -27,13 +27,13 @@ public interface Handle extends AutoCloseable {
   ///
   /// @param timeout maximum wait
   /// @return true if shutdown completed within the timeout
-  boolean awaitShutdown(Duration timeout);
+  boolean awaitShutdown(final Duration timeout);
 
   /// Initiates a graceful shutdown, waiting up to `timeout` for in-flight messages.
   ///
   /// @param timeout maximum wait for in-flight drain
   /// @return true if shutdown completed cleanly
-  boolean shutdownGracefully(Duration timeout);
+  boolean shutdownGracefully(final Duration timeout);
 
   /// Default close — graceful shutdown with a 5-second timeout.
   @Override

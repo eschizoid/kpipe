@@ -100,7 +100,8 @@ public class MessageProcessorRegistry {
 
   /// Creates a new registry with the byte-passthrough format and an empty source app name.
   ///
-  /// This is the preferred form when `sourceAppName` is not needed. Use [#withSourceAppName(String)]
+  /// This is the preferred form when `sourceAppName` is not needed. Use
+  // [#withSourceAppName(String)]
   /// to set the app name later if required.
   public MessageProcessorRegistry() {
     this("", MessageFormat.bytes());
@@ -108,7 +109,8 @@ public class MessageProcessorRegistry {
 
   /// Creates a new registry with the specified message format and an empty source app name.
   ///
-  /// This is the preferred form when `sourceAppName` is not needed. Use [#withSourceAppName(String)]
+  /// This is the preferred form when `sourceAppName` is not needed. Use
+  // [#withSourceAppName(String)]
   /// to set the app name later if required.
   ///
   /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `AvroFormat.INSTANCE`,
@@ -129,7 +131,8 @@ public class MessageProcessorRegistry {
 
   /// Creates a new registry with the specified message format.
   ///
-  /// Kept for backwards compatibility. Prefer the format-only [#MessageProcessorRegistry(MessageFormat)]
+  /// Kept for backwards compatibility. Prefer the format-only
+  // [#MessageProcessorRegistry(MessageFormat)]
   /// constructor (combined with [#withSourceAppName(String)] when needed) when `sourceAppName` is
   /// not required.
   ///
@@ -159,6 +162,16 @@ public class MessageProcessorRegistry {
   public MessageProcessorRegistry withSourceAppName(final String name) {
     this.sourceAppName = Objects.requireNonNull(name, "Source app name cannot be null");
     return this;
+  }
+
+  /// Returns the [MessageFormat] this registry was constructed with. Useful for callers that
+  /// want to inspect or reuse the format (e.g. to build a sibling pipeline). Defaults to
+  /// [MessageFormat#bytes()] when the registry was constructed with a no-arg or
+  /// `sourceAppName`-only constructor.
+  ///
+  /// @return the configured message format (never null)
+  public MessageFormat<?> messageFormat() {
+    return messageFormat;
   }
 
   /// Unregisters a processor by key. Sinks are managed via [#sinkRegistry()].

@@ -1,6 +1,7 @@
 package org.kpipe.registry;
 
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
@@ -72,7 +73,7 @@ public final class Operators {
   /// @param sideEffect the action to run on each value
   /// @param <T> the operator's value type
   /// @return an operator that runs `sideEffect.accept(input)` and returns input unchanged
-  public static <T> UnaryOperator<T> tap(final java.util.function.Consumer<T> sideEffect) {
+  public static <T> UnaryOperator<T> tap(final Consumer<T> sideEffect) {
     return value -> {
       sideEffect.accept(value);
       return value;
@@ -101,7 +102,7 @@ public final class Operators {
   /// @param sideEffect the action to run on each value
   /// @param <T> the operator's value type
   /// @return an operator that runs `sideEffect.accept(input)` and returns input unchanged
-  public static <T> UnaryOperator<T> peek(final java.util.function.Consumer<T> sideEffect) {
+  public static <T> UnaryOperator<T> peek(final Consumer<T> sideEffect) {
     return tap(sideEffect);
   }
 
