@@ -17,7 +17,7 @@ import java.util.function.*;
 ///
 /// Example usage:
 /// ```java
-/// final var registry = new MessageProcessorRegistry("my-app", JsonFormat.INSTANCE);
+/// final var registry = new MessageProcessorRegistry();
 /// var pipeline =
 ///   registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json("addTimestamp")).build();
 ///
@@ -30,7 +30,7 @@ public class MessageProcessorRegistry {
   private static final System.Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
 
   private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> registryMap = new ConcurrentHashMap<>();
-  private final String sourceAppName;
+  private volatile String sourceAppName;
   private final MessageFormat<?> messageFormat;
 
   private final MessageSinkRegistry sinkRegistry = new MessageSinkRegistry();
@@ -50,7 +50,7 @@ public class MessageProcessorRegistry {
   ///
   /// Example usage:
   /// ```java
-  /// final var registry = new MessageProcessorRegistry("my-app");
+  /// final var registry = new MessageProcessorRegistry();
   /// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
   ///     .add(RegistryKey.json("addTimestamp"))
   ///     .build();
@@ -98,11 +98,29 @@ public class MessageProcessorRegistry {
     };
   }
 
+  /// Creates a new registry with the byte-passthrough format and an empty source app name.
+  ///
+  /// This is the preferred form when `sourceAppName` is not needed. Use [#withSourceAppName(String)]
+  /// to set the app name later if required.
+  public MessageProcessorRegistry() {
+    this("", MessageFormat.bytes());
+  }
+
+  /// Creates a new registry with the specified message format and an empty source app name.
+  ///
+  /// This is the preferred form when `sourceAppName` is not needed. Use [#withSourceAppName(String)]
+  /// to set the app name later if required.
+  ///
+  /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `AvroFormat.INSTANCE`,
+  ///                      `ProtobufFormat.INSTANCE`, `MessageFormat.bytes()`, or a custom impl)
+  public MessageProcessorRegistry(final MessageFormat<?> messageFormat) {
+    this("", messageFormat);
+  }
+
   /// Creates a new registry with the byte-passthrough format as the default.
   ///
-  /// Most users should pass an explicit format via the two-arg constructor — this convenience
-  /// constructor is intended for tests, byte-level routing, and custom format scenarios where the
-  /// passthrough is sufficient.
+  /// Kept for backwards compatibility. Prefer the no-arg [#MessageProcessorRegistry()] constructor
+  /// (combined with [#withSourceAppName(String)] when needed) when `sourceAppName` is not required.
   ///
   /// @param sourceAppName Application name to use as source identifier
   public MessageProcessorRegistry(final String sourceAppName) {
@@ -110,6 +128,10 @@ public class MessageProcessorRegistry {
   }
 
   /// Creates a new registry with the specified message format.
+  ///
+  /// Kept for backwards compatibility. Prefer the format-only [#MessageProcessorRegistry(MessageFormat)]
+  /// constructor (combined with [#withSourceAppName(String)] when needed) when `sourceAppName` is
+  /// not required.
   ///
   /// @param sourceAppName Application name to use as source identifier
   /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `AvroFormat.INSTANCE`,
@@ -127,6 +149,16 @@ public class MessageProcessorRegistry {
   /// @return the source app name
   public String sourceAppName() {
     return sourceAppName;
+  }
+
+  /// Sets the source application name fluently. Useful when constructing the registry via the
+  /// no-arg or format-only constructors and the app name needs to be supplied later.
+  ///
+  /// @param name the source application name (must not be null)
+  /// @return this registry instance for chaining
+  public MessageProcessorRegistry withSourceAppName(final String name) {
+    this.sourceAppName = Objects.requireNonNull(name, "Source app name cannot be null");
+    return this;
   }
 
   /// Unregisters a processor by key. Sinks are managed via [#sinkRegistry()].
