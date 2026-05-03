@@ -56,8 +56,9 @@ class StreamCompositionTest {
 
   @Test
   void filterDropsMessagesByReturningNull() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
-      .filter(m -> "active".equals(m.get("status")));
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props()).filter(m ->
+      "active".equals(m.get("status"))
+    );
 
     final Map<String, Object> active = new HashMap<>();
     active.put("status", "active");
@@ -71,8 +72,9 @@ class StreamCompositionTest {
   @Test
   void peekRunsSideEffectAndPassesThrough() {
     final var calls = new AtomicInteger();
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
-      .peek(_ -> calls.incrementAndGet());
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props()).peek(_ ->
+      calls.incrementAndGet()
+    );
 
     final Map<String, Object> input = new HashMap<>();
     final var result = apply(stream, input);
@@ -90,8 +92,11 @@ class StreamCompositionTest {
       m.put("path", "false");
       return m;
     };
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
-      .when(m -> Boolean.TRUE.equals(m.get("flag")), markTrue, markFalse);
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props()).when(
+      m -> Boolean.TRUE.equals(m.get("flag")),
+      markTrue,
+      markFalse
+    );
 
     final Map<String, Object> a = new HashMap<>();
     a.put("flag", true);
