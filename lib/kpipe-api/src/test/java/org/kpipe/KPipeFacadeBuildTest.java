@@ -58,10 +58,10 @@ class KPipeFacadeBuildTest {
   }
 
   @Test
-  void chainingPreservesStreamInstanceAndAccumulatesOperators() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
+  void chainingProducesNewStreamPerStepAndAccumulatesOperators() {
+    final var root = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
 
-    final var chained = stream
+    final var chained = (DefaultStream<Map<String, Object>>) root
       .pipe(m -> {
         m.put("ts", 1L);
         return m;
@@ -70,16 +70,15 @@ class KPipeFacadeBuildTest {
       .peek(_ -> {})
       .when(_ -> true, m -> m, m -> m);
 
-    assertSame(stream, chained, "fluent chain should return the same DefaultStream instance");
-    assertEquals(4, stream.operators().size());
+    assertNotSame(root, chained, "immutable fluent chain should return a new instance per step");
+    assertEquals(0, root.operators().size(), "root stream remains untouched");
+    assertEquals(4, chained.operators().size());
   }
 
   @Test
   void operatorsAreInvokedInAdditionOrder() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
     final var trace = new java.util.ArrayList<Integer>();
-
-    stream
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
       .pipe(m -> {
         trace.add(1);
         return m;
@@ -103,9 +102,10 @@ class KPipeFacadeBuildTest {
 
   @Test
   void withRetryAndBackpressureAndSequentialAreCaptured() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
-
-    stream.withRetry(5, java.time.Duration.ofMillis(100)).withBackpressure(2_000, 1_000).withSequentialProcessing(true);
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
+      .withRetry(5, java.time.Duration.ofMillis(100))
+      .withBackpressure(2_000, 1_000)
+      .withSequentialProcessing(true);
 
     assertEquals(5, stream.maxRetries());
     assertEquals(java.time.Duration.ofMillis(100), stream.retryBackoff());
@@ -116,8 +116,7 @@ class KPipeFacadeBuildTest {
 
   @Test
   void defaultBackpressureUsesStandardWatermarks() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
-    stream.withBackpressure();
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props()).withBackpressure();
     assertEquals(10_000L, stream.backpressureHigh());
     assertEquals(7_000L, stream.backpressureLow());
   }

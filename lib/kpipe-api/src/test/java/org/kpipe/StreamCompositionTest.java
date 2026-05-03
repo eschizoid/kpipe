@@ -39,15 +39,15 @@ class StreamCompositionTest {
 
   @Test
   void pipeAppendsTransformations() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
-    stream.pipe(m -> {
-      m.put("a", 1);
-      return m;
-    });
-    stream.pipe(m -> {
-      m.put("b", 2);
-      return m;
-    });
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
+      .pipe(m -> {
+        m.put("a", 1);
+        return m;
+      })
+      .pipe(m -> {
+        m.put("b", 2);
+        return m;
+      });
 
     final var result = apply(stream, new HashMap<>());
     assertEquals(1, result.get("a"));
@@ -56,8 +56,8 @@ class StreamCompositionTest {
 
   @Test
   void filterDropsMessagesByReturningNull() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
-    stream.filter(m -> "active".equals(m.get("status")));
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
+      .filter(m -> "active".equals(m.get("status")));
 
     final Map<String, Object> active = new HashMap<>();
     active.put("status", "active");
@@ -70,9 +70,9 @@ class StreamCompositionTest {
 
   @Test
   void peekRunsSideEffectAndPassesThrough() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
     final var calls = new AtomicInteger();
-    stream.peek(_ -> calls.incrementAndGet());
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
+      .peek(_ -> calls.incrementAndGet());
 
     final Map<String, Object> input = new HashMap<>();
     final var result = apply(stream, input);
@@ -82,7 +82,6 @@ class StreamCompositionTest {
 
   @Test
   void whenSelectsBranchByPredicate() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
     final UnaryOperator<Map<String, Object>> markTrue = m -> {
       m.put("path", "true");
       return m;
@@ -91,7 +90,8 @@ class StreamCompositionTest {
       m.put("path", "false");
       return m;
     };
-    stream.when(m -> Boolean.TRUE.equals(m.get("flag")), markTrue, markFalse);
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
+      .when(m -> Boolean.TRUE.equals(m.get("flag")), markTrue, markFalse);
 
     final Map<String, Object> a = new HashMap<>();
     a.put("flag", true);
@@ -104,8 +104,7 @@ class StreamCompositionTest {
 
   @Test
   void mixedCompositionPreservesOrder() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
-    stream
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
       .pipe(m -> {
         m.put("step1", true);
         return m;
@@ -125,10 +124,8 @@ class StreamCompositionTest {
 
   @Test
   void filterShortCircuitsRemainingOperators() {
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
     final var afterFilterCalls = new AtomicInteger();
-
-    stream
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
       .filter(_ -> false)
       .pipe(m -> {
         afterFilterCalls.incrementAndGet();
@@ -137,5 +134,22 @@ class StreamCompositionTest {
 
     assertNull(apply(stream, new HashMap<>()));
     assertEquals(0, afterFilterCalls.get());
+  }
+
+  @Test
+  void branchingFromCommonRootProducesIndependentStreams() {
+    final var root = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props());
+    final var left = (DefaultStream<Map<String, Object>>) root.pipe(m -> {
+      m.put("branch", "left");
+      return m;
+    });
+    final var right = (DefaultStream<Map<String, Object>>) root.pipe(m -> {
+      m.put("branch", "right");
+      return m;
+    });
+
+    assertEquals("left", apply(left, new HashMap<>()).get("branch"));
+    assertEquals("right", apply(right, new HashMap<>()).get("branch"));
+    assertEquals(0, root.operators().size(), "root should remain unchanged");
   }
 }

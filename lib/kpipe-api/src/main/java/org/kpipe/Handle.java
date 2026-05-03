@@ -16,10 +16,12 @@ public interface Handle extends AutoCloseable {
   /// @return true when the consumer is running and the configured health check passes
   boolean isHealthy();
 
-  /// Returns an unmodifiable snapshot of the consumer's metrics.
+  /// Returns an unmodifiable snapshot of the consumer's metrics. All values are counters or
+  /// gauges represented as `Long`. Returns an empty map when metrics are disabled on the
+  /// underlying consumer.
   ///
   /// @return metric name -> value snapshot
-  Map<String, Object> metrics();
+  Map<String, Long> metrics();
 
   /// Waits up to `timeout` for the consumer to shut down.
   ///

@@ -14,12 +14,13 @@ import org.kpipe.registry.Operators;
 import org.kpipe.sink.CompositeMessageSink;
 import org.kpipe.sink.MessageSink;
 
-/// Package-private implementation of [Stream] that accumulates configuration and, on
-/// `start()`, builds the underlying `MessageProcessorRegistry`, `KPipeConsumer`, and
-/// `KPipeRunner` chain.
+/// Package-private immutable implementation of [Stream]. Each fluent method returns a NEW
+/// `DefaultStream` carrying the updated configuration; the original instance is never mutated.
+/// This makes branching safe (`s.pipe(a)` and `s.pipe(b)` produce independent streams) and
+/// matches the Java Stream API's functional style.
 ///
-/// This class is mutable internally (operators are appended) but always returns `this` to
-/// preserve the fluent-builder pattern users expect.
+/// On [#toCustom] / [#toConsole] / [#toMulti] the configuration is frozen into a [DefaultSink];
+/// any further fluent calls on the original stream cannot affect the already-terminated chain.
 ///
 /// @param <T> the deserialized message type
 final class DefaultStream<T> implements Stream<T> {
@@ -28,47 +29,91 @@ final class DefaultStream<T> implements Stream<T> {
   private final Properties kafkaProps;
   private final MessageFormat<T> format;
   private final Function<T, MessageSink<T>> defaultConsoleSinkFactory;
-  private final List<UnaryOperator<T>> operators = new ArrayList<>();
+  private final List<UnaryOperator<T>> operators;
+  private final int maxRetries;
+  private final Duration retryBackoff;
+  private final Long backpressureHigh;
+  private final Long backpressureLow;
+  private final boolean sequentialProcessing;
 
-  private int maxRetries = 0;
-  private Duration retryBackoff = Duration.ofMillis(500);
-  private Long backpressureHigh;
-  private Long backpressureLow;
-  private boolean sequentialProcessing = false;
-
+  /// Public constructor used by [KPipe] factories — starts with an empty pipeline and default
+  /// retry / backpressure settings.
   DefaultStream(
     final String topic,
     final Properties kafkaProps,
     final MessageFormat<T> format,
     final Function<T, MessageSink<T>> defaultConsoleSinkFactory
   ) {
-    this.topic = Objects.requireNonNull(topic, "topic cannot be null");
-    this.kafkaProps = Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null");
-    this.format = Objects.requireNonNull(format, "format cannot be null");
-    this.defaultConsoleSinkFactory = Objects.requireNonNull(
+    this(
+      Objects.requireNonNull(topic, "topic cannot be null"),
+      Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null"),
+      Objects.requireNonNull(format, "format cannot be null"),
+      Objects.requireNonNull(defaultConsoleSinkFactory, "defaultConsoleSinkFactory cannot be null"),
+      List.of(),
+      0,
+      Duration.ofMillis(500),
+      null,
+      null,
+      false
+    );
+  }
+
+  private DefaultStream(
+    final String topic,
+    final Properties kafkaProps,
+    final MessageFormat<T> format,
+    final Function<T, MessageSink<T>> defaultConsoleSinkFactory,
+    final List<UnaryOperator<T>> operators,
+    final int maxRetries,
+    final Duration retryBackoff,
+    final Long backpressureHigh,
+    final Long backpressureLow,
+    final boolean sequentialProcessing
+  ) {
+    this.topic = topic;
+    this.kafkaProps = kafkaProps;
+    this.format = format;
+    this.defaultConsoleSinkFactory = defaultConsoleSinkFactory;
+    this.operators = operators;
+    this.maxRetries = maxRetries;
+    this.retryBackoff = retryBackoff;
+    this.backpressureHigh = backpressureHigh;
+    this.backpressureLow = backpressureLow;
+    this.sequentialProcessing = sequentialProcessing;
+  }
+
+  private DefaultStream<T> withOperator(final UnaryOperator<T> op) {
+    final var next = new ArrayList<>(operators);
+    next.add(op);
+    return new DefaultStream<>(
+      topic,
+      kafkaProps,
+      format,
       defaultConsoleSinkFactory,
-      "defaultConsoleSinkFactory cannot be null"
+      List.copyOf(next),
+      maxRetries,
+      retryBackoff,
+      backpressureHigh,
+      backpressureLow,
+      sequentialProcessing
     );
   }
 
   @Override
   public Stream<T> pipe(final UnaryOperator<T> op) {
-    operators.add(Objects.requireNonNull(op, "operator cannot be null"));
-    return this;
+    return withOperator(Objects.requireNonNull(op, "operator cannot be null"));
   }
 
   @Override
   public Stream<T> filter(final Predicate<T> keep) {
     Objects.requireNonNull(keep, "predicate cannot be null");
-    operators.add(Operators.filter(keep));
-    return this;
+    return withOperator(Operators.filter(keep));
   }
 
   @Override
   public Stream<T> peek(final Consumer<T> sideEffect) {
     Objects.requireNonNull(sideEffect, "sideEffect cannot be null");
-    operators.add(Operators.peek(sideEffect));
-    return this;
+    return withOperator(Operators.peek(sideEffect));
   }
 
   @Override
@@ -76,16 +121,24 @@ final class DefaultStream<T> implements Stream<T> {
     Objects.requireNonNull(cond, "condition cannot be null");
     Objects.requireNonNull(ifTrue, "ifTrue cannot be null");
     Objects.requireNonNull(ifFalse, "ifFalse cannot be null");
-    operators.add(value -> cond.test(value) ? ifTrue.apply(value) : ifFalse.apply(value));
-    return this;
+    return withOperator(value -> cond.test(value) ? ifTrue.apply(value) : ifFalse.apply(value));
   }
 
   @Override
   public Stream<T> withRetry(final int maxRetries, final Duration backoff) {
     if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative");
-    this.maxRetries = maxRetries;
-    this.retryBackoff = Objects.requireNonNull(backoff, "backoff cannot be null");
-    return this;
+    return new DefaultStream<>(
+      topic,
+      kafkaProps,
+      format,
+      defaultConsoleSinkFactory,
+      operators,
+      maxRetries,
+      Objects.requireNonNull(backoff, "backoff cannot be null"),
+      backpressureHigh,
+      backpressureLow,
+      sequentialProcessing
+    );
   }
 
   @Override
@@ -98,15 +151,34 @@ final class DefaultStream<T> implements Stream<T> {
     if (high <= 0 || low < 0 || low >= high) throw new IllegalArgumentException(
       "Invalid watermarks: high must be positive and > low (got high=%d, low=%d)".formatted(high, low)
     );
-    this.backpressureHigh = high;
-    this.backpressureLow = low;
-    return this;
+    return new DefaultStream<>(
+      topic,
+      kafkaProps,
+      format,
+      defaultConsoleSinkFactory,
+      operators,
+      maxRetries,
+      retryBackoff,
+      high,
+      low,
+      sequentialProcessing
+    );
   }
 
   @Override
   public Stream<T> withSequentialProcessing(final boolean sequential) {
-    this.sequentialProcessing = sequential;
-    return this;
+    return new DefaultStream<>(
+      topic,
+      kafkaProps,
+      format,
+      defaultConsoleSinkFactory,
+      operators,
+      maxRetries,
+      retryBackoff,
+      backpressureHigh,
+      backpressureLow,
+      sequential
+    );
   }
 
   @Override
@@ -143,7 +215,7 @@ final class DefaultStream<T> implements Stream<T> {
   }
 
   List<UnaryOperator<T>> operators() {
-    return List.copyOf(operators);
+    return operators;
   }
 
   int maxRetries() {

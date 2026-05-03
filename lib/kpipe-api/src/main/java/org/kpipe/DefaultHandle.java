@@ -1,8 +1,6 @@
 package org.kpipe;
 
 import java.time.Duration;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import org.kpipe.consumer.KPipeConsumer;
@@ -25,9 +23,8 @@ final class DefaultHandle implements Handle {
   }
 
   @Override
-  public Map<String, Object> metrics() {
-    final Map<String, Object> snapshot = new HashMap<>(consumer.getMetrics());
-    return Collections.unmodifiableMap(snapshot);
+  public Map<String, Long> metrics() {
+    return consumer.getMetrics();
   }
 
   @Override
