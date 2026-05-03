@@ -2,7 +2,7 @@ package org.kpipe.consumer.enums;
 
 /// Represents the possible operational states of a KafkaOffsetManager.
 ///
-/// <p>The state transitions generally follow this sequence:
+/// The state transitions generally follow this sequence:
 ///
 /// <ul>
 ///   <li>CREATED - Initial state upon instantiation
@@ -11,7 +11,7 @@ package org.kpipe.consumer.enums;
 ///   <li>STOPPED - Final state after shutdown completion
 /// </ul>
 ///
-/// <p>State transitions are atomic and thread-safe when managed properly.
+/// State transitions are atomic and thread-safe when managed properly.
 public enum OffsetState {
   /// Initial state when the KafkaOffsetManager is created but not yet started. No offset tracking
   /// or committing occurs in this state.

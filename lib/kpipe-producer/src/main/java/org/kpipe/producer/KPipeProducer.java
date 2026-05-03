@@ -105,10 +105,6 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     public KPipeProducer<K, V> build() {
       if (producer != null) return new KPipeProducer<>(producer, false, metrics);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
-      // Note: `new Properties(parent)` makes parent a fallback for getProperty() rather than
-      // copying
-      // entries; subsequent putIfAbsent on the new instance ignores the parent's existing keys and
-      // can shadow them. Copy entries explicitly via clone() so user-supplied serializers win.
       final var producerProps = (Properties) props.clone();
       if (producerProps.containsKey("client.id")) producerProps.setProperty(
         "client.id",

@@ -67,8 +67,8 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   private final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets = new ConcurrentHashMap<>();
   private final Map<TopicPartition, Long> highestProcessedOffsets = new ConcurrentHashMap<>();
   private final Duration commitInterval;
-  private ScheduledExecutorService scheduler;
-  private ScheduledFuture<?> scheduledCommitTask;
+  private volatile ScheduledExecutorService scheduler;
+  private volatile ScheduledFuture<?> scheduledCommitTask;
 
   /// Creates a new KafkaOffsetManager instance.
   ///
@@ -170,11 +170,11 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
 
   /// Tracks an offset that is about to be processed using a ConsumerRecord.
   ///
-  /// <p>This method extracts the topic, partition, and offset from the consumer record and adds the
+  /// This method extracts the topic, partition, and offset from the consumer record and adds the
   /// offset+1 to the pending offsets. In Kafka's offset model, committing offset N means you've
   /// processed through offset N-1 and expect to receive N next.
   ///
-  /// <p>When using this method with {@link #markOffsetProcessed(ConsumerRecord)}, the offset
+  /// When using this method with {@link #markOffsetProcessed(ConsumerRecord)}, the offset
   /// transformation is handled automatically. This method initializes the next offset to commit
   /// using the raw record offset, which is appropriate for the first record in a partition.
   ///
@@ -189,10 +189,10 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
 
   /// Marks an offset as successfully processed using a ConsumerRecord.
   ///
-  /// <p>This method extracts the topic, partition, and offset from the consumer record, increments
+  /// This method extracts the topic, partition, and offset from the consumer record, increments
   /// the offset by 1 to match Kafka's "next offset" semantics.
   ///
-  /// <p>The +1 adjustment ensures that when this record's offset is committed, Kafka will begin
+  /// The +1 adjustment ensures that when this record's offset is committed, Kafka will begin
   /// delivering messages from the next offset after this one.
   ///
   /// @param record The consumer record that was processed
@@ -204,16 +204,15 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
 
     highestProcessedOffsets.compute(partition, (k, v) -> v == null ? offset : Math.max(v, offset));
 
-    final var offsets = pendingOffsets.get(partition);
-    if (offsets != null) {
-      offsets.remove(offset);
-      if (offsets.isEmpty()) pendingOffsets.remove(partition);
-    }
+    pendingOffsets.computeIfPresent(partition, (k, set) -> {
+      set.remove(offset);
+      return set.isEmpty() ? null : set;
+    });
   }
 
   /// Commits offsets that are safe to commit based on the current processing state.
   ///
-  /// <p>This method is called periodically to ensure that offsets are committed in a timely manner
+  /// This method is called periodically to ensure that offsets are committed in a timely manner
   /// without losing any unprocessed messages.
   public void commitSafeOffsets() {
     try {
@@ -284,16 +283,22 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
       .distinct()
       .flatMap(partition -> {
         final var pending = pendingOffsets.get(partition);
-        if (pending != null && !pending.isEmpty()) {
-          return Stream.of(Map.entry(partition, new OffsetAndMetadata(pending.first())));
-        } else {
-          final var highestProcessed = highestProcessedOffsets.get(partition);
-          return highestProcessed != null
-            ? Stream.of(Map.entry(partition, new OffsetAndMetadata(highestProcessed + 1)))
-            : Stream.empty();
-        }
+        final var lowestPending = pending != null ? safeFirst(pending) : null;
+        if (lowestPending != null) return Stream.of(Map.entry(partition, new OffsetAndMetadata(lowestPending)));
+        final var highestProcessed = highestProcessedOffsets.get(partition);
+        return highestProcessed != null
+          ? Stream.of(Map.entry(partition, new OffsetAndMetadata(highestProcessed + 1)))
+          : Stream.empty();
       })
       .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+  }
+
+  private static Long safeFirst(final SortedSet<Long> set) {
+    try {
+      return set.isEmpty() ? null : set.first();
+    } catch (final NoSuchElementException e) {
+      return null;
+    }
   }
 
   private boolean performCommit(final Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, final int timeoutSeconds)
