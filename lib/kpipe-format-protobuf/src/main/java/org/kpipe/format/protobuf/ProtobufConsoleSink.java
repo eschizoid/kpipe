@@ -20,18 +20,24 @@ public record ProtobufConsoleSink<T>() implements MessageSink<T> {
   }
 
   private String formatValue(final T value) {
-    if (value == null) return "null";
-    if (value instanceof Message message) {
-      try {
-        return PROTO_PRINTER.print(message);
-      } catch (final Exception e) {
-        LOGGER.log(Level.ERROR, "Failed to format Protobuf message as JSON", e);
-        return message.toString();
+    switch (value) {
+      case null -> {
+        return "null";
       }
-    }
-    if (value instanceof byte[] bytes) {
-      if (bytes.length == 0) return "empty";
-      return "[binary protobuf data]";
+      case Message message -> {
+        try {
+          return PROTO_PRINTER.print(message);
+        } catch (final Exception e) {
+          LOGGER.log(Level.ERROR, "Failed to format Protobuf message as JSON", e);
+          return message.toString();
+        }
+      }
+      case byte[] bytes -> {
+        if (bytes.length == 0) return "empty";
+        return "[binary protobuf data]";
+      }
+      default -> {
+      }
     }
     return String.valueOf(value);
   }

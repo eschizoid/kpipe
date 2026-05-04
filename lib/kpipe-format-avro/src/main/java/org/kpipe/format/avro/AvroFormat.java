@@ -26,12 +26,9 @@ import org.kpipe.registry.RegistryKey;
 
 /// Avro implementation of MessageFormat for KPipe.
 ///
-/// This class manages Avro schemas and provides serialization for Avro GenericRecord messages.
-/// It supports registering schemas from various sources and integrates with the
-/// AvroMessageProcessor for schema registration and optimized Avro handling.
-///
-/// Typical usage involves registering schemas and then serializing Avro records for Kafka
-/// pipelines.
+/// Manages Avro schemas (parsed and metadata) and provides serialization / deserialization for
+/// `GenericRecord` messages. Schemas registered via [#addSchema] are parsed once and cached on
+/// this instance.
 ///
 /// Example:
 /// ```java
@@ -45,19 +42,17 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   /// Use this rather than constructing a new AvroFormat unless you need a custom schema source
   /// or an isolated schema-registration scope.
   ///
-  /// **Footgun warning:** this `INSTANCE` is a JVM-global mutable singleton, and
-  /// [#addSchema(String, String, String)] additionally registers the parsed schema into the
-  /// process-wide [AvroMessageProcessor] schema cache. Two pipelines that register different
-  /// schemas under the same key on `INSTANCE` (or on the shared processor cache) will collide and
-  /// the last writer wins. For libraries, tests, or any code that needs an isolated schema scope,
-  /// construct a dedicated instance with `new AvroFormat()` (or `new AvroFormat(reader)`) and use
-  /// distinct schema keys.
+  /// **Footgun warning:** this `INSTANCE` is a JVM-global mutable singleton — schemas registered
+  /// here are visible to every caller using `AvroFormat.INSTANCE`. For libraries, tests, or any
+  /// code that needs an isolated schema scope, construct a dedicated instance with
+  /// `new AvroFormat()` (or `new AvroFormat(reader)`) and use distinct schema keys.
   public static final AvroFormat INSTANCE = new AvroFormat();
 
   /// Registry key for the pre-built Avro logging sink registered by [#newRegistry()].
   public static final RegistryKey<GenericRecord> AVRO_LOGGING = AvroRegistryKey.of("avroLogging");
 
   private final Map<String, SchemaInfo> schemas = new ConcurrentHashMap<>();
+  private final Map<String, Schema> parsedSchemas = new ConcurrentHashMap<>();
   private final Function<String, String> schemaReader;
   private String defaultSchemaKey;
 
@@ -77,9 +72,9 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   /// Creates a new [MessageProcessorRegistry] pre-wired with [AvroFormat#INSTANCE] and an
   /// [AvroConsoleSink] registered under [#AVRO_LOGGING].
   ///
-  /// The default `AvroConsoleSink` uses the schema registered under key `"1"` in the shared
-  /// [AvroMessageProcessor] cache; callers who use a different schema key should build the
-  /// registry directly and register a sink with the appropriate schema instead.
+  /// The default `AvroConsoleSink` uses the schema registered under key `"1"` on
+  /// [AvroFormat#INSTANCE]; callers who use a different schema key should build the registry
+  /// directly and register a sink with the appropriate schema instead.
   ///
   /// @return a new pre-configured registry
   public static MessageProcessorRegistry newRegistry() {
@@ -126,9 +121,12 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   @Override
   public void clearSchemas() {
     schemas.clear();
+    parsedSchemas.clear();
   }
 
-  /// Adds a schema to this format and registers it with the AvroMessageProcessor.
+  /// Adds a schema to this format. Reads the schema text from `location` (HTTP URL, classpath
+  /// resource, file path, or inline content) via the configured schema reader, parses it, and
+  /// caches both the parsed [Schema] and the [SchemaInfo] metadata on this instance.
   ///
   /// @param key schema identification key
   /// @param fullyQualifiedName fully qualified schema name
@@ -138,13 +136,37 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     schemas.put(key, new SchemaInfo(fullyQualifiedName, location));
     try {
       final var schemaJson = schemaReader.apply(location);
-      AvroMessageProcessor.registerSchema(key, schemaJson);
+      parsedSchemas.put(key, new Schema.Parser().parse(schemaJson));
     } catch (final Exception e) {
       throw new IllegalArgumentException(
         "Failed to register Avro schema for key '%s': %s".formatted(key, e.getMessage()),
         e
       );
     }
+  }
+
+  /// Adds a schema from inline JSON content. Parses the schema once, caches the parsed [Schema]
+  /// on this instance, and stores `SchemaInfo` derived from the parsed schema's full name.
+  ///
+  /// Convenience for tests and callers who already have schema JSON in hand and don't need the
+  /// `schemaReader` indirection.
+  ///
+  /// @param key schema identification key
+  /// @param schemaJson the Avro schema definition as JSON
+  /// @return this AvroFormat instance
+  public AvroFormat addSchema(final String key, final String schemaJson) {
+    final var schema = new Schema.Parser().parse(schemaJson);
+    parsedSchemas.put(key, schema);
+    schemas.put(key, new SchemaInfo(schema.getFullName(), schemaJson));
+    return this;
+  }
+
+  /// Returns the parsed [Schema] registered under `key`, or `null` if no schema is registered.
+  ///
+  /// @param key the schema key
+  /// @return the parsed schema, or `null` if not registered
+  public Schema getSchema(final String key) {
+    return parsedSchemas.get(key);
   }
 
   /// Finds schemas matching the given predicate.
@@ -183,17 +205,15 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     if (defaultSchemaKey == null) throw new UnsupportedOperationException(
       "Avro deserialization requires a default schema key. Use withDefaultSchema()."
     );
-    final var schema = AvroMessageProcessor.getSchema(defaultSchemaKey);
+    final var schema = parsedSchemas.get(defaultSchemaKey);
     if (schema == null) throw new IllegalArgumentException("No schema found for key: %s".formatted(defaultSchemaKey));
-    return AvroMessageProcessor.inScopedCaches(() -> {
-      final var datumReader = new org.apache.avro.generic.GenericDatumReader<GenericRecord>(schema);
-      final var decoder = org.apache.avro.io.DecoderFactory.get().binaryDecoder(data, null);
-      try {
-        return datumReader.read(null, decoder);
-      } catch (final IOException e) {
-        throw new RuntimeException("Failed to deserialize Avro record", e);
-      }
-    });
+    final var datumReader = new org.apache.avro.generic.GenericDatumReader<GenericRecord>(schema);
+    final var decoder = org.apache.avro.io.DecoderFactory.get().binaryDecoder(data, null);
+    try {
+      return datumReader.read(null, decoder);
+    } catch (final IOException e) {
+      throw new RuntimeException("Failed to deserialize Avro record", e);
+    }
   }
 
   /// Default schema reader supporting HTTP URLs, classpath resources, file paths, and inline

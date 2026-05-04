@@ -26,7 +26,6 @@ import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.format.json.JsonConsoleSink;
 import org.kpipe.format.json.JsonFormat;
-import org.kpipe.format.json.JsonMessageProcessor;
 import org.kpipe.format.protobuf.ProtobufConsoleSink;
 import org.kpipe.format.protobuf.ProtobufFormat;
 import org.kpipe.format.protobuf.ProtobufRegistryKey;
@@ -34,6 +33,7 @@ import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.otel.OtelConsumerMetrics;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.Operators;
 import org.kpipe.registry.RegistryKey;
 
 /// Demo application that runs JSON, Avro, and Protobuf consumer pipelines concurrently.
@@ -104,10 +104,19 @@ public class DemoApp implements AutoCloseable {
     sinkRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
 
     // Register demo processors
-    registry.register(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "demo-app"));
-    registry.register(RegistryKey.json("markProcessed"), JsonMessageProcessor.addFieldOperator("status", "processed"));
-    registry.register(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
-    registry.register(RegistryKey.json("removeSecrets"), JsonMessageProcessor.removeFieldsOperator("password", "ssn"));
+    registry.register(RegistryKey.json("addSource"), msg -> {
+      msg.put("source", "demo-app");
+      return msg;
+    });
+    registry.register(RegistryKey.json("markProcessed"), msg -> {
+      msg.put("status", "processed");
+      return msg;
+    });
+    registry.register(RegistryKey.json("addTimestamp"), msg -> {
+      msg.put("processedAt", System.currentTimeMillis());
+      return msg;
+    });
+    registry.register(RegistryKey.json("removeSecrets"), Operators.removeFields("password", "ssn"));
 
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE);
     pipeline.add(RegistryKey.json("addSource"));

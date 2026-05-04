@@ -21,9 +21,10 @@ import org.kpipe.sink.MessageSink;
 public record AvroConsoleSink<T>(Schema schema) implements MessageSink<T> {
   private static final Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());
 
-  /// Creates an `AvroConsoleSink` using the default schema version "1".
+  /// Creates an `AvroConsoleSink` using the default schema registered under key "1" on
+  /// [AvroFormat#INSTANCE].
   public AvroConsoleSink() {
-    this(AvroMessageProcessor.getSchema("1"));
+    this(AvroFormat.INSTANCE.getSchema("1"));
   }
 
   @Override

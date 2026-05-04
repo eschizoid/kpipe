@@ -11,7 +11,7 @@ import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericRecord;
 import org.junit.jupiter.api.Test;
 import org.kpipe.format.avro.AvroConsoleSink;
-import org.kpipe.format.avro.AvroMessageProcessor;
+import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.json.JsonConsoleSink;
 import org.kpipe.format.protobuf.ProtobufConsoleSink;
 import org.kpipe.sink.MessageSink;
@@ -34,25 +34,25 @@ class ToConsoleDispatchTest {
 
   @Test
   void avroToConsoleRequiresRegisteredSchema() {
-    AvroMessageProcessor.clearSchemaRegistry();
+    AvroFormat.INSTANCE.clearSchemas();
     final var stream = KPipe.avro("t", props());
     assertThrows(IllegalStateException.class, stream::toConsole);
   }
 
   @Test
   void avroToConsoleSucceedsWithRegisteredSchema() {
-    AvroMessageProcessor.clearSchemaRegistry();
+    AvroFormat.INSTANCE.clearSchemas();
     final var schema = SchemaBuilder.record("Test")
       .namespace("org.kpipe.test")
       .fields()
       .requiredString("id")
       .endRecord();
-    AvroMessageProcessor.registerSchema("1", schema.toString());
+    AvroFormat.INSTANCE.addSchema("1", schema.toString());
     try {
       final var sink = (DefaultSink<GenericRecord>) KPipe.avro("t", props()).toConsole();
       assertTrue(sink.terminalSink() instanceof AvroConsoleSink<?>);
     } finally {
-      AvroMessageProcessor.clearSchemaRegistry();
+      AvroFormat.INSTANCE.clearSchemas();
     }
   }
 
@@ -85,12 +85,12 @@ class ToConsoleDispatchTest {
   }
 
   /// Asserts that `KPipe.avro(...).toConsole()` fails fast when no default Avro schema has been
-  /// registered under key `"1"` in [AvroMessageProcessor]. The schema registry is process-wide
-  /// state, so we explicitly clear it before constructing the stream to make this test
-  /// deterministic regardless of test ordering within the same JVM.
+  /// registered under key `"1"` on [AvroFormat#INSTANCE]. The schema map on `INSTANCE` is
+  /// process-wide state, so we explicitly clear it before constructing the stream to make this
+  /// test deterministic regardless of test ordering within the same JVM.
   @Test
   void avroToConsoleThrowsWhenNoDefaultSchemaRegistered() {
-    AvroMessageProcessor.clearSchemaRegistry();
+    AvroFormat.INSTANCE.clearSchemas();
     final var stream = KPipe.avro("topic", props());
     final var ex = assertThrows(IllegalStateException.class, stream::toConsole);
     assertTrue(ex.getMessage().contains("Avro"), () -> "expected message to mention Avro: " + ex.getMessage());

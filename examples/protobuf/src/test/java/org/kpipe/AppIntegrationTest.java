@@ -12,13 +12,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.consumer.config.AppConfig;
-import org.kpipe.format.protobuf.ProtobufMessageProcessor;
 import org.kpipe.format.protobuf.ProtobufRegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
@@ -56,15 +56,13 @@ class AppIntegrationTest {
     try (final var app = new App(config)) {
       final var registry = app.getProcessorRegistry();
 
-      // Register processors
-      registry.register(
-        ProtobufRegistryKey.of("addSource"),
-        ProtobufMessageProcessor.addFieldOperator("name", "processed-by-kpipe")
-      );
-      registry.register(
-        ProtobufRegistryKey.of("markProcessed"),
-        ProtobufMessageProcessor.addFieldOperator("active", true)
-      );
+      // Register processors as inline lambdas using the native Protobuf builder API.
+      final UnaryOperator<Message> addSource = msg ->
+        msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("name"), "processed-by-kpipe").build();
+      final UnaryOperator<Message> markProcessed = msg ->
+        msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("active"), true).build();
+      registry.register(ProtobufRegistryKey.of("addSource"), addSource);
+      registry.register(ProtobufRegistryKey.of("markProcessed"), markProcessed);
 
       // Register the capturing sink
       registry.sinkRegistry().register(ProtobufRegistryKey.of("protobufLogging"), capturingSink);

@@ -94,7 +94,7 @@ public final class Operators {
   /// @param <T> the operator's value type
   /// @return an operator that returns `mapper.apply(input)`
   public static <T> UnaryOperator<T> map(final Function<T, T> mapper) {
-    return value -> mapper.apply(value);
+    return mapper::apply;
   }
 
   /// Alias for [#tap] using the Stream API vocabulary.
@@ -192,8 +192,7 @@ public final class Operators {
   /// Returns an operator that removes one or more fields from a [Map] message.
   ///
   /// Mutates the input map in-place. Returns `null` when the input is `null`. Missing keys are
-  /// silently ignored. This mirrors `JsonMessageProcessor.removeFieldsOperator` but lives on the
-  /// generic [Operators] namespace so users do not need to import a format-specific class.
+  /// silently ignored.
   ///
   /// Example:
   /// ```java
@@ -206,6 +205,54 @@ public final class Operators {
     return msg -> {
       if (msg == null) return null;
       for (final var f : fields) msg.remove(f);
+      return msg;
+    };
+  }
+
+  /// Returns an operator that sets a field on a [Map] message to the given value.
+  ///
+  /// Mutates the input map in-place. Returns `null` when the input is `null`. Existing values
+  /// for `key` are overwritten.
+  ///
+  /// Example:
+  /// ```java
+  /// .add(addField("source", "kpipe-consumer"))
+  /// .add(addField("processed_at", System.currentTimeMillis()))
+  /// ```
+  ///
+  /// @param key the field name to set
+  /// @param value the value to write under `key`
+  /// @return an operator that sets the field in-place, or returns `null` when the input is null
+  public static UnaryOperator<Map<String, Object>> addField(final String key, final Object value) {
+    return msg -> {
+      if (msg == null) return null;
+      msg.put(key, value);
+      return msg;
+    };
+  }
+
+  /// Returns an operator that transforms the value of a single field on a [Map] message.
+  ///
+  /// Mutates the input map in-place. Returns `null` when the input is `null`. If `fieldName` is
+  /// absent, the message is passed through unchanged (no error).
+  ///
+  /// Example:
+  /// ```java
+  /// .add(transformField("email", v -> ((String) v).toLowerCase()))
+  /// .add(transformField("user_id", v -> hash((String) v)))
+  /// ```
+  ///
+  /// @param fieldName the field whose value should be transformed
+  /// @param transformer function applied to the existing value
+  /// @return an operator that transforms the field in-place, or returns `null` when the input is
+  // null
+  public static UnaryOperator<Map<String, Object>> transformField(
+    final String fieldName,
+    final Function<Object, Object> transformer
+  ) {
+    return msg -> {
+      if (msg == null) return null;
+      if (msg.containsKey(fieldName)) msg.put(fieldName, transformer.apply(msg.get(fieldName)));
       return msg;
     };
   }

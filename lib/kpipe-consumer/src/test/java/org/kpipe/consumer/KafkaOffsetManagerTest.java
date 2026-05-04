@@ -954,8 +954,8 @@ class KafkaOffsetManagerTest {
         () -> countAliveSchedulerThreads() <= baselineAliveSchedulers,
         Duration.ofSeconds(10),
         "scheduler thread count must return to baseline (=" +
-        baselineAliveSchedulers +
-        ") — no orphan offset-commit-scheduler threads after start/close races"
+          baselineAliveSchedulers +
+          ") — no orphan offset-commit-scheduler threads after start/close races"
       );
     }
 

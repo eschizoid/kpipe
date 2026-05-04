@@ -24,9 +24,18 @@ class MessageProcessorRegistryJsonTest {
   void shouldComposeJsonProcessorChain() {
     final var pipeline = registry
       .pipeline(JsonFormat.INSTANCE)
-      .add(JsonMessageProcessor.addFieldOperator("source", "test-app"))
-      .add(JsonMessageProcessor.addTimestampOperator("timestamp"))
-      .add(JsonMessageProcessor.addFieldOperator("processed", "true"))
+      .add(obj -> {
+        obj.put("source", "test-app");
+        return obj;
+      })
+      .add(obj -> {
+        obj.put("timestamp", System.currentTimeMillis());
+        return obj;
+      })
+      .add(obj -> {
+        obj.put("processed", "true");
+        return obj;
+      })
       .build();
 
     final var result = new String(pipeline.apply("{}".getBytes()));
@@ -194,7 +203,10 @@ class MessageProcessorRegistryJsonTest {
         obj.put("b2", "v2");
         return obj;
       })
-      .add(JsonMessageProcessor.addFieldOperator("source", "test-app"))
+      .add(obj -> {
+        obj.put("source", "test-app");
+        return obj;
+      })
       .build();
 
     final var result = new String(pipeline.apply("{}".getBytes()));

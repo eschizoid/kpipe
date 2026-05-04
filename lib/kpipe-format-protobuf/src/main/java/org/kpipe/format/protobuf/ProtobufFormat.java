@@ -13,9 +13,8 @@ import org.kpipe.registry.RegistryKey;
 
 /// Protobuf implementation of MessageFormat for KPipe.
 ///
-/// This class manages Protobuf descriptors and provides serialization/deserialization for Protobuf
-/// messages. It supports registering descriptors and integrates with the ProtobufMessageProcessor
-/// for descriptor registration and optimized Protobuf handling.
+/// Manages Protobuf descriptors and provides serialization / deserialization for `Message`
+/// payloads. Descriptors registered via [#addDescriptor] are cached on this instance.
 ///
 /// Example:
 /// ```java
@@ -30,13 +29,10 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// Shared singleton instance — use this rather than constructing a new ProtobufFormat
   /// unless you need an isolated descriptor scope.
   ///
-  /// **Footgun warning:** this `INSTANCE` is a JVM-global mutable singleton, and
-  /// [#addDescriptor(String, com.google.protobuf.Descriptors.Descriptor)] additionally registers
-  /// the descriptor into the process-wide [ProtobufMessageProcessor] cache. Two pipelines that
-  /// register different descriptors under the same key on `INSTANCE` (or on the shared processor
-  /// cache) will collide and the last writer wins. For libraries, tests, or any code that needs
-  /// an isolated descriptor scope, construct a dedicated instance with `new ProtobufFormat()`
-  /// and use distinct descriptor keys.
+  /// **Footgun warning:** this `INSTANCE` is a JVM-global mutable singleton — descriptors
+  /// registered here are visible to every caller using `ProtobufFormat.INSTANCE`. For libraries,
+  /// tests, or any code that needs an isolated descriptor scope, construct a dedicated instance
+  /// with `new ProtobufFormat()` and use distinct descriptor keys.
   public static final ProtobufFormat INSTANCE = new ProtobufFormat();
 
   /// Registry key for the pre-built Protobuf logging sink registered by [#newRegistry()].
@@ -79,7 +75,6 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// @return This ProtobufFormat instance
   public ProtobufFormat addDescriptor(final String key, final Descriptors.Descriptor descriptor) {
     descriptors.put(key, descriptor);
-    ProtobufMessageProcessor.registerDescriptor(key, descriptor);
     schemas.put(key, new SchemaInfo(descriptor.getFullName(), descriptor.toProto().toString()));
     return this;
   }
@@ -163,15 +158,13 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   @Override
   public Message deserialize(final byte[] data) {
     if (data == null || data.length == 0) return null;
-    if (defaultDescriptorKey == null) {
-      throw new UnsupportedOperationException(
-        "Protobuf deserialization requires a default descriptor key. Use withDefaultDescriptor()."
-      );
-    }
+    if (defaultDescriptorKey == null) throw new UnsupportedOperationException(
+      "Protobuf deserialization requires a default descriptor key. Use withDefaultDescriptor()."
+    );
     final var descriptor = descriptors.get(defaultDescriptorKey);
-    if (descriptor == null) {
-      throw new IllegalArgumentException("No descriptor found for key: %s".formatted(defaultDescriptorKey));
-    }
+    if (descriptor == null) throw new IllegalArgumentException(
+      "No descriptor found for key: %s".formatted(defaultDescriptorKey)
+    );
     try {
       return DynamicMessage.parseFrom(descriptor, data);
     } catch (final InvalidProtocolBufferException e) {

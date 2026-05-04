@@ -1,5 +1,4 @@
-/// KPipe Protobuf format module — provides ProtobufFormat, ProtobufMessageProcessor,
-/// and ProtobufConsoleSink.
+/// KPipe Protobuf format module — provides ProtobufFormat and ProtobufConsoleSink.
 ///
 /// Add this module to your build only if your pipeline consumes or produces Protobuf messages.
 module org.kpipe.format.protobuf {
