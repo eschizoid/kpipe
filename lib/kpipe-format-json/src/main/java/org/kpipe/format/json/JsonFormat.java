@@ -44,15 +44,6 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
     // Default constructor
   }
 
-  /// Creates a new POJO message format (JSON-backed serialization for arbitrary Java types).
-  ///
-  /// @param <T> The POJO type
-  /// @param clazz The POJO class
-  /// @return A new MessageFormat for the specified POJO type
-  public static <T> MessageFormat<T> pojo(final Class<T> clazz) {
-    return new PojoFormat<>(clazz);
-  }
-
   /// Creates a new [MessageProcessorRegistry] pre-wired with [JsonFormat#INSTANCE] and a
   /// [JsonConsoleSink] registered under [MessageSinkRegistry#JSON_LOGGING].
   ///
@@ -126,13 +117,9 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   @Override
   public byte[] serialize(final Map<String, Object> data) {
     if (data == null) return null;
-    try {
-      return JsonMessageProcessor.inScopedCaches(() -> {
-        try (final var output = new ByteArrayOutputStream()) {
-          DSL_JSON.serialize(data, output);
-          return output.toByteArray();
-        }
-      });
+    try (final var output = new ByteArrayOutputStream()) {
+      DSL_JSON.serialize(data, output);
+      return output.toByteArray();
     } catch (final Exception e) {
       throw new RuntimeException("Failed to serialize JSON", e);
     }

@@ -36,7 +36,7 @@ class AvroFormatBehaviorTest {
 
   @AfterEach
   void tearDown() {
-    AvroMessageProcessor.clearSchemaRegistry();
+    AvroFormat.INSTANCE.clearSchemas();
     AvroFormat.INSTANCE.clearSchemas();
   }
 

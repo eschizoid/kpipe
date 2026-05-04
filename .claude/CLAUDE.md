@@ -1,8 +1,5 @@
 # KPipe Architecture and Design Principles
 
-This document serves as a persistent knowledge base for Junie sessions to maintain architectural consistency and avoid
-repeating past discussions.
-
 ## Core Architectural Decisions
 
 ### 1. The Byte Boundary Strategy
@@ -191,9 +188,9 @@ repeating past discussions.
   exceptions). Triage heuristic: when a "processed" counter rises but downstream invocations stay at 0, suspect
   overloaded null semantics first.
 
-### 13. KPipe Fluent Facade (1.11.0) — Layered API Strategy
+### 13. KPipe Fluent Facade (1.10.0) — Layered API Strategy
 
-- **Decision (1.11.0)**: ship a top-level `KPipe` fluent facade in a new `kpipe-api` module that delegates to the
+- **Decision (1.10.0)**: ship a top-level `KPipe` fluent facade in a new `kpipe-api` module that delegates to the
   existing `MessageProcessorRegistry` / `KPipeConsumer.Builder` / `KPipeRunner.Builder` stack. The facade is purely
   additive — no public 1.x API was changed.
 - **Reasoning**: The 1.10.0 ergonomics pass smoothed surface friction (no-arg ctors, format helpers, DLQ bundle, etc.)
@@ -225,8 +222,7 @@ repeating past discussions.
 
 ### 14. Audit-Derived Concurrency Patterns
 
-These patterns came out of the deep internal audit during the 1.10.0 / 1.11.0 work and should be preserved across
-the codebase:
+These patterns came out of the deep internal audit work and should be preserved across the codebase:
 
 - **Atomic remove-if-empty on `ConcurrentHashMap` of mutable collections**: NEVER do
   `if (set.isEmpty()) map.remove(key)` after a separate `set.remove(value)` — the check-then-act is non-atomic and

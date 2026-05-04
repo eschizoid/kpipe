@@ -55,8 +55,7 @@ class KPipeFacadeIntegrationTest {
 
     final var consumerProps = consumerProps("kpipe-facade-test-group-" + UUID.randomUUID());
 
-    final var handle = KPipe
-      .json(topic, consumerProps)
+    final var handle = KPipe.json(topic, consumerProps)
       .pipe(msg -> {
         msg.put("processed", true);
         return msg;
@@ -109,8 +108,7 @@ class KPipeFacadeIntegrationTest {
 
     final var consumerProps = consumerProps("kpipe-facade-filter-group-" + UUID.randomUUID());
 
-    final var handle = KPipe
-      .json(topic, consumerProps)
+    final var handle = KPipe.json(topic, consumerProps)
       // Drop messages where id is even — only odd ids reach the sink.
       .filter(msg -> ((Number) msg.get("id")).intValue() % 2 == 1)
       .toCustom(captureSink)
@@ -125,8 +123,7 @@ class KPipeFacadeIntegrationTest {
       assertAll(
         "Filtered captures",
         () -> assertEquals(3, captured.size(), "Should have captured exactly 3 odd-id messages"),
-        () ->
-          captured.forEach(m -> assertTrue(((Number) m.get("id")).intValue() % 2 == 1, "Captured id must be odd"))
+        () -> captured.forEach(m -> assertTrue(((Number) m.get("id")).intValue() % 2 == 1, "Captured id must be odd"))
       );
     } finally {
       handle.shutdownGracefully(Duration.ofSeconds(5));
@@ -158,7 +155,8 @@ class KPipeFacadeIntegrationTest {
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       for (int i = 1; i <= expected; i++) {
         final var json = """
-          {"id":%d,"value":"v%d"}""".formatted(i, i).getBytes(StandardCharsets.UTF_8);
+          {"id":%d,"value":"v%d"}""".formatted(i, i)
+          .getBytes(StandardCharsets.UTF_8);
         producer.send(new ProducerRecord<>(topic, json)).get();
       }
       producer.flush();
@@ -179,7 +177,8 @@ class KPipeFacadeIntegrationTest {
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       for (int i = 1; i <= count; i++) {
         final var json = """
-          {"id":%d,"value":"v%d"}""".formatted(i, i).getBytes(StandardCharsets.UTF_8);
+          {"id":%d,"value":"v%d"}""".formatted(i, i)
+          .getBytes(StandardCharsets.UTF_8);
         producer.send(new ProducerRecord<>(topic, json)).get();
       }
       producer.flush();

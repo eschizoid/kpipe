@@ -5,12 +5,13 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
+import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.EncoderFactory;
 import org.kpipe.format.avro.AvroFormat;
-import org.kpipe.format.avro.AvroMessageProcessor;
 import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.openjdk.jmh.annotations.*;
@@ -83,12 +84,22 @@ public class AvroPipelineBenchmark {
     format.addSchema("user", "com.kpipe.User", schemaJson);
     format.withDefaultSchema("user");
 
-    // Register operators
+    // Register operators inline using the native Avro API (operator helpers were removed in
+    // 1.11.x).
     final var op1 = AvroRegistryKey.of("op1");
     final var op2 = AvroRegistryKey.of("op2");
 
-    registry.register(op1, AvroMessageProcessor.addFieldOperator("processed", true));
-    registry.register(op2, AvroMessageProcessor.addFieldOperator("name", "PROCESSED"));
+    final UnaryOperator<GenericRecord> setProcessed = r -> {
+      r.put("processed", true);
+      return r;
+    };
+    final UnaryOperator<GenericRecord> renameProcessed = r -> {
+      r.put("name", "PROCESSED");
+      return r;
+    };
+
+    registry.register(op1, setProcessed);
+    registry.register(op2, renameProcessed);
 
     kpipePipeline = registry.pipeline(format).add(op1, op2).build();
     kpipeMagicPipeline = registry.pipeline(format).skipBytes(5).add(op1, op2).build();

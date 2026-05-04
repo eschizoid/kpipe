@@ -17,7 +17,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.consumer.config.AppConfig;
-import org.kpipe.format.json.JsonMessageProcessor;
 import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
@@ -57,12 +56,18 @@ class AppIntegrationTest {
       registry.sinkRegistry().register(RegistryKey.json("jsonLogging"), capturingSink);
 
       // Set up the processor registry
-      registry.register(RegistryKey.json("addSource"), JsonMessageProcessor.addFieldOperator("source", "test-app"));
-      registry.register(
-        RegistryKey.json("markProcessed"),
-        JsonMessageProcessor.addFieldOperator("status", "processed")
-      );
-      registry.register(RegistryKey.json("addTimestamp"), JsonMessageProcessor.addTimestampOperator("processedAt"));
+      registry.register(RegistryKey.json("addSource"), msg -> {
+        msg.put("source", "test-app");
+        return msg;
+      });
+      registry.register(RegistryKey.json("markProcessed"), msg -> {
+        msg.put("status", "processed");
+        return msg;
+      });
+      registry.register(RegistryKey.json("addTimestamp"), msg -> {
+        msg.put("processedAt", System.currentTimeMillis());
+        return msg;
+      });
 
       // Start the app in a virtual thread
       final var appThread = Thread.ofVirtual().start(() -> {

@@ -1307,7 +1307,10 @@ class KPipeConsumerMockingTest {
       while (mc.paused().isEmpty() && System.currentTimeMillis() < pauseDeadline) {
         Thread.sleep(25);
       }
-      assertTrue(mc.paused().contains(topicPartition), "consumer must pause via backpressure even when metrics disabled");
+      assertTrue(
+        mc.paused().contains(topicPartition),
+        "consumer must pause via backpressure even when metrics disabled"
+      );
 
       // Release sinks → in-flight drains to 0, ≤ lowWatermark=1, consumer should resume.
       sinkRelease.countDown();

@@ -10,7 +10,6 @@ import java.util.Properties;
 import org.apache.avro.generic.GenericRecord;
 import org.kpipe.format.avro.AvroConsoleSink;
 import org.kpipe.format.avro.AvroFormat;
-import org.kpipe.format.avro.AvroMessageProcessor;
 import org.kpipe.format.json.JsonConsoleSink;
 import org.kpipe.format.json.JsonFormat;
 import org.kpipe.format.protobuf.ProtobufConsoleSink;
@@ -56,7 +55,7 @@ public final class KPipe {
   /// to `GenericRecord` using the format's configured default schema.
   ///
   /// `toConsole()` will throw [IllegalStateException] if no default schema has been registered
-  /// in the global [AvroMessageProcessor] cache, since the console sink needs the schema to
+  /// under key `"1"` on [AvroFormat#INSTANCE], since the console sink needs the schema to
   /// re-encode payloads as JSON.
   ///
   /// @param topic the Kafka topic to consume
@@ -64,10 +63,10 @@ public final class KPipe {
   /// @return a fluent [Stream] configured for Avro
   public static Stream<GenericRecord> avro(final String topic, final Properties kafkaProps) {
     return new DefaultStream<>(topic, kafkaProps, AvroFormat.INSTANCE, _ -> {
-      final var schema = AvroMessageProcessor.getSchema("1");
+      final var schema = AvroFormat.INSTANCE.getSchema("1");
       if (schema == null) throw new IllegalStateException(
-        "AvroFormat.toConsole() requires a default Avro schema registered under key \"1\" in " +
-          "AvroMessageProcessor; register a schema (e.g. via AvroFormat.INSTANCE.addSchema(\"1\", ...)) " +
+        "AvroFormat.toConsole() requires a default Avro schema registered under key \"1\" on " +
+          "AvroFormat.INSTANCE; register a schema (e.g. AvroFormat.INSTANCE.addSchema(\"1\", schemaJson)) " +
           "or use toCustom(new AvroConsoleSink<>(schema))."
       );
       return new AvroConsoleSink<>(schema);

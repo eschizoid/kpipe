@@ -23,7 +23,7 @@ class ProtobufFormatTest {
   @AfterEach
   void tearDown() {
     format.clearSchemas();
-    ProtobufMessageProcessor.clearDescriptorRegistry();
+    ProtobufFormat.INSTANCE.clearSchemas();
   }
 
   @Test
@@ -154,13 +154,14 @@ class ProtobufFormatTest {
   }
 
   @Test
-  void shouldAlsoRegisterWithProcessorDescriptorRegistry() {
+  void shouldRegisterDescriptorOnSharedInstance() {
     format.addDescriptor("sync", descriptor);
 
-    // ProtobufMessageProcessor should also have the descriptor
-    final var fromProcessor = ProtobufMessageProcessor.getDescriptor("sync");
-    assertNotNull(fromProcessor);
-    assertEquals("TestMessage", fromProcessor.getName());
+    // Descriptors registered via this format instance are visible on ProtobufFormat.INSTANCE
+    // when the test fixture's `format` *is* INSTANCE (default singleton path).
+    final var fromInstance = ProtobufFormat.INSTANCE.getDescriptor("sync");
+    assertNotNull(fromInstance);
+    assertEquals("TestMessage", fromInstance.getName());
   }
 
   private static Descriptors.Descriptor buildTestDescriptor() throws Descriptors.DescriptorValidationException {

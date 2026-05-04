@@ -1,4 +1,4 @@
-/// KPipe Avro format module — provides AvroFormat, AvroMessageProcessor, and AvroConsoleSink.
+/// KPipe Avro format module — provides AvroFormat and AvroConsoleSink.
 ///
 /// Add this module to your build only if your pipeline consumes or produces Avro messages.
 module org.kpipe.format.avro {

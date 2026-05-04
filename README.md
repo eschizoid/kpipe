@@ -24,9 +24,9 @@ It is designed for Kafka consumer services performing transformations, enrichmen
 
 KPipe ships **two public surfaces** so you can pick the one that fits your use case:
 
-| Surface | What it gives you | When to use |
-| --- | --- | --- |
-| **`KPipe` fluent facade** (`kpipe-api`) | 5-line `KPipe.json("topic", props).pipe(...).toConsole().start()`. Returns a `Stream<T>` → `Sink<T>` → `Handle` chain. Immutable, IDE-discoverable. | The common path — most users start here. |
+| Surface                                                | What it gives you                                                                                                                                                   | When to use                                                                    |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **`KPipe` fluent facade** (`kpipe-api`)                | 5-line `KPipe.json("topic", props).pipe(...).toConsole().start()`. Returns a `Stream<T>` → `Sink<T>` → `Handle` chain. Immutable, IDE-discoverable.                 | The common path — most users start here.                                       |
 | **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumer.Builder` + `KPipeRunner.Builder`. Multi-step, supports custom registries, shared pipelines, programmatic runner config. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
 
 The facade delegates to the explicit API under the hood, so escaping from one to the other has no cost.
@@ -41,8 +41,8 @@ For the 5-line fluent path (recommended), pull `kpipe-api` plus the format modul
 
 ```kotlin
 // Gradle (Kotlin) — JSON via the fluent API
-implementation("io.github.eschizoid:kpipe-api:1.11.0")
-implementation("io.github.eschizoid:kpipe-format-json:1.11.0")
+implementation("io.github.eschizoid:kpipe-api:1.10.1")
+implementation("io.github.eschizoid:kpipe-format-json:1.10.1")
 ```
 
 ```xml
@@ -50,12 +50,12 @@ implementation("io.github.eschizoid:kpipe-format-json:1.11.0")
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-api</artifactId>
-  <version>1.11.0</version>
+  <version>1.10.1</version>
 </dependency>
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-format-json</artifactId>
-  <version>1.11.0</version>
+  <version>1.10.1</version>
 </dependency>
 ```
 
@@ -77,14 +77,14 @@ explicit registry / builder API (see "Advanced API" further down) — for that c
 | `kpipe-metrics-otel`    | OpenTelemetry-backed implementation (opt-in)                                     |
 | `kpipe-producer`        | Kafka producer wrapper, `KafkaMessageSink`                                       |
 | `kpipe-consumer`        | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`                         |
-| `kpipe-format-json`     | `JsonFormat`, `JsonMessageProcessor`, `JsonConsoleSink`                          |
-| `kpipe-format-avro`     | `AvroFormat`, `AvroMessageProcessor`, `AvroConsoleSink`                          |
-| `kpipe-format-protobuf` | `ProtobufFormat`, `ProtobufMessageProcessor`, `ProtobufConsoleSink`              |
+| `kpipe-format-json`     | `JsonFormat`, `JsonConsoleSink`                                                  |
+| `kpipe-format-avro`     | `AvroFormat`, `AvroConsoleSink`                                                  |
+| `kpipe-format-protobuf` | `ProtobufFormat`, `ProtobufConsoleSink`                                          |
 
 **Gradle (Kotlin) with BOM**
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.11.0"))
+implementation(platform("io.github.eschizoid:kpipe-bom:1.10.1"))
 implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")
 // add kpipe-metrics-otel only if you want OpenTelemetry-backed metrics
@@ -94,7 +94,7 @@ implementation("io.github.eschizoid:kpipe-metrics-otel")
 **Gradle (Groovy)**
 
 ```groovy
-implementation platform('io.github.eschizoid:kpipe-bom:1.11.0')
+implementation platform('io.github.eschizoid:kpipe-bom:1.10.1')
 implementation 'io.github.eschizoid:kpipe-api'
 implementation 'io.github.eschizoid:kpipe-format-json'
 ```
@@ -107,7 +107,7 @@ implementation 'io.github.eschizoid:kpipe-format-json'
     <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe-bom</artifactId>
-      <version>1.11.0</version>
+      <version>1.10.1</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -129,8 +129,8 @@ implementation 'io.github.eschizoid:kpipe-format-json'
 **SBT**
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.11.0"
-libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.11.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.10.1"
+libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.10.1"
 ```
 
 </details>
@@ -460,31 +460,40 @@ Runtime.getRuntime().addShutdownHook(new Thread(() -> runner.close()));
 
 ## Working with Messages
 
+KPipe pipelines deserialize once, transform many times, serialize once. Operators are `UnaryOperator<T>` where `T` is
+the format's typed payload (`Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf). Use the
+generic helpers in [`Operators`](lib/kpipe-core/src/main/java/org/kpipe/registry/Operators.java) — `filter`, `drop`,
+`tap`, `map`, `compose`, `safe`, plus map-specific `addField`, `removeFields`, `transformField`, `requireField`,
+`rename` — or write inline lambdas using each format's native API.
+
 ### JSON Processing
 
 Add `kpipe-format-json`. Operators are `UnaryOperator<Map<String, Object>>`:
 
 ```java
+import static org.kpipe.registry.Operators.*;
+
 import org.kpipe.format.json.JsonFormat;
-import org.kpipe.format.json.JsonMessageProcessor;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 
 final var registry = new MessageProcessorRegistry("myApp");
 
 final var stampKey = RegistryKey.json("addTimestamp");
-registry.register(stampKey, JsonMessageProcessor.addTimestampOperator("processedAt"));
+registry.register(stampKey, addField("processedAt", System.currentTimeMillis()));
 
 final var sanitizeKey = RegistryKey.json("sanitize");
-registry.register(sanitizeKey, JsonMessageProcessor.removeFieldsOperator("password", "ssn"));
+registry.register(sanitizeKey, removeFields("password", "ssn"));
 
-// Metadata merging
-final var metadata = Map.of("version", "1.0", "env", "prod");
-final var metaKey = RegistryKey.json("addMetadata");
-registry.register(metaKey, JsonMessageProcessor.mergeWithOperator(metadata));
+final var lowerEmailKey = RegistryKey.json("lowerEmail");
+registry.register(lowerEmailKey, transformField("email", v -> ((String) v).toLowerCase()));
 
 // Single deserialization → many transformations → single serialization
-final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(sanitizeKey).add(stampKey).add(metaKey).build();
+final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
+    .add(sanitizeKey)
+    .add(lowerEmailKey)
+    .add(stampKey)
+    .build();
 ```
 
 ### Avro Processing
@@ -493,61 +502,38 @@ Add `kpipe-format-avro`. Operators are `UnaryOperator<GenericRecord>`:
 
 ```java
 import org.kpipe.format.avro.AvroFormat;
-import org.kpipe.format.avro.AvroMessageProcessor;
 import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.registry.MessageProcessorRegistry;
 
 final var registry = new MessageProcessorRegistry("myApp");
 
-// Register the schema directly on the format
+// Register the schema directly on the format. addSchema(key, fqn, location) reads the schema from
+// a file/classpath/HTTP URL; the 2-arg overload addSchema(key, schemaJson) takes inline JSON.
 AvroFormat.INSTANCE.addSchema("user", "com.kpipe.User", "schemas/user.avsc");
 AvroFormat.INSTANCE.withDefaultSchema("user");
-final var schema = AvroMessageProcessor.getSchema("user");
+final var schema = AvroFormat.INSTANCE.getSchema("user");
 
-// Register operators with type-safe keys via AvroRegistryKey.of(...)
-final var sanitizeKey = AvroRegistryKey.of("sanitize");
-registry.register(sanitizeKey, AvroMessageProcessor.removeFieldsOperator(schema, "password", "creditCard"));
+// Avro records are schema-bound: use inline lambdas with the native Avro API for value transforms.
+// `Operators.filter`, `tap`, `compose` etc. work for any payload type, including GenericRecord.
+final var lowerNameKey = AvroRegistryKey.of("lowerName");
+registry.register(lowerNameKey, record -> {
+  if (record.get("name") != null) record.put("name", record.get("name").toString().toLowerCase());
+  return record;
+});
 
-final var upperKey = AvroRegistryKey.of("uppercaseName");
-registry.register(
-  upperKey,
-  AvroMessageProcessor.transformFieldOperator(schema, "name", value -> {
-    if (value instanceof String text) return text.toUpperCase();
-    return value;
-  })
-);
-
-final var pipeline = registry.pipeline(AvroFormat.INSTANCE).add(sanitizeKey).add(upperKey).build();
+final var pipeline = registry.pipeline(AvroFormat.INSTANCE).add(lowerNameKey).build();
 
 // For Confluent Wire Format (1 magic byte + 4-byte schema ID), skip the prefix:
-final var confluentPipeline = registry.pipeline(AvroFormat.INSTANCE).skipBytes(5).add(sanitizeKey).build();
-```
-
-### POJO Processing
-
-For high-performance processing of Java records or POJOs, use `JsonFormat.pojo(...)` from `kpipe-format-json`. This
-leverages DSL-JSON annotation processing for near-native performance.
-
-```java
-import org.kpipe.format.json.JsonFormat;
-import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.RegistryKey;
-
-final var registry = new MessageProcessorRegistry("myApp");
-
-final var userKey = RegistryKey.of("userTransform", UserRecord.class);
-registry.register(userKey, user -> new UserRecord(user.id(), user.name().toUpperCase(), user.email()));
-
-final var pipeline = registry.pipeline(JsonFormat.pojo(UserRecord.class)).add(userKey).build();
+final var confluentPipeline = registry.pipeline(AvroFormat.INSTANCE).skipBytes(5).add(lowerNameKey).build();
 ```
 
 ### Protobuf Processing
 
-Add `kpipe-format-protobuf`. Operators are `UnaryOperator<Message>`:
+Add `kpipe-format-protobuf`. Operators are `UnaryOperator<Message>`. Protobuf messages are immutable — every transform
+builds a new message via `toBuilder().setField(...).build()`.
 
 ```java
 import org.kpipe.format.protobuf.ProtobufFormat;
-import org.kpipe.format.protobuf.ProtobufMessageProcessor;
 import org.kpipe.format.protobuf.ProtobufRegistryKey;
 import org.kpipe.registry.MessageProcessorRegistry;
 
@@ -557,17 +543,11 @@ final var registry = new MessageProcessorRegistry("myApp", ProtobufFormat.INSTAN
 ProtobufFormat.INSTANCE.addDescriptor("customer", CustomerProto.Customer.getDescriptor());
 ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
 
-final var sanitizeKey = ProtobufRegistryKey.of("sanitize");
-registry.register(sanitizeKey, ProtobufMessageProcessor.removeFieldsOperator("email", "address"));
-
-final var upperKey = ProtobufRegistryKey.of("uppercaseName");
-registry.register(
-  upperKey,
-  ProtobufMessageProcessor.transformFieldOperator("name", value -> {
-    if (value instanceof String text) return text.toUpperCase();
-    return value;
-  })
-);
+final var clearEmailKey = ProtobufRegistryKey.of("clearEmail");
+registry.register(clearEmailKey, msg -> {
+  final var emailField = msg.getDescriptorForType().findFieldByName("email");
+  return msg.toBuilder().clearField(emailField).build();
+});
 
 // Register the protobuf console sink yourself (defaults are no longer auto-registered)
 final var protoLoggingKey = ProtobufRegistryKey.of("protobufLogging");
@@ -575,8 +555,7 @@ registry.sinkRegistry().register(protoLoggingKey, new org.kpipe.format.protobuf.
 
 final var pipeline = registry
   .pipeline(ProtobufFormat.INSTANCE)
-  .add(sanitizeKey)
-  .add(upperKey)
+  .add(clearEmailKey)
   .toSink(protoLoggingKey)
   .build();
 ```

@@ -1,4 +1,4 @@
-/// KPipe JSON format module — provides JsonFormat, JsonMessageProcessor, and JsonConsoleSink.
+/// KPipe JSON format module — provides JsonFormat and JsonConsoleSink.
 ///
 /// Add this module to your build only if your pipeline consumes or produces JSON messages.
 module org.kpipe.format.json {
