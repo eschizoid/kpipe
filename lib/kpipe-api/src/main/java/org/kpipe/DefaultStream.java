@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.Operators;
@@ -28,7 +28,7 @@ final class DefaultStream<T> implements Stream<T> {
   private final String topic;
   private final Properties kafkaProps;
   private final MessageFormat<T> format;
-  private final Function<T, MessageSink<T>> defaultConsoleSinkFactory;
+  private final Supplier<MessageSink<T>> defaultConsoleSinkFactory;
   private final List<UnaryOperator<T>> operators;
   private final int maxRetries;
   private final Duration retryBackoff;
@@ -42,7 +42,7 @@ final class DefaultStream<T> implements Stream<T> {
     final String topic,
     final Properties kafkaProps,
     final MessageFormat<T> format,
-    final Function<T, MessageSink<T>> defaultConsoleSinkFactory
+    final Supplier<MessageSink<T>> defaultConsoleSinkFactory
   ) {
     this(
       Objects.requireNonNull(topic, "topic cannot be null"),
@@ -62,7 +62,7 @@ final class DefaultStream<T> implements Stream<T> {
     final String topic,
     final Properties kafkaProps,
     final MessageFormat<T> format,
-    final Function<T, MessageSink<T>> defaultConsoleSinkFactory,
+    final Supplier<MessageSink<T>> defaultConsoleSinkFactory,
     final List<UnaryOperator<T>> operators,
     final int maxRetries,
     final Duration retryBackoff,
@@ -183,7 +183,7 @@ final class DefaultStream<T> implements Stream<T> {
 
   @Override
   public Sink<T> toConsole() {
-    return toCustom(defaultConsoleSinkFactory.apply(null));
+    return toCustom(defaultConsoleSinkFactory.get());
   }
 
   @Override

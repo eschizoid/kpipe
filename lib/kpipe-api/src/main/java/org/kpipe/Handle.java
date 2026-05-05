@@ -8,8 +8,6 @@ import java.util.Map;
 ///
 /// Implements [AutoCloseable] for try-with-resources usage; the default `close()` performs a
 /// graceful shutdown with a 5-second timeout.
-///
-/// @since 1.11.0
 public interface Handle extends AutoCloseable {
   /// Returns whether the underlying consumer is healthy.
   ///

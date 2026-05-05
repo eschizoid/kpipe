@@ -209,52 +209,50 @@ public class KPipeRunner<T extends KPipeConsumer<?>> implements AutoCloseable {
     // Pause the consumer first to prevent receiving new messages
     consumer.pause();
 
-    return Optional.ofNullable(consumer.createMessageTracker())
-      .map(tracker -> {
-        try {
-          // First check for in-flight messages
-          long inFlightCount = tracker.getInFlightMessageCount();
+    final MessageTracker tracker;
+    try {
+      tracker = consumer.createMessageTracker();
+    } catch (final IllegalStateException e) {
+      // Metrics are disabled — no tracker available, so we can't observe in-flight messages.
+      // Close immediately rather than block forever waiting for a count we can't read.
+      LOGGER.log(Level.WARNING, "No message tracker available (metrics disabled), closing consumer immediately");
+      consumer.close();
+      return true;
+    }
 
-          if (inFlightCount == 0) {
-            // No in-flight messages, close immediately
-            consumer.close();
-            return true;
-          }
+    try {
+      long inFlightCount = tracker.getInFlightMessageCount();
 
-          // Log and wait for in-flight messages
-          LOGGER.log(Level.INFO, "Waiting for %s in-flight messages to be processed".formatted(inFlightCount));
-
-          var completed = false;
-          try {
-            completed = tracker.waitForCompletion(timeoutMs).orElse(false);
-          } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Error while waiting for message completion", e);
-          }
-
-          // Second check to determine the final state
-          inFlightCount = tracker.getInFlightMessageCount();
-          final var allProcessed = completed && inFlightCount == 0;
-
-          if (allProcessed) LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down");
-          else LOGGER.log(
-            Level.WARNING,
-            "Shutdown timeout reached with %s messages still in flight".formatted(inFlightCount)
-          );
-
-          consumer.close();
-          return allProcessed;
-        } catch (final Exception e) {
-          LOGGER.log(Level.WARNING, "Error during graceful shutdown", e);
-          consumer.close();
-          return false;
-        }
-      })
-      .orElseGet(() -> {
-        // No message tracker available
-        LOGGER.log(Level.WARNING, "No message tracker available, closing consumer immediately");
+      if (inFlightCount == 0) {
         consumer.close();
         return true;
-      });
+      }
+
+      LOGGER.log(Level.INFO, "Waiting for %s in-flight messages to be processed".formatted(inFlightCount));
+
+      var completed = false;
+      try {
+        completed = tracker.waitForCompletion(timeoutMs).orElse(false);
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error while waiting for message completion", e);
+      }
+
+      inFlightCount = tracker.getInFlightMessageCount();
+      final var allProcessed = completed && inFlightCount == 0;
+
+      if (allProcessed) LOGGER.log(Level.INFO, "All in-flight messages processed, shutting down");
+      else LOGGER.log(
+        Level.WARNING,
+        "Shutdown timeout reached with %s messages still in flight".formatted(inFlightCount)
+      );
+
+      consumer.close();
+      return allProcessed;
+    } catch (final Exception e) {
+      LOGGER.log(Level.WARNING, "Error during graceful shutdown", e);
+      consumer.close();
+      return false;
+    }
   }
 
   /// Starts a metrics reporting thread if metrics reporters are configured.

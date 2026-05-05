@@ -33,7 +33,6 @@ import org.kpipe.sink.MessageSink;
 /// ```
 ///
 /// @param <T> the deserialized message type flowing through the pipeline
-/// @since 1.11.0
 public interface Stream<T> {
   /// Returns a new stream with `op` appended to the pipeline.
   ///
