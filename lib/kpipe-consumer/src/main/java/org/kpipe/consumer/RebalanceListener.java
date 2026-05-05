@@ -55,14 +55,7 @@ public record RebalanceListener(
 
     partitions.forEach(partition -> {
       final var pending = pendingOffsets.get(partition);
-      Long lowestPending = null;
-      if (pending != null && !pending.isEmpty()) {
-        try {
-          lowestPending = pending.first();
-        } catch (final NoSuchElementException ignored) {
-          // raced with concurrent removal; fall through to highestProcessed
-        }
-      }
+      final var lowestPending = pending != null ? KafkaOffsetManager.safeFirst(pending) : null;
       if (lowestPending != null) {
         offsetsToCommit.put(partition, new OffsetAndMetadata(lowestPending));
       } else {

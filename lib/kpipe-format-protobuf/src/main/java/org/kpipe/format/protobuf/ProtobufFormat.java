@@ -7,9 +7,9 @@ import com.google.protobuf.Message;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
-import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
+import org.kpipe.registry.SchemaAwareFormat;
 
 /// Protobuf implementation of MessageFormat for KPipe.
 ///
@@ -24,7 +24,7 @@ import org.kpipe.registry.RegistryKey;
 /// byte[] bytes = protoFormat.serialize(message);
 /// Message result = protoFormat.deserialize(bytes);
 /// ```
-public final class ProtobufFormat implements MessageFormat<Message> {
+public final class ProtobufFormat implements SchemaAwareFormat<Message> {
 
   /// Shared singleton instance — use this rather than constructing a new ProtobufFormat
   /// unless you need an isolated descriptor scope.

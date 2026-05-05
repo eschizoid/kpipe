@@ -1,5 +1,7 @@
 package org.kpipe.registry;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -11,6 +13,8 @@ import org.kpipe.sink.MessageSink;
 ///
 /// @param <T> The type of the object in the pipeline.
 public final class TypedPipelineBuilder<T> {
+
+  private static final Logger LOGGER = System.getLogger(TypedPipelineBuilder.class.getName());
 
   private final MessageFormat<T> format;
   private final List<UnaryOperator<T>> operators = new ArrayList<>();
@@ -115,7 +119,7 @@ public final class TypedPipelineBuilder<T> {
         try {
           registry.get(key).accept(value);
         } catch (final Exception e) {
-          // Suppress error to allow other sinks to proceed, similar to previous implementation
+          LOGGER.log(Level.WARNING, "Sink %s threw during compositeSink delivery; continuing".formatted(key), e);
         }
       }
     };

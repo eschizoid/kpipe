@@ -331,9 +331,12 @@ class KPipeRunnerTest {
   }
 
   @Test
-  void performGracefulConsumerShutdownShouldHandleNullTracker() {
-    // Arrange
-    when(mockConsumer.createMessageTracker()).thenReturn(null);
+  void performGracefulConsumerShutdownShouldHandleMetricsDisabled() {
+    // Arrange: when(mockConsumWhen metrics are disabled, createMessageTracker() throws
+    // IllegalStateException.
+    // Graceful shutdown should fall back to closing immediately rather than blocking on a tracker
+    // it can't read.
+    when(mockConsumer.createMessageTracker()).thenThrow(new IllegalStateException("metrics disabled"));
 
     // Act
     final var result = KPipeRunner.performGracefulConsumerShutdown(mockConsumer, 1000);

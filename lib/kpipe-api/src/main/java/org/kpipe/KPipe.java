@@ -33,8 +33,6 @@ import org.kpipe.sink.MessageSink;
 /// This facade is purely additive — it delegates to the existing
 /// [org.kpipe.registry.MessageProcessorRegistry] / [org.kpipe.consumer.KPipeConsumer.Builder] /
 /// [org.kpipe.consumer.KPipeRunner.Builder] stack and does not replace any public API.
-///
-/// @since 1.11.0
 public final class KPipe {
 
   private static final Logger LOGGER = System.getLogger(KPipe.class.getName());
@@ -48,7 +46,7 @@ public final class KPipe {
   /// @param kafkaProps the Kafka consumer properties
   /// @return a fluent [Stream] configured for JSON
   public static Stream<Map<String, Object>> json(final String topic, final Properties kafkaProps) {
-    return new DefaultStream<>(topic, kafkaProps, JsonFormat.INSTANCE, _ -> new JsonConsoleSink<>());
+    return new DefaultStream<>(topic, kafkaProps, JsonFormat.INSTANCE, () -> new JsonConsoleSink<>());
   }
 
   /// Creates an Avro-typed stream that consumes from the given topic. Messages are deserialized
@@ -62,7 +60,7 @@ public final class KPipe {
   /// @param kafkaProps the Kafka consumer properties
   /// @return a fluent [Stream] configured for Avro
   public static Stream<GenericRecord> avro(final String topic, final Properties kafkaProps) {
-    return new DefaultStream<>(topic, kafkaProps, AvroFormat.INSTANCE, _ -> {
+    return new DefaultStream<>(topic, kafkaProps, AvroFormat.INSTANCE, () -> {
       final var schema = AvroFormat.INSTANCE.getSchema("1");
       if (schema == null) throw new IllegalStateException(
         "AvroFormat.toConsole() requires a default Avro schema registered under key \"1\" on " +
@@ -80,7 +78,7 @@ public final class KPipe {
   /// @param kafkaProps the Kafka consumer properties
   /// @return a fluent [Stream] configured for Protobuf
   public static Stream<Message> protobuf(final String topic, final Properties kafkaProps) {
-    return new DefaultStream<>(topic, kafkaProps, ProtobufFormat.INSTANCE, _ -> new ProtobufConsoleSink<>());
+    return new DefaultStream<>(topic, kafkaProps, ProtobufFormat.INSTANCE, () -> new ProtobufConsoleSink<>());
   }
 
   /// Creates a raw `byte[]` stream — identity passthrough, no SerDe.
@@ -92,7 +90,7 @@ public final class KPipe {
   /// @param kafkaProps the Kafka consumer properties
   /// @return a fluent [Stream] for raw bytes
   public static Stream<byte[]> bytes(final String topic, final Properties kafkaProps) {
-    return new DefaultStream<>(topic, kafkaProps, MessageFormat.bytes(), _ -> bytesConsoleSink());
+    return new DefaultStream<>(topic, kafkaProps, MessageFormat.bytes(), () -> bytesConsoleSink());
   }
 
   /// Creates a stream backed by a user-supplied [MessageFormat]. The default `toConsole()` for
@@ -105,7 +103,7 @@ public final class KPipe {
   /// @param <T> the deserialized message type
   /// @return a fluent [Stream] for the supplied format
   public static <T> Stream<T> custom(final String topic, final Properties kafkaProps, final MessageFormat<T> format) {
-    return new DefaultStream<>(topic, kafkaProps, format, _ -> value -> LOGGER.log(Level.INFO, "{0}", value));
+    return new DefaultStream<>(topic, kafkaProps, format, () -> value -> LOGGER.log(Level.INFO, "{0}", value));
   }
 
   /// Returns a [MessageSink] that prints `byte[]` values as either UTF-8 (when the payload looks

@@ -2,8 +2,6 @@ package org.kpipe.registry;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -121,34 +119,6 @@ public final class RegistryFunctions {
         operation.accept(input1, input2);
       } catch (final Exception e) {
         logger.log(Level.WARNING, "Error in operation", e);
-      }
-    };
-  }
-
-  /// Creates a function wrapper that measures the execution time of operations and tracks
-  /// metrics.
-  ///
-  /// @param <T> the input type
-  /// @param <R> the return type
-  /// @param counterIncrement supplier that increments and returns the operation counter
-  /// @param errorCountIncrement supplier that increments and returns the error counter
-  /// @param timeAccumulator consumer that records the execution duration
-  /// @return a function that executes the operation with timing and metrics tracking
-  public static <T, R> BiFunction<T, Function<T, R>, R> timedExecution(
-    final Supplier<Long> counterIncrement,
-    final Supplier<Long> errorCountIncrement,
-    final Consumer<Duration> timeAccumulator
-  ) {
-    return (input, operation) -> {
-      final var start = Instant.now();
-      try {
-        final var result = operation.apply(input);
-        counterIncrement.get();
-        timeAccumulator.accept(Duration.between(start, Instant.now())); // add time
-        return result;
-      } catch (final Exception e) {
-        errorCountIncrement.get();
-        throw e;
       }
     };
   }

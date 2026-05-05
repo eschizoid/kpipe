@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.Operators;
@@ -28,7 +28,7 @@ final class DefaultStream<T> implements Stream<T> {
   private final String topic;
   private final Properties kafkaProps;
   private final MessageFormat<T> format;
-  private final Function<T, MessageSink<T>> defaultConsoleSinkFactory;
+  private final Supplier<MessageSink<T>> defaultConsoleSinkFactory;
   private final List<UnaryOperator<T>> operators;
   private final int maxRetries;
   private final Duration retryBackoff;
@@ -38,15 +38,19 @@ final class DefaultStream<T> implements Stream<T> {
 
   /// Public constructor used by [KPipe] factories — starts with an empty pipeline and default
   /// retry / backpressure settings.
+  ///
+  /// Defensively copies `kafkaProps` so that subsequent caller mutations do not silently affect
+  /// the in-flight stream. (See CLAUDE.md §14 — `(Properties) source.clone()` is the correct
+  /// copy idiom for `java.util.Properties`.)
   DefaultStream(
     final String topic,
     final Properties kafkaProps,
     final MessageFormat<T> format,
-    final Function<T, MessageSink<T>> defaultConsoleSinkFactory
+    final Supplier<MessageSink<T>> defaultConsoleSinkFactory
   ) {
     this(
       Objects.requireNonNull(topic, "topic cannot be null"),
-      Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null"),
+      (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone(),
       Objects.requireNonNull(format, "format cannot be null"),
       Objects.requireNonNull(defaultConsoleSinkFactory, "defaultConsoleSinkFactory cannot be null"),
       List.of(),
@@ -62,7 +66,7 @@ final class DefaultStream<T> implements Stream<T> {
     final String topic,
     final Properties kafkaProps,
     final MessageFormat<T> format,
-    final Function<T, MessageSink<T>> defaultConsoleSinkFactory,
+    final Supplier<MessageSink<T>> defaultConsoleSinkFactory,
     final List<UnaryOperator<T>> operators,
     final int maxRetries,
     final Duration retryBackoff,
@@ -183,7 +187,7 @@ final class DefaultStream<T> implements Stream<T> {
 
   @Override
   public Sink<T> toConsole() {
-    return toCustom(defaultConsoleSinkFactory.apply(null));
+    return toCustom(defaultConsoleSinkFactory.get());
   }
 
   @Override

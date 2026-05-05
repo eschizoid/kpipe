@@ -33,7 +33,6 @@ import org.kpipe.sink.MessageSink;
 /// ```
 ///
 /// @param <T> the deserialized message type flowing through the pipeline
-/// @since 1.11.0
 public interface Stream<T> {
   /// Returns a new stream with `op` appended to the pipeline.
   ///
@@ -127,9 +126,18 @@ public interface Stream<T> {
   /// @throws NullPointerException if `sink` is null
   Sink<T> toCustom(final MessageSink<T> sink);
 
-  /// Terminates the stream by fanning out to multiple sinks. Each delivered message is
-  /// dispatched to every sink; an exception in one sink does not prevent the others from
-  /// receiving the message (see [org.kpipe.sink.CompositeMessageSink]).
+  /// Terminates the stream by fanning out to multiple sinks. Each delivered message is dispatched
+  /// to every sink; an exception in one sink is **logged at ERROR but suppressed** so the
+  /// remaining sinks still receive the message (see [org.kpipe.sink.CompositeMessageSink]).
+  ///
+  /// **Best-effort delivery, NOT at-least-once-per-sink.** Because exceptions are suppressed,
+  /// a sink that consistently fails will silently drop messages while the consumer continues to
+  /// mark them as processed and commit offsets. The consumer's error path / DLQ is not invoked
+  /// for per-sink failures — only the per-sink ERROR log.
+  ///
+  /// If you need guaranteed delivery to every sink, do not use `toMulti`. Wire each sink as its
+  /// own pipeline through the explicit [org.kpipe.registry.MessageProcessorRegistry] API and
+  /// drive failure handling through the consumer's `errorHandler` / DLQ configuration.
   ///
   /// @param sinks the sinks to broadcast to (must contain at least one element)
   /// @return a [Sink] ready to start

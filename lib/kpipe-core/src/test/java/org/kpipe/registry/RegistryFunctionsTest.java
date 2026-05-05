@@ -112,55 +112,6 @@ class RegistryFunctionsTest {
   }
 
   @Test
-  void shouldTrackMetricsOnSuccessfulExecution() {
-    // Arrange
-    final var counter = new AtomicLong(0);
-    final var errorCounter = new AtomicLong(0);
-    final var totalDurationNanos = new AtomicLong(0);
-
-    // Act
-    final var timedFunction = RegistryFunctions.timedExecution(
-      counter::incrementAndGet,
-      errorCounter::incrementAndGet,
-      duration -> totalDurationNanos.addAndGet(duration.toNanos())
-    );
-
-    final var input = "test";
-    final Function<String, Integer> operation = String::length;
-    final var result = timedFunction.apply(input, (Function) operation);
-
-    // Assert
-    assertEquals(4, result);
-    assertEquals(1, counter.get());
-    assertEquals(0, errorCounter.get());
-    assertTrue(totalDurationNanos.get() > 0);
-  }
-
-  @Test
-  void shouldTrackErrorsOnFailedExecution() {
-    // Arrange
-    final var counter = new AtomicLong(0);
-    final var errorCounter = new AtomicLong(0);
-    final var totalDurationNanos = new AtomicLong(0);
-
-    final var timedFunction = RegistryFunctions.timedExecution(
-      counter::incrementAndGet,
-      errorCounter::incrementAndGet,
-      duration -> totalDurationNanos.addAndGet(duration.toNanos())
-    );
-
-    final var input = "test";
-    final Function<String, Integer> operation = s -> {
-      throw new RuntimeException("Test exception");
-    };
-
-    // Act & Assert
-    assertThrows(RuntimeException.class, () -> timedFunction.apply(input, (Function) operation));
-    assertEquals(0, counter.get());
-    assertEquals(1, errorCounter.get());
-  }
-
-  @Test
   void shouldTransformRegistryValues() {
     // Arrange
     final var registry = new ConcurrentHashMap<String, TestEntry>();

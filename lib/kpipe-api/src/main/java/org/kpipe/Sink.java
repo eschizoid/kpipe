@@ -9,7 +9,6 @@ package org.kpipe;
 /// `Sink<T>` instances from independent `Stream<T>` chains.
 ///
 /// @param <T> the deserialized message type flowing through the pipeline
-/// @since 1.11.0
 public interface Sink<T> {
   /// Starts the pipeline. The returned [Handle] is the only way to query metrics, check
   /// health, or shut down the running consumer. The underlying `KPipeRunner` registers a JVM

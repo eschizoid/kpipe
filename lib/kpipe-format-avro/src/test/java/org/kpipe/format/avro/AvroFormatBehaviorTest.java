@@ -8,7 +8,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.SchemaAwareFormat;
 
 class AvroFormatBehaviorTest {
 
@@ -137,7 +137,7 @@ class AvroFormatBehaviorTest {
     final var location = "test.avsc";
 
     // Act
-    final var schemaInfo = new MessageFormat.SchemaInfo(name, location);
+    final var schemaInfo = new SchemaAwareFormat.SchemaInfo(name, location);
 
     // Assert
     assertEquals(name, schemaInfo.fullyQualifiedName());
@@ -147,8 +147,8 @@ class AvroFormatBehaviorTest {
   @Test
   void shouldNotAcceptNullSchemaValues() {
     // Assert
-    assertThrows(NullPointerException.class, () -> new MessageFormat.SchemaInfo(null, "location"));
-    assertThrows(NullPointerException.class, () -> new MessageFormat.SchemaInfo("name", null));
+    assertThrows(NullPointerException.class, () -> new SchemaAwareFormat.SchemaInfo(null, "location"));
+    assertThrows(NullPointerException.class, () -> new SchemaAwareFormat.SchemaInfo("name", null));
   }
 
   @Test

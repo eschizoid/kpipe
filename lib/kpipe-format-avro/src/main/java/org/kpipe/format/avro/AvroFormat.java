@@ -20,9 +20,9 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.EncoderFactory;
-import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
+import org.kpipe.registry.SchemaAwareFormat;
 
 /// Avro implementation of MessageFormat for KPipe.
 ///
@@ -36,7 +36,7 @@ import org.kpipe.registry.RegistryKey;
 /// avroFormat.addSchema("user", "com.example.User", "schemas/user.avsc");
 /// byte[] bytes = avroFormat.serialize(record);
 /// ```
-public final class AvroFormat implements MessageFormat<GenericRecord> {
+public final class AvroFormat implements SchemaAwareFormat<GenericRecord> {
 
   /// Shared singleton instance using the default HTTP/file/classpath schema reader.
   /// Use this rather than constructing a new AvroFormat unless you need a custom schema source
@@ -217,13 +217,13 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   }
 
   /// Default schema reader supporting HTTP URLs, classpath resources, file paths, and inline
-  // content.
+  /// content.
   ///
   /// - `http://` / `https://` — fetched as a Confluent Schema Registry response and unwrapped from
   ///   the JSON `{"schema":"..."}` envelope.
   /// - `classpath:/path/to/schema.avsc` — read from the module classpath.
   /// - `file://`, `/absolute/path`, `*.json`, `*.avsc`, or any existing file path — read as UTF-8
-  // text.
+  ///   text.
   /// - Anything else — treated as inline schema content.
   private static String readSchemaFromLocation(final String location) {
     try {

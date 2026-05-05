@@ -1,7 +1,5 @@
 package org.kpipe.metrics;
 
-import java.util.function.LongSupplier;
-
 /// Metrics interface for KPipe consumers — captures message counts, processing duration,
 /// in-flight gauge, and backpressure events.
 ///
@@ -30,15 +28,6 @@ public interface ConsumerMetrics {
   ///
   /// @return a no-op ConsumerMetrics instance
   static ConsumerMetrics noop() {
-    return NoopConsumerMetrics.INSTANCE;
-  }
-
-  /// Returns a no-op instance whose in-flight gauge would observe the given supplier
-  /// when wired to a real backend. The supplier is ignored by the no-op impl.
-  ///
-  /// @param inFlightSupplier supplies the current number of in-flight messages
-  /// @return a no-op ConsumerMetrics instance
-  static ConsumerMetrics noop(final LongSupplier inFlightSupplier) {
     return NoopConsumerMetrics.INSTANCE;
   }
 

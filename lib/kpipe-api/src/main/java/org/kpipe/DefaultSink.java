@@ -10,11 +10,7 @@ import org.kpipe.sink.MessageSink;
 /// [MessageSink] and constructs a fully-wired `KPipeConsumer` + `KPipeRunner` on `start()`.
 ///
 /// @param <T> the deserialized message type
-final class DefaultSink<T> implements Sink<T> {
-
-  private final DefaultStream<T> stream;
-  private final MessageSink<T> terminalSink;
-
+record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) implements Sink<T> {
   DefaultSink(final DefaultStream<T> stream, final MessageSink<T> terminalSink) {
     this.stream = Objects.requireNonNull(stream, "stream cannot be null");
     this.terminalSink = Objects.requireNonNull(terminalSink, "terminalSink cannot be null");
@@ -41,16 +37,32 @@ final class DefaultSink<T> implements Sink<T> {
 
     final var consumer = consumerBuilder.build();
     final var runner = KPipeRunner.builder(consumer).build();
-    runner.start();
+    try {
+      runner.start();
+    } catch (final RuntimeException e) {
+      // Start failed (broker unreachable, missing topic, etc.) — release the consumer so we
+      // don't leak the partially-built pipeline. Without this, the AutoCloseable contract on
+      // Handle is unreachable because no Handle was ever returned.
+      try {
+        consumer.close();
+      } catch (final Exception suppressed) {
+        e.addSuppressed(suppressed);
+      }
+      throw e;
+    }
     return new DefaultHandle(runner, consumer);
   }
 
-
-  DefaultStream<T> stream() {
+  /// Exposes the configured stream for test inspection of composition.
+  @Override
+  public DefaultStream<T> stream() {
     return stream;
   }
 
-  MessageSink<T> terminalSink() {
+  /// Exposes the terminal sink for test inspection of composition (verifies
+  /// that `toConsole()` / `toCustom()` / `toMulti()` produced the expected sink type).
+  @Override
+  public MessageSink<T> terminalSink() {
     return terminalSink;
   }
 }
