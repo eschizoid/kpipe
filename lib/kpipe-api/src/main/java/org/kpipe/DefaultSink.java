@@ -10,11 +10,7 @@ import org.kpipe.sink.MessageSink;
 /// [MessageSink] and constructs a fully-wired `KPipeConsumer` + `KPipeRunner` on `start()`.
 ///
 /// @param <T> the deserialized message type
-final class DefaultSink<T> implements Sink<T> {
-
-  private final DefaultStream<T> stream;
-  private final MessageSink<T> terminalSink;
-
+record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) implements Sink<T> {
   DefaultSink(final DefaultStream<T> stream, final MessageSink<T> terminalSink) {
     this.stream = Objects.requireNonNull(stream, "stream cannot be null");
     this.terminalSink = Objects.requireNonNull(terminalSink, "terminalSink cannot be null");
@@ -45,12 +41,16 @@ final class DefaultSink<T> implements Sink<T> {
     return new DefaultHandle(runner, consumer);
   }
 
-
-  DefaultStream<T> stream() {
+  /// Exposes the configured stream for test inspection of composition.
+  @Override
+  public DefaultStream<T> stream() {
     return stream;
   }
 
-  MessageSink<T> terminalSink() {
+  /// Exposes the terminal sink for test inspection of composition (verifies
+  /// that `toConsole()` / `toCustom()` / `toMulti()` produced the expected sink type).
+  @Override
+  public MessageSink<T> terminalSink() {
     return terminalSink;
   }
 }

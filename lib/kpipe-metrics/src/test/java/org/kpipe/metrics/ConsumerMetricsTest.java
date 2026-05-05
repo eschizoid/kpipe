@@ -15,14 +15,6 @@ class ConsumerMetricsTest {
   }
 
   @Test
-  void shouldReturnNoopWithInFlightSupplierSingleton() {
-    final var metrics = ConsumerMetrics.noop(() -> 42L);
-    assertNotNull(metrics);
-    // The inFlightSupplier is ignored by the no-op impl — the call returns the same singleton.
-    assertSame(ConsumerMetrics.noop(), metrics);
-  }
-
-  @Test
   void shouldRecordMessageReceivedWithoutThrowing() {
     final var metrics = ConsumerMetrics.noop();
     assertDoesNotThrow(metrics::recordMessageReceived);

@@ -60,7 +60,6 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   private static final System.Logger LOGGER = System.getLogger(KafkaOffsetManager.class.getName());
 
   private final Consumer<K, byte[]> kafkaConsumer;
-  private final ExecutorService executorService;
   private final AtomicReference<OffsetState> state = new AtomicReference<>(OffsetState.CREATED);
   private final Queue<ConsumerCommand> commandQueue;
   private final Map<String, CompletableFuture<Boolean>> commitFutures = new ConcurrentHashMap<>();
@@ -125,7 +124,6 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   private KafkaOffsetManager(final Builder<K> builder) {
     this.kafkaConsumer = builder.kafkaConsumer;
     this.commitInterval = builder.commitInterval;
-    this.executorService = Executors.newVirtualThreadPerTaskExecutor();
     this.commandQueue = builder.commandQueue;
   }
 
@@ -445,14 +443,5 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   private void cleanup() {
     pendingOffsets.clear();
     highestProcessedOffsets.clear();
-
-    executorService.shutdown();
-    try {
-      if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) executorService.shutdownNow();
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      LOGGER.log(Level.WARNING, "Interrupted while waiting for executor shutdown", e);
-      executorService.shutdownNow();
-    }
   }
 }

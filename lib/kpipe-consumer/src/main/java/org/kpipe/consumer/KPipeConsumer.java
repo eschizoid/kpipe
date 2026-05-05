@@ -541,8 +541,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       );
     }
 
-    this.otelMetrics =
-      builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop(this.inFlightCount::get);
+    this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
   }
 
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
