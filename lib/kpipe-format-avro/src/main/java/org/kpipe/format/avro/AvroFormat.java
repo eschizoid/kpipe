@@ -217,13 +217,13 @@ public final class AvroFormat implements SchemaAwareFormat<GenericRecord> {
   }
 
   /// Default schema reader supporting HTTP URLs, classpath resources, file paths, and inline
-  // content.
+  /// content.
   ///
   /// - `http://` / `https://` — fetched as a Confluent Schema Registry response and unwrapped from
   ///   the JSON `{"schema":"..."}` envelope.
   /// - `classpath:/path/to/schema.avsc` — read from the module classpath.
   /// - `file://`, `/absolute/path`, `*.json`, `*.avsc`, or any existing file path — read as UTF-8
-  // text.
+  ///   text.
   /// - Anything else — treated as inline schema content.
   private static String readSchemaFromLocation(final String location) {
     try {

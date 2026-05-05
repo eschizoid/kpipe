@@ -37,7 +37,19 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
 
     final var consumer = consumerBuilder.build();
     final var runner = KPipeRunner.builder(consumer).build();
-    runner.start();
+    try {
+      runner.start();
+    } catch (final RuntimeException e) {
+      // Start failed (broker unreachable, missing topic, etc.) — release the consumer so we
+      // don't leak the partially-built pipeline. Without this, the AutoCloseable contract on
+      // Handle is unreachable because no Handle was ever returned.
+      try {
+        consumer.close();
+      } catch (final Exception suppressed) {
+        e.addSuppressed(suppressed);
+      }
+      throw e;
+    }
     return new DefaultHandle(runner, consumer);
   }
 

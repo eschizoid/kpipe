@@ -38,6 +38,10 @@ final class DefaultStream<T> implements Stream<T> {
 
   /// Public constructor used by [KPipe] factories — starts with an empty pipeline and default
   /// retry / backpressure settings.
+  ///
+  /// Defensively copies `kafkaProps` so that subsequent caller mutations do not silently affect
+  /// the in-flight stream. (See CLAUDE.md §14 — `(Properties) source.clone()` is the correct
+  /// copy idiom for `java.util.Properties`.)
   DefaultStream(
     final String topic,
     final Properties kafkaProps,
@@ -46,7 +50,7 @@ final class DefaultStream<T> implements Stream<T> {
   ) {
     this(
       Objects.requireNonNull(topic, "topic cannot be null"),
-      Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null"),
+      (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone(),
       Objects.requireNonNull(format, "format cannot be null"),
       Objects.requireNonNull(defaultConsoleSinkFactory, "defaultConsoleSinkFactory cannot be null"),
       List.of(),

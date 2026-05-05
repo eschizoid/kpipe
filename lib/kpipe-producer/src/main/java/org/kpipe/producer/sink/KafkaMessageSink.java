@@ -1,5 +1,7 @@
 package org.kpipe.producer.sink;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.util.Objects;
 import java.util.function.Function;
 import org.apache.kafka.clients.producer.Producer;
@@ -8,8 +10,15 @@ import org.kpipe.sink.MessageSink;
 
 /// A [MessageSink] that sends processed messages to a Kafka topic.
 ///
+/// Send failures are reported via the producer's async callback at WARNING level so they don't
+/// disappear silently. The Kafka `Future<RecordMetadata>` is otherwise discarded — callers who
+/// need synchronous send semantics or precise failure handling per record should use
+/// `KPipeProducer.send` / `sendAsync` directly rather than wiring this sink.
+///
 /// @param <T> The type of the processed object.
 public class KafkaMessageSink<T> implements MessageSink<T> {
+
+  private static final Logger LOGGER = System.getLogger(KafkaMessageSink.class.getName());
 
   private final Producer<byte[], byte[]> producer;
   private final String topic;
@@ -39,7 +48,9 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
     if (value == null) return;
     final var key = keyMapper != null ? keyMapper.apply(value) : null;
     final var val = valueMapper.apply(value);
-    producer.send(new ProducerRecord<>(topic, key, val));
+    producer.send(new ProducerRecord<>(topic, key, val), (metadata, exception) -> {
+      if (exception != null) LOGGER.log(Level.WARNING, "Failed to send record to topic %s".formatted(topic), exception);
+    });
   }
 
   /// Creates a [KafkaMessageSink] that uses null for keys.
