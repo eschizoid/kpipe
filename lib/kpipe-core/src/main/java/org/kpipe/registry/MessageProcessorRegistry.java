@@ -1,5 +1,6 @@
 package org.kpipe.registry;
 
+import java.lang.System.Logger.Level;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
@@ -86,14 +87,19 @@ public class MessageProcessorRegistry {
 
   /// Retrieves a typed operator from the registry.
   ///
+  /// If no operator is registered under `key`, the returned operator passes the input through
+  /// unchanged and logs a single WARNING per call. A missing operator is almost always a
+  /// configuration error — pipelines silently dropping their transforms is a §12-style trap.
+  ///
   /// @param <T> The type of data the operator processes.
   /// @param key The type-safe key to retrieve.
-  /// @return The registered operator, or a no-op operator if not found.
+  /// @return The registered operator, or a logging pass-through operator if not found.
   @SuppressWarnings("unchecked")
   public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
     return input -> {
       final var entry = (RegistryEntry<UnaryOperator<T>>) registryMap.get(key);
       if (entry != null) return entry.apply(input);
+      LOGGER.log(Level.WARNING, "No operator registered under key %s — passing input through unchanged".formatted(key));
       return input;
     };
   }

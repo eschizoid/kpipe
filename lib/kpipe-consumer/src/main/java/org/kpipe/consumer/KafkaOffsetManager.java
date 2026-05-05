@@ -291,7 +291,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
       .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
-  private static Long safeFirst(final SortedSet<Long> set) {
+  static Long safeFirst(final SortedSet<Long> set) {
     try {
       return set.isEmpty() ? null : set.first();
     } catch (final NoSuchElementException e) {

@@ -75,6 +75,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
   private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
   private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
+  private static final String METRIC_PROCESSING_DURATION_TOTAL_MS = "processingDurationTotalMs";
   private static final String METRIC_RETRIES = "retries";
   static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
   static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
@@ -279,6 +280,16 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @return This builder instance for method chaining
     public Builder<K> withThreadTerminationTimeout(final Duration timeout) {
       this.threadTerminationTimeout = Objects.requireNonNull(timeout);
+      return this;
+    }
+
+    /// Sets the timeout for the virtual-thread executor to drain in-flight processing tasks during
+    /// shutdown. After this timeout, `executor.shutdownNow()` is invoked to cancel remaining tasks.
+    ///
+    /// @param timeout Maximum time to wait for the executor to drain
+    /// @return This builder instance for method chaining
+    public Builder<K> withExecutorTerminationTimeout(final Duration timeout) {
+      this.executorTerminationTimeout = Objects.requireNonNull(timeout);
       return this;
     }
 
@@ -528,6 +539,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
           METRIC_MESSAGES_PROCESSED,
           new AtomicLong(0),
           METRIC_PROCESSING_ERRORS,
+          new AtomicLong(0),
+          METRIC_PROCESSING_DURATION_TOTAL_MS,
           new AtomicLong(0),
           METRIC_RETRIES,
           new AtomicLong(0),
@@ -898,9 +911,13 @@ public class KPipeConsumer<K> implements AutoCloseable {
     try {
       final var result = tryProcessRecord(record);
       if (result) {
-        if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+        final var durationMs = System.currentTimeMillis() - startTime;
+        if (enableMetrics) {
+          metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+          metrics.get(METRIC_PROCESSING_DURATION_TOTAL_MS).addAndGet(durationMs);
+        }
         otelMetrics.recordMessageProcessed();
-        otelMetrics.recordProcessingDuration(System.currentTimeMillis() - startTime);
+        otelMetrics.recordProcessingDuration(durationMs);
       }
     } finally {
       inFlightCount.decrementAndGet();
