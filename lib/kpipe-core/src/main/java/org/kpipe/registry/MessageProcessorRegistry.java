@@ -88,8 +88,8 @@ public class MessageProcessorRegistry {
   /// Retrieves a typed operator from the registry.
   ///
   /// If no operator is registered under `key`, the returned operator passes the input through
-  /// unchanged and logs a single WARNING per call. A missing operator is almost always a
-  /// configuration error — pipelines silently dropping their transforms is a §12-style trap.
+  /// unchanged and logs a WARNING. A missing operator is almost always a configuration error;
+  /// silent pass-through would let pipelines drop their transforms unnoticed.
   ///
   /// @param <T> The type of data the operator processes.
   /// @param key The type-safe key to retrieve.

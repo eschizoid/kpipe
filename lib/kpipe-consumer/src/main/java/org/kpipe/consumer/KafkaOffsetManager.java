@@ -418,10 +418,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
       stopScheduler();
       try {
         final var offsetsToCommit = prepareOffsetsToCommit();
-        performCommit(offsetsToCommit, 5);
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        LOGGER.log(Level.WARNING, "Interrupted during final commit", e);
+        if (!offsetsToCommit.isEmpty()) kafkaConsumer.commitSync(offsetsToCommit, Duration.ofSeconds(5));
       } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Error during final offset commit", e);
       }

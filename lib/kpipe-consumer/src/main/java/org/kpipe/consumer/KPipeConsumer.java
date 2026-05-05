@@ -192,8 +192,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Sets the pipeline to process each consumed message.
     ///
-    /// Per the byte-boundary architecture (CLAUDE.md §1), the consumer always operates on
-    /// `byte[]`. The pipeline must be a [MessagePipeline] — typically produced by
+    /// The consumer always operates on `byte[]` at the boundary; format SerDe lives inside the
+    /// pipeline. The pipeline must be a [MessagePipeline] — typically produced by
     /// `MessageProcessorRegistry.pipeline(format).build()`.
     ///
     /// @param pipeline The pipeline to apply to message values

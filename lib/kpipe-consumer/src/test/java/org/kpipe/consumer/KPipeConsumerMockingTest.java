@@ -556,10 +556,9 @@ class KPipeConsumerMockingTest {
 
   @Test
   void shouldHandleNullValueInRecord() throws Exception {
-    // Per the byte-boundary contract (CLAUDE.md §11), null record value is treated as a
-    // contract violation: pipeline deserialize() returns null, MessagePipeline.processToSink
-    // throws IllegalStateException, the consumer counts it as an error, invokes the error
-    // handler, and marks the offset as processed.
+    // Null record value is a contract violation: pipeline deserialize() returns null,
+    // MessagePipeline.processToSink throws IllegalStateException, the consumer counts it as
+    // an error, invokes the error handler, and marks the offset as processed.
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     final var functionalConsumer = new TestableKPipeConsumer<>(
@@ -1241,11 +1240,13 @@ class KPipeConsumerMockingTest {
     } while (System.currentTimeMillis() < deadline);
     assertEquals(0L, inFlight, "in-flight must drain to 0 even when handler throws");
 
-    final long marked = commandQueue
-      .stream()
-      .filter(cmd -> cmd instanceof ConsumerCommand.MarkOffsetProcessed)
-      .count();
-    assertEquals(2, marked, "both failed records must still be marked as processed before the handler runs");
+    // The MarkOffsetProcessed commands are enqueued by handleProcessingError running on virtual
+    // threads, AFTER executeProcessRecords' synchronous processCommands() has already returned.
+    // Drain the queue once more to forward the marks to the (mocked) offset manager.
+    consumer.drainCommands();
+
+    // Both failed records must be marked as processed before the handler runs.
+    verify(offsetManager, times(2)).markOffsetProcessed(any(ConsumerRecord.class));
   }
 
   /// Verifies that backpressure still drives Kafka pause/resume even when the metrics map is
@@ -1358,6 +1359,13 @@ class KPipeConsumerMockingTest {
 
     private void executeProcessRecords(final ConsumerRecords<K, byte[]> records) {
       processRecords(records);
+      processCommands();
+    }
+
+    /// Drains the command queue. Tests use this to flush commands queued by virtual threads
+    /// AFTER the synchronous `processCommands()` call inside `executeProcessRecords` — typically
+    /// `MarkOffsetProcessed` commands enqueued from inside `handleProcessingError`.
+    void drainCommands() {
       processCommands();
     }
 

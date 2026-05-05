@@ -40,8 +40,7 @@ final class DefaultStream<T> implements Stream<T> {
   /// retry / backpressure settings.
   ///
   /// Defensively copies `kafkaProps` so that subsequent caller mutations do not silently affect
-  /// the in-flight stream. (See CLAUDE.md §14 — `(Properties) source.clone()` is the correct
-  /// copy idiom for `java.util.Properties`.)
+  /// the in-flight stream.
   DefaultStream(
     final String topic,
     final Properties kafkaProps,

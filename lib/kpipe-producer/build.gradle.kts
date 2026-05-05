@@ -48,10 +48,9 @@ tasks.test {
     exclude("**/${excludePattern.replace(".", "/")}.class")
   }
 
-  minHeapSize = "7g"
-  maxHeapSize = "7g"
-  maxParallelForks = 1
-  forkEvery = 200
+  minHeapSize = "512m"
+  maxHeapSize = "2g"
+  maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(2)
 }
 
 tasks.jacocoTestReport {

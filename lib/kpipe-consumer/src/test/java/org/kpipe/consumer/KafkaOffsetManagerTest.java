@@ -349,11 +349,7 @@ class KafkaOffsetManagerTest {
         asyncManager.notifyCommitComplete(command.commitId(), false);
       } finally {
         // Clean up - should not throw even after failure
-        assertDoesNotThrow(asyncManager::close);
-
-        // Get and complete the final commit command during close
-        final var closeCommand = pollCommitCommand(Duration.ofSeconds(1));
-        if (closeCommand != null) asyncManager.notifyCommitComplete(closeCommand.commitId(), true);
+        assertDoesNotThrow(() -> asyncManager.close());
       }
     }
   }
@@ -411,31 +407,19 @@ class KafkaOffsetManagerTest {
     }
 
     @Test
-    void shouldHandleMultipleCloseCalls() throws Exception {
-      // Track and mark an offset
+    void shouldHandleMultipleCloseCalls() {
+      // Track and mark an offset so the final-commit path has work to do.
       final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key", "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
-      // First close - run asynchronously so we can capture the command
-      final var closeFuture = CompletableFuture.runAsync(offsetManager::close);
-
-      // Verify a command was added to the queue
-      final var command = pollCommitCommand(Duration.ofSeconds(2));
-      assertNotNull(command, "Should have generated a commit command during close");
-      assertInstanceOf(ConsumerCommand.CommitOffsets.class, command, "Command should be of type COMMIT_OFFSETS");
-
-      // Simulate successful commit completion
-      offsetManager.notifyCommitComplete(command.commitId(), true);
-
-      // Wait for close to complete
-      closeFuture.get(2, TimeUnit.SECONDS);
-
-      // A second close should be safe
+      // First close: invokes kafkaConsumer.commitSync directly with the prepared offsets.
       offsetManager.close();
+      verify(mockConsumer, times(1)).commitSync(anyMap(), any(Duration.class));
 
-      // No additional commands should be in the queue
-      assertNull(commandQueue.poll(), "No additional commands should be added on second close");
+      // Subsequent close() is a no-op (state already STOPPED) — must not call commitSync again.
+      offsetManager.close();
+      verify(mockConsumer, times(1)).commitSync(anyMap(), any(Duration.class));
     }
   }
 
@@ -469,8 +453,6 @@ class KafkaOffsetManagerTest {
         autoCommitManager.notifyCommitComplete(command.commitId(), true);
       } finally {
         autoCommitManager.close();
-        final var closeCommand = pollCommitCommand(Duration.ofSeconds(1));
-        if (closeCommand != null) autoCommitManager.notifyCommitComplete(closeCommand.commitId(), true);
       }
     }
 
