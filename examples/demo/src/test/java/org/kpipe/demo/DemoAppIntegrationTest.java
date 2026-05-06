@@ -6,14 +6,11 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Map;
-import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
+import org.kpipe.producer.config.KafkaProducerConfig;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
@@ -60,17 +57,7 @@ class DemoAppIntegrationTest {
       TimeUnit.SECONDS.sleep(3);
 
       // Produce a JSON message
-      final var producerProps = new Properties();
-      producerProps.putAll(
-        Map.of(
-          ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
-          kafka.getBootstrapServers(),
-          ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
-          ByteArraySerializer.class.getName(),
-          ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
-          ByteArraySerializer.class.getName()
-        )
-      );
+      final var producerProps = KafkaProducerConfig.createProducerConfig(kafka.getBootstrapServers());
 
       final var message = """
         {"id":1,"name":"Test User","email":"test@example.com"}""".getBytes(StandardCharsets.UTF_8);

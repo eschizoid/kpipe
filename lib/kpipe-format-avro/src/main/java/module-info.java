@@ -6,7 +6,6 @@ module org.kpipe.format.avro {
   requires org.apache.avro;
   requires com.fasterxml.jackson.core;
   requires java.net.http;
-  requires dsl.json;
 
   exports org.kpipe.format.avro;
 }

@@ -63,17 +63,17 @@ public final class Operators {
   /// Returns an operator that runs a side effect and passes the value through unchanged.
   ///
   /// Useful for logging, metrics, or invoking a downstream system without modifying
-  /// the message.
+  /// the message. Mirrors `java.util.stream.Stream.peek`.
   ///
   /// Example:
   /// ```java
-  /// .add(tap(msg -> log.info("processing {}", msg.get("id"))))
+  /// .add(peek(msg -> log.info("processing {}", msg.get("id"))))
   /// ```
   ///
   /// @param sideEffect the action to run on each value
   /// @param <T> the operator's value type
   /// @return an operator that runs `sideEffect.accept(input)` and returns input unchanged
-  public static <T> UnaryOperator<T> tap(final Consumer<T> sideEffect) {
+  public static <T> UnaryOperator<T> peek(final Consumer<T> sideEffect) {
     return value -> {
       sideEffect.accept(value);
       return value;
@@ -95,15 +95,6 @@ public final class Operators {
   /// @return an operator that returns `mapper.apply(input)`
   public static <T> UnaryOperator<T> map(final Function<T, T> mapper) {
     return mapper::apply;
-  }
-
-  /// Alias for [#tap] using the Stream API vocabulary.
-  ///
-  /// @param sideEffect the action to run on each value
-  /// @param <T> the operator's value type
-  /// @return an operator that runs `sideEffect.accept(input)` and returns input unchanged
-  public static <T> UnaryOperator<T> peek(final Consumer<T> sideEffect) {
-    return tap(sideEffect);
   }
 
   /// Wraps an operator with error handling that suppresses exceptions and returns the original

@@ -30,14 +30,13 @@ import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.EncoderFactory;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.format.avro.AvroRegistryKey;
+import org.kpipe.producer.config.KafkaProducerConfig;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -129,17 +128,7 @@ class AppIntegrationTest {
         }
       });
 
-      final var producerProps = new Properties();
-      producerProps.putAll(
-        Map.of(
-          ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
-          kafka.getBootstrapServers(),
-          ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
-          ByteArraySerializer.class.getName(),
-          ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
-          ByteArraySerializer.class.getName()
-        )
-      );
+      final var producerProps = KafkaProducerConfig.createProducerConfig(kafka.getBootstrapServers());
 
       // Retry produce during the warm-up window so we do not miss messages while the consumer
       // finishes initial group assignment.

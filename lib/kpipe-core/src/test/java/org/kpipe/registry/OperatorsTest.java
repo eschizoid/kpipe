@@ -43,9 +43,9 @@ class OperatorsTest {
   }
 
   @Test
-  void tapShouldRunSideEffectAndPassThrough() {
+  void peekShouldRunSideEffectAndPassThrough() {
     final var captured = new AtomicReference<String>();
-    final var op = Operators.tap((String s) -> captured.set(s));
+    final var op = Operators.peek((String s) -> captured.set(s));
 
     final var result = op.apply("original");
 
@@ -60,17 +60,6 @@ class OperatorsTest {
   }
 
   @Test
-  void peekShouldRunSideEffectAndPassThrough() {
-    final var captured = new AtomicReference<String>();
-    final var op = Operators.peek((String s) -> captured.set(s));
-
-    final var result = op.apply("original");
-
-    assertSame("original", result);
-    assertEquals("original", captured.get());
-  }
-
-  @Test
   void filterShouldComposeInPipeline() {
     // Verify the operator actually integrates with TypedPipelineBuilder's
     // null-handling — filtered messages short-circuit the chain.
@@ -79,7 +68,7 @@ class OperatorsTest {
       .pipeline(MessageFormat.bytes())
       .add(Operators.filter(b -> new String(b).startsWith("keep-")))
       .add(
-        Operators.tap(b -> {
+        Operators.peek(b -> {
           // This should not be invoked for filtered messages.
           if (new String(b).startsWith("drop-")) throw new AssertionError("filter did not short-circuit");
         })

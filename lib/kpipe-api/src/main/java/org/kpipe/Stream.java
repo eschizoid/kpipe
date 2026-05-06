@@ -57,7 +57,7 @@ public interface Stream<T> {
   /// `pipe(Operators.peek(sideEffect))`.
   ///
   /// @param sideEffect the side-effect to run on each message
-  /// @return a new stream with the peek appended
+  /// @return a new stream with the side-effect appended
   /// @throws NullPointerException if `sideEffect` is null
   Stream<T> peek(final Consumer<T> sideEffect);
 

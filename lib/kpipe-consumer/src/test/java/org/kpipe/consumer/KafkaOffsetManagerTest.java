@@ -65,7 +65,7 @@ class KafkaOffsetManagerTest {
 
   @Test
   void shouldHandleEmptyPartitions() throws Exception {
-    final var result = offsetManager.commitSyncAndWait(1);
+    final var result = offsetManager.commitSyncAndWait(Duration.ofSeconds(1));
 
     assertTrue(result, "Should handle empty partitions gracefully");
     verify(mockConsumer, never()).commitSync(anyMap());
@@ -234,7 +234,7 @@ class KafkaOffsetManagerTest {
         // Initiate commit
         CompletableFuture.runAsync(() -> {
           try {
-            offsetManager.commitSyncAndWait(1);
+            offsetManager.commitSyncAndWait(Duration.ofSeconds(1));
           } catch (InterruptedException ignored) {}
         });
 
@@ -271,7 +271,7 @@ class KafkaOffsetManagerTest {
       // Create a future to monitor a commit result
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
         try {
-          return offsetManager.commitSyncAndWait(1);
+          return offsetManager.commitSyncAndWait(Duration.ofSeconds(1));
         } catch (final InterruptedException e) {
           return false;
         }
@@ -302,7 +302,7 @@ class KafkaOffsetManagerTest {
       // Act - initiate commit
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
         try {
-          return offsetManager.commitSyncAndWait(1);
+          return offsetManager.commitSyncAndWait(Duration.ofSeconds(1));
         } catch (final InterruptedException e) {
           return false;
         }
@@ -466,7 +466,7 @@ class KafkaOffsetManagerTest {
       // Start the commit operation asynchronously
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
         try {
-          return offsetManager.commitSyncAndWait(500);
+          return offsetManager.commitSyncAndWait(Duration.ofMillis(500));
         } catch (final InterruptedException e) {
           return false;
         }
@@ -502,7 +502,7 @@ class KafkaOffsetManagerTest {
       // Act - initiate commit
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
         try {
-          return offsetManager.commitSyncAndWait(1);
+          return offsetManager.commitSyncAndWait(Duration.ofSeconds(1));
         } catch (final InterruptedException e) {
           return false;
         }
@@ -531,7 +531,7 @@ class KafkaOffsetManagerTest {
       offsetManager.markOffsetProcessed(record);
 
       // Assert - should not throw exceptions or cause issues
-      assertDoesNotThrow(() -> offsetManager.commitSyncAndWait(1));
+      assertDoesNotThrow(() -> offsetManager.commitSyncAndWait(Duration.ofSeconds(1)));
     }
 
     @Test
@@ -545,7 +545,7 @@ class KafkaOffsetManagerTest {
       // Act - initiate commit
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
         try {
-          return offsetManager.commitSyncAndWait(1);
+          return offsetManager.commitSyncAndWait(Duration.ofSeconds(1));
         } catch (final InterruptedException e) {
           return false;
         }
@@ -650,7 +650,7 @@ class KafkaOffsetManagerTest {
         // Force final commit and verify
         final var commitFuture = CompletableFuture.supplyAsync(() -> {
           try {
-            return concurrentManager.commitSyncAndWait(500);
+            return concurrentManager.commitSyncAndWait(Duration.ofMillis(500));
           } catch (final InterruptedException e) {
             return false;
           }
@@ -691,7 +691,7 @@ class KafkaOffsetManagerTest {
     // Start the commit operation and capture the command produced for it.
     CompletableFuture.runAsync(() -> {
       try {
-        offsetManager.commitSyncAndWait(30);
+        offsetManager.commitSyncAndWait(Duration.ofSeconds(30));
       } catch (final InterruptedException e) {
         // Ignore interruption
       }
@@ -971,7 +971,7 @@ class KafkaOffsetManagerTest {
       final var startNanos = System.nanoTime();
       final var commitFuture = CompletableFuture.supplyAsync(() -> {
         try {
-          return offsetManager.commitSyncAndWait(1);
+          return offsetManager.commitSyncAndWait(Duration.ofSeconds(1));
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
           return null;

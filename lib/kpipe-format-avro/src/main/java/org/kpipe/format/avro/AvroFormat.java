@@ -1,7 +1,7 @@
 package org.kpipe.format.avro;
 
-import com.dslplatform.json.DslJson;
-import java.io.ByteArrayInputStream;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonToken;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -246,14 +246,14 @@ public final class AvroFormat implements SchemaAwareFormat<GenericRecord> {
             "Empty response from schema registry"
           );
 
-          try {
-            final var dslJson = new DslJson<>();
-            final var bytes = responseBody.getBytes(StandardCharsets.UTF_8);
-            final var result = dslJson.deserialize(Map.class, new ByteArrayInputStream(bytes));
-
-            if (result == null) throw new IOException("Failed to deserialize schema registry response");
-            if (!result.containsKey("schema")) throw new IOException("Schema field not found in response");
-            return (String) result.get("schema");
+          try (final var parser = new JsonFactory().createParser(responseBody)) {
+            while (parser.nextToken() != null) {
+              if (parser.currentToken() == JsonToken.FIELD_NAME && "schema".equals(parser.currentName())) {
+                parser.nextToken();
+                return parser.getValueAsString();
+              }
+            }
+            throw new IOException("Schema field not found in response");
           } catch (final Exception e) {
             throw new IOException(
               "Error parsing schema registry response: " +

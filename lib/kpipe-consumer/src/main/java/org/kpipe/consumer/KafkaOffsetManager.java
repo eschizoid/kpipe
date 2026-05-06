@@ -48,7 +48,7 @@ import org.kpipe.consumer.enums.OffsetState;
 /// offsetManager.markOffsetProcessed(record);
 ///
 /// // Commit offsets explicitly
-/// final var success = offsetManager.commitSyncAndWait(5000); // 5 second timeout
+/// final var success = offsetManager.commitSyncAndWait(Duration.ofSeconds(5));
 ///
 /// // Clean up resources when done
 /// offsetManager.close();
@@ -214,7 +214,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   /// without losing any unprocessed messages.
   public void commitSafeOffsets() {
     try {
-      commitSyncAndWait(60);
+      commitSyncAndWait(Duration.ofSeconds(60));
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       LOGGER.log(Level.WARNING, "Interrupted while committing offsets", e);
@@ -258,18 +258,18 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     }
   }
 
-  /// Commits offsets synchronously and waits for the specified timeout.
+  /// Commits offsets synchronously and waits up to `timeout` for the commit to complete.
   ///
-  /// @param timeoutSeconds Time to wait for a commit in seconds
+  /// @param timeout Maximum time to wait for the commit
   /// @return true if the commit was successful
   /// @throws InterruptedException if the thread is interrupted while waiting
-  public boolean commitSyncAndWait(final int timeoutSeconds) throws InterruptedException {
+  public boolean commitSyncAndWait(final Duration timeout) throws InterruptedException {
     if (state.get() == OffsetState.STOPPED) return true;
 
     final var offsetsToCommit = prepareOffsetsToCommit();
     if (offsetsToCommit.isEmpty()) return true;
 
-    return performCommit(offsetsToCommit, timeoutSeconds);
+    return performCommit(offsetsToCommit, timeout);
   }
 
   /// Prepares offsets for commit based on the current processing state. This method calculates the
@@ -299,7 +299,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     }
   }
 
-  private boolean performCommit(final Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, final int timeoutSeconds)
+  private boolean performCommit(final Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, final Duration timeout)
     throws InterruptedException {
     if (offsetsToCommit.isEmpty()) return true;
 
@@ -310,7 +310,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     commandQueue.offer(new ConsumerCommand.CommitOffsets(offsetsToCommit, commitId));
 
     try {
-      return future.get(timeoutSeconds, TimeUnit.SECONDS);
+      return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
     } catch (final ExecutionException | TimeoutException e) {
       LOGGER.log(Level.WARNING, "Error waiting for offset commit", e);
       return false;

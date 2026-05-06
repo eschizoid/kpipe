@@ -12,11 +12,10 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.consumer.config.AppConfig;
+import org.kpipe.producer.config.KafkaProducerConfig;
 import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
@@ -80,17 +79,7 @@ class AppIntegrationTest {
       });
 
       // Produce a message
-      final var producerProps = new Properties();
-      producerProps.putAll(
-        Map.of(
-          ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
-          kafka.getBootstrapServers(),
-          ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
-          ByteArraySerializer.class.getName(),
-          ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
-          ByteArraySerializer.class.getName()
-        )
-      );
+      final var producerProps = KafkaProducerConfig.createProducerConfig(kafka.getBootstrapServers());
 
       final var message = """
         {"id":1,"message":"Hello JSON"}""".getBytes(StandardCharsets.UTF_8);

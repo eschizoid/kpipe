@@ -189,8 +189,9 @@ KPipe.json("events", kafkaProps)
     .start();
 ```
 
-The full operator vocabulary: `filter`, `drop`, `tap`, `peek`, `map`, `compose`, `safe`, `requireField`, `rename`,
-`removeFields`. All return `UnaryOperator<T>` (or `UnaryOperator<Map<String, Object>>` for the JSON-specific ones).
+The full operator vocabulary: `filter`, `drop`, `peek`, `map`, `compose`, `safe`, `requireField`, `rename`,
+`removeFields`, `addField`, `transformField`. All return `UnaryOperator<T>` (or `UnaryOperator<Map<String, Object>>` for
+the `Map`-typed ones).
 
 ---
 
@@ -463,7 +464,7 @@ Runtime.getRuntime().addShutdownHook(new Thread(() -> runner.close()));
 KPipe pipelines deserialize once, transform many times, serialize once. Operators are `UnaryOperator<T>` where `T` is
 the format's typed payload (`Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf). Use the
 generic helpers in [`Operators`](lib/kpipe-core/src/main/java/org/kpipe/registry/Operators.java) — `filter`, `drop`,
-`tap`, `map`, `compose`, `safe`, plus map-specific `addField`, `removeFields`, `transformField`, `requireField`,
+`peek`, `map`, `compose`, `safe`, plus map-specific `addField`, `removeFields`, `transformField`, `requireField`,
 `rename` — or write inline lambdas using each format's native API.
 
 ### JSON Processing

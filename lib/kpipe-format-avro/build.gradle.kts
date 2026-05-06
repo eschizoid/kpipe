@@ -21,7 +21,6 @@ repositories {
 dependencies {
   api(project(":lib:kpipe-core"))
   implementation(libs.avro)
-  implementation(libs.dslJson)
 
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
