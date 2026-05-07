@@ -61,7 +61,7 @@ public class App implements AutoCloseable {
   /// @param config The application configuration
   /// @param schemaRegistryUrl Schema Registry base URL
   public App(final AppConfig config, final String schemaRegistryUrl) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), AvroFormat.INSTANCE);
+    processorRegistry = new MessageProcessorRegistry(AvroFormat.INSTANCE);
     sinkRegistry = processorRegistry.sinkRegistry();
     kpipeConsumer = createConsumer(config, processorRegistry, schemaRegistryUrl);
 

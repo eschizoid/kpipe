@@ -17,7 +17,7 @@ import org.kpipe.registry.MessageProcessorRegistry;
 /// Production users should call `registry.pipeline(MessageFormat.bytes())` directly.
 final class TestPipelines {
 
-  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry("test");
+  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
   private TestPipelines() {}
 

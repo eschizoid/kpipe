@@ -20,7 +20,7 @@ class ProtobufFormatPipelineTest {
   @BeforeEach
   void setUp() throws Exception {
     descriptor = buildTestDescriptor();
-    registry = new MessageProcessorRegistry("test-app", ProtobufFormat.INSTANCE);
+    registry = new MessageProcessorRegistry(ProtobufFormat.INSTANCE);
 
     final var protoFormat = ProtobufFormat.INSTANCE;
     protoFormat.addDescriptor("test", descriptor);

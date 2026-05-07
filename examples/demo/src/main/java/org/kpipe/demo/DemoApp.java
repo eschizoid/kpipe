@@ -99,7 +99,7 @@ public class DemoApp implements AutoCloseable {
   /// ── JSON pipeline ──────────────────────────────────────────────────────
 
   private static KPipeRunner<KPipeConsumer<byte[]>> buildJsonPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry("demo-json", JsonFormat.INSTANCE);
+    final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
     final var sinkRegistry = registry.sinkRegistry();
     sinkRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
 
@@ -138,7 +138,7 @@ public class DemoApp implements AutoCloseable {
   /// ── Avro pipeline ─────────────────────────────────────────────────────
 
   private static KPipeRunner<KPipeConsumer<byte[]>> buildAvroPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry("demo-avro", AvroFormat.INSTANCE);
+    final var registry = new MessageProcessorRegistry(AvroFormat.INSTANCE);
     final var sinkRegistry = registry.sinkRegistry();
     sinkRegistry.register(AvroRegistryKey.of("avroLogging"), new AvroConsoleSink<>());
 
@@ -168,7 +168,7 @@ public class DemoApp implements AutoCloseable {
 
   /// ── Protobuf pipeline ─────────────────────────────────────────────────
   private static KPipeRunner<KPipeConsumer<byte[]>> buildProtobufPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry("demo-protobuf", ProtobufFormat.INSTANCE);
+    final var registry = new MessageProcessorRegistry(ProtobufFormat.INSTANCE);
     final var sinkRegistry = registry.sinkRegistry();
     sinkRegistry.register(ProtobufRegistryKey.of("protobufLogging"), new ProtobufConsoleSink<>());
 

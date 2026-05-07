@@ -53,7 +53,7 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), JsonFormat.INSTANCE);
+    processorRegistry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
     sinkRegistry = processorRegistry.sinkRegistry();
     // Pre-register loggers
     sinkRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());

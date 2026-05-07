@@ -78,7 +78,7 @@ public final class AvroFormat implements SchemaAwareFormat<GenericRecord> {
   ///
   /// @return a new pre-configured registry
   public static MessageProcessorRegistry newRegistry() {
-    final var registry = new MessageProcessorRegistry("kpipe-format-avro", INSTANCE);
+    final var registry = new MessageProcessorRegistry(INSTANCE);
     registry.sinkRegistry().register(AVRO_LOGGING, new AvroConsoleSink<>());
     return registry;
   }

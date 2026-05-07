@@ -54,7 +54,7 @@ public class App implements AutoCloseable {
   ///
   /// @param config The application configuration
   public App(final AppConfig config) {
-    processorRegistry = new MessageProcessorRegistry(config.appName(), ProtobufFormat.INSTANCE);
+    processorRegistry = new MessageProcessorRegistry(ProtobufFormat.INSTANCE);
     sinkRegistry = processorRegistry.sinkRegistry();
 
     kpipeConsumer = createConsumer(config, processorRegistry);

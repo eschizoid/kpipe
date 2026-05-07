@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -74,7 +75,7 @@ class KPipeProducerTest {
   @SuppressWarnings("unchecked")
   void shouldReturnFutureOnSendAsync() {
     final var future = CompletableFuture.completedFuture(mock(RecordMetadata.class));
-    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(future);
+    when(mockProducer.send(any(ProducerRecord.class), any(Callback.class))).thenReturn(future);
 
     final var result = new KPipeProducer<>(mockProducer, false, null).sendAsync(
       new ProducerRecord<>(TOPIC, null, "v".getBytes())

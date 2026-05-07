@@ -1,4 +1,4 @@
-package org.kpipe.consumer.enums;
+package org.kpipe.consumer;
 
 /// Represents the possible operational states of a KafkaOffsetManager.
 ///

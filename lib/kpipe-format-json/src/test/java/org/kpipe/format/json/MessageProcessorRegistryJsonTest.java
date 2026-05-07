@@ -17,7 +17,7 @@ class MessageProcessorRegistryJsonTest {
 
   @BeforeEach
   void setUp() {
-    registry = new MessageProcessorRegistry("test-app");
+    registry = new MessageProcessorRegistry();
   }
 
   @Test

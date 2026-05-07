@@ -3,10 +3,6 @@ package org.kpipe.consumer;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.TopicPartition;
-import org.kpipe.consumer.enums.OffsetState;
 
 /// Convenience base class for [OffsetManager] implementations that only need to customize how
 /// offsets are tracked and persisted.
@@ -25,8 +21,8 @@ import org.kpipe.consumer.enums.OffsetState;
 ///   (schedulers, connection pools, etc.).
 /// * `notifyCommitComplete(...)` — no-op. Override only if your implementation issues
 ///   asynchronous commits and needs the completion callback to settle a future.
-/// * `createRebalanceListener()` — returns a no-op [ConsumerRebalanceListener]. Override if you
-///   need to drain pending state or invalidate caches when partitions are revoked or assigned.
+/// * `createRebalanceListener()` — inherited no-op default from [OffsetManager]. Override if
+///   you need to drain pending state or invalidate caches on partition revoke/assign.
 /// * `getState()` / `isRunning()` — derived from the internal state reference.
 /// * `getStatistics()` — returns an empty map. Override to expose diagnostic counters.
 /// * `close()` — no-op. Override to release resources held by the implementation.
@@ -121,29 +117,6 @@ public abstract class AbstractOffsetManager<K> implements OffsetManager<K> {
   @Override
   public void notifyCommitComplete(final String commitId, final boolean success) {
     // no-op: implementations that don't manage async commit futures don't need this hook
-  }
-
-  /// Default no-op [ConsumerRebalanceListener]. Most custom offset managers do not need to
-  /// react to partition assignments because their state is keyed by [TopicPartition] and is
-  /// safe to retain across rebalances.
-  ///
-  /// Override if you need to drain pending state, invalidate caches, or surrender resources
-  /// when partitions are revoked or newly assigned.
-  ///
-  /// @return a no-op rebalance listener
-  @Override
-  public ConsumerRebalanceListener createRebalanceListener() {
-    return new ConsumerRebalanceListener() {
-      @Override
-      public void onPartitionsRevoked(final java.util.Collection<TopicPartition> partitions) {
-        // no-op
-      }
-
-      @Override
-      public void onPartitionsAssigned(final java.util.Collection<TopicPartition> partitions) {
-        // no-op
-      }
-    };
   }
 
   /// Returns the current state derived from the internal [AtomicReference].

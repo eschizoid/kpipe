@@ -1,6 +1,6 @@
 # KPipe — Roadmap & State of the Library
 
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-07
 **Current released line:** 1.10.0 (Maven Central)
 **Active branch state:** `feature/1.11.1-test-coverage` (PR #94) plus `fix/critical-bugs` cleanup branch
 
@@ -30,34 +30,48 @@ roadmap below.
 
 Single source of truth for what's left across the whole library.
 
-| #  | Priority                  | Item                                                                                      | Type              | Effort    |
-|----|---------------------------|-------------------------------------------------------------------------------------------|-------------------|-----------|
-| 1  | **P1 — Adoption blocker** | Multi-topic Phase 1 (homogeneous topics, single shared pipeline)                          | Feature           | ~3 days   |
-| 2  | **P1 — Adoption blocker** | Java baseline decision (stay on 25 vs drop to 21 LTS)                                     | Strategy          | decision  |
-| 3  | **P2 — Real footgun**     | `Format.INSTANCE` global mutable state (Avro/Protobuf)                                    | Hardening         | ~1 day    |
-| 4  | **P2 — Real footgun**     | HTTP fetcher full extraction from `kpipe-format-avro`                                     | Cleanup           | ~half day |
-| 5  | **P2 — Bug surface**      | Batch sinks (`BatchSink<T>` interface + size/time flush + partial-failure semantics)      | Feature           | ~5–7 days |
-| 6  | **P2 — Bug surface**      | Circuit breaker for sinks                                                                 | Feature           | ~3–4 days |
-| 7  | **P3 — User-visible**     | `AppConfig` slimdown / split (real example infra; decide split or move)                   | Refactor          | ~1 hr     |
-| 8  | **P3 — User-visible**     | `HttpHealthServer` placement decision (lib contract or sample → `examples/`?)             | Refactor          | ~30 min   |
-| 9  | **P3 — User-visible**     | Build/test config cleanup remaining (consumer parallelism, residual fork tuning)          | Refactor          | ~30 min   |
-| 10 | **P4 — Internal polish**  | `MessageTracker` audit — only used for graceful-shutdown wait; could collapse             | Investigation     | ~1 hr     |
-| 11 | **P4 — Internal polish**  | `OffsetManager.createRebalanceListener()` leak — register internally instead              | Refactor          | ~1 hr     |
-| 12 | **P4 — Internal polish**  | `MessageProcessorRegistry.sourceAppName` audit — likely vestigial                         | Investigation     | ~30 min   |
-| 13 | **P4 — Internal polish**  | `ConsumerCommand` sealed hierarchy review — `CommitOffsets` only emitted by scheduler now | Refactor          | ~1 hr     |
-| 14 | **P4 — Internal polish**  | `BackpressureController` public surface tightening                                        | Refactor          | ~1 hr     |
-| 15 | **P4 — Internal polish**  | `KPipeProducer.send*` variants audit (`send` / `sendAsync` / `sendToDlq`)                 | Investigation     | ~1 hr     |
-| 16 | **P4 — Internal polish**  | `OffsetState` enum sub-package — alone in `enums/`, move up                               | Refactor          | ~10 min   |
-| 17 | **P4 — Internal polish**  | `KafkaConsumerConfig` usage audit — confirm canonical or replace with builder             | Investigation     | ~30 min   |
-| 18 | **P4 — Internal polish**  | `kpipe-bom` and `kpipe-metrics-otel` module-info docs — last-mile polish                  | Docs              | ~30 min   |
-| 19 | **P5 — 2.0 candidates**   | Type-name shortening (`MessageProcessorRegistry` → `Pipelines`, etc.)                     | Breaking refactor | ~1 day    |
-| 20 | **P5 — 2.0 candidates**   | `Result<T>` sealed type for pipeline errors                                               | Breaking refactor | ~1 day    |
-| 21 | **P5 — 2.0 candidates**   | Fold `KPipeRunner` into `KPipeConsumer`                                                   | Breaking refactor | ~half day |
-| 22 | **P5 — Speculative perf** | Format serialization caches re-wire (only with JMH evidence)                              | Perf              | ~1–2 days |
+| #  | Priority                  | Item                                                                                                                         | Type              | Effort    |
+|----|---------------------------|------------------------------------------------------------------------------------------------------------------------------|-------------------|-----------|
+| 1  | **P1 — Adoption blocker** | Multi-topic Phase 1 (homogeneous topics, single shared pipeline)                                                             | Feature           | ~3 days   |
+| 2  | **P1 — Adoption blocker** | Java baseline decision (stay on 25 vs drop to 21 LTS)                                                                        | Strategy          | decision  |
+| 3  | **P2 — Real footgun**     | `Format.INSTANCE` global mutable state (Avro/Protobuf)                                                                       | Hardening         | ~1 day    |
+| 4  | **P2 — Real footgun**     | HTTP fetcher remaining extraction from `kpipe-format-avro` (drop `java.net.http` + `jackson.core`; dsl-json already removed) | Cleanup           | ~2–3 hr   |
+| 5  | **P2 — Bug surface**      | Batch sinks (`BatchSink<T>` interface + size/time flush + partial-failure semantics)                                         | Feature           | ~5–7 days |
+| 6  | **P2 — Bug surface**      | Circuit breaker for sinks                                                                                                    | Feature           | ~3–4 days |
+| 7  | **P3 — User-visible**     | `AppConfig` slimdown / split (real example infra; decide split or move)                                                      | Refactor          | ~1 hr     |
+| 8  | **P3 — User-visible**     | `HttpHealthServer` placement decision (lib contract or sample → `examples/`?)                                                | Refactor          | ~30 min   |
+| 9  | **P3 — User-visible**     | Build/test config cleanup remaining (consumer parallelism, residual fork tuning)                                             | Refactor          | ~30 min   |
+| 10 | **P5 — 2.0 candidates**   | Type-name shortening (`MessageProcessorRegistry` → `Pipelines`, etc.)                                                        | Breaking refactor | ~1 day    |
+| 11 | **P5 — 2.0 candidates**   | `Result<T>` sealed type for pipeline errors                                                                                  | Breaking refactor | ~1 day    |
+| 12 | **P5 — 2.0 candidates**   | Fold `KPipeRunner` into `KPipeConsumer`                                                                                      | Breaking refactor | ~half day |
+| 13 | **P5 — 2.0 candidates**   | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, deprecate the standalone class               | Breaking refactor | ~half day |
+| 14 | **P5 — Speculative perf** | Format serialization caches re-wire (only with JMH evidence)                                                                 | Perf              | ~1–2 days |
 
-**Recommendation:** ship P1 (#1, #2) and P2 (#3–#6) — those move the adoption needle. P3+ are correct fixes but
-invisible to users; the maintenance backlog is small enough that further internal polish yields diminishing
-returns. Multi-topic Phase 1 is the next focused effort.
+**Recommendation:** ship P1 (#1, #2) and P2 (#3–#6) — those move the adoption needle. P3 items are correct
+fixes but invisible to users. P4 internal-polish backlog was cleared on 2026-05-07 (8 audits/refactors landed
+in one branch — see "Recently completed" below). Multi-topic Phase 1 is the next focused effort.
+
+### Recently completed (P4 internal polish — 2026-05-07)
+
+- Moved `OffsetState` and `ConsumerState` out of the `org.kpipe.consumer.enums` sub-package; deleted the
+  one-package-deep folder.
+- Added a discoverable docstring to `kpipe-metrics-otel/module-info.java`. (`kpipe-bom` is a `java-platform`
+  BOM with no `module-info.java` — its description in `build.gradle.kts` is the appropriate doc.)
+- **Audited and removed** `MessageProcessorRegistry.sourceAppName` — confirmed vestigial (set by 17 callers,
+  read by zero). Deleted the field, both `String`-taking constructors, the getter, and `withSourceAppName`.
+  Updated all 17 call sites.
+- **Audited** `KafkaConsumerConfig` — confirmed canonical (parallels `KafkaProducerConfig`, used by all 4
+  example apps + own test). No change.
+- **Audited** `MessageTracker` — keep as-is. Well-tested public class; potential 2.0 collapse target moved
+  to P5.
+- **Fixed** `KPipeProducer.sendAsync` silent-metrics footgun: previously returned the raw producer Future
+  with no instrumentation; now wraps with a callback that increments `messages.sent` / `messages.failed`.
+- **Tightened** `OffsetManager.createRebalanceListener()` — moved the no-op default into the interface as a
+  `default` method. Custom external offset stores no longer need to implement Kafka rebalance plumbing.
+- **Audited** `ConsumerCommand` sealed hierarchy — keep as-is. `CommitOffsets` is the cross-thread bridge
+  for both scheduled commits and `close()` path; `withOffsets` has a real callsite in `RebalanceListener`.
+- **Audited** `BackpressureController` public surface — already minimal. All instance methods are used,
+  factories are intentional escape hatches, `calculateTotalLag` is a useful static utility.
 
 ---
 
@@ -146,13 +160,17 @@ fix is either (a) make `addSchema` only available on `new AvroFormat()` instance
 through a per-stream format instance, or (b) delete `INSTANCE` entirely and make construction explicit. Both are
 breaking changes. Documentation already carries an explicit "Footgun warning" — that's the cheap mitigation.
 
-### P2 #4 — `kpipe-format-avro` HTTP fetcher full extraction
+### P2 #4 — `kpipe-format-avro` HTTP fetcher remaining extraction
 
-`AvroFormat.readSchemaFromLocation` supports `http://` URLs that hit a Confluent Schema Registry, which keeps
-two extra deps on `kpipe-format-avro`: `requires java.net.http` and `requires com.fasterxml.jackson.core`.
-The 2-arg `addSchema(key, schemaJson)` overload covers the "I have the JSON" case directly, so HTTP fetching
-could move to a separate optional module (`kpipe-schema-registry-confluent`) or be deleted in favor of
-user-side fetching. Wins: smaller transitive footprint for users who only consume inline / classpath schemas.
+**Done already:** dsl-json dependency removed; envelope parsing rewritten to Jackson `JsonFactory` streaming
+(reuses the jackson-core that Avro already pulls transitively, so no new dep was added).
+
+**What's left:** `AvroFormat.readSchemaFromLocation` still supports `http://` URLs hitting a Confluent Schema
+Registry, which keeps two `requires` declarations on `kpipe-format-avro`'s `module-info.java`: `java.net.http`
+and `com.fasterxml.jackson.core`. The 2-arg `addSchema(key, schemaJson)` overload covers the "I have the JSON"
+case directly, so HTTP fetching could move to a separate optional module (`kpipe-schema-registry-confluent`)
+or be deleted in favor of user-side fetching. Wins: smaller transitive footprint for users who only consume
+inline / classpath schemas.
 
 ### P2 #5 — Batch sinks
 

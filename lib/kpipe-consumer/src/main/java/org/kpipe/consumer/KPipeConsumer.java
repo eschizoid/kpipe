@@ -18,7 +18,6 @@ import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.consumer.config.AppConfig;
-import org.kpipe.consumer.enums.ConsumerState;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
