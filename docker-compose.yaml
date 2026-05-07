@@ -114,7 +114,7 @@ services:
     restart: unless-stopped
 
   seed-json:
-    image: confluentinc/cp-kafka:8.2.0
+    image: soldevelo/kafka:4.2.0
     depends_on:
       app:
         condition: service_started
@@ -126,13 +126,13 @@ services:
         echo "=== Seeding JSON messages ==="
         for i in $$(seq 1 10); do
           echo "{\"id\":$$i,\"name\":\"User $$i\",\"email\":\"user$$i@example.com\",\"password\":\"secret\",\"active\":true}" | \
-            kafka-console-producer --bootstrap-server kafka:9092 --topic json-topic
+            kafka-console-producer.sh --bootstrap-server kafka:9092 --topic json-topic
         done
         echo "=== JSON seed complete ==="
     restart: "no"
 
   seed-avro:
-    image: confluentinc/cp-schema-registry:8.2.0
+    image: soldevelo/schema-registry:8.2.0
     depends_on:
       app:
         condition: service_started
@@ -156,7 +156,7 @@ services:
     restart: "no"
 
   seed-proto:
-    image: confluentinc/cp-schema-registry:8.2.0
+    image: soldevelo/schema-registry:8.2.0
     depends_on:
       app:
         condition: service_started
