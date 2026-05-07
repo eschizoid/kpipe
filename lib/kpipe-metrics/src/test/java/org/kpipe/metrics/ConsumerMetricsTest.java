@@ -17,25 +17,29 @@ class ConsumerMetricsTest {
   @Test
   void shouldRecordMessageReceivedWithoutThrowing() {
     final var metrics = ConsumerMetrics.noop();
-    assertDoesNotThrow(metrics::recordMessageReceived);
+    assertDoesNotThrow(() -> metrics.recordMessageReceived());
+    assertDoesNotThrow(() -> metrics.recordMessageReceived("topic-a"));
   }
 
   @Test
   void shouldRecordMessageProcessedWithoutThrowing() {
     final var metrics = ConsumerMetrics.noop();
-    assertDoesNotThrow(metrics::recordMessageProcessed);
+    assertDoesNotThrow(() -> metrics.recordMessageProcessed());
+    assertDoesNotThrow(() -> metrics.recordMessageProcessed("topic-a"));
   }
 
   @Test
   void shouldRecordProcessingErrorWithoutThrowing() {
     final var metrics = ConsumerMetrics.noop();
-    assertDoesNotThrow(metrics::recordProcessingError);
+    assertDoesNotThrow(() -> metrics.recordProcessingError());
+    assertDoesNotThrow(() -> metrics.recordProcessingError("topic-a"));
   }
 
   @Test
   void shouldRecordProcessingDurationWithoutThrowing() {
     final var metrics = ConsumerMetrics.noop();
     assertDoesNotThrow(() -> metrics.recordProcessingDuration(42L));
+    assertDoesNotThrow(() -> metrics.recordProcessingDuration("topic-a", 42L));
   }
 
   @Test

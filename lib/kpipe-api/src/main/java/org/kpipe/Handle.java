@@ -27,6 +27,12 @@ public interface Handle extends AutoCloseable {
   /// @return true if shutdown completed within the timeout
   boolean awaitShutdown(final Duration timeout);
 
+  /// Blocks indefinitely until the consumer shuts down (typically via SIGTERM / SIGINT through
+  /// the runner's shutdown hook). Returns when shutdown completes.
+  ///
+  /// @throws InterruptedException if the calling thread is interrupted while waiting
+  void awaitShutdown() throws InterruptedException;
+
   /// Initiates a graceful shutdown, waiting up to `timeout` for in-flight messages.
   ///
   /// @param timeout maximum wait for in-flight drain

@@ -172,7 +172,36 @@ auto-complete after `.` shows you everything you need):
 The terminal `Sink<T>.start()` returns a `Handle` exposing `isHealthy()`, `metrics()`, `awaitShutdown(Duration)`,
 `shutdownGracefully(Duration)`, and `close()`.
 
-### 4. Common operator patterns
+### 4. Consuming from multiple topics
+
+Two flavors, depending on whether the topics share a payload type.
+
+**Homogeneous** — many topics, one shared pipeline (the "partitioned-by-region versions of the same event" case):
+
+```java
+KPipe.json(Set.of("events-us", "events-eu", "events-ap"), kafkaProps)
+    .pipe(addTimestamp)
+    .toCustom(captureSink)
+    .start();
+```
+
+The `Collection<String>` overload exists on every entry point — `KPipe.json/avro/protobuf/bytes/custom`.
+
+**Heterogeneous** — many topics, each with its own payload type and its own pipeline, all dispatched through one
+consumer / one consumer-group / one offset manager:
+
+```java
+KPipe.multi(kafkaProps)
+    .json("events-json",  s -> s.pipe(addTimestamp).toCustom(jsonSink))
+    .avro("events-avro",  s -> s.filter(active).toCustom(avroSink))
+    .bytes("events-raw",  s -> s.toCustom(rawSink))
+    .start();
+```
+
+Each route gets its own typed `Stream<T>`. Records arriving for topics not registered with a route are dropped at
+`WARNING` and their offsets are still committed (no infinite retry on a config error).
+
+### 5. Common operator patterns
 
 `org.kpipe.registry.Operators` exposes pure-function helpers ready to drop into `.pipe(...)`:
 
@@ -210,22 +239,74 @@ pipelines.**
 
 ---
 
-## Why Not Just Use Kafka Streams?
-
-Kafka Streams is powerful but introduces a full topology framework and state management layer that many services do not
-need.
+## Why Not Just Use Kafka Streams (or Spring Kafka)?
 
 KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 
-| Capability                       | Kafka Streams | Reactor Kafka | KPipe |
-| -------------------------------- | ------------- | ------------- | ----- |
-| Full stream processing framework | Yes           | No            | No    |
-| Lightweight consumer pipelines   | Partial       | Yes           | Yes   |
-| Virtual-thread friendly          | No            | No            | Yes   |
-| Functional pipeline API          | Yes           | Yes           | Yes   |
-| Minimal dependencies             | No            | Yes           | Yes   |
+| Capability                       | Kafka Streams | Spring Kafka            | Reactor Kafka | KPipe |
+| -------------------------------- | ------------- | ----------------------- | ------------- | ----- |
+| Full stream processing framework | Yes           | No                      | No            | No    |
+| Lightweight consumer pipelines   | Partial       | Yes                     | Yes           | Yes   |
+| Virtual-thread friendly          | No            | Listener-container only | No            | Yes   |
+| Functional pipeline API          | Yes           | No (annotations)        | Yes           | Yes   |
+| Minimal runtime dependencies     | No            | No (Spring Boot)        | Yes           | Yes   |
+| JPMS modules (no Spring context) | No            | No                      | Partial       | Yes   |
+| Native multi-topic dispatch      | Yes (DSL)     | Per `@KafkaListener`    | Manual        | Yes   |
 
 KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
+
+### Coming from Spring Kafka?
+
+Spring Kafka covers the same niche — "I want a Kafka consumer with retries, DLQ, backpressure, and a typed payload" —
+but bundles Spring Boot, the application context, and annotation-driven wiring. KPipe targets the same workload with no
+Spring runtime, no annotation processor, no `KafkaListenerContainerFactory` to configure, and a fluent API that's
+discoverable via IDE autocomplete.
+
+What you get back when you switch:
+
+- **No Spring Boot in your classpath.** KPipe runs on plain `java -jar`. The whole library is ~8 JPMS modules with no
+  reflection, no AOP, no context lifecycle.
+- **Virtual threads by default.** Spring Kafka's listener container is still thread-pool-per-partition; KPipe is
+  thread-per-record on virtual threads. I/O-bound enrichment scales to 10k+ in-flight messages without thread pool
+  tuning.
+- **No `@KafkaListener` magic.** Pipelines are values: build them in `main`, branch them, hand them around. No classpath
+  scanning surprises, no proxied beans, no `@EnableKafka` toggle.
+- **Per-topic typing without a class per listener.** `KPipe.multi(props).json("a", ...).avro("b", ...)` registers
+  heterogeneous routes through a single consumer-group / single offset manager. Spring's equivalent is one
+  `@KafkaListener` method per topic with separate container instances.
+- **Errors throw, not get swallowed.** `MessagePipeline.apply()` throws on failure; `null` means "intentionally
+  filtered" and nothing else. Spring Kafka's default `ErrorHandlingDeserializer` + `RetryableTopic` chain is more
+  flexible but easier to misconfigure into silent drops.
+- **Bring your own SDK.** Metrics ship as interfaces (`ProducerMetrics`, `ConsumerMetrics`) with a separate
+  `kpipe-metrics-otel` adapter. No `MeterRegistry` autowiring needed.
+
+Rough migration sketch — a Spring Kafka listener:
+
+```java
+// Spring Kafka
+@KafkaListener(topics = "events", groupId = "my-app")
+public void onMessage(ConsumerRecord<String, Map<String, Object>> rec) {
+  rec.value().put("ts", System.currentTimeMillis());
+  sink.accept(rec.value());
+}
+```
+
+becomes:
+
+```java
+// KPipe
+KPipe.json("events", kafkaProps)
+    .pipe(msg -> { msg.put("ts", System.currentTimeMillis()); return msg; })
+    .toCustom(sink::accept)
+    .start();
+```
+
+Retry, DLQ, backpressure, and graceful shutdown are fluent calls on the same `Stream<T>` — no `RetryTemplate`, no
+`DeadLetterPublishingRecoverer`, no `ContainerProperties.AckMode` to pick.
+
+KPipe will **not** replace Spring Kafka if you depend on `@KafkaListener` lifecycle integration with Spring Boot
+actuator, transactional Kafka producers wired into `@Transactional`, or the broader Spring ecosystem (security,
+config-server, sleuth tracing). Those are reasons to stay.
 
 ---
 

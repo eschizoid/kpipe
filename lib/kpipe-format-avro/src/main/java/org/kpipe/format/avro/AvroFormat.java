@@ -91,6 +91,21 @@ public final class AvroFormat implements SchemaAwareFormat<GenericRecord> {
     return new AvroConsoleSink<>(schema);
   }
 
+  /// Creates a new [AvroConsoleSink] using the schema registered under key `"1"` on
+  /// [AvroFormat#INSTANCE]. Throws [IllegalStateException] if no such schema exists, since the
+  /// console sink needs a schema to re-encode payloads as JSON.
+  ///
+  /// @return a new console sink bound to the default-key schema
+  public static AvroConsoleSink<GenericRecord> defaultConsoleSink() {
+    final var schema = INSTANCE.getSchema("1");
+    if (schema == null) throw new IllegalStateException(
+      "AvroFormat.defaultConsoleSink() requires a schema registered under key \"1\" on " +
+        "AvroFormat.INSTANCE; register one (e.g. AvroFormat.INSTANCE.addSchema(\"1\", schemaJson)) " +
+        "or call consoleSink(schema) directly."
+    );
+    return new AvroConsoleSink<>(schema);
+  }
+
   /// Sets the default schema key to use for deserialization.
   ///
   /// @param schemaKey The schema key

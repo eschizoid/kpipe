@@ -50,7 +50,7 @@ public record ConsumerMetricsReporter(
   private static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
 
   /// Creates a new ConsumerMetricsReporter, defaulting to log-based reporting when reporter is
-  // null.
+  /// null.
   ///
   /// @param metricsSupplier supplier of consumer metrics
   /// @param uptimeSupplier supplier of application uptime in ms

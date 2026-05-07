@@ -34,6 +34,11 @@ final class DefaultHandle implements Handle {
   }
 
   @Override
+  public void awaitShutdown() throws InterruptedException {
+    runner.awaitShutdown();
+  }
+
+  @Override
   public boolean shutdownGracefully(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
     return runner.shutdownGracefully(timeout.toMillis());

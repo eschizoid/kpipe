@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -125,6 +126,132 @@ class KPipeFacadeIntegrationTest {
         () -> assertEquals(3, captured.size(), "Should have captured exactly 3 odd-id messages"),
         () -> captured.forEach(m -> assertTrue(((Number) m.get("id")).intValue() % 2 == 1, "Captured id must be odd"))
       );
+    } finally {
+      handle.shutdownGracefully(Duration.ofSeconds(5));
+    }
+  }
+
+  @Test
+  void endToEndMultiTopicJsonStream() throws Exception {
+    final var topics = Set.of(
+      "kpipe-facade-multi-a-" + UUID.randomUUID().toString().substring(0, 8),
+      "kpipe-facade-multi-b-" + UUID.randomUUID().toString().substring(0, 8),
+      "kpipe-facade-multi-c-" + UUID.randomUUID().toString().substring(0, 8)
+    );
+    final var captured = new CopyOnWriteArrayList<Map<String, Object>>();
+    final MessageSink<Map<String, Object>> captureSink = captured::add;
+
+    final var consumerProps = consumerProps("kpipe-facade-multi-group-" + UUID.randomUUID());
+
+    final var handle = KPipe.json(topics, consumerProps)
+      .pipe(msg -> {
+        msg.put("processed", true);
+        return msg;
+      })
+      .toCustom(captureSink)
+      .start();
+
+    try {
+      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+
+      // Produce 3 messages per topic — 9 total.
+      final var perTopic = 3;
+      final var expected = perTopic * topics.size();
+      try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
+        for (final var topic : topics) {
+          for (int i = 1; i <= perTopic; i++) {
+            final var json = """
+              {"id":%d,"topic":"%s","value":"v%d"}""".formatted(i, topic, i)
+              .getBytes(StandardCharsets.UTF_8);
+            producer.send(new ProducerRecord<>(topic, json)).get();
+          }
+        }
+        producer.flush();
+      }
+
+      waitFor(() -> captured.size() >= expected, Duration.ofSeconds(20), "expected %d messages".formatted(expected));
+
+      assertEquals(expected, captured.size(), "Should have captured one message per topic per id");
+
+      // Every captured message must come from one of the subscribed topics and be transformed.
+      for (final var msg : captured) {
+        assertEquals(Boolean.TRUE, msg.get("processed"), "Each message must carry processed=true");
+        assertTrue(topics.contains(msg.get("topic")), "Captured topic must be one of the subscribed topics");
+      }
+
+      // Verify each topic contributed at least one message (otherwise we accidentally only consumed
+      // one).
+      for (final var topic : topics) {
+        final var fromTopic = captured
+          .stream()
+          .filter(m -> topic.equals(m.get("topic")))
+          .count();
+        assertEquals(perTopic, fromTopic, "Each topic should contribute %d messages".formatted(perTopic));
+      }
+    } finally {
+      handle.shutdownGracefully(Duration.ofSeconds(5));
+    }
+  }
+
+  @Test
+  void endToEndHeterogeneousMulti() throws Exception {
+    final var jsonTopic = "kpipe-multi-json-" + UUID.randomUUID().toString().substring(0, 8);
+    final var bytesTopic = "kpipe-multi-bytes-" + UUID.randomUUID().toString().substring(0, 8);
+
+    final var jsonCaptured = new CopyOnWriteArrayList<Map<String, Object>>();
+    final var bytesCaptured = new CopyOnWriteArrayList<byte[]>();
+
+    final var consumerProps = consumerProps("kpipe-multi-group-" + UUID.randomUUID());
+
+    final var handle = KPipe.multi(consumerProps)
+      .json(jsonTopic, s ->
+        s
+          .pipe(msg -> {
+            msg.put("processed", true);
+            return msg;
+          })
+          .toCustom(jsonCaptured::add)
+      )
+      .bytes(bytesTopic, s -> s.toCustom(bytesCaptured::add))
+      .start();
+
+    try {
+      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+
+      final var perTopic = 3;
+      try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
+        for (int i = 1; i <= perTopic; i++) {
+          final var json = """
+            {"id":%d,"value":"v%d"}""".formatted(i, i)
+            .getBytes(StandardCharsets.UTF_8);
+          producer.send(new ProducerRecord<>(jsonTopic, json)).get();
+          producer
+            .send(new ProducerRecord<>(bytesTopic, ("raw-%d".formatted(i)).getBytes(StandardCharsets.UTF_8)))
+            .get();
+        }
+        producer.flush();
+      }
+
+      waitFor(
+        () -> jsonCaptured.size() >= perTopic && bytesCaptured.size() >= perTopic,
+        Duration.ofSeconds(20),
+        "expected %d JSON + %d byte messages".formatted(perTopic, perTopic)
+      );
+
+      assertEquals(perTopic, jsonCaptured.size(), "JSON sink should have captured exactly %d".formatted(perTopic));
+      assertEquals(perTopic, bytesCaptured.size(), "bytes sink should have captured exactly %d".formatted(perTopic));
+
+      // JSON pipeline transformed each message.
+      for (final var msg : jsonCaptured) {
+        assertEquals(Boolean.TRUE, msg.get("processed"), "JSON message must carry processed=true");
+        assertNotNull(msg.get("id"));
+      }
+
+      // Byte sink received only the bytes-topic raw payloads.
+      for (final var b : bytesCaptured) {
+        final var s = new String(b, StandardCharsets.UTF_8);
+        assertTrue(s.startsWith("raw-"), "Byte payload should start with 'raw-' but was: " + s);
+      }
     } finally {
       handle.shutdownGracefully(Duration.ofSeconds(5));
     }

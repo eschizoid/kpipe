@@ -6,6 +6,7 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.DoubleHistogram;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 import org.kpipe.metrics.ConsumerMetrics;
 
@@ -25,6 +26,7 @@ import org.kpipe.metrics.ConsumerMetrics;
 public final class OtelConsumerMetrics implements ConsumerMetrics {
 
   private static final AttributeKey<String> PIPELINE_KEY = AttributeKey.stringKey("pipeline");
+  private static final AttributeKey<String> TOPIC_KEY = AttributeKey.stringKey("topic");
 
   private final LongCounter messagesReceived;
   private final LongCounter messagesProcessed;
@@ -37,6 +39,7 @@ public final class OtelConsumerMetrics implements ConsumerMetrics {
   private final ObservableLongGauge inFlight;
 
   private final Attributes attributes;
+  private final ConcurrentHashMap<String, Attributes> topicAttributesCache = new ConcurrentHashMap<>();
 
   /// Creates a fully-instrumented instance with an in-flight gauge backed by the given supplier.
   ///
@@ -140,5 +143,32 @@ public final class OtelConsumerMetrics implements ConsumerMetrics {
   @Override
   public void recordBackpressureTime(final long millis) {
     backpressureTime.add(millis, attributes);
+  }
+
+  @Override
+  public void recordMessageReceived(final String topic) {
+    messagesReceived.add(1, withTopic(topic));
+  }
+
+  @Override
+  public void recordMessageProcessed(final String topic) {
+    messagesProcessed.add(1, withTopic(topic));
+  }
+
+  @Override
+  public void recordProcessingError(final String topic) {
+    processingErrors.add(1, withTopic(topic));
+  }
+
+  @Override
+  public void recordProcessingDuration(final String topic, final long millis) {
+    processingDuration.record(millis, withTopic(topic));
+  }
+
+  private Attributes withTopic(final String topic) {
+    if (topic == null) return attributes;
+    // Per-topic Attributes are immutable and stable for the consumer's lifetime — caching keeps
+    // the per-record metric path allocation-free once each topic has been seen once.
+    return topicAttributesCache.computeIfAbsent(topic, t -> attributes.toBuilder().put(TOPIC_KEY, t).build());
   }
 }

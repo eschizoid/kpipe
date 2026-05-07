@@ -11,154 +11,91 @@ import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.function.Function;
-import org.apache.kafka.clients.consumer.Consumer;
-import org.kpipe.consumer.*;
-import org.kpipe.consumer.config.AppConfig;
+import org.kpipe.Handle;
+import org.kpipe.KPipe;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
-import org.kpipe.consumer.metrics.ProcessorMetricsReporter;
-import org.kpipe.consumer.metrics.SinkMetricsReporter;
 import org.kpipe.format.avro.AvroConsoleSink;
 import org.kpipe.format.avro.AvroFormat;
-import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.format.json.JsonConsoleSink;
-import org.kpipe.format.json.JsonFormat;
 import org.kpipe.format.protobuf.ProtobufConsoleSink;
 import org.kpipe.format.protobuf.ProtobufFormat;
-import org.kpipe.format.protobuf.ProtobufRegistryKey;
-import org.kpipe.metrics.ConsumerMetricsReporter;
 import org.kpipe.metrics.otel.OtelConsumerMetrics;
-import org.kpipe.registry.MessagePipeline;
-import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.Operators;
-import org.kpipe.registry.RegistryKey;
 
-/// Demo application that runs JSON, Avro, and Protobuf consumer pipelines concurrently.
+/// Demo application that consumes JSON, Avro, and Protobuf payloads through a single
+/// `KPipe.multi(...)` consumer. One Kafka consumer-group, one offset manager, three typed
+/// pipelines dispatched by `record.topic()`. OpenTelemetry metrics carry a `topic` attribute so
+/// the Grafana dashboards can break down by topic across the heterogeneous routes.
 public class DemoApp implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(DemoApp.class.getName());
   private static final String TEST_AVRO_SCHEMA_PATH = "build/resources/test/avro/customer.avsc";
-
-  private final KPipeRunner<KPipeConsumer<byte[]>> jsonRunner;
-  private final KPipeRunner<KPipeConsumer<byte[]>> avroRunner;
-  private final KPipeRunner<KPipeConsumer<byte[]>> protoRunner;
-
-  /// Main entry point.
-  /// Shared OpenTelemetry instance for the demo app (initialized in main)
   private static OpenTelemetry SHARED_OTEL;
+
+  private final Handle handle;
 
   static void main() {
     final var config = DemoConfig.fromEnv();
 
-    // Initialize OpenTelemetry SDK so ConsumerMetrics send to the collector.
     try {
       SHARED_OTEL = initOpenTelemetry();
     } catch (final Exception e) {
-      LOGGER.log(
-        Level.WARNING,
-        "Failed to initialize OpenTelemetry, falling back to GlobalOpenTelemetry: {0}",
-        e.getMessage()
-      );
+      LOGGER.log(Level.WARNING, "OTel SDK init failed; falling back to GlobalOpenTelemetry: {0}", e.getMessage());
       SHARED_OTEL = GlobalOpenTelemetry.get();
     }
 
     try (final var app = new DemoApp(config)) {
-      app.start();
-      LOGGER.log(Level.INFO, "Demo application started — JSON, Avro, and Protobuf pipelines running");
-      // Block on the JSON runner (all three run concurrently)
-      app.jsonRunner.awaitShutdown();
+      LOGGER.log(Level.INFO, "Demo application started — JSON/Avro/Protobuf routes via KPipe.multi");
+      app.handle.awaitShutdown();
     } catch (final Exception e) {
       LOGGER.log(Level.ERROR, "Fatal error in demo application", e);
       System.exit(1);
     }
   }
 
-  /// Creates the demo application with all three pipelines.
+  /// Creates and starts the demo application with all three routes attached to a single consumer.
   public DemoApp(final DemoConfig config) {
-    jsonRunner = buildJsonPipeline(config);
-    avroRunner = buildAvroPipeline(config);
-    protoRunner = buildProtobufPipeline(config);
-  }
+    registerAvroSchema(config);
+    ProtobufFormat.INSTANCE.addDescriptor("customer", buildCustomerDescriptor());
+    ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
 
-  void start() {
-    jsonRunner.start();
-    avroRunner.start();
-    protoRunner.start();
+    final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(
+      config.bootstrapServers(),
+      config.consumerGroup() + "-multi"
+    );
+    final var otel = SHARED_OTEL != null ? SHARED_OTEL : GlobalOpenTelemetry.get();
+
+    handle = KPipe.multi(kafkaProps)
+      .withMetrics(new OtelConsumerMetrics(otel, "demo-multi"))
+      .json(config.jsonTopic(), s ->
+        s
+          .pipe(Operators.addField("source", "demo-app"))
+          .pipe(Operators.addField("status", "processed"))
+          .pipe(Operators.addField("processedAt", System.currentTimeMillis()))
+          .pipe(Operators.removeFields("password", "ssn"))
+          .toCustom(new JsonConsoleSink<>())
+      )
+      .avro(config.avroTopic(), s -> s.skipBytes(5).toCustom(new AvroConsoleSink<>()))
+      .protobuf(config.protoTopic(), s -> s.skipBytes(6).toCustom(new ProtobufConsoleSink<>()))
+      .start();
   }
 
   @Override
   public void close() {
-    jsonRunner.close();
-    avroRunner.close();
-    protoRunner.close();
+    handle.close();
   }
 
-  /// ── JSON pipeline ──────────────────────────────────────────────────────
-
-  private static KPipeRunner<KPipeConsumer<byte[]>> buildJsonPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
-    final var sinkRegistry = registry.sinkRegistry();
-    sinkRegistry.register(RegistryKey.json("jsonLogging"), new JsonConsoleSink<>());
-
-    // Register demo processors
-    registry.register(RegistryKey.json("addSource"), msg -> {
-      msg.put("source", "demo-app");
-      return msg;
-    });
-    registry.register(RegistryKey.json("markProcessed"), msg -> {
-      msg.put("status", "processed");
-      return msg;
-    });
-    registry.register(RegistryKey.json("addTimestamp"), msg -> {
-      msg.put("processedAt", System.currentTimeMillis());
-      return msg;
-    });
-    registry.register(RegistryKey.json("removeSecrets"), Operators.removeFields("password", "ssn"));
-
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE);
-    pipeline.add(RegistryKey.json("addSource"));
-    pipeline.add(RegistryKey.json("markProcessed"));
-    pipeline.add(RegistryKey.json("addTimestamp"));
-    pipeline.add(RegistryKey.json("removeSecrets"));
-    pipeline.toSink(RegistryKey.json("jsonLogging"));
-
-    final var appConfig = toAppConfig(
-      config,
-      config.jsonTopic(),
-      "demo-json",
-      List.of("addSource", "markProcessed", "addTimestamp", "removeSecrets")
-    );
-    final var consumer = buildConsumer(appConfig, pipeline.build(), "json");
-    return buildRunner(appConfig, consumer, registry);
-  }
-
-  /// ── Avro pipeline ─────────────────────────────────────────────────────
-
-  private static KPipeRunner<KPipeConsumer<byte[]>> buildAvroPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry(AvroFormat.INSTANCE);
-    final var sinkRegistry = registry.sinkRegistry();
-    sinkRegistry.register(AvroRegistryKey.of("avroLogging"), new AvroConsoleSink<>());
-
-    final var avroFormat = AvroFormat.INSTANCE;
-    final String avroSchemaLocation = isTestMode()
+  /// In production the Avro schema is fetched from the Confluent Schema Registry; in tests
+  /// (`kpipe.test.mode=true`) it loads from a local file to avoid a Schema Registry dependency
+  /// in CI.
+  private static void registerAvroSchema(final DemoConfig config) {
+    final var location = isTestMode()
       ? TEST_AVRO_SCHEMA_PATH
       : config.schemaRegistryUrl() + "/subjects/com.kpipe.customer/versions/latest";
-    avroFormat.addSchema("1", "com.kpipe.customer", avroSchemaLocation);
-    avroFormat.withDefaultSchema("1");
-
-    final var pipeline = registry.pipeline(avroFormat);
-    pipeline.skipBytes(5); // Skip Confluent Schema Registry wire-format prefix
-    pipeline.toSink(AvroRegistryKey.of("avroLogging"));
-
-    final var appConfig = toAppConfig(config, config.avroTopic(), "demo-avro", List.of());
-    final var consumer = buildConsumer(appConfig, pipeline.build(), "avro");
-    return buildRunner(appConfig, consumer, registry);
+    AvroFormat.INSTANCE.addSchema("1", "com.kpipe.customer", location);
+    AvroFormat.INSTANCE.withDefaultSchema("1");
   }
 
-  /** Returns true if running in test mode (system property or env var set to "true"). */
   private static boolean isTestMode() {
     return (
       "true".equalsIgnoreCase(System.getProperty("kpipe.test.mode")) ||
@@ -166,70 +103,15 @@ public class DemoApp implements AutoCloseable {
     );
   }
 
-  /// ── Protobuf pipeline ─────────────────────────────────────────────────
-  private static KPipeRunner<KPipeConsumer<byte[]>> buildProtobufPipeline(final DemoConfig config) {
-    final var registry = new MessageProcessorRegistry(ProtobufFormat.INSTANCE);
-    final var sinkRegistry = registry.sinkRegistry();
-    sinkRegistry.register(ProtobufRegistryKey.of("protobufLogging"), new ProtobufConsoleSink<>());
-
-    final var protoFormat = ProtobufFormat.INSTANCE;
-    protoFormat.addDescriptor("customer", buildCustomerDescriptor());
-    protoFormat.withDefaultDescriptor("customer");
-
-    final var pipeline = registry.pipeline(protoFormat);
-    // Confluent protobuf wire format: 1 magic byte + 4-byte schema ID + varint message index.
-    // For a single top-level message type, the index is one zero byte → 6 total.
-    pipeline.skipBytes(6);
-    pipeline.toSink(ProtobufRegistryKey.of("protobufLogging"));
-
-    final var appConfig = toAppConfig(config, config.protoTopic(), "demo-protobuf", List.of());
-    final var consumer = buildConsumer(appConfig, pipeline.build(), "proto");
-    return buildRunner(appConfig, consumer, registry);
-  }
-
-  /// ── Shared helpers ────────────────────────────────────────────────────
-
-  private static KPipeConsumer<byte[]> buildConsumer(
-    final AppConfig appConfig,
-    final MessagePipeline<?> pipeline,
-    final String pipelineLabel
-  ) {
-    final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(
-      appConfig.bootstrapServers(),
-      appConfig.consumerGroup()
-    );
-    final Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
-    final var otel = SHARED_OTEL != null ? SHARED_OTEL : GlobalOpenTelemetry.get();
-
-    return KPipeConsumer.<byte[]>builder()
-      .withProperties(kafkaProps)
-      .withTopic(appConfig.topic())
-      .withPipeline(pipeline)
-      .withPollTimeout(appConfig.pollTimeout())
-      .withCommandQueue(commandQueue)
-      .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
-      .withMetrics(new OtelConsumerMetrics(otel, pipelineLabel))
-      .enableMetrics(true)
-      .build();
-  }
-
-  ///
-  /// Initialize a simple OpenTelemetry SDK that exports metrics via OTLP/gRPC to the collector.
-  /// Reads endpoint from OTEL_EXPORTER_OTLP_ENDPOINT env var (defaults to
-  /// "http://otel-collector:4317").
-  ///
+  /// Initialises an OTLP/gRPC OpenTelemetry SDK pointed at the demo's collector. Reads
+  /// `OTEL_EXPORTER_OTLP_ENDPOINT` (default `http://otel-collector:4317`).
   private static OpenTelemetry initOpenTelemetry() {
     final var endpoint = System.getenv().getOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317");
-
-    // Use the gRPC exporter (collector is configured to listen on 4317 for gRPC).
-    final var metricExporter = OtlpGrpcMetricExporter.builder().setEndpoint(endpoint).build();
-    // Export every 10s so Grafana's [30s] rate window always sees fresh data points.
-    final var reader = PeriodicMetricReader.builder(metricExporter).setInterval(Duration.ofSeconds(10)).build();
+    final var exporter = OtlpGrpcMetricExporter.builder().setEndpoint(endpoint).build();
+    final var reader = PeriodicMetricReader.builder(exporter).setInterval(Duration.ofSeconds(10)).build();
     final var meterProvider = SdkMeterProvider.builder().registerMetricReader(reader).build();
-
     final var sdk = OpenTelemetrySdk.builder().setMeterProvider(meterProvider).buildAndRegisterGlobal();
 
-    // Ensure SDK is shutdown on JVM exit to flush metrics
     Runtime.getRuntime().addShutdownHook(
       new Thread(() -> {
         try {
@@ -237,57 +119,7 @@ public class DemoApp implements AutoCloseable {
         } catch (final Exception ignored) {}
       })
     );
-
     return sdk;
-  }
-
-  private static KPipeRunner<KPipeConsumer<byte[]>> buildRunner(
-    final AppConfig appConfig,
-    final KPipeConsumer<byte[]> consumer,
-    final MessageProcessorRegistry registry
-  ) {
-    final var consumerMetrics = ConsumerMetricsReporter.forConsumer(consumer::getMetrics);
-    final var processorMetrics = ProcessorMetricsReporter.forRegistry(registry);
-    final var sinkMetrics = SinkMetricsReporter.forRegistry(registry.sinkRegistry());
-
-    return KPipeRunner.builder(consumer)
-      .withStartAction(c -> {
-        c.start();
-        LOGGER.log(Level.INFO, "Pipeline started for topic: {0}", appConfig.topic());
-      })
-      .withHealthCheck(KPipeConsumer::isRunning)
-      .withGracefulShutdown(KPipeRunner::performGracefulConsumerShutdown)
-      .withMetricsReporters(List.of(consumerMetrics, processorMetrics, sinkMetrics))
-      .withMetricsInterval(appConfig.metricsInterval().toMillis())
-      .withShutdownTimeout(appConfig.shutdownTimeout().toMillis())
-      .withShutdownHook(true)
-      .build();
-  }
-
-  private static Function<Consumer<byte[], byte[]>, OffsetManager<byte[]>> createOffsetManagerProvider(
-    final Duration commitInterval,
-    final Queue<ConsumerCommand> commandQueue
-  ) {
-    return consumer ->
-      KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).withCommitInterval(commitInterval).build();
-  }
-
-  private static AppConfig toAppConfig(
-    final DemoConfig config,
-    final String topic,
-    final String appName,
-    final List<String> processors
-  ) {
-    return new AppConfig(
-      config.bootstrapServers(),
-      config.consumerGroup() + "-" + appName,
-      topic,
-      appName,
-      config.pollTimeout(),
-      config.shutdownTimeout(),
-      config.metricsInterval(),
-      processors
-    );
   }
 
   static Descriptors.Descriptor buildCustomerDescriptor() {

@@ -52,4 +52,35 @@ public interface ConsumerMetrics {
   ///
   /// @param millis pause duration in milliseconds
   void recordBackpressureTime(long millis);
+
+  /// Records that a message was received from `topic`. Implementations that care about per-topic
+  /// breakdown should override; the default delegates to [#recordMessageReceived()] and ignores
+  /// the topic.
+  ///
+  /// @param topic the Kafka topic the record arrived from
+  default void recordMessageReceived(final String topic) {
+    recordMessageReceived();
+  }
+
+  /// Records that a message from `topic` was successfully processed.
+  ///
+  /// @param topic the Kafka topic the record arrived from
+  default void recordMessageProcessed(final String topic) {
+    recordMessageProcessed();
+  }
+
+  /// Records that a message from `topic` failed processing.
+  ///
+  /// @param topic the Kafka topic the record arrived from
+  default void recordProcessingError(final String topic) {
+    recordProcessingError();
+  }
+
+  /// Records the time taken to process a single message from `topic`.
+  ///
+  /// @param topic the Kafka topic the record arrived from
+  /// @param millis processing duration in milliseconds
+  default void recordProcessingDuration(final String topic, final long millis) {
+    recordProcessingDuration(millis);
+  }
 }

@@ -2,8 +2,6 @@ package org.kpipe.demo;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
@@ -19,7 +17,6 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 class DemoAppIntegrationTest {
 
-  private static final Logger log = System.getLogger(DemoAppIntegrationTest.class.getName());
   private static final String CONFLUENT_PLATFORM_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
 
   @Container
@@ -42,18 +39,11 @@ class DemoAppIntegrationTest {
       Duration.ofSeconds(60)
     );
 
-    // We test the JSON pipeline only (Avro/Protobuf require Schema Registry)
+    // We test the JSON pipeline only (Avro/Protobuf require Schema Registry).
+    // KPipe.multi(...).start() runs in the constructor; nothing further to invoke.
     try (final var app = new DemoApp(config)) {
-      // Start in a virtual thread
-      final var appThread = Thread.ofVirtual().start(() -> {
-        try {
-          app.start();
-        } catch (final Exception e) {
-          log.log(Level.ERROR, "App error", e);
-        }
-      });
+      final var appThread = Thread.ofVirtual().start(() -> {});
 
-      // Allow time for consumer to subscribe
       TimeUnit.SECONDS.sleep(3);
 
       // Produce a JSON message
