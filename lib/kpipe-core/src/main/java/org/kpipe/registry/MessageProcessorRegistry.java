@@ -31,7 +31,6 @@ public class MessageProcessorRegistry {
   private static final System.Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
 
   private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> registryMap = new ConcurrentHashMap<>();
-  private volatile String sourceAppName;
   private final MessageFormat<?> messageFormat;
 
   private final MessageSinkRegistry sinkRegistry = new MessageSinkRegistry();
@@ -104,76 +103,22 @@ public class MessageProcessorRegistry {
     };
   }
 
-  /// Creates a new registry with the byte-passthrough format and an empty source app name.
-  ///
-  /// This is the preferred form when `sourceAppName` is not needed. Use
-  // [#withSourceAppName(String)]
-  /// to set the app name later if required.
+  /// Creates a new registry with the byte-passthrough format.
   public MessageProcessorRegistry() {
-    this("", MessageFormat.bytes());
-  }
-
-  /// Creates a new registry with the specified message format and an empty source app name.
-  ///
-  /// This is the preferred form when `sourceAppName` is not needed. Use
-  // [#withSourceAppName(String)]
-  /// to set the app name later if required.
-  ///
-  /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `AvroFormat.INSTANCE`,
-  ///                      `ProtobufFormat.INSTANCE`, `MessageFormat.bytes()`, or a custom impl)
-  public MessageProcessorRegistry(final MessageFormat<?> messageFormat) {
-    this("", messageFormat);
-  }
-
-  /// Creates a new registry with the byte-passthrough format as the default.
-  ///
-  /// Kept for backwards compatibility. Prefer the no-arg [#MessageProcessorRegistry()] constructor
-  /// (combined with [#withSourceAppName(String)] when needed) when `sourceAppName` is not required.
-  ///
-  /// @param sourceAppName Application name to use as source identifier
-  public MessageProcessorRegistry(final String sourceAppName) {
-    this(sourceAppName, MessageFormat.bytes());
+    this(MessageFormat.bytes());
   }
 
   /// Creates a new registry with the specified message format.
   ///
-  /// Kept for backwards compatibility. Prefer the format-only
-  // [#MessageProcessorRegistry(MessageFormat)]
-  /// constructor (combined with [#withSourceAppName(String)] when needed) when `sourceAppName` is
-  /// not required.
-  ///
-  /// @param sourceAppName Application name to use as source identifier
   /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `AvroFormat.INSTANCE`,
   ///                      `ProtobufFormat.INSTANCE`, `MessageFormat.bytes()`, or a custom impl)
-  public MessageProcessorRegistry(final String sourceAppName, final MessageFormat<?> messageFormat) {
-    this.sourceAppName = Objects.requireNonNull(sourceAppName, "Source app name cannot be null");
+  public MessageProcessorRegistry(final MessageFormat<?> messageFormat) {
     this.messageFormat = Objects.requireNonNull(messageFormat, "Message format cannot be null");
-  }
-
-  /// Returns the source application name this registry was created with — useful for
-  // format-specific
-  /// helper modules that register default operators (e.g. an "addSource" processor that stamps the
-  /// app name onto each message).
-  ///
-  /// @return the source app name
-  public String sourceAppName() {
-    return sourceAppName;
-  }
-
-  /// Sets the source application name fluently. Useful when constructing the registry via the
-  /// no-arg or format-only constructors and the app name needs to be supplied later.
-  ///
-  /// @param name the source application name (must not be null)
-  /// @return this registry instance for chaining
-  public MessageProcessorRegistry withSourceAppName(final String name) {
-    this.sourceAppName = Objects.requireNonNull(name, "Source app name cannot be null");
-    return this;
   }
 
   /// Returns the [MessageFormat] this registry was constructed with. Useful for callers that
   /// want to inspect or reuse the format (e.g. to build a sibling pipeline). Defaults to
-  /// [MessageFormat#bytes()] when the registry was constructed with a no-arg or
-  /// `sourceAppName`-only constructor.
+  /// [MessageFormat#bytes()] when the registry was constructed with the no-arg constructor.
   ///
   /// @return the configured message format (never null)
   public MessageFormat<?> messageFormat() {

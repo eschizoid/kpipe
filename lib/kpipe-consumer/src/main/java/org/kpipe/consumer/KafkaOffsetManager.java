@@ -13,7 +13,6 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.kpipe.consumer.enums.OffsetState;
 
 /// Manages Kafka consumer offsets for parallel processing scenarios.
 ///

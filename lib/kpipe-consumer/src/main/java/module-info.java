@@ -11,7 +11,6 @@ module org.kpipe.consumer {
 
   exports org.kpipe.consumer;
   exports org.kpipe.consumer.config;
-  exports org.kpipe.consumer.enums;
   exports org.kpipe.consumer.metrics;
   exports org.kpipe.health;
 }

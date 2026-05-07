@@ -192,10 +192,16 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
   /// Sends a record to a Kafka topic asynchronously.
   ///
+  /// Metrics are updated via a callback when the send completes — success increments
+  /// `kpipe.producer.messages.sent`, failure increments `kpipe.producer.messages.failed`.
+  ///
   /// @param record the record to send
   /// @return a future that will contain the record metadata
   public Future<RecordMetadata> sendAsync(final ProducerRecord<K, V> record) {
-    return producer.send(record);
+    return producer.send(record, (metadata, exception) -> {
+      if (exception == null) otelMetrics.recordMessageSent();
+      else otelMetrics.recordMessageFailed();
+    });
   }
 
   @Override

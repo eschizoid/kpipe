@@ -79,7 +79,7 @@ public class AvroPipelineBenchmark {
     avroWithMagicBytes[4] = 1;
     System.arraycopy(avroBytes, 0, avroWithMagicBytes, 5, avroBytes.length);
 
-    final var registry = new MessageProcessorRegistry("benchmark-app", AvroFormat.INSTANCE);
+    final var registry = new MessageProcessorRegistry(AvroFormat.INSTANCE);
     final var format = AvroFormat.INSTANCE;
     format.addSchema("user", "com.kpipe.User", schemaJson);
     format.withDefaultSchema("user");

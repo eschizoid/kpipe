@@ -63,7 +63,7 @@ class OperatorsTest {
   void filterShouldComposeInPipeline() {
     // Verify the operator actually integrates with TypedPipelineBuilder's
     // null-handling — filtered messages short-circuit the chain.
-    final var registry = new MessageProcessorRegistry("operators-test");
+    final var registry = new MessageProcessorRegistry();
     final var pipeline = registry
       .pipeline(MessageFormat.bytes())
       .add(Operators.filter(b -> new String(b).startsWith("keep-")))

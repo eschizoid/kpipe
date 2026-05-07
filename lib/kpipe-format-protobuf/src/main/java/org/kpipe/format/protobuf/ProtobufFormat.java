@@ -51,12 +51,12 @@ public final class ProtobufFormat implements SchemaAwareFormat<Message> {
   /// [ProtobufConsoleSink] registered under [#PROTOBUF_LOGGING].
   ///
   /// Convenience for the common case of "give me a Protobuf registry with a logging sink"; users
-  /// who need an isolated descriptor scope or a custom source app name should build the registry
-  /// directly via `new MessageProcessorRegistry(sourceAppName, new ProtobufFormat())`.
+  /// who need an isolated descriptor scope should build the registry directly via
+  /// `new MessageProcessorRegistry(new ProtobufFormat())`.
   ///
   /// @return a new pre-configured registry
   public static MessageProcessorRegistry newRegistry() {
-    final var registry = new MessageProcessorRegistry("kpipe-format-protobuf", INSTANCE);
+    final var registry = new MessageProcessorRegistry(INSTANCE);
     registry.sinkRegistry().register(PROTOBUF_LOGGING, new ProtobufConsoleSink<>());
     return registry;
   }

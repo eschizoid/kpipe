@@ -10,7 +10,6 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.kpipe.consumer.enums.OffsetState;
 
 /// Implementation of Kafka's ConsumerRebalanceListener that handles partition rebalance events for
 /// the KafkaOffsetManager.

@@ -14,7 +14,7 @@ import org.kpipe.registry.MessageProcessorRegistry;
 class JsonFormatPipelineTest {
 
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
-  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry("test-app");
+  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
   private static String normalizeJson(String json) {
     try (

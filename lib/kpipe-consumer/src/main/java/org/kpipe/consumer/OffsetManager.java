@@ -1,9 +1,10 @@
 package org.kpipe.consumer;
 
+import java.util.Collection;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.kpipe.consumer.enums.OffsetState;
+import org.apache.kafka.common.TopicPartition;
 
 /// Interface for managing Kafka consumer offsets.
 ///
@@ -34,8 +35,25 @@ public interface OffsetManager<K> extends AutoCloseable {
   void notifyCommitComplete(final String commitId, final boolean success);
 
   /// Creates a rebalance listener for this offset manager.
-  /// @return A ConsumerRebalanceListener instance
-  ConsumerRebalanceListener createRebalanceListener();
+  ///
+  /// Default implementation is a no-op — most custom offset stores key their state by
+  /// [TopicPartition] and can retain it across rebalances without any action. Override only
+  /// to drain pending state, invalidate caches, or surrender resources on revoke/assign.
+  ///
+  /// @return a [ConsumerRebalanceListener] (never null)
+  default ConsumerRebalanceListener createRebalanceListener() {
+    return new ConsumerRebalanceListener() {
+      @Override
+      public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
+        // no-op
+      }
+
+      @Override
+      public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
+        // no-op
+      }
+    };
+  }
 
   /// Gets the current operational state of the offset manager.
   /// @return The current OffsetState

@@ -175,7 +175,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   @State(Scope.Thread)
   public static class KpipeInvocationContext {
 
-    private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry("benchmark");
+    private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
     private AtomicInteger processedCount;
     private KPipeConsumer<byte[]> consumer;

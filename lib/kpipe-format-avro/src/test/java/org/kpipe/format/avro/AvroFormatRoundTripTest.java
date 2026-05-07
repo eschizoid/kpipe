@@ -19,7 +19,7 @@ import org.kpipe.registry.MessageProcessorRegistry;
 
 class AvroFormatRoundTripTest {
 
-  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry("test-app");
+  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
   @AfterEach
   public void clearSchemaRegistry() {
