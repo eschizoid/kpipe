@@ -11,6 +11,8 @@ tasks.named<ShadowJar>("shadowJar") {
 description = "KPipe - Demo Application Combining JSON, Avro, and Protobuf Pipelines"
 
 dependencies {
+  implementation(project(":lib:kpipe-api"))
+  implementation(project(":lib:kpipe-consumer"))
   implementation(project(":lib:kpipe-format-json"))
   implementation(project(":lib:kpipe-format-avro"))
   implementation(project(":lib:kpipe-format-protobuf"))

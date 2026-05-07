@@ -3,6 +3,7 @@ package org.kpipe;
 import java.util.Objects;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.KPipeRunner;
+import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.sink.MessageSink;
 
@@ -18,15 +19,10 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
 
   @Override
   public Handle start() {
-    final var registry = new MessageProcessorRegistry(stream.format());
-    final var pipelineBuilder = registry.pipeline(stream.format());
-    for (final var op : stream.operators()) pipelineBuilder.add(op);
-    final var pipeline = pipelineBuilder.toSink(terminalSink).build();
-
     final var consumerBuilder = KPipeConsumer.<byte[]>builder()
       .withProperties(stream.kafkaProps())
-      .withTopic(stream.topic())
-      .withPipeline(pipeline)
+      .withTopics(stream.topics())
+      .withPipeline(buildPipeline())
       .withSequentialProcessing(stream.sequentialProcessing());
 
     if (stream.maxRetries() > 0) consumerBuilder.withRetry(stream.maxRetries(), stream.retryBackoff());
@@ -40,9 +36,8 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
     try {
       runner.start();
     } catch (final RuntimeException e) {
-      // Start failed (broker unreachable, missing topic, etc.) — release the consumer so we
-      // don't leak the partially-built pipeline. Without this, the AutoCloseable contract on
-      // Handle is unreachable because no Handle was ever returned.
+      // Releasing the consumer here keeps the AutoCloseable contract reachable when start() throws
+      // before a Handle is returned.
       try {
         consumer.close();
       } catch (final Exception suppressed) {
@@ -51,6 +46,15 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
       throw e;
     }
     return new DefaultHandle(runner, consumer);
+  }
+
+  /// Builds the [MessagePipeline] for this sink's stream + terminal sink. Reused by
+  /// [MultiBuilder] when assembling a per-topic pipeline map.
+  MessagePipeline<?> buildPipeline() {
+    final var registry = new MessageProcessorRegistry(stream.format());
+    final var pipelineBuilder = registry.pipeline(stream.format()).skipBytes(stream.skipBytes());
+    for (final var op : stream.operators()) pipelineBuilder.add(op);
+    return pipelineBuilder.toSink(terminalSink).build();
   }
 
   /// Exposes the configured stream for test inspection of composition.

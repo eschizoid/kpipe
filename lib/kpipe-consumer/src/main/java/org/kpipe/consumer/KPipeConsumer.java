@@ -82,8 +82,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   private final Queue<ConsumerCommand> commandQueue;
   private final Consumer<K, byte[]> kafkaConsumer;
-  private final String topic;
-  private final MessagePipeline<?> processor;
+  private final Set<String> topics;
+  private final Map<String, MessagePipeline<?>> pipelines;
   private final ExecutorService virtualThreadExecutor;
   private final Duration pollTimeout;
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
@@ -143,8 +143,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
     private Builder() {}
 
     private Properties kafkaProps;
-    private String topic;
+    private Set<String> topics;
     private MessagePipeline<?> pipeline;
+    private Map<String, MessagePipeline<?>> pipelinesPerTopic;
     private Duration pollTimeout = Duration.ofMillis(100);
     private ErrorHandler<K> errorHandler = e ->
       LOGGER.log(
@@ -185,8 +186,29 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param topic The topic name
     /// @return This builder instance for method chaining
     public Builder<K> withTopic(final String topic) {
-      this.topic = topic;
+      return withTopics(Set.of(Objects.requireNonNull(topic, "Topic cannot be null")));
+    }
+
+    /// Sets multiple Kafka topics to consume from with a single shared pipeline.
+    ///
+    /// All topics must produce the same payload type because they share one [MessagePipeline].
+    /// For per-topic typing, run separate consumers.
+    ///
+    /// @param topics The topic names (must be non-empty)
+    /// @return This builder instance for method chaining
+    public Builder<K> withTopics(final Collection<String> topics) {
+      Objects.requireNonNull(topics, "Topics cannot be null");
+      if (topics.isEmpty()) throw new IllegalArgumentException("Topics cannot be empty");
+      this.topics = new LinkedHashSet<>(topics);
       return this;
+    }
+
+    /// Sets multiple Kafka topics to consume from with a single shared pipeline (varargs form).
+    ///
+    /// @param topics The topic names (must be non-empty)
+    /// @return This builder instance for method chaining
+    public Builder<K> withTopics(final String... topics) {
+      return withTopics(java.util.Arrays.asList(Objects.requireNonNull(topics, "Topics cannot be null")));
     }
 
     /// Sets the pipeline to process each consumed message.
@@ -195,10 +217,30 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// pipeline. The pipeline must be a [MessagePipeline] — typically produced by
     /// `MessageProcessorRegistry.pipeline(format).build()`.
     ///
+    /// All subscribed topics share this pipeline (homogeneous case). For heterogeneous
+    /// per-topic pipelines, use [#withPipelines(Map)].
+    ///
     /// @param pipeline The pipeline to apply to message values
     /// @return This builder instance for method chaining
     public Builder<K> withPipeline(final MessagePipeline<?> pipeline) {
       this.pipeline = pipeline;
+      return this;
+    }
+
+    /// Sets a per-topic pipeline map, enabling heterogeneous payload types across the subscribed
+    /// topics. When this is set, the consumer subscribes to the map's keys and dispatches each
+    /// record to its topic's pipeline. Records arriving for topics not present in the map are
+    /// dropped with a WARNING log; the offset is still marked processed.
+    ///
+    /// `withTopic` / `withTopics` is unnecessary when `withPipelines` is used — the topic set is
+    /// derived from the map keys. Mixing `withPipeline` and `withPipelines` is an error.
+    ///
+    /// @param pipelinesPerTopic the topic → pipeline map (must be non-empty)
+    /// @return This builder instance for method chaining
+    public Builder<K> withPipelines(final Map<String, MessagePipeline<?>> pipelinesPerTopic) {
+      Objects.requireNonNull(pipelinesPerTopic, "pipelinesPerTopic cannot be null");
+      if (pipelinesPerTopic.isEmpty()) throw new IllegalArgumentException("pipelinesPerTopic cannot be empty");
+      this.pipelinesPerTopic = Map.copyOf(pipelinesPerTopic);
       return this;
     }
 
@@ -453,8 +495,19 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @return a new KPipeConsumer instance
     public KPipeConsumer<K> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
-      Objects.requireNonNull(topic, "Topic must be provided");
-      Objects.requireNonNull(pipeline, "Pipeline function must be provided");
+      if (pipeline != null && pipelinesPerTopic != null) throw new IllegalArgumentException(
+        "Use either withPipeline (homogeneous) or withPipelines (heterogeneous), not both"
+      );
+      if (pipelinesPerTopic != null) {
+        if (topics != null) throw new IllegalArgumentException(
+          "withTopic/withTopics is unnecessary with withPipelines — topics are derived from the map keys; remove the explicit topic call"
+        );
+        this.topics = new LinkedHashSet<>(pipelinesPerTopic.keySet());
+      } else {
+        Objects.requireNonNull(topics, "Topic must be provided via withTopic or withTopics");
+        if (topics.isEmpty()) throw new IllegalArgumentException("At least one topic must be provided");
+        Objects.requireNonNull(pipeline, "Pipeline function must be provided");
+      }
       if (maxRetries < 0) throw new IllegalArgumentException("Max retries cannot be negative");
       if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
         "Poll timeout must be positive"
@@ -478,8 +531,14 @@ public class KPipeConsumer<K> implements AutoCloseable {
       builder.consumerProvider != null
         ? builder.consumerProvider.get()
         : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
-    this.topic = Objects.requireNonNull(builder.topic);
-    this.processor = Objects.requireNonNull(builder.pipeline);
+    this.topics = Set.copyOf(Objects.requireNonNull(builder.topics, "Topics must be set"));
+    if (builder.pipelinesPerTopic != null) this.pipelines = builder.pipelinesPerTopic;
+    else {
+      final var map = new LinkedHashMap<String, MessagePipeline<?>>(this.topics.size());
+      final var single = Objects.requireNonNull(builder.pipeline, "pipeline cannot be null");
+      for (final var t : this.topics) map.put(t, single);
+      this.pipelines = Map.copyOf(map);
+    }
     this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
     this.errorHandler = builder.errorHandler;
     this.maxRetries = builder.maxRetries;
@@ -585,11 +644,12 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (!state.compareAndSet(ConsumerState.CREATED, ConsumerState.RUNNING)) return;
 
     if (offsetManager != null) offsetManager.start();
-    if (rebalanceListener != null) kafkaConsumer.subscribe(List.of(topic), rebalanceListener);
-    else kafkaConsumer.subscribe(List.of(topic));
+    if (rebalanceListener != null) kafkaConsumer.subscribe(topics, rebalanceListener);
+    else kafkaConsumer.subscribe(topics);
 
+    final var threadLabel = topics.size() == 1 ? topics.iterator().next() : "topics-%d".formatted(topics.size());
     final var thread = Thread.ofVirtual()
-      .name("kafka-consumer-%s-%s".formatted(topic, UUID.randomUUID().toString().substring(0, 8)))
+      .name("kafka-consumer-%s-%s".formatted(threadLabel, UUID.randomUUID().toString().substring(0, 8)))
       .uncaughtExceptionHandler((t, e) -> {
         LOGGER.log(Level.ERROR, "Uncaught exception in thread {0}", t.getName(), e);
         transitionToClosing();
@@ -615,7 +675,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         } finally {
           try {
             kafkaConsumer.close();
-            LOGGER.log(Level.INFO, "Consumer closed for topic {0}", topic);
+            LOGGER.log(Level.INFO, "Consumer closed for topics {0}", topics);
           } catch (final Exception e) {
             LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
           } finally {
@@ -625,7 +685,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       });
 
     consumerThread.set(thread);
-    LOGGER.log(Level.INFO, "Consumer started for topic {0}", topic);
+    LOGGER.log(Level.INFO, "Consumer started for topics {0}", topics);
   }
 
   /// Pauses consumption from the topic. Any in-flight messages will continue processing, but no new
@@ -665,15 +725,15 @@ public class KPipeConsumer<K> implements AutoCloseable {
         switch (command) {
           case ConsumerCommand.Pause _ -> {
             kafkaConsumer.pause(kafkaConsumer.assignment());
-            LOGGER.log(Level.INFO, "Consumer paused for topic {0}", topic);
+            LOGGER.log(Level.INFO, "Consumer paused for topics {0}", topics);
           }
           case ConsumerCommand.Resume _ -> {
             kafkaConsumer.resume(kafkaConsumer.assignment());
-            LOGGER.log(Level.INFO, "Consumer resumed for topic {0}", topic);
+            LOGGER.log(Level.INFO, "Consumer resumed for topics {0}", topics);
           }
           case ConsumerCommand.Close _ -> {
             state.set(ConsumerState.CLOSING);
-            LOGGER.log(Level.INFO, "Consumer shutdown initiated for topic {0}", topic);
+            LOGGER.log(Level.INFO, "Consumer shutdown initiated for topics {0}", topics);
           }
           case ConsumerCommand.TrackOffset cmd -> {
             if (offsetManager != null) {
@@ -854,7 +914,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///
   /// @param records the batch of records to process
   protected void processRecords(final ConsumerRecords<K, byte[]> records) {
-    for (final var record : records.records(topic)) {
+    for (final var record : records) {
       if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
       inFlightCount.incrementAndGet();
 
@@ -868,7 +928,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
           if (isRunning()) {
             LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
             if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-            otelMetrics.recordProcessingError();
+            otelMetrics.recordProcessingError(record.topic());
             try {
               errorHandler.accept(new ProcessingError<>(record, e, 0));
             } catch (final Exception ex) {
@@ -904,7 +964,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// @param record The Kafka consumer record to process
   protected void processRecord(final ConsumerRecord<K, byte[]> record) {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
-    otelMetrics.recordMessageReceived();
+    otelMetrics.recordMessageReceived(record.topic());
 
     final long startTime = System.currentTimeMillis();
     try {
@@ -915,8 +975,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
           metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
           metrics.get(METRIC_PROCESSING_DURATION_TOTAL_MS).addAndGet(durationMs);
         }
-        otelMetrics.recordMessageProcessed();
-        otelMetrics.recordProcessingDuration(durationMs);
+        otelMetrics.recordMessageProcessed(record.topic());
+        otelMetrics.recordProcessingDuration(record.topic(), durationMs);
       }
     } finally {
       inFlightCount.decrementAndGet();
@@ -928,11 +988,24 @@ public class KPipeConsumer<K> implements AutoCloseable {
   }
 
   private boolean tryProcessRecord(final ConsumerRecord<K, byte[]> record) {
+    final var pipeline = pipelines.get(record.topic());
+    if (pipeline == null) {
+      // Partial-revocation race: subscribed topic was reassigned mid-poll. Mark processed so we
+      // don't loop forever on a config error.
+      LOGGER.log(
+        Level.WARNING,
+        "No pipeline registered for topic {0}; dropping record at offset {1}",
+        record.topic(),
+        record.offset()
+      );
+      markOffsetProcessed(record);
+      return false;
+    }
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) if (!handleRetry(record, attempt)) return false;
 
       try {
-        processor.processToSink(record.value());
+        pipeline.processToSink(record.value());
         markOffsetProcessed(record);
         return true;
       } catch (final Exception e) {
@@ -968,7 +1041,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   private void handleProcessingError(final ConsumerRecord<K, byte[]> record, final Exception e, final int retryCount) {
     if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-    otelMetrics.recordProcessingError();
+    otelMetrics.recordProcessingError(record.topic());
     LOGGER.log(
       Level.WARNING,
       "Failed to process message at offset {0} after {1} attempt(s): {2}",
@@ -977,7 +1050,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       e.getMessage()
     );
     if (deadLetterTopic != null && kpipeProducer != null) {
-      final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, topic, e);
+      final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e);
       if (sent && enableMetrics) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
     }
     markOffsetProcessed(record);

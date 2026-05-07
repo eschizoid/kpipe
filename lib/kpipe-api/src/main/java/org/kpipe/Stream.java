@@ -110,6 +110,16 @@ public interface Stream<T> {
   /// @return a new stream with the processing mode configured
   Stream<T> withSequentialProcessing(final boolean sequential);
 
+  /// Returns a new stream that skips the first `n` bytes of every payload before deserialization.
+  /// Useful for stripping wire-format prefixes — e.g. Confluent Schema Registry's 5-byte envelope
+  /// (1 magic + 4 schema id) for Avro, or 6-byte envelope (5 + 1 message-index varint) for the
+  /// single-top-level-message Protobuf case.
+  ///
+  /// @param n the number of leading bytes to skip (must be ≥ 0)
+  /// @return a new stream with the skip configured
+  /// @throws IllegalArgumentException if `n` is negative
+  Stream<T> skipBytes(final int n);
+
   /// Terminates the stream with a format-appropriate console sink and returns a [Sink] ready
   /// to start. For Avro streams this requires that a default schema has been registered; see
   /// [KPipe#avro] for details.

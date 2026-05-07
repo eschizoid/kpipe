@@ -32,12 +32,21 @@ class OtelConsumerMetricsTest {
   @Test
   void shouldRecordEventsWithoutThrowing() {
     final var metrics = new OtelConsumerMetrics(OpenTelemetry.noop(), () -> 0L, "test");
-    assertDoesNotThrow(metrics::recordMessageReceived);
-    assertDoesNotThrow(metrics::recordMessageProcessed);
-    assertDoesNotThrow(metrics::recordProcessingError);
+    assertDoesNotThrow(() -> metrics.recordMessageReceived());
+    assertDoesNotThrow(() -> metrics.recordMessageProcessed());
+    assertDoesNotThrow(() -> metrics.recordProcessingError());
     assertDoesNotThrow(() -> metrics.recordProcessingDuration(42L));
     assertDoesNotThrow(metrics::recordBackpressurePause);
     assertDoesNotThrow(() -> metrics.recordBackpressureTime(150L));
+  }
+
+  @Test
+  void shouldRecordTopicScopedEventsWithoutThrowing() {
+    final var metrics = new OtelConsumerMetrics(OpenTelemetry.noop(), () -> 0L, "test");
+    assertDoesNotThrow(() -> metrics.recordMessageReceived("events-a"));
+    assertDoesNotThrow(() -> metrics.recordMessageProcessed("events-a"));
+    assertDoesNotThrow(() -> metrics.recordProcessingError("events-a"));
+    assertDoesNotThrow(() -> metrics.recordProcessingDuration("events-a", 42L));
   }
 
   @Test

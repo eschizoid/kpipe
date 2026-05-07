@@ -2,9 +2,12 @@ package org.kpipe;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -25,7 +28,7 @@ import org.kpipe.sink.MessageSink;
 /// @param <T> the deserialized message type
 final class DefaultStream<T> implements Stream<T> {
 
-  private final String topic;
+  private final Set<String> topics;
   private final Properties kafkaProps;
   private final MessageFormat<T> format;
   private final Supplier<MessageSink<T>> defaultConsoleSinkFactory;
@@ -35,20 +38,32 @@ final class DefaultStream<T> implements Stream<T> {
   private final Long backpressureHigh;
   private final Long backpressureLow;
   private final boolean sequentialProcessing;
+  private final int skipBytes;
 
-  /// Public constructor used by [KPipe] factories — starts with an empty pipeline and default
+  /// Public constructor used by [KPipe] factories — single topic, empty pipeline, default
   /// retry / backpressure settings.
-  ///
-  /// Defensively copies `kafkaProps` so that subsequent caller mutations do not silently affect
-  /// the in-flight stream.
   DefaultStream(
     final String topic,
     final Properties kafkaProps,
     final MessageFormat<T> format,
     final Supplier<MessageSink<T>> defaultConsoleSinkFactory
   ) {
+    this(Set.of(Objects.requireNonNull(topic, "topic cannot be null")), kafkaProps, format, defaultConsoleSinkFactory);
+  }
+
+  /// Public constructor used by [KPipe] factories — multiple topics, single shared pipeline,
+  /// empty operator chain, default retry / backpressure settings.
+  ///
+  /// Defensively copies `kafkaProps` so that subsequent caller mutations do not silently affect
+  /// the in-flight stream. Defensively copies `topics` into an immutable insertion-ordered set.
+  DefaultStream(
+    final Collection<String> topics,
+    final Properties kafkaProps,
+    final MessageFormat<T> format,
+    final Supplier<MessageSink<T>> defaultConsoleSinkFactory
+  ) {
     this(
-      Objects.requireNonNull(topic, "topic cannot be null"),
+      validateTopics(topics),
       (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone(),
       Objects.requireNonNull(format, "format cannot be null"),
       Objects.requireNonNull(defaultConsoleSinkFactory, "defaultConsoleSinkFactory cannot be null"),
@@ -57,12 +72,24 @@ final class DefaultStream<T> implements Stream<T> {
       Duration.ofMillis(500),
       null,
       null,
-      false
+      false,
+      0
     );
   }
 
+  private static Set<String> validateTopics(final Collection<String> topics) {
+    Objects.requireNonNull(topics, "topics cannot be null");
+    if (topics.isEmpty()) throw new IllegalArgumentException("topics cannot be empty");
+    final var copy = new LinkedHashSet<String>(topics.size());
+    for (final var t : topics) {
+      if (t == null || t.isBlank()) throw new IllegalArgumentException("topic name cannot be null or blank");
+      copy.add(t);
+    }
+    return Set.copyOf(copy);
+  }
+
   private DefaultStream(
-    final String topic,
+    final Set<String> topics,
     final Properties kafkaProps,
     final MessageFormat<T> format,
     final Supplier<MessageSink<T>> defaultConsoleSinkFactory,
@@ -71,9 +98,10 @@ final class DefaultStream<T> implements Stream<T> {
     final Duration retryBackoff,
     final Long backpressureHigh,
     final Long backpressureLow,
-    final boolean sequentialProcessing
+    final boolean sequentialProcessing,
+    final int skipBytes
   ) {
-    this.topic = topic;
+    this.topics = topics;
     this.kafkaProps = kafkaProps;
     this.format = format;
     this.defaultConsoleSinkFactory = defaultConsoleSinkFactory;
@@ -83,13 +111,14 @@ final class DefaultStream<T> implements Stream<T> {
     this.backpressureHigh = backpressureHigh;
     this.backpressureLow = backpressureLow;
     this.sequentialProcessing = sequentialProcessing;
+    this.skipBytes = skipBytes;
   }
 
   private DefaultStream<T> withOperator(final UnaryOperator<T> op) {
     final var next = new ArrayList<>(operators);
     next.add(op);
     return new DefaultStream<>(
-      topic,
+      topics,
       kafkaProps,
       format,
       defaultConsoleSinkFactory,
@@ -98,7 +127,8 @@ final class DefaultStream<T> implements Stream<T> {
       retryBackoff,
       backpressureHigh,
       backpressureLow,
-      sequentialProcessing
+      sequentialProcessing,
+      skipBytes
     );
   }
 
@@ -131,7 +161,7 @@ final class DefaultStream<T> implements Stream<T> {
   public Stream<T> withRetry(final int maxRetries, final Duration backoff) {
     if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative");
     return new DefaultStream<>(
-      topic,
+      topics,
       kafkaProps,
       format,
       defaultConsoleSinkFactory,
@@ -140,7 +170,8 @@ final class DefaultStream<T> implements Stream<T> {
       Objects.requireNonNull(backoff, "backoff cannot be null"),
       backpressureHigh,
       backpressureLow,
-      sequentialProcessing
+      sequentialProcessing,
+      skipBytes
     );
   }
 
@@ -155,7 +186,7 @@ final class DefaultStream<T> implements Stream<T> {
       "Invalid watermarks: high must be positive and > low (got high=%d, low=%d)".formatted(high, low)
     );
     return new DefaultStream<>(
-      topic,
+      topics,
       kafkaProps,
       format,
       defaultConsoleSinkFactory,
@@ -164,14 +195,15 @@ final class DefaultStream<T> implements Stream<T> {
       retryBackoff,
       high,
       low,
-      sequentialProcessing
+      sequentialProcessing,
+      skipBytes
     );
   }
 
   @Override
   public Stream<T> withSequentialProcessing(final boolean sequential) {
     return new DefaultStream<>(
-      topic,
+      topics,
       kafkaProps,
       format,
       defaultConsoleSinkFactory,
@@ -180,7 +212,26 @@ final class DefaultStream<T> implements Stream<T> {
       retryBackoff,
       backpressureHigh,
       backpressureLow,
-      sequential
+      sequential,
+      skipBytes
+    );
+  }
+
+  @Override
+  public Stream<T> skipBytes(final int n) {
+    if (n < 0) throw new IllegalArgumentException("n cannot be negative");
+    return new DefaultStream<>(
+      topics,
+      kafkaProps,
+      format,
+      defaultConsoleSinkFactory,
+      operators,
+      maxRetries,
+      retryBackoff,
+      backpressureHigh,
+      backpressureLow,
+      sequentialProcessing,
+      n
     );
   }
 
@@ -203,8 +254,8 @@ final class DefaultStream<T> implements Stream<T> {
     return new DefaultSink<>(this, new CompositeMessageSink<>(List.of(sinks)));
   }
 
-  String topic() {
-    return topic;
+  Set<String> topics() {
+    return topics;
   }
 
   Properties kafkaProps() {
@@ -237,5 +288,9 @@ final class DefaultStream<T> implements Stream<T> {
 
   boolean sequentialProcessing() {
     return sequentialProcessing;
+  }
+
+  int skipBytes() {
+    return skipBytes;
   }
 }

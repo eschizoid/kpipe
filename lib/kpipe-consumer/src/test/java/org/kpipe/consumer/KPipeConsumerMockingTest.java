@@ -38,7 +38,7 @@ class KPipeConsumerMockingTest {
   private KafkaOffsetManager<String> offsetManager;
 
   @Captor
-  private ArgumentCaptor<List<String>> topicCaptor;
+  private ArgumentCaptor<Collection<String>> topicCaptor;
 
   @Captor
   private ArgumentCaptor<KPipeConsumer.ProcessingError<String>> errorCaptor;
@@ -70,7 +70,7 @@ class KPipeConsumerMockingTest {
     try (functionalConsumer) {
       functionalConsumer.start();
       verify(mockConsumer).subscribe(topicCaptor.capture());
-      assertEquals(List.of(TOPIC), topicCaptor.getValue());
+      assertEquals(Set.of(TOPIC), Set.copyOf(topicCaptor.getValue()));
     }
   }
 

@@ -32,7 +32,7 @@ Single source of truth for what's left across the whole library.
 
 | #  | Priority                  | Item                                                                                                                         | Type              | Effort    |
 |----|---------------------------|------------------------------------------------------------------------------------------------------------------------------|-------------------|-----------|
-| 1  | **P1 — Adoption blocker** | Multi-topic Phase 1 (homogeneous topics, single shared pipeline)                                                             | Feature           | ~3 days   |
+| 1  | ~~**P1 — Adoption blocker**~~ | ~~Multi-topic Phase 1 (homogeneous) + Phase 2 (heterogeneous via `KPipe.multi`)~~ — both landed 2026-05-07               | Feature           | shipped   |
 | 2  | **P1 — Adoption blocker** | Java baseline decision (stay on 25 vs drop to 21 LTS)                                                                        | Strategy          | decision  |
 | 3  | **P2 — Real footgun**     | `Format.INSTANCE` global mutable state (Avro/Protobuf)                                                                       | Hardening         | ~1 day    |
 | 4  | **P2 — Real footgun**     | HTTP fetcher remaining extraction from `kpipe-format-avro` (drop `java.net.http` + `jackson.core`; dsl-json already removed) | Cleanup           | ~2–3 hr   |
@@ -103,41 +103,19 @@ kpipe-bom                                          (BOM — pins versions)
 
 ## Production-readiness roadmap (detail for the P1 / P2 items above)
 
-### P1 #1 — Multi-topic consumer support (PHASED — hardest of the four)
+### P1 #1 — Multi-topic consumer support (SHIPPED 2026-05-07)
 
-- **Today:** `KPipeConsumer<K>` subscribes to a single topic. Real apps consume from N topics; users have to
-  spin up N consumer instances, each with its own thread/poll loop, which inflates rebalance traffic and breaks
-  the "one consumer group, many partitions" model Kafka was designed for.
+Both phases landed in a single branch:
 
-- **Why it's hard (be honest with future-you):**
-    1. The fluent facade is built around a single typed pipeline — `KPipe.json("topic")` returns
-       `Stream<Map<String,Object>>`. Multi-topic forces a decision: all topics share one pipeline (and one
-       payload type), or each topic gets its own pipeline. Sharing works for homogeneous topics; per-topic
-       typing breaks the current `Stream<T>` shape.
-    2. `KafkaOffsetManager` is already per-topic-partition internally, but everything else in the consumer
-       treats topic as implicit. `topic` needs to be plumbed through `MessagePipeline.apply`, the in-flight
-       tracker, the metrics labels, and `processRecord`. None hard alone; the breadth bites.
-    3. Rebalance semantics worsen — `RebalanceListener` is invoked for the union of partitions across topics,
-       and partial revocations (lose 2 partitions of topic-a, keep all of topic-b) need correct routing in the
-       per-topic dispatcher.
-    4. The Testcontainers harness assumes one topic. Most existing tests need new fixtures.
-
-- **Phase 1 — homogeneous multi-topic (target 1.11.0)**
-    - API: `KPipe.json(Set.of("topic-a", "topic-b", "topic-c"))` or varargs. Single shared pipeline. All topics
-      must produce the same payload type.
-    - Covers the ~60% real-world case ("partitioned-by-region versions of the same event").
-    - Touches: `KPipeConsumer.subscribe`, `KafkaOffsetManager` plumbing review, facade signature additions,
-      metrics topic-label propagation, Testcontainers fixture for multi-topic.
-    - Effort: ~3 days.
-
-- **Phase 2 — per-topic dispatch (target 1.13.0 or later, defer if Phase 1 covers demand)**
-    - API: `KPipe.multi().on("topic-a", jsonStream).on("topic-b", avroStream).build()`. Different payload
-      types per topic, separate pipelines.
-    - Requires a new facade entry point and a routing layer on top of the consumer poll loop.
-    - Effort: ~5–7 days, mostly facade redesign.
-
-- **Trap to avoid:** don't try to land both phases in one release. Ship Phase 1 standalone, gather feedback,
-  decide if Phase 2 is needed at all.
+- **Homogeneous (Phase 1):** `KPipe.json/avro/protobuf/bytes/custom(Collection<String>, Properties)` overloads
+  and `KPipeConsumer.Builder.withTopics(Collection<String>)` + `withTopics(String...)`. One pipeline, N
+  topics, same payload type.
+- **Heterogeneous (Phase 2):** `KPipe.multi(props).json(topic, configurator).avro(...).bytes(...).start()`.
+  Per-topic pipelines through one consumer / one offset manager / one consumer-group; `KPipeConsumer`
+  dispatches by `record.topic()`. Unrouted topics drop+log at WARNING and commit (no infinite retry on
+  config error).
+- **Coverage:** `KPipeFacadeIntegrationTest.endToEndMultiTopicJsonStream` (homogeneous, 3 topics) and
+  `endToEndHeterogeneousMulti` (JSON + bytes through one consumer).
 
 ### P1 #2 — Java baseline decision (THINKING)
 
