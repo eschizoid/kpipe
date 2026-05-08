@@ -273,22 +273,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       return this;
     }
 
-    /// Enables or disables metrics collection.
-    ///
-    /// As of `1.10.0`, metrics are enabled by default. Prefer [#disableMetrics()] to opt out;
-    /// this overload is retained for backwards compatibility.
-    ///
-    /// @param enable Whether to enable a metrics collection
-    /// @return This builder instance for method chaining
-    /// @deprecated since `1.10.0` — metrics default to enabled. Call [#disableMetrics()] to turn
-    ///     them off; no replacement is needed when leaving them enabled.
-    @Deprecated(since = "1.10.0")
-    public Builder<K> enableMetrics(final boolean enable) {
-      this.enableMetrics = enable;
-      return this;
-    }
-
-    /// Disables metrics collection. Metrics are enabled by default as of `1.10.0`.
+    /// Disables metrics collection. Metrics are enabled by default.
     ///
     /// @return This builder instance for method chaining
     public Builder<K> disableMetrics() {

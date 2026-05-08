@@ -155,7 +155,6 @@ class KPipeConsumerTest {
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(retryProcessor))
       .withRetry(2, Duration.ofMillis(10))
-      .enableMetrics(true)
       .build();
     final var record = createRecord(0, "key", "hello");
 
@@ -186,7 +185,6 @@ class KPipeConsumerTest {
       .withPipeline(TestPipelines.sideEffect(failingProcessor))
       .withRetry(2, Duration.ofMillis(10))
       .withErrorHandler(errorHandler)
-      .enableMetrics(true)
       .build();
     final var record = createRecord(0, "key", "hello");
 
@@ -223,7 +221,6 @@ class KPipeConsumerTest {
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(intermittentProcessor))
       .withRetry(5, Duration.ofMillis(10))
-      .enableMetrics(true)
       .build();
 
     // Act
@@ -344,7 +341,7 @@ class KPipeConsumerTest {
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
-      .enableMetrics(false)
+      .disableMetrics()
       .build();
     final var record = createRecord(1, "k", "v");
 
@@ -502,7 +499,7 @@ class KPipeConsumerTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
-        .enableMetrics(false)
+        .disableMetrics()
         .withBackpressure(10_000, 7_000)
         .build()
     );

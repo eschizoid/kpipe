@@ -127,7 +127,6 @@ public class App implements AutoCloseable {
       .withPollTimeout(config.pollTimeout())
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(createOffsetManagerProvider(Duration.ofSeconds(30), commandQueue))
-      .enableMetrics(true)
       .build();
   }
 

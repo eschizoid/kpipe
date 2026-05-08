@@ -44,7 +44,7 @@ Single source of truth for what's left across the whole library.
 | 10 | **P5 — 2.0 candidates**   | Type-name shortening (`MessageProcessorRegistry` → `Pipelines`, etc.)                                                        | Breaking refactor | ~1 day    |
 | 11 | **P5 — 2.0 candidates**   | `Result<T>` sealed type for pipeline errors                                                                                  | Breaking refactor | ~1 day    |
 | 12 | **P5 — 2.0 candidates**   | Fold `KPipeRunner` into `KPipeConsumer`                                                                                      | Breaking refactor | ~half day |
-| 13 | **P5 — 2.0 candidates**   | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, deprecate the standalone class               | Breaking refactor | ~half day |
+| 13 | **P5 — 2.0 candidates**   | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                  | Breaking refactor | ~half day |
 | 14 | **P5 — Speculative perf** | Format serialization caches re-wire (only with JMH evidence)                                                                 | Perf              | ~1–2 days |
 
 **Recommendation:** ship P1 (#1, #2) and P2 (#3–#6) — those move the adoption needle. P3 items are correct

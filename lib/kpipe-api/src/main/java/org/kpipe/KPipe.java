@@ -28,17 +28,16 @@ import org.kpipe.sink.MessageSink;
 ///     .start();
 /// ```
 ///
-/// This facade is purely additive — it delegates to the existing
-/// [org.kpipe.registry.MessageProcessorRegistry] / [org.kpipe.consumer.KPipeConsumer.Builder] /
-/// [org.kpipe.consumer.KPipeRunner.Builder] stack and does not replace any public API.
+/// Each format exposes two overloads: one taking a single `String topic` and one taking a
+/// `Collection<String> topics` for homogeneous multi-topic consumption (single shared pipeline).
+/// For heterogeneous routes (per-topic typing) use [#multi].
 public final class KPipe {
 
   private static final Logger LOGGER = System.getLogger(KPipe.class.getName());
 
   private KPipe() {}
 
-  /// Creates a JSON-typed stream that consumes from the given topic. Messages are deserialized
-  /// to `Map<String, Object>`.
+  /// JSON-typed stream consuming from `topic`. Messages deserialize to `Map<String, Object>`.
   ///
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
@@ -47,8 +46,7 @@ public final class KPipe {
     return new DefaultStream<>(topic, kafkaProps, JsonFormat.INSTANCE, JsonFormat::consoleSink);
   }
 
-  /// Creates a JSON-typed stream that consumes from multiple homogeneous topics through a single
-  /// shared pipeline. All topics must produce the same payload shape.
+  /// JSON-typed stream consuming from multiple homogeneous topics through a single shared pipeline.
   ///
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
@@ -57,12 +55,12 @@ public final class KPipe {
     return new DefaultStream<>(topics, kafkaProps, JsonFormat.INSTANCE, JsonFormat::consoleSink);
   }
 
-  /// Creates an Avro-typed stream that consumes from the given topic. Messages are deserialized
-  /// to `GenericRecord` using the format's configured default schema.
+  /// Avro-typed stream consuming from `topic`. Messages deserialize to `GenericRecord` using the
+  /// format's configured default schema.
   ///
-  /// `toConsole()` will throw [IllegalStateException] if no default schema has been registered
-  /// under key `"1"` on [AvroFormat#INSTANCE], since the console sink needs the schema to
-  /// re-encode payloads as JSON.
+  /// `toConsole()` throws [IllegalStateException] if no default schema is registered under key
+  /// `"1"` on [AvroFormat#INSTANCE] — the console sink needs the schema to re-encode payloads
+  /// as JSON. Pass `.toCustom(AvroFormat.consoleSink(schema))` to bind a specific schema.
   ///
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
@@ -71,7 +69,8 @@ public final class KPipe {
     return new DefaultStream<>(topic, kafkaProps, AvroFormat.INSTANCE, AvroFormat::defaultConsoleSink);
   }
 
-  /// Multi-topic Avro variant. See [#avro(String, Properties)] for the schema requirement.
+  /// Avro-typed stream consuming from multiple homogeneous topics. See [#avro(String, Properties)]
+  /// for the schema requirement.
   ///
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
@@ -80,8 +79,8 @@ public final class KPipe {
     return new DefaultStream<>(topics, kafkaProps, AvroFormat.INSTANCE, AvroFormat::defaultConsoleSink);
   }
 
-  /// Creates a Protobuf-typed stream that consumes from the given topic. Messages are
-  /// deserialized to `com.google.protobuf.Message`.
+  /// Protobuf-typed stream consuming from `topic`. Messages deserialize to
+  /// `com.google.protobuf.Message`.
   ///
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
@@ -90,7 +89,7 @@ public final class KPipe {
     return new DefaultStream<>(topic, kafkaProps, ProtobufFormat.INSTANCE, ProtobufFormat::consoleSink);
   }
 
-  /// Multi-topic Protobuf variant.
+  /// Protobuf-typed stream consuming from multiple homogeneous topics.
   ///
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
@@ -99,10 +98,8 @@ public final class KPipe {
     return new DefaultStream<>(topics, kafkaProps, ProtobufFormat.INSTANCE, ProtobufFormat::consoleSink);
   }
 
-  /// Creates a raw `byte[]` stream — identity passthrough, no SerDe.
-  ///
-  /// `toConsole()` returns a sink that logs a UTF-8 preview when the bytes look like text and a
-  /// hex preview otherwise.
+  /// Raw `byte[]` stream — identity passthrough, no SerDe. `toConsole()` logs a UTF-8 preview
+  /// when the payload looks like text, hex preview otherwise.
   ///
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
@@ -111,7 +108,7 @@ public final class KPipe {
     return new DefaultStream<>(topic, kafkaProps, MessageFormat.bytes(), KPipe::bytesConsoleSink);
   }
 
-  /// Multi-topic raw `byte[]` variant.
+  /// Raw `byte[]` stream consuming from multiple homogeneous topics.
   ///
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
@@ -120,9 +117,8 @@ public final class KPipe {
     return new DefaultStream<>(topics, kafkaProps, MessageFormat.bytes(), KPipe::bytesConsoleSink);
   }
 
-  /// Creates a stream backed by a user-supplied [MessageFormat]. The default `toConsole()` for
-  /// custom streams logs values via `String.valueOf(value)` — pass `toCustom(...)` for richer
-  /// formatting.
+  /// Stream backed by a user-supplied [MessageFormat]. The default `toConsole()` for custom
+  /// streams logs values via `String.valueOf(value)` — pass `toCustom(...)` for richer formatting.
   ///
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
@@ -130,10 +126,10 @@ public final class KPipe {
   /// @param <T> the deserialized message type
   /// @return a fluent [Stream] for the supplied format
   public static <T> Stream<T> custom(final String topic, final Properties kafkaProps, final MessageFormat<T> format) {
-    return new DefaultStream<>(topic, kafkaProps, format, () -> value -> LOGGER.log(Level.INFO, "{0}", value));
+    return new DefaultStream<>(topic, kafkaProps, format, KPipe::loggingSink);
   }
 
-  /// Multi-topic custom-format variant.
+  /// Custom-format stream consuming from multiple homogeneous topics.
   ///
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
@@ -145,13 +141,11 @@ public final class KPipe {
     final Properties kafkaProps,
     final MessageFormat<T> format
   ) {
-    return new DefaultStream<>(topics, kafkaProps, format, () -> value -> LOGGER.log(Level.INFO, "{0}", value));
+    return new DefaultStream<>(topics, kafkaProps, format, KPipe::loggingSink);
   }
 
-  /// Creates a heterogeneous multi-topic builder. Each route registers a per-topic pipeline,
-  /// so different topics can carry different payload shapes through one consumer-group / one
-  /// offset manager.
-  ///
+  /// Heterogeneous multi-topic builder. Each route registers a per-topic pipeline so different
+  /// topics can carry different payload shapes through one consumer-group / one offset manager.
   /// Records arriving for unrouted topics are dropped at WARNING and their offsets are still
   /// committed.
   ///
@@ -168,8 +162,8 @@ public final class KPipe {
     return new MultiBuilder(kafkaProps);
   }
 
-  /// Returns a [MessageSink] that prints `byte[]` values as either UTF-8 (when the payload looks
-  /// like text) or as a hex preview. This is the default sink used by [#bytes] for `toConsole`.
+  /// `MessageSink` that prints `byte[]` values as either UTF-8 (when the payload looks like
+  /// text) or as a hex preview. Used by [#bytes] for `toConsole`.
   ///
   /// @return a console sink for `byte[]` payloads
   public static MessageSink<byte[]> bytesConsoleSink() {
@@ -182,9 +176,12 @@ public final class KPipe {
         LOGGER.log(Level.INFO, "empty");
         return;
       }
-      final var rendered = renderBytes(value);
-      LOGGER.log(Level.INFO, "{0}", rendered);
+      LOGGER.log(Level.INFO, "{0}", renderBytes(value));
     };
+  }
+
+  private static <T> MessageSink<T> loggingSink() {
+    return value -> LOGGER.log(Level.INFO, "{0}", value);
   }
 
   private static String renderBytes(final byte[] value) {
