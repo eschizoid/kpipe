@@ -1,8 +1,8 @@
 # KPipe — Roadmap & State of the Library
 
-**Last updated:** 2026-05-07
+**Last updated:** 2026-05-08
 **Current released line:** 1.10.0 (Maven Central)
-**Active branch state:** `feature/1.11.1-test-coverage` (PR #94) plus `fix/critical-bugs` cleanup branch
+**Active work:** `refactor/api-cleanup` (DefaultStream record + test dedup + deprecated removal)
 
 ---
 
@@ -33,7 +33,7 @@ Single source of truth for what's left across the whole library.
 | #  | Priority                  | Item                                                                                                                         | Type              | Effort    |
 |----|---------------------------|------------------------------------------------------------------------------------------------------------------------------|-------------------|-----------|
 | 1  | ~~**P1 — Adoption blocker**~~ | ~~Multi-topic Phase 1 (homogeneous) + Phase 2 (heterogeneous via `KPipe.multi`)~~ — both landed 2026-05-07               | Feature           | shipped   |
-| 2  | **P1 — Adoption blocker** | Java baseline decision (stay on 25 vs drop to 21 LTS)                                                                        | Strategy          | decision  |
+| 2  | ~~**P1 — Adoption blocker**~~ | ~~Java baseline decision~~ — **stay on Java 25** (decided 2026-05-07)                                                    | Strategy          | decided   |
 | 3  | **P2 — Real footgun**     | `Format.INSTANCE` global mutable state (Avro/Protobuf)                                                                       | Hardening         | ~1 day    |
 | 4  | **P2 — Real footgun**     | HTTP fetcher remaining extraction from `kpipe-format-avro` (drop `java.net.http` + `jackson.core`; dsl-json already removed) | Cleanup           | ~2–3 hr   |
 | 5  | **P2 — Bug surface**      | Batch sinks (`BatchSink<T>` interface + size/time flush + partial-failure semantics)                                         | Feature           | ~5–7 days |
@@ -44,34 +44,29 @@ Single source of truth for what's left across the whole library.
 | 10 | **P5 — 2.0 candidates**   | Type-name shortening (`MessageProcessorRegistry` → `Pipelines`, etc.)                                                        | Breaking refactor | ~1 day    |
 | 11 | **P5 — 2.0 candidates**   | `Result<T>` sealed type for pipeline errors                                                                                  | Breaking refactor | ~1 day    |
 | 12 | **P5 — 2.0 candidates**   | Fold `KPipeRunner` into `KPipeConsumer`                                                                                      | Breaking refactor | ~half day |
-| 13 | **P5 — 2.0 candidates**   | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, deprecate the standalone class               | Breaking refactor | ~half day |
+| 13 | **P5 — 2.0 candidates**   | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                  | Breaking refactor | ~half day |
 | 14 | **P5 — Speculative perf** | Format serialization caches re-wire (only with JMH evidence)                                                                 | Perf              | ~1–2 days |
 
-**Recommendation:** ship P1 (#1, #2) and P2 (#3–#6) — those move the adoption needle. P3 items are correct
-fixes but invisible to users. P4 internal-polish backlog was cleared on 2026-05-07 (8 audits/refactors landed
-in one branch — see "Recently completed" below). Multi-topic Phase 1 is the next focused effort.
+**Recommendation:** P1 (#1, #2) shipped. Next adoption needle is **P2 #5 — batch sinks**; that's the
+"can I batch-insert into Postgres?" feature Spring Kafka users evaluate against. Circuit breaker (#6) and
+HTTP-fetcher cleanup (#4) compose on top. P3 items are correct fixes but invisible to users — defer until
+something forces them. **No further internal polish** — diminishing returns.
 
-### Recently completed (P4 internal polish — 2026-05-07)
+### Recently shipped
 
-- Moved `OffsetState` and `ConsumerState` out of the `org.kpipe.consumer.enums` sub-package; deleted the
-  one-package-deep folder.
-- Added a discoverable docstring to `kpipe-metrics-otel/module-info.java`. (`kpipe-bom` is a `java-platform`
-  BOM with no `module-info.java` — its description in `build.gradle.kts` is the appropriate doc.)
-- **Audited and removed** `MessageProcessorRegistry.sourceAppName` — confirmed vestigial (set by 17 callers,
-  read by zero). Deleted the field, both `String`-taking constructors, the getter, and `withSourceAppName`.
-  Updated all 17 call sites.
-- **Audited** `KafkaConsumerConfig` — confirmed canonical (parallels `KafkaProducerConfig`, used by all 4
-  example apps + own test). No change.
-- **Audited** `MessageTracker` — keep as-is. Well-tested public class; potential 2.0 collapse target moved
-  to P5.
-- **Fixed** `KPipeProducer.sendAsync` silent-metrics footgun: previously returned the raw producer Future
-  with no instrumentation; now wraps with a callback that increments `messages.sent` / `messages.failed`.
-- **Tightened** `OffsetManager.createRebalanceListener()` — moved the no-op default into the interface as a
-  `default` method. Custom external offset stores no longer need to implement Kafka rebalance plumbing.
-- **Audited** `ConsumerCommand` sealed hierarchy — keep as-is. `CommitOffsets` is the cross-thread bridge
-  for both scheduled commits and `close()` path; `withOffsets` has a real callsite in `RebalanceListener`.
-- **Audited** `BackpressureController` public surface — already minimal. All instance methods are used,
-  factories are intentional escape hatches, `calculateTotalLag` is a useful static utility.
+- **2026-05-08 — api module cleanup** (`refactor/api-cleanup`): `DefaultStream` converted to record (11
+  field decls + 11 ctor assignments + 9 trivial accessors → auto-generated); `KPipeConsumer.Builder.enableMetrics(boolean)`
+  deleted (only `@Deprecated` in the codebase, all 9 callers migrated); `ToConsoleDispatchTest` parameterized;
+  redundant `KPipeFacadeBuildTest` factory tests dropped; `validateTopics` single-pass. Net **−160 lines**.
+- **2026-05-07 — multi-topic** (`feature/multi-topic`): both phases landed in one branch. Homogeneous via
+  `KPipe.json/avro/.../bytes/custom(Collection<String>, Properties)`; heterogeneous via
+  `KPipe.multi(props).json(topic, configurator).avro(...).start()`. Topic-aware OTel metrics with
+  `computeIfAbsent` `Attributes` cache. `Stream.skipBytes(int)` for Confluent envelope handling. Demo
+  collapsed from 3 explicit-API runners (~250 lines) to one `KPipe.multi(...)` (~50 lines).
+- **2026-05-07 — P4 internal polish backlog cleared**: `OffsetState`/`ConsumerState` out of the
+  `enums` sub-package; vestigial `MessageProcessorRegistry.sourceAppName` deleted; `KPipeProducer.sendAsync`
+  silent-metrics footgun fixed; `OffsetManager.createRebalanceListener()` made a `default` interface
+  method; `kpipe-metrics-otel/module-info.java` docstring added. 8 audits/refactors total.
 
 ---
 
@@ -117,18 +112,12 @@ Both phases landed in a single branch:
 - **Coverage:** `KPipeFacadeIntegrationTest.endToEndMultiTopicJsonStream` (homogeneous, 3 topics) and
   `endToEndHeterogeneousMulti` (JSON + bytes through one consumer).
 
-### P1 #2 — Java baseline decision (THINKING)
+### P1 #2 — Java baseline decision (DECIDED 2026-05-07: stay on Java 25)
 
-- **Status:** under consideration, not committed. Java 25 floor locks out ~95% of production Java teams (most
-  on 17 or 21).
-- **Option A — stay on 25:** ideologically pure (full `ScopedValue` stable, /// markdown javadoc, latest
-  pattern matching), niche audience, slow adoption. Fine if positioning is "for teams already on 25."
-- **Option B — drop to 21 LTS + ScopedValue preview:** keeps the §3 design (VT + ScopedValue, no
-  ThreadLocal). Costs users `--enable-preview`, awkward for some shops. VT itself is stable in 21.
-- **Option C — drop to 21 LTS stable, ScopedValue → ThreadLocal in fallback path:** broadest reach, but
-  regresses §3. Considered a regression.
-- **Recommendation:** Option B if we want adoption now; Option A if we wait for 25 to age into prod (~2027).
-  Multi-topic / batch sinks / circuit breaker should ship regardless; baseline choice is orthogonal.
+Stay on Java 25. Trade-off accepted: smaller initial audience (most prod teams still on 17/21) in exchange
+for `///` markdown javadoc, stable `ScopedValue` if we ever re-introduce thread-local-like state, modern
+pattern matching, and unnamed variables (`_`) in switch patterns. Re-evaluate if adoption hits a wall purely
+because of the baseline.
 
 ### P2 #3 — `Format.INSTANCE` singletons remain a footgun
 

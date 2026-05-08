@@ -88,7 +88,7 @@ class KPipeBytesConsoleSinkTest {
   }
 
   /// JUL [Handler] that captures each [LogRecord]'s formatted message into an in-memory buffer.
-  /// Handles parameterized messages (e.g. `{0}`) via [MessageFormat#format].
+  /// Handles parameterized messages (e.g. `{0}`) via [MessageFormat#format(Object)].
   private static final class CapturingHandler extends Handler {
 
     private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();

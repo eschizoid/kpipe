@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.UnaryOperator;
@@ -153,8 +154,8 @@ class StreamCompositionTest {
       return m;
     });
 
-    assertEquals("left", apply(left, new HashMap<>()).get("branch"));
-    assertEquals("right", apply(right, new HashMap<>()).get("branch"));
+    assertEquals("left", Objects.requireNonNull(apply(left, new HashMap<>())).get("branch"));
+    assertEquals("right", Objects.requireNonNull(apply(right, new HashMap<>())).get("branch"));
     assertEquals(0, root.operators().size(), "root should remain unchanged");
   }
 }

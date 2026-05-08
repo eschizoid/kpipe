@@ -119,7 +119,7 @@ class KPipeFacadeIntegrationTest {
       assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
 
       // Produce messages with ids 1..6; expect only 1, 3, 5 to make it through.
-      produceFixedAndWait(topic, 6, captured, 3, Duration.ofSeconds(20));
+      produceFixedAndWait(captured, Duration.ofSeconds(20));
 
       assertAll(
         "Filtered captures",
@@ -293,26 +293,21 @@ class KPipeFacadeIntegrationTest {
 
   /// Produces `count` JSON payloads with sequential ids 1..count and waits for `expected`
   /// messages to land in the sink (used by the filter test to confirm only odd-id messages pass).
-  private static void produceFixedAndWait(
-    final String topic,
-    final int count,
-    final List<Map<String, Object>> sink,
-    final int expected,
-    final Duration timeout
-  ) throws Exception {
+  private static void produceFixedAndWait(final List<Map<String, Object>> sink, final Duration timeout)
+    throws Exception {
     final var producerProps = producerProps();
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
-      for (int i = 1; i <= count; i++) {
+      for (int i = 1; i <= 6; i++) {
         final var json = """
           {"id":%d,"value":"v%d"}""".formatted(i, i)
           .getBytes(StandardCharsets.UTF_8);
-        producer.send(new ProducerRecord<>(topic, json)).get();
+        producer.send(new ProducerRecord<>("kpipe-facade-filter-test", json)).get();
       }
       producer.flush();
     }
     // Wait until the sink stops growing OR we hit `expected`. Then give a small grace period to
     // ensure any extra (unwanted) messages would have arrived too.
-    waitFor(() -> sink.size() >= expected, timeout, "Timed out waiting for %d filtered messages".formatted(expected));
+    waitFor(() -> sink.size() >= 3, timeout, "Timed out waiting for %d filtered messages".formatted(3));
     // Grace period: ensure no extra messages slip through after expected reached.
     TimeUnit.MILLISECONDS.sleep(500);
   }

@@ -1,8 +1,6 @@
 package org.kpipe;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -48,6 +46,6 @@ class KPipeApiTest {
     for (final var op : ds.operators()) v = op.apply(v);
 
     assertEquals(42L, v.get("ts"));
-    assertTrue(!v.containsKey("password"), "removeFields should drop the password field");
+    assertFalse(v.containsKey("password"), "removeFields should drop the password field");
   }
 }

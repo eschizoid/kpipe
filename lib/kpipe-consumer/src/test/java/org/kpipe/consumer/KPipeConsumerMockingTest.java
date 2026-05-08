@@ -471,7 +471,7 @@ class KPipeConsumerMockingTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
-        .enableMetrics(false)
+        .disableMetrics()
         .build()
     ) {
       assertTrue(consumer.getMetrics().isEmpty(), "Metrics should be empty when disabled");
@@ -490,9 +490,7 @@ class KPipeConsumerMockingTest {
     final KPipeConsumer.ErrorHandler<String> errorHandler = error -> {};
     final var maxRetries = 3;
     final var retryBackoff = Duration.ofMillis(100);
-    final var enableMetrics = true;
 
-    // Create a consumer with all options
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -500,7 +498,6 @@ class KPipeConsumerMockingTest {
       .withPollTimeout(pollTimeout)
       .withErrorHandler(errorHandler)
       .withRetry(maxRetries, retryBackoff)
-      .enableMetrics(enableMetrics)
       .build();
 
     // Assert

@@ -2,16 +2,11 @@ package org.kpipe;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.google.protobuf.Message;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
-import org.apache.avro.generic.GenericRecord;
 import org.junit.jupiter.api.Test;
 import org.kpipe.format.json.JsonFormat;
-import org.kpipe.registry.MessageFormat;
 
 /// Verifies that each top-level [KPipe] factory returns a non-null [Stream] and that the chain
 /// of fluent operations accumulates state correctly without requiring a real Kafka connection.
@@ -24,37 +19,6 @@ class KPipeFacadeBuildTest {
     props.setProperty("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
     props.setProperty("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
     return props;
-  }
-
-  @Test
-  void jsonFactoryReturnsStream() {
-    final Stream<Map<String, Object>> stream = KPipe.json("events", props());
-    assertNotNull(stream);
-    assertInstanceOf(DefaultStream.class, stream);
-  }
-
-  @Test
-  void avroFactoryReturnsStream() {
-    final Stream<GenericRecord> stream = KPipe.avro("events", props());
-    assertNotNull(stream);
-  }
-
-  @Test
-  void protobufFactoryReturnsStream() {
-    final Stream<Message> stream = KPipe.protobuf("events", props());
-    assertNotNull(stream);
-  }
-
-  @Test
-  void bytesFactoryReturnsStream() {
-    final Stream<byte[]> stream = KPipe.bytes("events", props());
-    assertNotNull(stream);
-  }
-
-  @Test
-  void customFactoryReturnsStream() {
-    final Stream<byte[]> stream = KPipe.custom("events", props(), MessageFormat.bytes());
-    assertNotNull(stream);
   }
 
   @Test
@@ -73,31 +37,6 @@ class KPipeFacadeBuildTest {
     assertNotSame(root, chained, "immutable fluent chain should return a new instance per step");
     assertEquals(0, root.operators().size(), "root stream remains untouched");
     assertEquals(4, chained.operators().size());
-  }
-
-  @Test
-  void operatorsAreInvokedInAdditionOrder() {
-    final var trace = new java.util.ArrayList<Integer>();
-    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
-      .pipe(m -> {
-        trace.add(1);
-        return m;
-      })
-      .pipe(m -> {
-        trace.add(2);
-        return m;
-      })
-      .pipe(m -> {
-        trace.add(3);
-        return m;
-      });
-
-    final var ops = stream.operators();
-    assertEquals(3, ops.size());
-
-    Map<String, Object> v = new HashMap<>();
-    for (final var op : ops) v = op.apply(v);
-    assertEquals(List.of(1, 2, 3), trace);
   }
 
   @Test
