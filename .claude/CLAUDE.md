@@ -28,12 +28,14 @@
 
 ### 3. Java 25 Virtual Threads and Scoped Values
 
-- **Decision**: Use Virtual Threads (Project Loom) for parallel processing and `ScopedValue` for context sharing and
-  high-performance caching.
+- **Decision**: Use Virtual Threads (Project Loom) for parallel processing. When per-record context-sharing is needed,
+  prefer `ScopedValue` over `ThreadLocal`.
 - **Reasoning**: Virtual Threads replace complex thread pool management with a simple "thread-per-record" model.
-  `ScopedValue` provides a modern, lightweight alternative to `ThreadLocal` that is specifically optimized for large
-  numbers of virtual threads.
-- **Result**: Massive concurrency with minimal memory overhead, avoiding `ThreadLocal` scalability issues.
+  `ScopedValue` is the VT-friendly alternative to `ThreadLocal`, avoiding the scalability traps of inheritable
+  thread-locals on a thread-per-record consumer.
+- **Current state**: VT is used everywhere (consumer poll → record processing). `ScopedValue` is **not** currently
+  used — earlier per-format SerDe caches were torn out as dead infrastructure. The doctrine still stands for any
+  future thread-local-like state we might add (e.g. tenant context, span propagation).
 
 ### 4. Reliable Offset Management ("Lowest Pending Offset")
 
@@ -206,11 +208,12 @@
   This keeps the user-facing import path clean (`import org.kpipe.KPipe;`) and avoids the `org.kpipe.facade` split-
   package cost while still letting `kpipe-core` own the registry/sink/format types in `org.kpipe.registry` and
   `org.kpipe.sink`.
-- **Immutability contract on `Stream<T>`**: every fluent method returns a NEW `DefaultStream` instance carrying the
-  updated configuration. The original is never mutated. Branching from a common root is safe — `s.pipe(a)` and
-  `s.pipe(b)` produce independent streams. Operators are stored as an immutable `List.copyOf(...)`. This matches the
-  Java Stream API's functional style; the alternative (mutate-and-return-this, like `StringBuilder`) is a foot gun
-  for users who reuse the root reference.
+- **Immutability contract on `Stream<T>`**: `DefaultStream` is a Java record. Every fluent method returns a NEW
+  `DefaultStream` instance carrying the updated configuration. The original is never mutated. Branching from a
+  common root is safe — `s.pipe(a)` and `s.pipe(b)` produce independent streams. Operators are stored as an
+  immutable `List.copyOf(...)`. The record form keeps "adding a fluent setter is a one-place change" honest:
+  declare the component, add the `with*` method, reference it in `DefaultSink.buildPipeline` if it affects pipeline
+  construction.
 - **`Handle` is `AutoCloseable`** with a default `close()` that performs `shutdownGracefully(Duration.ofSeconds(5))`.
   Use try-with-resources to guarantee cleanup. `metrics()` returns `Map<String, Long>` (typed), not `Map<String,
   Object>`.
@@ -247,3 +250,37 @@ These patterns came out of the deep internal audit work and should be preserved 
 - **Don't expose internal counters through public APIs**: if a method takes an `AtomicLong` parameter for
   "optionally update this counter on success," it's leaking implementation detail. Return a `boolean` and let the
   caller update its own counter.
+
+### 15. Multi-Topic Dispatch (1.11.0)
+
+- **Decision**: One `KPipeConsumer` can host either one shared pipeline across N topics (homogeneous) or a
+  per-topic pipeline map (heterogeneous), but always through one Kafka consumer / one consumer-group / one
+  offset manager.
+- **Internal model**: `KPipeConsumer` stores `Map<String, MessagePipeline<?>> pipelines`. The homogeneous path
+  (`Builder.withPipeline(...)`) replicates the same pipeline reference across every subscribed topic at construction
+  time; the heterogeneous path (`Builder.withPipelines(Map)`) takes the map directly and derives the topic set from
+  its keys. `tryProcessRecord` does a single `pipelines.get(record.topic())` per record. The map is built via
+  `Map.copyOf(...)`, so for typical small route counts it's `Map1`/`MapN` (identity-fast `String#equals` lookup),
+  not `HashMap`.
+- **Unrouted-topic policy**: if a record arrives for a topic with no registered pipeline (rebalance race, config
+  error), **drop + log at WARNING + mark offset processed**. Never throw (would crash the consumer thread for a
+  config error) and never DLQ (we don't have a per-topic DLQ). The "mark processed" part is critical — without
+  it, the same record gets re-fetched forever.
+- **Facade split**: homogeneous via `KPipe.json/avro/protobuf/bytes/custom(Collection<String>, Properties)`;
+  heterogeneous via `KPipe.multi(props).json(topic, configurator).avro(...)...start()`. Single-string overloads
+  remain unchanged. Mixing `withTopic`/`withTopics` with `withPipelines` is rejected as a config error (silent
+  override would mask user mistakes).
+- **Metrics**: OTel `kpipe.consumer.*` instruments now carry both a `pipeline` attribute (consumer-wide) and a
+  `topic` attribute (per record). Per-topic `Attributes` are cached via `computeIfAbsent` so the per-record metric
+  path is allocation-free after each topic has been seen once.
+
+### 16. No-Deprecation Policy
+
+- **Decision**: When a public API has to go, **delete it and migrate all callers**. Do not deprecate, do not add
+  `@Deprecated`, do not add `since = "..."` annotations.
+- **Reasoning**: Deprecation cycles bloat the surface, train users to ignore warnings, and rot in place when the
+  promised "removal in next major" never happens. The library is pre-1.x-stable enough that hard breaks with a
+  release-note migration are cleaner than carrying dead overloads. Tests and examples are migrated in the same PR
+  that deletes the method, so callers always have a working reference.
+- **Enforcement**: zero `@Deprecated` annotations and zero `@deprecated` Javadoc tags should ever land in the
+  codebase. If something needs to be removed, the PR description mentions the removal explicitly.
