@@ -30,6 +30,10 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
       stream.backpressureHigh(),
       stream.backpressureLow()
     );
+    if (stream.consumerMetrics() != null) consumerBuilder.withMetrics(stream.consumerMetrics());
+    if (stream.errorHandler() != null) consumerBuilder.withErrorHandler(stream.errorHandler()::accept);
+    if (stream.deadLetterTopic() != null) consumerBuilder.withDeadLetterTopic(stream.deadLetterTopic());
+    if (stream.pollTimeout() != null) consumerBuilder.withPollTimeout(stream.pollTimeout());
 
     final var consumer = consumerBuilder.build();
     final var runner = KPipeRunner.builder(consumer).build();

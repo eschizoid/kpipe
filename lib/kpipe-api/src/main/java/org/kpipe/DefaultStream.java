@@ -11,6 +11,8 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
+import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.Operators;
 import org.kpipe.sink.CompositeMessageSink;
@@ -22,8 +24,7 @@ import org.kpipe.sink.MessageSink;
 /// matches the Java Stream API's functional style.
 ///
 /// Adding a new fluent setter is a one-place change: declare the component, add the `with*`
-/// fluent method, and reference it in [DefaultSink#buildPipeline] if it affects pipeline
-/// construction.
+/// fluent method, and reference it in [DefaultSink#start] if it affects consumer construction.
 ///
 /// @param <T> the deserialized message type
 record DefaultStream<T>(
@@ -37,7 +38,11 @@ record DefaultStream<T>(
   Long backpressureHigh,
   Long backpressureLow,
   boolean sequentialProcessing,
-  int skipBytes
+  int skipBytes,
+  ConsumerMetrics consumerMetrics,
+  Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler,
+  String deadLetterTopic,
+  Duration pollTimeout
 ) implements Stream<T> {
   /// Public constructor used by [KPipe] factories — single topic, empty pipeline, default
   /// retry / backpressure settings.
@@ -70,7 +75,11 @@ record DefaultStream<T>(
       null,
       null,
       false,
-      0
+      0,
+      null,
+      null,
+      null,
+      null
     );
   }
 
@@ -123,7 +132,11 @@ record DefaultStream<T>(
       backpressureHigh,
       backpressureLow,
       sequentialProcessing,
-      skipBytes
+      skipBytes,
+      consumerMetrics,
+      errorHandler,
+      deadLetterTopic,
+      pollTimeout
     );
   }
 
@@ -148,7 +161,11 @@ record DefaultStream<T>(
       high,
       low,
       sequentialProcessing,
-      skipBytes
+      skipBytes,
+      consumerMetrics,
+      errorHandler,
+      deadLetterTopic,
+      pollTimeout
     );
   }
 
@@ -165,7 +182,11 @@ record DefaultStream<T>(
       backpressureHigh,
       backpressureLow,
       sequential,
-      skipBytes
+      skipBytes,
+      consumerMetrics,
+      errorHandler,
+      deadLetterTopic,
+      pollTimeout
     );
   }
 
@@ -183,7 +204,99 @@ record DefaultStream<T>(
       backpressureHigh,
       backpressureLow,
       sequentialProcessing,
-      n
+      n,
+      consumerMetrics,
+      errorHandler,
+      deadLetterTopic,
+      pollTimeout
+    );
+  }
+
+  @Override
+  public Stream<T> withMetrics(final ConsumerMetrics metrics) {
+    Objects.requireNonNull(metrics, "metrics cannot be null");
+    return new DefaultStream<>(
+      topics,
+      kafkaProps,
+      format,
+      defaultConsoleSinkFactory,
+      operators,
+      maxRetries,
+      retryBackoff,
+      backpressureHigh,
+      backpressureLow,
+      sequentialProcessing,
+      skipBytes,
+      metrics,
+      errorHandler,
+      deadLetterTopic,
+      pollTimeout
+    );
+  }
+
+  @Override
+  public Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError<byte[]>> handler) {
+    Objects.requireNonNull(handler, "handler cannot be null");
+    return new DefaultStream<>(
+      topics,
+      kafkaProps,
+      format,
+      defaultConsoleSinkFactory,
+      operators,
+      maxRetries,
+      retryBackoff,
+      backpressureHigh,
+      backpressureLow,
+      sequentialProcessing,
+      skipBytes,
+      consumerMetrics,
+      handler,
+      deadLetterTopic,
+      pollTimeout
+    );
+  }
+
+  @Override
+  public Stream<T> withDeadLetterTopic(final String dlqTopic) {
+    if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException("dlqTopic cannot be null or blank");
+    return new DefaultStream<>(
+      topics,
+      kafkaProps,
+      format,
+      defaultConsoleSinkFactory,
+      operators,
+      maxRetries,
+      retryBackoff,
+      backpressureHigh,
+      backpressureLow,
+      sequentialProcessing,
+      skipBytes,
+      consumerMetrics,
+      errorHandler,
+      dlqTopic,
+      pollTimeout
+    );
+  }
+
+  @Override
+  public Stream<T> withPollTimeout(final Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    return new DefaultStream<>(
+      topics,
+      kafkaProps,
+      format,
+      defaultConsoleSinkFactory,
+      operators,
+      maxRetries,
+      retryBackoff,
+      backpressureHigh,
+      backpressureLow,
+      sequentialProcessing,
+      skipBytes,
+      consumerMetrics,
+      errorHandler,
+      deadLetterTopic,
+      timeout
     );
   }
 
@@ -220,7 +333,11 @@ record DefaultStream<T>(
       backpressureHigh,
       backpressureLow,
       sequentialProcessing,
-      skipBytes
+      skipBytes,
+      consumerMetrics,
+      errorHandler,
+      deadLetterTopic,
+      pollTimeout
     );
   }
 }

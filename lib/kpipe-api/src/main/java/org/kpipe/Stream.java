@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
+import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.sink.MessageSink;
 
 /// Fluent stream-composition type for the [KPipe] facade.
@@ -109,6 +111,42 @@ public interface Stream<T> {
   /// @param sequential true for sequential per-partition processing; false for parallel
   /// @return a new stream with the processing mode configured
   Stream<T> withSequentialProcessing(final boolean sequential);
+
+  /// Returns a new stream with an OpenTelemetry-backed (or any custom) [ConsumerMetrics]
+  /// implementation attached. Use `new OtelConsumerMetrics(otel, "consumer-name")` from
+  /// `kpipe-metrics-otel` for the standard OTel wiring.
+  ///
+  /// @param metrics the metrics implementation (must not be null)
+  /// @return a new stream with metrics attached
+  /// @throws NullPointerException if `metrics` is null
+  Stream<T> withMetrics(final ConsumerMetrics metrics);
+
+  /// Returns a new stream with a custom error handler. The handler is invoked after retries are
+  /// exhausted (or immediately when `maxRetries == 0`) with the failing record, the exception,
+  /// and the retry count. The default handler logs at WARNING.
+  ///
+  /// @param handler the error handler (must not be null)
+  /// @return a new stream with the error handler attached
+  /// @throws NullPointerException if `handler` is null
+  Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError<byte[]>> handler);
+
+  /// Returns a new stream with a dead-letter topic configured. Records that fail processing after
+  /// retries are exhausted are forwarded to `dlqTopic` (using a `KPipeProducer` derived from the
+  /// consumer properties) before the error handler is invoked.
+  ///
+  /// @param dlqTopic the dead-letter topic name (must be non-blank)
+  /// @return a new stream with the DLQ configured
+  /// @throws IllegalArgumentException if `dlqTopic` is null or blank
+  Stream<T> withDeadLetterTopic(final String dlqTopic);
+
+  /// Returns a new stream with a custom Kafka poll timeout. The default is 100ms; longer
+  /// timeouts reduce CPU usage on idle topics, shorter timeouts make backpressure / shutdown
+  /// commands more responsive.
+  ///
+  /// @param timeout the poll timeout (must be non-null and non-negative)
+  /// @return a new stream with the poll timeout configured
+  /// @throws NullPointerException if `timeout` is null
+  Stream<T> withPollTimeout(final Duration timeout);
 
   /// Returns a new stream that skips the first `n` bytes of every payload before deserialization.
   /// Useful for stripping wire-format prefixes — e.g. Confluent Schema Registry's 5-byte envelope

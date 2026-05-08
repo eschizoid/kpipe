@@ -11,6 +11,7 @@ subprojects {
   apply(plugin = "com.gradleup.shadow")
 
   dependencies {
+    implementation(project(":lib:kpipe-api"))
     implementation(project(":lib:kpipe-consumer"))
     implementation(rootProject.libs.kafkaClients)
     implementation(rootProject.libs.slf4jSimple)
@@ -19,6 +20,7 @@ subprojects {
     runtimeOnly(rootProject.libs.opentelemetryExporterOtlp)
     runtimeOnly(rootProject.libs.opentelemetryAutoconfigure)
 
+    testImplementation(project(":lib:kpipe-api"))
     testImplementation(project(":lib:kpipe-consumer"))
     testImplementation(rootProject.libs.junitJupiter)
     testImplementation(rootProject.libs.testcontainers)

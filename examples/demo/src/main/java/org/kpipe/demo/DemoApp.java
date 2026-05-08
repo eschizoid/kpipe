@@ -29,7 +29,6 @@ import org.kpipe.registry.Operators;
 public class DemoApp implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(DemoApp.class.getName());
-  private static final String TEST_AVRO_SCHEMA_PATH = "build/resources/test/avro/customer.avsc";
   private static OpenTelemetry SHARED_OTEL;
 
   private final Handle handle;
@@ -44,6 +43,15 @@ public class DemoApp implements AutoCloseable {
       SHARED_OTEL = GlobalOpenTelemetry.get();
     }
 
+    AvroFormat.INSTANCE.addSchema(
+      "1",
+      "com.kpipe.customer",
+      config.schemaRegistryUrl() + "/subjects/com.kpipe.customer/versions/latest"
+    );
+    AvroFormat.INSTANCE.withDefaultSchema("1");
+    ProtobufFormat.INSTANCE.addDescriptor("customer", buildCustomerDescriptor());
+    ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
+
     try (final var app = new DemoApp(config)) {
       LOGGER.log(Level.INFO, "Demo application started — JSON/Avro/Protobuf routes via KPipe.multi");
       app.handle.awaitShutdown();
@@ -54,11 +62,9 @@ public class DemoApp implements AutoCloseable {
   }
 
   /// Creates and starts the demo application with all three routes attached to a single consumer.
+  /// Caller is responsible for registering the Avro schema (via Schema Registry URL or directly)
+  /// and the Protobuf descriptor before construction.
   public DemoApp(final DemoConfig config) {
-    registerAvroSchema(config);
-    ProtobufFormat.INSTANCE.addDescriptor("customer", buildCustomerDescriptor());
-    ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
-
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(
       config.bootstrapServers(),
       config.consumerGroup() + "-multi"
@@ -83,24 +89,6 @@ public class DemoApp implements AutoCloseable {
   @Override
   public void close() {
     handle.close();
-  }
-
-  /// In production the Avro schema is fetched from the Confluent Schema Registry; in tests
-  /// (`kpipe.test.mode=true`) it loads from a local file to avoid a Schema Registry dependency
-  /// in CI.
-  private static void registerAvroSchema(final DemoConfig config) {
-    final var location = isTestMode()
-      ? TEST_AVRO_SCHEMA_PATH
-      : config.schemaRegistryUrl() + "/subjects/com.kpipe.customer/versions/latest";
-    AvroFormat.INSTANCE.addSchema("1", "com.kpipe.customer", location);
-    AvroFormat.INSTANCE.withDefaultSchema("1");
-  }
-
-  private static boolean isTestMode() {
-    return (
-      "true".equalsIgnoreCase(System.getProperty("kpipe.test.mode")) ||
-      "true".equalsIgnoreCase(System.getenv("KPIPE_TEST_MODE"))
-    );
   }
 
   /// Initialises an OTLP/gRPC OpenTelemetry SDK pointed at the demo's collector. Reads

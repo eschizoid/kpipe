@@ -182,9 +182,11 @@
   deserialization because `skipBytes(5)` was wrong, but the consumer reported them as processed. ~10 minutes wasted on
   a bug that should have been a single error log.
 - **Implementation invariants**:
-    - Null record value throws `IllegalStateException` with a specific message (retryable via the normal exception path).
+    - Null record value throws `IllegalStateException` with a specific message (retryable via the normal exception
+      path).
     - Null deserialization result throws `IllegalStateException` (implementations must throw, not return null).
-    - Null `process()` result is the *only* legitimate filter signal — mark offset processed, count as success, no error.
+    - Null `process()` result is the *only* legitimate filter signal — mark offset processed, count as success, no
+      error.
 - **Generalizable rule**: When composing `Function<T, R>` chains, never use `null`/`Optional.empty()` to signal both
   "filtered" and "failed". If both states exist, model them as distinct types (sealed `Result<T>` or distinct
   exceptions). Triage heuristic: when a "processed" counter rises but downstream invocations stay at 0, suspect
@@ -284,3 +286,48 @@ These patterns came out of the deep internal audit work and should be preserved 
   that deletes the method, so callers always have a working reference.
 - **Enforcement**: zero `@Deprecated` annotations and zero `@deprecated` Javadoc tags should ever land in the
   codebase. If something needs to be removed, the PR description mentions the removal explicitly.
+
+### 17. Core ↔ Facade Capability Mapping
+
+This table is the source of truth for which `kpipe-consumer` / `kpipe-core` / `kpipe-format-*` / `kpipe-metrics`
+capabilities are reachable through the **fluent facade** (`KPipe.json/avro/protobuf/bytes/custom(...)` →
+`Stream<T>` → `Sink<T>` → `Handle`, plus `KPipe.multi(props)` → `MultiBuilder`) versus only via the **explicit API**
+(`MessageProcessorRegistry` + `KPipeConsumer.Builder` + `KPipeRunner.Builder`).
+
+When adding a new consumer/builder feature: decide whether it belongs on the 80% path (add to `Stream<T>` and
+`MultiBuilder`) or whether it stays as an escape hatch (explicit-only). Update this table in the same PR.
+
+| Capability                               | Source module          | Facade path                                                             | Explicit-API path                                                                                    | Notes                                                              |
+|------------------------------------------|------------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------|
+| Format selection                         | `kpipe-format-*`       | `KPipe.json/avro/protobuf/bytes/custom(...)`                            | `new MessageProcessorRegistry(format)`                                                               | Custom format: pass any `MessageFormat<T>` to `KPipe.custom`.      |
+| Topic subscription (homogeneous)         | `kpipe-consumer`       | `KPipe.X(topic, props)`                                                 | `Builder.withTopic(s) / withTopics(...)`                                                             | One topic-set, one shared pipeline.                                |
+| Topic subscription (heterogeneous)       | `kpipe-consumer`       | `KPipe.multi(props).json(...).avro(...)...start()`                      | `Builder.withPipelines(Map<String, MessagePipeline<?>>)`                                             | Per-topic dispatch (§15).                                          |
+| Operator chain (`pipe/filter/peek/when`) | `kpipe-core`           | `Stream.pipe / filter / peek / when`                                    | `MessageProcessorRegistry.pipeline(format).add(...)`                                                 | Identical operator semantics.                                      |
+| Custom terminal sink                     | `kpipe-core`           | `Stream.toCustom(MessageSink<T>)`                                       | `sinkRegistry.register(key, sink)`                                                                   | Any `MessageSink<T>`; facade also offers `.toConsole()`.           |
+| Multi-sink fanout                        | `kpipe-core`           | `Stream.toMulti(sinks...)`                                              | `new CompositeMessageSink<>(...)`                                                                    | Best-effort delivery; per-sink errors logged + suppressed.         |
+| Skip wire-format prefix                  | `kpipe-core`           | `Stream.skipBytes(int)`                                                 | `TypedPipelineBuilder.skipBytes(int)`                                                                | Confluent envelope: 5 (Avro) / 6 (Proto single-msg).               |
+| Retry policy                             | `kpipe-consumer`       | `Stream.withRetry(int, Duration)`                                       | `Builder.withRetry(int, Duration)`                                                                   |                                                                    |
+| Backpressure (default watermarks)        | `kpipe-consumer`       | `Stream.withBackpressure()`                                             | `Builder.withBackpressure(BackpressureController)`                                                   | Defaults: pause 10k, resume 7k.                                    |
+| Backpressure (custom watermarks)         | `kpipe-consumer`       | `Stream.withBackpressure(high, low)`                                    | `Builder.withBackpressure(BackpressureController)`                                                   | High/low strategy auto-derived from `sequentialProcessing`.        |
+| Sequential processing                    | `kpipe-consumer`       | `Stream.withSequentialProcessing(boolean)`                              | `Builder.withSequentialProcessing(boolean)`                                                          | Switches backpressure to lag-based (§5).                           |
+| OTel/custom metrics                      | `kpipe-metrics(-otel)` | `Stream.withMetrics(ConsumerMetrics)` / `MultiBuilder.withMetrics(...)` | `Builder.withMetrics(ConsumerMetrics)`                                                               | Single-format and multi-topic both supported.                      |
+| Custom error handler                     | `kpipe-consumer`       | `Stream.withErrorHandler(Consumer<ProcessingError<byte[]>>)`            | `Builder.withErrorHandler(ErrorHandler<K>)`                                                          | Default logs at WARNING (§11).                                     |
+| Dead-letter topic                        | `kpipe-consumer`       | `Stream.withDeadLetterTopic(String)`                                    | `Builder.withDeadLetterTopic(String)` / `withDeadLetterBundle(...)`                                  | Bundle form pairs DLQ + producer for advanced wiring.              |
+| Poll timeout                             | `kpipe-consumer`       | `Stream.withPollTimeout(Duration)`                                      | `Builder.withPollTimeout(Duration)`                                                                  | Default 100ms.                                                     |
+| Lifecycle handle                         | `kpipe-api`            | `Handle.isHealthy / metrics / awaitShutdown / close`                    | `KPipeRunner.start / awaitShutdown / shutdownGracefully`                                             | `Handle` is `AutoCloseable` (5s graceful default).                 |
+| **Custom `OffsetManager`**               | `kpipe-consumer`       | — (escape hatch only)                                                   | `Builder.withOffsetManager(...)` / `withOffsetManager(Provider)`                                     | E.g. Postgres/Redis-backed manager.                                |
+| **Custom Kafka `Consumer` factory**      | `kpipe-consumer`       | —                                                                       | `Builder.withConsumerProvider(Supplier<Consumer<K,byte[]>>)`                                         | Test seam / SSL configurators.                                     |
+| **Custom DLQ `KafkaProducer`**           | `kpipe-producer`       | —                                                                       | `Builder.withKafkaProducer(...)` / `withDeadLetterBundle(...)`                                       | Override default producer for the DLQ.                             |
+| **Rebalance listener**                   | `kpipe-consumer`       | —                                                                       | `Builder.withRebalanceListener(ConsumerRebalanceListener)`                                           | External offset commit hooks, log routing.                         |
+| **Custom command queue**                 | `kpipe-consumer`       | —                                                                       | `Builder.withCommandQueue(Queue<ConsumerCommand>)`                                                   | Test seam (rarely needed).                                         |
+| **Thread/executor termination**          | `kpipe-consumer`       | —                                                                       | `Builder.withThreadTerminationTimeout / withExecutorTerminationTimeout / withWaitForMessagesTimeout` | Shutdown tuning.                                                   |
+| **`KPipeRunner` lifecycle hooks**        | `kpipe-consumer`       | —                                                                       | `KPipeRunner.Builder.withStartAction / withMetricsReporters / withShutdownAction`                    | Start/stop side-effects, periodic metric logging.                  |
+| **Health endpoint**                      | `kpipe-consumer`       | —                                                                       | `HttpHealthServer.fromEnv(...)`                                                                      | Run alongside `Handle` in the host process.                        |
+| **Message tracker**                      | `kpipe-consumer`       | —                                                                       | `KPipeConsumer.createMessageTracker(...)`                                                            | In-flight visibility for tests/diagnostics.                        |
+| **Disable metrics**                      | `kpipe-consumer`       | —                                                                       | `Builder.disableMetrics()`                                                                           | Required only for the no-API-export footprint.                     |
+| **Custom `MessageProcessorRegistry`**    | `kpipe-core`           | —                                                                       | `new MessageProcessorRegistry(...)` + manual wiring                                                  | Pre-shared pipelines across consumers, multi-format orchestrators. |
+
+**Reading the table:** rows in **bold** are deliberately escape-hatch-only. The 80%-path features (everything not in
+bold) are discoverable via the facade's IDE auto-complete after the first `.`. If a user reaches for an explicit-API
+escape hatch, they're either operating an advanced topology or building a backend that should live in its own module
+(e.g. a Postgres `OffsetManager`).

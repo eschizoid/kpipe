@@ -1,41 +1,32 @@
 package org.kpipe;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.dslplatform.json.DslJson;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
-import java.net.InetSocketAddress;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.EncoderFactory;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.kpipe.consumer.config.AppConfig;
-import org.kpipe.format.avro.AvroRegistryKey;
+import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.producer.config.KafkaProducerConfig;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
@@ -46,112 +37,51 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 class AppIntegrationTest {
 
-  private static final Logger log = System.getLogger(AppIntegrationTest.class.getName());
   private static final String CONFLUENT_PLATFORM_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
-  private static final String AVRO_TOPIC = "avro-topic";
-  private static final String SCHEMA_CONTENT_TYPE = "application/vnd.schemaregistry.v1+json";
-  private static final String SCHEMA_SUBJECT = "com.kpipe.customer";
-  private static final String SCHEMA_VERSIONS_PATH = "/subjects/" + SCHEMA_SUBJECT + "/versions";
-  private static final String SCHEMA_LATEST_PATH = SCHEMA_VERSIONS_PATH + "/latest";
-  private static final String SUBJECTS_EMPTY_JSON = """
-    []
-    """;
-  private static final String REGISTERED_SCHEMA_RESPONSE_JSON = """
-    {"id":1}
-    """;
-  private static final String SCHEMA_NOT_FOUND_JSON = """
-    {"error_code":40403,"message":"Schema not found"}
-    """;
-  private static final String ROUTE_NOT_FOUND_JSON = """
-    {"message":"Not found"}
-    """;
-  private static final DslJson<Object> JSON = new DslJson<>();
-  private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
-  private static volatile String latestSchema;
-  private static HttpServer schemaRegistryStub;
 
   @Container
   static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
     DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_PLATFORM_VERSION))
   ).withStartupAttempts(3);
 
-  @BeforeAll
-  static void startSchemaRegistryStub() throws Exception {
-    schemaRegistryStub = HttpServer.create(new InetSocketAddress(0), 0);
-    schemaRegistryStub.createContext("/subjects", AppIntegrationTest::handleSchemaStubRequest);
-    schemaRegistryStub.start();
-  }
+  private Schema schema;
 
-  @AfterAll
-  static void stopSchemaRegistryStub() {
-    if (schemaRegistryStub != null) schemaRegistryStub.stop(0);
-    latestSchema = null;
+  @BeforeEach
+  void registerSchemaFromTestResource() throws Exception {
+    AvroFormat.INSTANCE.clearSchemas();
+    try (final var in = getClass().getClassLoader().getResourceAsStream("avro/customer.avsc")) {
+      assertNotNull(in, "avro/customer.avsc not found on test classpath");
+      schema = new Schema.Parser().parse(in);
+    }
+    AvroFormat.INSTANCE.addSchema("1", "com.kpipe.customer", schema.toString());
+    AvroFormat.INSTANCE.withDefaultSchema("1");
   }
 
   @Test
   void testAvroAppEndToEnd() throws Exception {
-    final var srUrl = "http://localhost:%d".formatted(schemaRegistryStub.getAddress().getPort());
+    final var topic = "avro-topic-" + UUID.randomUUID().toString().substring(0, 8);
+    final var captured = new CopyOnWriteArrayList<GenericRecord>();
+    final MessageSink<GenericRecord> capturingSink = captured::add;
 
-    // Load and register schema before App construction (App fetches latest schema during init).
-    final Schema schema;
-    try (final var is = getClass().getClassLoader().getResourceAsStream("avro/customer.avsc")) {
-      assertNotNull(is, "Schema file not found");
-      schema = new Schema.Parser().parse(is);
-    }
-    registerSchema(srUrl, schema.toString());
+    try (final var handle = KPipe.avro(topic, consumerProps()).skipBytes(5).toCustom(capturingSink).start()) {
+      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
 
-    final var config = new AppConfig(
-      kafka.getBootstrapServers(),
-      "test-group",
-      AVRO_TOPIC,
-      "avro-app",
-      Duration.ofMillis(100),
-      Duration.ofSeconds(1),
-      Duration.ofSeconds(5),
-      List.of()
-    );
+      produceUntilConsumed(topic, createConfluentWirePayload(), captured, Duration.ofSeconds(15));
 
-    final var capturingSink = new CapturingSink();
-
-    try (final var app = new App(config, srUrl)) {
-      final var registry = app.getProcessorRegistry();
-      // Register the capturing sink
-      registry.sinkRegistry().register(AvroRegistryKey.of("avroLogging"), capturingSink);
-
-      // Start the app
-      final var appThread = Thread.ofVirtual().start(() -> {
-        try {
-          app.start();
-          app.awaitShutdown();
-        } catch (final Exception e) {
-          log.log(Level.ERROR, "App error", e);
-        }
-      });
-
-      final var producerProps = KafkaProducerConfig.createProducerConfig(kafka.getBootstrapServers());
-
-      // Retry produce during the warm-up window so we do not miss messages while the consumer
-      // finishes initial group assignment.
-      produceUntilConsumed(createConfluentWirePayload(schema), producerProps, capturingSink, Duration.ofSeconds(10));
-
-      // Verify
-      assertTrue(appThread.isAlive());
-
-      final var received = capturingSink.getMessages();
-      assertFalse(received.isEmpty(), "Should have received at least one message");
-
-      final var processedRecord = received.getFirst();
-
+      final var processed = captured.getFirst();
       assertAll(
-        () -> assertEquals(1L, processedRecord.get("id")),
-        () -> assertEquals("Test User", processedRecord.get("name").toString()),
-        () -> assertEquals("test.user@example.com", processedRecord.get("email").toString()),
-        () -> assertEquals(true, processedRecord.get("active"))
+        () -> assertEquals(1L, processed.get("id")),
+        () -> assertEquals("Test User", processed.get("name").toString()),
+        () -> assertEquals("test.user@example.com", processed.get("email").toString()),
+        () -> assertEquals(true, processed.get("active"))
       );
+
+      assertTrue(handle.shutdownGracefully(Duration.ofSeconds(5)));
+      assertFalse(handle.isHealthy());
     }
   }
 
-  private static byte[] createConfluentWirePayload(final Schema schema) throws Exception {
+  private byte[] createConfluentWirePayload() throws Exception {
     final var record = new GenericData.Record(schema);
     record.put("id", 1L);
     record.put("name", "Test User");
@@ -163,128 +93,40 @@ class AppIntegrationTest {
     record.put("preferences", Collections.emptyMap());
 
     final var out = new ByteArrayOutputStream();
-    out.write(0); // Magic byte
-    out.write(ByteBuffer.allocate(4).putInt(1).array()); // Schema ID 1
+    out.write(0); // Confluent magic byte
+    out.write(ByteBuffer.allocate(4).putInt(1).array()); // schema id 1
 
     final var encoder = EncoderFactory.get().binaryEncoder(out, null);
-    final var writer = new GenericDatumWriter<GenericRecord>(schema);
-    writer.write(record, encoder);
+    new GenericDatumWriter<GenericRecord>(schema).write(record, encoder);
     encoder.flush();
     return out.toByteArray();
   }
 
-  private static void handleSchemaStubRequest(final HttpExchange exchange) {
-    try (exchange) {
-      final var method = exchange.getRequestMethod();
-      final var path = exchange.getRequestURI().getPath();
-
-      if ("GET".equals(method) && "/subjects".equals(path)) {
-        writeJson(exchange, 200, SUBJECTS_EMPTY_JSON);
-        return;
-      }
-
-      if ("POST".equals(method) && SCHEMA_VERSIONS_PATH.equals(path)) {
-        final var bodyBytes = exchange.getRequestBody().readAllBytes();
-        final var payload = JSON.deserialize(Map.class, new ByteArrayInputStream(bodyBytes));
-        latestSchema = payload != null && payload.get("schema") != null ? payload.get("schema").toString() : null;
-        writeJson(exchange, 200, REGISTERED_SCHEMA_RESPONSE_JSON);
-        return;
-      }
-
-      if ("GET".equals(method) && SCHEMA_LATEST_PATH.equals(path)) {
-        if (latestSchema == null) {
-          writeJson(exchange, 404, SCHEMA_NOT_FOUND_JSON);
-          return;
-        }
-
-        final var response = new HashMap<String, Object>();
-        response.put("subject", SCHEMA_SUBJECT);
-        response.put("version", 1);
-        response.put("id", 1);
-        response.put("schema", latestSchema);
-
-        final byte[] json;
-        try (final var out = new ByteArrayOutputStream()) {
-          JSON.serialize(response, out);
-          json = out.toByteArray();
-        }
-
-        exchange.getResponseHeaders().set("Content-Type", SCHEMA_CONTENT_TYPE);
-        exchange.sendResponseHeaders(200, json.length);
-        exchange.getResponseBody().write(json);
-        return;
-      }
-
-      writeJson(exchange, 404, ROUTE_NOT_FOUND_JSON);
-    } catch (final Exception e) {
-      throw new RuntimeException(e);
-    }
+  private static Properties consumerProps() {
+    final var props = new Properties();
+    props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+    props.put(ConsumerConfig.GROUP_ID_CONFIG, "test-group-" + UUID.randomUUID());
+    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+    props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+    return props;
   }
 
   private static void produceUntilConsumed(
+    final String topic,
     final byte[] payload,
-    final Properties producerProps,
-    final CapturingSink sink,
+    final List<?> sink,
     final Duration timeout
   ) throws Exception {
+    final var producerProps = KafkaProducerConfig.createProducerConfig(kafka.getBootstrapServers());
     final var deadline = System.nanoTime() + timeout.toNanos();
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       while (System.nanoTime() < deadline) {
-        producer.send(new ProducerRecord<>(AVRO_TOPIC, payload)).get();
-        if (sink.size() >= 1) return;
+        producer.send(new ProducerRecord<>(topic, payload)).get();
+        if (!sink.isEmpty()) return;
         TimeUnit.MILLISECONDS.sleep(250);
       }
     }
     throw new AssertionError("Timed out waiting for consumer to receive produced message(s)");
-  }
-
-  private static void registerSchema(final String schemaRegistryUrl, final String schemaJson) throws Exception {
-    final var payloadMap = Collections.singletonMap("schema", schemaJson);
-    final byte[] payload;
-    try (final var out = new ByteArrayOutputStream()) {
-      JSON.serialize(payloadMap, out);
-      payload = out.toByteArray();
-    }
-
-    final var request = HttpRequest.newBuilder()
-      .uri(URI.create("%s%s".formatted(schemaRegistryUrl, SCHEMA_VERSIONS_PATH)))
-      .header("Content-Type", SCHEMA_CONTENT_TYPE)
-      .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
-      .build();
-
-    final var response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
-    assertTrue(
-      response.statusCode() == 200 || response.statusCode() == 409,
-      "Schema registration failed: HTTP %d body=%s".formatted(response.statusCode(), response.body())
-    );
-  }
-
-  private static void writeJson(final HttpExchange exchange, final int status, final String body) {
-    try {
-      final var payload = body.getBytes(StandardCharsets.UTF_8);
-      exchange.getResponseHeaders().set("Content-Type", SCHEMA_CONTENT_TYPE);
-      exchange.sendResponseHeaders(status, payload.length);
-      exchange.getResponseBody().write(payload);
-    } catch (final Exception e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  private static class CapturingSink implements MessageSink<GenericRecord> {
-
-    private final List<GenericRecord> messages = new ArrayList<>();
-
-    @Override
-    public synchronized void accept(GenericRecord processedValue) {
-      messages.add(processedValue);
-    }
-
-    public synchronized List<GenericRecord> getMessages() {
-      return new ArrayList<>(messages);
-    }
-
-    public synchronized int size() {
-      return messages.size();
-    }
   }
 }

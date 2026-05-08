@@ -30,22 +30,22 @@ roadmap below.
 
 Single source of truth for what's left across the whole library.
 
-| #  | Priority                  | Item                                                                                                                         | Type              | Effort    |
-|----|---------------------------|------------------------------------------------------------------------------------------------------------------------------|-------------------|-----------|
-| 1  | ~~**P1 — Adoption blocker**~~ | ~~Multi-topic Phase 1 (homogeneous) + Phase 2 (heterogeneous via `KPipe.multi`)~~ — both landed 2026-05-07               | Feature           | shipped   |
-| 2  | ~~**P1 — Adoption blocker**~~ | ~~Java baseline decision~~ — **stay on Java 25** (decided 2026-05-07)                                                    | Strategy          | decided   |
-| 3  | **P2 — Real footgun**     | `Format.INSTANCE` global mutable state (Avro/Protobuf)                                                                       | Hardening         | ~1 day    |
-| 4  | **P2 — Real footgun**     | HTTP fetcher remaining extraction from `kpipe-format-avro` (drop `java.net.http` + `jackson.core`; dsl-json already removed) | Cleanup           | ~2–3 hr   |
-| 5  | **P2 — Bug surface**      | Batch sinks (`BatchSink<T>` interface + size/time flush + partial-failure semantics)                                         | Feature           | ~5–7 days |
-| 6  | **P2 — Bug surface**      | Circuit breaker for sinks                                                                                                    | Feature           | ~3–4 days |
-| 7  | **P3 — User-visible**     | `AppConfig` slimdown / split (real example infra; decide split or move)                                                      | Refactor          | ~1 hr     |
-| 8  | **P3 — User-visible**     | `HttpHealthServer` placement decision (lib contract or sample → `examples/`?)                                                | Refactor          | ~30 min   |
-| 9  | **P3 — User-visible**     | Build/test config cleanup remaining (consumer parallelism, residual fork tuning)                                             | Refactor          | ~30 min   |
-| 10 | **P5 — 2.0 candidates**   | Type-name shortening (`MessageProcessorRegistry` → `Pipelines`, etc.)                                                        | Breaking refactor | ~1 day    |
-| 11 | **P5 — 2.0 candidates**   | `Result<T>` sealed type for pipeline errors                                                                                  | Breaking refactor | ~1 day    |
-| 12 | **P5 — 2.0 candidates**   | Fold `KPipeRunner` into `KPipeConsumer`                                                                                      | Breaking refactor | ~half day |
-| 13 | **P5 — 2.0 candidates**   | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                  | Breaking refactor | ~half day |
-| 14 | **P5 — Speculative perf** | Format serialization caches re-wire (only with JMH evidence)                                                                 | Perf              | ~1–2 days |
+| #  | Priority                      | Item                                                                                                                         | Type              | Effort    |
+|----|-------------------------------|------------------------------------------------------------------------------------------------------------------------------|-------------------|-----------|
+| 1  | ~~**P1 — Adoption blocker**~~ | ~~Multi-topic Phase 1 (homogeneous) + Phase 2 (heterogeneous via `KPipe.multi`)~~ — both landed 2026-05-07                   | Feature           | shipped   |
+| 2  | ~~**P1 — Adoption blocker**~~ | ~~Java baseline decision~~ — **stay on Java 25** (decided 2026-05-07)                                                        | Strategy          | decided   |
+| 3  | **P2 — Real footgun**         | `Format.INSTANCE` global mutable state (Avro/Protobuf)                                                                       | Hardening         | ~1 day    |
+| 4  | **P2 — Real footgun**         | HTTP fetcher remaining extraction from `kpipe-format-avro` (drop `java.net.http` + `jackson.core`; dsl-json already removed) | Cleanup           | ~2–3 hr   |
+| 5  | **P2 — Bug surface**          | Batch sinks (`BatchSink<T>` interface + size/time flush + partial-failure semantics)                                         | Feature           | ~5–7 days |
+| 6  | **P2 — Bug surface**          | Circuit breaker for sinks                                                                                                    | Feature           | ~3–4 days |
+| 7  | **P3 — User-visible**         | `AppConfig` slimdown / split (real example infra; decide split or move)                                                      | Refactor          | ~1 hr     |
+| 8  | **P3 — User-visible**         | `HttpHealthServer` placement decision (lib contract or sample → `examples/`?)                                                | Refactor          | ~30 min   |
+| 9  | **P3 — User-visible**         | Build/test config cleanup remaining (consumer parallelism, residual fork tuning)                                             | Refactor          | ~30 min   |
+| 10 | **P5 — 2.0 candidates**       | Type-name shortening (`MessageProcessorRegistry` → `Pipelines`, etc.)                                                        | Breaking refactor | ~1 day    |
+| 11 | **P5 — 2.0 candidates**       | `Result<T>` sealed type for pipeline errors                                                                                  | Breaking refactor | ~1 day    |
+| 12 | **P5 — 2.0 candidates**       | Fold `KPipeRunner` into `KPipeConsumer`                                                                                      | Breaking refactor | ~half day |
+| 13 | **P5 — 2.0 candidates**       | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                  | Breaking refactor | ~half day |
+| 14 | **P5 — Speculative perf**     | Format serialization caches re-wire (only with JMH evidence)                                                                 | Perf              | ~1–2 days |
 
 **Recommendation:** P1 (#1, #2) shipped. Next adoption needle is **P2 #5 — batch sinks**; that's the
 "can I batch-insert into Postgres?" feature Spring Kafka users evaluate against. Circuit breaker (#6) and
@@ -55,7 +55,8 @@ something forces them. **No further internal polish** — diminishing returns.
 ### Recently shipped
 
 - **2026-05-08 — api module cleanup** (`refactor/api-cleanup`): `DefaultStream` converted to record (11
-  field decls + 11 ctor assignments + 9 trivial accessors → auto-generated); `KPipeConsumer.Builder.enableMetrics(boolean)`
+  field decls + 11 ctor assignments + 9 trivial accessors → auto-generated);
+  `KPipeConsumer.Builder.enableMetrics(boolean)`
   deleted (only `@Deprecated` in the codebase, all 9 callers migrated); `ToConsoleDispatchTest` parameterized;
   redundant `KPipeFacadeBuildTest` factory tests dropped; `validateTopics` single-pass. Net **−160 lines**.
 - **2026-05-07 — multi-topic** (`feature/multi-topic`): both phases landed in one branch. Homogeneous via

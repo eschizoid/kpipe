@@ -1,13 +1,18 @@
 package org.kpipe.demo;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.format.protobuf.ProtobufFormat;
 import org.kpipe.producer.config.KafkaProducerConfig;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -24,13 +29,22 @@ class DemoAppIntegrationTest {
     DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_PLATFORM_VERSION))
   ).withStartupAttempts(3);
 
+  @BeforeEach
+  void registerSchemasFromTestResources() throws IOException {
+    AvroFormat.INSTANCE.clearSchemas();
+    AvroFormat.INSTANCE.addSchema("1", "com.kpipe.customer", loadAvroSchema());
+    AvroFormat.INSTANCE.withDefaultSchema("1");
+
+    ProtobufFormat.INSTANCE.addDescriptor("customer", DemoApp.buildCustomerDescriptor());
+    ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
+  }
+
   @Test
   void testJsonPipelineEndToEnd() throws Exception {
-    System.setProperty("kpipe.test.mode", "true");
     final var config = new DemoConfig(
       kafka.getBootstrapServers(),
       "test-group",
-      "http://localhost:8081", // not used for JSON
+      "http://localhost:8081", // unused — schemas pre-registered above
       "json-test-topic",
       "avro-test-topic",
       "proto-test-topic",
@@ -39,16 +53,11 @@ class DemoAppIntegrationTest {
       Duration.ofSeconds(60)
     );
 
-    // We test the JSON pipeline only (Avro/Protobuf require Schema Registry).
-    // KPipe.multi(...).start() runs in the constructor; nothing further to invoke.
-    try (final var app = new DemoApp(config)) {
+    try (final var _ = new DemoApp(config)) {
       final var appThread = Thread.ofVirtual().start(() -> {});
-
       TimeUnit.SECONDS.sleep(3);
 
-      // Produce a JSON message
       final var producerProps = KafkaProducerConfig.createProducerConfig(kafka.getBootstrapServers());
-
       final var message = """
         {"id":1,"name":"Test User","email":"test@example.com"}""".getBytes(StandardCharsets.UTF_8);
 
@@ -60,9 +69,15 @@ class DemoAppIntegrationTest {
         }
       }
 
-      // Wait for the app to finish processing and exit cleanly
       appThread.join(Duration.ofSeconds(10).toMillis());
       assertFalse(appThread.isAlive(), "App should exit after processing all messages");
+    }
+  }
+
+  private static String loadAvroSchema() throws IOException {
+    try (final InputStream in = DemoAppIntegrationTest.class.getResourceAsStream("/avro/customer.avsc")) {
+      if (in == null) throw new IOException("avro/customer.avsc not found on test classpath");
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     }
   }
 }
