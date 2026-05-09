@@ -71,9 +71,19 @@ class StreamBatchIntegrationTest {
         producer.flush();
       }
 
-      // Wait until at least the two size-triggered batches have arrived (20 records) — leaves
-      // the trailing 5 to be drained either by age trigger or shutdown.
-      waitFor(() -> totalCaptured.size() >= 20, Duration.ofSeconds(20), "expected at least 20 captured records");
+      // Wait until the consumer has polled all 25 records from Kafka — `messagesReceived` is
+      // the post-poll counter. Without this gate, shutdown can race ahead of a slow fetch and
+      // the trailing records never reach the buffer (failure surfaced after the partial-batch
+      // flusher refactor reshuffled timing).
+      waitFor(
+        () -> handle.metrics().getOrDefault("messagesReceived", 0L) >= 25L,
+        Duration.ofSeconds(20),
+        "expected consumer to receive all 25 records"
+      );
+
+      // By now at least 20 should be flushed (two size-triggered batches); the remaining ≤5
+      // sit in the buffer waiting for the age trigger or the shutdown drain.
+      waitFor(() -> totalCaptured.size() >= 20, Duration.ofSeconds(5), "expected at least 20 captured records");
 
       // Verify size-triggered batches are exactly maxSize=10.
       final var sizeTriggered = batches.stream().filter(b -> b.size() == policy.maxSize()).toList();
