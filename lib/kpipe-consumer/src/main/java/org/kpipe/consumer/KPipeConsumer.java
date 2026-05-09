@@ -21,6 +21,8 @@ import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
+import org.kpipe.sink.BatchPolicy;
+import org.kpipe.sink.BatchSink;
 
 /// A functional-style Kafka consumer that processes records using a provided function.
 ///
@@ -109,6 +111,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final String deadLetterTopic;
   private final KPipeProducer<K, byte[]> kpipeProducer;
 
+  private final BatchPipelineWrapper<K, ?> batchWrapper;
+  private final ScheduledExecutorService batchScheduler;
+
   /// Represents an error that occurred during record processing. Contains the original record,
   /// the exception that was thrown, and the number of retry attempts made.
   ///
@@ -142,10 +147,15 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     private Builder() {}
 
+    /// Internal record bundling the per-topic batch configuration handed in via
+    /// [#withBatchPipeline].
+    record BatchSpec<T>(String topic, MessagePipeline<T> pipeline, BatchSink<T> sink, BatchPolicy policy) {}
+
     private Properties kafkaProps;
     private Set<String> topics;
     private MessagePipeline<?> pipeline;
     private Map<String, MessagePipeline<?>> pipelinesPerTopic;
+    private BatchSpec<?> batchSpec;
     private Duration pollTimeout = Duration.ofMillis(100);
     private ErrorHandler<K> errorHandler = e ->
       LOGGER.log(
@@ -241,6 +251,39 @@ public class KPipeConsumer<K> implements AutoCloseable {
       Objects.requireNonNull(pipelinesPerTopic, "pipelinesPerTopic cannot be null");
       if (pipelinesPerTopic.isEmpty()) throw new IllegalArgumentException("pipelinesPerTopic cannot be empty");
       this.pipelinesPerTopic = Map.copyOf(pipelinesPerTopic);
+      return this;
+    }
+
+    /// Configures a batch-mode pipeline for `topic`. Records are deserialized + processed via
+    /// `pipeline`, buffered until `policy.maxSize()` records have accumulated or
+    /// `policy.maxAge()` has elapsed since the oldest buffered record, then flushed in one call
+    /// to `sink`. Offsets are marked processed only after the sink returns successfully — a
+    /// throwing sink sends every record in the batch to the configured DLQ (if any) and still
+    /// commits offsets so the consumer does not loop on a poison batch.
+    ///
+    /// **Single-topic only in v1.** Cannot be combined with `withPipeline` / `withPipelines`.
+    /// **Sequential processing required.** Configure via `withSequentialProcessing(true)` (the
+    /// facade does this for you).
+    ///
+    /// @param topic the Kafka topic
+    /// @param pipeline the typed pipeline to deserialize+process raw bytes into `T`
+    /// @param sink the batch sink invoked on each flush
+    /// @param policy the size/age flush thresholds
+    /// @param <T> the deserialized value type
+    /// @return this builder instance for method chaining
+    public <T> Builder<K> withBatchPipeline(
+      final String topic,
+      final MessagePipeline<T> pipeline,
+      final BatchSink<T> sink,
+      final BatchPolicy policy
+    ) {
+      Objects.requireNonNull(topic, "topic cannot be null");
+      if (topic.isBlank()) throw new IllegalArgumentException("topic cannot be blank");
+      Objects.requireNonNull(pipeline, "pipeline cannot be null");
+      Objects.requireNonNull(sink, "sink cannot be null");
+      Objects.requireNonNull(policy, "policy cannot be null");
+      this.batchSpec = new BatchSpec<>(topic, pipeline, sink, policy);
+      this.topics = Set.of(topic);
       return this;
     }
 
@@ -480,10 +523,18 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @return a new KPipeConsumer instance
     public KPipeConsumer<K> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
+      if (batchSpec != null && (pipeline != null || pipelinesPerTopic != null)) throw new IllegalArgumentException(
+        "withBatchPipeline cannot be combined with withPipeline / withPipelines"
+      );
+      if (batchSpec != null && !sequentialProcessing) throw new IllegalArgumentException(
+        "Batch sinks require sequential processing — call withSequentialProcessing(true)"
+      );
       if (pipeline != null && pipelinesPerTopic != null) throw new IllegalArgumentException(
         "Use either withPipeline (homogeneous) or withPipelines (heterogeneous), not both"
       );
-      if (pipelinesPerTopic != null) {
+      if (batchSpec != null) {
+        // topics already populated by withBatchPipeline; nothing else to assert.
+      } else if (pipelinesPerTopic != null) {
         if (topics != null) throw new IllegalArgumentException(
           "withTopic/withTopics is unnecessary with withPipelines — topics are derived from the map keys; remove the explicit topic call"
         );
@@ -517,7 +568,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
         ? builder.consumerProvider.get()
         : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
     this.topics = Set.copyOf(Objects.requireNonNull(builder.topics, "Topics must be set"));
-    if (builder.pipelinesPerTopic != null) this.pipelines = builder.pipelinesPerTopic;
+    if (builder.batchSpec != null) {
+      this.pipelines = Map.of();
+    } else if (builder.pipelinesPerTopic != null) this.pipelines = builder.pipelinesPerTopic;
     else {
       final var map = new LinkedHashMap<String, MessagePipeline<?>>(this.topics.size());
       final var single = Objects.requireNonNull(builder.pipeline, "pipeline cannot be null");
@@ -564,6 +617,18 @@ public class KPipeConsumer<K> implements AutoCloseable {
           ? KPipeProducer.<K, byte[]>builder().withProperties(builder.kafkaProps).build()
           : null;
 
+    if (builder.batchSpec != null) {
+      this.batchScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        final var t = Thread.ofVirtual().unstarted(r);
+        t.setName("kpipe-batch-scheduler");
+        return t;
+      });
+      this.batchWrapper = createBatchWrapper(builder.batchSpec);
+    } else {
+      this.batchScheduler = null;
+      this.batchWrapper = null;
+    }
+
     if (builder.backpressureController == null) {
       LOGGER.log(
         Level.INFO,
@@ -600,6 +665,50 @@ public class KPipeConsumer<K> implements AutoCloseable {
     this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
   }
 
+  private <T> BatchPipelineWrapper<K, T> createBatchWrapper(final Builder.BatchSpec<T> spec) {
+    // Batch flushes call the OffsetManager directly rather than going through commandQueue. The
+    // queue exists to serialize Kafka-consumer calls (pause/resume/commitSync) on the consumer
+    // thread; OffsetManager.markOffsetProcessed is already thread-safe and avoiding the queue
+    // means the shutdown drain works even after the consumer thread has exited.
+    final var callbacks = new BatchPipelineWrapper.BatchCallbacks<K>() {
+      @Override
+      public void markProcessed(final ConsumerRecord<K, byte[]> record) {
+        if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+        otelMetrics.recordMessageProcessed(record.topic());
+        if (offsetManager != null) offsetManager.markOffsetProcessed(record);
+      }
+
+      @Override
+      public void onBatchFailure(final ConsumerRecord<K, byte[]> record, final Exception cause) {
+        if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+        otelMetrics.recordProcessingError(record.topic());
+        LOGGER.log(
+          Level.WARNING,
+          "Batch failure for record at offset {0}: {1}",
+          record.offset(),
+          cause.getMessage()
+        );
+        if (deadLetterTopic != null && kpipeProducer != null) {
+          final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause);
+          if (sent && enableMetrics) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+        }
+        if (offsetManager != null) offsetManager.markOffsetProcessed(record);
+        try {
+          errorHandler.accept(new ProcessingError<>(record, cause, 0));
+        } catch (final Exception ex) {
+          LOGGER.log(
+            Level.ERROR,
+            "Error handler threw on batch failure at offset {0}: {1}",
+            record.offset(),
+            ex.getMessage(),
+            ex
+          );
+        }
+      }
+    };
+    return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), batchScheduler, callbacks);
+  }
+
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
   /// uses the consumer's metrics to determine how many messages have been received versus
   /// processed.
@@ -629,6 +738,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (!state.compareAndSet(ConsumerState.CREATED, ConsumerState.RUNNING)) return;
 
     if (offsetManager != null) offsetManager.start();
+    if (batchWrapper != null) batchWrapper.start();
     if (rebalanceListener != null) kafkaConsumer.subscribe(topics, rebalanceListener);
     else kafkaConsumer.subscribe(topics);
 
@@ -881,6 +991,17 @@ public class KPipeConsumer<K> implements AutoCloseable {
       virtualThreadExecutor.shutdownNow();
     }
 
+    if (batchWrapper != null) {
+      try {
+        batchWrapper.close();
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error draining batch buffer during shutdown", e);
+      }
+    }
+    if (batchScheduler != null) {
+      batchScheduler.shutdownNow();
+    }
+
     if (offsetManager != null) {
       try {
         offsetManager.close();
@@ -973,6 +1094,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   }
 
   private boolean tryProcessRecord(final ConsumerRecord<K, byte[]> record) {
+    if (batchWrapper != null) return tryEnqueueBatchRecord(record);
     final var pipeline = pipelines.get(record.topic());
     if (pipeline == null) {
       // Partial-revocation race: subscribed topic was reassigned mid-poll. Mark processed so we
@@ -1005,6 +1127,31 @@ public class KPipeConsumer<K> implements AutoCloseable {
       }
     }
     return false;
+  }
+
+  @SuppressWarnings({ "unchecked", "rawtypes" })
+  private boolean tryEnqueueBatchRecord(final ConsumerRecord<K, byte[]> record) {
+    final BatchPipelineWrapper rawWrapper = batchWrapper;
+    try {
+      final var pipeline = rawWrapper.pipeline();
+      final var value = pipeline.processToValue(record.value());
+      if (value == null) {
+        // Intentional filter — mark processed immediately; nothing to buffer.
+        markOffsetProcessed(record);
+        return true;
+      }
+      rawWrapper.enqueue(record, value);
+      // Buffered: messagesProcessed will be incremented in the flush callback when the batch is
+      // committed to the user sink.
+      return false;
+    } catch (final Exception e) {
+      if (isInterruptionRelated(e)) {
+        Thread.currentThread().interrupt();
+        return false;
+      }
+      handleProcessingError(record, e, 0);
+      return false;
+    }
   }
 
   private boolean handleRetry(final ConsumerRecord<K, byte[]> record, final int attempt) {

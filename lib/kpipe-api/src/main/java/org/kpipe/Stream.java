@@ -6,6 +6,8 @@ import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.metrics.ConsumerMetrics;
+import org.kpipe.sink.BatchPolicy;
+import org.kpipe.sink.BatchSink;
 import org.kpipe.sink.MessageSink;
 
 /// Fluent stream-composition type for the [KPipe] facade.
@@ -173,6 +175,22 @@ public interface Stream<T> {
   /// @return a [Sink] ready to start
   /// @throws NullPointerException if `sink` is null
   Sink<T> toCustom(final MessageSink<T> sink);
+
+  /// Terminates the stream with a buffering [BatchSink], flushing in chunks of `policy.maxSize()`
+  /// or whenever `policy.maxAge()` elapses since the oldest buffered record. Offsets are
+  /// committed only after each flush returns successfully — a thrown sink sends every record in
+  /// the failed batch to the configured DLQ (if any) and still commits offsets so the consumer
+  /// does not loop on a poison batch.
+  ///
+  /// **Sequential processing is enabled automatically.** Batch sinks v1 does not support
+  /// parallel mode; the facade flips `withSequentialProcessing(true)` for you when this terminal
+  /// is used. Single-topic only — multi-topic batching ships in a follow-up.
+  ///
+  /// @param sink the batch sink invoked on each flush (must not be null)
+  /// @param policy the size/age flush thresholds (must not be null)
+  /// @return a [Sink] ready to start
+  /// @throws NullPointerException if any argument is null
+  Sink<T> toBatch(final BatchSink<T> sink, final BatchPolicy policy);
 
   /// Terminates the stream by fanning out to multiple sinks. Each delivered message is dispatched
   /// to every sink; an exception in one sink is **logged at ERROR but suppressed** so the

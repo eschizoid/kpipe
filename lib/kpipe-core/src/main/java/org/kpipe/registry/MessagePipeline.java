@@ -96,6 +96,25 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
     if (sink != null) sink.accept(processed);
   }
 
+  /// Executes deserialize → process and returns the resulting value without invoking any sink
+  /// or re-serializing. This is the entry point used by batch-mode pipelines so the consumer
+  /// can buffer the deserialized value alongside the originating Kafka record before flushing
+  /// in batches.
+  ///
+  /// Exceptions propagate exactly as in [#processToSink]. A `null` return means the message
+  /// was intentionally filtered by [#process] — callers should treat the offset as handled.
+  ///
+  /// @param data the input bytes
+  /// @return the processed value, or `null` if the message was intentionally filtered
+  /// @throws IllegalStateException if [#deserialize] returns `null` (contract violation)
+  default T processToValue(byte[] data) {
+    final var deserialized = deserialize(data);
+    if (deserialized == null) throw new IllegalStateException(
+      "deserialize() returned null — implementations must throw on malformed input"
+    );
+    return process(deserialized);
+  }
+
   /// Composes this pipeline with another of the same type T, running this pipeline's
   /// processors first then `next`'s. Both pipelines must operate on the same domain
   /// type. The composed pipeline reuses this pipeline's deserializer/serializer; only

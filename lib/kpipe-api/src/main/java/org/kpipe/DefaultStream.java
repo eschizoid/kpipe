@@ -15,6 +15,8 @@ import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.Operators;
+import org.kpipe.sink.BatchPolicy;
+import org.kpipe.sink.BatchSink;
 import org.kpipe.sink.CompositeMessageSink;
 import org.kpipe.sink.MessageSink;
 
@@ -309,6 +311,13 @@ record DefaultStream<T>(
   public Sink<T> toCustom(final MessageSink<T> sink) {
     Objects.requireNonNull(sink, "sink cannot be null");
     return new DefaultSink<>(this, sink);
+  }
+
+  @Override
+  public Sink<T> toBatch(final BatchSink<T> sink, final BatchPolicy policy) {
+    Objects.requireNonNull(sink, "sink cannot be null");
+    Objects.requireNonNull(policy, "policy cannot be null");
+    return new DefaultBatchSink<>(this, sink, policy);
   }
 
   @Override
