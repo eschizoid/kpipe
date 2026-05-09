@@ -1,7 +1,8 @@
 # KPipe Benchmarks
 
-This module contains a suite of JMH (Java Microbenchmark Harness) tests to quantify KPipe's performance across different
-scenarios and compare it against manual implementations and industry-standard alternatives.
+JMH benchmarks for KPipe — pipeline efficiency, Avro byte handling, parallel processing, and batch sink throughput. Each
+scenario pits KPipe against either a hand-rolled equivalent or a well-known alternative (Confluent Parallel Consumer) so
+the numbers mean something concrete.
 
 ## Benchmark Scenarios
 
@@ -24,13 +25,11 @@ Measures the efficiency of KPipe's magic byte offset handling vs. traditional by
 
 ### 3. Parallel Processing Overhead (`ParallelProcessingBenchmark`)
 
-Evaluates the throughput of KPipe's Java Virtual Thread-based parallel processing engine against the Confluent Parallel
-Consumer.
+KPipe's virtual-thread parallel processing vs. the Confluent Parallel Consumer.
 
-- **KPipe Parallel Mode**: Leverages a thread-per-record model using Loom to process message batches concurrently with
-  minimal overhead.
-- **Confluent Parallel Consumer**: Industry-standard library for parallel processing, used as a baseline for comparison.
-- **Kafka backend**: Uses an in-process embedded Kafka broker powered by Apache Kafka test kit.
+- **KPipe**: thread-per-record on Loom — no pool, no queue, no batching primitives.
+- **Confluent Parallel Consumer**: the de-facto baseline most teams reach for.
+- **Kafka backend**: an in-process broker via the Apache Kafka test kit (no external Kafka).
 
 ### 4. Batch Sink Throughput (`BatchSinkLatencyBenchmark`)
 
@@ -45,7 +44,7 @@ inserts the per-call latency to expose the amortisation that batching provides.
 #### Results (Apple Silicon, JDK 25.0.2, single fork, 3×2s warmup + 5×3s measurement)
 
 | batchSize | sinkLatencyMicros | Throughput (ops/s) | Speedup vs batchSize=1 |
-|----------:|------------------:|-------------------:|-----------------------:|
+| --------: | ----------------: | -----------------: | ---------------------: |
 |         1 |                10 |             28,018 |                  1.00× |
 |         1 |               100 |              6,885 |                  1.00× |
 |         1 |              1000 |                788 |                  1.00× |
@@ -108,11 +107,11 @@ This benchmark compares KPipe's zero-copy offset-based deserialization against t
 > numbers that looked impressive but measured nothing. Adding `encoder.flush()` in `@Setup` produces the realistic
 > numbers below.
 
-| Benchmark                                       |    Mode | Cnt |        Score |           Error |   Units |
-|-------------------------------------------------|--------:|----:|-------------:|----------------:|--------:|
-| `AvroPipelineBenchmark.kpipeAvroMagicPipeline`  | `thrpt` | `5` | `926,454.03` | `± 255,156.10`  | `ops/s` |
-| `AvroPipelineBenchmark.kpipeAvroPipeline`       | `thrpt` | `5` | `806,103.53` | `± 308,309.30`  | `ops/s` |
-| `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `5` | `676,133.95` | `± 662,309.38`  | `ops/s` |
+| Benchmark                                       |    Mode | Cnt |        Score |          Error |   Units |
+| ----------------------------------------------- | ------: | --: | -----------: | -------------: | ------: |
+| `AvroPipelineBenchmark.kpipeAvroMagicPipeline`  | `thrpt` | `5` | `926,454.03` | `± 255,156.10` | `ops/s` |
+| `AvroPipelineBenchmark.kpipeAvroPipeline`       | `thrpt` | `5` | `806,103.53` | `± 308,309.30` | `ops/s` |
+| `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `5` | `676,133.95` | `± 662,309.38` | `ops/s` |
 
 **Observation**: KPipe's zero-copy magic-byte handling is **~1.37× faster** than the manual `Arrays.copyOfRange`
 strip-and-reparse approach. The error band on the manual path is wide because allocation pressure interacts with GC
@@ -123,7 +122,7 @@ pauses unpredictably; the gap is real but smaller than the previous (broken) sna
 This benchmark measures the cost of chaining multiple transformations.
 
 | Benchmark                                      |    Mode | Cnt |        Score |          Error |   Units |
-|------------------------------------------------|--------:|----:|-------------:|---------------:|--------:|
+| ---------------------------------------------- | ------: | --: | -----------: | -------------: | ------: |
 | `JsonPipelineBenchmark.kpipeJsonPipeline`      | `thrpt` | `5` | `241,973.45` | `± 112,445.20` | `ops/s` |
 | `JsonPipelineBenchmark.manualJsonSerDeChained` | `thrpt` | `5` |  `78,396.78` |  `± 38,829.91` | `ops/s` |
 | `JsonPipelineBenchmark.manualJsonSingleSerDe`  | `thrpt` | `5` | `200,700.24` | `± 202,444.52` | `ops/s` |
@@ -139,7 +138,7 @@ This benchmark compares KPipe's "thread-per-record" model using Java Virtual Thr
 Confluent Parallel Consumer.
 
 | Benchmark                                                 |    Mode | Cnt |       Score |       Error |   Units |
-|-----------------------------------------------------------|--------:|----:|------------:|------------:|--------:|
+| --------------------------------------------------------- | ------: | --: | ----------: | ----------: | ------: |
 | `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `5` | `3,110.974` | `± 400.967` | `ops/s` |
 | `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `5` | `3,268.037` |  `± 83.313` | `ops/s` |
 
@@ -152,13 +151,11 @@ across iterations — Confluent's wider error band reflects iteration-to-iterati
 See § 4 above (`BatchSinkLatencyBenchmark`) for the size × latency parameter sweep. Headline: at
 `sinkLatencyMicros=1000` (≈ JDBC commit), `batchSize=100` yields **~84× the throughput** of `batchSize=1`.
 
-## Understanding Results
+## Reading the numbers
 
-The benchmarks typically run in `Throughput` mode (`ops/s`). Higher numbers are better.
+Throughput mode (`ops/s`). Bigger is better.
 
-### Projecting "Messages Per Second"
-
-Based on the latest snapshot results, we can derive the following throughput expectations:
+### Projected messages per second
 
 - **Avro (In-Memory)**: Up to **~926,000 records/s** with zero-copy magic-byte handling. JSON beats this in absolute
   ops/s here because the JSON bench applies two operators per record while the Avro bench applies two operators on a
@@ -174,27 +171,23 @@ Based on the latest snapshot results, we can derive the following throughput exp
 > **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`. For this benchmark, derive message
 > rate as `ops/s * 10,000`.
 
-Key performance indicators to watch for:
+A few things worth keeping in mind when comparing runs:
 
-- **SerDe Tax**: The drop-in throughput as more transformation steps are added in the manual vs. optimized KPipe
-  pipeline.
-- **GC Pressure**: While not explicitly measured by throughput, the zero-copy Avro benchmark significantly reduces
-  memory allocation and garbage collection overhead.
-- **Concurrency Scaling**: How the parallel processing benchmark handles large batches compared to sequential
-  processing.
-- **Real Infrastructure vs. Mocks**: This suite favors repeatable local microbenchmarks by using an embedded Kafka
-  broker.
-- **Parallel timing fairness**: both `kpipeParallelProcessing` and `confluentParallelProcessing` start their processing
-  loops inside benchmark methods (not in setup), so measured time includes comparable startup-to-completion behavior for
-  each invocation.
-- **Parallel throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`, so its
-  reported throughput is normalized per processed message rather than per full benchmark invocation.
-- **Logging noise control**: KPipe parallel benchmark uses a no-op sink in benchmark runs to avoid console I/O from
-  distorting throughput numbers.
-- **CPU efficiency (Linux only)**: compare CPI and related normalized counters from `perfnorm` for
-  `kpipeParallelProcessing` vs `confluentParallelProcessing`.
-- **Platform caveat for CPI**: macOS runs can still compare throughput and GC behavior, but CPI should be
-  collected/reported only from Linux perf-enabled runs.
+- **SerDe tax** shows up as throughput drop-off when you chain more transformations on the manual pipeline vs. KPipe's
+  single-deserialize approach.
+- **GC pressure** isn't on the throughput chart but matters for the Avro zero-copy bench — fewer copies means fewer
+  allocations means less GC noise.
+- **Concurrency scaling** between parallel and sequential modes only tells you something useful when the workload fits
+  more than one core's worth of work.
+- **Embedded Kafka** keeps runs repeatable and fast, at the cost of not exercising real network/SSL paths.
+- **Timing fairness for parallel benches**: both `kpipeParallelProcessing` and `confluentParallelProcessing` run their
+  processing loops inside the benchmark method (not `@Setup`), so startup-to-completion is measured the same way for
+  both.
+- **Throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`, so the reported
+  `ops/s` is per processed message, not per full invocation.
+- **Logging noise**: the KPipe parallel bench uses a no-op sink so console I/O doesn't bend the numbers.
+- **CPU counters (Linux only)**: `perfnorm` gives normalized CPI / cycles / instructions. macOS can't supply those via
+  JMH, so don't quote CPI on a macOS run.
 
 ## Requirements
 

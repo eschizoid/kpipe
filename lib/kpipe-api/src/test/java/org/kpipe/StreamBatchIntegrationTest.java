@@ -68,7 +68,8 @@ class StreamBatchIntegrationTest {
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
         for (int i = 1; i <= 25; i++) {
           final var json = """
-            {"id":%d,"value":"v%d"}""".formatted(i, i).getBytes(StandardCharsets.UTF_8);
+            {"id":%d,"value":"v%d"}""".formatted(i, i)
+            .getBytes(StandardCharsets.UTF_8);
           producer.send(new ProducerRecord<>(topic, json)).get();
         }
         producer.flush();
@@ -89,7 +90,10 @@ class StreamBatchIntegrationTest {
       waitFor(() -> totalCaptured.size() >= 20, Duration.ofSeconds(5), "expected at least 20 captured records");
 
       // Verify size-triggered batches are exactly maxSize=10.
-      final var sizeTriggered = batches.stream().filter(b -> b.size() == policy.maxSize()).toList();
+      final var sizeTriggered = batches
+        .stream()
+        .filter(b -> b.size() == policy.maxSize())
+        .toList();
       assertTrue(sizeTriggered.size() >= 2, "expected at least 2 size-triggered batches of 10, got: " + batches);
 
       // Trigger shutdown — the trailing 5 records must be drained.

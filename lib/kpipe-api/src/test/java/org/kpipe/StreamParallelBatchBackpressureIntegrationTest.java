@@ -73,11 +73,7 @@ class StreamParallelBatchBackpressureIntegrationTest {
     // but the assertion remains cleaner with frequent partial flushes.
     final var policy = new BatchPolicy(10, Duration.ofSeconds(2));
 
-    final var handle = KPipe
-      .json(topic, consumerProps)
-      .withBackpressure(50, 25)
-      .toBatch(batchSink, policy)
-      .start();
+    final var handle = KPipe.json(topic, consumerProps).withBackpressure(50, 25).toBatch(batchSink, policy).start();
 
     try {
       assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
@@ -87,7 +83,8 @@ class StreamParallelBatchBackpressureIntegrationTest {
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
         for (int i = 1; i <= RECORD_COUNT; i++) {
           final var json = """
-            {"id":%d,"value":"v%d"}""".formatted(i, i).getBytes(StandardCharsets.UTF_8);
+            {"id":%d,"value":"v%d"}""".formatted(i, i)
+            .getBytes(StandardCharsets.UTF_8);
           final var key = Integer.toString(i).getBytes(StandardCharsets.UTF_8);
           producer.send(new ProducerRecord<>(topic, null, key, json));
         }

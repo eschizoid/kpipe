@@ -40,7 +40,11 @@ class BatchResultTest {
 
     assertTrue(result.succeededIndexes().isEmpty());
     assertEquals(3, result.failedByIndex().size());
-    for (int i = 0; i < 3; i++) assertSame(cause, result.failedByIndex().get(i), "index " + i + " must point to the same cause");
+    for (int i = 0; i < 3; i++) assertSame(
+      cause,
+      result.failedByIndex().get(i),
+      "index " + i + " must point to the same cause"
+    );
   }
 
   @Test

@@ -7,7 +7,7 @@ Runs JSON, Avro, and Protobuf consumer pipelines side by side in one application
 Three KPipe pipelines, one per topic, each with its own deserializer and sink:
 
 | Pipeline | Topic         | Format   | Processors                                           |
-|----------|---------------|----------|------------------------------------------------------|
+| -------- | ------------- | -------- | ---------------------------------------------------- |
 | JSON     | `json-topic`  | JSON     | addSource, markProcessed, addTimestamp, removeFields |
 | Avro     | `avro-topic`  | Avro     | Schema Registry deserialization + console sink       |
 | Protobuf | `proto-topic` | Protobuf | Descriptor-based deserialization + console sink      |
@@ -21,14 +21,15 @@ cd examples/demo
 docker compose up --build
 ```
 
-The compose file pulls in the root `docker-compose.yaml` for Kafka + Schema Registry, adds the OpenTelemetry collector, registers the Avro and Protobuf schemas, then builds and starts the app.
+The compose file pulls in the root `docker-compose.yaml` for Kafka + Schema Registry, adds the OpenTelemetry collector,
+registers the Avro and Protobuf schemas, then builds and starts the app.
 
 ## Configuration
 
 Environment variables (defined in `docker-compose.yaml`):
 
 | Variable                  | Default                       | Description                   |
-|---------------------------|-------------------------------|-------------------------------|
+| ------------------------- | ----------------------------- | ----------------------------- |
 | `KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092`                  | Kafka bootstrap servers       |
 | `KAFKA_CONSUMER_GROUP`    | `kpipe-demo`                  | Consumer group ID prefix      |
 | `SCHEMA_REGISTRY_URL`     | `http://schema-registry:8081` | Confluent Schema Registry URL |

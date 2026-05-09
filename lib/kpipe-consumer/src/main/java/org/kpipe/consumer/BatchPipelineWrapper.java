@@ -195,12 +195,12 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     if (!missing.isEmpty()) {
       coverageViolation = new IllegalStateException(
         "BatchSink for topic " +
-        topic +
-        " did not account for indexes " +
-        missing +
-        " in a batch of " +
-        size +
-        " — treating as failures to avoid silent data loss"
+          topic +
+          " did not account for indexes " +
+          missing +
+          " in a batch of " +
+          size +
+          " — treating as failures to avoid silent data loss"
       );
       LOGGER.log(Level.WARNING, coverageViolation.getMessage());
     }

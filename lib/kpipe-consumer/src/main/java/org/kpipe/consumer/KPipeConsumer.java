@@ -743,7 +743,14 @@ public class KPipeConsumer<K> implements AutoCloseable {
         }
       }
     };
-    return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), batchScheduler, callbacks);
+    return new BatchPipelineWrapper<>(
+      spec.topic(),
+      spec.pipeline(),
+      spec.sink(),
+      spec.policy(),
+      batchScheduler,
+      callbacks
+    );
   }
 
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker

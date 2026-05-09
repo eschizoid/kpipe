@@ -77,7 +77,8 @@ class StreamParallelBatchIntegrationTest {
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
         for (int i = 1; i <= RECORD_COUNT; i++) {
           final var json = """
-            {"id":%d,"value":"v%d"}""".formatted(i, i).getBytes(StandardCharsets.UTF_8);
+            {"id":%d,"value":"v%d"}""".formatted(i, i)
+            .getBytes(StandardCharsets.UTF_8);
           // Round-robin across partitions by setting an explicit key — null key + sticky
           // partitioner would clump everything onto one or two partitions, which would defeat
           // the multi-partition coverage check below.

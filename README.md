@@ -2,8 +2,8 @@
 
 # KPipe
 
-**KPipe is a lightweight Kafka processing library for modern Java that lets you build safe, high‑performance message
-pipelines using virtual threads and a functional API.**
+A Kafka consumer library for Java 25. Built around virtual threads, a functional pipeline API, and at-least-once
+delivery — small enough to read end-to-end in an afternoon.
 
 [![JVM 25+](https://img.shields.io/badge/JVM-25%2B-brightgreen.svg?&logo=openjdk)](https://openjdk.org/projects/jdk/25/)
 [![Build](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
@@ -12,28 +12,31 @@ pipelines using virtual threads and a functional API.**
 [![Javadoc](https://javadoc.io/badge2/io.github.eschizoid/kpipe-api/javadoc.svg?color=purple)](https://javadoc.io/doc/io.github.eschizoid/kpipe-api)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-- **Modern Java concurrency** (virtual threads)
-- **Composable functional pipelines**
-- **Safe at-least-once processing**
-- **Backpressure** to protect downstream systems
-- **High throughput with minimal framework overhead**
+What it does:
 
-It is designed for Kafka consumer services performing transformations, enrichment, or routing.
+- Virtual-thread-per-record processing (no thread pool to tune)
+- Composable `UnaryOperator<T>` pipelines that deserialize once and serialize once
+- At-least-once delivery via lowest-pending-offset commits, even with parallel processing
+- In-flight or lag-based backpressure with hysteresis
+- Minimal framework code on the hot path
+
+The target audience is anyone running Kafka consumers that transform, enrich, or route — and would rather not glue their
+own consumer loop together every time.
 
 ### Two API surfaces
 
-KPipe ships **two public surfaces** so you can pick the one that fits your use case:
+There are two public entry points; pick whichever matches the shape of your problem:
 
 | Surface                                                | What it gives you                                                                                                                                                   | When to use                                                                    |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | **`KPipe` fluent facade** (`kpipe-api`)                | 5-line `KPipe.json("topic", props).pipe(...).toConsole().start()`. Returns a `Stream<T>` → `Sink<T>` → `Handle` chain. Immutable, IDE-discoverable.                 | The common path — most users start here.                                       |
 | **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumer.Builder` + `KPipeRunner.Builder`. Multi-step, supports custom registries, shared pipelines, programmatic runner config. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
 
-The facade delegates to the explicit API under the hood, so escaping from one to the other has no cost.
+The facade is a thin layer on top of the explicit API, so dropping down when you outgrow it doesn't cost anything.
 
 ---
 
-## Getting Started
+## Getting started
 
 ### 1. Add the dependencies
 
@@ -62,8 +65,8 @@ implementation("io.github.eschizoid:kpipe-format-json:1.10.1")
 `kpipe-api` transitively pulls `kpipe-consumer` + `kpipe-producer` + `kpipe-core`. Skip `kpipe-api` only if you want the
 explicit registry / builder API (see "Advanced API" further down) — for that case, depend on `kpipe-consumer` directly.
 
-> **Tip:** A `kpipe-bom` is published so you only pin one version across modules. Use it via `dependencyManagement`
-> (Maven) or `enforcedPlatform` (Gradle) and drop versions from individual `kpipe-*` dependencies.
+There's also a `kpipe-bom` so you only pin one version across modules — use it via `dependencyManagement` (Maven) or
+`enforcedPlatform` (Gradle) and drop versions from the individual `kpipe-*` dependencies.
 
 <details>
 <summary>Module catalog & other build tools</summary>
@@ -148,13 +151,14 @@ KPipe.json("events", kafkaProps)
     .start();   // returns AutoCloseable Handle (call .close() to shut down)
 ```
 
-That's it — a working JSON Kafka consumer that strips the `password` field, stamps a timestamp, and logs to console. The
-chain auto-builds the underlying `MessageProcessorRegistry`, `KPipeConsumer`, and `KPipeRunner` for you.
+A working JSON Kafka consumer that strips the `password` field, stamps a timestamp, and logs to console. Behind the
+scenes the chain assembles a `MessageProcessorRegistry`, a `KPipeConsumer`, and a `KPipeRunner` — you don't have to
+touch any of them.
 
 ### 3. The full fluent surface
 
-The `Stream<T>` returned by `KPipe.json/avro/protobuf/bytes/custom(...)` exposes the entire usable API in one place (IDE
-auto-complete after `.` shows you everything you need):
+The `Stream<T>` returned by `KPipe.json/avro/protobuf/bytes/custom(...)` is the API. Type a `.` after it and the IDE
+shows you everything that exists:
 
 | Method                                                 | What it does                                            |
 | ------------------------------------------------------ | ------------------------------------------------------- |
@@ -176,7 +180,7 @@ The terminal `Sink<T>.start()` returns a `Handle` exposing `isHealthy()`, `metri
 
 Two flavors, depending on whether the topics share a payload type.
 
-**Homogeneous** — many topics, one shared pipeline (the "partitioned-by-region versions of the same event" case):
+Homogeneous — many topics, one shared pipeline (the "partitioned-by-region versions of the same event" case):
 
 ```java
 KPipe.json(Set.of("events-us", "events-eu", "events-ap"), kafkaProps)
@@ -187,8 +191,8 @@ KPipe.json(Set.of("events-us", "events-eu", "events-ap"), kafkaProps)
 
 The `Collection<String>` overload exists on every entry point — `KPipe.json/avro/protobuf/bytes/custom`.
 
-**Heterogeneous** — many topics, each with its own payload type and its own pipeline, all dispatched through one
-consumer / one consumer-group / one offset manager:
+Heterogeneous — many topics, each with its own payload type and its own pipeline, all dispatched through one consumer /
+one consumer-group / one offset manager:
 
 ```java
 KPipe.multi(kafkaProps)
@@ -224,24 +228,20 @@ the `Map`-typed ones).
 
 ---
 
-## When to Use KPipe
+## When to use KPipe
 
-KPipe works well for:
+KPipe is a good fit if you're building Kafka consumer microservices, event enrichment pipelines, or lightweight
+transformation services — especially anything I/O-bound (REST calls, DB lookups) where virtual threads pay off. If
+you're already moving toward Java 25 concurrency, KPipe assumes that world by default.
 
-- Kafka consumer microservices
-- event enrichment pipelines
-- lightweight transformation services
-- I/O-bound processing (REST calls, database lookups)
-- teams adopting **modern Java concurrency**
-
-KPipe is not intended to replace large streaming frameworks. It focuses on **simple, composable Kafka consumer
-pipelines.**
+It's not trying to replace Kafka Streams or Flink. The scope ends at "consume, transform, route, produce" — no
+windowing, no joins, no state stores.
 
 ---
 
-## Why Not Just Use Kafka Streams (or Spring Kafka)?
+## Why not Kafka Streams or Spring Kafka?
 
-KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
+KPipe is for code-first pipelines with minimal infrastructure overhead.
 
 | Capability                       | Kafka Streams | Spring Kafka            | Reactor Kafka | KPipe |
 | -------------------------------- | ------------- | ----------------------- | ------------- | ----- |
@@ -253,7 +253,7 @@ KPipe focuses on **code-first pipelines with minimal infrastructure overhead.**
 | JPMS modules (no Spring context) | No            | No                      | Partial       | Yes   |
 | Native multi-topic dispatch      | Yes (DSL)     | Per `@KafkaListener`    | Manual        | Yes   |
 
-KPipe sits between **raw KafkaConsumer code and full streaming frameworks.**
+KPipe sits between raw `KafkaConsumer` code and full streaming frameworks.
 
 ### Coming from Spring Kafka?
 
@@ -262,23 +262,22 @@ but bundles Spring Boot, the application context, and annotation-driven wiring. 
 Spring runtime, no annotation processor, no `KafkaListenerContainerFactory` to configure, and a fluent API that's
 discoverable via IDE autocomplete.
 
-What you get back when you switch:
+What changes:
 
-- **No Spring Boot in your classpath.** KPipe runs on plain `java -jar`. The whole library is ~8 JPMS modules with no
-  reflection, no AOP, no context lifecycle.
-- **Virtual threads by default.** Spring Kafka's listener container is still thread-pool-per-partition; KPipe is
-  thread-per-record on virtual threads. I/O-bound enrichment scales to 10k+ in-flight messages without thread pool
-  tuning.
-- **No `@KafkaListener` magic.** Pipelines are values: build them in `main`, branch them, hand them around. No classpath
-  scanning surprises, no proxied beans, no `@EnableKafka` toggle.
-- **Per-topic typing without a class per listener.** `KPipe.multi(props).json("a", ...).avro("b", ...)` registers
-  heterogeneous routes through a single consumer-group / single offset manager. Spring's equivalent is one
-  `@KafkaListener` method per topic with separate container instances.
-- **Errors throw, not get swallowed.** `MessagePipeline.apply()` throws on failure; `null` means "intentionally
-  filtered" and nothing else. Spring Kafka's default `ErrorHandlingDeserializer` + `RetryableTopic` chain is more
-  flexible but easier to misconfigure into silent drops.
-- **Bring your own SDK.** Metrics ship as interfaces (`ProducerMetrics`, `ConsumerMetrics`) with a separate
-  `kpipe-metrics-otel` adapter. No `MeterRegistry` autowiring needed.
+- No Spring Boot on the classpath. KPipe runs on plain `java -jar` — eight JPMS modules, no reflection, no AOP, no
+  application context to manage.
+- Virtual threads by default. Spring Kafka's listener container is still thread-pool-per-partition; KPipe runs
+  thread-per-record on virtual threads, which is where I/O-bound enrichment scales without pool tuning.
+- No `@KafkaListener` indirection. Pipelines are values you build in `main` and pass around. No classpath scanning, no
+  proxied beans, no `@EnableKafka` toggle to remember.
+- Per-topic typing without a class per listener. `KPipe.multi(props).json("a", ...).avro("b", ...)` wires heterogeneous
+  routes through one consumer group and one offset manager. Spring's equivalent is one `@KafkaListener` method per
+  topic, each with its own container.
+- Errors throw instead of getting swallowed. `MessagePipeline.apply()` throws on failure; `null` means "intentionally
+  filtered" and only that. Spring Kafka's default `ErrorHandlingDeserializer` + `RetryableTopic` chain is more flexible
+  but also easier to misconfigure into silent drops.
+- Metrics are pluggable. `ProducerMetrics` and `ConsumerMetrics` are interfaces; the `kpipe-metrics-otel` adapter is
+  opt-in. No `MeterRegistry` autowiring.
 
 Rough migration sketch — a Spring Kafka listener:
 
@@ -301,19 +300,19 @@ KPipe.json("events", kafkaProps)
     .start();
 ```
 
-Retry, DLQ, backpressure, and graceful shutdown are fluent calls on the same `Stream<T>` — no `RetryTemplate`, no
+Retry, DLQ, backpressure, and graceful shutdown are fluent calls on the same `Stream<T>`. No `RetryTemplate`, no
 `DeadLetterPublishingRecoverer`, no `ContainerProperties.AckMode` to pick.
 
-KPipe will **not** replace Spring Kafka if you depend on `@KafkaListener` lifecycle integration with Spring Boot
-actuator, transactional Kafka producers wired into `@Transactional`, or the broader Spring ecosystem (security,
-config-server, sleuth tracing). Those are reasons to stay.
+If you depend on `@KafkaListener` lifecycle integration with Spring Boot actuator, transactional Kafka producers wired
+into `@Transactional`, or the broader Spring ecosystem (security, config-server, sleuth tracing), stay where you are.
+KPipe doesn't have those.
 
 ---
 
-## Architecture and Reliability
+## Architecture and reliability
 
-KPipe is designed to be a lightweight, high-performance alternative to existing Kafka consumer libraries, focusing on
-modern Java 25+ features (Virtual Threads, Scoped Values) and predictable behavior.
+KPipe is a lightweight Kafka consumer library that leans hard on Java 25 features — virtual threads, scoped values,
+records, JPMS — to keep the runtime predictable.
 
 ### 1. Modular Architecture (JPMS)
 
@@ -350,61 +349,53 @@ module my.application {
 }
 ```
 
-### 2. The "Single SerDe Cycle" Strategy
+### 2. Single SerDe cycle
 
-Unlike traditional pipelines that often perform `byte[] -> Object -> byte[]` at every transformation step, KPipe
-optimizes for throughput:
+Most pipelines do `byte[] → Object → byte[]` at every step. KPipe doesn't:
 
-- **Single Deserialization**: Messages are deserialized **once** into a mutable representation (e.g., `Map` for JSON,
-  `GenericRecord` for Avro) via the `MessagePipeline`.
-- **In-Place Transformations**: A chain of `UnaryOperator` functions is applied to the same object.
-- **Single Serialization**: The final object is serialized back to `byte[]` only once.
-- **Integrated Sinks**: Typed sinks can be attached directly to the pipeline, receiving the object before final
-  serialization.
+- Deserialize once into a mutable representation (`Map` for JSON, `GenericRecord` for Avro) via `MessagePipeline`.
+- Apply a chain of `UnaryOperator` functions to that same object.
+- Serialize back to `byte[]` once at the end.
+- Typed sinks can attach directly to the pipeline and receive the object before final serialization, skipping it
+  entirely.
 
-This approach significantly reduces CPU overhead and GC pressure.
+The win is fewer allocations and less CPU spent on intermediate SerDe steps. The benchmark numbers are in
+`benchmarks/README.md`.
 
-### 3. Virtual Threads and Scoped Values
+### 3. Virtual threads
 
-KPipe uses **Java Virtual Threads** (Project Loom) for high-concurrency message processing.
+KPipe runs on Java virtual threads (Project Loom) for concurrency.
 
-- **Efficient Resource Reuse**: Heavy objects like `Schema.Parser`, `ByteArrayOutputStream`, and Avro encoders are
-  cached per virtual thread using `ScopedValue`, which is significantly more lightweight than `ThreadLocal`.
-  - **Optimization**: `ScopedValue` allows KPipe to share these heavy resources across all transformations in a single
-    pipeline without the memory leak risks or scalability bottlenecks of `ThreadLocal` in a virtual-thread-per-record
-    model.
-- **Thread-Per-Record**: Each message is processed in its own virtual thread, allowing KPipe to scale to millions of
-  concurrent operations without the overhead of complex thread pools.
+- Thread-per-record. Each message gets its own virtual thread, so I/O-bound enrichment scales without explicit pool
+  sizing.
+- Heavy objects like `Schema.Parser`, `ByteArrayOutputStream`, and Avro encoders are reused via `ScopedValue` rather
+  than `ThreadLocal`. `ThreadLocal` doesn't compose well with virtual threads — under thread-per-record, you get a new
+  `ThreadLocal` map per record, which defeats the cache. `ScopedValue` shares the value within the scope cleanly.
 
-### 4. Reliable "At-Least-Once" Delivery
+### 4. At-least-once delivery via lowest pending offset
 
-KPipe implements a **Lowest Pending Offset** strategy to ensure reliability even with parallel processing:
+KPipe never commits past an in-flight record. The implementation:
 
-- **Pluggable Offset Management**: Use the `OffsetManager` interface to customize how offsets are stored (Kafka-based or
-  external database).
-- **In-Flight Tracking**: Every record's offset is tracked in a `ConcurrentSkipListSet` per partition (in
-  `KafkaOffsetManager`).
-- **No-Gap Commits**: Even if message 102 finishes before 101, offset 102 will **not** be committed until 101 is
-  successfully processed.
-- **Crash Recovery**: If the consumer crashes, it will resume from the last committed "safe" offset. While this may
-  result in some records being re-processed (standard "at-least-once" behavior), it guarantees no message is ever
-  skipped.
+- `OffsetManager` is an interface — Kafka-backed by default, but you can plug in external storage.
+- Every in-flight offset is tracked in a `ConcurrentSkipListSet` per partition (see `KafkaOffsetManager`).
+- Offset 102 cannot be committed until 101 finishes, even if 102 completes first. No gaps.
+- On crash, the consumer resumes from the last committed offset. Some records may be reprocessed — standard
+  at-least-once behavior — but nothing is skipped.
 
-### 5. Parallel vs. Sequential Processing
+### 5. Parallel vs. sequential processing
 
-KPipe supports two modes of execution depending on your ordering and throughput requirements:
+Two modes, picked based on whether per-partition order matters:
 
-- **Parallel Mode (Default)**: Best for stateless transformations (enrichment, masking). High throughput via virtual
-  threads. Offsets are committed based on the **lowest pending offset** to ensure no gaps.
-- **Sequential Mode (`.withSequentialProcessing(true)`)**: Best for stateful transformations where order per partition
-  is critical (e.g., balance updates, sequence-dependent events). In this mode, only one message per partition is
-  processed at a time. Backpressure is supported and operates by monitoring the **consumer lag** (the difference between
-  the partition end-offset and the consumer's current position).
+- Parallel (default). Stateless transformations like enrichment or masking. High throughput on virtual threads. Offsets
+  commit by lowest pending offset.
+- Sequential (`.withSequentialProcessing(true)`). Stateful transformations where per-partition order matters (balance
+  updates, sequence-dependent events). One message per partition at a time. Backpressure switches to monitoring consumer
+  lag — the gap between partition end-offset and consumer position — since in-flight count is always ≤ 1.
 
-### 6. External Offset Management
+### 6. External offset management
 
-While Kafka-based offset storage is the default, KPipe supports external storage (e.g., PostgreSQL) for **exactly-once
-processing** or specific architectural needs.
+Kafka-backed offset storage is the default. For exactly-once processing or external coordination needs, plug in your own
+`OffsetManager`.
 
 1.  **Seek on Assignment**: When partitions are assigned, fetch the last processed offset from your database and call
     `consumer.seek(partition, offset + 1)`.
@@ -439,66 +430,64 @@ public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
 }
 ```
 
-### 7. Error Handling & Retries
+### 7. Error handling and retries
 
-KPipe provides a robust, multi-layered error handling mechanism:
+Error handling is layered:
 
-- **Built-in Retries**: Configure `.withRetry(maxRetries, backoff)` to automatically retry transient failures.
-- **Dead Letter Queue (DLQ)**: Enable high-reliability processing with built-in DLQ support:
+- Retries: `.withRetry(maxRetries, backoff)` for transient failures.
+- Dead-letter topic:
   ```java
   final var consumer = KPipeConsumer.<byte[]>builder()
-    .withDeadLetterTopic("events-dlq") // Automatically sends to DLQ after retries are exhausted
+    .withDeadLetterTopic("events-dlq") // sent here after retries are exhausted
     .build();
   ```
-- **Dead Letter Handling**: Provide a custom `.withErrorHandler()` to redirect messages to an external database.
-- **Safe Pipelines**: Use `MessageProcessorRegistry.withErrorHandling()` to wrap individual processors, or
-  `MessageSinkRegistry.withErrorHandling()` to wrap sinks.
+- Custom error handler: `.withErrorHandler(...)` to route failures somewhere other than a Kafka topic — an external DB,
+  alerting system, whatever.
+- Per-processor and per-sink wrapping: `MessageProcessorRegistry.withErrorHandling()` and
+  `MessageSinkRegistry.withErrorHandling()` swallow failures at the boundary so one bad processor doesn't take down the
+  pipeline.
 
 ### 8. Backpressure
 
-When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe can automatically pause Kafka polling to
-prevent unbounded resource consumption or excessive lag.
+When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe pauses Kafka polling instead of letting
+in-flight work or lag pile up unbounded.
 
-Backpressure uses **two configurable watermarks** (hysteresis) to avoid rapid pause/resume oscillation:
+It uses two watermarks with hysteresis so it doesn't oscillate:
 
-- **High watermark** — pause Kafka polling when the monitored metric reaches this value.
-- **Low watermark** — resume Kafka polling when the metric drops to or below this value.
+- High watermark — pause polling when the monitored metric crosses this value.
+- Low watermark — resume polling when the metric drops back to or below this value.
 
-#### Backpressure Strategies
+#### Strategies
 
-KPipe automatically selects the optimal backpressure strategy based on your processing mode:
+KPipe picks the strategy based on processing mode:
 
-| Mode                   | Strategy         | Metric Monitored               | Use Case                                                       |
-| :--------------------- | :--------------- | :----------------------------- | :------------------------------------------------------------- |
-| **Parallel** (Default) | **In-Flight**    | Total active virtual threads   | Prevent memory exhaustion from too many concurrent tasks.      |
-| **Sequential**         | **Consumer Lag** | Total unread messages in Kafka | Prevent the consumer from falling too far behind the producer. |
+| Mode               | Strategy     | Monitored              | Why                                                |
+| :----------------- | :----------- | :--------------------- | :------------------------------------------------- |
+| Parallel (default) | In-flight    | Active virtual threads | Cap concurrent in-flight work to bound memory      |
+| Sequential         | Consumer lag | Total unread messages  | In-flight is always ≤ 1, so lag is the real signal |
 
-##### 1. In-Flight Strategy (Parallel Mode)
+##### Parallel mode: in-flight count
 
-In parallel mode, multiple messages are processed concurrently using Virtual Threads. The backpressure controller
-monitors the number of messages currently "in-flight" (started but not yet finished).
+Many records run concurrently on virtual threads. The controller watches how many are currently in-flight (started but
+not finished).
 
-- **High Watermark Default**: 10,000
-- **Low Watermark Default**: 7,000
+- High watermark default: 10,000
+- Low watermark default: 7,000
 
-##### 2. Consumer Lag Strategy (Sequential Mode)
+##### Sequential mode: consumer lag
 
-In sequential mode, messages are processed one by one to maintain strict ordering. Since only one message is ever
-in-flight, KPipe instead monitors the **total consumer lag** across all assigned partitions.
-
-The lag is calculated using the formula:
+Sequential mode processes one record per partition at a time, so in-flight is always ≤ 1. KPipe watches consumer lag
+across all assigned partitions instead:
 
 ```
 lag = Σ (endOffset - position)
 ```
 
-Where:
+- `endOffset` — highest offset available in the partition.
+- `position` — offset of the next record this consumer will fetch.
 
-- `endOffset`: The highest available offset in a partition.
-- `position`: The offset of the next record to be fetched by this consumer.
-
-- **High Watermark Default**: 10,000
-- **Low Watermark Default**: 7,000
+- High watermark default: 10,000
+- Low watermark default: 7,000
 
 #### Configuration
 
@@ -507,28 +496,25 @@ final var consumer = KPipeConsumer.<byte[]>builder()
   .withProperties(kafkaProps)
   .withTopic("events")
   .withPipeline(pipeline)
-  // Enable backpressure with default watermarks (10k / 7k)
+  // Default watermarks: 10k high / 7k low
   .withBackpressure()
-  // Or configure explicit watermarks:
+  // Or explicit:
   // .withBackpressure(5_000, 3_000)
   .build();
 ```
 
-**Backpressure is enabled by default** with watermarks 10,000 (high) / 7,000 (low). Call `.withBackpressure(high, low)`
-to override the watermarks for your workload.
+Backpressure is on by default with 10k/7k watermarks. Override with `.withBackpressure(high, low)` for your workload.
 
-**Observability:** backpressure events are logged (WARNING on pause, INFO on resume) and tracked via two dedicated
-metrics: `backpressurePauseCount` and `backpressureTimeMs`.
+Pauses log at WARNING, resumes at INFO. Two dedicated metrics track them: `backpressurePauseCount` and
+`backpressureTimeMs`.
 
-### 9. Graceful Shutdown & Interrupt Handling
+### 9. Graceful shutdown and interrupts
 
-KPipe respects JVM signals and ensures timely shutdown without data loss:
+KPipe respects JVM signals without losing records:
 
-- **Interrupt Awareness**: Interrupts trigger a coordinated shutdown sequence. They do **not** cause records to be
-  skipped.
-- **Reliable Redelivery**: If a record's processing is interrupted (e.g., during retry backoff or transformation), the
-  offset is NOT marked as processed. This ensures it will be safely picked up by the next consumer instance,
-  guaranteeing "at-least-once" delivery even during shutdown.
+- Interrupts trigger a coordinated shutdown. They don't cause records to be skipped.
+- If a record's processing is interrupted mid-flight (during retry backoff or transformation), its offset is not marked
+  as processed. The next consumer instance picks it up — at-least-once still holds during shutdown.
 
 ```java
 // Initiate graceful shutdown with 5-second timeout
@@ -540,15 +526,15 @@ Runtime.getRuntime().addShutdownHook(new Thread(() -> runner.close()));
 
 ---
 
-## Working with Messages
+## Working with messages
 
-KPipe pipelines deserialize once, transform many times, serialize once. Operators are `UnaryOperator<T>` where `T` is
-the format's typed payload (`Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf). Use the
-generic helpers in [`Operators`](lib/kpipe-core/src/main/java/org/kpipe/registry/Operators.java) — `filter`, `drop`,
-`peek`, `map`, `compose`, `safe`, plus map-specific `addField`, `removeFields`, `transformField`, `requireField`,
-`rename` — or write inline lambdas using each format's native API.
+Pipelines deserialize once, transform many times, serialize once. Operators are `UnaryOperator<T>` where `T` is the
+format's typed payload — `Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf. The generic
+helpers in [`Operators`](lib/kpipe-core/src/main/java/org/kpipe/registry/Operators.java) (`filter`, `drop`, `peek`,
+`map`, `compose`, `safe`, plus the map-specific `addField`, `removeFields`, `transformField`, `requireField`, `rename`)
+cover the common cases. For anything else, inline lambdas using the format's native API.
 
-### JSON Processing
+### JSON
 
 Add `kpipe-format-json`. Operators are `UnaryOperator<Map<String, Object>>`:
 
@@ -578,7 +564,7 @@ final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
     .build();
 ```
 
-### Avro Processing
+### Avro
 
 Add `kpipe-format-avro`. Operators are `UnaryOperator<GenericRecord>`:
 
@@ -609,9 +595,9 @@ final var pipeline = registry.pipeline(AvroFormat.INSTANCE).add(lowerNameKey).bu
 final var confluentPipeline = registry.pipeline(AvroFormat.INSTANCE).skipBytes(5).add(lowerNameKey).build();
 ```
 
-### Protobuf Processing
+### Protobuf
 
-Add `kpipe-format-protobuf`. Operators are `UnaryOperator<Message>`. Protobuf messages are immutable — every transform
+Add `kpipe-format-protobuf`. Operators are `UnaryOperator<Message>`. Protobuf messages are immutable, so every transform
 builds a new message via `toBuilder().setField(...).build()`.
 
 ```java
@@ -644,19 +630,18 @@ final var pipeline = registry
 
 ---
 
-## Message Sinks
+## Message sinks
 
-Message sinks provide destinations for processed messages. The `MessageSink` interface is a functional interface that
-extends `Consumer<T>`:
+Sinks are where processed messages go. `MessageSink` is just a functional `Consumer<T>`:
 
 ```java
 @FunctionalInterface
 public interface MessageSink<T> extends Consumer<T> {}
 ```
 
-### Built-in Sinks
+### Built-in sinks
 
-Console sinks live in their format modules. The registry no longer auto-registers them — register the ones you want:
+Console sinks live in their format modules. The registry doesn't auto-register them — register the ones you want:
 
 ```java
 import org.kpipe.format.json.JsonConsoleSink;
@@ -678,7 +663,7 @@ final var pipeline = registry
   .build();
 ```
 
-### Custom Sinks
+### Custom sinks
 
 ```java
 final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
@@ -686,9 +671,9 @@ final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
 };
 ```
 
-### Message Sink Registry
+### Sink registry
 
-`MessageProcessorRegistry` exposes a `sinkRegistry()` accessor — sink and processor registries are separate components
+`MessageProcessorRegistry` exposes a `sinkRegistry()` accessor. Sink and processor registries are separate components
 with parallel APIs (`register` / `unregister` / `getMetrics`):
 
 ```java
@@ -703,7 +688,7 @@ registry.sinkRegistry().register(dbKey, databaseSink);
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json("enrich")).toSink(dbKey).build();
 ```
 
-### Error Handling in Sinks
+### Error handling in sinks
 
 ```java
 // Wrap a sink or operator with error handling (suppresses exceptions, logs errors)
@@ -713,9 +698,9 @@ final var safeOperator = MessageProcessorRegistry.withErrorHandling(riskyOperato
 registry.sinkRegistry().register(RegistryKey.json("safeDatabase"), safeSink);
 ```
 
-### Kafka Producer Sink
+### Kafka producer sink
 
-Produce processed messages back to a Kafka topic. `KafkaMessageSink` lives in `org.kpipe.producer.sink`:
+To produce processed messages back to a Kafka topic, use `KafkaMessageSink` (in `org.kpipe.producer.sink`):
 
 ```java
 import org.kpipe.producer.KPipeProducer;
@@ -730,10 +715,10 @@ final var pipeline = registry
   .build();
 ```
 
-### Composite Sink (Broadcasting)
+### Composite sink (fanout)
 
-`CompositeMessageSink` (in `org.kpipe.sink`, part of `kpipe-core`) broadcasts to multiple sinks. Failures in one sink do
-not prevent other sinks from receiving the data:
+`CompositeMessageSink` (in `org.kpipe.sink`, part of `kpipe-core`) broadcasts to multiple sinks. A failure in one sink
+doesn't stop the others from receiving the message:
 
 ```java
 import org.kpipe.sink.CompositeMessageSink;
@@ -745,9 +730,9 @@ final var pipeline = registry.pipeline(JsonFormat.INSTANCE).toSink(compositeSink
 
 ---
 
-## Built-in Metrics
+## Built-in metrics
 
-### Programmatic Access
+### Programmatic access
 
 ```java
 final var metrics = consumer.getMetrics();
@@ -760,10 +745,10 @@ log.log(Level.INFO, "Backpressure pauses: " + metrics.get("backpressurePauseCoun
 log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs"));
 ```
 
-### OpenTelemetry Integration
+### OpenTelemetry
 
-OTel support is opt-in via the `kpipe-metrics-otel` module. `kpipe-metrics` itself only ships interfaces — it does not
-pull `opentelemetry-api` onto your classpath. Add `kpipe-metrics-otel` (and your OTel SDK at runtime) to enable real
+OTel is opt-in via the `kpipe-metrics-otel` module. `kpipe-metrics` ships interfaces only and doesn't pull
+`opentelemetry-api` onto your classpath. Add `kpipe-metrics-otel` (plus your OTel SDK at runtime) to wire real
 telemetry:
 
 ```java
@@ -777,8 +762,8 @@ final var consumer = KPipeConsumer.<byte[]>builder()
   .build();
 ```
 
-When `withMetrics(...)` is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` is used automatically — zero
-allocation overhead, no OTel API on the classpath.
+When `withMetrics(...)` is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` is used. Zero allocation, no
+OTel API on the classpath.
 
 | Instrument                           | Type      | Description                            |
 | ------------------------------------ | --------- | -------------------------------------- |
@@ -795,9 +780,9 @@ allocation overhead, no OTel API on the classpath.
 
 ---
 
-## KPipe Runner
+## KPipeRunner
 
-The `KPipeRunner` provides lifecycle management, metrics reporting, and graceful shutdown for Kafka consumers:
+`KPipeRunner` handles consumer lifecycle: start, periodic metrics reporting, health check, graceful shutdown.
 
 ```java
 final var runner = KPipeRunner.builder(consumer)
@@ -826,9 +811,9 @@ try (final var runner = KPipeRunner.builder(consumer).build()) {
 
 ---
 
-## Full Application Example
+## Full application example
 
-For complete working applications, see the [`examples/`](examples/) directory.
+The [`examples/`](examples/) directory has complete working apps. Below is a condensed sketch.
 
 <details>
 <summary>Expand condensed application example</summary>
@@ -915,17 +900,16 @@ export SHUTDOWN_TIMEOUT_SEC=5
 
 ## Requirements
 
-- **Java 25+**
-- Gradle (for building the project)
-- [kcat](https://github.com/edenhill/kcat) (for testing)
-- Docker (for local Kafka setup)
+- Java 25 or newer
+- Gradle (for building from source)
+- [kcat](https://github.com/edenhill/kcat) for ad-hoc testing
+- Docker for local Kafka via Testcontainers
 
 ---
 
 ## Testing
 
-KPipe includes a pre-configured `docker-compose.yaml` that starts a full local environment including Kafka, Zookeeper,
-and Confluent Schema Registry.
+There's a `docker-compose.yaml` for spinning up Kafka, Zookeeper, and Confluent Schema Registry locally.
 
 ```bash
 # Format code and build all modules
@@ -998,11 +982,11 @@ JSON
 
 ---
 
-## Advanced Patterns
+## Advanced patterns
 
-### Enum-Based Registry (Static Type Safety)
+### Enum-based registry
 
-Define operators as an `Enum` that implements `UnaryOperator<T>` for bulk registration and discoverability:
+For statically typed bulk registration, define operators as an enum implementing `UnaryOperator<T>`:
 
 ```java
 public enum StandardProcessors implements UnaryOperator<Map<String, Object>> {
@@ -1028,7 +1012,7 @@ registry.registerEnum(Map.class, StandardProcessors.class);
 // PROCESSOR_PIPELINE=TIMESTAMP,SOURCE
 ```
 
-### Conditional Processing
+### Conditional processing
 
 ```java
 final var pipeline = registry
@@ -1047,10 +1031,10 @@ final var pipeline = registry
   .build();
 ```
 
-### Filtering Messages
+### Filtering messages
 
-Return `null` from an operator to skip a message. KPipe will stop processing the current record and will not send it to
-any downstream operators or sinks:
+Return `null` from an operator to skip a record. KPipe stops processing it — no downstream operators, no sink. The
+offset is still committed (the record is treated as intentionally filtered, not failed).
 
 ```java
 registry.register(RegistryKey.json("filter"), map -> {
@@ -1059,110 +1043,100 @@ registry.register(RegistryKey.json("filter"), map -> {
 });
 ```
 
-### Thread-Safety and Resource Management
+### Thread safety and resource management
 
-- Message processors should be stateless and thread-safe.
-- KPipe automatically handles resource reuse via `ScopedValue` (optimized for Virtual Threads). Avoid manual
-  `ThreadLocal` usage.
-- For processors with side effects (like database calls), ensure they are compatible with high-concurrency virtual
-  threads.
+- Processors should be stateless and thread-safe.
+- KPipe reuses heavy resources via `ScopedValue` (the virtual-thread-safe alternative to `ThreadLocal`). Don't add
+  `ThreadLocal` of your own — it doesn't compose with thread-per-record.
+- Side-effectful processors (DB calls, HTTP) need to be safe under high concurrency. With virtual threads you can easily
+  have thousands in flight; pool sizing on connection pools matters more than thread count.
 
 ---
 
 ## Performance
 
-KPipe is designed for high-throughput, low-overhead Kafka processing using modern Java features and pipeline
-optimizations. Performance depends on workload shape (I/O vs CPU bound), partitioning, and message size.
+A few specifics worth calling out, since "fast" without context is meaningless. Performance always depends on workload
+shape (I/O vs CPU bound), partitioning, and message size — these are micro-level optimizations.
 
-- **Zero-Copy Magic Byte Handling**: For Avro data (especially from Confluent Schema Registry), KPipe supports an
-  `offset` parameter that allows skipping magic bytes and schema IDs without performing expensive `Arrays.copyOfRange`
-  operations.
-- **DslJson Integration**: Uses a high-performance JSON library to reduce parsing overhead and GC pressure.
+- Zero-copy magic-byte handling. For Avro from Confluent Schema Registry, KPipe takes an `offset` parameter to skip
+  magic bytes and schema IDs without `Arrays.copyOfRange`.
+- DslJson for JSON parsing. Cuts parse overhead and GC pressure compared to Jackson on the hot path.
 
-Latest parallel benchmark snapshot (see [`benchmarks/README.md`](benchmarks/README.md)) shows a throughput edge for
-KPipe over Confluent Parallel Consumer, with a higher allocation footprint. Treat these as scenario-specific results,
-not universal guarantees.
+The latest parallel benchmark in [`benchmarks/README.md`](benchmarks/README.md) shows KPipe ahead of Confluent Parallel
+Consumer on throughput, with a higher allocation footprint. Scenario-specific — not a blanket claim.
 
 ---
 
-## Key-Level Ordering for Critical Systems (e.g., Payments)
+## Key-level ordering (payments, balances, anything sequential)
 
-For systems like **payment processors** where the order of operations (Authorize → Capture) is vital:
+If your domain requires per-entity ordering — Authorize before Capture, balance updates in sequence — Kafka already
+guarantees per-partition ordering. Use that:
 
-- **Consistent Partitioning**: Ensure your producer uses a consistent key (e.g., `transaction_id` or `customer_id`).
-  Kafka guarantees all messages with the same key land in the same partition.
-- **Safety**: KPipe manages each partition as an independent, ordered sequence of offsets. As long as related events
-  share a key, KPipe's commitment strategy ensures they are handled reliably without skipping steps.
+- Have your producer key by the entity (`transaction_id`, `customer_id`, etc). Kafka routes all messages with the same
+  key to the same partition.
+- KPipe commits per-partition lowest-pending-offset, so as long as related events share a key, they land on one
+  partition and KPipe processes them in order without skipping.
+- For strict per-partition serial processing (one record at a time), turn on `.withSequentialProcessing(true)`.
 
 ---
 
-## Metrics Dashboard
+## Metrics dashboard
 
-KPipe ships a local observability stack under `infra/observability/` that spins up with Docker Compose:
+There's a local observability stack under `infra/observability/` that runs via Docker Compose:
 
-- **OpenTelemetry Collector** — receives OTLP metrics from KPipe and exports to Prometheus.
-- **Prometheus** — scrapes the collector and stores time-series data.
-- **Grafana** — pre-provisioned with a **KPipe Overview** dashboard covering all consumer and producer metrics.
+- OpenTelemetry Collector — receives OTLP metrics from KPipe, exports to Prometheus.
+- Prometheus — scrapes the collector and stores time-series data.
+- Grafana — pre-provisioned with a "KPipe Overview" dashboard covering all consumer and producer metrics.
 
-The stack is automatically included when you run any example via `docker compose`. To point your own OTel Collector at a
-running KPipe app, configure the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable:
+Any of the example apps brings this stack up via `docker compose`. To point your own collector at a running KPipe app,
+set the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable:
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4318
 OTEL_METRICS_EXPORTER=otlp
 ```
 
-Once running, open Grafana at [http://localhost:3000](http://localhost:3000) (admin/admin) to view the KPipe Overview
-dashboard.
+Open Grafana at [http://localhost:3000](http://localhost:3000) (admin/admin) for the KPipe Overview dashboard.
 
 ---
 
-## Running the Demo
+## Running the demo
 
-The `examples/demo` module runs JSON, Avro, and Protobuf pipelines concurrently in a single application, with full
-observability wired in.
+`examples/demo` runs JSON, Avro, and Protobuf pipelines side-by-side in one app with observability wired up.
 
 ```bash
-# Build and start everything (Kafka, Schema Registry, OTel, Prometheus, Grafana, demo app, seed data)
+# Brings up Kafka, Schema Registry, OTel Collector, Prometheus, Grafana, the demo app, and seeds data
 ./scripts/run-demo.sh
 
-# Or manually:
+# Or, by hand:
 cd examples/demo
 docker compose up --build
 ```
 
-This will:
+The script starts Kafka (KRaft mode) + Schema Registry, creates topics, registers the Avro and Protobuf schemas, brings
+up the observability stack, then builds and starts the demo app with all three pipelines and seeds JSON messages so
+there's something to process immediately.
 
-1. Start Kafka (KRaft) and Schema Registry
-2. Create topics and register Avro + Protobuf schemas
-3. Start the observability stack (OTel Collector → Prometheus → Grafana)
-4. Build and start the demo application with all three pipelines
-5. Seed JSON messages for immediate processing
-
-Open [http://localhost:3000](http://localhost:3000) to view metrics in Grafana, or
-[http://localhost:8080/health](http://localhost:8080/health) to check the app health endpoint.
+Grafana is at [http://localhost:3000](http://localhost:3000); the app health endpoint is at
+[http://localhost:8080/health](http://localhost:8080/health).
 
 ---
 
 ## Inspiration
 
-This library is inspired by the best practices from:
+KPipe leans on:
 
-- [Project Loom](https://openjdk.org/projects/loom/)
-- [High-performance JSON libraries (DslJson)](https://github.com/ngs-doo/dsl-json)
+- [Project Loom](https://openjdk.org/projects/loom/) for virtual threads.
+- [DslJson](https://github.com/ngs-doo/dsl-json) for the JSON hot path.
 
 ---
 
 ## Contributing
 
-If you're using this library, feel free to:
-
-- Register custom processors
-- Add metrics/observability hooks
-- Share improvements or retry strategies
+Custom processors, metrics hooks, retry strategies — PRs welcome.
 
 ---
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Apache 2.0. See [LICENSE](LICENSE).

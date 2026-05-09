@@ -82,14 +82,7 @@ class BatchPipelineWrapperConcurrencyTest {
       }
     });
 
-    final var wrapper = new BatchPipelineWrapper<>(
-      topic,
-      TestPipelines.identity(),
-      sink,
-      policy,
-      scheduler,
-      callbacks
-    );
+    final var wrapper = new BatchPipelineWrapper<>(topic, TestPipelines.identity(), sink, policy, scheduler, callbacks);
     wrapper.start();
 
     final var workerCount = 16;
@@ -127,7 +120,11 @@ class BatchPipelineWrapperConcurrencyTest {
     wrapper.close();
 
     assertEquals(0L, wrapper.bufferedCount(), "buffer should be empty after close()");
-    assertEquals(totalExpected, callbacks.processed.size(), "every enqueued record should be marked processed exactly once");
+    assertEquals(
+      totalExpected,
+      callbacks.processed.size(),
+      "every enqueued record should be marked processed exactly once"
+    );
     assertEquals(0, callbacks.failed.size(), "no records should land on the failure path");
 
     // Aggregate flushed bytes across all batches and verify identity coverage.
