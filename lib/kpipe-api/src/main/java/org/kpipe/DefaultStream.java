@@ -25,8 +25,10 @@ import org.kpipe.sink.MessageSink;
 /// This makes branching safe (`s.pipe(a)` and `s.pipe(b)` produce independent streams) and
 /// matches the Java Stream API's functional style.
 ///
-/// Adding a new fluent setter is a one-place change: declare the component, add the `with*`
-/// fluent method, and reference it in [DefaultSink#start] if it affects consumer construction.
+/// Adding a new fluent setter is a one-place change: declare the record component, mirror it on
+/// [Mut], and write the `with*` method as `mutate(m -> m.field = newValue)`. There is no
+/// constructor copy-paste — [#mutate(Consumer)] funnels every wither through a single instance
+/// of [Mut] and rebuilds via [Mut#build].
 ///
 /// @param <T> the deserialized message type
 record DefaultStream<T>(
@@ -123,23 +125,10 @@ record DefaultStream<T>(
   public Stream<T> withRetry(final int maxRetries, final Duration backoff) {
     if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative");
     Objects.requireNonNull(backoff, "backoff cannot be null");
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      operators,
-      maxRetries,
-      backoff,
-      backpressureHigh,
-      backpressureLow,
-      sequentialProcessing,
-      skipBytes,
-      consumerMetrics,
-      errorHandler,
-      deadLetterTopic,
-      pollTimeout
-    );
+    return mutate(m -> {
+      m.maxRetries = maxRetries;
+      m.retryBackoff = backoff;
+    });
   }
 
   @Override
@@ -152,154 +141,45 @@ record DefaultStream<T>(
     if (low < 0 || low >= high) throw new IllegalArgumentException(
       "Invalid watermarks: high must be positive and > low (got high=%d, low=%d)".formatted(high, low)
     );
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      operators,
-      maxRetries,
-      retryBackoff,
-      high,
-      low,
-      sequentialProcessing,
-      skipBytes,
-      consumerMetrics,
-      errorHandler,
-      deadLetterTopic,
-      pollTimeout
-    );
+    return mutate(m -> {
+      m.backpressureHigh = high;
+      m.backpressureLow = low;
+    });
   }
 
   @Override
   public Stream<T> withSequentialProcessing(final boolean sequential) {
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      operators,
-      maxRetries,
-      retryBackoff,
-      backpressureHigh,
-      backpressureLow,
-      sequential,
-      skipBytes,
-      consumerMetrics,
-      errorHandler,
-      deadLetterTopic,
-      pollTimeout
-    );
+    return mutate(m -> m.sequentialProcessing = sequential);
   }
 
   @Override
   public Stream<T> skipBytes(final int n) {
     if (n < 0) throw new IllegalArgumentException("n cannot be negative");
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      operators,
-      maxRetries,
-      retryBackoff,
-      backpressureHigh,
-      backpressureLow,
-      sequentialProcessing,
-      n,
-      consumerMetrics,
-      errorHandler,
-      deadLetterTopic,
-      pollTimeout
-    );
+    return mutate(m -> m.skipBytes = n);
   }
 
   @Override
   public Stream<T> withMetrics(final ConsumerMetrics metrics) {
     Objects.requireNonNull(metrics, "metrics cannot be null");
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      operators,
-      maxRetries,
-      retryBackoff,
-      backpressureHigh,
-      backpressureLow,
-      sequentialProcessing,
-      skipBytes,
-      metrics,
-      errorHandler,
-      deadLetterTopic,
-      pollTimeout
-    );
+    return mutate(m -> m.consumerMetrics = metrics);
   }
 
   @Override
   public Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError<byte[]>> handler) {
     Objects.requireNonNull(handler, "handler cannot be null");
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      operators,
-      maxRetries,
-      retryBackoff,
-      backpressureHigh,
-      backpressureLow,
-      sequentialProcessing,
-      skipBytes,
-      consumerMetrics,
-      handler,
-      deadLetterTopic,
-      pollTimeout
-    );
+    return mutate(m -> m.errorHandler = handler);
   }
 
   @Override
   public Stream<T> withDeadLetterTopic(final String dlqTopic) {
     if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException("dlqTopic cannot be null or blank");
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      operators,
-      maxRetries,
-      retryBackoff,
-      backpressureHigh,
-      backpressureLow,
-      sequentialProcessing,
-      skipBytes,
-      consumerMetrics,
-      errorHandler,
-      dlqTopic,
-      pollTimeout
-    );
+    return mutate(m -> m.deadLetterTopic = dlqTopic);
   }
 
   @Override
   public Stream<T> withPollTimeout(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      operators,
-      maxRetries,
-      retryBackoff,
-      backpressureHigh,
-      backpressureLow,
-      sequentialProcessing,
-      skipBytes,
-      consumerMetrics,
-      errorHandler,
-      deadLetterTopic,
-      timeout
-    );
+    return mutate(m -> m.pollTimeout = timeout);
   }
 
   @Override
@@ -329,24 +209,81 @@ record DefaultStream<T>(
   }
 
   private DefaultStream<T> withOperator(final UnaryOperator<T> op) {
-    final var next = new ArrayList<>(operators);
-    next.add(op);
-    return new DefaultStream<>(
-      topics,
-      kafkaProps,
-      format,
-      defaultConsoleSinkFactory,
-      List.copyOf(next),
-      maxRetries,
-      retryBackoff,
-      backpressureHigh,
-      backpressureLow,
-      sequentialProcessing,
-      skipBytes,
-      consumerMetrics,
-      errorHandler,
-      deadLetterTopic,
-      pollTimeout
-    );
+    return mutate(m -> {
+      final var next = new ArrayList<>(operators);
+      next.add(op);
+      m.operators = List.copyOf(next);
+    });
+  }
+
+  /// Single funnel for every wither: snapshot this record into a [Mut], let the caller change
+  /// what they need, rebuild a new record. Replaces 13 hand-rolled 15-arg constructor calls with
+  /// one. New fields slot in at one site (the Mut declaration + its `from`/`build`).
+  private DefaultStream<T> mutate(final Consumer<Mut<T>> change) {
+    final var m = Mut.from(this);
+    change.accept(m);
+    return m.build();
+  }
+
+  /// Mutable mirror of [DefaultStream]'s components used only inside [#mutate]. Each public
+  /// wither hands a freshly-allocated `Mut` to a small lambda that updates one or two fields,
+  /// then [#build] returns a new immutable record. Never escapes the package.
+  private static final class Mut<T> {
+
+    Set<String> topics;
+    Properties kafkaProps;
+    MessageFormat<T> format;
+    Supplier<MessageSink<T>> defaultConsoleSinkFactory;
+    List<UnaryOperator<T>> operators;
+    int maxRetries;
+    Duration retryBackoff;
+    Long backpressureHigh;
+    Long backpressureLow;
+    boolean sequentialProcessing;
+    int skipBytes;
+    ConsumerMetrics consumerMetrics;
+    Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler;
+    String deadLetterTopic;
+    Duration pollTimeout;
+
+    static <T> Mut<T> from(final DefaultStream<T> s) {
+      final var m = new Mut<T>();
+      m.topics = s.topics;
+      m.kafkaProps = s.kafkaProps;
+      m.format = s.format;
+      m.defaultConsoleSinkFactory = s.defaultConsoleSinkFactory;
+      m.operators = s.operators;
+      m.maxRetries = s.maxRetries;
+      m.retryBackoff = s.retryBackoff;
+      m.backpressureHigh = s.backpressureHigh;
+      m.backpressureLow = s.backpressureLow;
+      m.sequentialProcessing = s.sequentialProcessing;
+      m.skipBytes = s.skipBytes;
+      m.consumerMetrics = s.consumerMetrics;
+      m.errorHandler = s.errorHandler;
+      m.deadLetterTopic = s.deadLetterTopic;
+      m.pollTimeout = s.pollTimeout;
+      return m;
+    }
+
+    DefaultStream<T> build() {
+      return new DefaultStream<>(
+        topics,
+        kafkaProps,
+        format,
+        defaultConsoleSinkFactory,
+        operators,
+        maxRetries,
+        retryBackoff,
+        backpressureHigh,
+        backpressureLow,
+        sequentialProcessing,
+        skipBytes,
+        consumerMetrics,
+        errorHandler,
+        deadLetterTopic,
+        pollTimeout
+      );
+    }
   }
 }
