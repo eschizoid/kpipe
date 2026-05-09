@@ -305,6 +305,8 @@ When adding a new consumer/builder feature: decide whether it belongs on the 80%
 | Operator chain (`pipe/filter/peek/when`) | `kpipe-core`           | `Stream.pipe / filter / peek / when`                                    | `MessageProcessorRegistry.pipeline(format).add(...)`                                                 | Identical operator semantics.                                      |
 | Custom terminal sink                     | `kpipe-core`           | `Stream.toCustom(MessageSink<T>)`                                       | `sinkRegistry.register(key, sink)`                                                                   | Any `MessageSink<T>`; facade also offers `.toConsole()`.           |
 | Multi-sink fanout                        | `kpipe-core`           | `Stream.toMulti(sinks...)`                                              | `new CompositeMessageSink<>(...)`                                                                    | Best-effort delivery; per-sink errors logged + suppressed.         |
+| Batch sink (size + age flush)            | `kpipe-core`           | `Stream.toBatch(BatchSink<T>, BatchPolicy)`                             | `Builder.withBatchPipeline(topic, pipeline, sink, policy)` (multi-call for heterogeneous batch)      | `BatchSink<T>` returns `BatchResult` for per-record DLQ; `BatchSink.ofVoid(consumer)` wraps void-style sinks (whole-batch DLQ on throw). Both sequential and parallel modes. See §18. |
+| Batch sink (multi-topic via `MultiBuilder`) | `kpipe-api`         | `KPipe.multi(props).json(topic, s -> s.toBatch(sink, policy))...start()` | `Builder.withBatchPipeline(...)` × N                                                                | One consumer-group, mixed batch + non-batch routes.                |
 | Skip wire-format prefix                  | `kpipe-core`           | `Stream.skipBytes(int)`                                                 | `TypedPipelineBuilder.skipBytes(int)`                                                                | Confluent envelope: 5 (Avro) / 6 (Proto single-msg).               |
 | Retry policy                             | `kpipe-consumer`       | `Stream.withRetry(int, Duration)`                                       | `Builder.withRetry(int, Duration)`                                                                   |                                                                    |
 | Backpressure (default watermarks)        | `kpipe-consumer`       | `Stream.withBackpressure()`                                             | `Builder.withBackpressure(BackpressureController)`                                                   | Defaults: pause 10k, resume 7k.                                    |
@@ -331,3 +333,57 @@ When adding a new consumer/builder feature: decide whether it belongs on the 80%
 bold) are discoverable via the facade's IDE auto-complete after the first `.`. If a user reaches for an explicit-API
 escape hatch, they're either operating an advanced topology or building a backend that should live in its own module
 (e.g. a Postgres `OffsetManager`).
+
+### 18. Batch Sink Architecture (1.12.0)
+
+- **One sink interface, two usage shapes.** `BatchSink<T> extends Function<List<T>, BatchResult>` is
+  the single batch terminal. Implementations that report per-record outcomes return `BatchResult`
+  directly; void-style consumers (transactional commits, fire-and-forget HTTP POSTs) wrap with
+  `BatchSink.ofVoid(consumer::accept)` — `consumer.accept` returning normally maps to
+  `BatchResult.allSucceeded(size)`, throwing maps to `BatchResult.allFailed(size, e)`. There is
+  **no separate `PartialBatchSink` interface** — that was collapsed in 1.12.0 because the void
+  shape is just a special case of the partial one (and the duplication cost two interfaces, two
+  facade records, two builder methods, and a nullable-mutual-exclusion invariant in `BatchSpec`).
+- **Coverage contract is enforced.** A `BatchResult` whose `succeededIndexes` ∪
+  `failedByIndex.keys()` does not cover every position `[0, batchSize)` is a contract violation.
+  `BatchPipelineWrapper` flags missing indexes with a synthetic `IllegalStateException` and
+  routes them to the DLQ rather than silently marking them processed (§12 "no silent failures").
+  Out-of-range indexes are logged at WARNING; a `null` `BatchResult` is treated as whole-batch
+  failure with a clear log line.
+- **Buffering lives in `BatchPipelineWrapper`** — one wrapper per topic, owns its own buffer +
+  `ReentrantLock` + `bufferedCount` gauge + age-tick `ScheduledFuture`. The lock protects
+  `enqueue` / `tick` / `close` / `flushLocked` so parallel-mode workers can `enqueue` concurrently
+  while a flush is mid-flight. Constructed once per `BatchSpec` in the consumer constructor;
+  started in `KPipeConsumer.start()` (registers the tick); drained in `close()` (one final flush
+  before the offset manager closes).
+- **Backpressure participation in parallel mode.** `inFlightCount` is decremented the moment
+  `processRecord` returns — for a batch path, that's "the record was buffered," which would make
+  buffered records invisible to the in-flight watermark. The wrapper's `bufferedCount()` is
+  added to `KPipeConsumer.totalInFlight()` to close that gap. `enqueue` increments it before
+  releasing the lock; `flushLocked` decrements it in `finally` by the snapshot size so the gauge
+  stays correct even if the user sink throws.
+- **Offset commits use the `OffsetManager` directly, not the command queue.** The command queue
+  exists to serialize Kafka-consumer calls (pause/resume/commitSync) on the consumer thread;
+  `OffsetManager.markOffsetProcessed` is already thread-safe (`ConcurrentHashMap` +
+  `ConcurrentSkipListSet`). Bypassing the queue from the wrapper's flush callback means the
+  shutdown drain works even after the consumer thread has exited — the alternative would have
+  the queue accumulating commands that never get processed.
+- **Whole-batch shutdown drain happens BEFORE `offsetManager.close()`.** Order in
+  `KPipeConsumer.close()`: pause + Close-command + wait-for-in-flight + join consumer thread +
+  shutdown executor → drain all batch wrappers → close offset manager → close producer → state =
+  CLOSED. The drain runs while the offset manager is still alive so the freshly marked offsets
+  are part of the final commit.
+- **Sequential vs parallel choice is on the user.** Default is parallel (matches the rest of the
+  consumer); `Stream.withSequentialProcessing(true)` switches to per-partition ordering. Batch
+  works in both modes — sequential is simpler reasoning but loses Loom's free parallelism;
+  parallel needs the `bufferedCount` machinery above.
+- **Multi-topic batching is heterogeneous-only via `MultiBuilder`.** A consumer may host any mix
+  of regular pipelines (`withPipeline` / `withPipelines`) and batch routes (`withBatchPipeline`
+  multi-call), but a single topic can only appear in one or the other — the disjoint-set check
+  fires in `Builder.build()`. The facade composes naturally: each `KPipe.multi(...).json(topic,
+  s -> s.toBatch(...))` route is a single-topic `DefaultBatchSink` that the multi-builder
+  collects and wires through `withBatchPipeline` at start time.
+- **Bench harness** lives in the existing `benchmarks/` module (NOT a new `lib/kpipe-bench`
+  module). `BatchSinkLatencyBenchmark` parameterises over `batchSize × sinkLatencyMicros` and
+  drives the public facade through `MockConsumer` so `BatchPipelineWrapper` stays
+  package-private.
