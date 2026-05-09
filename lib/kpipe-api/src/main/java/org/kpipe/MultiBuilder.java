@@ -42,7 +42,7 @@ public final class MultiBuilder {
   private static final Logger LOGGER = System.getLogger(MultiBuilder.class.getName());
 
   private final Properties kafkaProps;
-  private final Map<String, DefaultSink<?>> routes = new LinkedHashMap<>();
+  private final Map<String, Sink<?>> routes = new LinkedHashMap<>();
   private ConsumerMetrics consumerMetrics;
 
   MultiBuilder(final Properties kafkaProps) {
@@ -138,27 +138,47 @@ public final class MultiBuilder {
 
     final var stream = new DefaultStream<>(Set.of(topic), kafkaProps, format, defaultConsoleSinkFactory);
     final var sink = configurator.apply(stream);
-    if (!(sink instanceof DefaultSink<?> ds)) throw new IllegalStateException(
-      "Sink returned by configurator for topic '%s' is not a kpipe-built sink — call .toConsole(), .toCustom(...), or .toMulti(...) on the supplied stream".formatted(
+    if (
+      !(sink instanceof DefaultSink<?>) &&
+      !(sink instanceof DefaultBatchSink<?>) &&
+      !(sink instanceof DefaultPartialBatchSink<?>)
+    ) throw new IllegalStateException(
+      "Sink returned by configurator for topic '%s' is not a kpipe-built sink — call .toConsole(), .toCustom(...), .toMulti(...), .toBatch(...), or .toBatchPartial(...) on the supplied stream".formatted(
         topic
       )
     );
-    routes.put(topic, ds);
+    routes.put(topic, sink);
     return this;
   }
 
   /// Builds and starts the underlying [KPipeConsumer] / [KPipeRunner] with the registered routes
   /// and returns a [Handle] for lifecycle management.
   ///
+  /// Routes terminating in `.toBatch(...)` / `.toBatchPartial(...)` are wired through
+  /// `withBatchPipeline` / `withPartialBatchPipeline`; the consumer subscribes to the union of
+  /// regular and batch topics and dispatches per-record via the per-topic batch wrapper map.
+  ///
   /// @return a [Handle] for lifecycle management
   /// @throws IllegalStateException if no routes have been registered
   public Handle start() {
     if (routes.isEmpty()) throw new IllegalStateException("at least one route is required");
 
-    final var pipelines = new LinkedHashMap<String, MessagePipeline<?>>(routes.size());
-    for (final var entry : routes.entrySet()) pipelines.put(entry.getKey(), entry.getValue().buildPipeline());
+    final var nonBatchPipelines = new LinkedHashMap<String, MessagePipeline<?>>();
+    final var consumerBuilder = KPipeConsumer.<byte[]>builder().withProperties(kafkaProps);
 
-    final var consumerBuilder = KPipeConsumer.<byte[]>builder().withProperties(kafkaProps).withPipelines(pipelines);
+    for (final var entry : routes.entrySet()) {
+      final var topic = entry.getKey();
+      final var sink = entry.getValue();
+      if (sink instanceof DefaultSink<?> ds) {
+        nonBatchPipelines.put(topic, ds.buildPipeline());
+      } else if (sink instanceof DefaultBatchSink<?> dbs) {
+        addBatchRoute(consumerBuilder, dbs);
+      } else if (sink instanceof DefaultPartialBatchSink<?> dpbs) {
+        addPartialBatchRoute(consumerBuilder, dpbs);
+      }
+    }
+
+    if (!nonBatchPipelines.isEmpty()) consumerBuilder.withPipelines(nonBatchPipelines);
     if (consumerMetrics != null) consumerBuilder.withMetrics(consumerMetrics);
     final var consumer = consumerBuilder.build();
     final var runner = KPipeRunner.builder(consumer).build();
@@ -173,5 +193,27 @@ public final class MultiBuilder {
       throw e;
     }
     return new DefaultHandle(runner, consumer);
+  }
+
+  /// Type witnesses keep the generic plumbing one-line: pull the typed pipeline + sink off the
+  /// route, then call the typed builder method. Without this helper the casts would litter
+  /// `start()`.
+  private static <T> void addBatchRoute(
+    final KPipeConsumer.Builder<byte[]> consumerBuilder,
+    final DefaultBatchSink<T> route
+  ) {
+    consumerBuilder.withBatchPipeline(route.topic(), route.buildPipeline(), route.batchSink(), route.batchPolicy());
+  }
+
+  private static <T> void addPartialBatchRoute(
+    final KPipeConsumer.Builder<byte[]> consumerBuilder,
+    final DefaultPartialBatchSink<T> route
+  ) {
+    consumerBuilder.withPartialBatchPipeline(
+      route.topic(),
+      route.buildPipeline(),
+      route.partialSink(),
+      route.batchPolicy()
+    );
   }
 }
