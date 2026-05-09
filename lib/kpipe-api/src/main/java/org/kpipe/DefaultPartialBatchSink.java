@@ -11,9 +11,9 @@ import org.kpipe.sink.PartialBatchSink;
 /// [org.kpipe.registry.MessagePipeline] from the stream's operator chain
 /// (deserialize → operators → return value) and wires it into
 /// [KPipeConsumer.Builder#withPartialBatchPipeline] together with the configured
-/// [PartialBatchSink] and [BatchPolicy]. Sequential processing is forced; consumer-level config
-/// (metrics, errorHandler, DLQ, pollTimeout, retry, backpressure) carries over from the
-/// underlying [DefaultStream].
+/// [PartialBatchSink] and [BatchPolicy]. Honors whatever processing mode the underlying
+/// [DefaultStream] carries (default: parallel); consumer-level config (metrics, errorHandler,
+/// DLQ, pollTimeout, retry, backpressure) carries over too.
 ///
 /// Single-topic only — the stream is rejected at construction time if it carries more than one
 /// topic. Multi-topic batching ships in a follow-up.
@@ -40,7 +40,7 @@ record DefaultPartialBatchSink<T>(DefaultStream<T> stream, PartialBatchSink<T> p
 
     final var consumerBuilder = KPipeConsumer.<byte[]>builder()
       .withProperties(stream.kafkaProps())
-      .withSequentialProcessing(true)
+      .withSequentialProcessing(stream.sequentialProcessing())
       .withPartialBatchPipeline(topic, pipeline, partialSink, batchPolicy);
 
     if (stream.maxRetries() > 0) consumerBuilder.withRetry(stream.maxRetries(), stream.retryBackoff());

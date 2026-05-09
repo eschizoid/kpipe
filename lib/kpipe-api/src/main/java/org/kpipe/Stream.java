@@ -183,9 +183,10 @@ public interface Stream<T> {
   /// the failed batch to the configured DLQ (if any) and still commits offsets so the consumer
   /// does not loop on a poison batch.
   ///
-  /// **Sequential processing is enabled automatically.** Batch sinks v1 does not support
-  /// parallel mode; the facade flips `withSequentialProcessing(true)` for you when this terminal
-  /// is used. Single-topic only — multi-topic batching ships in a follow-up.
+  /// **Both processing modes are supported.** Default is parallel; call
+  /// [#withSequentialProcessing] to switch to per-partition ordering. Under parallel mode,
+  /// buffered records participate in the in-flight backpressure metric so a slow sink cannot let
+  /// the buffer grow unbounded. Single-topic only — multi-topic batching ships in a follow-up.
   ///
   /// @param sink the batch sink invoked on each flush (must not be null)
   /// @param policy the size/age flush thresholds (must not be null)
@@ -207,9 +208,10 @@ public interface Stream<T> {
   /// sink itself throws, every record in the input batch is sent to the DLQ with the thrown
   /// exception (whole-batch fallback, equivalent to v1 [#toBatch] failure semantics).
   ///
-  /// **Sequential processing is enabled automatically.** Like [#toBatch], partial-batch sinks
-  /// require sequential mode; the facade flips `withSequentialProcessing(true)` for you.
-  /// Single-topic only — multi-topic batching ships in a follow-up.
+  /// **Both processing modes are supported.** Default is parallel; call
+  /// [#withSequentialProcessing] to switch to per-partition ordering. Like [#toBatch], buffered
+  /// records participate in the in-flight backpressure metric under parallel mode. Single-topic
+  /// only — multi-topic batching ships in a follow-up.
   ///
   /// @param sink the partial-batch sink invoked on each flush (must not be null)
   /// @param policy the size/age flush thresholds (must not be null)

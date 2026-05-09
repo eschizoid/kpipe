@@ -55,7 +55,10 @@ class StreamBatchIntegrationTest {
     final var consumerProps = consumerProps("kpipe-batch-group-" + UUID.randomUUID());
     final var policy = new BatchPolicy(10, Duration.ofSeconds(2));
 
-    final var handle = KPipe.json(topic, consumerProps).toBatch(batchSink, policy).start();
+    final var handle = KPipe.json(topic, consumerProps)
+      .withSequentialProcessing(true)
+      .toBatch(batchSink, policy)
+      .start();
 
     try {
       assertTrue(handle.isHealthy(), "Handle should be healthy after start()");

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.kpipe.registry.MessagePipeline;
@@ -27,9 +28,18 @@ import org.kpipe.sink.PartialBatchSink;
 /// [PartialBatchSink] (returns a [BatchResult] naming per-record outcomes). The lock/buffer/tick
 /// machinery is shared; only the flush leaf differs.
 ///
-/// Thread-safety: a single [ReentrantLock] guards the buffer. `enqueue` is called from the
-/// consumer thread (sequential mode is enforced upstream); `tick` runs on the shared scheduler;
-/// `close` runs from the shutdown path. All three serialize through the same lock.
+/// **Thread-safety.** A single [ReentrantLock] guards the buffer. `enqueue` may be called from
+/// many virtual-thread workers concurrently (parallel mode) or serialized on the consumer thread
+/// (sequential mode); the lock makes both safe. `tick` runs on the shared scheduler; `close`
+/// runs from the shutdown path. All paths serialize through the same lock so mutations to the
+/// buffer, the `oldestEnqueueNanos` timestamp, and the `bufferedCount` are coherent.
+///
+/// **Backpressure participation.** The wrapper exposes a [#bufferedCount] gauge that the owning
+/// consumer adds to its in-flight count when the in-flight backpressure strategy is active.
+/// Without that addition, buffered records would be invisible to the watermark check in parallel
+/// mode — a slow batch sink could let the buffer grow unbounded while the consumer kept polling.
+/// `bufferedCount` increments on each [#enqueue] call and decrements after every flush by the
+/// snapshot size.
 ///
 /// @param <K> Kafka record key type
 /// @param <T> deserialized value type
@@ -67,6 +77,7 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
 
   private final ReentrantLock lock = new ReentrantLock();
   private final List<Entry<K, T>> buffer = new ArrayList<>();
+  private final AtomicLong bufferedCount = new AtomicLong(0);
   private long oldestEnqueueNanos;
   private ScheduledFuture<?> tickFuture;
 
@@ -128,15 +139,29 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   /// Adds `(record, value)` to the buffer. If the new size meets the policy threshold, flushes
   /// inline. The caller must already have invoked `pipeline.processToValue(...)` with `value`
   /// non-null (filtered records skip enqueueing entirely).
+  ///
+  /// `bufferedCount` is incremented before the lock is released so the in-flight backpressure
+  /// strategy observes the new buffered record on its next check. The matching decrement happens
+  /// in [#flushLocked] after the user sink returns.
   void enqueue(final ConsumerRecord<K, byte[]> record, final T value) {
     lock.lock();
     try {
       if (buffer.isEmpty()) oldestEnqueueNanos = System.nanoTime();
       buffer.add(new Entry<>(record, value));
+      bufferedCount.incrementAndGet();
       if (buffer.size() >= policy.maxSize()) flushLocked();
     } finally {
       lock.unlock();
     }
+  }
+
+  /// Returns the current count of records buffered in this wrapper across both completed and
+  /// pending flushes. Used by [KPipeConsumer]'s in-flight backpressure strategy to include
+  /// buffered records in the watermark calculation when batch sinks run in parallel mode.
+  ///
+  /// @return the current buffered-record count (always &gt;= 0)
+  long bufferedCount() {
+    return bufferedCount.get();
   }
 
   private void tick() {
@@ -156,7 +181,11 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   }
 
   /// Caller must hold `lock`. Snapshots the buffer, clears it, then delegates to the bound
-  /// [Flusher] for the actual sink call + per-record offset bookkeeping.
+  /// [Flusher] for the actual sink call + per-record offset bookkeeping. `bufferedCount` is
+  /// decremented in `finally` by the snapshot size so it tracks records still owned by the
+  /// wrapper even if the flusher throws — under parallel mode this is what keeps the in-flight
+  /// metric stable across slow flushes (the records are no longer "in the buffer" but they have
+  /// already been counted out of `inFlightCount` in the consumer).
   private void flushLocked() {
     if (buffer.isEmpty()) return;
     final var snapshot = List.copyOf(buffer);
@@ -165,7 +194,11 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     final var values = new ArrayList<T>(snapshot.size());
     for (final var entry : snapshot) values.add(entry.value());
 
-    flusher.flush(snapshot, values, callbacks);
+    try {
+      flusher.flush(snapshot, values, callbacks);
+    } finally {
+      bufferedCount.addAndGet(-snapshot.size());
+    }
   }
 
   @Override

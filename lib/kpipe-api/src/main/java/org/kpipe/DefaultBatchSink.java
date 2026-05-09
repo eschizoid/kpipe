@@ -10,8 +10,9 @@ import org.kpipe.sink.BatchSink;
 /// Package-private [Sink] impl for batch terminals. Builds a sink-less [org.kpipe.registry.MessagePipeline]
 /// from the stream's operator chain (deserialize → operators → return value) and wires it into
 /// [KPipeConsumer.Builder#withBatchPipeline] together with the configured [BatchSink] and
-/// [BatchPolicy]. Sequential processing is forced; consumer-level config (metrics, errorHandler,
-/// DLQ, pollTimeout, retry, backpressure) carries over from the underlying [DefaultStream].
+/// [BatchPolicy]. Honors whatever processing mode the underlying [DefaultStream] carries
+/// (default: parallel); consumer-level config (metrics, errorHandler, DLQ, pollTimeout, retry,
+/// backpressure) carries over too.
 ///
 /// Single-topic only — the stream is rejected at construction time if it carries more than one
 /// topic. Multi-topic batching ships in a follow-up.
@@ -38,7 +39,7 @@ record DefaultBatchSink<T>(DefaultStream<T> stream, BatchSink<T> batchSink, Batc
 
     final var consumerBuilder = KPipeConsumer.<byte[]>builder()
       .withProperties(stream.kafkaProps())
-      .withSequentialProcessing(true)
+      .withSequentialProcessing(stream.sequentialProcessing())
       .withBatchPipeline(topic, pipeline, batchSink, batchPolicy);
 
     if (stream.maxRetries() > 0) consumerBuilder.withRetry(stream.maxRetries(), stream.retryBackoff());

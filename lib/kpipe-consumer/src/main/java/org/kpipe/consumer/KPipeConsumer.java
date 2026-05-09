@@ -280,8 +280,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// commits offsets so the consumer does not loop on a poison batch.
     ///
     /// **Single-topic only in v1.** Cannot be combined with `withPipeline` / `withPipelines`.
-    /// **Sequential processing required.** Configure via `withSequentialProcessing(true)` (the
-    /// facade does this for you).
+    /// Both sequential and parallel processing are supported. Under parallel mode, buffered
+    /// records participate in the in-flight backpressure metric so a slow sink cannot let the
+    /// buffer grow unbounded.
     ///
     /// @param topic the Kafka topic
     /// @param pipeline the typed pipeline to deserialize+process raw bytes into `T`
@@ -318,8 +319,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// batch is sent to the DLQ with the thrown exception as the cause (whole-batch fallback).
     ///
     /// **Single-topic only in v1.** Cannot be combined with `withPipeline` / `withPipelines` /
-    /// `withBatchPipeline`. **Sequential processing required.** Configure via
-    /// `withSequentialProcessing(true)` (the facade does this for you).
+    /// `withBatchPipeline`. Both sequential and parallel processing are supported. Under
+    /// parallel mode, buffered records participate in the in-flight backpressure metric so a
+    /// slow sink cannot let the buffer grow unbounded.
     ///
     /// @param topic the Kafka topic
     /// @param pipeline the typed pipeline to deserialize+process raw bytes into `T`
@@ -582,9 +584,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
       if (batchSpec != null && (pipeline != null || pipelinesPerTopic != null)) throw new IllegalArgumentException(
         "withBatchPipeline / withPartialBatchPipeline cannot be combined with withPipeline / withPipelines"
       );
-      if (batchSpec != null && !sequentialProcessing) throw new IllegalArgumentException(
-        "Batch sinks require sequential processing — call withSequentialProcessing(true)"
-      );
       if (pipeline != null && pipelinesPerTopic != null) throw new IllegalArgumentException(
         "Use either withPipeline (homogeneous) or withPipelines (heterogeneous), not both"
       );
@@ -662,7 +661,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     ).withStrategy(
       this.sequentialProcessing
         ? BackpressureController.lagStrategy()
-        : BackpressureController.inFlightStrategy(this.inFlightCount::get)
+        : BackpressureController.inFlightStrategy(this::totalInFlight)
     );
 
     this.deadLetterTopic = builder.deadLetterTopic;
@@ -1198,6 +1197,18 @@ public class KPipeConsumer<K> implements AutoCloseable {
       }
     }
     return false;
+  }
+
+  /// Returns the total number of records currently being tracked for backpressure: the dispatched
+  /// in-flight count plus, when a batch wrapper is configured, the records buffered inside it.
+  /// Without the buffered piece, a slow batch sink under parallel mode would let the buffer grow
+  /// unbounded — the consumer thread decrements `inFlightCount` the moment a record finishes
+  /// `processRecord` (which for batch is "the record was buffered"), so the buffer would be
+  /// invisible to the watermark check.
+  private long totalInFlight() {
+    final var dispatched = inFlightCount.get();
+    if (batchWrapper == null) return dispatched;
+    return dispatched + batchWrapper.bufferedCount();
   }
 
   @SuppressWarnings({ "unchecked", "rawtypes" })
