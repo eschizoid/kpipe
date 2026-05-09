@@ -154,100 +154,88 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     }
   }
 
+  /// All the dispatch lives in one place: call the sink, classify the [BatchResult], log any
+  /// out-of-range indexes, build a synthetic failure for uncovered positions (§12 "no silent
+  /// failures"), then walk the snapshot exactly once. Sink-throw and null-result both fall back
+  /// to whole-batch failure with a clear log line.
   private void flush(final List<Entry<K, T>> snapshot, final List<T> values) {
     final var size = snapshot.size();
+
     final BatchResult result;
     try {
       result = sink.apply(values);
     } catch (final Exception e) {
-      // Sink itself blew up — fall back to whole-batch behavior so no record gets silently
-      // dropped. Every record goes to the DLQ with the thrown exception as the cause.
       logBatchFailure("threw", size, e);
-      for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), e);
+      failAll(snapshot, e);
       return;
     }
-
     if (result == null) {
       final var cause = new IllegalStateException(
         "BatchSink returned null BatchResult for topic " + topic + " (" + size + " records)"
       );
       logBatchFailure("returned null", size, cause);
-      for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), cause);
+      failAll(snapshot, cause);
       return;
     }
 
-    final var succeededSet = collectIndexes(result.succeededIndexes(), size, "succeeded");
-    for (final var key : result.failedByIndex().keySet()) validateIndex(key, size, "failed");
+    final var succeeded = new HashSet<Integer>(size * 2);
+    for (final var i : result.succeededIndexes()) {
+      if (i != null && i >= 0 && i < size) succeeded.add(i);
+      else logOutOfRange("succeeded", i, size);
+    }
+    for (final var i : result.failedByIndex().keySet()) {
+      if (i == null || i < 0 || i >= size) logOutOfRange("failed", i, size);
+    }
 
-    final var coverageViolation = checkCoverage(succeededSet, result.failedByIndex().keySet(), size);
+    IllegalStateException coverageViolation = null;
+    final var missing = new ArrayList<Integer>();
+    for (int i = 0; i < size; i++) {
+      if (!succeeded.contains(i) && !result.failedByIndex().containsKey(i)) missing.add(i);
+    }
+    if (!missing.isEmpty()) {
+      coverageViolation = new IllegalStateException(
+        "BatchSink for topic " +
+        topic +
+        " did not account for indexes " +
+        missing +
+        " in a batch of " +
+        size +
+        " — treating as failures to avoid silent data loss"
+      );
+      LOGGER.log(Level.WARNING, coverageViolation.getMessage());
+    }
+
     for (int i = 0; i < size; i++) {
       final var record = snapshot.get(i).record();
-      if (succeededSet.contains(i)) {
+      if (succeeded.contains(i)) {
         callbacks.markProcessed(record);
         continue;
       }
       final var perRecordCause = result.failedByIndex().get(i);
-      if (perRecordCause != null) {
-        callbacks.onBatchFailure(record, perRecordCause);
-        continue;
-      }
-      // Uncovered index — synthetic failure so operators can attribute it back to a sink bug.
       callbacks.onBatchFailure(
         record,
-        coverageViolation != null
-          ? coverageViolation
-          : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic)
+        perRecordCause != null
+          ? perRecordCause
+          : (coverageViolation != null
+              ? coverageViolation
+              : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic))
       );
     }
   }
 
-  private HashSet<Integer> collectIndexes(final List<Integer> indexes, final int batchSize, final String kind) {
-    final var set = new HashSet<Integer>(indexes.size() * 2);
-    for (final var i : indexes) if (validateIndex(i, batchSize, kind)) set.add(i);
-    return set;
+  private void failAll(final List<Entry<K, T>> snapshot, final Exception cause) {
+    for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), cause);
   }
 
-  private boolean validateIndex(final Integer i, final int batchSize, final String kind) {
-    if (i == null || i < 0 || i >= batchSize) {
-      LOGGER.log(
-        Level.WARNING,
-        "BatchSink returned out-of-range {0} index {1} for topic {2} (batchSize={3})",
-        kind,
-        i,
-        topic,
-        batchSize
-      );
-      return false;
-    }
-    return true;
-  }
-
-  /// Builds the synthetic failure that uncovered indexes are attributed to. Returns `null` when
-  /// coverage is complete (every position 0..size-1 is named in either set). The §12 "no silent
-  /// failures" doctrine says a contract violation must be observable, so missing positions are
-  /// flagged via a real exception rather than silently marked processed.
-  private IllegalStateException checkCoverage(
-    final HashSet<Integer> succeeded,
-    final java.util.Set<Integer> failed,
-    final int size
-  ) {
-    final var covered = new HashSet<Integer>(size * 2);
-    covered.addAll(succeeded);
-    for (final var i : failed) if (i != null && i >= 0 && i < size) covered.add(i);
-    if (covered.size() == size) return null;
-    final var missing = new ArrayList<Integer>();
-    for (int i = 0; i < size; i++) if (!covered.contains(i)) missing.add(i);
-    final var violation = new IllegalStateException(
-      "BatchSink for topic " +
-      topic +
-      " did not account for indexes " +
-      missing +
-      " in a batch of " +
-      size +
-      " — treating as failures to avoid silent data loss"
+  private void logOutOfRange(final String kind, final Integer index, final int batchSize) {
+    LOGGER.log(
+      Level.WARNING,
+      "BatchSink returned out-of-range {0} index {1} for topic {2} (batchSize={3})",
+      kind,
+      index,
+      topic,
+      batchSize
     );
-    LOGGER.log(Level.WARNING, violation.getMessage());
-    return violation;
   }
 
   private void logBatchFailure(final String kind, final int size, final Throwable cause) {

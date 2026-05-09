@@ -45,7 +45,7 @@ inserts the per-call latency to expose the amortisation that batching provides.
 #### Results (Apple Silicon, JDK 25.0.2, single fork, 3×2s warmup + 5×3s measurement)
 
 | batchSize | sinkLatencyMicros | Throughput (ops/s) | Speedup vs batchSize=1 |
-| --------: | ----------------: | -----------------: | ---------------------: |
+|----------:|------------------:|-------------------:|-----------------------:|
 |         1 |                10 |             28,018 |                  1.00× |
 |         1 |               100 |              6,885 |                  1.00× |
 |         1 |              1000 |                788 |                  1.00× |
