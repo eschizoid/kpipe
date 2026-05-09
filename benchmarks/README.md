@@ -45,7 +45,7 @@ inserts the per-call latency to expose the amortisation that batching provides.
 #### Results (Apple Silicon, JDK 25.0.2, single fork, 3×2s warmup + 5×3s measurement)
 
 | batchSize | sinkLatencyMicros | Throughput (ops/s) | Speedup vs batchSize=1 |
-|----------:|------------------:|-------------------:|-----------------------:|
+| --------: | ----------------: | -----------------: | ---------------------: |
 |         1 |                10 |             28,018 |                  1.00× |
 |         1 |               100 |              6,885 |                  1.00× |
 |         1 |              1000 |                788 |                  1.00× |
@@ -56,9 +56,9 @@ inserts the per-call latency to expose the amortisation that batching provides.
 |       100 |               100 |            361,636 |                  52.5× |
 |       100 |              1000 |             66,059 |                  83.9× |
 
-The story is exactly what the design promised: at 1000 µs/call (think a slow JDBC commit) batching at size 100 is
-**~84× the throughput** of single-record processing. At 10 µs/call batching still helps, but the gain shrinks because
-per-call cost is no longer the bottleneck.
+The story is exactly what the design promised: at 1000 µs/call (think a slow JDBC commit) batching at size 100 is **~84×
+the throughput** of single-record processing. At 10 µs/call batching still helps, but the gain shrinks because per-call
+cost is no longer the bottleneck.
 
 ## Running Benchmarks
 
@@ -101,13 +101,12 @@ Run date: `2026-05-09` · Apple Silicon · JDK 25.0.2 · single fork · 3×2s wa
 This benchmark compares KPipe's zero-copy offset-based deserialization against the traditional approach of using
 `Arrays.copyOfRange`.
 
-> **Bench fix in this snapshot.** The previous snapshot's headline numbers (~740M ops/s / ~351M
-> ops/s) were not real — `@Setup` wrote to a `BinaryEncoder` without calling `flush()`, so
-> `out.toByteArray()` returned an empty array. Earlier versions of `AvroFormat.deserialize`
-> silently returned `null` on empty input; the manual path's `serialize(null)` then NPE'd, but
-> the older `AvroFormat.serialize(null)` happened to no-op. Both crashes were timed as "fast
-> work," producing numbers that looked impressive but measured nothing. Adding `encoder.flush()`
-> in `@Setup` produces the realistic numbers below.
+> **Bench fix in this snapshot.** The previous snapshot's headline numbers (~740M ops/s / ~351M ops/s) were not real —
+> `@Setup` wrote to a `BinaryEncoder` without calling `flush()`, so `out.toByteArray()` returned an empty array. Earlier
+> versions of `AvroFormat.deserialize` silently returned `null` on empty input; the manual path's `serialize(null)` then
+> NPE'd, but the older `AvroFormat.serialize(null)` happened to no-op. Both crashes were timed as "fast work," producing
+> numbers that looked impressive but measured nothing. Adding `encoder.flush()` in `@Setup` produces the realistic
+> numbers below.
 
 | Benchmark                                       |    Mode | Cnt |        Score |           Error |   Units |
 |-------------------------------------------------|--------:|----:|-------------:|----------------:|--------:|
@@ -151,8 +150,7 @@ across iterations — Confluent's wider error band reflects iteration-to-iterati
 ### 4. Batch Sink Throughput
 
 See § 4 above (`BatchSinkLatencyBenchmark`) for the size × latency parameter sweep. Headline: at
-`sinkLatencyMicros=1000`
-(≈ JDBC commit), `batchSize=100` yields **~84× the throughput** of `batchSize=1`.
+`sinkLatencyMicros=1000` (≈ JDBC commit), `batchSize=100` yields **~84× the throughput** of `batchSize=1`.
 
 ## Understanding Results
 
@@ -164,8 +162,8 @@ Based on the latest snapshot results, we can derive the following throughput exp
 
 - **Avro (In-Memory)**: Up to **~926,000 records/s** with zero-copy magic-byte handling. JSON beats this in absolute
   ops/s here because the JSON bench applies two operators per record while the Avro bench applies two operators on a
-  larger payload — comparing benches with different shapes is unfair, but the within-benchmark KPipe-vs-manual ratio
-  is the headline number.
+  larger payload — comparing benches with different shapes is unfair, but the within-benchmark KPipe-vs-manual ratio is
+  the headline number.
 - **JSON (In-Memory)**: Up to **~242,000 records/s** with the KPipe single-SerDe pipeline (3.1× the chained-SerDe
   baseline).
 - **End-to-End Parallel Processing**: **~31.1M to ~32.7M messages/s**. For this run, use `score * 10,000` because

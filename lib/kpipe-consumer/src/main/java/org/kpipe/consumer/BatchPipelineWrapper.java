@@ -15,18 +15,13 @@ import org.kpipe.registry.MessagePipeline;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchResult;
 import org.kpipe.sink.BatchSink;
-import org.kpipe.sink.PartialBatchSink;
 
 /// Internal per-topic batch buffer. Owns a queue of `(record, value)` pairs and flushes either on
-/// size or on age (whichever fires first), or on shutdown drain. Offsets are marked processed
-/// only after the user's [BatchSink] returns successfully — failed batches go through the
-/// caller-supplied [BatchCallbacks#onBatchFailure] hook (DLQ + error handler) and are still
-/// marked processed so the consumer does not loop on a poison batch.
-///
-/// **Two flavors.** A wrapper is constructed with either a [BatchSink] (the v1 whole-batch
-/// flavor — the entire batch is treated as a single success-or-failure unit) or a
-/// [PartialBatchSink] (returns a [BatchResult] naming per-record outcomes). The lock/buffer/tick
-/// machinery is shared; only the flush leaf differs.
+/// size or on age (whichever fires first), or on shutdown drain. The user [BatchSink] returns a
+/// [BatchResult] naming per-record outcomes; succeeded records have their offsets marked
+/// processed, failed records are routed through the caller-supplied [BatchCallbacks#onBatchFailure]
+/// hook (DLQ + error handler) and still marked processed so the consumer does not loop on a
+/// poison batch.
 ///
 /// **Thread-safety.** A single [ReentrantLock] guards the buffer. `enqueue` may be called from
 /// many virtual-thread workers concurrently (parallel mode) or serialized on the consumer thread
@@ -54,26 +49,17 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   interface BatchCallbacks<K> {
     /// Mark a record's offset as successfully processed (after a successful batch flush).
     void markProcessed(ConsumerRecord<K, byte[]> record);
+
     /// Handle a record that was part of a failed batch — DLQ + error handler + mark processed.
     void onBatchFailure(ConsumerRecord<K, byte[]> record, Exception cause);
   }
 
-  /// Strategy interface that owns the actual sink call. The two implementations bind either to a
-  /// [BatchSink] (whole-batch) or a [PartialBatchSink] (per-record). Kept private to the
-  /// wrapper.
-  private interface Flusher<K, T> {
-    /// Invoked under the wrapper's lock with a snapshot of the buffered records and a parallel
-    /// list of their deserialized values. Implementations dispatch to the user sink and call
-    /// `callbacks.markProcessed` / `callbacks.onBatchFailure` for each record.
-    void flush(List<Entry<K, T>> snapshot, List<T> values, BatchCallbacks<K> callbacks);
-  }
-
   private final String topic;
   private final MessagePipeline<T> pipeline;
+  private final BatchSink<T> sink;
   private final BatchPolicy policy;
   private final ScheduledExecutorService scheduler;
   private final BatchCallbacks<K> callbacks;
-  private final Flusher<K, T> flusher;
 
   private final ReentrantLock lock = new ReentrantLock();
   private final List<Entry<K, T>> buffer = new ArrayList<>();
@@ -81,48 +67,20 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   private long oldestEnqueueNanos;
   private ScheduledFuture<?> tickFuture;
 
-  /// Constructs a whole-batch wrapper backed by a [BatchSink]. Equivalent to v1 behavior — a
-  /// thrown sink fails the entire batch, a returning sink succeeds the entire batch.
   BatchPipelineWrapper(
     final String topic,
     final MessagePipeline<T> pipeline,
-    final BatchSink<T> batchSink,
+    final BatchSink<T> sink,
     final BatchPolicy policy,
     final ScheduledExecutorService scheduler,
     final BatchCallbacks<K> callbacks
-  ) {
-    this(topic, pipeline, policy, scheduler, callbacks, wholeBatchFlusher(topic, batchSink));
-  }
-
-  /// Constructs a partial-batch wrapper backed by a [PartialBatchSink]. The sink reports
-  /// per-record success/failure via a [BatchResult]; failed records go to the DLQ and succeeded
-  /// records are marked processed. A thrown sink falls back to whole-batch failure semantics
-  /// (every record routed to the DLQ with the thrown exception as the cause).
-  BatchPipelineWrapper(
-    final String topic,
-    final MessagePipeline<T> pipeline,
-    final PartialBatchSink<T> partialSink,
-    final BatchPolicy policy,
-    final ScheduledExecutorService scheduler,
-    final BatchCallbacks<K> callbacks
-  ) {
-    this(topic, pipeline, policy, scheduler, callbacks, partialBatchFlusher(topic, partialSink));
-  }
-
-  private BatchPipelineWrapper(
-    final String topic,
-    final MessagePipeline<T> pipeline,
-    final BatchPolicy policy,
-    final ScheduledExecutorService scheduler,
-    final BatchCallbacks<K> callbacks,
-    final Flusher<K, T> flusher
   ) {
     this.topic = topic;
     this.pipeline = pipeline;
+    this.sink = sink;
     this.policy = policy;
     this.scheduler = scheduler;
     this.callbacks = callbacks;
-    this.flusher = flusher;
   }
 
   MessagePipeline<T> pipeline() {
@@ -157,9 +115,7 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
 
   /// Returns the current count of records buffered in this wrapper across both completed and
   /// pending flushes. Used by [KPipeConsumer]'s in-flight backpressure strategy to include
-  /// buffered records in the watermark calculation when batch sinks run in parallel mode.
-  ///
-  /// @return the current buffered-record count (always &gt;= 0)
+  /// buffered records in the watermark check.
   long bufferedCount() {
     return bufferedCount.get();
   }
@@ -180,12 +136,9 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     }
   }
 
-  /// Caller must hold `lock`. Snapshots the buffer, clears it, then delegates to the bound
-  /// [Flusher] for the actual sink call + per-record offset bookkeeping. `bufferedCount` is
-  /// decremented in `finally` by the snapshot size so it tracks records still owned by the
-  /// wrapper even if the flusher throws — under parallel mode this is what keeps the in-flight
-  /// metric stable across slow flushes (the records are no longer "in the buffer" but they have
-  /// already been counted out of `inFlightCount` in the consumer).
+  /// Caller must hold `lock`. Snapshots the buffer, clears it, invokes the user sink, then
+  /// dispatches per-record outcomes. `bufferedCount` is decremented in `finally` by the snapshot
+  /// size so it tracks records still owned by the wrapper even if dispatch throws.
   private void flushLocked() {
     if (buffer.isEmpty()) return;
     final var snapshot = List.copyOf(buffer);
@@ -195,10 +148,117 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     for (final var entry : snapshot) values.add(entry.value());
 
     try {
-      flusher.flush(snapshot, values, callbacks);
+      flush(snapshot, values);
     } finally {
       bufferedCount.addAndGet(-snapshot.size());
     }
+  }
+
+  private void flush(final List<Entry<K, T>> snapshot, final List<T> values) {
+    final var size = snapshot.size();
+    final BatchResult result;
+    try {
+      result = sink.apply(values);
+    } catch (final Exception e) {
+      // Sink itself blew up — fall back to whole-batch behavior so no record gets silently
+      // dropped. Every record goes to the DLQ with the thrown exception as the cause.
+      logBatchFailure("threw", size, e);
+      for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), e);
+      return;
+    }
+
+    if (result == null) {
+      final var cause = new IllegalStateException(
+        "BatchSink returned null BatchResult for topic " + topic + " (" + size + " records)"
+      );
+      logBatchFailure("returned null", size, cause);
+      for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), cause);
+      return;
+    }
+
+    final var succeededSet = collectIndexes(result.succeededIndexes(), size, "succeeded");
+    for (final var key : result.failedByIndex().keySet()) validateIndex(key, size, "failed");
+
+    final var coverageViolation = checkCoverage(succeededSet, result.failedByIndex().keySet(), size);
+    for (int i = 0; i < size; i++) {
+      final var record = snapshot.get(i).record();
+      if (succeededSet.contains(i)) {
+        callbacks.markProcessed(record);
+        continue;
+      }
+      final var perRecordCause = result.failedByIndex().get(i);
+      if (perRecordCause != null) {
+        callbacks.onBatchFailure(record, perRecordCause);
+        continue;
+      }
+      // Uncovered index — synthetic failure so operators can attribute it back to a sink bug.
+      callbacks.onBatchFailure(
+        record,
+        coverageViolation != null
+          ? coverageViolation
+          : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic)
+      );
+    }
+  }
+
+  private HashSet<Integer> collectIndexes(final List<Integer> indexes, final int batchSize, final String kind) {
+    final var set = new HashSet<Integer>(indexes.size() * 2);
+    for (final var i : indexes) if (validateIndex(i, batchSize, kind)) set.add(i);
+    return set;
+  }
+
+  private boolean validateIndex(final Integer i, final int batchSize, final String kind) {
+    if (i == null || i < 0 || i >= batchSize) {
+      LOGGER.log(
+        Level.WARNING,
+        "BatchSink returned out-of-range {0} index {1} for topic {2} (batchSize={3})",
+        kind,
+        i,
+        topic,
+        batchSize
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /// Builds the synthetic failure that uncovered indexes are attributed to. Returns `null` when
+  /// coverage is complete (every position 0..size-1 is named in either set). The §12 "no silent
+  /// failures" doctrine says a contract violation must be observable, so missing positions are
+  /// flagged via a real exception rather than silently marked processed.
+  private IllegalStateException checkCoverage(
+    final HashSet<Integer> succeeded,
+    final java.util.Set<Integer> failed,
+    final int size
+  ) {
+    final var covered = new HashSet<Integer>(size * 2);
+    covered.addAll(succeeded);
+    for (final var i : failed) if (i != null && i >= 0 && i < size) covered.add(i);
+    if (covered.size() == size) return null;
+    final var missing = new ArrayList<Integer>();
+    for (int i = 0; i < size; i++) if (!covered.contains(i)) missing.add(i);
+    final var violation = new IllegalStateException(
+      "BatchSink for topic " +
+      topic +
+      " did not account for indexes " +
+      missing +
+      " in a batch of " +
+      size +
+      " — treating as failures to avoid silent data loss"
+    );
+    LOGGER.log(Level.WARNING, violation.getMessage());
+    return violation;
+  }
+
+  private void logBatchFailure(final String kind, final int size, final Throwable cause) {
+    LOGGER.log(
+      Level.WARNING,
+      "Batch sink {0} for topic {1} ({2} records); falling back to whole-batch failure: {3}",
+      kind,
+      topic,
+      size,
+      cause.getMessage()
+    );
   }
 
   @Override
@@ -210,137 +270,6 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     } finally {
       lock.unlock();
     }
-  }
-
-  private static <K, T> Flusher<K, T> wholeBatchFlusher(final String topic, final BatchSink<T> sink) {
-    return (snapshot, values, callbacks) -> {
-      Exception failure = null;
-      try {
-        sink.accept(values);
-      } catch (final Exception e) {
-        failure = e;
-        LOGGER.log(
-          Level.WARNING,
-          "Batch sink failed for topic {0} ({1} records): {2}",
-          topic,
-          snapshot.size(),
-          e.getMessage()
-        );
-      }
-
-      for (final var entry : snapshot) {
-        if (failure == null) callbacks.markProcessed(entry.record());
-        else callbacks.onBatchFailure(entry.record(), failure);
-      }
-    };
-  }
-
-  private static <K, T> Flusher<K, T> partialBatchFlusher(final String topic, final PartialBatchSink<T> sink) {
-    return (snapshot, values, callbacks) -> {
-      final var size = snapshot.size();
-      BatchResult<T> result;
-      try {
-        result = sink.apply(values);
-      } catch (final Exception e) {
-        // Sink itself blew up — fall back to v1 whole-batch behavior so no record gets silently
-        // dropped. Every record goes to the DLQ with the thrown exception as the cause.
-        LOGGER.log(
-          Level.WARNING,
-          "Partial batch sink threw for topic {0} ({1} records); falling back to whole-batch failure: {2}",
-          topic,
-          size,
-          e.getMessage()
-        );
-        for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), e);
-        return;
-      }
-
-      if (result == null) {
-        // Defensive — a `null` BatchResult is a contract violation; treat as whole-batch failure.
-        final var cause = new IllegalStateException(
-          "PartialBatchSink returned null BatchResult for topic " + topic + " (" + size + " records)"
-        );
-        LOGGER.log(Level.WARNING, cause.getMessage());
-        for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), cause);
-        return;
-      }
-
-      // Build a coverage set so we can detect indexes the sink did not account for. Iterating
-      // through the snapshot once at the end keeps offset-marking order stable (succeeded
-      // records first as they appear, then failures) — matters for `markOffsetProcessed`
-      // observability when records arrive out of partition order.
-      final var covered = new HashSet<Integer>(size * 2);
-      final var succeededSet = new HashSet<Integer>(result.succeededIndexes().size() * 2);
-      for (final var i : result.succeededIndexes()) {
-        if (i == null || i < 0 || i >= size) {
-          LOGGER.log(
-            Level.WARNING,
-            "PartialBatchSink returned out-of-range succeeded index {0} for topic {1} (batchSize={2})",
-            i,
-            topic,
-            size
-          );
-          continue;
-        }
-        succeededSet.add(i);
-        covered.add(i);
-      }
-      for (final var entry : result.failedByIndex().entrySet()) {
-        final var i = entry.getKey();
-        if (i == null || i < 0 || i >= size) {
-          LOGGER.log(
-            Level.WARNING,
-            "PartialBatchSink returned out-of-range failed index {0} for topic {1} (batchSize={2})",
-            i,
-            topic,
-            size
-          );
-          continue;
-        }
-        covered.add(i);
-      }
-
-      // Detect uncovered indexes BEFORE walking the snapshot, so we can reuse the same loop for
-      // dispatch. Uncovered indexes are treated as failures — silently marking them processed
-      // would mask sink bugs (the §12 "no silent failures" doctrine: a contract violation must
-      // be observable).
-      IllegalStateException coverageViolation = null;
-      if (covered.size() != size) {
-        final var missing = new ArrayList<Integer>();
-        for (int i = 0; i < size; i++) if (!covered.contains(i)) missing.add(i);
-        coverageViolation = new IllegalStateException(
-          "PartialBatchSink for topic " +
-          topic +
-          " did not account for indexes " +
-          missing +
-          " in a batch of " +
-          size +
-          " — treating as failures to avoid silent data loss"
-        );
-        LOGGER.log(Level.WARNING, coverageViolation.getMessage());
-      }
-
-      for (int i = 0; i < size; i++) {
-        final var record = snapshot.get(i).record();
-        if (succeededSet.contains(i)) {
-          callbacks.markProcessed(record);
-          continue;
-        }
-        final var perRecordCause = result.failedByIndex().get(i);
-        if (perRecordCause != null) {
-          callbacks.onBatchFailure(record, perRecordCause);
-          continue;
-        }
-        // Index neither in succeeded nor in failed map — coverage violation. Use the synthetic
-        // exception so operators can attribute failed records back to the contract bug.
-        callbacks.onBatchFailure(
-          record,
-          coverageViolation != null
-            ? coverageViolation
-            : new IllegalStateException("PartialBatchSink contract violation at index " + i + " for topic " + topic)
-        );
-      }
-    };
   }
 
   record Entry<K, T>(ConsumerRecord<K, byte[]> record, T value) {}

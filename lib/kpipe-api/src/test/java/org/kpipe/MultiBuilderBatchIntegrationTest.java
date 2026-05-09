@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
@@ -26,7 +25,6 @@ import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchResult;
 import org.kpipe.sink.BatchSink;
 import org.kpipe.sink.MessageSink;
-import org.kpipe.sink.PartialBatchSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
@@ -55,8 +53,8 @@ class MultiBuilderBatchIntegrationTest {
     final var batchCaptured = new CopyOnWriteArrayList<Map<String, Object>>();
     final var bytesBatchCaptured = new CopyOnWriteArrayList<byte[]>();
 
-    final BatchSink<Map<String, Object>> jsonBatchSink = batchCaptured::addAll;
-    final BatchSink<byte[]> bytesBatchSink = bytesBatchCaptured::addAll;
+    final BatchSink<Map<String, Object>> jsonBatchSink = BatchSink.ofVoid(batchCaptured::addAll);
+    final BatchSink<byte[]> bytesBatchSink = BatchSink.ofVoid(bytesBatchCaptured::addAll);
     final MessageSink<Map<String, Object>> nonBatchSink = nonBatchCaptured::add;
 
     final var policy = new BatchPolicy(5, Duration.ofSeconds(2));
@@ -77,8 +75,11 @@ class MultiBuilderBatchIntegrationTest {
           .send(
             new ProducerRecord<>(
               nonBatchTopic,
-              ("""
-              {"id":%d,"src":"nonbatch"}""").formatted(i).getBytes(StandardCharsets.UTF_8)
+              (
+                """
+                {"id":%d,"src":"nonbatch"}"""
+              ).formatted(i)
+                .getBytes(StandardCharsets.UTF_8)
             )
           )
           .get();
@@ -86,8 +87,11 @@ class MultiBuilderBatchIntegrationTest {
           .send(
             new ProducerRecord<>(
               batchTopic,
-              ("""
-              {"id":%d,"src":"batch"}""").formatted(i).getBytes(StandardCharsets.UTF_8)
+              (
+                """
+                {"id":%d,"src":"batch"}"""
+              ).formatted(i)
+                .getBytes(StandardCharsets.UTF_8)
             )
           )
           .get();
@@ -114,9 +118,7 @@ class MultiBuilderBatchIntegrationTest {
 
       assertTrue(nonBatchCaptured.stream().allMatch(m -> "nonbatch".equals(m.get("src"))));
       assertTrue(batchCaptured.stream().allMatch(m -> "batch".equals(m.get("src"))));
-      assertTrue(
-        bytesBatchCaptured.stream().allMatch(b -> new String(b, StandardCharsets.UTF_8).startsWith("raw-"))
-      );
+      assertTrue(bytesBatchCaptured.stream().allMatch(b -> new String(b, StandardCharsets.UTF_8).startsWith("raw-")));
     } finally {
       handle.shutdownGracefully(Duration.ofSeconds(2));
     }
@@ -128,7 +130,7 @@ class MultiBuilderBatchIntegrationTest {
   void builderRejectsTopicConfiguredAsBothRegularAndBatch() {
     final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
-    final BatchSink<Map<String, Object>> sink = b -> {};
+    final BatchSink<Map<String, Object>> sink = BatchSink.ofVoid(b -> {});
 
     final var ex = assertThrows(IllegalArgumentException.class, () ->
       KPipeConsumer.<byte[]>builder()
@@ -144,19 +146,20 @@ class MultiBuilderBatchIntegrationTest {
     );
   }
 
-  /// A batch + partial-batch combination on different topics is supported.
+  /// Two batch routes (one whole-batch via `ofVoid`, one returning per-record results) coexist
+  /// on different topics.
   @Test
-  void builderAcceptsBatchAndPartialBatchOnDifferentTopics() {
+  void builderAcceptsTwoBatchRoutesOnDifferentTopics() {
     final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
-    final BatchSink<Map<String, Object>> wholeBatch = b -> {};
-    final PartialBatchSink<Map<String, Object>> partialBatch = b -> BatchResult.allSucceeded(b.size());
+    final BatchSink<Map<String, Object>> wholeBatch = BatchSink.ofVoid(b -> {});
+    final BatchSink<Map<String, Object>> perRecordBatch = b -> BatchResult.allSucceeded(b.size());
 
     // No exception: two batch routes on different topics build cleanly.
     KPipeConsumer.<byte[]>builder()
       .withProperties(consumerProps("test-mixed-batch"))
       .withBatchPipeline("topic-whole", pipeline, wholeBatch, BatchPolicy.ofSize(10))
-      .withPartialBatchPipeline("topic-partial", pipeline, partialBatch, BatchPolicy.ofSize(10))
+      .withBatchPipeline("topic-per-record", pipeline, perRecordBatch, BatchPolicy.ofSize(10))
       .build();
   }
 

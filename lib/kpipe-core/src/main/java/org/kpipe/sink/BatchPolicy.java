@@ -9,6 +9,9 @@ import java.util.Objects;
 /// @param maxSize maximum number of records in a single batch (must be ≥ 1)
 /// @param maxAge maximum time the oldest buffered record may sit before flush (must be positive)
 public record BatchPolicy(int maxSize, Duration maxAge) {
+  /// Canonical constructor — validates that `maxSize` is at least 1 and `maxAge` is strictly
+  /// positive. Both rules guard against silently-broken configurations (a flush-of-zero or a
+  /// past-due age threshold).
   public BatchPolicy {
     if (maxSize < 1) throw new IllegalArgumentException("maxSize must be >= 1, got " + maxSize);
     Objects.requireNonNull(maxAge, "maxAge cannot be null");

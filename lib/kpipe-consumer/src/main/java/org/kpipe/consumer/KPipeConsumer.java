@@ -23,7 +23,6 @@ import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
-import org.kpipe.sink.PartialBatchSink;
 
 /// A functional-style Kafka consumer that processes records using a provided function.
 ///
@@ -149,25 +148,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
     private Builder() {}
 
     /// Internal record bundling the per-topic batch configuration handed in via
-    /// [#withBatchPipeline] (whole-batch flavor) or [#withPartialBatchPipeline] (per-record
-    /// flavor). Exactly one of `sink` and `partialSink` is non-null; the other is `null`. The
-    /// builder validates this invariant at construction time.
-    record BatchSpec<T>(
-      String topic,
-      MessagePipeline<T> pipeline,
-      BatchSink<T> sink,
-      PartialBatchSink<T> partialSink,
-      BatchPolicy policy
-    ) {
-      BatchSpec {
-        if ((sink == null) == (partialSink == null)) throw new IllegalArgumentException(
-          "BatchSpec must carry exactly one of (sink, partialSink); got sink=" +
-            (sink != null) +
-            ", partialSink=" +
-            (partialSink != null)
-        );
-      }
-    }
+    /// [#withBatchPipeline]. The [BatchSink] returns a [org.kpipe.sink.BatchResult] naming
+    /// per-record outcomes; void-style consumers can use [BatchSink#ofVoid] to opt into
+    /// whole-batch success/failure semantics.
+    record BatchSpec<T>(String topic, MessagePipeline<T> pipeline, BatchSink<T> sink, BatchPolicy policy) {}
 
     private Properties kafkaProps;
     private Set<String> topics;
@@ -306,49 +290,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       if (batchSpecs.containsKey(topic)) throw new IllegalArgumentException(
         "Duplicate batch route for topic '%s'".formatted(topic)
       );
-      this.batchSpecs.put(topic, new BatchSpec<>(topic, pipeline, sink, null, policy));
-      return this;
-    }
-
-    /// Configures a partial-batch-mode pipeline for `topic`. Like [#withBatchPipeline] but the
-    /// sink reports per-record success/failure via a [org.kpipe.sink.BatchResult] rather than
-    /// being treated as a single success-or-failure unit. Failed records (named by index in the
-    /// returned result) are sent individually to the configured DLQ; succeeded records have
-    /// their offsets marked processed normally.
-    ///
-    /// **Behavior on contract violations.** If the returned [org.kpipe.sink.BatchResult] does
-    /// not cover every input position, the missing indexes are treated as failures and sent to
-    /// the DLQ with a synthetic [IllegalStateException] as the cause — silently marking them
-    /// processed would mask sink bugs. If the sink itself throws, every record in the input
-    /// batch is sent to the DLQ with the thrown exception as the cause (whole-batch fallback).
-    ///
-    /// May be called multiple times to register partial-batch routes for different topics on the
-    /// same consumer (heterogeneous multi-topic batch consumption); the disjoint-topics check
-    /// fires in [#build]. Both sequential and parallel processing are supported. Under parallel
-    /// mode, buffered records participate in the in-flight backpressure metric so a slow sink
-    /// cannot let the buffer grow unbounded.
-    ///
-    /// @param topic the Kafka topic
-    /// @param pipeline the typed pipeline to deserialize+process raw bytes into `T`
-    /// @param sink the partial-batch sink invoked on each flush
-    /// @param policy the size/age flush thresholds
-    /// @param <T> the deserialized value type
-    /// @return this builder instance for method chaining
-    public <T> Builder<K> withPartialBatchPipeline(
-      final String topic,
-      final MessagePipeline<T> pipeline,
-      final PartialBatchSink<T> sink,
-      final BatchPolicy policy
-    ) {
-      Objects.requireNonNull(topic, "topic cannot be null");
-      if (topic.isBlank()) throw new IllegalArgumentException("topic cannot be blank");
-      Objects.requireNonNull(pipeline, "pipeline cannot be null");
-      Objects.requireNonNull(sink, "sink cannot be null");
-      Objects.requireNonNull(policy, "policy cannot be null");
-      if (batchSpecs.containsKey(topic)) throw new IllegalArgumentException(
-        "Duplicate batch route for topic '%s'".formatted(topic)
-      );
-      this.batchSpecs.put(topic, new BatchSpec<>(topic, pipeline, null, sink, policy));
+      this.batchSpecs.put(topic, new BatchSpec<>(topic, pipeline, sink, policy));
       return this;
     }
 
@@ -801,22 +743,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         }
       }
     };
-    if (spec.sink() != null) return new BatchPipelineWrapper<>(
-      spec.topic(),
-      spec.pipeline(),
-      spec.sink(),
-      spec.policy(),
-      batchScheduler,
-      callbacks
-    );
-    return new BatchPipelineWrapper<>(
-      spec.topic(),
-      spec.pipeline(),
-      spec.partialSink(),
-      spec.policy(),
-      batchScheduler,
-      callbacks
-    );
+    return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), batchScheduler, callbacks);
   }
 
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker

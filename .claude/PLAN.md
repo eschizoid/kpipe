@@ -20,9 +20,8 @@
 | Test coverage of the public surface    | 8.5/10      |
 | Aggregate                              | **~8.7/10** |
 
-**Honest "would I adopt this in prod?" delta:** API quality is high, but ecosystem-level features (multi-topic,
-batch sinks) are the gap between "polished niche tool" and "Spring Kafka alternative." Both committed on the
-roadmap below.
+"Would I adopt this in prod?" — API quality is fine, but the ecosystem features (multi-topic, batch sinks)
+are what separate it from being a niche tool vs. a Spring Kafka alternative. Both are on the roadmap below.
 
 ---
 
@@ -47,10 +46,10 @@ Single source of truth for what's left across the whole library.
 | 13 | **P5 — 2.0 candidates**       | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                  | Breaking refactor | ~half day |
 | 14 | **P5 — Speculative perf**     | Format serialization caches re-wire (only with JMH evidence)                                                                 | Perf              | ~1–2 days |
 
-**Recommendation:** P1 (#1, #2) shipped. Next adoption needle is **P2 #5 — batch sinks**; that's the
-"can I batch-insert into Postgres?" feature Spring Kafka users evaluate against. Circuit breaker (#6) and
-HTTP-fetcher cleanup (#4) compose on top. P3 items are correct fixes but invisible to users — defer until
-something forces them. **No further internal polish** — diminishing returns.
+P1 (#1, #2) shipped. Next is **P2 #5 — batch sinks**; this is the "can I batch-insert into Postgres?"
+feature Spring Kafka users evaluate against. Circuit breaker (#6) and HTTP-fetcher cleanup (#4) build on
+top. P3 items are correct fixes but invisible to users — defer until something forces them. No further
+internal polish for now; diminishing returns.
 
 ### Recently shipped
 
@@ -185,7 +184,7 @@ any caching work to Avro and JSON only.
 
 ## Strengths to preserve
 
-These properties of the library should NOT be regressed in any future refactor:
+Don't regress these in any future refactor:
 
 - **Byte boundary at the consumer entry point** — `KPipeConsumer<K>` operates on `byte[]` values. Format SerDe lives in
   the pipeline.

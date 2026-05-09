@@ -45,12 +45,12 @@ class StreamBatchIntegrationTest {
     final var batches = new CopyOnWriteArrayList<List<Map<String, Object>>>();
     final var totalCaptured = new ArrayList<Map<String, Object>>();
 
-    final BatchSink<Map<String, Object>> batchSink = batch -> {
+    final BatchSink<Map<String, Object>> batchSink = BatchSink.ofVoid(batch -> {
       batches.add(List.copyOf(batch));
       synchronized (totalCaptured) {
         totalCaptured.addAll(batch);
       }
-    };
+    });
 
     final var consumerProps = consumerProps("kpipe-batch-group-" + UUID.randomUUID());
     final var policy = new BatchPolicy(10, Duration.ofSeconds(2));

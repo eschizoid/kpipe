@@ -73,14 +73,14 @@ class BatchPipelineWrapperConcurrencyTest {
     // Slow sink — sleeps 5ms per call to widen the contention window between flushers and
     // workers still trying to enqueue. Captures every batch so we can assert "no record appears
     // in two batches" at the end.
-    final BatchSink<byte[]> sink = batch -> {
+    final BatchSink<byte[]> sink = BatchSink.ofVoid(batch -> {
       batches.add(List.copyOf(batch));
       try {
         Thread.sleep(5);
       } catch (final InterruptedException ie) {
         Thread.currentThread().interrupt();
       }
-    };
+    });
 
     final var wrapper = new BatchPipelineWrapper<>(
       topic,

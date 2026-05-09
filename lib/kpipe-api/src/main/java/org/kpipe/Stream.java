@@ -9,7 +9,6 @@ import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 import org.kpipe.sink.MessageSink;
-import org.kpipe.sink.PartialBatchSink;
 
 /// Fluent stream-composition type for the [KPipe] facade.
 ///
@@ -178,46 +177,30 @@ public interface Stream<T> {
   Sink<T> toCustom(final MessageSink<T> sink);
 
   /// Terminates the stream with a buffering [BatchSink], flushing in chunks of `policy.maxSize()`
-  /// or whenever `policy.maxAge()` elapses since the oldest buffered record. Offsets are
-  /// committed only after each flush returns successfully — a thrown sink sends every record in
-  /// the failed batch to the configured DLQ (if any) and still commits offsets so the consumer
-  /// does not loop on a poison batch.
+  /// or whenever `policy.maxAge()` elapses since the oldest buffered record. The sink returns a
+  /// [org.kpipe.sink.BatchResult] naming per-record outcomes: succeeded records have their
+  /// offsets marked processed; failed records are routed to the configured DLQ. For void-style
+  /// consumers that report whole-batch success or failure (e.g. a transactional commit), wrap
+  /// with [BatchSink#ofVoid] — exceptions translate to `BatchResult.allFailed`.
+  ///
+  /// **Coverage contract.** The returned [org.kpipe.sink.BatchResult] must account for every
+  /// position in the input batch. Indexes that are not named in either the success list or the
+  /// failure map are treated as failures (with a synthetic [IllegalStateException] as the
+  /// cause) — silently marking them processed would mask sink bugs and risk data loss. If the
+  /// sink itself throws, every record is sent to the DLQ with the thrown exception (whole-batch
+  /// fallback).
   ///
   /// **Both processing modes are supported.** Default is parallel; call
   /// [#withSequentialProcessing] to switch to per-partition ordering. Under parallel mode,
   /// buffered records participate in the in-flight backpressure metric so a slow sink cannot let
-  /// the buffer grow unbounded. Single-topic only — multi-topic batching ships in a follow-up.
+  /// the buffer grow unbounded. Single-topic streams via [KPipe#json]/[KPipe#avro]/etc; for
+  /// multi-topic batch consumers use the [KPipe#multi] builder.
   ///
   /// @param sink the batch sink invoked on each flush (must not be null)
   /// @param policy the size/age flush thresholds (must not be null)
   /// @return a [Sink] ready to start
   /// @throws NullPointerException if any argument is null
   Sink<T> toBatch(final BatchSink<T> sink, final BatchPolicy policy);
-
-  /// Terminates the stream with a buffering [PartialBatchSink], flushing in chunks of
-  /// `policy.maxSize()` or whenever `policy.maxAge()` elapses since the oldest buffered record.
-  /// Unlike [#toBatch], the sink reports per-record success/failure via a
-  /// [org.kpipe.sink.BatchResult]: only the records the sink names as failed are routed to the
-  /// configured DLQ, while the records it names as succeeded have their offsets marked
-  /// processed normally.
-  ///
-  /// **Coverage contract.** The returned [org.kpipe.sink.BatchResult] must account for every
-  /// position in the input batch. Indexes that are not named in either the success list or the
-  /// failure map are treated as failures (with a synthetic [IllegalStateException] as the
-  /// cause) — silently marking them processed would mask sink bugs and risk data loss. If the
-  /// sink itself throws, every record in the input batch is sent to the DLQ with the thrown
-  /// exception (whole-batch fallback, equivalent to v1 [#toBatch] failure semantics).
-  ///
-  /// **Both processing modes are supported.** Default is parallel; call
-  /// [#withSequentialProcessing] to switch to per-partition ordering. Like [#toBatch], buffered
-  /// records participate in the in-flight backpressure metric under parallel mode. Single-topic
-  /// only — multi-topic batching ships in a follow-up.
-  ///
-  /// @param sink the partial-batch sink invoked on each flush (must not be null)
-  /// @param policy the size/age flush thresholds (must not be null)
-  /// @return a [Sink] ready to start
-  /// @throws NullPointerException if any argument is null
-  Sink<T> toBatchPartial(final PartialBatchSink<T> sink, final BatchPolicy policy);
 
   /// Terminates the stream by fanning out to multiple sinks. Each delivered message is dispatched
   /// to every sink; an exception in one sink is **logged at ERROR but suppressed** so the

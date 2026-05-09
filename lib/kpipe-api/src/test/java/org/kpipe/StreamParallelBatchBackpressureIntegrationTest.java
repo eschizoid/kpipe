@@ -58,14 +58,14 @@ class StreamParallelBatchBackpressureIntegrationTest {
     // at roughly 1000 records/sec, well below the producer's burst rate. Buffered records
     // accumulate, the in-flight + buffered metric crosses 50 (the high watermark), and the
     // consumer pauses.
-    final BatchSink<Map<String, Object>> batchSink = batch -> {
+    final BatchSink<Map<String, Object>> batchSink = BatchSink.ofVoid(batch -> {
       try {
         Thread.sleep(10);
       } catch (final InterruptedException ie) {
         Thread.currentThread().interrupt();
       }
       totalCaptured.addAll(batch);
-    };
+    });
 
     final var consumerProps = consumerProps("kpipe-bp-batch-group-" + UUID.randomUUID());
     // maxSize=10 keeps the buffer turning over so the buffered count actively contributes to

@@ -138,12 +138,8 @@ public final class MultiBuilder {
 
     final var stream = new DefaultStream<>(Set.of(topic), kafkaProps, format, defaultConsoleSinkFactory);
     final var sink = configurator.apply(stream);
-    if (
-      !(sink instanceof DefaultSink<?>) &&
-      !(sink instanceof DefaultBatchSink<?>) &&
-      !(sink instanceof DefaultPartialBatchSink<?>)
-    ) throw new IllegalStateException(
-      "Sink returned by configurator for topic '%s' is not a kpipe-built sink — call .toConsole(), .toCustom(...), .toMulti(...), .toBatch(...), or .toBatchPartial(...) on the supplied stream".formatted(
+    if (!(sink instanceof DefaultSink<?>) && !(sink instanceof DefaultBatchSink<?>)) throw new IllegalStateException(
+      "Sink returned by configurator for topic '%s' is not a kpipe-built sink — call .toConsole(), .toCustom(...), .toMulti(...), or .toBatch(...) on the supplied stream".formatted(
         topic
       )
     );
@@ -154,9 +150,9 @@ public final class MultiBuilder {
   /// Builds and starts the underlying [KPipeConsumer] / [KPipeRunner] with the registered routes
   /// and returns a [Handle] for lifecycle management.
   ///
-  /// Routes terminating in `.toBatch(...)` / `.toBatchPartial(...)` are wired through
-  /// `withBatchPipeline` / `withPartialBatchPipeline`; the consumer subscribes to the union of
-  /// regular and batch topics and dispatches per-record via the per-topic batch wrapper map.
+  /// Routes terminating in `.toBatch(...)` are wired through `withBatchPipeline`; the consumer
+  /// subscribes to the union of regular and batch topics and dispatches per-record via the
+  /// per-topic batch wrapper map.
   ///
   /// @return a [Handle] for lifecycle management
   /// @throws IllegalStateException if no routes have been registered
@@ -173,8 +169,6 @@ public final class MultiBuilder {
         nonBatchPipelines.put(topic, ds.buildPipeline());
       } else if (sink instanceof DefaultBatchSink<?> dbs) {
         addBatchRoute(consumerBuilder, dbs);
-      } else if (sink instanceof DefaultPartialBatchSink<?> dpbs) {
-        addPartialBatchRoute(consumerBuilder, dpbs);
       }
     }
 
@@ -195,25 +189,12 @@ public final class MultiBuilder {
     return new DefaultHandle(runner, consumer);
   }
 
-  /// Type witnesses keep the generic plumbing one-line: pull the typed pipeline + sink off the
-  /// route, then call the typed builder method. Without this helper the casts would litter
-  /// `start()`.
+  /// Type witness: pulls the typed pipeline + sink off the route, then calls the typed builder
+  /// method. Without this helper the casts would litter `start()`.
   private static <T> void addBatchRoute(
     final KPipeConsumer.Builder<byte[]> consumerBuilder,
     final DefaultBatchSink<T> route
   ) {
     consumerBuilder.withBatchPipeline(route.topic(), route.buildPipeline(), route.batchSink(), route.batchPolicy());
-  }
-
-  private static <T> void addPartialBatchRoute(
-    final KPipeConsumer.Builder<byte[]> consumerBuilder,
-    final DefaultPartialBatchSink<T> route
-  ) {
-    consumerBuilder.withPartialBatchPipeline(
-      route.topic(),
-      route.buildPipeline(),
-      route.partialSink(),
-      route.batchPolicy()
-    );
   }
 }

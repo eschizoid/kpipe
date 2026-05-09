@@ -19,7 +19,6 @@ import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 import org.kpipe.sink.CompositeMessageSink;
 import org.kpipe.sink.MessageSink;
-import org.kpipe.sink.PartialBatchSink;
 
 /// Package-private immutable record-based [Stream]. Each fluent method returns a NEW
 /// `DefaultStream` carrying the updated configuration; the original instance is never mutated.
@@ -199,13 +198,6 @@ record DefaultStream<T>(
     Objects.requireNonNull(sink, "sink cannot be null");
     Objects.requireNonNull(policy, "policy cannot be null");
     return new DefaultBatchSink<>(this, sink, policy);
-  }
-
-  @Override
-  public Sink<T> toBatchPartial(final PartialBatchSink<T> sink, final BatchPolicy policy) {
-    Objects.requireNonNull(sink, "sink cannot be null");
-    Objects.requireNonNull(policy, "policy cannot be null");
-    return new DefaultPartialBatchSink<>(this, sink, policy);
   }
 
   @Override
