@@ -23,7 +23,6 @@ import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
-import org.kpipe.sink.PartialBatchSink;
 
 /// A functional-style Kafka consumer that processes records using a provided function.
 ///
@@ -112,7 +111,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final String deadLetterTopic;
   private final KPipeProducer<K, byte[]> kpipeProducer;
 
-  private final BatchPipelineWrapper<K, ?> batchWrapper;
+  private final Map<String, BatchPipelineWrapper<K, ?>> batchWrappers;
   private final ScheduledExecutorService batchScheduler;
 
   /// Represents an error that occurred during record processing. Contains the original record,
@@ -149,31 +148,16 @@ public class KPipeConsumer<K> implements AutoCloseable {
     private Builder() {}
 
     /// Internal record bundling the per-topic batch configuration handed in via
-    /// [#withBatchPipeline] (whole-batch flavor) or [#withPartialBatchPipeline] (per-record
-    /// flavor). Exactly one of `sink` and `partialSink` is non-null; the other is `null`. The
-    /// builder validates this invariant at construction time.
-    record BatchSpec<T>(
-      String topic,
-      MessagePipeline<T> pipeline,
-      BatchSink<T> sink,
-      PartialBatchSink<T> partialSink,
-      BatchPolicy policy
-    ) {
-      BatchSpec {
-        if ((sink == null) == (partialSink == null)) throw new IllegalArgumentException(
-          "BatchSpec must carry exactly one of (sink, partialSink); got sink=" +
-          (sink != null) +
-          ", partialSink=" +
-          (partialSink != null)
-        );
-      }
-    }
+    /// [#withBatchPipeline]. The [BatchSink] returns a [org.kpipe.sink.BatchResult] naming
+    /// per-record outcomes; void-style consumers can use [BatchSink#ofVoid] to opt into
+    /// whole-batch success/failure semantics.
+    record BatchSpec<T>(String topic, MessagePipeline<T> pipeline, BatchSink<T> sink, BatchPolicy policy) {}
 
     private Properties kafkaProps;
     private Set<String> topics;
     private MessagePipeline<?> pipeline;
     private Map<String, MessagePipeline<?>> pipelinesPerTopic;
-    private BatchSpec<?> batchSpec;
+    private final Map<String, BatchSpec<?>> batchSpecs = new LinkedHashMap<>();
     private Duration pollTimeout = Duration.ofMillis(100);
     private ErrorHandler<K> errorHandler = e ->
       LOGGER.log(
@@ -279,10 +263,12 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// throwing sink sends every record in the batch to the configured DLQ (if any) and still
     /// commits offsets so the consumer does not loop on a poison batch.
     ///
-    /// **Single-topic only in v1.** Cannot be combined with `withPipeline` / `withPipelines`.
-    /// Both sequential and parallel processing are supported. Under parallel mode, buffered
-    /// records participate in the in-flight backpressure metric so a slow sink cannot let the
-    /// buffer grow unbounded.
+    /// May be called multiple times to register batch routes for different topics on the same
+    /// consumer (heterogeneous multi-topic batch consumption). Cannot be combined with
+    /// `withPipeline` / `withPipelines` for the SAME topic — the disjoint-topics check fires in
+    /// [#build]. Both sequential and parallel processing are supported. Under parallel mode,
+    /// buffered records participate in the in-flight backpressure metric so a slow sink cannot
+    /// let the buffer grow unbounded.
     ///
     /// @param topic the Kafka topic
     /// @param pipeline the typed pipeline to deserialize+process raw bytes into `T`
@@ -301,47 +287,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
       Objects.requireNonNull(pipeline, "pipeline cannot be null");
       Objects.requireNonNull(sink, "sink cannot be null");
       Objects.requireNonNull(policy, "policy cannot be null");
-      this.batchSpec = new BatchSpec<>(topic, pipeline, sink, null, policy);
-      this.topics = Set.of(topic);
-      return this;
-    }
-
-    /// Configures a partial-batch-mode pipeline for `topic`. Like [#withBatchPipeline] but the
-    /// sink reports per-record success/failure via a [org.kpipe.sink.BatchResult] rather than
-    /// being treated as a single success-or-failure unit. Failed records (named by index in the
-    /// returned result) are sent individually to the configured DLQ; succeeded records have
-    /// their offsets marked processed normally.
-    ///
-    /// **Behavior on contract violations.** If the returned [org.kpipe.sink.BatchResult] does
-    /// not cover every input position, the missing indexes are treated as failures and sent to
-    /// the DLQ with a synthetic [IllegalStateException] as the cause — silently marking them
-    /// processed would mask sink bugs. If the sink itself throws, every record in the input
-    /// batch is sent to the DLQ with the thrown exception as the cause (whole-batch fallback).
-    ///
-    /// **Single-topic only in v1.** Cannot be combined with `withPipeline` / `withPipelines` /
-    /// `withBatchPipeline`. Both sequential and parallel processing are supported. Under
-    /// parallel mode, buffered records participate in the in-flight backpressure metric so a
-    /// slow sink cannot let the buffer grow unbounded.
-    ///
-    /// @param topic the Kafka topic
-    /// @param pipeline the typed pipeline to deserialize+process raw bytes into `T`
-    /// @param sink the partial-batch sink invoked on each flush
-    /// @param policy the size/age flush thresholds
-    /// @param <T> the deserialized value type
-    /// @return this builder instance for method chaining
-    public <T> Builder<K> withPartialBatchPipeline(
-      final String topic,
-      final MessagePipeline<T> pipeline,
-      final PartialBatchSink<T> sink,
-      final BatchPolicy policy
-    ) {
-      Objects.requireNonNull(topic, "topic cannot be null");
-      if (topic.isBlank()) throw new IllegalArgumentException("topic cannot be blank");
-      Objects.requireNonNull(pipeline, "pipeline cannot be null");
-      Objects.requireNonNull(sink, "sink cannot be null");
-      Objects.requireNonNull(policy, "policy cannot be null");
-      this.batchSpec = new BatchSpec<>(topic, pipeline, null, sink, policy);
-      this.topics = Set.of(topic);
+      if (batchSpecs.containsKey(topic)) throw new IllegalArgumentException(
+        "Duplicate batch route for topic '%s'".formatted(topic)
+      );
+      this.batchSpecs.put(topic, new BatchSpec<>(topic, pipeline, sink, policy));
       return this;
     }
 
@@ -581,24 +530,52 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @return a new KPipeConsumer instance
     public KPipeConsumer<K> build() {
       Objects.requireNonNull(kafkaProps, "Kafka properties must be provided");
-      if (batchSpec != null && (pipeline != null || pipelinesPerTopic != null)) throw new IllegalArgumentException(
-        "withBatchPipeline / withPartialBatchPipeline cannot be combined with withPipeline / withPipelines"
-      );
       if (pipeline != null && pipelinesPerTopic != null) throw new IllegalArgumentException(
         "Use either withPipeline (homogeneous) or withPipelines (heterogeneous), not both"
       );
-      if (batchSpec != null) {
-        // topics already populated by withBatchPipeline; nothing else to assert.
+
+      // Compute the regular-pipeline topic set. When no batch routes are configured the existing
+      // semantics apply (topic + pipeline are both required, missing fields throw NPE). When
+      // batch routes ARE configured the regular pipeline is optional — a batch-only consumer is
+      // legitimate, and the regular path validates only when the user partly set it up.
+      final Set<String> regularTopics;
+      if (batchSpecs.isEmpty()) {
+        if (pipelinesPerTopic != null) {
+          if (topics != null) throw new IllegalArgumentException(
+            "withTopic/withTopics is unnecessary with withPipelines — topics are derived from the map keys; remove the explicit topic call"
+          );
+          regularTopics = pipelinesPerTopic.keySet();
+        } else {
+          Objects.requireNonNull(topics, "Topic must be provided via withTopic or withTopics");
+          if (topics.isEmpty()) throw new IllegalArgumentException("At least one topic must be provided");
+          Objects.requireNonNull(pipeline, "Pipeline function must be provided");
+          regularTopics = topics;
+        }
       } else if (pipelinesPerTopic != null) {
         if (topics != null) throw new IllegalArgumentException(
           "withTopic/withTopics is unnecessary with withPipelines — topics are derived from the map keys; remove the explicit topic call"
         );
-        this.topics = new LinkedHashSet<>(pipelinesPerTopic.keySet());
-      } else {
+        regularTopics = pipelinesPerTopic.keySet();
+      } else if (pipeline != null) {
         Objects.requireNonNull(topics, "Topic must be provided via withTopic or withTopics");
-        if (topics.isEmpty()) throw new IllegalArgumentException("At least one topic must be provided");
-        Objects.requireNonNull(pipeline, "Pipeline function must be provided");
+        regularTopics = topics;
+      } else {
+        regularTopics = Set.of();
       }
+
+      // A topic must live in EITHER pipelines/pipelinesPerTopic OR batchSpecs, never both.
+      for (final var batchTopic : batchSpecs.keySet()) {
+        if (regularTopics.contains(batchTopic)) throw new IllegalArgumentException(
+          "Topic '%s' is configured as both a regular pipeline and a batch route — pick one".formatted(batchTopic)
+        );
+      }
+
+      // The consumer subscribes to the union of regular and batch topics. Always overwrite
+      // `this.topics` here — pre-existing code did the same when pipelinesPerTopic was set.
+      final var union = new LinkedHashSet<String>(regularTopics.size() + batchSpecs.size());
+      union.addAll(regularTopics);
+      union.addAll(batchSpecs.keySet());
+      this.topics = union;
       if (maxRetries < 0) throw new IllegalArgumentException("Max retries cannot be negative");
       if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
         "Poll timeout must be positive"
@@ -623,14 +600,20 @@ public class KPipeConsumer<K> implements AutoCloseable {
         ? builder.consumerProvider.get()
         : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
     this.topics = Set.copyOf(Objects.requireNonNull(builder.topics, "Topics must be set"));
-    if (builder.batchSpec != null) {
-      this.pipelines = Map.of();
-    } else if (builder.pipelinesPerTopic != null) this.pipelines = builder.pipelinesPerTopic;
-    else {
-      final var map = new LinkedHashMap<String, MessagePipeline<?>>(this.topics.size());
-      final var single = Objects.requireNonNull(builder.pipeline, "pipeline cannot be null");
-      for (final var t : this.topics) map.put(t, single);
+    if (builder.pipelinesPerTopic != null) {
+      this.pipelines = builder.pipelinesPerTopic;
+    } else if (builder.pipeline != null) {
+      // Homogeneous: only the pipeline-bound topics get this pipeline; batch topics live in
+      // batchWrappers and are handled separately by tryProcessRecord.
+      final var pipelineTopics = builder.topics
+        .stream()
+        .filter(t -> !builder.batchSpecs.containsKey(t))
+        .toList();
+      final var map = new LinkedHashMap<String, MessagePipeline<?>>(pipelineTopics.size());
+      for (final var t : pipelineTopics) map.put(t, builder.pipeline);
       this.pipelines = Map.copyOf(map);
+    } else {
+      this.pipelines = Map.of();
     }
     this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
     this.errorHandler = builder.errorHandler;
@@ -672,16 +655,20 @@ public class KPipeConsumer<K> implements AutoCloseable {
           ? KPipeProducer.<K, byte[]>builder().withProperties(builder.kafkaProps).build()
           : null;
 
-    if (builder.batchSpec != null) {
+    if (!builder.batchSpecs.isEmpty()) {
       this.batchScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         final var t = Thread.ofVirtual().unstarted(r);
         t.setName("kpipe-batch-scheduler");
         return t;
       });
-      this.batchWrapper = createBatchWrapper(builder.batchSpec);
+      final var wrappers = new LinkedHashMap<String, BatchPipelineWrapper<K, ?>>(builder.batchSpecs.size());
+      for (final var entry : builder.batchSpecs.entrySet()) {
+        wrappers.put(entry.getKey(), createBatchWrapper(entry.getValue()));
+      }
+      this.batchWrappers = Map.copyOf(wrappers);
     } else {
       this.batchScheduler = null;
-      this.batchWrapper = null;
+      this.batchWrappers = Map.of();
     }
 
     if (builder.backpressureController == null) {
@@ -737,12 +724,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       public void onBatchFailure(final ConsumerRecord<K, byte[]> record, final Exception cause) {
         if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
         otelMetrics.recordProcessingError(record.topic());
-        LOGGER.log(
-          Level.WARNING,
-          "Batch failure for record at offset {0}: {1}",
-          record.offset(),
-          cause.getMessage()
-        );
+        LOGGER.log(Level.WARNING, "Batch failure for record at offset {0}: {1}", record.offset(), cause.getMessage());
         if (deadLetterTopic != null && kpipeProducer != null) {
           final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause);
           if (sent && enableMetrics) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
@@ -761,22 +743,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         }
       }
     };
-    if (spec.sink() != null) return new BatchPipelineWrapper<>(
-      spec.topic(),
-      spec.pipeline(),
-      spec.sink(),
-      spec.policy(),
-      batchScheduler,
-      callbacks
-    );
-    return new BatchPipelineWrapper<>(
-      spec.topic(),
-      spec.pipeline(),
-      spec.partialSink(),
-      spec.policy(),
-      batchScheduler,
-      callbacks
-    );
+    return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), batchScheduler, callbacks);
   }
 
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
@@ -808,7 +775,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (!state.compareAndSet(ConsumerState.CREATED, ConsumerState.RUNNING)) return;
 
     if (offsetManager != null) offsetManager.start();
-    if (batchWrapper != null) batchWrapper.start();
+    batchWrappers.values().forEach(BatchPipelineWrapper::start);
     if (rebalanceListener != null) kafkaConsumer.subscribe(topics, rebalanceListener);
     else kafkaConsumer.subscribe(topics);
 
@@ -1061,9 +1028,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
       virtualThreadExecutor.shutdownNow();
     }
 
-    if (batchWrapper != null) {
+    for (final var wrapper : batchWrappers.values()) {
       try {
-        batchWrapper.close();
+        wrapper.close();
       } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Error draining batch buffer during shutdown", e);
       }
@@ -1164,7 +1131,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
   }
 
   private boolean tryProcessRecord(final ConsumerRecord<K, byte[]> record) {
-    if (batchWrapper != null) return tryEnqueueBatchRecord(record);
+    final var batchWrapper = batchWrappers.get(record.topic());
+    if (batchWrapper != null) return tryEnqueueBatchRecord(record, batchWrapper);
     final var pipeline = pipelines.get(record.topic());
     if (pipeline == null) {
       // Partial-revocation race: subscribed topic was reassigned mid-poll. Mark processed so we
@@ -1200,20 +1168,23 @@ public class KPipeConsumer<K> implements AutoCloseable {
   }
 
   /// Returns the total number of records currently being tracked for backpressure: the dispatched
-  /// in-flight count plus, when a batch wrapper is configured, the records buffered inside it.
+  /// in-flight count plus the sum of records buffered across all configured batch wrappers.
   /// Without the buffered piece, a slow batch sink under parallel mode would let the buffer grow
   /// unbounded — the consumer thread decrements `inFlightCount` the moment a record finishes
   /// `processRecord` (which for batch is "the record was buffered"), so the buffer would be
   /// invisible to the watermark check.
   private long totalInFlight() {
-    final var dispatched = inFlightCount.get();
-    if (batchWrapper == null) return dispatched;
-    return dispatched + batchWrapper.bufferedCount();
+    var total = inFlightCount.get();
+    for (final var wrapper : batchWrappers.values()) total += wrapper.bufferedCount();
+    return total;
   }
 
   @SuppressWarnings({ "unchecked", "rawtypes" })
-  private boolean tryEnqueueBatchRecord(final ConsumerRecord<K, byte[]> record) {
-    final BatchPipelineWrapper rawWrapper = batchWrapper;
+  private boolean tryEnqueueBatchRecord(
+    final ConsumerRecord<K, byte[]> record,
+    final BatchPipelineWrapper<K, ?> wrapper
+  ) {
+    final BatchPipelineWrapper rawWrapper = wrapper;
     try {
       final var pipeline = rawWrapper.pipeline();
       final var value = pipeline.processToValue(record.value());

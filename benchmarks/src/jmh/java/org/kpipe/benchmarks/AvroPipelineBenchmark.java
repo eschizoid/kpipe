@@ -66,7 +66,13 @@ public class AvroPipelineBenchmark {
 
     final var out = new ByteArrayOutputStream();
     final var writer = new GenericDatumWriter<>(schema);
-    writer.write(record, EncoderFactory.get().binaryEncoder(out, null));
+    final var encoder = EncoderFactory.get().binaryEncoder(out, null);
+    writer.write(record, encoder);
+    // BinaryEncoder buffers — without flush(), out.toByteArray() returns empty bytes and the
+    // bench produces a non-deserializable payload. The previous snapshot ran fine because
+    // an earlier AvroFormat.deserialize codepath happened to ignore the empty input; the v1
+    // batch-sink work tightened that contract and surfaced the latent bug.
+    encoder.flush();
     avroBytes = out.toByteArray();
 
     // With magic bytes (Confluent format: 0x0 + 4 bytes schema ID)

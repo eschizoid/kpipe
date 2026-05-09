@@ -57,10 +57,10 @@ class StreamParallelBatchIntegrationTest {
     final var batches = new CopyOnWriteArrayList<List<Map<String, Object>>>();
     final var totalCaptured = Collections.synchronizedList(new ArrayList<Map<String, Object>>());
 
-    final BatchSink<Map<String, Object>> batchSink = batch -> {
+    final BatchSink<Map<String, Object>> batchSink = BatchSink.ofVoid(batch -> {
       batches.add(List.copyOf(batch));
       totalCaptured.addAll(batch);
-    };
+    });
 
     final var consumerProps = consumerProps("kpipe-parallel-batch-group-" + UUID.randomUUID());
     // maxSize=20 — 200 records will cause ~10 size-triggered flushes plus a final age/shutdown

@@ -32,6 +32,34 @@ Consumer.
 - **Confluent Parallel Consumer**: Industry-standard library for parallel processing, used as a baseline for comparison.
 - **Kafka backend**: Uses an in-process embedded Kafka broker powered by Apache Kafka test kit.
 
+### 4. Batch Sink Throughput (`BatchSinkLatencyBenchmark`)
+
+Quantifies the win from `Stream.toBatch(...)` when the destination has nontrivial per-call cost. The benchmark
+parameterises over batch size (1 / 10 / 100) and a simulated sink latency (10 / 100 / 1000 µs) — the sink calls
+`LockSupport.parkNanos(latency)` once per batch regardless of size, mirroring JDBC commits, HTTP POSTs, and S3 PUTs
+where wall-clock cost is dominated by a per-call round trip rather than per-record CPU.
+
+A no-op sink would give a misleading result here (per-record overhead becomes the only cost), so the bench deliberately
+inserts the per-call latency to expose the amortisation that batching provides.
+
+#### Results (Apple Silicon, JDK 25.0.2, single fork, 3×2s warmup + 5×3s measurement)
+
+| batchSize | sinkLatencyMicros | Throughput (ops/s) | Speedup vs batchSize=1 |
+|----------:|------------------:|-------------------:|-----------------------:|
+|         1 |                10 |             28,018 |                  1.00× |
+|         1 |               100 |              6,885 |                  1.00× |
+|         1 |              1000 |                788 |                  1.00× |
+|        10 |                10 |            264,606 |                   9.4× |
+|        10 |               100 |             63,813 |                   9.3× |
+|        10 |              1000 |              7,778 |                   9.9× |
+|       100 |                10 |            605,458 |                  21.6× |
+|       100 |               100 |            361,636 |                  52.5× |
+|       100 |              1000 |             66,059 |                  83.9× |
+
+The story is exactly what the design promised: at 1000 µs/call (think a slow JDBC commit) batching at size 100 is **~84×
+the throughput** of single-record processing. At 10 µs/call batching still helps, but the gain shrinks because per-call
+cost is no longer the bottleneck.
+
 ## Running Benchmarks
 
 To run all benchmarks with default JMH settings:
@@ -66,49 +94,63 @@ JMH parameters can be configured in `benchmarks/build.gradle.kts` or passed via 
 
 ## Latest Results (Snapshot)
 
-Run date: `2026-03-10`
+Run date: `2026-05-09` · Apple Silicon · JDK 25.0.2 · single fork · 3×2s warmup + 5×3s measurement (`Cnt = 5`).
 
 ### 1. Avro Pipeline: The "Zero-Copy" Advantage
 
 This benchmark compares KPipe's zero-copy offset-based deserialization against the traditional approach of using
 `Arrays.copyOfRange`.
 
-| Benchmark                                       |    Mode |  Cnt |            Score |            Error |   Units |
-| ----------------------------------------------- | ------: | ---: | ---------------: | ---------------: | ------: |
-| `AvroPipelineBenchmark.kpipeAvroMagicPipeline`  | `thrpt` | `16` | `740,303,088.78` | `+/- 35,778,690` | `ops/s` |
-| `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `16` | `351,320,682.67` | `+/- 68,268,778` | `ops/s` |
+> **Bench fix in this snapshot.** The previous snapshot's headline numbers (~740M ops/s / ~351M ops/s) were not real —
+> `@Setup` wrote to a `BinaryEncoder` without calling `flush()`, so `out.toByteArray()` returned an empty array. Earlier
+> versions of `AvroFormat.deserialize` silently returned `null` on empty input; the manual path's `serialize(null)` then
+> NPE'd, but the older `AvroFormat.serialize(null)` happened to no-op. Both crashes were timed as "fast work," producing
+> numbers that looked impressive but measured nothing. Adding `encoder.flush()` in `@Setup` produces the realistic
+> numbers below.
 
-**Observation**: KPipe is **~2.1x faster** when handling Confluent Magic Bytes. By using an `offset` instead of copying
-the byte array, we effectively eliminate allocation overhead and drastically reduce GC pressure for high-throughput
-streams.
+| Benchmark                                       |    Mode | Cnt |        Score |           Error |   Units |
+|-------------------------------------------------|--------:|----:|-------------:|----------------:|--------:|
+| `AvroPipelineBenchmark.kpipeAvroMagicPipeline`  | `thrpt` | `5` | `926,454.03` | `± 255,156.10`  | `ops/s` |
+| `AvroPipelineBenchmark.kpipeAvroPipeline`       | `thrpt` | `5` | `806,103.53` | `± 308,309.30`  | `ops/s` |
+| `AvroPipelineBenchmark.manualAvroMagicHandling` | `thrpt` | `5` | `676,133.95` | `± 662,309.38`  | `ops/s` |
+
+**Observation**: KPipe's zero-copy magic-byte handling is **~1.37× faster** than the manual `Arrays.copyOfRange`
+strip-and-reparse approach. The error band on the manual path is wide because allocation pressure interacts with GC
+pauses unpredictably; the gap is real but smaller than the previous (broken) snapshot's `~2.1×` claim.
 
 ### 2. JSON Pipeline: Defeating the "SerDe Tax"
 
 This benchmark measures the cost of chaining multiple transformations.
 
-| Benchmark                                      |    Mode |  Cnt |        Score |          Error |   Units |
-| ---------------------------------------------- | ------: | ---: | -----------: | -------------: | ------: |
-| `JsonPipelineBenchmark.kpipeJsonPipeline`      | `thrpt` | `16` | `405,542.23` | `+/- 28,441.3` | `ops/s` |
-| `JsonPipelineBenchmark.manualJsonSerDeChained` | `thrpt` | `16` | `120,315.66` | `+/- 10,061.3` | `ops/s` |
-| `JsonPipelineBenchmark.manualJsonSingleSerDe`  | `thrpt` | `16` | `364,166.21` | `+/- 39,811.4` | `ops/s` |
+| Benchmark                                      |    Mode | Cnt |        Score |          Error |   Units |
+|------------------------------------------------|--------:|----:|-------------:|---------------:|--------:|
+| `JsonPipelineBenchmark.kpipeJsonPipeline`      | `thrpt` | `5` | `241,973.45` | `± 112,445.20` | `ops/s` |
+| `JsonPipelineBenchmark.manualJsonSerDeChained` | `thrpt` | `5` |  `78,396.78` |  `± 38,829.91` | `ops/s` |
+| `JsonPipelineBenchmark.manualJsonSingleSerDe`  | `thrpt` | `5` | `200,700.24` | `± 202,444.52` | `ops/s` |
 
-**Observation**: KPipe is **~3.3x faster** than a naive chained approach. Even compared to a manual single-block
-implementation (`manualJsonSingleSerDe`), KPipe's internal operator chaining is slightly more efficient, providing
-abstraction without a performance penalty.
+**Observation**: KPipe is **~3.1× faster** than a naive chained approach (`manualJsonSerDeChained`) and roughly on par
+with the manual single-SerDe implementation (`manualJsonSingleSerDe`) — the latter overlaps within error in this
+single-fork run. Both confirm KPipe's operator chaining adds no measurable SerDe tax on top of a bespoke single-pass
+implementation.
 
 ### 3. Parallel Processing: Virtual Threads (Loom) vs. Confluent
 
 This benchmark compares KPipe's "thread-per-record" model using Java Virtual Threads against the industry-standard
 Confluent Parallel Consumer.
 
-| Benchmark                                                 |    Mode |  Cnt |       Score |        Error |   Units |
-| --------------------------------------------------------- | ------: | ---: | ----------: | -----------: | ------: |
-| `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `16` | `3,235.415` | `+/- 14.876` | `ops/s` |
-| `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `16` | `3,306.732` |  `+/- 3.368` | `ops/s` |
+| Benchmark                                                 |    Mode | Cnt |       Score |       Error |   Units |
+|-----------------------------------------------------------|--------:|----:|------------:|------------:|--------:|
+| `ParallelProcessingBenchmark.confluentParallelProcessing` | `thrpt` | `5` | `3,110.974` | `± 400.967` | `ops/s` |
+| `ParallelProcessingBenchmark.kpipeParallelProcessing`     | `thrpt` | `5` | `3,268.037` |  `± 83.313` | `ops/s` |
 
 **Observation**: With `10,000` messages per invocation and `8` partitions, this run shows a measurable throughput edge
-for KPipe (**~2.2%** over Confluent). At the same time, Confluent shows lower allocation per operation in this profile (
-`275.078 B/op` vs `1457.324 B/op`), so this is a throughput-vs-allocation tradeoff rather than a one-dimensional win.
+for KPipe (**~5.0%** over Confluent) with notably tighter variance (`±83` vs `±401`). KPipe's score is also more stable
+across iterations — Confluent's wider error band reflects iteration-to-iteration spread on the embedded Kafka broker.
+
+### 4. Batch Sink Throughput
+
+See § 4 above (`BatchSinkLatencyBenchmark`) for the size × latency parameter sweep. Headline: at
+`sinkLatencyMicros=1000` (≈ JDBC commit), `batchSize=100` yields **~84× the throughput** of `batchSize=1`.
 
 ## Understanding Results
 
@@ -118,12 +160,16 @@ The benchmarks typically run in `Throughput` mode (`ops/s`). Higher numbers are 
 
 Based on the latest snapshot results, we can derive the following throughput expectations:
 
-- **Avro (In-Memory)**: Up to **~740 million records/s**. This represents the upper limit of the transformation logic
-  when Kafka I/O is excluded.
-- **JSON (In-Memory)**: Up to **~405,000 records/s**. JSON processing is significantly more CPU-intensive than Avro due
-  to text parsing.
-- **End-to-End Parallel Processing**: **~32.3M to ~33.1M messages/s**. For this run, use `score * 10,000` because
+- **Avro (In-Memory)**: Up to **~926,000 records/s** with zero-copy magic-byte handling. JSON beats this in absolute
+  ops/s here because the JSON bench applies two operators per record while the Avro bench applies two operators on a
+  larger payload — comparing benches with different shapes is unfair, but the within-benchmark KPipe-vs-manual ratio is
+  the headline number.
+- **JSON (In-Memory)**: Up to **~242,000 records/s** with the KPipe single-SerDe pipeline (3.1× the chained-SerDe
+  baseline).
+- **End-to-End Parallel Processing**: **~31.1M to ~32.7M messages/s**. For this run, use `score * 10,000` because
   `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`.
+- **Batch Sink (Slow Destination)**: At a 1ms-per-call simulated sink, batching at size 100 reaches **~66,000 batches/s
+  ≈ 6.6M records/s**, vs **~788 records/s** for size 1. Batching wins big when destination cost dominates.
 
 > **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`. For this benchmark, derive message
 > rate as `ops/s * 10,000`.

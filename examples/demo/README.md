@@ -1,41 +1,34 @@
 # Demo Example
 
-A combined example that runs **JSON**, **Avro**, and **Protobuf** consumer pipelines concurrently in a single
-application.
+Runs JSON, Avro, and Protobuf consumer pipelines side by side in one application.
 
-## What It Does
+## What it does
 
-The demo application starts three independent KPipe pipelines, each consuming from its own Kafka topic and applying
-format-specific processing:
+Three KPipe pipelines, one per topic, each with its own deserializer and sink:
 
 | Pipeline | Topic         | Format   | Processors                                           |
-| -------- | ------------- | -------- | ---------------------------------------------------- |
+|----------|---------------|----------|------------------------------------------------------|
 | JSON     | `json-topic`  | JSON     | addSource, markProcessed, addTimestamp, removeFields |
 | Avro     | `avro-topic`  | Avro     | Schema Registry deserialization + console sink       |
 | Protobuf | `proto-topic` | Protobuf | Descriptor-based deserialization + console sink      |
 
 ## Running
 
-Start the full stack (Kafka, Schema Registry, observability, and the demo app):
+Bring up Kafka, Schema Registry, the observability stack, and the demo app:
 
 ```bash
 cd examples/demo
 docker compose up --build
 ```
 
-This will:
-
-1. Start Kafka and Schema Registry via the root `docker-compose.yaml`
-2. Start the observability stack (OpenTelemetry Collector, etc.)
-3. Register Avro and Protobuf schemas
-4. Build and start the demo application
+The compose file pulls in the root `docker-compose.yaml` for Kafka + Schema Registry, adds the OpenTelemetry collector, registers the Avro and Protobuf schemas, then builds and starts the app.
 
 ## Configuration
 
-All configuration is via environment variables (see `docker-compose.yaml`):
+Environment variables (defined in `docker-compose.yaml`):
 
 | Variable                  | Default                       | Description                   |
-| ------------------------- | ----------------------------- | ----------------------------- |
+|---------------------------|-------------------------------|-------------------------------|
 | `KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092`                  | Kafka bootstrap servers       |
 | `KAFKA_CONSUMER_GROUP`    | `kpipe-demo`                  | Consumer group ID prefix      |
 | `SCHEMA_REGISTRY_URL`     | `http://schema-registry:8081` | Confluent Schema Registry URL |
