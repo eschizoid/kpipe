@@ -27,7 +27,7 @@ import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.ConfluentKafkaContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /// Verifies that buffered records participate in the in-flight backpressure metric when batch
@@ -38,13 +38,14 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers(disabledWithoutDocker = true)
 class StreamParallelBatchBackpressureIntegrationTest {
 
-  private static final String CONFLUENT_PLATFORM_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
   private static final int PARTITIONS = 2;
   private static final int RECORD_COUNT = 500;
 
   @Container
-  static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
-    DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_PLATFORM_VERSION))
+  static KafkaContainer kafka = new KafkaContainer(
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
+                   .asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   @Test

@@ -32,7 +32,7 @@ import org.kpipe.KPipe;
 import org.kpipe.producer.sink.KafkaMessageSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.ConfluentKafkaContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /// End-to-end test for W3C trace context propagation across the Kafka boundary.
@@ -45,7 +45,7 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers(disabledWithoutDocker = true)
 class TracePropagationIntegrationTest {
 
-  private static final String CONFLUENT_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
 
   // Known parent: traceparent format is `version-traceId-parentSpanId-flags` (W3C §3.2).
   private static final String INBOUND_TRACE_ID = "0af7651916cd43dd8448eb211c80319c";
@@ -53,8 +53,9 @@ class TracePropagationIntegrationTest {
   private static final String INBOUND_TRACEPARENT = "00-" + INBOUND_TRACE_ID + "-" + INBOUND_SPAN_ID + "-01";
 
   @Container
-  static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
-    DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_VERSION))
+  static KafkaContainer kafka = new KafkaContainer(
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
+                   .asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   private static java.util.List<io.opentelemetry.sdk.trace.data.SpanData> waitForSpans(
