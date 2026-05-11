@@ -6,7 +6,6 @@ import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
@@ -108,8 +107,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final BackpressureController backpressureController;
   private final Tracer tracer;
   private final AtomicLong inFlightCount = new AtomicLong(0);
-  private final AtomicBoolean manualPause = new AtomicBoolean(false);
-  private final AtomicBoolean backpressurePaused = new AtomicBoolean(false);
+  /// Single source of truth for "who's holding the consumer paused" — replaces three separate
+  /// AtomicBoolean flags (manual / backpressure / circuit breaker) and the AND-of-checks each
+  /// resume site used to maintain. See [PauseCoordinator] for the arbitration semantics.
+  private final PauseCoordinator pauseCoordinator = new PauseCoordinator();
   private volatile long backpressurePauseStartNanos;
 
   private final String deadLetterTopic;
@@ -120,7 +121,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// probe timer. Lazily created when either feature is configured; otherwise stays null.
   private final ScheduledExecutorService scheduler;
 
-  /// Circuit-breaker state. All six fields are inert when `circuitBreakerController` is null —
+  /// Circuit-breaker state. All five fields are inert when `circuitBreakerController` is null —
   /// per-record `recordCircuitBreakerOutcome(...)` short-circuits on the null check, so callers
   /// who don't configure a breaker pay only a single field read per record.
   private final CircuitBreakerController circuitBreakerController;
@@ -129,11 +130,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
     CircuitBreakerState.CLOSED
   );
   private final AtomicLong circuitBreakerOpenedAtNanos = new AtomicLong(0L);
-  /// Sibling of `backpressurePaused` / `manualPause`. Set to `true` while the breaker holds the
-  /// consumer paused; gates the auto-resume in `checkBackpressure` and the public `resume()`.
-  /// Without this, backpressure observing "currentlyPaused + low lag" auto-resumes within one
-  /// consumer-loop iteration and defeats the CB pause.
-  private final AtomicBoolean circuitBreakerPaused = new AtomicBoolean(false);
   private volatile ScheduledFuture<?> circuitBreakerProbeFuture;
 
   /// Represents an error that occurred during record processing. Contains the original record,
@@ -662,8 +658,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (builder.pipelinesPerTopic != null) {
       this.pipelines = builder.pipelinesPerTopic;
     } else if (builder.pipeline != null) {
-      // Homogeneous: only the pipeline-bound topics get this pipeline; batch topics live in
-      // batchWrappers and are handled separately by tryProcessRecord.
       final var pipelineTopics = builder.topics
         .stream()
         .filter(t -> !builder.batchSpecs.containsKey(t))
@@ -901,8 +895,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///
   /// This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
-    manualPause.set(true);
-    internalPause();
+    if (pauseCoordinator.requestPause(PauseCoordinator.Source.MANUAL)) internalPause();
   }
 
   private void internalPause() {
@@ -980,12 +973,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
-    manualPause.set(false);
-    // Three pause gates can hold the consumer paused: manual (cleared above), backpressure
-    // (cleared only by checkBackpressure when its metric drops below low watermark), and
-    // circuit breaker (cleared only by the half-open probe timer). All three must be released
-    // before the consumer can actually resume.
-    if (!backpressurePaused.get() && !circuitBreakerPaused.get()) internalResume();
+    if (pauseCoordinator.releasePause(PauseCoordinator.Source.MANUAL)) internalResume();
   }
 
   private void internalResume() {
@@ -1215,7 +1203,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw: {0}", traceEx.getMessage());
       }
       inFlightCount.decrementAndGet();
-      if (backpressurePaused.get()) {
+      if (pauseCoordinator.isHeldBy(PauseCoordinator.Source.BACKPRESSURE)) {
+        // Backpressure is in-flight-count-driven; finishing a record could drop the count below
+        // the low watermark, so wake the consumer thread to re-evaluate on its next iteration.
         final var thread = consumerThread.get();
         if (thread != null) LockSupport.unpark(thread);
       }
@@ -1413,13 +1403,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (enableMetrics) metrics.computeIfAbsent(METRIC_CIRCUIT_BREAKER_TRIPS, _ -> new AtomicLong()).incrementAndGet();
     otelMetrics.recordCircuitBreakerTrip();
     otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.OPEN.name());
-    // Set the dedicated CB-pause flag BEFORE internalPause so the consumer-loop's
-    // checkBackpressure can't issue an auto-resume between the CAS and the next iteration.
-    // Without this flag, backpressure's RESUME branch sees `currentlyPaused=true` and "lag
-    // below low watermark" (the test's MockConsumer has no real lag) and immediately resumes,
-    // defeating the CB pause within one loop iteration.
-    circuitBreakerPaused.set(true);
-    internalPause();
+    // Register CB as a pause source via the coordinator so backpressure's auto-resume path
+    // sees "another source is holding" and skips. Only call internalPause when CB is the
+    // FIRST source holding — if backpressure or manual already paused us, the Kafka pause
+    // command was already issued.
+    if (pauseCoordinator.requestPause(PauseCoordinator.Source.CIRCUIT_BREAKER)) internalPause();
     final var existing = circuitBreakerProbeFuture;
     if (existing != null) existing.cancel(false);
     circuitBreakerProbeFuture = scheduler.schedule(
@@ -1442,10 +1430,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
       .addAndGet(openMs);
     otelMetrics.recordCircuitBreakerTimeOpen(openMs);
     otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN.name());
-    // Clear the CB-pause gate BEFORE internalResume so the consumer thread, on its next
-    // iteration, doesn't see the gate still set and skip its own resume work.
-    circuitBreakerPaused.set(false);
-    internalResume();
+    // Release CB as a pause source. Only call internalResume if CB was the LAST source —
+    // if backpressure or the user is still holding pause, the consumer stays paused at Kafka
+    // and the probe waits for those other sources to release.
+    if (pauseCoordinator.releasePause(PauseCoordinator.Source.CIRCUIT_BREAKER)) internalResume();
   }
 
   /// Transitions the breaker back to CLOSED after a successful probe. Resets stats so the next
@@ -1470,35 +1458,26 @@ public class KPipeConsumer<K> implements AutoCloseable {
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
         otelMetrics.recordBackpressurePause();
         backpressurePauseStartNanos = System.nanoTime();
-        backpressurePaused.set(true);
-        internalPause();
+        if (pauseCoordinator.requestPause(PauseCoordinator.Source.BACKPRESSURE)) internalPause();
       }
       case RESUME -> {
-        backpressurePaused.set(false);
         final long duration = Math.max(
           1,
           TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos)
         );
         if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
         otelMetrics.recordBackpressureTime(duration);
-        if (manualPause.get()) {
+        if (pauseCoordinator.releasePause(PauseCoordinator.Source.BACKPRESSURE)) {
+          LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
+          internalResume();
+        } else {
           LOGGER.log(
             Level.INFO,
-            "Backpressure resolved (paused for {0} ms), but consumer remains manually paused",
-            duration
+            "Backpressure resolved (paused for {0} ms), other sources still hold the pause: {1}",
+            duration,
+            pauseCoordinator.currentSources()
           );
-          break;
         }
-        if (circuitBreakerPaused.get()) {
-          LOGGER.log(
-            Level.INFO,
-            "Backpressure resolved (paused for {0} ms), but circuit breaker is holding the consumer paused",
-            duration
-          );
-          break;
-        }
-        LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
-        internalResume();
       }
       case NONE -> {
       }
