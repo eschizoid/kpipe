@@ -1,17 +1,10 @@
 package org.kpipe.format.avro;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonToken;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -231,52 +224,26 @@ public final class AvroFormat implements SchemaAwareFormat<GenericRecord> {
     }
   }
 
-  /// Default schema reader supporting HTTP URLs, classpath resources, file paths, and inline
-  /// content.
+  /// Default schema reader supporting classpath resources, file paths, and inline content.
   ///
-  /// - `http://` / `https://` — fetched as a Confluent Schema Registry response and unwrapped from
-  ///   the JSON `{"schema":"..."}` envelope.
   /// - `classpath:/path/to/schema.avsc` — read from the module classpath.
   /// - `file://`, `/absolute/path`, `*.json`, `*.avsc`, or any existing file path — read as UTF-8
   ///   text.
   /// - Anything else — treated as inline schema content.
+  ///
+  /// **HTTP fetching moved.** Schema-Registry-over-HTTP support lives in
+  /// `kpipe-schema-registry-confluent` (`ConfluentSchemaResolver`); call that resolver yourself,
+  /// then pass the returned JSON to the 2-arg [#addSchema(String, String)] overload. Keeping
+  /// `java.net.http` and `com.fasterxml.jackson.core` out of `kpipe-format-avro` shrinks the
+  /// transitive footprint for users who only consume inline / classpath schemas.
   private static String readSchemaFromLocation(final String location) {
     try {
       if (location.startsWith("http://") || location.startsWith("https://")) {
-        try (final var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
-          final var request = HttpRequest.newBuilder()
-            .uri(URI.create(location))
-            .timeout(Duration.ofSeconds(10))
-            .GET()
-            .build();
-
-          final var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-          if (response.statusCode() < 200 || response.statusCode() >= 300) throw new IOException(
-            "Failed to fetch schema: HTTP %d".formatted(response.statusCode())
-          );
-
-          final var responseBody = response.body();
-          if (responseBody == null || responseBody.isEmpty()) throw new IOException(
-            "Empty response from schema registry"
-          );
-
-          try (final var parser = new JsonFactory().createParser(responseBody)) {
-            while (parser.nextToken() != null) {
-              if (parser.currentToken() == JsonToken.FIELD_NAME && "schema".equals(parser.currentName())) {
-                parser.nextToken();
-                return parser.getValueAsString();
-              }
-            }
-            throw new IOException("Schema field not found in response");
-          } catch (final Exception e) {
-            throw new IOException(
-              "Error parsing schema registry response: " +
-                responseBody.substring(0, Math.min(100, responseBody.length())),
-              e
-            );
-          }
-        }
+        throw new IOException(
+          "HTTP schema URLs are no longer supported by AvroFormat. Use ConfluentSchemaResolver " +
+          "from kpipe-schema-registry-confluent: resolver.lookupBySubjectVersion(subject, version) " +
+          "then pass the result to AvroFormat.addSchema(key, schemaJson)."
+        );
       } else if (location.startsWith("classpath:")) {
         final var resourcePath = location.substring("classpath:".length());
         try (final var inputStream = AvroFormat.class.getResourceAsStream(resourcePath)) {

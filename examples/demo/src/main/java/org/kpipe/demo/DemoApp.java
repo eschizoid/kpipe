@@ -16,6 +16,7 @@ import org.kpipe.KPipe;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.format.avro.AvroConsoleSink;
 import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 import org.kpipe.format.json.JsonConsoleSink;
 import org.kpipe.format.protobuf.ProtobufConsoleSink;
 import org.kpipe.format.protobuf.ProtobufFormat;
@@ -43,11 +44,13 @@ public class DemoApp implements AutoCloseable {
       SHARED_OTEL = GlobalOpenTelemetry.get();
     }
 
-    AvroFormat.INSTANCE.addSchema(
-      "1",
-      "com.kpipe.customer",
-      config.schemaRegistryUrl() + "/subjects/com.kpipe.customer/versions/latest"
-    );
+    try (final var resolver = new ConfluentSchemaResolver(config.schemaRegistryUrl())) {
+      AvroFormat.INSTANCE.addSchema(
+        "1",
+        "com.kpipe.customer",
+        resolver.lookupBySubjectVersion("com.kpipe.customer", "latest")
+      );
+    }
     AvroFormat.INSTANCE.withDefaultSchema("1");
     ProtobufFormat.INSTANCE.addDescriptor("customer", buildCustomerDescriptor());
     ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
