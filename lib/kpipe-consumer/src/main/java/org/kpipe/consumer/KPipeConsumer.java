@@ -20,6 +20,7 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.KPipeProducer;
+import org.kpipe.producer.tracing.Tracer;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
@@ -103,6 +104,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
   private final ConsumerMetrics otelMetrics;
   private final BackpressureController backpressureController;
+  private final Tracer tracer;
   private final AtomicLong inFlightCount = new AtomicLong(0);
   private final AtomicBoolean manualPause = new AtomicBoolean(false);
   private final AtomicBoolean backpressurePaused = new AtomicBoolean(false);
@@ -183,6 +185,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     private String deadLetterTopic;
     private KPipeProducer<K, byte[]> kpipeProducer;
     private ConsumerMetrics consumerMetrics;
+    private Tracer tracer;
 
     /// Sets the properties for the Kafka consumer.
     ///
@@ -525,6 +528,24 @@ public class KPipeConsumer<K> implements AutoCloseable {
       return this;
     }
 
+    /// Sets the tracer used for span propagation across the Kafka boundary.
+    ///
+    /// On record receive, the tracer extracts any upstream context (e.g. W3C `traceparent`)
+    /// from the record's headers and starts a span scoped to the record's processing. On DLQ
+    /// send, the tracer injects the active context into outbound headers so downstream consumers
+    /// stay on the same trace.
+    ///
+    /// Add the `kpipe-tracing-otel` module and pass
+    /// `new OtelTracer(openTelemetry, "my-pipeline")` to wire OpenTelemetry-backed propagation.
+    /// When not set, the default is [Tracer#noop()] (zero overhead).
+    ///
+    /// @param tracer the tracer; pass `Tracer.noop()` to disable explicitly
+    /// @return This builder instance for method chaining
+    public Builder<K> withTracer(final Tracer tracer) {
+      this.tracer = tracer;
+      return this;
+    }
+
     /// Builds a new KPipeConsumer with the configured settings.
     ///
     /// @return a new KPipeConsumer instance
@@ -647,12 +668,14 @@ public class KPipeConsumer<K> implements AutoCloseable {
         : BackpressureController.inFlightStrategy(this::totalInFlight)
     );
 
+    this.tracer = builder.tracer != null ? builder.tracer : Tracer.noop();
+
     this.deadLetterTopic = builder.deadLetterTopic;
     this.kpipeProducer =
       builder.kpipeProducer != null
         ? builder.kpipeProducer
         : this.deadLetterTopic != null
-          ? KPipeProducer.<K, byte[]>builder().withProperties(builder.kafkaProps).build()
+          ? KPipeProducer.<K, byte[]>builder().withProperties(builder.kafkaProps).withTracer(this.tracer).build()
           : null;
 
     if (!builder.batchSpecs.isEmpty()) {
@@ -1042,10 +1065,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Error draining batch buffer during shutdown", e);
       }
     }
-    if (batchScheduler != null) {
-      batchScheduler.shutdownNow();
-    }
-
+    if (batchScheduler != null) batchScheduler.shutdownNow();
     if (offsetManager != null) {
       try {
         offsetManager.close();
@@ -1053,10 +1073,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Error closing offset manager", e);
       }
     }
-
-    if (kpipeProducer != null) {
-      kpipeProducer.close();
-    }
+    if (kpipeProducer != null) kpipeProducer.close();
     state.set(ConsumerState.CLOSED);
   }
 
@@ -1116,9 +1133,20 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
     otelMetrics.recordMessageReceived(record.topic());
 
+    // Open the span scope BEFORE tryProcessRecord so the entire processing path runs under the
+    // span, including retries and DLQ sends. A misbehaving tracer must not crash the consumer —
+    // fall back to a noop scope.
+    Tracer.SpanScope span;
+    try {
+      span = tracer.startConsumerSpan(record);
+    } catch (final Exception traceEx) {
+      LOGGER.log(Level.WARNING, "Tracer.startConsumerSpan threw: {0}", traceEx.getMessage());
+      span = Tracer.SpanScope.noop();
+    }
+
     final long startTime = System.currentTimeMillis();
     try {
-      final var result = tryProcessRecord(record);
+      final var result = tryProcessRecord(record, span);
       if (result) {
         final var durationMs = System.currentTimeMillis() - startTime;
         if (enableMetrics) {
@@ -1129,6 +1157,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
         otelMetrics.recordProcessingDuration(record.topic(), durationMs);
       }
     } finally {
+      try {
+        span.close();
+      } catch (final Exception traceEx) {
+        LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw: {0}", traceEx.getMessage());
+      }
       inFlightCount.decrementAndGet();
       if (backpressurePaused.get()) {
         final var thread = consumerThread.get();
@@ -1137,9 +1170,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
     }
   }
 
-  private boolean tryProcessRecord(final ConsumerRecord<K, byte[]> record) {
+  private boolean tryProcessRecord(final ConsumerRecord<K, byte[]> record, final Tracer.SpanScope span) {
     final var batchWrapper = batchWrappers.get(record.topic());
-    if (batchWrapper != null) return tryEnqueueBatchRecord(record, batchWrapper);
+    if (batchWrapper != null) return tryEnqueueBatchRecord(record, batchWrapper, span);
     final var pipeline = pipelines.get(record.topic());
     if (pipeline == null) {
       // Partial-revocation race: subscribed topic was reassigned mid-poll. Mark processed so we
@@ -1166,7 +1199,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
           return false;
         }
         if (attempt == maxRetries) {
-          handleProcessingError(record, e, attempt);
+          handleProcessingError(record, e, attempt, span);
           return false;
         }
       }
@@ -1186,21 +1219,19 @@ public class KPipeConsumer<K> implements AutoCloseable {
     return total;
   }
 
-  @SuppressWarnings({ "unchecked", "rawtypes" })
-  private boolean tryEnqueueBatchRecord(
+  private <T> boolean tryEnqueueBatchRecord(
     final ConsumerRecord<K, byte[]> record,
-    final BatchPipelineWrapper<K, ?> wrapper
+    final BatchPipelineWrapper<K, T> wrapper,
+    final Tracer.SpanScope span
   ) {
-    final BatchPipelineWrapper rawWrapper = wrapper;
     try {
-      final var pipeline = rawWrapper.pipeline();
-      final var value = pipeline.processToValue(record.value());
+      final var value = wrapper.pipeline().processToValue(record.value());
       if (value == null) {
         // Intentional filter — mark processed immediately; nothing to buffer.
         markOffsetProcessed(record);
         return true;
       }
-      rawWrapper.enqueue(record, value);
+      wrapper.enqueue(record, value);
       // Buffered: messagesProcessed will be incremented in the flush callback when the batch is
       // committed to the user sink.
       return false;
@@ -1209,7 +1240,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         Thread.currentThread().interrupt();
         return false;
       }
-      handleProcessingError(record, e, 0);
+      handleProcessingError(record, e, 0, span);
       return false;
     }
   }
@@ -1231,9 +1262,21 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
   }
 
-  private void handleProcessingError(final ConsumerRecord<K, byte[]> record, final Exception e, final int retryCount) {
+  private void handleProcessingError(
+    final ConsumerRecord<K, byte[]> record,
+    final Exception e,
+    final int retryCount,
+    final Tracer.SpanScope span
+  ) {
     if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
     otelMetrics.recordProcessingError(record.topic());
+    // Mark the span as errored. Guarded — a misbehaving tracer must never crash the consumer
+    // thread, leak in-flight counts, or skip offset marking.
+    try {
+      span.recordException(e);
+    } catch (final Exception traceEx) {
+      LOGGER.log(Level.WARNING, "Tracer.SpanScope.recordException threw: {0}", traceEx.getMessage());
+    }
     LOGGER.log(
       Level.WARNING,
       "Failed to process message at offset {0} after {1} attempt(s): {2}",

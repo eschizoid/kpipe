@@ -44,8 +44,8 @@ For the 5-line fluent path (recommended), pull `kpipe-api` plus the format modul
 
 ```kotlin
 // Gradle (Kotlin) — JSON via the fluent API
-implementation("io.github.eschizoid:kpipe-api:1.10.1")
-implementation("io.github.eschizoid:kpipe-format-json:1.10.1")
+implementation("io.github.eschizoid:kpipe-api:1.11.0")
+implementation("io.github.eschizoid:kpipe-format-json:1.11.0")
 ```
 
 ```xml
@@ -53,12 +53,12 @@ implementation("io.github.eschizoid:kpipe-format-json:1.10.1")
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-api</artifactId>
-  <version>1.10.1</version>
+  <version>1.11.0</version>
 </dependency>
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-format-json</artifactId>
-  <version>1.10.1</version>
+  <version>1.11.0</version>
 </dependency>
 ```
 
@@ -87,7 +87,7 @@ There's also a `kpipe-bom` so you only pin one version across modules — use it
 **Gradle (Kotlin) with BOM**
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.10.1"))
+implementation(platform("io.github.eschizoid:kpipe-bom:1.11.0"))
 implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")
 // add kpipe-metrics-otel only if you want OpenTelemetry-backed metrics
@@ -97,7 +97,7 @@ implementation("io.github.eschizoid:kpipe-metrics-otel")
 **Gradle (Groovy)**
 
 ```groovy
-implementation platform('io.github.eschizoid:kpipe-bom:1.10.1')
+implementation platform('io.github.eschizoid:kpipe-bom:1.11.0')
 implementation 'io.github.eschizoid:kpipe-api'
 implementation 'io.github.eschizoid:kpipe-format-json'
 ```
@@ -110,7 +110,7 @@ implementation 'io.github.eschizoid:kpipe-format-json'
     <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe-bom</artifactId>
-      <version>1.10.1</version>
+      <version>1.11.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -132,8 +132,8 @@ implementation 'io.github.eschizoid:kpipe-format-json'
 **SBT**
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.10.1"
-libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.10.1"
+libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.11.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.11.0"
 ```
 
 </details>

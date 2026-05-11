@@ -17,6 +17,7 @@ import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.json.JsonFormat;
 import org.kpipe.format.protobuf.ProtobufFormat;
 import org.kpipe.metrics.ConsumerMetrics;
+import org.kpipe.producer.tracing.Tracer;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.sink.MessageSink;
@@ -44,6 +45,7 @@ public final class MultiBuilder {
   private final Properties kafkaProps;
   private final Map<String, Sink<?>> routes = new LinkedHashMap<>();
   private ConsumerMetrics consumerMetrics;
+  private Tracer tracer;
 
   MultiBuilder(final Properties kafkaProps) {
     this.kafkaProps = (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone();
@@ -58,6 +60,17 @@ public final class MultiBuilder {
   /// @return this builder
   public MultiBuilder withMetrics(final ConsumerMetrics metrics) {
     this.consumerMetrics = Objects.requireNonNull(metrics, "metrics cannot be null");
+    return this;
+  }
+
+  /// Attaches a [Tracer] to the multi-topic consumer. The tracer wraps every record (regardless
+  /// of route) with a consumer span and injects the active context into outbound DLQ headers.
+  ///
+  /// @param tracer the tracer (typically `new OtelTracer(otel, "my-pipeline")` from
+  ///     `kpipe-tracing-otel`); pass `Tracer.noop()` to disable explicitly
+  /// @return this builder
+  public MultiBuilder withTracer(final Tracer tracer) {
+    this.tracer = Objects.requireNonNull(tracer, "tracer cannot be null");
     return this;
   }
 
@@ -174,6 +187,7 @@ public final class MultiBuilder {
 
     if (!nonBatchPipelines.isEmpty()) consumerBuilder.withPipelines(nonBatchPipelines);
     if (consumerMetrics != null) consumerBuilder.withMetrics(consumerMetrics);
+    if (tracer != null) consumerBuilder.withTracer(tracer);
     final var consumer = consumerBuilder.build();
     final var runner = KPipeRunner.builder(consumer).build();
     try {

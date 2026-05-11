@@ -8,6 +8,7 @@ import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kpipe.producer.tracing.Tracer;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -22,7 +23,7 @@ class KafkaMessageSinkTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToKafka() {
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, Tracer.noop());
 
     sink.accept("hello");
 
@@ -44,7 +45,8 @@ class KafkaMessageSinkTest {
       mockProducer,
       TOPIC,
       s -> "key".getBytes(),
-      String::getBytes
+      String::getBytes,
+      Tracer.noop()
     );
 
     sink.accept("value");
@@ -62,7 +64,7 @@ class KafkaMessageSinkTest {
 
   @Test
   void shouldNotSendWhenValueIsNull() {
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, Tracer.noop());
 
     sink.accept(null);
 

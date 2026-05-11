@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.metrics.ConsumerMetrics;
+import org.kpipe.producer.tracing.Tracer;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.Operators;
 import org.kpipe.sink.BatchPolicy;
@@ -46,7 +47,8 @@ record DefaultStream<T>(
   ConsumerMetrics consumerMetrics,
   Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler,
   String deadLetterTopic,
-  Duration pollTimeout
+  Duration pollTimeout,
+  Tracer tracer
 ) implements Stream<T> {
   /// Public constructor used by [KPipe] factories — single topic, empty pipeline, default
   /// retry / backpressure settings.
@@ -80,6 +82,7 @@ record DefaultStream<T>(
       null,
       false,
       0,
+      null,
       null,
       null,
       null,
@@ -183,6 +186,12 @@ record DefaultStream<T>(
   }
 
   @Override
+  public Stream<T> withTracer(final Tracer tracer) {
+    Objects.requireNonNull(tracer, "tracer cannot be null");
+    return mutate(m -> m.tracer = tracer);
+  }
+
+  @Override
   public Sink<T> toConsole() {
     return toCustom(defaultConsoleSinkFactory.get());
   }
@@ -245,6 +254,7 @@ record DefaultStream<T>(
     Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler;
     String deadLetterTopic;
     Duration pollTimeout;
+    Tracer tracer;
 
     static <T> Mut<T> from(final DefaultStream<T> s) {
       final var m = new Mut<T>();
@@ -263,6 +273,7 @@ record DefaultStream<T>(
       m.errorHandler = s.errorHandler;
       m.deadLetterTopic = s.deadLetterTopic;
       m.pollTimeout = s.pollTimeout;
+      m.tracer = s.tracer;
       return m;
     }
 
@@ -282,7 +293,8 @@ record DefaultStream<T>(
         consumerMetrics,
         errorHandler,
         deadLetterTopic,
-        pollTimeout
+        pollTimeout,
+        tracer
       );
     }
   }

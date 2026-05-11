@@ -5,6 +5,7 @@ import java.lang.System.Logger.Level;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 
 /// Minimal Avro consumer demonstrating the KPipe facade against a Confluent Schema Registry.
 /// Reads `AppConfig` from environment, fetches the `com.kpipe.customer` schema from the registry
@@ -21,11 +22,13 @@ public final class App {
     final var config = AppConfig.fromEnv();
     final var schemaRegistryUrl = System.getenv().getOrDefault("SCHEMA_REGISTRY_URL", DEFAULT_SCHEMA_REGISTRY_URL);
 
-    AvroFormat.INSTANCE.addSchema(
-      "1",
-      "com.kpipe.customer",
-      schemaRegistryUrl + "/subjects/com.kpipe.customer/versions/latest"
-    );
+    try (final var resolver = new ConfluentSchemaResolver(schemaRegistryUrl)) {
+      AvroFormat.INSTANCE.addSchema(
+        "1",
+        "com.kpipe.customer",
+        resolver.lookupBySubjectVersion("com.kpipe.customer", "latest")
+      );
+    }
     AvroFormat.INSTANCE.withDefaultSchema("1");
 
     final var props = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());

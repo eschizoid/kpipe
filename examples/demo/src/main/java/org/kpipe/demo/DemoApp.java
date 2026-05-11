@@ -21,6 +21,7 @@ import org.kpipe.format.protobuf.ProtobufConsoleSink;
 import org.kpipe.format.protobuf.ProtobufFormat;
 import org.kpipe.metrics.otel.OtelConsumerMetrics;
 import org.kpipe.registry.Operators;
+import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 
 /// Demo application that consumes JSON, Avro, and Protobuf payloads through a single
 /// `KPipe.multi(...)` consumer. One Kafka consumer-group, one offset manager, three typed
@@ -43,11 +44,13 @@ public class DemoApp implements AutoCloseable {
       SHARED_OTEL = GlobalOpenTelemetry.get();
     }
 
-    AvroFormat.INSTANCE.addSchema(
-      "1",
-      "com.kpipe.customer",
-      config.schemaRegistryUrl() + "/subjects/com.kpipe.customer/versions/latest"
-    );
+    try (final var resolver = new ConfluentSchemaResolver(config.schemaRegistryUrl())) {
+      AvroFormat.INSTANCE.addSchema(
+        "1",
+        "com.kpipe.customer",
+        resolver.lookupBySubjectVersion("com.kpipe.customer", "latest")
+      );
+    }
     AvroFormat.INSTANCE.withDefaultSchema("1");
     ProtobufFormat.INSTANCE.addDescriptor("customer", buildCustomerDescriptor());
     ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");

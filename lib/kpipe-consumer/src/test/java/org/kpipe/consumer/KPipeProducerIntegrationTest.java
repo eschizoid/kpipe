@@ -13,6 +13,7 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.kpipe.producer.sink.KafkaMessageSink;
+import org.kpipe.producer.tracing.Tracer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
@@ -132,7 +133,8 @@ class KPipeProducerIntegrationTest {
     final var kafkaSink = KafkaMessageSink.<byte[]>of(
       new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer()),
       outputTopic,
-      v -> v
+      v -> v,
+      Tracer.noop()
     );
     final var consumer = KPipeConsumer.<byte[]>builder()
       .withProperties(props)
