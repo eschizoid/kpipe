@@ -5,8 +5,7 @@ avro = "1.12.1"
 protobuf = "4.29.3"
 dslJson = "2.0.2"
 slf4j = "2.0.16"
-junit = "5.11.0"
-junitPlatform = "1.10.0"
+junit = "6.0.0"
 mockito = "5.18.0"
 testcontainers = "2.0.4"
 postgresql = "42.7.3"
@@ -22,6 +21,7 @@ jgit = "6.10.0.202406032230-r"
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
 opentelemetryApi = { module = "io.opentelemetry:opentelemetry-api", version.ref = "otel" }
 opentelemetrySdk = { module = "io.opentelemetry:opentelemetry-sdk", version.ref = "otel" }
+opentelemetrySdkTesting = { module = "io.opentelemetry:opentelemetry-sdk-testing", version.ref = "otel" }
 opentelemetryExporterOtlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "otel" }
 opentelemetryAutoconfigure = { module = "io.opentelemetry:opentelemetry-sdk-extension-autoconfigure", version.ref = "otel" }
 kafkaTestCommonRuntime = { module = "org.apache.kafka:kafka-test-common-runtime", version.ref = "kafka" }
@@ -36,7 +36,7 @@ slf4jSimple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 junitBom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junitJupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 junitJupiterApi = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
-junitPlatformLauncher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
+junitPlatformLauncher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit" }
 
 mockitoCore = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 mockitoJunitJupiter = { module = "org.mockito:mockito-junit-jupiter", version.ref = "mockito" }

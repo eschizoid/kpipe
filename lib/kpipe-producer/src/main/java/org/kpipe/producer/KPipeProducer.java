@@ -13,6 +13,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.kpipe.metrics.ProducerMetrics;
+import org.kpipe.producer.tracing.Tracer;
 
 /// A functional wrapper around a Kafka [Producer] used by KPipe for DLQ and output sinks.
 ///
@@ -25,16 +26,24 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   private final Producer<K, V> producer;
   private final boolean ownProducer;
   private final ProducerMetrics otelMetrics;
+  private final Tracer tracer;
 
   /// Creates a new KPipeProducer that wraps an existing Kafka producer.
   ///
   /// @param producer    the Kafka producer to wrap
   /// @param ownProducer whether this wrapper owns the producer and should close it
   /// @param otelMetrics OpenTelemetry metrics instruments; uses noop if null
-  KPipeProducer(final Producer<K, V> producer, final boolean ownProducer, final ProducerMetrics otelMetrics) {
+  /// @param tracer      the tracer for outbound header injection; uses noop if null
+  KPipeProducer(
+    final Producer<K, V> producer,
+    final boolean ownProducer,
+    final ProducerMetrics otelMetrics,
+    final Tracer tracer
+  ) {
     this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
     this.ownProducer = ownProducer;
     this.otelMetrics = otelMetrics != null ? otelMetrics : ProducerMetrics.noop();
+    this.tracer = tracer != null ? tracer : Tracer.noop();
   }
 
   /// Creates a new builder for constructing [KPipeProducer] instances.
@@ -61,6 +70,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     private Properties props;
     private Producer<K, V> producer;
     private ProducerMetrics metrics;
+    private Tracer tracer;
 
     /// Sets the properties used to create the underlying Kafka producer.
     ///
@@ -97,15 +107,25 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       return this;
     }
 
+    /// Sets the tracer used to inject the active span's context into outbound headers (DLQ and
+    /// Kafka sinks). When not set, no propagation occurs (`Tracer.noop()`).
+    ///
+    /// @param tracer the tracer to use; pass `Tracer.noop()` to disable explicitly
+    /// @return this builder instance for method chaining
+    public Builder<K, V> withTracer(final Tracer tracer) {
+      this.tracer = tracer;
+      return this;
+    }
+
     /// Builds a new [KPipeProducer].
     ///
     /// @return a new KPipeProducer instance
     /// @throws NullPointerException if neither {@link #withProducer(Producer)} nor
     ///     {@link #withProperties(Properties)} was called
     public KPipeProducer<K, V> build() {
-      if (producer != null) return new KPipeProducer<>(producer, false, metrics);
+      if (producer != null) return new KPipeProducer<>(producer, false, metrics, tracer);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
-      return new KPipeProducer<>(new KafkaProducer<>(buildProducerProperties(props)), true, metrics);
+      return new KPipeProducer<>(new KafkaProducer<>(buildProducerProperties(props)), true, metrics, tracer);
     }
 
     /// Builds the effective producer Properties from a source `Properties`. Visible for testing.
@@ -155,6 +175,14 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     producerRecord.headers().add("x-dlq-source-topic", sourceTopic.getBytes());
     producerRecord.headers().add("x-dlq-source-partition", String.valueOf(record.partition()).getBytes());
     producerRecord.headers().add("x-dlq-source-offset", String.valueOf(record.offset()).getBytes());
+
+    // Inject the current trace context (e.g. W3C `traceparent`) so DLQ subscribers can continue
+    // the trace. Guarded — a misbehaving tracer must not break the error path.
+    try {
+      tracer.injectContextInto(producerRecord.headers());
+    } catch (final Exception traceEx) {
+      LOGGER.log(Level.WARNING, "Tracer.injectContextInto threw during DLQ send: {0}", traceEx.getMessage());
+    }
 
     try {
       send(producerRecord);

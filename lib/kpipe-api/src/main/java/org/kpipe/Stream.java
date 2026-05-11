@@ -6,6 +6,7 @@ import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.metrics.ConsumerMetrics;
+import org.kpipe.producer.tracing.Tracer;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 import org.kpipe.sink.MessageSink;
@@ -122,6 +123,19 @@ public interface Stream<T> {
   /// @return a new stream with metrics attached
   /// @throws NullPointerException if `metrics` is null
   Stream<T> withMetrics(final ConsumerMetrics metrics);
+
+  /// Returns a new stream with a [Tracer] attached for W3C trace-context propagation. The tracer
+  /// starts a consumer span around each record (extracting upstream context from headers) and
+  /// injects the active context into DLQ and producer-sink outbound records.
+  ///
+  /// Use `new OtelTracer(openTelemetry, "my-pipeline")` from `kpipe-tracing-otel` for OpenTelemetry
+  /// wiring. Pass [Tracer#noop] to disable tracing explicitly (also the default when this method
+  /// is not called).
+  ///
+  /// @param tracer the tracer implementation (must not be null; use `Tracer.noop()` to disable)
+  /// @return a new stream with tracing attached
+  /// @throws NullPointerException if `tracer` is null
+  Stream<T> withTracer(final Tracer tracer);
 
   /// Returns a new stream with a custom error handler. The handler is invoked after retries are
   /// exhausted (or immediately when `maxRetries == 0`) with the failing record, the exception,

@@ -7,4 +7,5 @@ module org.kpipe.producer {
   exports org.kpipe.producer;
   exports org.kpipe.producer.config;
   exports org.kpipe.producer.sink;
+  exports org.kpipe.producer.tracing;
 }
