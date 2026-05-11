@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
+import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.tracing.Tracer;
@@ -136,6 +137,32 @@ public interface Stream<T> {
   /// @return a new stream with tracing attached
   /// @throws NullPointerException if `tracer` is null
   Stream<T> withTracer(final Tracer tracer);
+
+  /// Returns a new stream with a circuit breaker attached. Watches per-record outcomes; once the
+  /// failure rate over the sliding window crosses `failureThreshold`, pauses Kafka polling until
+  /// `openDuration` elapses, then resumes and treats the next record as a probe (success
+  /// returns to closed, failure trips again and restarts the timer).
+  ///
+  /// **Why CB and not just retries.** Retries handle transient per-record failures. CB handles
+  /// sustained outages — DB down, downstream 503-storm — by stopping work entirely until the
+  /// dependency recovers. Without it, every record during an outage exhausts `maxRetries` and
+  /// floods the DLQ.
+  ///
+  /// @param failureThreshold the failure rate (0.0..1.0) at which to trip
+  /// @param windowSize the rolling sample size — must be positive
+  /// @param openDuration how long to stay in OPEN before probing
+  /// @return a new stream with the breaker configured
+  /// @throws IllegalArgumentException for invalid arguments
+  Stream<T> withCircuitBreaker(final double failureThreshold, final int windowSize, final Duration openDuration);
+
+  /// Returns a new stream with an explicit [CircuitBreakerController]. Use this form when you
+  /// need to share a pre-built controller across consumers or when constructing it from
+  /// configuration. For inline use prefer the three-argument overload.
+  ///
+  /// @param controller the controller (must not be null)
+  /// @return a new stream with the breaker configured
+  /// @throws NullPointerException if `controller` is null
+  Stream<T> withCircuitBreaker(final CircuitBreakerController controller);
 
   /// Returns a new stream with a custom error handler. The handler is invoked after retries are
   /// exhausted (or immediately when `maxRetries == 0`) with the failing record, the exception,

@@ -123,14 +123,13 @@ public final class ConfluentSchemaResolver implements SchemaResolver, AutoClosea
     i += marker.length();
     // Skip whitespace and the colon.
     while (i < body.length() && Character.isWhitespace(body.charAt(i))) i++;
-    if (i >= body.length() || body.charAt(i) != ':') {
-      throw new RuntimeException("Malformed schema field in response from " + url + ": " + truncate(body));
-    }
-    i++;
-    while (i < body.length() && Character.isWhitespace(body.charAt(i))) i++;
-    if (i >= body.length() || body.charAt(i) != '"') {
-      throw new RuntimeException("Schema field is not a string in response from " + url + ": " + truncate(body));
-    }
+    if (i >= body.length() || body.charAt(i) != ':') throw new RuntimeException(
+      "Malformed schema field in response from " + url + ": " + truncate(body)
+    );
+    do i++; while (i < body.length() && Character.isWhitespace(body.charAt(i)));
+    if (i >= body.length() || body.charAt(i) != '"') throw new RuntimeException(
+      "Schema field is not a string in response from " + url + ": " + truncate(body)
+    );
     i++; // opening quote
 
     final var sb = new StringBuilder(body.length() - i);
@@ -149,9 +148,9 @@ public final class ConfluentSchemaResolver implements SchemaResolver, AutoClosea
           case 'b' -> sb.append('\b');
           case 'f' -> sb.append('\f');
           case 'u' -> {
-            if (i + 5 >= body.length()) {
-              throw new RuntimeException("Truncated unicode escape in schema field from " + url);
-            }
+            if (i + 5 >= body.length()) throw new RuntimeException(
+              "Truncated unicode escape in schema field from " + url
+            );
             sb.append((char) Integer.parseInt(body, i + 2, i + 6, 16));
             i += 4;
           }

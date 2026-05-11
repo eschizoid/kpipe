@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
+import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.tracing.Tracer;
@@ -48,7 +49,8 @@ record DefaultStream<T>(
   Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler,
   String deadLetterTopic,
   Duration pollTimeout,
-  Tracer tracer
+  Tracer tracer,
+  CircuitBreakerController circuitBreaker
 ) implements Stream<T> {
   /// Public constructor used by [KPipe] factories — single topic, empty pipeline, default
   /// retry / backpressure settings.
@@ -82,6 +84,7 @@ record DefaultStream<T>(
       null,
       false,
       0,
+      null,
       null,
       null,
       null,
@@ -192,6 +195,21 @@ record DefaultStream<T>(
   }
 
   @Override
+  public Stream<T> withCircuitBreaker(
+    final double failureThreshold,
+    final int windowSize,
+    final Duration openDuration
+  ) {
+    return withCircuitBreaker(new CircuitBreakerController(failureThreshold, windowSize, openDuration));
+  }
+
+  @Override
+  public Stream<T> withCircuitBreaker(final CircuitBreakerController controller) {
+    Objects.requireNonNull(controller, "controller cannot be null");
+    return mutate(m -> m.circuitBreaker = controller);
+  }
+
+  @Override
   public Sink<T> toConsole() {
     return toCustom(defaultConsoleSinkFactory.get());
   }
@@ -255,6 +273,7 @@ record DefaultStream<T>(
     String deadLetterTopic;
     Duration pollTimeout;
     Tracer tracer;
+    CircuitBreakerController circuitBreaker;
 
     static <T> Mut<T> from(final DefaultStream<T> s) {
       final var m = new Mut<T>();
@@ -274,6 +293,7 @@ record DefaultStream<T>(
       m.deadLetterTopic = s.deadLetterTopic;
       m.pollTimeout = s.pollTimeout;
       m.tracer = s.tracer;
+      m.circuitBreaker = s.circuitBreaker;
       return m;
     }
 
@@ -294,7 +314,8 @@ record DefaultStream<T>(
         errorHandler,
         deadLetterTopic,
         pollTimeout,
-        tracer
+        tracer,
+        circuitBreaker
       );
     }
   }

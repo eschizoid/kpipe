@@ -6,7 +6,6 @@ import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
@@ -81,6 +80,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private static final String METRIC_RETRIES = "retries";
   static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
   static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
+  static final String METRIC_CIRCUIT_BREAKER_TRIPS = "circuitBreakerTrips";
+  static final String METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS = "circuitBreakerTimeOpenMs";
   private static final String METRIC_DLQ_SENT = "dlqSent";
 
   private final Queue<ConsumerCommand> commandQueue;
@@ -99,22 +100,36 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final int maxRetries;
   private final Duration retryBackoff;
   private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.CREATED);
-  private final boolean enableMetrics;
   private final boolean sequentialProcessing;
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
   private final ConsumerMetrics otelMetrics;
   private final BackpressureController backpressureController;
   private final Tracer tracer;
   private final AtomicLong inFlightCount = new AtomicLong(0);
-  private final AtomicBoolean manualPause = new AtomicBoolean(false);
-  private final AtomicBoolean backpressurePaused = new AtomicBoolean(false);
+  /// Single source of truth for "who's holding the consumer paused" — replaces three separate
+  /// AtomicBoolean flags (manual / backpressure / circuit breaker) and the AND-of-checks each
+  /// resume site used to maintain. See [PauseCoordinator] for the arbitration semantics.
+  private final PauseCoordinator pauseCoordinator = new PauseCoordinator();
   private volatile long backpressurePauseStartNanos;
 
   private final String deadLetterTopic;
   private final KPipeProducer<K, byte[]> kpipeProducer;
 
   private final Map<String, BatchPipelineWrapper<K, ?>> batchWrappers;
-  private final ScheduledExecutorService batchScheduler;
+  /// Shared virtual-thread scheduler. Owns batch-pipeline age ticks AND the circuit-breaker
+  /// probe timer. Lazily created when either feature is configured; otherwise stays null.
+  private final ScheduledExecutorService scheduler;
+
+  /// Circuit-breaker state. All five fields are inert when `circuitBreakerController` is null —
+  /// per-record `recordCircuitBreakerOutcome(...)` short-circuits on the null check, so callers
+  /// who don't configure a breaker pay only a single field read per record.
+  private final CircuitBreakerController circuitBreakerController;
+  private final CircuitBreakerStats circuitBreakerStats;
+  private final AtomicReference<CircuitBreakerState> circuitBreakerState = new AtomicReference<>(
+    CircuitBreakerState.CLOSED
+  );
+  private final AtomicLong circuitBreakerOpenedAtNanos = new AtomicLong(0L);
+  private volatile ScheduledFuture<?> circuitBreakerProbeFuture;
 
   /// Represents an error that occurred during record processing. Contains the original record,
   /// the exception that was thrown, and the number of retry attempts made.
@@ -171,7 +186,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
       );
     private int maxRetries = 0;
     private Duration retryBackoff = Duration.ofMillis(500);
-    private boolean enableMetrics = true;
     private boolean sequentialProcessing = false;
     private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
@@ -186,6 +200,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     private KPipeProducer<K, byte[]> kpipeProducer;
     private ConsumerMetrics consumerMetrics;
     private Tracer tracer;
+    private CircuitBreakerController circuitBreakerController;
 
     /// Sets the properties for the Kafka consumer.
     ///
@@ -323,14 +338,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
     public Builder<K> withRetry(final int maxRetries, final Duration backoff) {
       this.maxRetries = maxRetries;
       this.retryBackoff = backoff;
-      return this;
-    }
-
-    /// Disables metrics collection. Metrics are enabled by default.
-    ///
-    /// @return This builder instance for method chaining
-    public Builder<K> disableMetrics() {
-      this.enableMetrics = false;
       return this;
     }
 
@@ -546,6 +553,23 @@ public class KPipeConsumer<K> implements AutoCloseable {
       return this;
     }
 
+    /// Attaches a circuit breaker that watches per-record success / failure outcomes and pauses
+    /// Kafka polling once the failure rate crosses the configured threshold. After
+    /// `openDuration` elapses the consumer enters HALF_OPEN and the next record acts as the probe
+    /// — success returns to CLOSED, failure flips back to OPEN and restarts the timer.
+    ///
+    /// **Why CB and not just retries.** Retries handle transient failures per record. A circuit
+    /// breaker handles *sustained* failures (DB down, downstream 503-storm) by stopping work
+    /// entirely until the downstream recovers — preventing DLQ floods and consumer-side resource
+    /// burn while the dependency is unhealthy.
+    ///
+    /// @param controller the failure-rate / window / open-duration policy (must not be null)
+    /// @return this builder instance for method chaining
+    public Builder<K> withCircuitBreaker(final CircuitBreakerController controller) {
+      this.circuitBreakerController = Objects.requireNonNull(controller, "controller cannot be null");
+      return this;
+    }
+
     /// Builds a new KPipeConsumer with the configured settings.
     ///
     /// @return a new KPipeConsumer instance
@@ -621,17 +645,14 @@ public class KPipeConsumer<K> implements AutoCloseable {
         ? builder.consumerProvider.get()
         : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
     this.topics = Set.copyOf(Objects.requireNonNull(builder.topics, "Topics must be set"));
+    // `build()` sets `topics` to the UNION of regular + batch routes for Kafka subscription, so
+    // the homogeneous branch must filter out batch-route topics to avoid replicating the regular
+    // pipeline onto a topic that's owned by a batch wrapper.
     if (builder.pipelinesPerTopic != null) {
       this.pipelines = builder.pipelinesPerTopic;
     } else if (builder.pipeline != null) {
-      // Homogeneous: only the pipeline-bound topics get this pipeline; batch topics live in
-      // batchWrappers and are handled separately by tryProcessRecord.
-      final var pipelineTopics = builder.topics
-        .stream()
-        .filter(t -> !builder.batchSpecs.containsKey(t))
-        .toList();
-      final var map = new LinkedHashMap<String, MessagePipeline<?>>(pipelineTopics.size());
-      for (final var t : pipelineTopics) map.put(t, builder.pipeline);
+      final var map = new LinkedHashMap<String, MessagePipeline<?>>(builder.topics.size());
+      for (final var t : builder.topics) if (!builder.batchSpecs.containsKey(t)) map.put(t, builder.pipeline);
       this.pipelines = Map.copyOf(map);
     } else {
       this.pipelines = Map.of();
@@ -640,7 +661,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
     this.errorHandler = builder.errorHandler;
     this.maxRetries = builder.maxRetries;
     this.retryBackoff = builder.retryBackoff;
-    this.enableMetrics = builder.enableMetrics;
     this.sequentialProcessing = builder.sequentialProcessing;
     this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
@@ -678,21 +698,32 @@ public class KPipeConsumer<K> implements AutoCloseable {
           ? KPipeProducer.<K, byte[]>builder().withProperties(builder.kafkaProps).withTracer(this.tracer).build()
           : null;
 
-    if (!builder.batchSpecs.isEmpty()) {
-      this.batchScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+    final var needScheduler = !builder.batchSpecs.isEmpty() || builder.circuitBreakerController != null;
+    if (needScheduler) {
+      this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         final var t = Thread.ofVirtual().unstarted(r);
-        t.setName("kpipe-batch-scheduler");
+        t.setName("kpipe-scheduler");
         return t;
       });
+    } else {
+      this.scheduler = null;
+    }
+
+    if (!builder.batchSpecs.isEmpty()) {
       final var wrappers = new LinkedHashMap<String, BatchPipelineWrapper<K, ?>>(builder.batchSpecs.size());
       for (final var entry : builder.batchSpecs.entrySet()) {
         wrappers.put(entry.getKey(), createBatchWrapper(entry.getValue()));
       }
       this.batchWrappers = Map.copyOf(wrappers);
     } else {
-      this.batchScheduler = null;
       this.batchWrappers = Map.of();
     }
+
+    this.circuitBreakerController = builder.circuitBreakerController;
+    this.circuitBreakerStats =
+      this.circuitBreakerController != null
+        ? new CircuitBreakerStats(this.circuitBreakerController.windowSize())
+        : null;
 
     if (builder.backpressureController == null) {
       LOGGER.log(
@@ -704,28 +735,30 @@ public class KPipeConsumer<K> implements AutoCloseable {
       );
     }
 
-    if (enableMetrics) {
-      metrics.putAll(
-        Map.of(
-          METRIC_MESSAGES_RECEIVED,
-          new AtomicLong(0),
-          METRIC_MESSAGES_PROCESSED,
-          new AtomicLong(0),
-          METRIC_PROCESSING_ERRORS,
-          new AtomicLong(0),
-          METRIC_PROCESSING_DURATION_TOTAL_MS,
-          new AtomicLong(0),
-          METRIC_RETRIES,
-          new AtomicLong(0),
-          METRIC_BACKPRESSURE_PAUSE_COUNT,
-          new AtomicLong(0),
-          METRIC_BACKPRESSURE_TIME_MS,
-          new AtomicLong(0),
-          METRIC_DLQ_SENT,
-          new AtomicLong(0)
-        )
-      );
-    }
+    metrics.putAll(
+      Map.of(
+        METRIC_MESSAGES_RECEIVED,
+        new AtomicLong(0),
+        METRIC_MESSAGES_PROCESSED,
+        new AtomicLong(0),
+        METRIC_PROCESSING_ERRORS,
+        new AtomicLong(0),
+        METRIC_PROCESSING_DURATION_TOTAL_MS,
+        new AtomicLong(0),
+        METRIC_RETRIES,
+        new AtomicLong(0),
+        METRIC_BACKPRESSURE_PAUSE_COUNT,
+        new AtomicLong(0),
+        METRIC_BACKPRESSURE_TIME_MS,
+        new AtomicLong(0),
+        METRIC_CIRCUIT_BREAKER_TRIPS,
+        new AtomicLong(0),
+        METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS,
+        new AtomicLong(0),
+        METRIC_DLQ_SENT,
+        new AtomicLong(0)
+      )
+    );
 
     this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
   }
@@ -738,19 +771,19 @@ public class KPipeConsumer<K> implements AutoCloseable {
     final var callbacks = new BatchPipelineWrapper.BatchCallbacks<K>() {
       @Override
       public void markProcessed(final ConsumerRecord<K, byte[]> record) {
-        if (enableMetrics) metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+        metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
         otelMetrics.recordMessageProcessed(record.topic());
         if (offsetManager != null) offsetManager.markOffsetProcessed(record);
       }
 
       @Override
       public void onBatchFailure(final ConsumerRecord<K, byte[]> record, final Exception cause) {
-        if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+        metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
         otelMetrics.recordProcessingError(record.topic());
         LOGGER.log(Level.WARNING, "Batch failure for record at offset {0}: {1}", record.offset(), cause.getMessage());
         if (deadLetterTopic != null && kpipeProducer != null) {
           final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause);
-          if (sent && enableMetrics) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+          if (sent) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
         }
         if (offsetManager != null) offsetManager.markOffsetProcessed(record);
         try {
@@ -766,14 +799,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         }
       }
     };
-    return new BatchPipelineWrapper<>(
-      spec.topic(),
-      spec.pipeline(),
-      spec.sink(),
-      spec.policy(),
-      batchScheduler,
-      callbacks
-    );
+    return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), scheduler, callbacks);
   }
 
   /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
@@ -781,12 +807,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// processed.
   ///
   /// @return a new [MessageTracker] instance
-  /// @throws IllegalStateException if metrics are disabled (the tracker has no counters to read)
   public MessageTracker createMessageTracker() {
-    if (!enableMetrics) throw new IllegalStateException(
-      "Cannot create MessageTracker: metrics are disabled. Remove the disableMetrics() call from " +
-        "the builder, or do not call createMessageTracker()."
-    );
     return MessageTracker.builder()
       .withMetrics(this::getMetrics)
       .withReceivedMetricKey(METRIC_MESSAGES_RECEIVED)
@@ -855,8 +876,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///
   /// This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
-    manualPause.set(true);
-    internalPause();
+    if (pauseCoordinator.requestPause(PauseCoordinator.Source.MANUAL)) internalPause();
   }
 
   private void internalPause() {
@@ -934,8 +954,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
-    manualPause.set(false);
-    if (!backpressurePaused.get()) internalResume();
+    if (pauseCoordinator.releasePause(PauseCoordinator.Source.MANUAL)) internalResume();
   }
 
   private void internalResume() {
@@ -962,10 +981,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// * `retries` - count of retry attempts made for failed records
   /// * `inFlight` - current number of messages being processed
   ///
-  /// @return an unmodifiable map of metric names to their current values, or an empty map if
-  // metrics are disabled
+  /// @return an unmodifiable map of metric names to their current values
   public Map<String, Long> getMetrics() {
-    if (!enableMetrics) return Map.of();
     final var snapshot = metrics
       .entrySet()
       .stream()
@@ -1020,7 +1037,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   public void close() {
     if (!transitionToClosing()) return;
 
-    final var tracker = (waitForMessagesTimeout.toMillis() > 0 && enableMetrics) ? createMessageTracker() : null;
+    final var tracker = waitForMessagesTimeout.toMillis() > 0 ? createMessageTracker() : null;
     pause();
     commandQueue.offer(new ConsumerCommand.Close());
 
@@ -1065,7 +1082,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Error draining batch buffer during shutdown", e);
       }
     }
-    if (batchScheduler != null) batchScheduler.shutdownNow();
+    final var probe = circuitBreakerProbeFuture;
+    if (probe != null) probe.cancel(false);
+    if (scheduler != null) scheduler.shutdownNow();
     if (offsetManager != null) {
       try {
         offsetManager.close();
@@ -1094,7 +1113,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
           inFlightCount.decrementAndGet();
           if (isRunning()) {
             LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
-            if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+            metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
             otelMetrics.recordProcessingError(record.topic());
             try {
               errorHandler.accept(new ProcessingError<>(record, e, 0));
@@ -1130,12 +1149,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///
   /// @param record The Kafka consumer record to process
   protected void processRecord(final ConsumerRecord<K, byte[]> record) {
-    if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
+    metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
     otelMetrics.recordMessageReceived(record.topic());
 
-    // Open the span scope BEFORE tryProcessRecord so the entire processing path runs under the
-    // span, including retries and DLQ sends. A misbehaving tracer must not crash the consumer —
-    // fall back to a noop scope.
     Tracer.SpanScope span;
     try {
       span = tracer.startConsumerSpan(record);
@@ -1149,10 +1165,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
       final var result = tryProcessRecord(record, span);
       if (result) {
         final var durationMs = System.currentTimeMillis() - startTime;
-        if (enableMetrics) {
-          metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-          metrics.get(METRIC_PROCESSING_DURATION_TOTAL_MS).addAndGet(durationMs);
-        }
+        metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+        metrics.get(METRIC_PROCESSING_DURATION_TOTAL_MS).addAndGet(durationMs);
         otelMetrics.recordMessageProcessed(record.topic());
         otelMetrics.recordProcessingDuration(record.topic(), durationMs);
       }
@@ -1163,7 +1177,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw: {0}", traceEx.getMessage());
       }
       inFlightCount.decrementAndGet();
-      if (backpressurePaused.get()) {
+      if (pauseCoordinator.isHeldBy(PauseCoordinator.Source.BACKPRESSURE)) {
+        // Backpressure is in-flight-count-driven; finishing a record could drop the count below
+        // the low watermark, so wake the consumer thread to re-evaluate on its next iteration.
         final var thread = consumerThread.get();
         if (thread != null) LockSupport.unpark(thread);
       }
@@ -1175,8 +1191,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (batchWrapper != null) return tryEnqueueBatchRecord(record, batchWrapper, span);
     final var pipeline = pipelines.get(record.topic());
     if (pipeline == null) {
-      // Partial-revocation race: subscribed topic was reassigned mid-poll. Mark processed so we
-      // don't loop forever on a config error.
       LOGGER.log(
         Level.WARNING,
         "No pipeline registered for topic {0}; dropping record at offset {1}",
@@ -1187,11 +1201,27 @@ public class KPipeConsumer<K> implements AutoCloseable {
       return false;
     }
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) if (!handleRetry(record, attempt)) return false;
+      if (attempt > 0) {
+        metrics.get(METRIC_RETRIES).incrementAndGet();
+        LOGGER.log(
+          Level.INFO,
+          "Retrying message at offset {0} (attempt {1} of {2})",
+          record.offset(),
+          attempt,
+          maxRetries
+        );
+        try {
+          Thread.sleep(retryBackoff.toMillis());
+        } catch (final InterruptedException ie) {
+          Thread.currentThread().interrupt();
+          return false;
+        }
+      }
 
       try {
         pipeline.processToSink(record.value());
         markOffsetProcessed(record);
+        recordCircuitBreakerOutcome(true);
         return true;
       } catch (final Exception e) {
         if (isInterruptionRelated(e)) {
@@ -1245,19 +1275,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
     }
   }
 
-  private boolean handleRetry(final ConsumerRecord<K, byte[]> record, final int attempt) {
-    if (enableMetrics) metrics.get(METRIC_RETRIES).incrementAndGet();
-    LOGGER.log(Level.INFO, "Retrying message at offset {0} (attempt {1} of {2})", record.offset(), attempt, maxRetries);
-
-    try {
-      Thread.sleep(retryBackoff.toMillis());
-      return true;
-    } catch (final InterruptedException ie) {
-      Thread.currentThread().interrupt();
-      return false;
-    }
-  }
-
   private void markOffsetProcessed(final ConsumerRecord<K, byte[]> record) {
     if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
   }
@@ -1268,7 +1285,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     final int retryCount,
     final Tracer.SpanScope span
   ) {
-    if (enableMetrics) metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+    metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
     otelMetrics.recordProcessingError(record.topic());
     // Mark the span as errored. Guarded — a misbehaving tracer must never crash the consumer
     // thread, leak in-flight counts, or skip offset marking.
@@ -1286,9 +1303,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
     );
     if (deadLetterTopic != null && kpipeProducer != null) {
       final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e);
-      if (sent && enableMetrics) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+      if (sent) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
     }
     markOffsetProcessed(record);
+    recordCircuitBreakerOutcome(false);
     try {
       errorHandler.accept(new ProcessingError<>(record, e, retryCount));
     } catch (final Exception ex) {
@@ -1302,6 +1320,91 @@ public class KPipeConsumer<K> implements AutoCloseable {
     }
   }
 
+  /// Feeds a per-record outcome into the circuit breaker state machine. No-op if no breaker is
+  /// configured. Drives all three state transitions:
+  ///
+  ///   * `CLOSED + failure crossing threshold` → `OPEN` (CAS, pause, schedule probe)
+  ///   * `HALF_OPEN + success` → `CLOSED` (CAS, reset stats — fresh window for the next cycle)
+  ///   * `HALF_OPEN + failure` → `OPEN` (CAS, pause, restart probe timer)
+  ///
+  /// Outcomes that arrive while `OPEN` (in-flight records from before pause) are recorded into
+  /// stats but cannot drive transitions — the timer is the only path out of `OPEN`.
+  ///
+  /// All state transitions follow §11's single-read CAS pattern: read state once, decide,
+  /// `compareAndSet`. Lost races are no-ops — another thread already drove the transition.
+  private void recordCircuitBreakerOutcome(final boolean success) {
+    if (circuitBreakerController == null) return;
+    final var current = circuitBreakerState.get();
+    // OPEN-state outcomes are in-flight remnants from before the trip: they can't drive a
+    // transition (only the probe timer leaves OPEN), so feeding them into stats is pure
+    // overhead — and worse, would skew the window the breaker uses to re-evaluate later.
+    if (current == CircuitBreakerState.OPEN) return;
+    if (success) circuitBreakerStats.recordSuccess();
+    else circuitBreakerStats.recordFailure();
+
+    if (current == CircuitBreakerState.CLOSED) {
+      if (!success && circuitBreakerController.shouldTrip(circuitBreakerStats)) {
+        if (circuitBreakerState.compareAndSet(CircuitBreakerState.CLOSED, CircuitBreakerState.OPEN)) tripBreaker();
+      }
+    } else {
+      // HALF_OPEN — the only remaining state after the OPEN early-return
+      final var target = success ? CircuitBreakerState.CLOSED : CircuitBreakerState.OPEN;
+      if (circuitBreakerState.compareAndSet(CircuitBreakerState.HALF_OPEN, target)) {
+        if (success) closeBreaker();
+        else tripBreaker();
+      }
+    }
+  }
+
+  /// Transitions the breaker into OPEN: pause the consumer, schedule a one-shot probe timer, log
+  /// at WARNING. Called on CLOSED→OPEN and HALF_OPEN→OPEN transitions.
+  private void tripBreaker() {
+    circuitBreakerOpenedAtNanos.set(System.nanoTime());
+    LOGGER.log(
+      Level.WARNING,
+      "Circuit breaker tripped: pausing consumer (failureRate={0}, openDuration={1})",
+      circuitBreakerStats.failureRate(),
+      circuitBreakerController.openDuration()
+    );
+    metrics.get(METRIC_CIRCUIT_BREAKER_TRIPS).incrementAndGet();
+    otelMetrics.recordCircuitBreakerTrip();
+    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.OPEN);
+    if (pauseCoordinator.requestPause(PauseCoordinator.Source.CIRCUIT_BREAKER)) internalPause();
+    final var existing = circuitBreakerProbeFuture;
+    if (existing != null) existing.cancel(false);
+    circuitBreakerProbeFuture = scheduler.schedule(
+      this::tryHalfOpen,
+      circuitBreakerController.openDuration().toMillis(),
+      TimeUnit.MILLISECONDS
+    );
+  }
+
+  /// One-shot timer callback. CAS the state OPEN → HALF_OPEN and resume the consumer; the next
+  /// record's outcome will drive the final transition. Lost CAS = already moved on (e.g. a manual
+  /// resume / shutdown), no-op.
+  private void tryHalfOpen() {
+    if (!circuitBreakerState.compareAndSet(CircuitBreakerState.OPEN, CircuitBreakerState.HALF_OPEN)) return;
+    // The probe future has fired (this method IS the firing callback). Null the field so a
+    // subsequent `tripBreaker` cancel doesn't hold a stale completed handle.
+    circuitBreakerProbeFuture = null;
+    final var openedAt = circuitBreakerOpenedAtNanos.get();
+    final var openMs = openedAt == 0L ? 0L : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - openedAt);
+    LOGGER.log(Level.INFO, "Circuit breaker probing: open for {0} ms, resuming consumer", openMs);
+    metrics.get(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS).addAndGet(openMs);
+    otelMetrics.recordCircuitBreakerTimeOpen(openMs);
+    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN);
+    if (pauseCoordinator.releasePause(PauseCoordinator.Source.CIRCUIT_BREAKER)) internalResume();
+  }
+
+  /// Transitions the breaker back to CLOSED after a successful probe. Resets stats so the next
+  /// trip cycle starts with a fresh window.
+  private void closeBreaker() {
+    LOGGER.log(Level.INFO, "Circuit breaker closed: probe succeeded, resuming normal operation");
+    circuitBreakerStats.reset();
+    circuitBreakerOpenedAtNanos.set(0L);
+    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.CLOSED);
+  }
+
   private void checkBackpressure() {
     switch (backpressureController.check(kafkaConsumer, isPaused())) {
       case PAUSE -> {
@@ -1312,30 +1415,29 @@ public class KPipeConsumer<K> implements AutoCloseable {
           backpressureController.getMetricName(),
           value
         );
-        if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
+        metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
         otelMetrics.recordBackpressurePause();
         backpressurePauseStartNanos = System.nanoTime();
-        backpressurePaused.set(true);
-        internalPause();
+        if (pauseCoordinator.requestPause(PauseCoordinator.Source.BACKPRESSURE)) internalPause();
       }
       case RESUME -> {
-        backpressurePaused.set(false);
         final long duration = Math.max(
           1,
           TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos)
         );
-        if (enableMetrics) metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
+        metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
         otelMetrics.recordBackpressureTime(duration);
-        if (manualPause.get()) {
+        if (pauseCoordinator.releasePause(PauseCoordinator.Source.BACKPRESSURE)) {
+          LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
+          internalResume();
+        } else {
           LOGGER.log(
             Level.INFO,
-            "Backpressure resolved (paused for {0} ms), but consumer remains manually paused",
-            duration
+            "Backpressure resolved (paused for {0} ms), other sources still hold the pause: {1}",
+            duration,
+            pauseCoordinator.currentSources()
           );
-          break;
         }
-        LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
-        internalResume();
       }
       case NONE -> {
       }

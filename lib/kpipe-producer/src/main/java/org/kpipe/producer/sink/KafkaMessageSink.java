@@ -16,9 +16,9 @@ import org.kpipe.sink.MessageSink;
 /// need synchronous send semantics or precise failure handling per record should use
 /// `KPipeProducer.send` / `sendAsync` directly rather than wiring this sink.
 ///
-/// **Trace propagation.** The `tracer` injects the active span's context (W3C `traceparent` by
-/// default) into outbound record headers so downstream consumers see the same trace. Pass
-/// [Tracer#noop] to disable injection.
+/// **Trace propagation.** A non-null `tracer` injects the active span's context (W3C `traceparent`
+/// by default) into outbound record headers so downstream consumers see the same trace. Pass
+/// `null` to disable injection — the sink coalesces to an internal no-op tracer.
 ///
 /// @param <T> The type of the processed object.
 public class KafkaMessageSink<T> implements MessageSink<T> {
@@ -37,7 +37,7 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
   /// @param topic       the destination topic
   /// @param keyMapper   function to serialize the key (may be null for null keys)
   /// @param valueMapper function to serialize the value
-  /// @param tracer      injects span context into outbound headers; pass [Tracer#noop] to disable
+  /// @param tracer      injects span context into outbound headers; pass `null` to disable
   public KafkaMessageSink(
     final Producer<byte[], byte[]> producer,
     final String topic,
@@ -49,7 +49,7 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
     this.topic = Objects.requireNonNull(topic, "topic cannot be null");
     this.keyMapper = keyMapper;
     this.valueMapper = Objects.requireNonNull(valueMapper, "valueMapper cannot be null");
-    this.tracer = Objects.requireNonNull(tracer, "tracer cannot be null");
+    this.tracer = tracer != null ? tracer : Tracer.noop();
   }
 
   @Override
@@ -73,7 +73,7 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
   /// @param producer    the Kafka producer to use
   /// @param topic       the destination topic
   /// @param valueMapper function to serialize the value
-  /// @param tracer      injects span context into outbound headers; pass [Tracer#noop] to disable
+  /// @param tracer      injects span context into outbound headers; pass `null` to disable
   /// @param <T>         the type of the processed object
   /// @return a new KafkaMessageSink
   public static <T> KafkaMessageSink<T> of(

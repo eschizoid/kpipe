@@ -27,6 +27,7 @@ public final class OtelConsumerMetrics implements ConsumerMetrics {
 
   private static final AttributeKey<String> PIPELINE_KEY = AttributeKey.stringKey("pipeline");
   private static final AttributeKey<String> TOPIC_KEY = AttributeKey.stringKey("topic");
+  private static final AttributeKey<String> CIRCUIT_BREAKER_STATE_KEY = AttributeKey.stringKey("circuit_breaker.state");
 
   private final LongCounter messagesReceived;
   private final LongCounter messagesProcessed;
@@ -34,6 +35,9 @@ public final class OtelConsumerMetrics implements ConsumerMetrics {
   private final DoubleHistogram processingDuration;
   private final LongCounter backpressurePauses;
   private final LongCounter backpressureTime;
+  private final LongCounter circuitBreakerTrips;
+  private final LongCounter circuitBreakerStateChanges;
+  private final LongCounter circuitBreakerTimeOpen;
 
   @SuppressWarnings("unused")
   private final ObservableLongGauge inFlight;
@@ -82,6 +86,21 @@ public final class OtelConsumerMetrics implements ConsumerMetrics {
     backpressureTime = meter
       .counterBuilder("kpipe.consumer.backpressure.time")
       .setDescription("Total time spent paused due to backpressure")
+      .setUnit("ms")
+      .build();
+    circuitBreakerTrips = meter
+      .counterBuilder("kpipe.consumer.circuit_breaker.trips")
+      .setDescription("Number of times the circuit breaker tripped (CLOSED→OPEN or HALF_OPEN→OPEN)")
+      .setUnit("{trip}")
+      .build();
+    circuitBreakerStateChanges = meter
+      .counterBuilder("kpipe.consumer.circuit_breaker.state_changes")
+      .setDescription("State transitions of the circuit breaker, broken down by destination state")
+      .setUnit("{change}")
+      .build();
+    circuitBreakerTimeOpen = meter
+      .counterBuilder("kpipe.consumer.circuit_breaker.time_open")
+      .setDescription("Total time the circuit breaker spent in OPEN state")
       .setUnit("ms")
       .build();
     inFlight = meter
@@ -163,6 +182,22 @@ public final class OtelConsumerMetrics implements ConsumerMetrics {
   @Override
   public void recordProcessingDuration(final String topic, final long millis) {
     processingDuration.record(millis, withTopic(topic));
+  }
+
+  @Override
+  public void recordCircuitBreakerTrip() {
+    circuitBreakerTrips.add(1, attributes);
+  }
+
+  @Override
+  public void recordCircuitBreakerStateChange(final Enum<?> state) {
+    if (state == null) return;
+    circuitBreakerStateChanges.add(1, attributes.toBuilder().put(CIRCUIT_BREAKER_STATE_KEY, state.name()).build());
+  }
+
+  @Override
+  public void recordCircuitBreakerTimeOpen(final long millis) {
+    circuitBreakerTimeOpen.add(millis, attributes);
   }
 
   private Attributes withTopic(final String topic) {

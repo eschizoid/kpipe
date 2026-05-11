@@ -7,11 +7,7 @@ import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.KPipeRunner;
 
 /// Package-private [Handle] impl wrapping a started [KPipeRunner].
-final class DefaultHandle implements Handle {
-
-  private final KPipeRunner<KPipeConsumer<byte[]>> runner;
-  private final KPipeConsumer<byte[]> consumer;
-
+record DefaultHandle(KPipeRunner<KPipeConsumer<byte[]>> runner, KPipeConsumer<byte[]> consumer) implements Handle {
   DefaultHandle(final KPipeRunner<KPipeConsumer<byte[]>> runner, final KPipeConsumer<byte[]> consumer) {
     this.runner = Objects.requireNonNull(runner, "runner cannot be null");
     this.consumer = Objects.requireNonNull(consumer, "consumer cannot be null");

@@ -27,22 +27,22 @@ testing primitives, distributed tracing, Spring interop. The refreshed backlog l
 
 ## Prioritized backlog (refreshed 2026-05-09)
 
-| #  | Priority                      | Item                                                                                                                                                                                 | Type              | Effort    |
-|----|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|-----------|
-| 1  | ~~**P1 — Adoption blocker**~~ | ~~Multi-topic Phase 1 (homogeneous) + Phase 2 (heterogeneous via `KPipe.multi`)~~ — both landed 2026-05-07                                                                           | Feature           | shipped   |
-| 2  | ~~**P1 — Adoption blocker**~~ | ~~Java baseline decision~~ — **stay on Java 25** (decided 2026-05-07)                                                                                                                | Strategy          | decided   |
-| 3  | ~~**P2 — Bug surface**~~      | ~~Batch sinks (`BatchSink<T>` interface + size/time flush + per-record DLQ + parallel mode + multi-topic + JMH bench)~~ — landed 2026-05-08/09 across 8 commits                      | Feature           | shipped   |
-| 4  | ~~**P2 — Adoption**~~         | ~~Confluent Schema Registry module (`kpipe-schema-registry-confluent`) — schema-by-ID lookup from wire envelope; absorbs HTTP-fetcher extraction from `kpipe-format-avro`~~ — landed 2026-05-11 | Feature           | shipped   |
+| #  | Priority                          | Item                                                                                                                                                                                                                                                                        | Type              | Effort    |
+|----|-----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------|-----------|
+| 1  | ~~**P1 — Adoption blocker**~~     | ~~Multi-topic Phase 1 (homogeneous) + Phase 2 (heterogeneous via `KPipe.multi`)~~ — both landed 2026-05-07                                                                                                                                                                  | Feature           | shipped   |
+| 2  | ~~**P1 — Adoption blocker**~~     | ~~Java baseline decision~~ — **stay on Java 25** (decided 2026-05-07)                                                                                                                                                                                                       | Strategy          | decided   |
+| 3  | ~~**P2 — Bug surface**~~          | ~~Batch sinks (`BatchSink<T>` interface + size/time flush + per-record DLQ + parallel mode + multi-topic + JMH bench)~~ — landed 2026-05-08/09 across 8 commits                                                                                                             | Feature           | shipped   |
+| 4  | ~~**P2 — Adoption**~~             | ~~Confluent Schema Registry module (`kpipe-schema-registry-confluent`) — schema-by-ID lookup from wire envelope; absorbs HTTP-fetcher extraction from `kpipe-format-avro`~~ — landed 2026-05-11                                                                             | Feature           | shipped   |
 | 5  | ~~**P2 — Production-readiness**~~ | ~~W3C trace context propagation through Kafka headers + tracer integration (`kpipe-tracing-otel`)~~ — landed 2026-05-11; SPI in `kpipe-producer`, impl + W3C propagator in `kpipe-tracing-otel`, `Stream.withTracer` on the facade, `KafkaMessageSink` + DLQ inject context | Feature           | shipped   |
-| 6  | **P2 — Productivity**         | Testing primitives (`kpipe-test`) — `TestStream<T>` with `.send().expect()`, no Testcontainers required (Kafka-Streams' `TopologyTestDriver` analogue)                               | Feature           | ~3–4 days |
-| 7  | **P2 — Bug surface**          | Circuit breaker for sinks — hand-rolled inside `kpipe-consumer`, mirrors `BackpressureController` shape                                                                              | Feature           | ~3–4 days |
-| 8  | **P3 — User-visible**         | `Format.INSTANCE` global mutable state hardening (real on paper, rarely hit in practice; documented as known footgun for now)                                                        | Hardening         | ~1 day    |
-| 9  | **P3 — User-visible**         | `AppConfig` slimdown / split (real example infra; decide split or move)                                                                                                              | Refactor          | ~1 hr     |
-| 10 | **P3 — User-visible**         | `HttpHealthServer` placement decision (lib contract or sample → `examples/`?)                                                                                                        | Refactor          | ~30 min   |
-| 11 | **P3 — User-visible**         | Build/test config cleanup remaining (consumer parallelism, residual fork tuning)                                                                                                     | Refactor          | ~30 min   |
-| 12 | **P3 — Audience**             | Spring Boot starter (`kpipe-spring-boot-starter`) — auto-wires `KPipeConsumer` from `application.yml`; opt-in, no Spring in core                                                     | Feature           | ~1 week   |
-| 13 | **P5 — 2.0 candidates**       | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                                                                          | Breaking refactor | ~half day |
-| 14 | **P5 — Speculative perf**     | Format serialization caches re-wire (only with JMH evidence)                                                                                                                         | Perf              | ~1–2 days |
+| 6  | **P2 — Productivity**             | Testing primitives (`kpipe-test`) — `TestStream<T>` with `.send().expect()`, no Testcontainers required (Kafka-Streams' `TopologyTestDriver` analogue)                                                                                                                      | Feature           | ~3–4 days |
+| 7  | **P2 — Bug surface**              | Circuit breaker for sinks — hand-rolled inside `kpipe-consumer`, mirrors `BackpressureController` shape                                                                                                                                                                     | Feature           | ~3–4 days |
+| 8  | **P3 — User-visible**             | `Format.INSTANCE` global mutable state hardening (real on paper, rarely hit in practice; documented as known footgun for now)                                                                                                                                               | Hardening         | ~1 day    |
+| 9  | **P3 — User-visible**             | `AppConfig` slimdown / split (real example infra; decide split or move)                                                                                                                                                                                                     | Refactor          | ~1 hr     |
+| 10 | **P3 — User-visible**             | `HttpHealthServer` placement decision (lib contract or sample → `examples/`?)                                                                                                                                                                                               | Refactor          | ~30 min   |
+| 11 | **P3 — User-visible**             | Build/test config cleanup remaining (consumer parallelism, residual fork tuning)                                                                                                                                                                                            | Refactor          | ~30 min   |
+| 12 | **P3 — Audience**                 | Spring Boot starter (`kpipe-spring-boot-starter`) — auto-wires `KPipeConsumer` from `application.yml`; opt-in, no Spring in core                                                                                                                                            | Feature           | ~1 week   |
+| 13 | **P5 — 2.0 candidates**           | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                                                                                                                                                                 | Breaking refactor | ~half day |
+| 14 | **P5 — Speculative perf**         | Format serialization caches re-wire (only with JMH evidence)                                                                                                                                                                                                                | Perf              | ~1–2 days |
 
 **What's gone from the previous revision** (and why):
 
@@ -184,27 +184,27 @@ kpipe-schema-registry-confluent ← kpipe-core                 (opt-in Confluent
 kpipe-bom                                                    (BOM — pins versions)
 ```
 
-| Module                            | What's in it                                                                                                                                         |
-|-----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                        |
+| Module                            | What's in it                                                                                                                                                               |
+|-----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                                              |
 | `kpipe-core`                      | Format-agnostic pipeline machinery: `MessageProcessorRegistry`, `MessageFormat` / `SchemaAwareFormat`, `MessageSink`, `Operators`, `MessagePipeline`, `SchemaResolver` SPI |
-| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters; **no OTel API** on classpath                                        |
-| `kpipe-metrics-otel`              | OpenTelemetry-backed metrics implementation (opt-in)                                                                                                 |
-| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers; OTel tracer implementation (opt-in)                                                             |
-| `kpipe-schema-registry-confluent` | Confluent Schema Registry client (`ConfluentSchemaResolver`); schema-by-ID + by-subject-version lookup with JSON envelope unwrap (opt-in)            |
-| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `KafkaProducerConfig`, `Tracer` SPI                                                                      |
-| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `KafkaOffsetManager`, `HttpHealthServer`                                                   |
-| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                      |
-| `kpipe-format-avro`               | `AvroFormat` (owns its own schema registry), `AvroConsoleSink`                                                                                       |
-| `kpipe-format-protobuf`           | `ProtobufFormat` (owns its own descriptor registry), `ProtobufConsoleSink`                                                                           |
-| `kpipe-api`                       | `KPipe` fluent facade — `Stream<T>`, `Sink<T>`, `Handle`, `MultiBuilder`                                                                             |
+| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters; **no OTel API** on classpath                                                              |
+| `kpipe-metrics-otel`              | OpenTelemetry-backed metrics implementation (opt-in)                                                                                                                       |
+| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers; OTel tracer implementation (opt-in)                                                                                   |
+| `kpipe-schema-registry-confluent` | Confluent Schema Registry client (`ConfluentSchemaResolver`); schema-by-ID + by-subject-version lookup with JSON envelope unwrap (opt-in)                                  |
+| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `KafkaProducerConfig`, `Tracer` SPI                                                                                            |
+| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `KafkaOffsetManager`, `HttpHealthServer`                                                                         |
+| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                                            |
+| `kpipe-format-avro`               | `AvroFormat` (owns its own schema registry), `AvroConsoleSink`                                                                                                             |
+| `kpipe-format-protobuf`           | `ProtobufFormat` (owns its own descriptor registry), `ProtobufConsoleSink`                                                                                                 |
+| `kpipe-api`                       | `KPipe` fluent facade — `Stream<T>`, `Sink<T>`, `Handle`, `MultiBuilder`                                                                                                   |
 
 **Still planned** (from the backlog, not yet built):
 
-| Module                      | What's in it                                                                                                       |
-|-----------------------------|--------------------------------------------------------------------------------------------------------------------|
-| `kpipe-test`                | `TestStream<T>` for unit-testing pipelines without Testcontainers; `.send(record).expect(output)` ergonomics.       |
-| `kpipe-spring-boot-starter` | Auto-wiring of `KPipeConsumer` from `application.yml`. Opt-in; no Spring on `kpipe-core`'s classpath.               |
+| Module                      | What's in it                                                                                                  |
+|-----------------------------|---------------------------------------------------------------------------------------------------------------|
+| `kpipe-test`                | `TestStream<T>` for unit-testing pipelines without Testcontainers; `.send(record).expect(output)` ergonomics. |
+| `kpipe-spring-boot-starter` | Auto-wiring of `KPipeConsumer` from `application.yml`. Opt-in; no Spring on `kpipe-core`'s classpath.         |
 
 ---
 
