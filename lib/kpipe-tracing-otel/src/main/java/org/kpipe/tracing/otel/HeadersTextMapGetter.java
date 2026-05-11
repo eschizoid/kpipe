@@ -3,7 +3,6 @@ package org.kpipe.tracing.otel;
 import io.opentelemetry.context.propagation.TextMapGetter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
 
@@ -17,7 +16,6 @@ final class HeadersTextMapGetter implements TextMapGetter<Headers> {
 
   @Override
   public Iterable<String> keys(final Headers carrier) {
-    if (carrier == null) return Collections.emptyList();
     final var keys = new ArrayList<String>();
     for (final Header h : carrier) keys.add(h.key());
     return keys;

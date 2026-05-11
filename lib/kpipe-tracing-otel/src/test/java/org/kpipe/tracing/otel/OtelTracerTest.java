@@ -54,7 +54,7 @@ class OtelTracerTest {
   void startConsumerSpanInheritsParentTraceFromTraceparentHeader() {
     final var headers = new RecordHeaders();
     headers.add("traceparent", TRACEPARENT_HEADER.getBytes(StandardCharsets.UTF_8));
-    final var record = new ConsumerRecord<>("source-topic", 0, 42L, (Object) null, new byte[] { 1, 2, 3 });
+    final var record = new ConsumerRecord<>("source-topic", 0, 42L, null, new byte[] { 1, 2, 3 });
     // Attach the headers post-construction (ConsumerRecord exposes a mutable Headers).
     for (final var h : headers) record.headers().add(h.key(), h.value());
 
@@ -65,7 +65,7 @@ class OtelTracerTest {
 
     final var spans = spanExporter.getFinishedSpanItems();
     assertEquals(1, spans.size(), "Expected exactly one finished span");
-    final var span = spans.get(0);
+    final var span = spans.getFirst();
 
     // CORE INVARIANT — propagation works: the started span lives inside the upstream trace.
     assertEquals(PARENT_TRACE_ID, span.getTraceId(), "Span must inherit the inbound trace-id");
@@ -86,7 +86,7 @@ class OtelTracerTest {
 
   @Test
   void startConsumerSpanWithoutParentHeaderCreatesNewTrace() {
-    final var record = new ConsumerRecord<>("source-topic", 0, 99L, (Object) null, new byte[] { 9 });
+    final var record = new ConsumerRecord<>("source-topic", 0, 99L, null, new byte[] { 9 });
 
     try (final var scope = tracer.startConsumerSpan(record)) {
       assertNotNull(scope);
@@ -94,7 +94,7 @@ class OtelTracerTest {
 
     final var spans = spanExporter.getFinishedSpanItems();
     assertEquals(1, spans.size());
-    final var span = spans.get(0);
+    final var span = spans.getFirst();
     // No parent → fresh trace id (not the known constant).
     assertNotEquals(PARENT_TRACE_ID, span.getTraceId());
     assertTrue(span.getParentSpanContext() == null || !span.getParentSpanContext().isValid());
@@ -102,7 +102,7 @@ class OtelTracerTest {
 
   @Test
   void injectContextIntoWritesTraceparentDerivedFromActiveSpan() {
-    final var inbound = new ConsumerRecord<>("source-topic", 0, 1L, (Object) null, new byte[] { 0 });
+    final var inbound = new ConsumerRecord<>("source-topic", 0, 1L, null, new byte[] { 0 });
     inbound.headers().add("traceparent", TRACEPARENT_HEADER.getBytes(StandardCharsets.UTF_8));
 
     final var outbound = new RecordHeaders();
@@ -122,7 +122,7 @@ class OtelTracerTest {
 
   @Test
   void recordExceptionMarksSpanStatusErrored() {
-    final var record = new ConsumerRecord<>("source-topic", 0, 7L, (Object) null, new byte[] { 0 });
+    final var record = new ConsumerRecord<>("source-topic", 0, 7L, null, new byte[] { 0 });
     final var boom = new RuntimeException("kaboom");
 
     try (final var scope = tracer.startConsumerSpan(record)) {
@@ -131,7 +131,7 @@ class OtelTracerTest {
 
     final var spans = spanExporter.getFinishedSpanItems();
     assertEquals(1, spans.size());
-    assertEquals(StatusCode.ERROR, spans.get(0).getStatus().getStatusCode());
+    assertEquals(StatusCode.ERROR, spans.getFirst().getStatus().getStatusCode());
   }
 
   @Test

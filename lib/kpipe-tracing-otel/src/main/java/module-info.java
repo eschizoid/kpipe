@@ -17,6 +17,7 @@ module org.kpipe.tracing.otel {
   requires org.kpipe.producer;
   requires io.opentelemetry.api;
   requires kafka.clients;
+  requires io.opentelemetry.context;
 
   exports org.kpipe.tracing.otel;
 }

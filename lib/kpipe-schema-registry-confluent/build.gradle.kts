@@ -24,6 +24,10 @@ dependencies {
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
   testRuntimeOnly(libs.junitPlatformLauncher)
+
+  testImplementation(libs.testcontainers)
+  testImplementation(libs.testcontainersJunitJupiter)
+  testImplementation(libs.testcontainersKafka)
 }
 
 tasks.test {

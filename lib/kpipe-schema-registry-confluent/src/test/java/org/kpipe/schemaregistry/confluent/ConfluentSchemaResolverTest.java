@@ -52,19 +52,30 @@ class ConfluentSchemaResolverTest {
 
   @Test
   void lookupByIdUnwrapsSchemaField() {
-    responseBody.set("{\"schema\":\"{\\\"type\\\":\\\"record\\\",\\\"name\\\":\\\"Foo\\\"}\",\"subject\":\"foo\"}");
+    responseBody.set(
+      """
+      {"schema":"{\\"type\\":\\"record\\",\\"name\\":\\"Foo\\"}","subject":"foo"}"""
+    );
 
     try (final var resolver = new ConfluentSchemaResolver(baseUrl)) {
       final var schema = resolver.lookupById(42);
 
       assertEquals("/schemas/ids/42", lastPath.get(), "expected SR id endpoint");
-      assertEquals("{\"type\":\"record\",\"name\":\"Foo\"}", schema, "envelope should be stripped, escapes decoded");
+      assertEquals(
+        """
+        {"type":"record","name":"Foo"}""",
+        schema,
+        "envelope should be stripped, escapes decoded"
+      );
     }
   }
 
   @Test
   void lookupBySubjectVersionUsesCorrectEndpoint() {
-    responseBody.set("{\"schema\":\"\\\"inline-string-schema\\\"\",\"id\":7}");
+    responseBody.set(
+      """
+      {"schema":"\\"inline-string-schema\\"","id":7}"""
+    );
 
     try (final var resolver = new ConfluentSchemaResolver(baseUrl)) {
       final var schema = resolver.lookupBySubjectVersion("com.kpipe.customer", "latest");
@@ -76,7 +87,10 @@ class ConfluentSchemaResolverTest {
 
   @Test
   void nonNumericVersionIsUrlEncoded() {
-    responseBody.set("{\"schema\":\"{\\\"type\\\":\\\"int\\\"}\"}");
+    responseBody.set(
+      """
+      {"schema":"{\\"type\\":\\"int\\"}"}"""
+    );
 
     try (final var resolver = new ConfluentSchemaResolver(baseUrl)) {
       resolver.lookupBySubjectVersion("with spaces", "v 1");
@@ -98,7 +112,10 @@ class ConfluentSchemaResolverTest {
 
   @Test
   void responseMissingSchemaFieldThrows() {
-    responseBody.set("{\"id\":42,\"subject\":\"foo\"}");
+    responseBody.set(
+      """
+      {"id":42,"subject":"foo"}"""
+    );
 
     try (final var resolver = new ConfluentSchemaResolver(baseUrl)) {
       final var thrown = assertThrows(RuntimeException.class, () -> resolver.lookupById(42));
@@ -125,7 +142,10 @@ class ConfluentSchemaResolverTest {
 
   @Test
   void trailingSlashInBaseUrlIsStripped() {
-    responseBody.set("{\"schema\":\"\\\"x\\\"\"}");
+    responseBody.set(
+      """
+      {"schema":"\\"x\\""}"""
+    );
 
     try (final var resolver = new ConfluentSchemaResolver(baseUrl + "/")) {
       final var result = resolver.lookupById(1);

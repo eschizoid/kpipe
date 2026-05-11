@@ -18,7 +18,7 @@ final class HeadersTextMapSetter implements TextMapSetter<Headers> {
 
   @Override
   public void set(final Headers carrier, final String key, final String value) {
-    if (carrier == null || key == null || value == null) return;
+    if (carrier == null) return;
     carrier.remove(key);
     carrier.add(key, value.getBytes(StandardCharsets.UTF_8));
   }

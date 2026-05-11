@@ -1,8 +1,8 @@
 # KPipe — Roadmap & State of the Library
 
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-11
 **Current released line:** 1.11.0 (Maven Central)
-**Active work:** none — `main` is clean. Backlog refreshed 2026-05-09 (this revision).
+**Active work:** `chore/junit-6-upgrade` branch — bundled JUnit 6 bump + README pin + PLAN refresh + Confluent SR module + tracing module + cast-fix in `tryEnqueueBatchRecord`. Uncommitted across several files; ready to land.
 
 ---
 
@@ -32,9 +32,9 @@ testing primitives, distributed tracing, Spring interop. The refreshed backlog l
 | 1  | ~~**P1 — Adoption blocker**~~ | ~~Multi-topic Phase 1 (homogeneous) + Phase 2 (heterogeneous via `KPipe.multi`)~~ — both landed 2026-05-07                                                                           | Feature           | shipped   |
 | 2  | ~~**P1 — Adoption blocker**~~ | ~~Java baseline decision~~ — **stay on Java 25** (decided 2026-05-07)                                                                                                                | Strategy          | decided   |
 | 3  | ~~**P2 — Bug surface**~~      | ~~Batch sinks (`BatchSink<T>` interface + size/time flush + per-record DLQ + parallel mode + multi-topic + JMH bench)~~ — landed 2026-05-08/09 across 8 commits                      | Feature           | shipped   |
-| 4  | **P2 — Adoption**             | Confluent Schema Registry module (`kpipe-schema-registry-confluent`) — schema-by-ID lookup from wire envelope, local cache; absorbs HTTP-fetcher extraction from `kpipe-format-avro` | Feature           | ~3–4 days |
-| 5  | **P2 — Productivity**         | Testing primitives (`kpipe-test`) — `TestStream<T>` with `.send().expect()`, no Testcontainers required (Kafka-Streams' `TopologyTestDriver` analogue)                               | Feature           | ~3–4 days |
-| 6  | **P2 — Production-readiness** | W3C trace context propagation through Kafka headers + tracer integration (`kpipe-tracing-otel`)                                                                                      | Feature           | ~2–3 days |
+| 4  | ~~**P2 — Adoption**~~         | ~~Confluent Schema Registry module (`kpipe-schema-registry-confluent`) — schema-by-ID lookup from wire envelope; absorbs HTTP-fetcher extraction from `kpipe-format-avro`~~ — landed 2026-05-11 | Feature           | shipped   |
+| 5  | ~~**P2 — Production-readiness**~~ | ~~W3C trace context propagation through Kafka headers + tracer integration (`kpipe-tracing-otel`)~~ — landed 2026-05-11; SPI in `kpipe-producer`, impl + W3C propagator in `kpipe-tracing-otel`, `Stream.withTracer` on the facade, `KafkaMessageSink` + DLQ inject context | Feature           | shipped   |
+| 6  | **P2 — Productivity**         | Testing primitives (`kpipe-test`) — `TestStream<T>` with `.send().expect()`, no Testcontainers required (Kafka-Streams' `TopologyTestDriver` analogue)                               | Feature           | ~3–4 days |
 | 7  | **P2 — Bug surface**          | Circuit breaker for sinks — hand-rolled inside `kpipe-consumer`, mirrors `BackpressureController` shape                                                                              | Feature           | ~3–4 days |
 | 8  | **P3 — User-visible**         | `Format.INSTANCE` global mutable state hardening (real on paper, rarely hit in practice; documented as known footgun for now)                                                        | Hardening         | ~1 day    |
 | 9  | **P3 — User-visible**         | `AppConfig` slimdown / split (real example infra; decide split or move)                                                                                                              | Refactor          | ~1 hr     |
@@ -56,12 +56,62 @@ testing primitives, distributed tracing, Spring interop. The refreshed backlog l
   delete" loses functionality, "extract into a real SR module" turns it into an adoption feature for similar effort.
 - `Format.INSTANCE` (was P2 #3) — downgraded to P3. Practical hit-rate is low; doc warning is the cheap mitigation.
 
-**Active P2 ordering rationale:** schema-registry first because it's a day-1 adoption blocker for Confluent
-shops; testing primitives second because every existing user benefits immediately; tracing third for production
-observability; CB last because it's incident-time value, not an adoption driver. P3 items are cheap to close
-in spare cycles.
+**Active P2 ordering rationale:** schema-registry and tracing both landed 2026-05-11 (Confluent SR was the
+top adoption blocker; tracing was already half-wired so finishing it was cheap). Remaining: testing primitives
+(every existing user benefits immediately) and CB (incident-time value, lowest among the P2 set). P3 items are
+cheap to close in spare cycles.
 
 ### Recently shipped
+
+- **2026-05-11 — Confluent Schema Registry module** (`chore/junit-6-upgrade` branch, uncommitted):
+  new `kpipe-schema-registry-confluent` module wired into `settings.gradle.kts`. Provides
+  `ConfluentSchemaResolver` with `lookupById(int)` (the `SchemaResolver` SPI in `kpipe-core` for
+  wire-envelope decode) and `lookupBySubjectVersion(String, String)` (config-time lookup, mirrors
+  the URL shape the examples used to inline into `AvroFormat.addSchema`). Hand-rolled SR envelope
+  parser — the `{"schema":"..."}` JSON unwrap with `\"` / `\\` / `\uXXXX` escape decoding —
+  scoped to the SR response shape so the module avoids a Jackson dependency. 8 unit tests against
+  an in-JDK `HttpServer` covering both endpoints, URL encoding, non-2xx, missing/empty body,
+  negative id, trailing-slash baseUrl. `AvroFormat.readSchemaFromLocation`'s `http://` branch was
+  removed; calling it now throws with a migration message pointing at the new module. The two
+  example apps (`examples/avro`, `examples/demo`) migrated to use
+  `ConfluentSchemaResolver.lookupBySubjectVersion(...)` at startup. `kpipe-format-avro`'s
+  `module-info` dropped `requires java.net.http`; `requires com.fasterxml.jackson.core` had to
+  stay because `EncoderFactory.jsonEncoder` in `AvroConsoleSink` transitively exposes Jackson
+  types at compile time.
+
+- **2026-05-11 — W3C trace context propagation** (`chore/junit-6-upgrade` branch, uncommitted):
+  new `kpipe-tracing-otel` module + `Tracer` SPI in `kpipe-producer.tracing` (placed there
+  because the SPI references Kafka's `Headers` and `ConsumerRecord` types, so it must live in a
+  module that already requires `kafka.clients`; `kpipe-metrics` is interfaces-only and dep-free).
+  `OtelTracer` uses `OpenTelemetry.getPropagators().getTextMapPropagator()` (W3C default) with
+  small `TextMapGetter<Headers>` / `TextMapSetter<Headers>` adapters. Wired into `KPipeConsumer`:
+  `Builder.withTracer(Tracer)`, span lifecycle in `processRecord` (extract upstream parent from
+  headers, start CONSUMER span with `messaging.kafka.{topic,partition,offset}` attributes, close
+  in nested-finally so a throwing user callback doesn't leak the scope), `recordException(t)`
+  inside `handleProcessingError`. `KPipeProducer.sendToDlq` and `KafkaMessageSink.accept` inject
+  the active context into outbound headers. Facade gained `Stream.withTracer(Tracer)` and
+  `MultiBuilder.withTracer(Tracer)`. Per §16 no-deprecation, the old `KafkaMessageSink`
+  constructor / `of()` factory were not duplicated with a noop default — there's exactly one of
+  each, callers pass `Tracer.noop()` explicitly when they don't want propagation. Test
+  call sites in `KafkaMessageSinkTest`, `KPipeProducerTest`, `KPipeProducerIntegrationTest`
+  migrated. One unit test in `kpipe-tracing-otel` against `InMemorySpanExporter` verifies the
+  incoming `traceparent` header propagates as the new span's parent.
+
+- **2026-05-11 — JUnit 6 upgrade**: bumped `junit = "6.0.0"` (was `5.11.0`) in
+  `gradle/libs.versions.toml`, removed the now-redundant `junitPlatform` version key (JUnit 6
+  aligned platform artifacts to `6.x` — same version line as Jupiter). `junitPlatformLauncher`
+  now references `junit` directly. Zero code changes — the Jupiter API (`@Test`,
+  `Assertions.*`, `@BeforeEach`, `@ExtendWith(MockitoExtension.class)`) is stable across the 5→6
+  jump. Mockito 5.18 and Testcontainers 2.0.4 already support JUnit 6. Full unit-test suite green
+  across all modules.
+
+- **2026-05-11 — `tryEnqueueBatchRecord` cast cleanup**: replaced the raw-type cast pattern
+  (`((BatchPipelineWrapper) wrapper).pipeline()` + `enqueue(...)` with
+  `@SuppressWarnings({"unchecked", "rawtypes"})`) by making the method generic in `T`. The
+  caller (`tryProcessRecord`) passes `BatchPipelineWrapper<K, ?>` and the wildcard captures
+  cleanly into a fresh `T` at the parameter boundary — `pipeline()` returns
+  `MessagePipeline<T>`, `processToValue` returns `T`, `enqueue` accepts `T`. Two raw casts and
+  the `@SuppressWarnings` gone.
 
 - **2026-05-09 — batch sinks v1 → v2 → cleanup** (PR #100 + 7 main commits): single-session push that took
   the batch story end-to-end.
@@ -128,57 +178,70 @@ kpipe-metrics ← kpipe-core ← kpipe-consumer
                           ← kpipe-producer
                           ← kpipe-format-{json, avro, protobuf}
                           ← kpipe-api  (← KPipe facade)
-kpipe-metrics-otel ← kpipe-metrics                (opt-in OTel impl)
-kpipe-bom                                          (BOM — pins versions)
+kpipe-metrics-otel              ← kpipe-metrics              (opt-in OTel metrics)
+kpipe-tracing-otel              ← kpipe-producer             (opt-in OTel tracing)
+kpipe-schema-registry-confluent ← kpipe-core                 (opt-in Confluent SR client)
+kpipe-bom                                                    (BOM — pins versions)
 ```
 
-| Module                  | What's in it                                                                                                                                         |
-|-------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `kpipe-bom`             | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                        |
-| `kpipe-core`            | Format-agnostic pipeline machinery: `MessageProcessorRegistry`, `MessageFormat` / `SchemaAwareFormat`, `MessageSink`, `Operators`, `MessagePipeline` |
-| `kpipe-metrics`         | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters; **no OTel API** on classpath                                        |
-| `kpipe-metrics-otel`    | OpenTelemetry-backed implementation (opt-in)                                                                                                         |
-| `kpipe-producer`        | Kafka producer wrapper, `KafkaMessageSink`, `KafkaProducerConfig`                                                                                    |
-| `kpipe-consumer`        | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `KafkaOffsetManager`, `HttpHealthServer`                                                   |
-| `kpipe-format-json`     | `JsonFormat`, `JsonConsoleSink`                                                                                                                      |
-| `kpipe-format-avro`     | `AvroFormat` (owns its own schema registry), `AvroConsoleSink`                                                                                       |
-| `kpipe-format-protobuf` | `ProtobufFormat` (owns its own descriptor registry), `ProtobufConsoleSink`                                                                           |
-| `kpipe-api`             | `KPipe` fluent facade — `Stream<T>`, `Sink<T>`, `Handle`                                                                                             |
+| Module                            | What's in it                                                                                                                                         |
+|-----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                        |
+| `kpipe-core`                      | Format-agnostic pipeline machinery: `MessageProcessorRegistry`, `MessageFormat` / `SchemaAwareFormat`, `MessageSink`, `Operators`, `MessagePipeline`, `SchemaResolver` SPI |
+| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters; **no OTel API** on classpath                                        |
+| `kpipe-metrics-otel`              | OpenTelemetry-backed metrics implementation (opt-in)                                                                                                 |
+| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers; OTel tracer implementation (opt-in)                                                             |
+| `kpipe-schema-registry-confluent` | Confluent Schema Registry client (`ConfluentSchemaResolver`); schema-by-ID + by-subject-version lookup with JSON envelope unwrap (opt-in)            |
+| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `KafkaProducerConfig`, `Tracer` SPI                                                                      |
+| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `KafkaOffsetManager`, `HttpHealthServer`                                                   |
+| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                      |
+| `kpipe-format-avro`               | `AvroFormat` (owns its own schema registry), `AvroConsoleSink`                                                                                       |
+| `kpipe-format-protobuf`           | `ProtobufFormat` (owns its own descriptor registry), `ProtobufConsoleSink`                                                                           |
+| `kpipe-api`                       | `KPipe` fluent facade — `Stream<T>`, `Sink<T>`, `Handle`, `MultiBuilder`                                                                             |
 
-**Planned new modules** (from the refreshed backlog):
+**Still planned** (from the backlog, not yet built):
 
-| Module                            | What's in it                                                                                                                                                                     |
-|-----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `kpipe-schema-registry-confluent` | Confluent Schema Registry client: schema-by-ID lookup from wire envelope, local schema cache, version migration. Absorbs the `http://` fetcher currently in `kpipe-format-avro`. |
-| `kpipe-test`                      | `TestStream<T>` for unit-testing pipelines without Testcontainers; `.send(record).expect(output)` ergonomics.                                                                    |
-| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers; OTel tracer integration (opt-in, no API in `kpipe-core`).                                                                   |
-| `kpipe-spring-boot-starter`       | Auto-wiring of `KPipeConsumer` from `application.yml`. Opt-in; no Spring on `kpipe-core`'s classpath.                                                                            |
+| Module                      | What's in it                                                                                                       |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------|
+| `kpipe-test`                | `TestStream<T>` for unit-testing pipelines without Testcontainers; `.send(record).expect(output)` ergonomics.       |
+| `kpipe-spring-boot-starter` | Auto-wiring of `KPipeConsumer` from `application.yml`. Opt-in; no Spring on `kpipe-core`'s classpath.               |
 
 ---
 
-## Production-readiness roadmap (detail for active P2 items)
+## Production-readiness roadmap (detail for P2 items, shipped + active)
 
-### P2 #4 — Confluent Schema Registry module
+### P2 #4 — Confluent Schema Registry module (SHIPPED 2026-05-11, partial)
 
-- **Today:** `kpipe-format-avro` carries `java.net.http` + `jackson-core` (`requires` in `module-info.java`)
-  to support `AvroFormat.readSchemaFromLocation` with `http://` URLs. The `addSchema(key, schemaJson)` 2-arg
-  overload covers inline / classpath cases without any HTTP. So `kpipe-format-avro` pays a transitive cost
-  for a feature that's only used by Confluent users.
-- **Target:** New module `kpipe-schema-registry-confluent` that:
-    - Provides a real Confluent SR client (schema-by-ID lookup, local cache with TTL or revision-based
-      invalidation, version migration helpers).
-    - Hosts the `http://` fetching code currently in `kpipe-format-avro`, so the format module can drop
-      `java.net.http` and `jackson-core` from `requires`.
-    - Plugs into both `AvroFormat` and `ProtobufFormat` via a small SPI in `kpipe-core`
-      (e.g., `interface SchemaResolver { Schema lookup(int schemaId); }`).
-    - User wires it via builder: `.withSchemaResolver(new ConfluentSchemaResolver(srUrl, ttl))`.
-- **Why P2 adoption:** Confluent SR is the de-facto standard for Avro/Protobuf at scale. Without first-class
-  support, every shop running Confluent has to either hand-roll fetching or use the `http://` URL hack.
-  Day-1 friction.
-- **Scope guard:** stays a *consumer* of SR. No schema *publishing* in v1 (that's a producer-side feature
-  and Confluent's own producer client already does it well).
-- **Effort:** ~3–4 days including unit tests, a Testcontainers integration test against
-  `confluentinc/cp-schema-registry`, and the format-module dependency cleanup.
+**What landed:**
+
+- New module `kpipe-schema-registry-confluent` with `ConfluentSchemaResolver` (HTTP client + hand-rolled
+  SR envelope parser, no Jackson dep). Exposes `lookupById(int)` (the `SchemaResolver` SPI in
+  `kpipe-core`) and `lookupBySubjectVersion(String, String)` for startup-time lookup.
+- `http://` fetching removed from `kpipe-format-avro.AvroFormat.readSchemaFromLocation` — calling it
+  with an http URL now throws with a migration message.
+- `kpipe-format-avro/module-info` drops `requires java.net.http`. Jackson stayed (see follow-up below).
+- `examples/avro` + `examples/demo` migrated to `ConfluentSchemaResolver.lookupBySubjectVersion(...)`.
+- 8 unit tests against an in-JDK `HttpServer` (both endpoints, URL encoding, non-2xx, missing/empty
+  body, negative id, trailing-slash baseUrl).
+
+**Deferred follow-ups** (not blocking the v1.12 ship but tracked):
+
+- **TTL / revision-based cache in `ConfluentSchemaResolver`** — today every `lookup*` call is a
+  fresh HTTP request. Acceptable for startup-time `lookupBySubjectVersion` (called once), painful
+  for hot-path `lookupById` (every record). The class docstring explicitly says "Caching is the
+  caller's responsibility in v1." Add an internal LRU/TTL cache before runtime auto-lookup is wired in.
+- **Wiring the `SchemaResolver` SPI into `AvroFormat` / `ProtobufFormat` decode path** — the SPI
+  exists in `kpipe-core` but neither format calls `resolver.lookupById(...)` from `deserialize(byte[])`.
+  Users still register schemas at startup via `addSchema(key, json)` and decode with `skipBytes(5)`.
+  The wire-envelope auto-lookup loop is a separate slice.
+- **`.withSchemaResolver(...)` builder method** on `KPipeConsumer.Builder` / `Stream` — depends on
+  the previous item.
+- **Testcontainers integration test** against `confluentinc/cp-schema-registry` — unit tests only today.
+- **Jackson drop from `kpipe-format-avro`** — blocked. Avro's `EncoderFactory.jsonEncoder` used by
+  `AvroConsoleSink` transitively exposes Jackson types at compile time. Not something we can fix
+  without dropping the Avro console sink or rewriting it against a different encoder.
+- **No schema publishing.** Out of scope per the original spec (Confluent's own producer client
+  handles publishing).
 
 ### P2 #5 — Testing primitives (`kpipe-test`)
 
@@ -209,24 +272,33 @@ kpipe-bom                                          (BOM — pins versions)
 - **Effort:** ~3–4 days. Most of the machinery already exists (`MockConsumer` plumbing in the JMH
   bench is ~80% of what a `TestStream` needs).
 
-### P2 #6 — W3C trace context propagation
+### P2 #6 — W3C trace context propagation (SHIPPED 2026-05-11, partial)
 
-- **Today:** OTel **metrics** are wired via `kpipe-metrics-otel` (`kpipe.consumer.*` instruments). OTel
-  **traces** are not. A record produced by service A with a `traceparent` header lands in KPipe and the
-  span context is dropped. Downstream services see a brand-new trace, breaking distributed correlation
-  across the Kafka boundary.
-- **Target:** New module `kpipe-tracing-otel`:
-    - On record receive, extract W3C `traceparent` from Kafka headers.
-    - Start a span for the pipeline with the upstream as parent.
-    - Inject `traceparent` into outbound producer records (DLQ + `KafkaMessageSink`).
-    - Tracer is configured opt-in: `.withTracer(new OtelTracer(tracerProvider))`.
-- **Why P2 production-readiness:** distributed tracing is table stakes for prod observability. Without
-  it, KPipe is invisible in Jaeger / Tempo / Honeycomb traces — a cliff between upstream and downstream
-  spans.
-- **Scope guard:** v1 does W3C propagation only. B3, Datadog headers, and custom propagators come later
-  if asked.
-- **Effort:** ~2–3 days including a Testcontainers integration test that asserts the parent span ID is
-  preserved end-to-end.
+**What landed:**
+
+- New module `kpipe-tracing-otel`. `OtelTracer` uses `OpenTelemetry.getPropagators().getTextMapPropagator()`
+  (W3C default) with `TextMapGetter<Headers>` / `TextMapSetter<Headers>` adapters.
+- `Tracer` SPI in `org.kpipe.producer.tracing` (placed there because the SPI references Kafka's
+  `Headers` and `ConsumerRecord` types; `kpipe-metrics` is interfaces-only and dep-free, widening
+  it would regress that). Default `Tracer.noop()` for zero-overhead.
+- `KPipeConsumer` wired: `Builder.withTracer(Tracer)`, span lifecycle in `processRecord` (extract
+  upstream parent from headers, start CONSUMER span with `messaging.kafka.{topic,partition,offset}`
+  attributes, close in nested-finally so a throwing user callback doesn't leak the scope),
+  `recordException(t)` in `handleProcessingError`.
+- Outbound injection: `KPipeProducer.sendToDlq` and `KafkaMessageSink.accept` both call
+  `tracer.injectContextInto(record.headers())` before send.
+- Facade: `Stream.withTracer(Tracer)` and `MultiBuilder.withTracer(Tracer)`.
+- One unit test in `kpipe-tracing-otel` against `InMemorySpanExporter` verifies the incoming
+  `traceparent` header propagates as the new span's parent.
+
+**Deferred follow-ups:**
+
+- **Testcontainers integration test** asserting parent span id is preserved across consumer →
+  producer → downstream consumer. Spec called for this; unit test stands in for now.
+- **B3, Datadog headers, custom propagators** — out of scope per v1 spec.
+- **Tracer auto-discovery via `ServiceLoader`** — today the user constructs `OtelTracer` explicitly
+  and passes it in. A `META-INF/services` entry would let `.withTracer()` default to whatever's on
+  the classpath, mirroring how SLF4J binds. Not requested yet.
 
 ### P2 #7 — Circuit breaker for sinks (hand-rolled)
 

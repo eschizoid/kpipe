@@ -32,6 +32,13 @@ dependencies {
 
   testImplementation(libs.mockitoCore)
   testImplementation(libs.mockitoJunitJupiter)
+
+  testImplementation(project(":lib:kpipe-api"))
+  testImplementation(project(":lib:kpipe-consumer"))
+  testImplementation(project(":lib:kpipe-format-json"))
+  testImplementation(libs.testcontainers)
+  testImplementation(libs.testcontainersJunitJupiter)
+  testImplementation(libs.testcontainersKafka)
 }
 
 tasks.test {
