@@ -241,8 +241,8 @@ public final class AvroFormat implements SchemaAwareFormat<GenericRecord> {
       if (location.startsWith("http://") || location.startsWith("https://")) {
         throw new IOException(
           "HTTP schema URLs are no longer supported by AvroFormat. Use ConfluentSchemaResolver " +
-          "from kpipe-schema-registry-confluent: resolver.lookupBySubjectVersion(subject, version) " +
-          "then pass the result to AvroFormat.addSchema(key, schemaJson)."
+            "from kpipe-schema-registry-confluent: resolver.lookupBySubjectVersion(subject, version) " +
+            "then pass the result to AvroFormat.addSchema(key, schemaJson)."
         );
       } else if (location.startsWith("classpath:")) {
         final var resourcePath = location.substring("classpath:".length());

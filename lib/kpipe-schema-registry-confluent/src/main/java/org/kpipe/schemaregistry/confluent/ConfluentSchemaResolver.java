@@ -80,10 +80,10 @@ public final class ConfluentSchemaResolver implements SchemaResolver, AutoClosea
     if (subject.isBlank()) throw new IllegalArgumentException("subject cannot be blank");
     if (version.isBlank()) throw new IllegalArgumentException("version cannot be blank");
     final var url = "%s/subjects/%s/versions/%s".formatted(
-        baseUrl,
-        URLEncoder.encode(subject, StandardCharsets.UTF_8),
-        URLEncoder.encode(version, StandardCharsets.UTF_8)
-      );
+      baseUrl,
+      URLEncoder.encode(subject, StandardCharsets.UTF_8),
+      URLEncoder.encode(version, StandardCharsets.UTF_8)
+    );
     return fetchAndUnwrap(url);
   }
 

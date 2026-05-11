@@ -16,12 +16,12 @@ import org.kpipe.KPipe;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.format.avro.AvroConsoleSink;
 import org.kpipe.format.avro.AvroFormat;
-import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 import org.kpipe.format.json.JsonConsoleSink;
 import org.kpipe.format.protobuf.ProtobufConsoleSink;
 import org.kpipe.format.protobuf.ProtobufFormat;
 import org.kpipe.metrics.otel.OtelConsumerMetrics;
 import org.kpipe.registry.Operators;
+import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 
 /// Demo application that consumes JSON, Avro, and Protobuf payloads through a single
 /// `KPipe.multi(...)` consumer. One Kafka consumer-group, one offset manager, three typed

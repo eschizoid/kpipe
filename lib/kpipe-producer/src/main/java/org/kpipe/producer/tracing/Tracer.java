@@ -72,6 +72,8 @@ public interface Tracer {
 
     /// Returns the no-op scope. Useful for tracer implementations that decide a particular record
     /// does not warrant a span.
+    ///
+    /// @return a shared no-op `SpanScope`
     static SpanScope noop() {
       return NoopSpanScope.INSTANCE;
     }

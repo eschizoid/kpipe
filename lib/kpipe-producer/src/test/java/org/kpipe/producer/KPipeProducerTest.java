@@ -54,7 +54,9 @@ class KPipeProducerTest {
     );
 
     final var ex = assertThrows(RuntimeException.class, () ->
-      new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).send(new ProducerRecord<>(TOPIC, null, "v".getBytes()))
+      new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).send(
+        new ProducerRecord<>(TOPIC, null, "v".getBytes())
+      )
     );
     assertEquals("Send failed", ex.getMessage());
   }
@@ -93,7 +95,12 @@ class KPipeProducerTest {
     );
 
     final var record = new ConsumerRecord<>(TOPIC, 2, 42L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).sendToDlq(DLQ_TOPIC, record, TOPIC, new RuntimeException("boom"));
+    new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).sendToDlq(
+      DLQ_TOPIC,
+      record,
+      TOPIC,
+      new RuntimeException("boom")
+    );
 
     verify(mockProducer).send(
       argThat(r -> {
