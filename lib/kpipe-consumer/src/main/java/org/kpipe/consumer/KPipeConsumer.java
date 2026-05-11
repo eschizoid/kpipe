@@ -644,6 +644,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       }
       return new KPipeConsumer<>(this);
     }
+
   }
 
   /// Creates a new KPipeConsumer using the provided builder.
@@ -655,15 +656,14 @@ public class KPipeConsumer<K> implements AutoCloseable {
         ? builder.consumerProvider.get()
         : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
     this.topics = Set.copyOf(Objects.requireNonNull(builder.topics, "Topics must be set"));
+    // `build()` sets `topics` to the UNION of regular + batch routes for Kafka subscription, so
+    // the homogeneous branch must filter out batch-route topics to avoid replicating the regular
+    // pipeline onto a topic that's owned by a batch wrapper.
     if (builder.pipelinesPerTopic != null) {
       this.pipelines = builder.pipelinesPerTopic;
     } else if (builder.pipeline != null) {
-      final var pipelineTopics = builder.topics
-        .stream()
-        .filter(t -> !builder.batchSpecs.containsKey(t))
-        .toList();
-      final var map = new LinkedHashMap<String, MessagePipeline<?>>(pipelineTopics.size());
-      for (final var t : pipelineTopics) map.put(t, builder.pipeline);
+      final var map = new LinkedHashMap<String, MessagePipeline<?>>(builder.topics.size());
+      for (final var t : builder.topics) if (!builder.batchSpecs.containsKey(t)) map.put(t, builder.pipeline);
       this.pipelines = Map.copyOf(map);
     } else {
       this.pipelines = Map.of();
@@ -1173,9 +1173,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (enableMetrics) metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
     otelMetrics.recordMessageReceived(record.topic());
 
-    // Open the span scope BEFORE tryProcessRecord so the entire processing path runs under the
-    // span, including retries and DLQ sends. A misbehaving tracer must not crash the consumer —
-    // fall back to a noop scope.
     Tracer.SpanScope span;
     try {
       span = tracer.startConsumerSpan(record);
@@ -1217,8 +1214,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (batchWrapper != null) return tryEnqueueBatchRecord(record, batchWrapper, span);
     final var pipeline = pipelines.get(record.topic());
     if (pipeline == null) {
-      // Partial-revocation race: subscribed topic was reassigned mid-poll. Mark processed so we
-      // don't loop forever on a config error.
       LOGGER.log(
         Level.WARNING,
         "No pipeline registered for topic {0}; dropping record at offset {1}",
@@ -1360,32 +1355,29 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// `compareAndSet`. Lost races are no-ops — another thread already drove the transition.
   private void recordCircuitBreakerOutcome(final boolean success) {
     if (circuitBreakerController == null) return;
+    final var current = circuitBreakerState.get();
+    // OPEN-state outcomes are in-flight remnants from before the trip: they can't drive a
+    // transition (only the probe timer leaves OPEN), so feeding them into stats is pure
+    // overhead — and worse, would skew the window the breaker uses to re-evaluate later.
+    if (current == CircuitBreakerState.OPEN) return;
     if (success) circuitBreakerStats.recordSuccess();
     else circuitBreakerStats.recordFailure();
 
-    final var current = circuitBreakerState.get();
     switch (current) {
       case CLOSED -> {
         if (!success && circuitBreakerController.shouldTrip(circuitBreakerStats)) {
-          if (circuitBreakerState.compareAndSet(CircuitBreakerState.CLOSED, CircuitBreakerState.OPEN)) {
-            tripBreaker();
-          }
+          if (circuitBreakerState.compareAndSet(CircuitBreakerState.CLOSED, CircuitBreakerState.OPEN)) tripBreaker();
         }
       }
       case HALF_OPEN -> {
-        if (success) {
-          if (circuitBreakerState.compareAndSet(CircuitBreakerState.HALF_OPEN, CircuitBreakerState.CLOSED)) {
-            closeBreaker();
-          }
-        } else {
-          if (circuitBreakerState.compareAndSet(CircuitBreakerState.HALF_OPEN, CircuitBreakerState.OPEN)) {
-            tripBreaker();
-          }
+        final var target = success ? CircuitBreakerState.CLOSED : CircuitBreakerState.OPEN;
+        if (circuitBreakerState.compareAndSet(CircuitBreakerState.HALF_OPEN, target)) {
+          if (success) closeBreaker();
+          else tripBreaker();
         }
       }
       case OPEN -> {
-        // Outcome from an in-flight record that finished after the breaker tripped. Stats already
-        // updated above; only the timer can leave OPEN, so nothing else to do here.
+        // unreachable — handled by the early-return above
       }
     }
   }
@@ -1400,13 +1392,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
       circuitBreakerStats.failureRate(),
       circuitBreakerController.openDuration()
     );
-    if (enableMetrics) metrics.computeIfAbsent(METRIC_CIRCUIT_BREAKER_TRIPS, _ -> new AtomicLong()).incrementAndGet();
+    if (enableMetrics) metrics.get(METRIC_CIRCUIT_BREAKER_TRIPS).incrementAndGet();
     otelMetrics.recordCircuitBreakerTrip();
-    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.OPEN.name());
-    // Register CB as a pause source via the coordinator so backpressure's auto-resume path
-    // sees "another source is holding" and skips. Only call internalPause when CB is the
-    // FIRST source holding — if backpressure or manual already paused us, the Kafka pause
-    // command was already issued.
+    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.OPEN);
     if (pauseCoordinator.requestPause(PauseCoordinator.Source.CIRCUIT_BREAKER)) internalPause();
     final var existing = circuitBreakerProbeFuture;
     if (existing != null) existing.cancel(false);
@@ -1422,17 +1410,15 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// resume / shutdown), no-op.
   private void tryHalfOpen() {
     if (!circuitBreakerState.compareAndSet(CircuitBreakerState.OPEN, CircuitBreakerState.HALF_OPEN)) return;
+    // The probe future has fired (this method IS the firing callback). Null the field so a
+    // subsequent `tripBreaker` cancel doesn't hold a stale completed handle.
+    circuitBreakerProbeFuture = null;
     final var openedAt = circuitBreakerOpenedAtNanos.get();
     final var openMs = openedAt == 0L ? 0L : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - openedAt);
     LOGGER.log(Level.INFO, "Circuit breaker probing: open for {0} ms, resuming consumer", openMs);
-    if (enableMetrics) metrics
-      .computeIfAbsent(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS, _ -> new AtomicLong())
-      .addAndGet(openMs);
+    if (enableMetrics) metrics.get(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS).addAndGet(openMs);
     otelMetrics.recordCircuitBreakerTimeOpen(openMs);
-    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN.name());
-    // Release CB as a pause source. Only call internalResume if CB was the LAST source —
-    // if backpressure or the user is still holding pause, the consumer stays paused at Kafka
-    // and the probe waits for those other sources to release.
+    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN);
     if (pauseCoordinator.releasePause(PauseCoordinator.Source.CIRCUIT_BREAKER)) internalResume();
   }
 
@@ -1442,7 +1428,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     LOGGER.log(Level.INFO, "Circuit breaker closed: probe succeeded, resuming normal operation");
     circuitBreakerStats.reset();
     circuitBreakerOpenedAtNanos.set(0L);
-    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.CLOSED.name());
+    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.CLOSED);
   }
 
   private void checkBackpressure() {

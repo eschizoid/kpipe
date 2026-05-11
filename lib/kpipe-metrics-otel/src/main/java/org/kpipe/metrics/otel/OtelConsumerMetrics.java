@@ -190,9 +190,9 @@ public final class OtelConsumerMetrics implements ConsumerMetrics {
   }
 
   @Override
-  public void recordCircuitBreakerStateChange(final String state) {
+  public void recordCircuitBreakerStateChange(final Enum<?> state) {
     if (state == null) return;
-    circuitBreakerStateChanges.add(1, attributes.toBuilder().put(CIRCUIT_BREAKER_STATE_KEY, state).build());
+    circuitBreakerStateChanges.add(1, attributes.toBuilder().put(CIRCUIT_BREAKER_STATE_KEY, state.name()).build());
   }
 
   @Override

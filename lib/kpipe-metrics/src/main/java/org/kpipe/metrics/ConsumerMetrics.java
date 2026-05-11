@@ -88,11 +88,13 @@ public interface ConsumerMetrics {
   /// implementation is a no-op so existing custom `ConsumerMetrics` impls don't need to override.
   default void recordCircuitBreakerTrip() {}
 
-  /// Records a state-machine transition. `state` is the *new* state name (CLOSED / OPEN /
-  /// HALF_OPEN); implementations typically attach it as an attribute on a gauge or counter.
+  /// Records a state-machine transition. Implementations typically attach the new state as an
+  /// attribute on a counter so dashboards can show per-state transition rates.
   ///
-  /// @param state the new state name
-  default void recordCircuitBreakerStateChange(final String state) {}
+  /// @param state the new state — typed (not stringly) so the call-site can't fat-finger
+  ///     "CLOSE" vs "CLOSED". Implementations that want the name as a string call `state.name()`
+  ///     internally.
+  default void recordCircuitBreakerStateChange(final Enum<?> state) {}
 
   /// Records how long the breaker spent in OPEN state (recorded on OPEN → HALF_OPEN transition).
   ///

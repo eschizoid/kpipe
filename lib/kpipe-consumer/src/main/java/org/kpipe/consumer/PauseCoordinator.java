@@ -51,8 +51,7 @@ final class PauseCoordinator {
   ///     one source holding" — the caller should now invoke `internalPause()`. Idempotent:
   ///     calling twice with the same source returns `true` only the first time.
   boolean requestPause(final Source source) {
-    final var prev = mask.getAndUpdate(m -> m | source.bit);
-    return prev == 0 && (source.bit != 0);
+    return mask.getAndUpdate(m -> m | source.bit) == 0;
   }
 
   /// Removes `source` from the held set.
@@ -61,8 +60,7 @@ final class PauseCoordinator {
   ///     "no sources holding" — the caller should now invoke `internalResume()`. Idempotent.
   boolean releasePause(final Source source) {
     final var prev = mask.getAndUpdate(m -> m & ~source.bit);
-    final var next = prev & ~source.bit;
-    return prev != 0 && next == 0;
+    return prev != 0 && (prev & ~source.bit) == 0;
   }
 
   /// Returns whether `source` is currently in the held set.

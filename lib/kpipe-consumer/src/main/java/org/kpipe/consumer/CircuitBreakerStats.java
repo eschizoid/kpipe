@@ -10,15 +10,11 @@ import java.util.concurrent.atomic.AtomicLongArray;
 /// outcome's counter and incrementing the new one's — so [#failureRate] is `O(1)` regardless of
 /// window size.
 ///
-/// **Concurrency.** Multiple virtual threads call `recordX` simultaneously under parallel mode.
-/// Each thread claims a unique slot via `AtomicLong.getAndIncrement` on `head`; the per-slot
-/// `getAndSet` and counter increments are atomic. Slot collisions only occur when `head` wraps —
-/// in that case the colliding writes still leave the slot at the latest value AND the counters
-/// consistent with the latest set of slots, because each `getAndSet` returns the slot's previous
-/// content and the counter delta is computed from that.
-///
-/// **Reset.** [#reset()] clears all slots and counters in one pass. Called when transitioning out
-/// of HALF_OPEN to start the fresh window cleanly.
+/// **Concurrency invariant.** Each `recordX` claims a unique slot via `head.getAndIncrement`, then
+/// atomically swaps the slot. Concurrent writes to the same slot (only possible once `head` wraps
+/// past `windowSize`) compose correctly because each `getAndSet` returns the slot's previous
+/// content and the counter delta is computed from that — the counters always match the actual
+/// slot contents at any quiescent point.
 final class CircuitBreakerStats {
 
   private static final long EMPTY = 0L;
@@ -60,12 +56,16 @@ final class CircuitBreakerStats {
   /// Returns the proportion of failures in the current window, in `[0.0, 1.0]`. Returns `0.0` when
   /// the window is empty.
   double failureRate() {
-    final var total = totalSamples();
-    return total == 0 ? 0.0 : (double) failures.get() / total;
+    // Snapshot both counters once — re-reading `failures` here after `totalSamples()` would
+    // race and could produce a ratio > 1.0 when a failure arrived between the two reads.
+    final var f = failures.get();
+    final var s = successes.get();
+    final var total = f + s;
+    return total == 0 ? 0.0 : (double) f / total;
   }
 
-  /// Clears every slot and resets both counters to zero. Cheap — `O(windowSize)` but called only
-  /// on state transitions, never on the hot path.
+  /// Clears every slot and resets both counters to zero. Called only on state transitions, never
+  /// on the hot path.
   void reset() {
     for (int i = 0; i < slots.length(); i++) slots.set(i, EMPTY);
     head.set(0);

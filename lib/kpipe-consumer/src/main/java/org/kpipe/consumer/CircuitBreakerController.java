@@ -26,25 +26,10 @@ import java.util.Objects;
 ///   * `HALF_OPEN` — the next record's outcome decides: success → `CLOSED` (window reset),
 ///     failure → `OPEN` (timer restarted).
 ///
-/// **Action enum.** The controller exposes a small `Action` enum mainly for symmetry with
-/// [BackpressureController]. In practice the consumer drives transitions inline via CAS using
-/// the two predicates above; the enum is convenient for tests and explicit state-machine
-/// rendering.
-///
 /// @param failureThreshold the failure rate (0.0..1.0) at or above which the breaker trips
 /// @param windowSize       the rolling sample size — must match the stats window
 /// @param openDuration     how long the breaker stays in `OPEN` before probing
 public record CircuitBreakerController(double failureThreshold, int windowSize, Duration openDuration) {
-  /// Actions the consumer can take given the current stats + state.
-  public enum Action {
-    /// No transition is needed.
-    NONE,
-    /// `CLOSED → OPEN`: the failure rate crossed the threshold; the breaker should trip.
-    TRIP,
-    /// `OPEN → HALF_OPEN`: the open duration has elapsed; the breaker should probe.
-    PROBE,
-  }
-
   public CircuitBreakerController {
     if (failureThreshold <= 0.0 || failureThreshold > 1.0) {
       throw new IllegalArgumentException("failureThreshold must be in (0.0, 1.0], got %f".formatted(failureThreshold));
@@ -60,7 +45,6 @@ public record CircuitBreakerController(double failureThreshold, int windowSize, 
   /// the threshold. Requiring a full window avoids tripping on the first few failures before the
   /// breaker has any signal to work with.
   public boolean shouldTrip(final CircuitBreakerStats stats) {
-    Objects.requireNonNull(stats, "stats cannot be null");
     if (stats.totalSamples() < windowSize) return false;
     return stats.failureRate() >= failureThreshold;
   }
