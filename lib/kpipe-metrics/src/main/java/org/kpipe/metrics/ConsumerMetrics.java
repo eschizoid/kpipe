@@ -83,4 +83,19 @@ public interface ConsumerMetrics {
   default void recordProcessingDuration(final String topic, final long millis) {
     recordProcessingDuration(millis);
   }
+
+  /// Records that the circuit breaker tripped (CLOSED → OPEN, or HALF_OPEN → OPEN). Default
+  /// implementation is a no-op so existing custom `ConsumerMetrics` impls don't need to override.
+  default void recordCircuitBreakerTrip() {}
+
+  /// Records a state-machine transition. `state` is the *new* state name (CLOSED / OPEN /
+  /// HALF_OPEN); implementations typically attach it as an attribute on a gauge or counter.
+  ///
+  /// @param state the new state name
+  default void recordCircuitBreakerStateChange(final String state) {}
+
+  /// Records how long the breaker spent in OPEN state (recorded on OPEN → HALF_OPEN transition).
+  ///
+  /// @param millis duration in milliseconds
+  default void recordCircuitBreakerTimeOpen(final long millis) {}
 }

@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.avro.generic.GenericRecord;
+import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.consumer.KPipeRunner;
 import org.kpipe.format.avro.AvroFormat;
@@ -46,6 +47,7 @@ public final class MultiBuilder {
   private final Map<String, Sink<?>> routes = new LinkedHashMap<>();
   private ConsumerMetrics consumerMetrics;
   private Tracer tracer;
+  private CircuitBreakerController circuitBreaker;
 
   MultiBuilder(final Properties kafkaProps) {
     this.kafkaProps = (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone();
@@ -71,6 +73,17 @@ public final class MultiBuilder {
   /// @return this builder
   public MultiBuilder withTracer(final Tracer tracer) {
     this.tracer = Objects.requireNonNull(tracer, "tracer cannot be null");
+    return this;
+  }
+
+  /// Attaches a circuit breaker to the multi-topic consumer. The breaker observes record outcomes
+  /// across ALL routes — a sustained failure rate on any one route can trip and pause the whole
+  /// consumer. If you need per-route breakers, build separate single-topic consumers.
+  ///
+  /// @param controller the breaker policy (must not be null)
+  /// @return this builder
+  public MultiBuilder withCircuitBreaker(final CircuitBreakerController controller) {
+    this.circuitBreaker = Objects.requireNonNull(controller, "controller cannot be null");
     return this;
   }
 
@@ -188,6 +201,7 @@ public final class MultiBuilder {
     if (!nonBatchPipelines.isEmpty()) consumerBuilder.withPipelines(nonBatchPipelines);
     if (consumerMetrics != null) consumerBuilder.withMetrics(consumerMetrics);
     if (tracer != null) consumerBuilder.withTracer(tracer);
+    if (circuitBreaker != null) consumerBuilder.withCircuitBreaker(circuitBreaker);
     final var consumer = consumerBuilder.build();
     final var runner = KPipeRunner.builder(consumer).build();
     try {

@@ -35,6 +35,7 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
     if (stream.deadLetterTopic() != null) consumerBuilder.withDeadLetterTopic(stream.deadLetterTopic());
     if (stream.pollTimeout() != null) consumerBuilder.withPollTimeout(stream.pollTimeout());
     if (stream.tracer() != null) consumerBuilder.withTracer(stream.tracer());
+    if (stream.circuitBreaker() != null) consumerBuilder.withCircuitBreaker(stream.circuitBreaker());
 
     final var consumer = consumerBuilder.build();
     final var runner = KPipeRunner.builder(consumer).build();
