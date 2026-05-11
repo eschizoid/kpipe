@@ -3,8 +3,6 @@ package org.kpipe.benchmarks;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -21,7 +19,6 @@ import org.kpipe.format.json.JsonFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
-import org.kpipe.sink.MessageSink;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -91,8 +88,7 @@ public class BatchSinkLatencyBenchmark {
   private static final int RECORDS_PER_INVOCATION = 500;
 
   /// Pre-serialized JSON payload reused across every invocation.
-  private static final byte[] JSON_PAYLOAD =
-    """
+  private static final byte[] JSON_PAYLOAD = """
     {
       "id": 12345,
       "name": "John Doe",
@@ -155,7 +151,6 @@ public class BatchSinkLatencyBenchmark {
         .withProperties(props)
         .withConsumer(() -> mockConsumer)
         .withSequentialProcessing(true)
-        .disableMetrics()
         .withPollTimeout(Duration.ofMillis(10));
 
       if (trial.batchSize == 1) {
@@ -173,10 +168,10 @@ public class BatchSinkLatencyBenchmark {
       } else {
         // Batch path — flush parks once per batch regardless of batch size. The latch counts down
         // by batch.size() so the latch resolution semantics are identical between cells.
-        final BatchSink<Map<String, Object>> batchSink = batch -> {
+        final BatchSink<Map<String, Object>> batchSink = BatchSink.ofVoid(batch -> {
           LockSupport.parkNanos(nanos);
           for (int i = 0; i < batch.size(); i++) processedLatch.countDown();
-        };
+        });
         // A permissive 1-minute age cap means flush is purely size-driven within an invocation,
         // which keeps the parked-call count deterministic at exactly RECORDS / batchSize.
         final var policy = new BatchPolicy(trial.batchSize, Duration.ofMinutes(1));
@@ -197,8 +192,14 @@ public class BatchSinkLatencyBenchmark {
       final var props = new Properties();
       props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "ignored:9092");
       props.put(ConsumerConfig.GROUP_ID_CONFIG, "kpipe-batch-bench");
-      props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-      props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+      props.put(
+        ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+        "org.apache.kafka.common.serialization.ByteArrayDeserializer"
+      );
+      props.put(
+        ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+        "org.apache.kafka.common.serialization.ByteArrayDeserializer"
+      );
       props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
       return props;
     }

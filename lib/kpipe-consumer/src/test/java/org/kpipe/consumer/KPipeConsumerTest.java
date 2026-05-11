@@ -335,25 +335,6 @@ class KPipeConsumerTest {
   }
 
   @Test
-  void metricsShouldBeEmptyWhenDisabled() {
-    // Arrange
-    final var consumer = KPipeConsumer.<String>builder()
-      .withProperties(properties)
-      .withTopic(TOPIC)
-      .withPipeline(TestPipelines.identity())
-      .disableMetrics()
-      .build();
-    final var record = createRecord(1, "k", "v");
-
-    // Act
-    consumer.processRecord(record);
-
-    // Assert
-    assertTrue(consumer.getMetrics().isEmpty());
-    consumer.close();
-  }
-
-  @Test
   void withBackpressureShouldPauseConsumerWhenInFlightExceedsHighWatermark() throws InterruptedException {
     // Arrange: slow sink to keep messages in-flight; high watermark of 2
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
@@ -499,7 +480,6 @@ class KPipeConsumerTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
-        .disableMetrics()
         .withBackpressure(10_000, 7_000)
         .build()
     );

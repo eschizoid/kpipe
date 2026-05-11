@@ -18,7 +18,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /// Integration tests for the circuit breaker. Uses Kafka's `MockConsumer` so the tests are fast,
-/// deterministic, and have no Docker dependency — same pattern as `KPipeBackpressureIntegrationTest`.
+/// deterministic, and have no Docker dependency — same pattern as
+// `KPipeBackpressureIntegrationTest`.
 ///
 /// Verifies the three transitions:
 ///

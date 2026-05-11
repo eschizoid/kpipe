@@ -464,26 +464,6 @@ class KPipeConsumerMockingTest {
   }
 
   @Test
-  void shouldNotCollectMetricsWhenDisabled() {
-    // Create consumer with disabled metrics
-    try (
-      final var consumer = KPipeConsumer.<String>builder()
-        .withProperties(properties)
-        .withTopic(TOPIC)
-        .withPipeline(TestPipelines.identity())
-        .disableMetrics()
-        .build()
-    ) {
-      assertTrue(consumer.getMetrics().isEmpty(), "Metrics should be empty when disabled");
-      assertThrows(
-        IllegalStateException.class,
-        consumer::createMessageTracker,
-        "createMessageTracker() must throw when metrics are disabled (no counters to read)"
-      );
-    }
-  }
-
-  @Test
   void builderShouldRespectAllOptions() {
     // Setup
     final var pollTimeout = Duration.ofMillis(200);
@@ -1244,84 +1224,6 @@ class KPipeConsumerMockingTest {
 
     // Both failed records must be marked as processed before the handler runs.
     verify(offsetManager, times(2)).markOffsetProcessed(any(ConsumerRecord.class));
-  }
-
-  /// Verifies that backpressure still drives Kafka pause/resume even when the metrics map is
-  /// disabled via {@link KPipeConsumer.Builder#disableMetrics()}. The decision is driven by the
-  /// `inFlightCount` AtomicLong field directly, not by the metrics map.
-  @Test
-  void backpressureWorksWhenMetricsDisabled() throws Exception {
-    final var topicPartition = new TopicPartition(TOPIC, PARTITION);
-    final var sinkStarted = new CountDownLatch(2);
-    final var sinkRelease = new CountDownLatch(1);
-
-    final var mc = new MockConsumer<String, byte[]>("earliest") {
-      @Override
-      public synchronized void subscribe(final Collection<String> topics) {
-        // no-op: partition is pre-assigned below
-      }
-
-      @Override
-      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {
-        // no-op: partition is pre-assigned below
-      }
-    };
-    mc.assign(List.of(topicPartition));
-    mc.updateBeginningOffsets(Map.of(topicPartition, 0L));
-    for (int i = 0; i < 10; i++) {
-      mc.addRecord(new ConsumerRecord<>(TOPIC, PARTITION, i, "k" + i, ("v" + i).getBytes()));
-    }
-
-    try (
-      final var consumer = KPipeConsumer.<String>builder()
-        .withProperties(properties)
-        .withTopic(TOPIC)
-        .withPipeline(
-          TestPipelines.sideEffect(v -> {
-            sinkStarted.countDown();
-            try {
-              sinkRelease.await(5, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-              Thread.currentThread().interrupt();
-            }
-            return v;
-          })
-        )
-        .disableMetrics()
-        .withBackpressure(2, 1)
-        .withConsumer(() -> mc)
-        .build()
-    ) {
-      // Sanity: metrics map is empty when disabled.
-      assertTrue(consumer.getMetrics().isEmpty(), "metrics should be empty when disableMetrics() is set");
-
-      consumer.start();
-
-      // Wait until at least 2 sink invocations are in-flight so backpressure can fire.
-      assertTrue(sinkStarted.await(3, TimeUnit.SECONDS), "expected pipeline to be in-flight");
-
-      // Wait until the consumer loop pauses Kafka.
-      final long pauseDeadline = System.currentTimeMillis() + 3000;
-      while (mc.paused().isEmpty() && System.currentTimeMillis() < pauseDeadline) {
-        Thread.sleep(25);
-      }
-      assertTrue(
-        mc.paused().contains(topicPartition),
-        "consumer must pause via backpressure even when metrics disabled"
-      );
-
-      // Release sinks → in-flight drains to 0, ≤ lowWatermark=1, consumer should resume.
-      sinkRelease.countDown();
-
-      final long resumeDeadline = System.currentTimeMillis() + 3000;
-      while (!mc.paused().isEmpty() && System.currentTimeMillis() < resumeDeadline) {
-        Thread.sleep(25);
-      }
-      assertTrue(mc.paused().isEmpty(), "consumer must resume once in-flight drops below lowWatermark");
-
-      // Even after pause/resume cycles the metrics map remains empty.
-      assertTrue(consumer.getMetrics().isEmpty(), "metrics must remain empty after backpressure cycle");
-    }
   }
 
   public static class TestableKPipeConsumer<K> extends KPipeConsumer<K> {
