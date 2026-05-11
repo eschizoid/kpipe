@@ -47,13 +47,15 @@ class KPipeCircuitBreakerIntegrationTest {
   @Test
   void sustainedFailuresTripBreakerAndPauseConsumer() throws InterruptedException {
     // Arrange: 12 records, every single one fails. windowSize=5, threshold=0.5 means the breaker
-    // trips after the 5th failure (the first time the window fills with all-failures).
+    // trips after the 5th failure (the first time the window fills with all-failures). Sequential
+    // mode so outcomes arrive at the breaker in deterministic order.
     final var mc = buildMockConsumer(12);
     final var controller = new CircuitBreakerController(0.5, 5, Duration.ofSeconds(30));
 
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
+      .withSequentialProcessing(true)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           throw new RuntimeException("simulated downstream failure");
@@ -86,6 +88,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
+      .withSequentialProcessing(true)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           throw new RuntimeException("downstream down");
@@ -122,6 +125,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
+      .withSequentialProcessing(true)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           final var seq = processed.incrementAndGet();
@@ -159,6 +163,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
+      .withSequentialProcessing(true)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           final var seq = processed.incrementAndGet();
@@ -188,6 +193,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
+      .withSequentialProcessing(true)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           throw new RuntimeException("every record fails");

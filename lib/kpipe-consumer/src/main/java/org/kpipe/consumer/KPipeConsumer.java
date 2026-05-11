@@ -120,7 +120,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// probe timer. Lazily created when either feature is configured; otherwise stays null.
   private final ScheduledExecutorService scheduler;
 
-  /// Circuit-breaker state. All five fields are inert when `circuitBreakerController` is null —
+  /// Circuit-breaker state. All six fields are inert when `circuitBreakerController` is null —
   /// per-record `recordCircuitBreakerOutcome(...)` short-circuits on the null check, so callers
   /// who don't configure a breaker pay only a single field read per record.
   private final CircuitBreakerController circuitBreakerController;
@@ -129,6 +129,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
     CircuitBreakerState.CLOSED
   );
   private final AtomicLong circuitBreakerOpenedAtNanos = new AtomicLong(0L);
+  /// Sibling of `backpressurePaused` / `manualPause`. Set to `true` while the breaker holds the
+  /// consumer paused; gates the auto-resume in `checkBackpressure` and the public `resume()`.
+  /// Without this, backpressure observing "currentlyPaused + low lag" auto-resumes within one
+  /// consumer-loop iteration and defeats the CB pause.
+  private final AtomicBoolean circuitBreakerPaused = new AtomicBoolean(false);
   private volatile ScheduledFuture<?> circuitBreakerProbeFuture;
 
   /// Represents an error that occurred during record processing. Contains the original record,
@@ -976,7 +981,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
   public void resume() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
     manualPause.set(false);
-    if (!backpressurePaused.get()) internalResume();
+    // Three pause gates can hold the consumer paused: manual (cleared above), backpressure
+    // (cleared only by checkBackpressure when its metric drops below low watermark), and
+    // circuit breaker (cleared only by the half-open probe timer). All three must be released
+    // before the consumer can actually resume.
+    if (!backpressurePaused.get() && !circuitBreakerPaused.get()) internalResume();
   }
 
   private void internalResume() {
@@ -1404,6 +1413,12 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (enableMetrics) metrics.computeIfAbsent(METRIC_CIRCUIT_BREAKER_TRIPS, _ -> new AtomicLong()).incrementAndGet();
     otelMetrics.recordCircuitBreakerTrip();
     otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.OPEN.name());
+    // Set the dedicated CB-pause flag BEFORE internalPause so the consumer-loop's
+    // checkBackpressure can't issue an auto-resume between the CAS and the next iteration.
+    // Without this flag, backpressure's RESUME branch sees `currentlyPaused=true` and "lag
+    // below low watermark" (the test's MockConsumer has no real lag) and immediately resumes,
+    // defeating the CB pause within one loop iteration.
+    circuitBreakerPaused.set(true);
     internalPause();
     final var existing = circuitBreakerProbeFuture;
     if (existing != null) existing.cancel(false);
@@ -1427,6 +1442,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
       .addAndGet(openMs);
     otelMetrics.recordCircuitBreakerTimeOpen(openMs);
     otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN.name());
+    // Clear the CB-pause gate BEFORE internalResume so the consumer thread, on its next
+    // iteration, doesn't see the gate still set and skip its own resume work.
+    circuitBreakerPaused.set(false);
     internalResume();
   }
 
@@ -1467,6 +1485,14 @@ public class KPipeConsumer<K> implements AutoCloseable {
           LOGGER.log(
             Level.INFO,
             "Backpressure resolved (paused for {0} ms), but consumer remains manually paused",
+            duration
+          );
+          break;
+        }
+        if (circuitBreakerPaused.get()) {
+          LOGGER.log(
+            Level.INFO,
+            "Backpressure resolved (paused for {0} ms), but circuit breaker is holding the consumer paused",
             duration
           );
           break;
