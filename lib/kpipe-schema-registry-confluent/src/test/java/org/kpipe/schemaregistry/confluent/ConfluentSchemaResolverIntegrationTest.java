@@ -17,14 +17,14 @@ import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.ConfluentKafkaContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
-/// End-to-end test for [ConfluentSchemaResolver] against a real `confluentinc/cp-schema-registry`
+/// End-to-end test for [ConfluentSchemaResolver] against a real `soldevelo/schema-registry`
 /// container. Registers a schema via SR's REST API, then exercises both lookup shapes.
 ///
 /// **Networking note.** Schema Registry runs in a sibling container and needs to reach the
-/// broker via the shared docker network. `ConfluentKafkaContainer.getBootstrapServers()` returns
+/// broker via the shared docker network. `KafkaContainer.getBootstrapServers()` returns
 /// a `localhost:<mappedPort>` address that's only reachable from the host — peers on the docker
 /// network can't resolve it. `withListener("kafka:19092")` adds an additional advertised listener
 /// reachable as `PLAINTEXT://kafka:19092` from any sibling on the same `Network`.
@@ -32,6 +32,7 @@ import org.testcontainers.utility.DockerImageName;
 class ConfluentSchemaResolverIntegrationTest {
 
   private static final String CONFLUENT_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
   private static final String SUBJECT = "kpipe-test-schema";
   private static final String SCHEMA_JSON = """
     {"type":"record","name":"KPipeTest","fields":[{"name":"id","type":"long"}]}""";
@@ -39,8 +40,9 @@ class ConfluentSchemaResolverIntegrationTest {
   private static final Network NETWORK = Network.newNetwork();
 
   @Container
-  static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
-    DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_VERSION))
+  static KafkaContainer kafka = new KafkaContainer(
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
+                   .asCompatibleSubstituteFor("apache/kafka")
   )
     .withNetwork(NETWORK)
     .withListener("kafka:19092")
@@ -48,14 +50,14 @@ class ConfluentSchemaResolverIntegrationTest {
 
   @Container
   static GenericContainer<?> schemaRegistry = new GenericContainer<>(
-    DockerImageName.parse("confluentinc/cp-schema-registry:%s".formatted(CONFLUENT_VERSION))
+    DockerImageName.parse("soldevelo/schema-registry:%s".formatted(CONFLUENT_VERSION))
   )
     .withNetwork(NETWORK)
     .withNetworkAliases("schema-registry")
     .withExposedPorts(8081)
-    .withEnv("SCHEMA_REGISTRY_HOST_NAME", "schema-registry")
+    .withEnv("SCHEMA_REGISTRY_ADVERTISED_HOSTNAME", "schema-registry")
     .withEnv("SCHEMA_REGISTRY_LISTENERS", "http://0.0.0.0:8081")
-    .withEnv("SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS", "PLAINTEXT://kafka:19092")
+    .withEnv("SCHEMA_REGISTRY_KAFKA_BROKERS", "PLAINTEXT://kafka:19092")
     .withEnv("SCHEMA_REGISTRY_KAFKASTORE_TOPIC", "_schemas")
     .dependsOn(kafka)
     .waitingFor(Wait.forHttp("/subjects").forStatusCode(200))
