@@ -1,8 +1,8 @@
 # KPipe — Roadmap & State of the Library
 
-**Last updated:** 2026-05-11
-**Current released line:** 1.11.0 (Maven Central)
-**Active work:** `chore/junit-6-upgrade` branch — bundled JUnit 6 bump + README pin + PLAN refresh + Confluent SR module + tracing module + cast-fix in `tryEnqueueBatchRecord`. Uncommitted across several files; ready to land.
+**Last updated:** 2026-05-15
+**Current released line:** 1.11.0 (Maven Central) — 1.12 release pending (batch sinks, CB, Confluent SR, tracing all merged to main)
+**Active work:** `feature/kpipe-test` branch — testing primitives module (only P2 left).
 
 ---
 
@@ -35,7 +35,7 @@ testing primitives, distributed tracing, Spring interop. The refreshed backlog l
 | 4  | ~~**P2 — Adoption**~~             | ~~Confluent Schema Registry module (`kpipe-schema-registry-confluent`) — schema-by-ID lookup from wire envelope; absorbs HTTP-fetcher extraction from `kpipe-format-avro`~~ — landed 2026-05-11                                                                             | Feature           | shipped   |
 | 5  | ~~**P2 — Production-readiness**~~ | ~~W3C trace context propagation through Kafka headers + tracer integration (`kpipe-tracing-otel`)~~ — landed 2026-05-11; SPI in `kpipe-producer`, impl + W3C propagator in `kpipe-tracing-otel`, `Stream.withTracer` on the facade, `KafkaMessageSink` + DLQ inject context | Feature           | shipped   |
 | 6  | **P2 — Productivity**             | Testing primitives (`kpipe-test`) — `TestStream<T>` with `.send().expect()`, no Testcontainers required (Kafka-Streams' `TopologyTestDriver` analogue)                                                                                                                      | Feature           | ~3–4 days |
-| 7  | **P2 — Bug surface**              | Circuit breaker for sinks — hand-rolled inside `kpipe-consumer`, mirrors `BackpressureController` shape                                                                                                                                                                     | Feature           | ~3–4 days |
+| 7  | ~~**P2 — Bug surface**~~          | ~~Circuit breaker for sinks — hand-rolled inside `kpipe-consumer`, mirrors `BackpressureController` shape~~ — landed 2026-05-11 (PR #102)                                                                                                                                   | Feature           | shipped   |
 | 8  | **P3 — User-visible**             | `Format.INSTANCE` global mutable state hardening (real on paper, rarely hit in practice; documented as known footgun for now)                                                                                                                                               | Hardening         | ~1 day    |
 | 9  | **P3 — User-visible**             | `AppConfig` slimdown / split (real example infra; decide split or move)                                                                                                                                                                                                     | Refactor          | ~1 hr     |
 | 10 | **P3 — User-visible**             | `HttpHealthServer` placement decision (lib contract or sample → `examples/`?)                                                                                                                                                                                               | Refactor          | ~30 min   |
@@ -56,12 +56,27 @@ testing primitives, distributed tracing, Spring interop. The refreshed backlog l
   delete" loses functionality, "extract into a real SR module" turns it into an adoption feature for similar effort.
 - `Format.INSTANCE` (was P2 #3) — downgraded to P3. Practical hit-rate is low; doc warning is the cheap mitigation.
 
-**Active P2 ordering rationale:** schema-registry and tracing both landed 2026-05-11 (Confluent SR was the
-top adoption blocker; tracing was already half-wired so finishing it was cheap). Remaining: testing primitives
-(every existing user benefits immediately) and CB (incident-time value, lowest among the P2 set). P3 items are
-cheap to close in spare cycles.
+**Active P2 ordering rationale:** schema-registry, tracing, and CB all landed in the 2026-05-11 push.
+Only testing primitives (`kpipe-test`) remain in the P2 set — every existing user benefits immediately
+when it lands. P3 items are cheap to close in spare cycles.
 
 ### Recently shipped
+
+- **2026-05-11 — Circuit breaker for sinks** (PR #102, squashed as `40b5946`): hand-rolled inside
+  `kpipe-consumer`, mirrors the `BackpressureController` shape. `CircuitBreakerStats` (count-based
+  sliding window on `AtomicLongArray`), `CircuitBreakerController` (pure-function record with
+  `shouldTrip` / `shouldProbe`), `CircuitBreakerState` enum. State transitions use single-read CAS
+  per §11. The pause/resume gates were unified behind a new `PauseCoordinator` (bitmask-backed
+  `AtomicInteger` with a `Source` enum: MANUAL / BACKPRESSURE / CIRCUIT_BREAKER) so multiple sources
+  can pause the consumer without one source's release auto-resuming another's pause — fixed the
+  real-world bug where the CB trip was defeated by the lag-strategy's auto-resume branch.
+  Half-open probe timer rides the shared `scheduler` (renamed from `batchScheduler`). Facade:
+  `Stream.withCircuitBreaker(double, int, Duration)` + `Stream.withCircuitBreaker(controller)`,
+  `MultiBuilder.withCircuitBreaker(...)`. OTel counters: `kpipe.consumer.circuit_breaker.{trips,
+  state_changes, time_open}`. Same PR also dropped the `enableMetrics` flag (§16 no-deprecation:
+  removed field, builder method, all 10 hot-path guards, 3 tests of the disabled behavior) and
+  inlined `handleRetry` into the retry loop. 5 MockConsumer-based integration tests in sequential
+  mode for deterministic outcome ordering.
 
 - **2026-05-11 — Confluent Schema Registry module** (`chore/junit-6-upgrade` branch, uncommitted):
   new `kpipe-schema-registry-confluent` module wired into `settings.gradle.kts`. Provides
@@ -300,30 +315,23 @@ kpipe-bom                                                    (BOM — pins versi
   and passes it in. A `META-INF/services` entry would let `.withTracer()` default to whatever's on
   the classpath, mirroring how SLF4J binds. Not requested yet.
 
-### P2 #7 — Circuit breaker for sinks (hand-rolled)
+### P2 #7 — Circuit breaker for sinks (SHIPPED 2026-05-11, PR #102)
 
-- **Today:** if a sink fails (DB down, HTTP 503), retries are unbounded and per-record. Backpressure helps
-  but doesn't stop the bleeding. Every record during an outage runs `maxRetries+1` attempts and lands in
-  the DLQ.
-- **Target:** `CircuitBreakerController` record next to `BackpressureController`. Same architectural
-  pattern: pure-function record, takes thresholds + window + strategy, returns `Action {OPEN, CLOSE,
-  PROBE, NONE}`. Wired into `KPipeConsumer.checkBackpressure`-style hook so trip → `internalPause()`,
-  half-open → `internalResume()` and the next record acts as the probe.
-    - Sliding window: `AtomicLongArray` ring buffer (success / failure counters per bucket) — ~30 lines.
-    - State machine: CLOSED / OPEN / HALF_OPEN with single-read CAS transitions per §11 — ~50 lines.
-    - Half-open timer: virtual-thread `ScheduledExecutorService` mirroring the `batchScheduler` precedent.
-    - Facade: `Stream.withCircuitBreaker(double failureThreshold, int windowSize, Duration openDuration)`.
-    - Metrics: `recordCircuitBreakerTrip`, `recordCircuitBreakerState(State)`, `recordCircuitBreakerTimeOpen(ms)`
-      on `ConsumerMetrics` + OTel impl.
-- **Why hand-rolled, not Resilience4j:** Resilience4j duplicates infrastructure already in `kpipe-consumer`
-  (state machine, command queue serialization onto consumer thread, scheduled executor for deferred work,
-  pause/resume choreography via `manualPause` + `LockSupport.park/unpark`). Adopting it for CB-only would
-  mean running parallel state machines or reducing Resilience4j to a thin wrapper using ~10% of its API.
-  If KPipe later grows resilience features (rate limit, bulkhead, slow-call detection, exponential
-  backoff with jitter), revisit; one-time migration is mechanical. Hand-rolling here is the *reversible*
-  decision.
-- **Effort:** ~3–4 days including virtual-thread concurrency tests using `Thread.ofVirtual()` +
-  `CountDownLatch` per the §Testing Strategy convention.
+**What landed:** see the "Recently shipped" entry above for the full breakdown. Headline:
+hand-rolled `CircuitBreakerStats` + `CircuitBreakerController` + `CircuitBreakerState` in
+`kpipe-consumer`, unified pause gates behind a new `PauseCoordinator` (fixing the
+backpressure-auto-resume bug), facade entry points (`Stream.withCircuitBreaker(...)`,
+`MultiBuilder.withCircuitBreaker(...)`), OTel counters, 5 MockConsumer integration tests in
+sequential mode. The same PR dropped the `enableMetrics` flag and inlined `handleRetry`.
+
+**Deferred follow-ups:**
+
+- **Per-sink CB (vs per-consumer)**: today one CB covers the whole consumer's terminal sink path.
+  Multi-topic heterogeneous routes share one CB. A real "trip the DB sink but keep the S3 sink
+  running" story needs per-route CB state. Wait for a user to ask.
+- **Open / half-open metrics exporters**: the OTel counters are there; the log-based reporter
+  pattern (mirroring `ConsumerMetricsReporter`) is not. Cheap to add when someone asks.
+- **Documentation pass**: README still doesn't have a CB example. Roll into the next docs sweep.
 
 ---
 
