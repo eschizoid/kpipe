@@ -883,16 +883,16 @@ public class KPipeConsumer<K> implements AutoCloseable {
   }
 
   /// Blocks indefinitely until [#close()] returns. Use [#awaitShutdown(Duration)] for a bounded
-  /// wait.
+  /// wait that returns a `boolean` instead of throwing.
   ///
-  /// @return `true` if shutdown completed normally, `false` if the wait was interrupted
-  public boolean awaitShutdown() {
+  /// @throws InterruptedException if the calling thread is interrupted while waiting; the
+  ///     interrupt flag is restored before throwing
+  public void awaitShutdown() throws InterruptedException {
     try {
       shutdownLatch.await();
-      return true;
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      return false;
+      throw e;
     }
   }
 
@@ -1189,6 +1189,12 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// This method is idempotent - calling it multiple times has no additional effect.
   @Override
   public void close() {
+    // CREATED → CLOSED: the consumer was built but never started. Skip the drain dance, but still
+    // release the shutdown latch so any caller blocked in awaitShutdown() unblocks.
+    if (state.compareAndSet(ConsumerState.CREATED, ConsumerState.CLOSED)) {
+      shutdownLatch.countDown();
+      return;
+    }
     if (!transitionToClosing()) return;
     stopMetricsReporterThread();
 
