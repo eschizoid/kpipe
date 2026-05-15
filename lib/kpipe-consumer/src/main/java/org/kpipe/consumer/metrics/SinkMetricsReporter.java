@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.kpipe.metrics.KPipeMetricsReporter;
-import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 
 /// Reports metrics for message sinks, allowing flexible composition of:
@@ -81,21 +81,21 @@ public record SinkMetricsReporter(
     LOGGER.log(Level.INFO, metrics);
   }
 
-  /// Creates a reporter for all sinks in the registry.
+  /// Creates a reporter for every sink registered in the registry's sink namespace.
   ///
-  /// @param registry the message sink registry
+  /// @param registry the processor registry whose sinks should be reported on
   /// @return a new reporter that can be further customized
-  public static SinkMetricsReporter forRegistry(final MessageSinkRegistry registry) {
-    return new SinkMetricsReporter(() -> registry.getAll().keySet(), registry::getMetrics, null);
+  public static SinkMetricsReporter forRegistry(final MessageProcessorRegistry registry) {
+    return new SinkMetricsReporter(() -> registry.getAllSinks().keySet(), registry::getSinkMetrics, null);
   }
 
   /// Creates a reporter for a specific subset of sinks.
   ///
-  /// @param registry the message sink registry
+  /// @param registry the processor registry whose sinks should be reported on
   /// @param keys the specific sink keys to report on
   /// @return a new reporter that can be further customized
-  public static SinkMetricsReporter forRegistry(final MessageSinkRegistry registry, final Set<RegistryKey<?>> keys) {
-    return new SinkMetricsReporter(() -> keys, registry::getMetrics, null);
+  public static SinkMetricsReporter forRegistry(final MessageProcessorRegistry registry, final Set<RegistryKey<?>> keys) {
+    return new SinkMetricsReporter(() -> keys, registry::getSinkMetrics, null);
   }
 
   /// Creates a new reporter with the specified output consumer.

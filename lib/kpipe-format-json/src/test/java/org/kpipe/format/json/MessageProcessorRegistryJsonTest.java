@@ -7,7 +7,6 @@ import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.MessageSinkRegistry;
 import org.kpipe.registry.RegistryKey;
 import org.kpipe.sink.MessageSink;
 
@@ -110,7 +109,7 @@ class MessageProcessorRegistryJsonTest {
     final MessageSink<Map<String, Object>> sink = message -> {
       throw new RuntimeException("Test exception");
     };
-    final var safeSink = MessageSinkRegistry.withErrorHandling(sink);
+    final var safeSink = MessageProcessorRegistry.withErrorHandling(sink);
 
     assertDoesNotThrow(() -> safeSink.accept(new java.util.HashMap<>()));
   }

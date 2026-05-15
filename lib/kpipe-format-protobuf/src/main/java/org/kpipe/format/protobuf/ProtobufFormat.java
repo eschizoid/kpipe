@@ -57,7 +57,7 @@ public final class ProtobufFormat implements SchemaAwareFormat<Message> {
   /// @return a new pre-configured registry
   public static MessageProcessorRegistry newRegistry() {
     final var registry = new MessageProcessorRegistry(INSTANCE);
-    registry.sinkRegistry().register(PROTOBUF_LOGGING, new ProtobufConsoleSink<>());
+    registry.register(PROTOBUF_LOGGING, new ProtobufConsoleSink<>());
     return registry;
   }
 

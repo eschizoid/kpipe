@@ -340,7 +340,7 @@ kpipe-bom                                          (Maven BOM — pins versions)
 ```
 
 - **kpipe-core**: format-agnostic pipeline machinery — `MessageFormat`, `MessagePipeline`, `MessageProcessorRegistry`,
-  `MessageSinkRegistry`, `MessageSink`, `CompositeMessageSink`, `RegistryKey`, `RegistryFunctions`. No Kafka, no
+  `MessageSink`, `CompositeMessageSink`, `RegistryKey`, `RegistryFunctions`. No Kafka, no
   third-party runtime deps.
 - **kpipe-metrics**: pure interfaces (`ProducerMetrics`, `ConsumerMetrics`) plus log-based reporters. No OTel API on the
   classpath.
@@ -461,7 +461,7 @@ Error handling is layered:
 - Custom error handler: `.withErrorHandler(...)` to route failures somewhere other than a Kafka topic — an external DB,
   alerting system, whatever.
 - Per-processor and per-sink wrapping: `MessageProcessorRegistry.withErrorHandling()` and
-  `MessageSinkRegistry.withErrorHandling()` swallow failures at the boundary so one bad processor doesn't take down the
+  `MessageProcessorRegistry.withErrorHandling()` (overloaded for both operators and sinks) swallow failures at the boundary so one bad processor doesn't take down the
   pipeline.
 
 ### 8. Backpressure
@@ -756,7 +756,7 @@ registry.register(clearEmailKey, msg -> {
 
 // Register the protobuf console sink yourself (defaults are no longer auto-registered)
 final var protoLoggingKey = ProtobufRegistryKey.of("protobufLogging");
-registry.sinkRegistry().register(protoLoggingKey, new org.kpipe.format.protobuf.ProtobufConsoleSink<>());
+registry.register(protoLoggingKey, new org.kpipe.format.protobuf.ProtobufConsoleSink<>());
 
 final var pipeline = registry
   .pipeline(ProtobufFormat.INSTANCE)
@@ -791,12 +791,12 @@ final var avroConsoleSink = new AvroConsoleSink<GenericRecord>(schema);
 final var protobufConsoleSink = new ProtobufConsoleSink<Message>();
 
 // Register and use via the pipeline builder
-registry.sinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, jsonConsoleSink);
+registry.register(JsonFormat.JSON_LOGGING, jsonConsoleSink);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
   .add(RegistryKey.json("sanitize"))
-  .toSink(MessageSinkRegistry.JSON_LOGGING)
+  .toSink(JsonFormat.JSON_LOGGING)
   .build();
 ```
 
@@ -808,20 +808,22 @@ final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
 };
 ```
 
-### Sink registry
+### Registering sinks
 
-`MessageProcessorRegistry` exposes a `sinkRegistry()` accessor. Sink and processor registries are separate components
-with parallel APIs (`register` / `unregister` / `getMetrics`):
+`MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape.
+`register(key, operator)` and `register(key, sink)` are overloads of one method; lookups use
+`getOperator(key)` and `getSink(key)`. Per-namespace utilities (`getAllSinks`, `getSinkMetrics`,
+`unregisterSink`, `clearSinks`, `compositeSink`) keep the surfaces separate without forcing users
+through a sub-object.
 
 ```java
-// Create a registry
-final var registry = new MessageProcessorRegistry("my-app");
+final var registry = new MessageProcessorRegistry();
 
-// Register sinks with explicit types via the sink registry
+// Register a sink — `register` is overloaded; Java picks the MessageSink variant
 final var dbKey = RegistryKey.of("database", Map.class);
-registry.sinkRegistry().register(dbKey, databaseSink);
+registry.register(dbKey, databaseSink);
 
-// Use the sink by key in the pipeline
+// Use it in a pipeline
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json("enrich")).toSink(dbKey).build();
 ```
 
@@ -829,10 +831,10 @@ final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json
 
 ```java
 // Wrap a sink or operator with error handling (suppresses exceptions, logs errors)
-final var safeSink = MessageSinkRegistry.withErrorHandling(riskySink);
+final var safeSink = MessageProcessorRegistry.withErrorHandling(riskySink);
 final var safeOperator = MessageProcessorRegistry.withErrorHandling(riskyOperator);
 
-registry.sinkRegistry().register(RegistryKey.json("safeDatabase"), safeSink);
+registry.register(RegistryKey.json("safeDatabase"), safeSink);
 ```
 
 ### Kafka producer sink
@@ -1012,8 +1014,8 @@ public class KPipeApp implements AutoCloseable {
   }
 
   public KPipeApp(final AppConfig config) {
-    final var processorRegistry = new MessageProcessorRegistry(config.appName());
-    processorRegistry.sinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, new JsonConsoleSink<>());
+    final var processorRegistry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
+    processorRegistry.register(JsonFormat.JSON_LOGGING, new JsonConsoleSink<>());
 
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 

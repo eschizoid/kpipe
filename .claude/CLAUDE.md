@@ -87,17 +87,32 @@
 - **Composition over Inheritance**: Message transformations are composed using functional operators (Stream.reduce) in
   `MessageProcessorRegistry` rather than deep inheritance or manual chaining.
 
-### 7. Unified Registry Architecture
+### 7. Unified Registry (1.13.0)
 
-- **Decision**: Consolidate `MessageProcessorRegistry` and `MessageSinkRegistry` into a unified management system.
-- **Reasoning**: Processors (`UnaryOperator<T>`) and Sinks (`MessageSink<T>`) share common needs for lifecycle
-  management, metrics, and type-safe identification.
+- **Decision**: One registry type, two namespaces. `MessageProcessorRegistry` holds both operators
+  (`UnaryOperator<T>`) and sinks (`MessageSink<T>`) in separate internal maps, keyed identically by
+  `RegistryKey<T>`. `MessageSinkRegistry` was deleted in 1.13.0 and its surface absorbed.
+- **Reasoning**: Processors and sinks share lifecycle, metrics, and type-safe key shape; keeping
+  two structurally-identical types behind a colocated facade (1.12's `registry.sinkRegistry().X()`
+  pattern) leaked the layering through callers. Collapsing to one type concentrates the "what is a
+  registry entry, what metrics does it carry, how does error-handling wrap a value" answer in one
+  place.
 - **Implementation**:
-    - `MessageProcessorRegistry` acts as a primary facade that delegates sink-related operations to an internal
-      `MessageSinkRegistry`.
-    - Both use a shared `RegistryEntry<T>` to centralize metrics tracking.
-    - Standardized API: Both registries support `register`, `get`, `getAll`, `getMetrics`, and `unregister` with
-      identical semantics.
+    - `register` is overloaded: `register(RegistryKey<T>, UnaryOperator<T>)` for the operator
+      namespace, `register(RegistryKey<T>, MessageSink<T>)` for the sink namespace. Java resolves
+      by argument type; bare lambdas like `x -> x` are still ambiguous and need an explicit cast.
+    - Symmetric pairs: `getOperator` / `getSink`, `getKeys` / `getSinkKeys`, `getAll` / `getAllSinks`,
+      `getMetrics` / `getSinkMetrics`, `unregister` / `unregisterSink`, `clear` / `clearSinks`,
+      `registerEnum` / `registerSinkEnum`. The operator side keeps the unsuffixed names because it
+      was the larger pre-existing surface; the sink side carries the `Sink` suffix.
+    - `compositeSink(RegistryKey<T>...)` is an instance method on the registry (moved from the
+      former `TypedPipelineBuilder.compositeSink` static).
+    - `withErrorHandling` is overloaded too: one for `UnaryOperator<T>`, one for `MessageSink<T>`.
+    - The shared `RegistryEntry<T>` still centralises metrics tracking.
+- **Migration note (1.12 → 1.13)**: every `registry.sinkRegistry().X(...)` call site becomes
+  `registry.X(...)` (or `registry.XSink(...)` for the suffixed pairs above). `MessageSinkRegistry.JSON_LOGGING`
+  moved to `JsonFormat.JSON_LOGGING`. Per §16, no deprecation shim — callers migrated in the same PR
+  (`arch/registry-collapse`).
 
 ### 8. Centralized Error Handling
 
