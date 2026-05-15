@@ -3,7 +3,7 @@ package org.kpipe;
 import java.time.Duration;
 import java.util.Map;
 
-/// Runtime handle for a started KPipe pipeline. Wraps the underlying `KPipeRunner` and exposes
+/// Runtime handle for a started KPipe pipeline. Wraps the underlying `KPipeConsumer` and exposes
 /// only the operations needed by facade users.
 ///
 /// Implements [AutoCloseable] for try-with-resources usage; the default `close()` performs a

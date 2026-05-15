@@ -2,7 +2,6 @@ package org.kpipe;
 
 import java.util.Objects;
 import org.kpipe.consumer.KPipeConsumer;
-import org.kpipe.consumer.KPipeRunner;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.sink.BatchPolicy;
@@ -68,9 +67,8 @@ record DefaultBatchSink<T>(
     if (stream.pollTimeout() != null) consumerBuilder.withPollTimeout(stream.pollTimeout());
 
     final var consumer = consumerBuilder.build();
-    final var runner = KPipeRunner.builder(consumer).build();
     try {
-      runner.start();
+      consumer.start();
     } catch (final RuntimeException e) {
       try {
         consumer.close();
@@ -79,6 +77,6 @@ record DefaultBatchSink<T>(
       }
       throw e;
     }
-    return new DefaultHandle(runner, consumer);
+    return new DefaultHandle(consumer);
   }
 }

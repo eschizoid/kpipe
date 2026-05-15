@@ -11,10 +11,9 @@ package org.kpipe;
 /// @param <T> the deserialized message type flowing through the pipeline
 public interface Sink<T> {
   /// Starts the pipeline. The returned [Handle] is the only way to query metrics, check
-  /// health, or shut down the running consumer. The underlying `KPipeRunner` registers a JVM
-  /// shutdown hook by default, so the consumer will close cleanly even if the handle is not
-  /// closed explicitly — but using try-with-resources on the [Handle] (which is
-  /// `AutoCloseable`) is the recommended pattern.
+  /// health, or shut down the running consumer. The handle is `AutoCloseable` — wrap the call in
+  /// try-with-resources to guarantee shutdown. For long-running hosts, opt in to a JVM shutdown
+  /// hook via `KPipeConsumer.Builder.withShutdownHook(true)` on the explicit-API path.
   ///
   /// @return a [Handle] for monitoring and shutdown
   Handle start();
