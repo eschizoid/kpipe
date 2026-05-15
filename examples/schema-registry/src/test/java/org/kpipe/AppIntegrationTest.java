@@ -96,6 +96,7 @@ class AppIntegrationTest {
     try (
       final var handle = KPipe
         .avro(topic, consumerProps())
+        .withSequentialProcessing(true) // preserve send-order in captured list
         .skipBytes(5)
         .toCustom(capturingSink)
         .start()
