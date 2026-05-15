@@ -23,7 +23,7 @@ import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.ConfluentKafkaContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /// End-to-end test for `Stream.toBatch(...)`. Spins up a real Kafka broker, produces JSON
@@ -32,11 +32,12 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers(disabledWithoutDocker = true)
 class StreamBatchIntegrationTest {
 
-  private static final String CONFLUENT_PLATFORM_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
 
   @Container
-  static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
-    DockerImageName.parse("confluentinc/cp-kafka:%s".formatted(CONFLUENT_PLATFORM_VERSION))
+  static KafkaContainer kafka = new KafkaContainer(
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
+                   .asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   @Test
