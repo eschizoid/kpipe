@@ -128,6 +128,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final List<KPipeMetricsReporter> metricsReporters;
   private final Duration metricsReporterInterval;
   private final boolean useShutdownHook;
+  /// JVM shutdown hook (when `useShutdownHook=true`); kept so `close()` can remove it explicitly.
+  /// Without this, every constructed consumer accumulates a hook in the JVM's shutdown-hook set
+  /// for the lifetime of the process — a real leak in hosts that build/close many consumers.
+  private volatile Thread shutdownHookThread;
   /// Shared virtual-thread scheduler. Owns batch-pipeline age ticks AND the circuit-breaker
   /// probe timer. Lazily created when either feature is configured; otherwise stays null.
   private final ScheduledExecutorService scheduler;
@@ -778,7 +782,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
     this.metricsReporterInterval = builder.metricsReporterInterval;
     this.useShutdownHook = builder.useShutdownHook;
     if (this.useShutdownHook) {
-      Runtime.getRuntime().addShutdownHook(new Thread(this::close, "kpipe-shutdown-hook"));
+      this.shutdownHookThread = new Thread(this::close, "kpipe-shutdown-hook");
+      Runtime.getRuntime().addShutdownHook(this.shutdownHookThread);
     }
 
     if (builder.backpressureController == null) {
@@ -919,7 +924,12 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///     forced through
   public boolean shutdownGracefully(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
-    if (state.get() == ConsumerState.CLOSED) return true;
+    // Snapshot state once. CLOSED → nothing to drain, already done.
+    // CLOSING → another caller is mid-shutdown; await their completion and report the drain
+    // they observed rather than calling pause()/close() on an already-shutting consumer.
+    final var snapshot = state.get();
+    if (snapshot == ConsumerState.CLOSED) return true;
+    if (snapshot == ConsumerState.CLOSING) return awaitShutdown(timeout) && totalInFlight() == 0;
     pause();
     final var drained = waitForInFlightDrain(timeout);
     close();
@@ -1176,10 +1186,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// This method performs a graceful shutdown by:
   ///
   /// <ol>
+  ///   <li>Handling the unstarted (CREATED) case: state → CLOSED, release the shutdown latch
   ///   <li>Setting the state to CLOSING to prevent new operations
-  ///   <li>Creating a message tracker to monitor in-flight messages
-  ///   <li>Signaling shutdown to stop accepting new messages
-  ///   <li>Waiting for all in-flight messages to complete processing
+  ///   <li>Stopping the periodic metrics-reporter thread (if any)
+  ///   <li>Pausing the consumer and signaling shutdown via the command queue
+  ///   <li>Waiting up to `waitForMessagesTimeout` for in-flight messages to drain
   ///   <li>Waking up the consumer thread and waiting for its termination
   ///   <li>Shutting down the virtual thread executor
   ///   <li>Closing the offset manager to ensure final offsets are committed
@@ -1190,9 +1201,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
   @Override
   public void close() {
     // CREATED → CLOSED: the consumer was built but never started. Skip the drain dance, but still
-    // release the shutdown latch so any caller blocked in awaitShutdown() unblocks.
+    // release the shutdown latch so any caller blocked in awaitShutdown() unblocks, and remove
+    // the JVM shutdown hook if one was registered.
     if (state.compareAndSet(ConsumerState.CREATED, ConsumerState.CLOSED)) {
       shutdownLatch.countDown();
+      tryRemoveShutdownHook();
       return;
     }
     if (!transitionToClosing()) return;
@@ -1255,6 +1268,24 @@ public class KPipeConsumer<K> implements AutoCloseable {
     if (kpipeProducer != null) kpipeProducer.close();
     state.set(ConsumerState.CLOSED);
     shutdownLatch.countDown();
+    tryRemoveShutdownHook();
+  }
+
+  /// Removes the JVM shutdown hook installed in the constructor when `useShutdownHook=true`.
+  /// No-op when no hook was installed or when the JVM is already shutting down (in which case
+  /// `removeShutdownHook` would throw `IllegalStateException` — caught and ignored, the hook is
+  /// running anyway).
+  private void tryRemoveShutdownHook() {
+    final var hook = shutdownHookThread;
+    if (hook == null) return;
+    try {
+      Runtime.getRuntime().removeShutdownHook(hook);
+    } catch (final IllegalStateException e) {
+      // JVM already shutting down — the hook is currently executing, which is exactly the path
+      // that called us. Leave it alone.
+    } finally {
+      shutdownHookThread = null;
+    }
   }
 
   /// Processes multiple Kafka records by submitting each one to the virtual thread executor.
