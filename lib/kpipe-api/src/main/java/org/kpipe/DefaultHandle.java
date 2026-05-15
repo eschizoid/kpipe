@@ -4,18 +4,18 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import org.kpipe.consumer.KPipeConsumer;
-import org.kpipe.consumer.KPipeRunner;
 
-/// Package-private [Handle] impl wrapping a started [KPipeRunner].
-record DefaultHandle(KPipeRunner<KPipeConsumer<byte[]>> runner, KPipeConsumer<byte[]> consumer) implements Handle {
-  DefaultHandle(final KPipeRunner<KPipeConsumer<byte[]>> runner, final KPipeConsumer<byte[]> consumer) {
-    this.runner = Objects.requireNonNull(runner, "runner cannot be null");
+/// Package-private [Handle] impl wrapping a started [KPipeConsumer]. Since the 1.13 fold of
+/// `KPipeRunner` into `KPipeConsumer`, every lifecycle concern lives on the consumer directly —
+/// no intermediate runner.
+record DefaultHandle(KPipeConsumer<byte[]> consumer) implements Handle {
+  DefaultHandle(final KPipeConsumer<byte[]> consumer) {
     this.consumer = Objects.requireNonNull(consumer, "consumer cannot be null");
   }
 
   @Override
   public boolean isHealthy() {
-    return runner.isHealthy();
+    return consumer.isRunning();
   }
 
   @Override
@@ -26,17 +26,17 @@ record DefaultHandle(KPipeRunner<KPipeConsumer<byte[]>> runner, KPipeConsumer<by
   @Override
   public boolean awaitShutdown(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
-    return runner.awaitShutdown(timeout.toMillis());
+    return consumer.awaitShutdown(timeout);
   }
 
   @Override
   public void awaitShutdown() throws InterruptedException {
-    runner.awaitShutdown();
+    consumer.awaitShutdown();
   }
 
   @Override
   public boolean shutdownGracefully(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
-    return runner.shutdownGracefully(timeout.toMillis());
+    return consumer.shutdownGracefully(timeout);
   }
 }

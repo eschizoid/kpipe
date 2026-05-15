@@ -2,13 +2,13 @@ package org.kpipe;
 
 import java.util.Objects;
 import org.kpipe.consumer.KPipeConsumer;
-import org.kpipe.consumer.KPipeRunner;
 import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.sink.MessageSink;
 
 /// Package-private [Sink] impl. Holds the configured [DefaultStream] plus the chosen terminal
-/// [MessageSink] and constructs a fully-wired `KPipeConsumer` + `KPipeRunner` on `start()`.
+/// [MessageSink] and constructs a fully-wired [KPipeConsumer] on `start()`. The consumer hosts
+/// its own lifecycle since the 1.13 KPipeRunner fold.
 ///
 /// @param <T> the deserialized message type
 record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) implements Sink<T> {
@@ -38,9 +38,8 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
     if (stream.circuitBreaker() != null) consumerBuilder.withCircuitBreaker(stream.circuitBreaker());
 
     final var consumer = consumerBuilder.build();
-    final var runner = KPipeRunner.builder(consumer).build();
     try {
-      runner.start();
+      consumer.start();
     } catch (final RuntimeException e) {
       // Releasing the consumer here keeps the AutoCloseable contract reachable when start() throws
       // before a Handle is returned.
@@ -51,7 +50,7 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
       }
       throw e;
     }
-    return new DefaultHandle(runner, consumer);
+    return new DefaultHandle(consumer);
   }
 
   /// Builds the [MessagePipeline] for this sink's stream + terminal sink. Reused by

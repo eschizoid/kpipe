@@ -30,7 +30,7 @@ There are two public entry points; pick whichever matches the shape of your prob
 | Surface                                                | What it gives you                                                                                                                                                   | When to use                                                                    |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | **`KPipe` fluent facade** (`kpipe-api`)                | 5-line `KPipe.json("topic", props).pipe(...).toConsole().start()`. Returns a `Stream<T>` → `Sink<T>` → `Handle` chain. Immutable, IDE-discoverable.                 | The common path — most users start here.                                       |
-| **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumer.Builder` + `KPipeRunner.Builder`. Multi-step, supports custom registries, shared pipelines, programmatic runner config. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
+| **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumer.Builder`. Multi-step, supports custom registries, shared pipelines, custom offset managers, periodic metrics reporting via the builder. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
 
 The facade is a thin layer on top of the explicit API, so dropping down when you outgrow it doesn't cost anything.
 
@@ -71,20 +71,20 @@ There's also a `kpipe-bom` so you only pin one version across modules — use it
 <details>
 <summary>Module catalog & other build tools</summary>
 
-| Module                            | What it gives you                                                                                       |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `kpipe-api`                       | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                |
-| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                           |
-| `kpipe-core`                      | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`           |
-| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                         |
-| `kpipe-metrics-otel`              | OpenTelemetry-backed implementation (opt-in)                                                            |
-| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers (opt-in)                                            |
-| `kpipe-schema-registry-confluent` | Confluent Schema Registry client — `lookupById` + `lookupBySubjectVersion` (opt-in)                     |
-| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `Tracer` SPI                                                |
-| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `CircuitBreakerController`, `PauseCoordinator`|
-| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                         |
-| `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                         |
-| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                 |
+| Module                            | What it gives you                                                                                                                |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `kpipe-api`                       | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                         |
+| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                    |
+| `kpipe-core`                      | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                    |
+| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                                                  |
+| `kpipe-metrics-otel`              | OpenTelemetry-backed implementation (opt-in)                                                                                     |
+| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers (opt-in)                                                                     |
+| `kpipe-schema-registry-confluent` | Confluent Schema Registry client — `lookupById` + `lookupBySubjectVersion` (opt-in)                                              |
+| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `Tracer` SPI                                                                         |
+| `kpipe-consumer`                  | `KPipeConsumer` (hosts lifecycle, metrics-reporter thread, shutdown hook), `BackpressureController`, `CircuitBreakerController`, `PauseCoordinator` |
+| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                  |
+| `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                                                  |
+| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                                          |
 
 **Gradle (Kotlin) with BOM**
 
@@ -154,8 +154,8 @@ KPipe.json("events", kafkaProps)
 ```
 
 A working JSON Kafka consumer that strips the `password` field, stamps a timestamp, and logs to console. Behind the
-scenes the chain assembles a `MessageProcessorRegistry`, a `KPipeConsumer`, and a `KPipeRunner` — you don't have to
-touch any of them.
+scenes the chain assembles a `MessageProcessorRegistry` and a `KPipeConsumer` — you don't have to
+touch either of them.
 
 ### 3. The full fluent surface
 
@@ -347,8 +347,10 @@ kpipe-bom                                          (Maven BOM — pins versions)
 - **kpipe-metrics-otel**: OpenTelemetry implementation (`OtelConsumerMetrics`, `OtelProducerMetrics`). Add this only if
   you want OTel-backed metrics.
 - **kpipe-producer**: Kafka producer wrapper, `KafkaMessageSink` (in `org.kpipe.producer.sink`), `Tracer` SPI.
-- **kpipe-consumer**: `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `CircuitBreakerController`,
-  `PauseCoordinator`, `KafkaOffsetManager`, `HttpHealthServer`, `consumer.metrics` reporters.
+- **kpipe-consumer**: `KPipeConsumer` (hosts lifecycle: `start` / `close` / `awaitShutdown` /
+  `shutdownGracefully` / `waitForInFlightDrain` + optional metrics-reporter thread and JVM
+  shutdown hook), `BackpressureController`, `CircuitBreakerController`, `PauseCoordinator`,
+  `KafkaOffsetManager`, `HttpHealthServer`, `consumer.metrics` reporters.
 - **kpipe-tracing-otel**: W3C trace context propagation — extract on consume, inject on produce / DLQ. Opt-in module
   (see "Distributed tracing" below).
 - **kpipe-schema-registry-confluent**: Confluent Schema Registry client (`ConfluentSchemaResolver`) for
@@ -617,8 +619,11 @@ KPipe respects JVM signals without losing records:
 // Initiate graceful shutdown with 5-second timeout
 boolean allProcessed = runner.shutdownGracefully(5000);
 
-// Or register as JVM shutdown hook (KPipeRunner handles this with .withShutdownHook(true))
-Runtime.getRuntime().addShutdownHook(new Thread(() -> runner.close()));
+// Or register a JVM shutdown hook via the builder (default off)
+KPipeConsumer.<byte[]>builder()
+  .withShutdownHook(true)
+  // ...
+  .build();
 ```
 
 ---
@@ -958,34 +963,50 @@ OTel API on the classpath.
 
 ---
 
-## KPipeRunner
+## Consumer lifecycle
 
-`KPipeRunner` handles consumer lifecycle: start, periodic metrics reporting, health check, graceful shutdown.
+Since 1.13.0 the consumer hosts its own lifecycle — start, periodic metrics reporting, JVM
+shutdown hook, in-flight drain, graceful shutdown. The standalone `KPipeRunner` was deleted in
+the runner+tracker fold; everything is on `KPipeConsumer` directly.
 
 ```java
-final var runner = KPipeRunner.builder(consumer)
+final var consumer = KPipeConsumer.<byte[]>builder()
+  .withProperties(kafkaProps)
+  .withTopic("events")
+  .withPipeline(pipeline)
   .withMetricsReporters(List.of(
-    ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
+    ConsumerMetricsReporter.forConsumer(c -> consumer.getMetrics()),
     EntryMetricsReporter.forProcessors(processorRegistry)
   ))
-  .withMetricsInterval(30_000)
-  .withHealthCheck(KPipeConsumer::isRunning)
-  .withShutdownTimeout(10_000)
-  .withShutdownHook(true)
+  .withMetricsInterval(Duration.ofSeconds(30))
+  .withShutdownHook(true)   // installs Runtime.getRuntime().addShutdownHook(consumer::close)
   .build();
 
-runner.start();
-runner.awaitShutdown();
+consumer.start();
+consumer.awaitShutdown();             // blocks until close() completes
 ```
 
-The runner implements `AutoCloseable` for use with try-with-resources:
+Use try-with-resources for explicit cleanup:
 
 ```java
-try (final var runner = KPipeRunner.builder(consumer).build()) {
-  runner.start();
-  runner.awaitShutdown();
+try (final var consumer = KPipeConsumer.<byte[]>builder()
+    .withProperties(kafkaProps)
+    .withTopic("events")
+    .withPipeline(pipeline)
+    .build()) {
+  consumer.start();
+  consumer.awaitShutdown(Duration.ofMinutes(5));   // bounded wait
 }
 ```
+
+Targeted operations: `consumer.shutdownGracefully(Duration)` initiates close with a custom
+in-flight drain budget and returns whether the drain finished cleanly;
+`consumer.waitForInFlightDrain(Duration)` blocks until the in-flight counter hits zero (useful
+during reconfiguration without closing).
+
+The facade (`KPipe.json(...).start()`) wraps this in a `Handle` so users of the fluent path never
+see these methods directly — the handle's `awaitShutdown` / `shutdownGracefully` / `close`
+delegate straight through.
 
 ---
 
@@ -1000,7 +1021,7 @@ The [`examples/`](examples/) directory has complete working apps. Below is a con
 public class KPipeApp implements AutoCloseable {
 
   private static final System.Logger LOGGER = System.getLogger(KPipeApp.class.getName());
-  private final KPipeRunner<KPipeConsumer<byte[]>> runner;
+  private final KPipeConsumer<byte[]> consumer;
 
   static void main() {
     final var config = AppConfig.fromEnv();
@@ -1019,7 +1040,7 @@ public class KPipeApp implements AutoCloseable {
 
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    final var functionalConsumer = KPipeConsumer.<byte[]>builder()
+    consumer = KPipeConsumer.<byte[]>builder()
       .withProperties(KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup()))
       .withTopic(config.topic())
       .withDeadLetterTopic(config.topic() + ".dlq")
@@ -1027,36 +1048,31 @@ public class KPipeApp implements AutoCloseable {
         processorRegistry
           .pipeline(JsonFormat.INSTANCE)
           .add(RegistryKey.json("addSource"), RegistryKey.json("markProcessed"), RegistryKey.json("addTimestamp"))
-          .toSink(MessageSinkRegistry.JSON_LOGGING)
+          .toSink(JsonFormat.JSON_LOGGING)
           .build()
       )
       .withCommandQueue(commandQueue)
-      .withOffsetManagerProvider((consumer) ->
-        KafkaOffsetManager.builder(consumer)
+      .withOffsetManagerProvider((c) ->
+        KafkaOffsetManager.builder(c)
           .withCommandQueue(commandQueue)
           .withCommitInterval(Duration.ofSeconds(30))
           .build()
       )
-      .enableMetrics(true)
-      .build();
-
-    runner = KPipeRunner.builder(functionalConsumer)
-      .withMetricsInterval(config.metricsInterval().toMillis())
-      .withShutdownTimeout(config.shutdownTimeout().toMillis())
+      .withMetricsInterval(config.metricsInterval())
       .withShutdownHook(true)
       .build();
   }
 
   public void start() {
-    runner.start();
+    consumer.start();
   }
 
   public boolean awaitShutdown() {
-    return runner.awaitShutdown();
+    return consumer.awaitShutdown();
   }
 
   public void close() {
-    runner.close();
+    consumer.close();
   }
 }
 ```
