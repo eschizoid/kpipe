@@ -15,7 +15,8 @@ import org.kpipe.sink.MessageSink;
 /// Holds two type-safe maps keyed by [RegistryKey]: one for [UnaryOperator]s (the transforms
 /// you compose with `.pipe(...)`), one for [MessageSink]s (the terminal consumers). The two
 /// namespaces share the same key shape but are stored independently — a key may exist as an
-/// operator, as a sink, as both, or as neither.
+/// operator, as a sink, as both, or as neither. Internally both namespaces share a single
+/// `Namespace` helper so the structural-mirror methods all funnel into one body each.
 ///
 /// Example:
 ///
@@ -43,8 +44,54 @@ public class MessageProcessorRegistry {
 
   private static final Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
 
-  private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> operatorMap = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> sinkMap = new ConcurrentHashMap<>();
+  /// Internal helper: each namespace owns one map and exposes the structural CRUD methods. Keeps
+  /// the public registry from carrying two hand-rolled mirrors. The user-facing methods
+  /// (`register`, `getOperator` / `getSink`, etc.) still split by overload / suffix to preserve
+  /// the type-safe API; only the *plumbing* is shared.
+  private static final class Namespace {
+    private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> map = new ConcurrentHashMap<>();
+
+    <T> void put(final RegistryKey<T> key, final Object value) {
+      map.put(key, new RegistryEntry<>(value));
+    }
+
+    /// Returns the entry under `key` cast to the caller-supplied wrapper type, or null if
+    /// nothing is registered. The wrapper type cannot be inferred from the key (which carries
+    /// the *value* type, e.g. `Map<String, Object>`, not the wrapper `UnaryOperator<Map<...>>`),
+    /// so callers supply it as a type witness. Type-safety of the registration is enforced at
+    /// the public `register(RegistryKey<T>, ...)` overloads.
+    @SuppressWarnings("unchecked")
+    <W> RegistryEntry<W> getAs(final RegistryKey<?> key) {
+      return (RegistryEntry<W>) map.get(key);
+    }
+
+    boolean remove(final RegistryKey<?> key) {
+      return map.remove(key) != null;
+    }
+
+    void clear() {
+      map.clear();
+    }
+
+    Set<RegistryKey<?>> keys() {
+      return Collections.unmodifiableSet(map.keySet());
+    }
+
+    Map<RegistryKey<?>, String> all() {
+      return RegistryFunctions.createUnmodifiableView(map, value -> {
+        final var entry = (RegistryEntry<?>) value;
+        return entry.value().getClass().getSimpleName();
+      });
+    }
+
+    Map<String, Object> metrics(final RegistryKey<?> key) {
+      final var entry = map.get(key);
+      return entry == null ? Map.of() : entry.getMetrics();
+    }
+  }
+
+  private final Namespace operators = new Namespace();
+  private final Namespace sinks = new Namespace();
   private final MessageFormat<?> messageFormat;
 
   /// Creates a new registry with the byte-passthrough format.
@@ -68,10 +115,6 @@ public class MessageProcessorRegistry {
   }
 
   /// Creates a fluent builder for typed pipelines.
-  ///
-  /// @param format The message format for serialization/deserialization.
-  /// @param <T>    The type of the object in the pipeline.
-  /// @return A new TypedPipelineBuilder.
   public <T> TypedPipelineBuilder<T> pipeline(final MessageFormat<T> format) {
     return new TypedPipelineBuilder<>(format, this);
   }
@@ -82,7 +125,7 @@ public class MessageProcessorRegistry {
   public <T> void register(final RegistryKey<T> key, final UnaryOperator<T> operator) {
     Objects.requireNonNull(key, "key cannot be null");
     Objects.requireNonNull(operator, "operator cannot be null");
-    operatorMap.put(key, new RegistryEntry<>(operator));
+    operators.put(key, operator);
   }
 
   /// Registers every constant of an `Enum` that implements `UnaryOperator<T>`. Each constant's
@@ -98,43 +141,41 @@ public class MessageProcessorRegistry {
   /// Retrieves a typed operator. If `key` is not registered, returns a logging pass-through —
   /// a missing operator is almost always a config error and silent pass-through would mask the
   /// bug.
-  @SuppressWarnings("unchecked")
   public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
     return input -> {
-      final var entry = (RegistryEntry<UnaryOperator<T>>) operatorMap.get(key);
-      if (entry != null) return entry.apply(input);
-      LOGGER.log(Level.WARNING, "No operator registered under key %s — passing input through unchanged".formatted(key));
-      return input;
+      final RegistryEntry<UnaryOperator<T>> entry = operators.getAs(key);
+      if (entry == null) {
+        LOGGER.log(Level.WARNING, "No operator registered under key %s — passing input through unchanged".formatted(key));
+        return input;
+      }
+      return entry.apply(input);
     };
   }
 
-  /// Removes an operator entry. Returns true iff a value was present.
+  /// Removes an operator entry. Returns true iff a value was present. Sinks are untouched —
+  /// use [#unregisterSink(RegistryKey)] for those.
   public boolean unregister(final RegistryKey<?> key) {
-    return operatorMap.remove(key) != null;
+    return operators.remove(key);
   }
 
   /// Removes every operator entry. Sinks are untouched — use [#clearSinks()] for those.
   public void clear() {
-    operatorMap.clear();
+    operators.clear();
   }
 
   /// Returns an unmodifiable view of registered operator keys.
   public Set<RegistryKey<?>> getKeys() {
-    return Collections.unmodifiableSet(operatorMap.keySet());
+    return operators.keys();
   }
 
   /// Returns an unmodifiable view of registered operators (key → implementation simple name).
   public Map<RegistryKey<?>, String> getAll() {
-    return RegistryFunctions.createUnmodifiableView(operatorMap, value -> {
-      final var entry = (RegistryEntry<?>) value;
-      return entry.value().getClass().getSimpleName();
-    });
+    return operators.all();
   }
 
   /// Gets metrics for a specific operator entry, or an empty map if `key` is not registered.
   public Map<String, Object> getMetrics(final RegistryKey<?> key) {
-    final var entry = operatorMap.get(key);
-    return entry == null ? Map.of() : entry.getMetrics();
+    return operators.metrics(key);
   }
 
   /// Wraps an operator with error-handling logic that suppresses exceptions and returns the
@@ -150,7 +191,7 @@ public class MessageProcessorRegistry {
   public <T> void register(final RegistryKey<T> key, final MessageSink<T> sink) {
     Objects.requireNonNull(key, "key cannot be null");
     Objects.requireNonNull(sink, "sink cannot be null");
-    sinkMap.put(key, new RegistryEntry<>(sink));
+    sinks.put(key, sink);
   }
 
   /// Registers every constant of an `Enum` that implements `MessageSink<T>`.
@@ -167,42 +208,40 @@ public class MessageProcessorRegistry {
 
   /// Retrieves a typed sink. Unlike operators, a missing sink does NOT pass through — it logs at
   /// WARNING and drops the value (no usable fallback for a void terminal).
-  @SuppressWarnings("unchecked")
   public <T> MessageSink<T> getSink(final RegistryKey<T> key) {
     return value -> {
-      final var entry = (RegistryEntry<MessageSink<T>>) sinkMap.get(key);
-      if (entry != null) entry.accept(value);
-      else LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
+      final RegistryEntry<MessageSink<T>> entry = sinks.getAs(key);
+      if (entry == null) {
+        LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
+        return;
+      }
+      entry.accept(value);
     };
   }
 
   /// Removes a sink entry. Returns true iff a value was present.
   public boolean unregisterSink(final RegistryKey<?> key) {
-    return sinkMap.remove(key) != null;
+    return sinks.remove(key);
   }
 
   /// Removes every sink entry. Operators are untouched.
   public void clearSinks() {
-    sinkMap.clear();
+    sinks.clear();
   }
 
   /// Returns an unmodifiable view of registered sink keys.
   public Set<RegistryKey<?>> getSinkKeys() {
-    return Collections.unmodifiableSet(sinkMap.keySet());
+    return sinks.keys();
   }
 
   /// Returns an unmodifiable view of registered sinks (key → implementation simple name).
   public Map<RegistryKey<?>, String> getAllSinks() {
-    return RegistryFunctions.createUnmodifiableView(sinkMap, value -> {
-      final var entry = (RegistryEntry<?>) value;
-      return entry.value().getClass().getSimpleName();
-    });
+    return sinks.all();
   }
 
   /// Gets metrics for a specific sink entry, or an empty map if `key` is not registered.
   public Map<String, Object> getSinkMetrics(final RegistryKey<?> key) {
-    final var entry = sinkMap.get(key);
-    return entry == null ? Map.of() : entry.getMetrics();
+    return sinks.metrics(key);
   }
 
   /// Wraps a sink with error-handling logic that suppresses exceptions. Overload of the operator
@@ -225,4 +264,5 @@ public class MessageProcessorRegistry {
       }
     };
   }
+
 }
