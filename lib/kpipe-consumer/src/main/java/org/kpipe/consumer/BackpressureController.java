@@ -27,6 +27,13 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   /// Bounded timeout used for the `endOffsets()` broker call inside the lag strategy. Caps how
   /// long the consumer thread can be blocked when the broker is slow or unreachable.
   private static final Duration LAG_QUERY_TIMEOUT = Duration.ofSeconds(2);
+
+  /// Default high watermark (in-flight count or lag) at which the consumer pauses. Used by
+  /// `KPipeConsumer.Builder.withBackpressure()` (no-arg) and by the constructor when no
+  /// controller is explicitly configured.
+  public static final long DEFAULT_HIGH_WATERMARK = 10_000;
+  /// Default low watermark at which the consumer resumes (hysteresis floor).
+  public static final long DEFAULT_LOW_WATERMARK = 7_000;
   /// Creates a new BackpressureController with the same watermarks but a different strategy.
   ///
   /// @param strategy the new strategy to use
