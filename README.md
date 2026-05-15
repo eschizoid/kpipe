@@ -709,24 +709,24 @@ implementation("io.github.eschizoid:kpipe-schema-registry-confluent:1.12.0")
 Resolve a schema at startup:
 
 ```java
-import java.net.http.HttpClient;
+import java.time.Duration;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 
-final var resolver = new ConfluentSchemaResolver(HttpClient.newHttpClient(), "http://schema-registry:8081");
+try (final var resolver = new ConfluentSchemaResolver("http://schema-registry:8081", Duration.ofSeconds(10))) {
+  // Fetch by subject-version (config-time):
+  final String schemaJson = resolver.lookupBySubjectVersion("user-value", "latest");
+  AvroFormat.INSTANCE.addSchema("user", schemaJson);
 
-// Fetch by subject-version (config-time):
-final String schemaJson = resolver.lookupBySubjectVersion("user-value", "latest");
-AvroFormat.INSTANCE.addSchema("user", schemaJson);
-
-// Fetch by ID (runtime, e.g. from a wire-envelope decode loop):
-final String byId = resolver.lookupById(42);
+  // Fetch by ID (runtime, e.g. from a wire-envelope decode loop):
+  final String byId = resolver.lookupById(42);
+}
 ```
 
-The HTTP client is yours — pass it pre-configured with TLS, auth, timeouts, retries. The module has no Jackson
-dependency (the SR envelope is unwrapped by a hand-rolled parser scoped to the response shape) and is opt-in:
-`kpipe-format-avro`'s built-in `http://` schema fetcher was removed in 1.12, calling it now throws with a migration
-message pointing here.
+The single-arg constructor `new ConfluentSchemaResolver(baseUrl)` defaults the request timeout to 10s; an internal
+`HttpClient` is built from the timeout. The module has no Jackson dependency (the SR envelope is unwrapped by a
+hand-rolled parser scoped to the response shape) and is opt-in: `kpipe-format-avro`'s built-in `http://` schema
+fetcher was removed in 1.12, calling it now throws with a migration message pointing here.
 
 **v1 scope and what's deferred:** read-only lookups. No schema publishing (Confluent's own producer client handles
 that). No caching — every call is a fresh HTTP request; acceptable for startup-time `lookupBySubjectVersion`, you'll
