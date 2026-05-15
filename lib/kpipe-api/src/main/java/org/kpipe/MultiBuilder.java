@@ -13,7 +13,6 @@ import java.util.function.Supplier;
 import org.apache.avro.generic.GenericRecord;
 import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
-import org.kpipe.consumer.KPipeRunner;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.json.JsonFormat;
 import org.kpipe.format.protobuf.ProtobufFormat;
@@ -173,7 +172,7 @@ public final class MultiBuilder {
     return this;
   }
 
-  /// Builds and starts the underlying [KPipeConsumer] / [KPipeRunner] with the registered routes
+  /// Builds and starts the underlying [KPipeConsumer] with the registered routes
   /// and returns a [Handle] for lifecycle management.
   ///
   /// Routes terminating in `.toBatch(...)` are wired through `withBatchPipeline`; the consumer
@@ -202,19 +201,7 @@ public final class MultiBuilder {
     if (consumerMetrics != null) consumerBuilder.withMetrics(consumerMetrics);
     if (tracer != null) consumerBuilder.withTracer(tracer);
     if (circuitBreaker != null) consumerBuilder.withCircuitBreaker(circuitBreaker);
-    final var consumer = consumerBuilder.build();
-    final var runner = KPipeRunner.builder(consumer).build();
-    try {
-      runner.start();
-    } catch (final RuntimeException e) {
-      try {
-        consumer.close();
-      } catch (final Exception suppressed) {
-        e.addSuppressed(suppressed);
-      }
-      throw e;
-    }
-    return new DefaultHandle(runner, consumer);
+    return DefaultHandle.startAndWrap(consumerBuilder.build());
   }
 
   /// Type witness: pulls the typed pipeline + sink off the route, then calls the typed builder
