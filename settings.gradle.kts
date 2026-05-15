@@ -19,5 +19,8 @@ include("examples:json")
 include("examples:avro")
 include("examples:protobuf")
 include("examples:demo")
+include("examples:circuit-breaker")
+include("examples:tracing")
+include("examples:schema-registry")
 
 include("benchmarks")

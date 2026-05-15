@@ -238,3 +238,4 @@ gradle-app.setting
 .java-version
 /.token-savior-cache.json
 .claude/worktrees/
+scheduled_tasks.lock
