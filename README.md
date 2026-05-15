@@ -44,8 +44,8 @@ For the 5-line fluent path (recommended), pull `kpipe-api` plus the format modul
 
 ```kotlin
 // Gradle (Kotlin) — JSON via the fluent API
-implementation("io.github.eschizoid:kpipe-api:1.11.0")
-implementation("io.github.eschizoid:kpipe-format-json:1.11.0")
+implementation("io.github.eschizoid:kpipe-api:1.12.0")
+implementation("io.github.eschizoid:kpipe-format-json:1.12.0")
 ```
 
 ```xml
@@ -53,12 +53,12 @@ implementation("io.github.eschizoid:kpipe-format-json:1.11.0")
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-api</artifactId>
-  <version>1.11.0</version>
+  <version>1.12.0</version>
 </dependency>
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-format-json</artifactId>
-  <version>1.11.0</version>
+  <version>1.12.0</version>
 </dependency>
 ```
 
@@ -71,23 +71,25 @@ There's also a `kpipe-bom` so you only pin one version across modules — use it
 <details>
 <summary>Module catalog & other build tools</summary>
 
-| Module                  | What it gives you                                                                |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| `kpipe-api`             | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`         |
-| `kpipe-bom`             | Maven BOM — pins all `kpipe-*` artifacts to matching versions                    |
-| `kpipe-core`            | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators |
-| `kpipe-metrics`         | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters  |
-| `kpipe-metrics-otel`    | OpenTelemetry-backed implementation (opt-in)                                     |
-| `kpipe-producer`        | Kafka producer wrapper, `KafkaMessageSink`                                       |
-| `kpipe-consumer`        | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`                         |
-| `kpipe-format-json`     | `JsonFormat`, `JsonConsoleSink`                                                  |
-| `kpipe-format-avro`     | `AvroFormat`, `AvroConsoleSink`                                                  |
-| `kpipe-format-protobuf` | `ProtobufFormat`, `ProtobufConsoleSink`                                          |
+| Module                            | What it gives you                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `kpipe-api`                       | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                |
+| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                           |
+| `kpipe-core`                      | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`           |
+| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                         |
+| `kpipe-metrics-otel`              | OpenTelemetry-backed implementation (opt-in)                                                            |
+| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers (opt-in)                                            |
+| `kpipe-schema-registry-confluent` | Confluent Schema Registry client — `lookupById` + `lookupBySubjectVersion` (opt-in)                     |
+| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `Tracer` SPI                                                |
+| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `CircuitBreakerController`, `PauseCoordinator`|
+| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                         |
+| `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                         |
+| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                 |
 
 **Gradle (Kotlin) with BOM**
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.11.0"))
+implementation(platform("io.github.eschizoid:kpipe-bom:1.12.0"))
 implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")
 // add kpipe-metrics-otel only if you want OpenTelemetry-backed metrics
@@ -97,7 +99,7 @@ implementation("io.github.eschizoid:kpipe-metrics-otel")
 **Gradle (Groovy)**
 
 ```groovy
-implementation platform('io.github.eschizoid:kpipe-bom:1.11.0')
+implementation platform('io.github.eschizoid:kpipe-bom:1.12.0')
 implementation 'io.github.eschizoid:kpipe-api'
 implementation 'io.github.eschizoid:kpipe-format-json'
 ```
@@ -110,7 +112,7 @@ implementation 'io.github.eschizoid:kpipe-format-json'
     <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe-bom</artifactId>
-      <version>1.11.0</version>
+      <version>1.12.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -132,8 +134,8 @@ implementation 'io.github.eschizoid:kpipe-format-json'
 **SBT**
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.11.0"
-libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.11.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.12.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.12.0"
 ```
 
 </details>
@@ -160,18 +162,26 @@ touch any of them.
 The `Stream<T>` returned by `KPipe.json/avro/protobuf/bytes/custom(...)` is the API. Type a `.` after it and the IDE
 shows you everything that exists:
 
-| Method                                                 | What it does                                            |
-| ------------------------------------------------------ | ------------------------------------------------------- |
-| `.pipe(UnaryOperator<T> op)`                           | append an operator to the pipeline                      |
-| `.filter(Predicate<T> keep)`                           | drop messages where predicate returns false             |
-| `.peek(Consumer<T> sideEffect)`                        | observe without modifying (logging, metrics)            |
-| `.when(Predicate, ifTrue, ifFalse)`                    | branch the pipeline conditionally                       |
-| `.withRetry(int max, Duration backoff)`                | configure retry behavior                                |
-| `.withBackpressure()` / `.withBackpressure(high, low)` | enable backpressure with default or explicit watermarks |
-| `.withSequentialProcessing(boolean)`                   | force one-at-a-time per partition                       |
-| `.toConsole()`                                         | terminate with the format-appropriate console sink      |
-| `.toCustom(MessageSink<T> sink)`                       | terminate with your own sink                            |
-| `.toMulti(MessageSink<T>... sinks)`                    | fan-out to multiple sinks                               |
+| Method                                                              | What it does                                                            |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `.pipe(UnaryOperator<T> op)`                                        | append an operator to the pipeline                                      |
+| `.filter(Predicate<T> keep)`                                        | drop messages where predicate returns false                             |
+| `.peek(Consumer<T> sideEffect)`                                     | observe without modifying (logging, metrics)                            |
+| `.when(Predicate, ifTrue, ifFalse)`                                 | branch the pipeline conditionally                                       |
+| `.skipBytes(int n)`                                                 | drop a leading wire-format prefix (Confluent: 5 for Avro, 6 for Proto)  |
+| `.withRetry(int max, Duration backoff)`                             | configure retry behavior                                                |
+| `.withBackpressure()` / `.withBackpressure(high, low)`              | enable backpressure with default or explicit watermarks                 |
+| `.withSequentialProcessing(boolean)`                                | force one-at-a-time per partition                                       |
+| `.withCircuitBreaker(double threshold, int window, Duration open)`  | open the circuit when sink failure rate exceeds threshold (see below)   |
+| `.withTracer(Tracer t)`                                             | propagate W3C trace context through Kafka headers                       |
+| `.withDeadLetterTopic(String)`                                      | route failed records to a DLQ topic after retries are exhausted         |
+| `.withErrorHandler(Consumer<ProcessingError<byte[]>>)`              | custom failure handler (DB, alerting, anything not a Kafka topic)       |
+| `.withMetrics(ConsumerMetrics m)`                                   | wire OTel or custom metrics (default `ConsumerMetrics.noop()`)          |
+| `.withPollTimeout(Duration d)`                                      | override Kafka poll timeout (default 100ms)                             |
+| `.toConsole()`                                                      | terminate with the format-appropriate console sink                      |
+| `.toCustom(MessageSink<T> sink)`                                    | terminate with your own sink                                            |
+| `.toMulti(MessageSink<T>... sinks)`                                 | fan-out to multiple sinks                                               |
+| `.toBatch(BatchSink<T> sink, BatchPolicy policy)`                   | terminate with a batch sink (size / age flush, optional per-record DLQ) |
 
 The terminal `Sink<T>.start()` returns a `Handle` exposing `isHealthy()`, `metrics()`, `awaitShutdown(Duration)`,
 `shutdownGracefully(Duration)`, and `close()`.
@@ -322,8 +332,11 @@ KPipe ships eight focused JPMS modules with a clean dependency direction (no cyc
 kpipe-metrics ← kpipe-core ← kpipe-consumer
                           ← kpipe-producer
                           ← kpipe-format-{json, avro, protobuf}
-kpipe-metrics-otel ← kpipe-metrics      (opt-in OTel implementation)
-kpipe-bom                                (Maven BOM — pins versions)
+                          ← kpipe-api  (KPipe fluent facade)
+kpipe-metrics-otel              ← kpipe-metrics    (opt-in OTel metrics)
+kpipe-tracing-otel              ← kpipe-producer   (opt-in OTel tracing)
+kpipe-schema-registry-confluent ← kpipe-core       (opt-in Confluent SR client)
+kpipe-bom                                          (Maven BOM — pins versions)
 ```
 
 - **kpipe-core**: format-agnostic pipeline machinery — `MessageFormat`, `MessagePipeline`, `MessageProcessorRegistry`,
@@ -333,9 +346,13 @@ kpipe-bom                                (Maven BOM — pins versions)
   classpath.
 - **kpipe-metrics-otel**: OpenTelemetry implementation (`OtelConsumerMetrics`, `OtelProducerMetrics`). Add this only if
   you want OTel-backed metrics.
-- **kpipe-producer**: Kafka producer wrapper, `KafkaMessageSink` (in `org.kpipe.producer.sink`).
-- **kpipe-consumer**: `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `KafkaOffsetManager`,
-  `HttpHealthServer`, `consumer.metrics` reporters.
+- **kpipe-producer**: Kafka producer wrapper, `KafkaMessageSink` (in `org.kpipe.producer.sink`), `Tracer` SPI.
+- **kpipe-consumer**: `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `CircuitBreakerController`,
+  `PauseCoordinator`, `KafkaOffsetManager`, `HttpHealthServer`, `consumer.metrics` reporters.
+- **kpipe-tracing-otel**: W3C trace context propagation — extract on consume, inject on produce / DLQ. Opt-in module
+  (see "Distributed tracing" below).
+- **kpipe-schema-registry-confluent**: Confluent Schema Registry client (`ConfluentSchemaResolver`) for
+  schema-by-ID and by-subject-version lookup. Opt-in (see "Confluent Schema Registry" below).
 - **kpipe-format-json / -avro / -protobuf**: per-format `XFormat.INSTANCE`, processors, and console sinks. Pull only the
   format(s) you need.
 
@@ -508,7 +525,87 @@ Backpressure is on by default with 10k/7k watermarks. Override with `.withBackpr
 Pauses log at WARNING, resumes at INFO. Two dedicated metrics track them: `backpressurePauseCount` and
 `backpressureTimeMs`.
 
-### 9. Graceful shutdown and interrupts
+### 9. Circuit breaker
+
+Backpressure caps in-flight work and prevents memory blow-ups, but it doesn't stop the bleeding when a downstream sink
+is *failing* (DB connection refused, HTTP 503). Without a circuit breaker, every record during an outage runs
+`maxRetries + 1` attempts and lands in the DLQ. The breaker stops the cascade by pausing polling once the sink failure
+rate crosses a threshold, then probes recovery with a single record after a cool-down window.
+
+```java
+import java.time.Duration;
+import org.kpipe.KPipe;
+
+KPipe.json("events", kafkaProps)
+    .pipe(enrich)
+    .withCircuitBreaker(
+        0.5,                          // failure threshold (50% over the window)
+        100,                          // window size (last N outcomes)
+        Duration.ofSeconds(30))       // open duration before half-open probe
+    .toCustom(flakySink)
+    .start();
+```
+
+The state machine is the standard CLOSED → OPEN → HALF_OPEN → CLOSED cycle:
+
+- **CLOSED**: outcomes feed a sliding window. When the rolling failure rate exceeds the threshold, transition to OPEN.
+- **OPEN**: poll is paused. After `openDuration`, transition to HALF_OPEN.
+- **HALF_OPEN**: poll resumes; the next record is the probe. Success → CLOSED (and the window resets). Failure →
+  back to OPEN for another `openDuration`.
+
+CB and backpressure pause through the same `PauseCoordinator` (bitmask of MANUAL / BACKPRESSURE / CIRCUIT_BREAKER
+sources), so they don't fight each other — releasing the backpressure source while the CB still holds keeps the
+consumer paused, and vice-versa.
+
+OTel counters (opt-in via `kpipe-metrics-otel`):
+
+| Instrument                                | Type    | Description                                       |
+| ----------------------------------------- | ------- | ------------------------------------------------- |
+| `kpipe.consumer.circuit_breaker.trips`         | Counter | Times the breaker transitioned CLOSED → OPEN |
+| `kpipe.consumer.circuit_breaker.state_changes` | Counter | Any state transition, attribute-tagged       |
+| `kpipe.consumer.circuit_breaker.time_open`     | Counter | Total ms spent in OPEN                       |
+
+When `.withCircuitBreaker(...)` is omitted, the consumer never trips and the counters stay at zero.
+
+### 10. Distributed tracing (W3C trace context)
+
+KPipe propagates W3C trace context (`traceparent` / `tracestate` Kafka headers) end-to-end: extract on consume, inject
+on produce and on DLQ writes. The implementation lives in the opt-in `kpipe-tracing-otel` module — `kpipe-core` and
+`kpipe-consumer` are dependency-free, you bring the OTel SDK at runtime.
+
+Add the dependency:
+
+```kotlin
+implementation("io.github.eschizoid:kpipe-tracing-otel:1.12.0")
+```
+
+Wire it on the stream:
+
+```java
+import io.opentelemetry.api.OpenTelemetry;
+import org.kpipe.KPipe;
+import org.kpipe.tracing.otel.OtelTracer;
+
+final OpenTelemetry otel = /* GlobalOpenTelemetry.get() or your SDK */;
+
+KPipe.json("events", kafkaProps)
+    .withTracer(new OtelTracer(otel, "events-consumer"))
+    .pipe(enrich)
+    .toCustom(producerSink)
+    .start();
+```
+
+What it does on the hot path:
+
+1. On poll, extracts the upstream context from `traceparent` / `tracestate` headers using the standard W3C propagator.
+2. Starts a CONSUMER span with `messaging.kafka.{topic,partition,offset}` attributes; the upstream span is the parent.
+3. Closes the span in a nested `finally` so a throwing user callback can't leak the scope.
+4. On produce (`KafkaMessageSink.accept`) and DLQ writes (`KPipeProducer.sendToDlq`), injects the *current* context into
+   outbound headers — downstream consumers see the same trace.
+
+Without `.withTracer(...)`, `Tracer.noop()` is used: zero allocation, no OTel API on the classpath.
+
+### 11. Graceful shutdown and interrupts
 
 KPipe respects JVM signals without losing records:
 
@@ -594,6 +691,46 @@ final var pipeline = registry.pipeline(AvroFormat.INSTANCE).add(lowerNameKey).bu
 // For Confluent Wire Format (1 magic byte + 4-byte schema ID), skip the prefix:
 final var confluentPipeline = registry.pipeline(AvroFormat.INSTANCE).skipBytes(5).add(lowerNameKey).build();
 ```
+
+#### Confluent Schema Registry
+
+For Confluent-style deployments where schemas live in a Schema Registry rather than on the classpath, the
+`kpipe-schema-registry-confluent` module ships an HTTP client that resolves schemas by ID or by subject-version. It
+exposes the `SchemaResolver` SPI from `kpipe-core` so future versions can wire wire-envelope auto-lookup directly into
+`AvroFormat` / `ProtobufFormat` (deferred from 1.12 — for now you fetch the schema at startup and feed it into
+`AvroFormat.INSTANCE`).
+
+Add the dependency:
+
+```kotlin
+implementation("io.github.eschizoid:kpipe-schema-registry-confluent:1.12.0")
+```
+
+Resolve a schema at startup:
+
+```java
+import java.net.http.HttpClient;
+import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
+
+final var resolver = new ConfluentSchemaResolver(HttpClient.newHttpClient(), "http://schema-registry:8081");
+
+// Fetch by subject-version (config-time):
+final String schemaJson = resolver.lookupBySubjectVersion("user-value", "latest");
+AvroFormat.INSTANCE.addSchema("user", schemaJson);
+
+// Fetch by ID (runtime, e.g. from a wire-envelope decode loop):
+final String byId = resolver.lookupById(42);
+```
+
+The HTTP client is yours — pass it pre-configured with TLS, auth, timeouts, retries. The module has no Jackson
+dependency (the SR envelope is unwrapped by a hand-rolled parser scoped to the response shape) and is opt-in:
+`kpipe-format-avro`'s built-in `http://` schema fetcher was removed in 1.12, calling it now throws with a migration
+message pointing here.
+
+**v1 scope and what's deferred:** read-only lookups. No schema publishing (Confluent's own producer client handles
+that). No caching — every call is a fresh HTTP request; acceptable for startup-time `lookupBySubjectVersion`, you'll
+want an external cache before wiring `lookupById` into a hot path. No compatibility checks.
 
 ### Protobuf
 
@@ -728,6 +865,42 @@ final var compositeSink = new CompositeMessageSink<>(List.of(postgresSink, conso
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE).toSink(compositeSink).build();
 ```
 
+### Batch sinks
+
+Single-record sinks pay the destination's per-call cost on every message. When that cost is non-trivial — a JDBC commit,
+an HTTP POST, an S3 PUT — batching amortizes it. `BatchSink<T>` is a `Function<List<T>, BatchResult>` that flushes at a
+configurable size or age:
+
+```java
+import java.time.Duration;
+import org.kpipe.KPipe;
+import org.kpipe.sink.BatchPolicy;
+import org.kpipe.sink.BatchSink;
+
+KPipe.json("events", kafkaProps)
+    .pipe(addTimestamp)
+    .toBatch(
+        BatchSink.ofVoid(batch -> jdbc.bulkInsert(batch)),     // void-style: success on return, fail on throw
+        new BatchPolicy(100, Duration.ofSeconds(5)))           // flush at 100 records OR 5 seconds, whichever first
+    .start();
+```
+
+`BatchSink.ofVoid(...)` wraps a void-style consumer (throw → whole-batch DLQ). For per-record outcomes — say a bulk
+HTTP API that returns which rows failed — return `BatchResult` directly with the succeeded / failed indexes; the
+wrapper routes only the failures to the DLQ.
+
+Highlights:
+
+- **Both modes.** Sequential and parallel processing both work; in parallel mode the buffer participates in the
+  in-flight backpressure metric so a slow batch sink can't let the buffer grow unbounded.
+- **Multi-topic.** Compose with `KPipe.multi(...)` — each route can choose `.toBatch(...)` independently.
+- **Coverage contract enforced.** A `BatchResult` that doesn't cover every position `[0, batchSize)` is treated as a
+  contract violation and routed to the DLQ rather than silently marked processed.
+- **Shutdown drain.** A final flush runs before the offset manager closes, so partially-filled buffers commit cleanly.
+
+Headline number from `BatchSinkLatencyBenchmark` at 1ms-per-call sink latency: **84× throughput at batch=100** versus
+the per-record control. Full numbers in [`benchmarks/README.md`](benchmarks/README.md).
+
 ---
 
 ## Built-in metrics
@@ -765,18 +938,21 @@ final var consumer = KPipeConsumer.<byte[]>builder()
 When `withMetrics(...)` is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` is used. Zero allocation, no
 OTel API on the classpath.
 
-| Instrument                           | Type      | Description                            |
-| ------------------------------------ | --------- | -------------------------------------- |
-| `kpipe.consumer.messages.received`   | Counter   | Records polled from Kafka              |
-| `kpipe.consumer.messages.processed`  | Counter   | Records successfully processed         |
-| `kpipe.consumer.messages.errors`     | Counter   | Records that failed processing         |
-| `kpipe.consumer.processing.duration` | Histogram | Per-record processing time (ms)        |
-| `kpipe.consumer.messages.inflight`   | Gauge     | Current number of in-flight messages   |
-| `kpipe.consumer.backpressure.pauses` | Counter   | Times backpressure paused the consumer |
-| `kpipe.consumer.backpressure.time`   | Counter   | Total time paused due to backpressure  |
-| `kpipe.producer.messages.sent`       | Counter   | Records successfully produced          |
-| `kpipe.producer.messages.failed`     | Counter   | Records that failed to produce         |
-| `kpipe.producer.dlq.sent`            | Counter   | Records sent to DLQ                    |
+| Instrument                                     | Type      | Description                                            |
+| ---------------------------------------------- | --------- | ------------------------------------------------------ |
+| `kpipe.consumer.messages.received`             | Counter   | Records polled from Kafka                              |
+| `kpipe.consumer.messages.processed`            | Counter   | Records successfully processed                         |
+| `kpipe.consumer.messages.errors`               | Counter   | Records that failed processing                         |
+| `kpipe.consumer.processing.duration`           | Histogram | Per-record processing time (ms)                        |
+| `kpipe.consumer.messages.inflight`             | Gauge     | Current number of in-flight messages                   |
+| `kpipe.consumer.backpressure.pauses`           | Counter   | Times backpressure paused the consumer                 |
+| `kpipe.consumer.backpressure.time`             | Counter   | Total time paused due to backpressure                  |
+| `kpipe.consumer.circuit_breaker.trips`         | Counter   | Times the breaker tripped CLOSED → OPEN                |
+| `kpipe.consumer.circuit_breaker.state_changes` | Counter   | Any CB state transition (tagged with target state)     |
+| `kpipe.consumer.circuit_breaker.time_open`     | Counter   | Total time the breaker spent in OPEN (ms)              |
+| `kpipe.producer.messages.sent`                 | Counter   | Records successfully produced                          |
+| `kpipe.producer.messages.failed`               | Counter   | Records that failed to produce                         |
+| `kpipe.producer.dlq.sent`                      | Counter   | Records sent to DLQ                                    |
 
 ---
 

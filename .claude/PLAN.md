@@ -3,7 +3,7 @@
 **Last updated:** 2026-05-15
 **Current released line:** 1.12.0 (Maven Central) — batch sinks, Confluent SR, W3C tracing, circuit breaker, JUnit 6,
 `enableMetrics` removal
-**Active branch:** `feature/kpipe-test`
+**Active branch:** `feature/docs-sweep`
 
 ---
 
