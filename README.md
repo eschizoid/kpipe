@@ -966,7 +966,7 @@ OTel API on the classpath.
 final var runner = KPipeRunner.builder(consumer)
   .withMetricsReporters(List.of(
     ConsumerMetricsReporter.forConsumer(consumer::getMetrics),
-    ProcessorMetricsReporter.forRegistry(processorRegistry)
+    EntryMetricsReporter.forProcessors(processorRegistry)
   ))
   .withMetricsInterval(30_000)
   .withHealthCheck(KPipeConsumer::isRunning)
