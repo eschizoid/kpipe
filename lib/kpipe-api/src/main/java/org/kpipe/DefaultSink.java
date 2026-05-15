@@ -37,20 +37,7 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
     if (stream.tracer() != null) consumerBuilder.withTracer(stream.tracer());
     if (stream.circuitBreaker() != null) consumerBuilder.withCircuitBreaker(stream.circuitBreaker());
 
-    final var consumer = consumerBuilder.build();
-    try {
-      consumer.start();
-    } catch (final RuntimeException e) {
-      // Releasing the consumer here keeps the AutoCloseable contract reachable when start() throws
-      // before a Handle is returned.
-      try {
-        consumer.close();
-      } catch (final Exception suppressed) {
-        e.addSuppressed(suppressed);
-      }
-      throw e;
-    }
-    return new DefaultHandle(consumer);
+    return DefaultHandle.startAndWrap(consumerBuilder.build());
   }
 
   /// Builds the [MessagePipeline] for this sink's stream + terminal sink. Reused by
