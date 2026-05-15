@@ -66,17 +66,6 @@ record DefaultBatchSink<T>(
     if (stream.deadLetterTopic() != null) consumerBuilder.withDeadLetterTopic(stream.deadLetterTopic());
     if (stream.pollTimeout() != null) consumerBuilder.withPollTimeout(stream.pollTimeout());
 
-    final var consumer = consumerBuilder.build();
-    try {
-      consumer.start();
-    } catch (final RuntimeException e) {
-      try {
-        consumer.close();
-      } catch (final Exception suppressed) {
-        e.addSuppressed(suppressed);
-      }
-      throw e;
-    }
-    return new DefaultHandle(consumer);
+    return DefaultHandle.startAndWrap(consumerBuilder.build());
   }
 }

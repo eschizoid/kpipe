@@ -201,18 +201,7 @@ public final class MultiBuilder {
     if (consumerMetrics != null) consumerBuilder.withMetrics(consumerMetrics);
     if (tracer != null) consumerBuilder.withTracer(tracer);
     if (circuitBreaker != null) consumerBuilder.withCircuitBreaker(circuitBreaker);
-    final var consumer = consumerBuilder.build();
-    try {
-      consumer.start();
-    } catch (final RuntimeException e) {
-      try {
-        consumer.close();
-      } catch (final Exception suppressed) {
-        e.addSuppressed(suppressed);
-      }
-      throw e;
-    }
-    return new DefaultHandle(consumer);
+    return DefaultHandle.startAndWrap(consumerBuilder.build());
   }
 
   /// Type witness: pulls the typed pipeline + sink off the route, then calls the typed builder
