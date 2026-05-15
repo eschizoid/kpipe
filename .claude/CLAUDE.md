@@ -142,7 +142,7 @@
     - `org.kpipe.consumer.metrics` — owned by `kpipe-consumer` (reporters that depend on registry types).
     - `org.kpipe.consumer.sink.*` — owned by `kpipe-consumer`.
 - **Split Package Rule**: No two modules may export the same Java package. When a class references types from another
-  module (e.g., `ProcessorMetricsReporter` referencing `MessageProcessorRegistry`), it stays in the module that owns
+  module (e.g., `EntryMetricsReporter` referencing `MessageProcessorRegistry`), it stays in the module that owns
   those types.
 
 ### 10. OpenTelemetry Metrics Strategy
@@ -158,8 +158,11 @@
       `kpipe.consumer.backpressure.time`.
     - Both default to `OpenTelemetry.noop()` — zero cost when not configured.
     - Wired via builder: `.withMetrics(new ConsumerMetrics(otel))` / `.withMetrics(new ProducerMetrics(otel))`.
-- **Log-based reporters** (`ConsumerMetricsReporter`, `ProcessorMetricsReporter`, `SinkMetricsReporter`) remain
-  available as a lightweight fallback for users who do not use OTel.
+- **Log-based reporters**: `ConsumerMetricsReporter` (aggregate consumer-level snapshot — uptime,
+  per-second rates, backpressure totals) plus `EntryMetricsReporter` (per-entry, namespace-aware
+  via `forProcessors(...)` / `forSinks(...)`). 1.13.0 collapsed the prior `ProcessorMetricsReporter`
+  + `SinkMetricsReporter` (structurally identical) into the single `EntryMetricsReporter`. These
+  remain available as a lightweight fallback for users who do not use OTel.
 
 ### 11. KPipeConsumer Concurrency and Safety Patterns
 
