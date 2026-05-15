@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.util.Map;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.RegistryKey;
 
 /// JSON implementation of [MessageFormat] for KPipe.
 ///
@@ -26,6 +26,10 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   /// Shared singleton instance — JsonFormat is stateless, so there is no isolation concern.
   public static final JsonFormat INSTANCE = new JsonFormat();
 
+  /// Pre-defined registry key for the bundled `JsonConsoleSink` (the default sink wired up by
+  /// [#newRegistry()]).
+  public static final RegistryKey<Map<String, Object>> JSON_LOGGING = RegistryKey.json("jsonLogging");
+
   private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
 
   /// Constructs a new JsonFormat instance.
@@ -34,12 +38,12 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   }
 
   /// Creates a new [MessageProcessorRegistry] pre-wired with [JsonFormat#INSTANCE] and a
-  /// [JsonConsoleSink] registered under [MessageSinkRegistry#JSON_LOGGING].
+  /// [JsonConsoleSink] registered under [JsonFormat#JSON_LOGGING].
   ///
   /// @return a new pre-configured registry
   public static MessageProcessorRegistry newRegistry() {
     final var registry = new MessageProcessorRegistry(INSTANCE);
-    registry.sinkRegistry().register(MessageSinkRegistry.JSON_LOGGING, new JsonConsoleSink<>());
+    registry.register(JSON_LOGGING, new JsonConsoleSink<>());
     return registry;
   }
 

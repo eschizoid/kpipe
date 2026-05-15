@@ -1,7 +1,5 @@
 package org.kpipe.registry;
 
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -13,8 +11,6 @@ import org.kpipe.sink.MessageSink;
 ///
 /// @param <T> The type of the object in the pipeline.
 public final class TypedPipelineBuilder<T> {
-
-  private static final Logger LOGGER = System.getLogger(TypedPipelineBuilder.class.getName());
 
   private final MessageFormat<T> format;
   private final List<UnaryOperator<T>> operators = new ArrayList<>();
@@ -102,27 +98,8 @@ public final class TypedPipelineBuilder<T> {
   /// @return This builder.
   @SafeVarargs
   public final TypedPipelineBuilder<T> toSink(final RegistryKey<T>... sinkKeys) {
-    for (final var key : sinkKeys) toSink(registry.sinkRegistry().get(key));
+    for (final var key : sinkKeys) toSink(registry.getSink(key));
     return this;
-  }
-
-  /// Creates a composite sink that delegates to multiple sinks from a registry.
-  ///
-  /// @param registry The sink registry
-  /// @param sinkKeys The keys of the sinks to compose
-  /// @param <T>      The message type
-  /// @return A composite sink
-  @SafeVarargs
-  public static <T> MessageSink<T> compositeSink(MessageSinkRegistry registry, final RegistryKey<T>... sinkKeys) {
-    return value -> {
-      for (final var key : sinkKeys) {
-        try {
-          registry.get(key).accept(value);
-        } catch (final Exception e) {
-          LOGGER.log(Level.WARNING, "Sink %s threw during compositeSink delivery; continuing".formatted(key), e);
-        }
-      }
-    };
   }
 
   /// Builds the [MessagePipeline].

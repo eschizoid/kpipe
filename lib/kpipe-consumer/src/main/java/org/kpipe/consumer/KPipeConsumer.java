@@ -54,7 +54,7 @@ import org.kpipe.sink.BatchSink;
 /// ```java
 /// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
 ///     .add(sanitizeKey)
-///     .toSink(MessageSinkRegistry.JSON_LOGGING)
+///     .toSink(JsonFormat.JSON_LOGGING)
 ///     .build();
 ///
 /// final var consumer = KPipeConsumer.<String>builder()

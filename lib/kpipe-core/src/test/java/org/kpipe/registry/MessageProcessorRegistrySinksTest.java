@@ -7,31 +7,30 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.kpipe.sink.MessageSink;
 
-class MessageSinkRegistryTest {
+/// Sink-namespace tests for [MessageProcessorRegistry]. The operator namespace is exercised
+/// elsewhere (format-specific tests in each `kpipe-format-*` module).
+class MessageProcessorRegistrySinksTest {
 
-  private MessageSinkRegistry registry;
+  private MessageProcessorRegistry registry;
 
   @BeforeEach
   void setUp() {
-    registry = new MessageSinkRegistry();
+    registry = new MessageProcessorRegistry();
   }
 
   @Test
   void shouldStartEmpty() {
-    assertTrue(registry.getAll().isEmpty());
+    assertTrue(registry.getAllSinks().isEmpty());
   }
 
   @Test
   void shouldRegisterAndRetrieveSink() {
-    // Arrange
     final var testSink = mock(MessageSink.class);
     final var key = RegistryKey.of("testSink", Object.class);
 
-    // Act
     registry.register(key, testSink);
-    final var retrieved = registry.get(key);
+    final var retrieved = registry.getSink(key);
 
-    // Assert
     assertNotNull(retrieved);
     retrieved.accept("processed");
     verify(testSink).accept("processed");
@@ -39,35 +38,40 @@ class MessageSinkRegistryTest {
 
   @Test
   void shouldUnregisterSink() {
-    // Arrange
     final var testSink = mock(MessageSink.class);
     final var key = RegistryKey.<Object>of("sinkToRemove", Object.class);
     registry.register(key, testSink);
 
-    // Act & Assert
-    assertTrue(registry.getAll().containsKey(key));
-    final var removed = registry.unregister(key);
+    assertTrue(registry.getAllSinks().containsKey(key));
+    final var removed = registry.unregisterSink(key);
 
     assertTrue(removed);
-    assertFalse(registry.getAll().containsKey(key));
+    assertFalse(registry.getAllSinks().containsKey(key));
   }
 
   @Test
   void shouldClearAllSinks() {
-    // Arrange
     final var testSink = mock(MessageSink.class);
     registry.register(RegistryKey.of("testSink", Object.class), testSink);
 
-    // Act
-    registry.clear();
+    registry.clearSinks();
 
-    // Assert
-    assertTrue(registry.getAll().isEmpty());
+    assertTrue(registry.getAllSinks().isEmpty());
   }
 
   @Test
-  void shouldCreatePipelineThatSendsToMultipleSinks() {
-    // Arrange
+  void shouldNotClearSinksWhenClearingOperators() {
+    final var testSink = mock(MessageSink.class);
+    final var sinkKey = RegistryKey.of("aSink", Object.class);
+    registry.register(sinkKey, testSink);
+
+    registry.clear(); // operator-side only
+
+    assertTrue(registry.getAllSinks().containsKey(sinkKey), "clear() must not touch the sink namespace");
+  }
+
+  @Test
+  void shouldDispatchCompositeSinkToEveryRegisteredKey() {
     final var sink1 = mock(MessageSink.class);
     final var sink2 = mock(MessageSink.class);
 
@@ -77,18 +81,14 @@ class MessageSinkRegistryTest {
     registry.register(key1, sink1);
     registry.register(key2, sink2);
 
-    // Act
-    final var pipeline = registry.pipeline(key1, key2);
-    pipeline.accept("processed");
+    registry.compositeSink(key1, key2).accept("processed");
 
-    // Assert
     verify(sink1).accept("processed");
     verify(sink2).accept("processed");
   }
 
   @Test
-  void shouldContinuePipelineWhenOneSinkThrowsException() {
-    // Arrange
+  void shouldKeepDeliveringWhenOneCompositeSinkThrows() {
     final var failingSink = mock(MessageSink.class);
     doThrow(new RuntimeException("Test failure")).when(failingSink).accept(any());
 
@@ -100,46 +100,38 @@ class MessageSinkRegistryTest {
     registry.register(keyFailing, failingSink);
     registry.register(keyWorking, workingSink);
 
-    // Act
-    final var pipeline = registry.pipeline(keyFailing, keyWorking);
-    pipeline.accept("processed");
+    registry.compositeSink(keyFailing, keyWorking).accept("processed");
 
-    // Assert
     verify(workingSink).accept("processed");
   }
 
   @Test
   void shouldTrackMetricsForSink() {
-    // Arrange
     final var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
     final MessageSink<Object> countingSink = value -> callCount.incrementAndGet();
 
     final var key = RegistryKey.of("countingSink", Object.class);
     registry.register(key, countingSink);
-    final var sink = registry.get(key);
+    final var sink = registry.getSink(key);
 
-    // Act
     sink.accept("processed");
     sink.accept("processed");
 
-    // Assert
-    final var metrics = registry.getMetrics(key);
+    final var metrics = registry.getSinkMetrics(key);
     assertEquals(2L, metrics.get("invocationCount"));
     assertEquals(0L, metrics.get("errorCount"));
   }
 
   @Test
   void shouldTrackErrorMetricsForFailingSink() {
-    // Arrange
     final MessageSink<Object> failingSink = value -> {
       throw new RuntimeException("Test failure");
     };
 
     final var key = RegistryKey.of("failingSink", Object.class);
     registry.register(key, failingSink);
-    final var sink = registry.get(key);
+    final var sink = registry.getSink(key);
 
-    // Act
     try {
       sink.accept("processed");
       fail("Should have thrown an exception");
@@ -147,76 +139,61 @@ class MessageSinkRegistryTest {
       // Expected
     }
 
-    // Assert
-    final var metrics = registry.getMetrics(key);
+    final var metrics = registry.getSinkMetrics(key);
     assertEquals(1L, metrics.get("errorCount"));
   }
 
   @Test
   void shouldWrapSinkWithErrorHandling() {
-    // Arrange
     final MessageSink<Object> failingSink = value -> {
       throw new RuntimeException("Test failure");
     };
 
-    // Act
-    final var safeSink = MessageSinkRegistry.withErrorHandling(failingSink);
+    final var safeSink = MessageProcessorRegistry.withErrorHandling(failingSink);
 
-    // Assert - should not throw exception
-    safeSink.accept("processed");
+    safeSink.accept("processed"); // must not throw
   }
 
   @Test
   void shouldReturnEmptyMetricsForNonExistentSink() {
-    // Act
-    final var metrics = registry.getMetrics(RegistryKey.of("nonExistent", Object.class));
-
-    // Assert
+    final var metrics = registry.getSinkMetrics(RegistryKey.of("nonExistent", Object.class));
     assertTrue(metrics.isEmpty());
   }
 
   @Test
-  void shouldRejectNullOrEmptyName() {
-    // Arrange
+  void shouldRejectNullKey() {
     final var testSink = mock(MessageSink.class);
-
-    // Assert
     assertThrows(NullPointerException.class, () -> registry.register(null, testSink));
   }
 
   @Test
   void shouldRejectNullSink() {
-    // Assert
     assertThrows(NullPointerException.class, () ->
-      registry.register(RegistryKey.<Object>of("test", Object.class), null)
+      registry.register(RegistryKey.<Object>of("test", Object.class), (MessageSink<Object>) null)
     );
   }
 
   @Test
   void shouldRegisterAndRetrieveTypedSink() {
-    // Arrange
     final var key = RegistryKey.<String>of("typedSink", String.class);
     @SuppressWarnings("unchecked")
     final MessageSink<String> testSink = mock(MessageSink.class);
     registry.register(key, testSink);
 
-    // Act
-    final var retrieved = registry.get(key);
+    final var retrieved = registry.getSink(key);
     retrieved.accept("processed");
 
-    // Assert
     verify(testSink).accept("processed");
   }
 
   @Test
   void shouldThrowOnTypeMismatch() {
-    // Arrange
     final var key = RegistryKey.<String>of("typedSink", String.class);
-    registry.register(key, msg -> {});
+    registry.register(key, (MessageSink<String>) msg -> {});
 
-    // Act & Assert
     assertThrows(ClassCastException.class, () -> {
-      final MessageSink<Integer> retrieved = (MessageSink<Integer>) (MessageSink<?>) registry.get(key);
+      @SuppressWarnings("unchecked")
+      final MessageSink<Integer> retrieved = (MessageSink<Integer>) (MessageSink<?>) registry.getSink(key);
       retrieved.accept(123);
     });
   }

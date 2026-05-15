@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.kpipe.registry.MessageSinkRegistry;
+import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
@@ -21,7 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class SinkMetricsReporterTest {
 
   @Mock
-  private MessageSinkRegistry registry;
+  private MessageProcessorRegistry registry;
 
   @Mock
   private Supplier<Set<RegistryKey<?>>> sinkNamesSupplier;
@@ -51,10 +51,10 @@ class SinkMetricsReporterTest {
 
   @Test
   void shouldWorkWithFluentApi() {
-    final var sinkMap = new HashMap<RegistryKey<?>, Object>();
-    for (final var key : sinkKeys) sinkMap.put(key, new Object());
-    doReturn(sinkMap).when(registry).getAll();
-    doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
+    final var sinkMap = new HashMap<RegistryKey<?>, String>();
+    for (final var key : sinkKeys) sinkMap.put(key, "Object");
+    doReturn(sinkMap).when(registry).getAllSinks();
+    doReturn(testMetrics).when(registry).getSinkMetrics(any(RegistryKey.class));
 
     SinkMetricsReporter.forRegistry(registry).toConsumer(reporter).reportMetrics();
 
@@ -65,11 +65,11 @@ class SinkMetricsReporterTest {
   void shouldSupportSelectiveReporting() {
     final RegistryKey<?> selectedKey = RegistryKey.of("selected", byte[].class);
     final Set<RegistryKey<?>> selectedKeys = Collections.singleton(selectedKey);
-    doReturn(testMetrics).when(registry).getMetrics(selectedKey);
+    doReturn(testMetrics).when(registry).getSinkMetrics(selectedKey);
 
     SinkMetricsReporter.forRegistry(registry, selectedKeys).toConsumer(reporter).reportMetrics();
 
     verify(reporter, times(1)).accept(contains("selected"));
-    verify(registry, never()).getAll();
+    verify(registry, never()).getAllSinks();
   }
 }
