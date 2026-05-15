@@ -468,7 +468,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     ///
     /// @return This builder instance for method chaining
     public Builder<K> withBackpressure() {
-      return withBackpressure(10_000, 7_000);
+      return withBackpressure(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK);
     }
 
     /// Enables backpressure control using the given high and low watermarks. When the number of
@@ -734,7 +734,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     this.backpressureController = (
       builder.backpressureController != null
         ? builder.backpressureController
-        : new BackpressureController(10_000, 7_000, null)
+        : new BackpressureController(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK, null)
     ).withStrategy(
       this.sequentialProcessing
         ? BackpressureController.lagStrategy()
@@ -1024,6 +1024,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
           } catch (final Exception e) {
             LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
           } finally {
+            // CLOSED is also set at the tail of close(); both paths are idempotent and
+            // CountDownLatch.countDown() past zero is a no-op. This path catches the case where
+            // the consumer thread terminates via an uncaught exception path (transitionToClosing
+            // → outer finally) — close() may not have been called externally, but awaitShutdown
+            // callers must still unblock.
             state.set(ConsumerState.CLOSED);
             shutdownLatch.countDown();
           }
