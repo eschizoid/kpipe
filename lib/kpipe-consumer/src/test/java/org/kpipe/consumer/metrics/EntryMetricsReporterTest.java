@@ -79,11 +79,20 @@ class EntryMetricsReporterTest {
   }
 
   @Test
-  void forProcessors_defaultsToLoggerWhenConsumerIsNull() {
+  void forProcessors_defaultReporterUsesLOGGING() {
     doReturn(keys).when(registry).getKeys();
     doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
-    assertDoesNotThrow(() -> EntryMetricsReporter.forProcessors(registry).reportMetrics());
+    final var rep = EntryMetricsReporter.forProcessors(registry);
+    assertSame(EntryMetricsReporter.LOGGING, rep.reporter(), "factory must wire the LOGGING reporter");
+    assertDoesNotThrow(rep::reportMetrics);
+  }
+
+  @Test
+  void canonicalConstructorRejectsNullReporter() {
+    assertThrows(NullPointerException.class, () ->
+      new EntryMetricsReporter("Processor", namesSupplier, metricsFetcher, null)
+    );
   }
 
   // ─────────────────────────────── forSinks ────────────────────────────────
