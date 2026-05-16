@@ -65,11 +65,13 @@ jobs:
             :lib:kpipe-core:build :lib:kpipe-core:publish \
             :lib:kpipe-metrics:build :lib:kpipe-metrics:publish \
             :lib:kpipe-metrics-otel:build :lib:kpipe-metrics-otel:publish \
+            :lib:kpipe-tracing-otel:build :lib:kpipe-tracing-otel:publish \
             :lib:kpipe-producer:build :lib:kpipe-producer:publish \
             :lib:kpipe-consumer:build :lib:kpipe-consumer:publish \
             :lib:kpipe-format-json:build :lib:kpipe-format-json:publish \
             :lib:kpipe-format-avro:build :lib:kpipe-format-avro:publish \
             :lib:kpipe-format-protobuf:build :lib:kpipe-format-protobuf:publish \
+            :lib:kpipe-schema-registry-confluent:build :lib:kpipe-schema-registry-confluent:publish \
             :lib:kpipe-api:build \
             :lib:kpipe-api:publish \
             -x test
