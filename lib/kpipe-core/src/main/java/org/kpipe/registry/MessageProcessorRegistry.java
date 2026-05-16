@@ -115,6 +115,10 @@ public class MessageProcessorRegistry {
   }
 
   /// Creates a fluent builder for typed pipelines.
+  ///
+  /// @param format the message format that drives serialisation / deserialisation
+  /// @param <T>    the pipeline value type
+  /// @return a new [TypedPipelineBuilder] bound to this registry
   public <T> TypedPipelineBuilder<T> pipeline(final MessageFormat<T> format) {
     return new TypedPipelineBuilder<>(format, this);
   }
@@ -122,6 +126,10 @@ public class MessageProcessorRegistry {
   // ─────────────────────────── Operators ───────────────────────────
 
   /// Registers a typed operator under `key`.
+  ///
+  /// @param key      the registry key (must be non-null)
+  /// @param operator the operator to register (must be non-null)
+  /// @param <T>      the pipeline value type the operator acts on
   public <T> void register(final RegistryKey<T> key, final UnaryOperator<T> operator) {
     Objects.requireNonNull(key, "key cannot be null");
     Objects.requireNonNull(operator, "operator cannot be null");
@@ -130,6 +138,11 @@ public class MessageProcessorRegistry {
 
   /// Registers every constant of an `Enum` that implements `UnaryOperator<T>`. Each constant's
   /// `name()` becomes the key.
+  ///
+  /// @param type      the runtime class for the pipeline value type
+  /// @param enumClass the enum class whose constants are operators
+  /// @param <T>       the pipeline value type
+  /// @param <E>       the enum type implementing `UnaryOperator<T>`
   public <T, E extends Enum<E> & UnaryOperator<T>> void registerEnum(final Class<T> type, final Class<E> enumClass) {
     Objects.requireNonNull(type, "type cannot be null");
     Objects.requireNonNull(enumClass, "enumClass cannot be null");
@@ -141,6 +154,10 @@ public class MessageProcessorRegistry {
   /// Retrieves a typed operator. If `key` is not registered, returns a logging pass-through —
   /// a missing operator is almost always a config error and silent pass-through would mask the
   /// bug.
+  ///
+  /// @param key the registry key to look up
+  /// @param <T> the pipeline value type
+  /// @return the registered operator, or a logging pass-through if `key` is not registered
   public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
     return input -> {
       final RegistryEntry<UnaryOperator<T>> entry = operators.getAs(key);
@@ -152,8 +169,11 @@ public class MessageProcessorRegistry {
     };
   }
 
-  /// Removes an operator entry. Returns true iff a value was present. Sinks are untouched —
-  /// use [#unregisterSink(RegistryKey)] for those.
+  /// Removes an operator entry. Sinks are untouched — use [#unregisterSink(RegistryKey)] for
+  /// those.
+  ///
+  /// @param key the registry key to remove
+  /// @return `true` iff an entry was removed
   public boolean unregister(final RegistryKey<?> key) {
     return operators.remove(key);
   }
@@ -163,23 +183,34 @@ public class MessageProcessorRegistry {
     operators.clear();
   }
 
-  /// Returns an unmodifiable view of registered operator keys.
+  /// Returns the registered operator keys.
+  ///
+  /// @return an unmodifiable view of registered operator keys
   public Set<RegistryKey<?>> getKeys() {
     return operators.keys();
   }
 
-  /// Returns an unmodifiable view of registered operators (key → implementation simple name).
+  /// Returns a summary of registered operators.
+  ///
+  /// @return an unmodifiable view of registered operators (key → implementation simple name)
   public Map<RegistryKey<?>, String> getAll() {
     return operators.all();
   }
 
-  /// Gets metrics for a specific operator entry, or an empty map if `key` is not registered.
+  /// Gets metrics for a specific operator entry.
+  ///
+  /// @param key the registry key to look up
+  /// @return the entry's metrics, or an empty map if `key` is not registered
   public Map<String, Object> getMetrics(final RegistryKey<?> key) {
     return operators.metrics(key);
   }
 
   /// Wraps an operator with error-handling logic that suppresses exceptions and returns the
   /// original input.
+  ///
+  /// @param operator the operator to wrap
+  /// @param <T>      the pipeline value type
+  /// @return a new operator that logs and swallows exceptions raised by the original
   public static <T> UnaryOperator<T> withErrorHandling(final UnaryOperator<T> operator) {
     return RegistryFunctions.withOperatorErrorHandling(operator, LOGGER);
   }
@@ -188,6 +219,10 @@ public class MessageProcessorRegistry {
 
   /// Registers a typed sink under `key`. Overload of the operator [#register] — Java resolves
   /// by argument type ([UnaryOperator] vs [MessageSink]).
+  ///
+  /// @param key  the registry key (must be non-null)
+  /// @param sink the sink to register (must be non-null)
+  /// @param <T>  the pipeline value type the sink consumes
   public <T> void register(final RegistryKey<T> key, final MessageSink<T> sink) {
     Objects.requireNonNull(key, "key cannot be null");
     Objects.requireNonNull(sink, "sink cannot be null");
@@ -195,6 +230,11 @@ public class MessageProcessorRegistry {
   }
 
   /// Registers every constant of an `Enum` that implements `MessageSink<T>`.
+  ///
+  /// @param type      the runtime class for the pipeline value type
+  /// @param enumClass the enum class whose constants are sinks
+  /// @param <T>       the pipeline value type
+  /// @param <E>       the enum type implementing `MessageSink<T>`
   public <T, E extends Enum<E> & MessageSink<T>> void registerSinkEnum(
     final Class<T> type,
     final Class<E> enumClass
@@ -208,6 +248,10 @@ public class MessageProcessorRegistry {
 
   /// Retrieves a typed sink. Unlike operators, a missing sink does NOT pass through — it logs at
   /// WARNING and drops the value (no usable fallback for a void terminal).
+  ///
+  /// @param key the registry key to look up
+  /// @param <T> the pipeline value type the sink consumes
+  /// @return the registered sink, or a logging drop-sink if `key` is not registered
   public <T> MessageSink<T> getSink(final RegistryKey<T> key) {
     return value -> {
       final RegistryEntry<MessageSink<T>> entry = sinks.getAs(key);
@@ -219,7 +263,10 @@ public class MessageProcessorRegistry {
     };
   }
 
-  /// Removes a sink entry. Returns true iff a value was present.
+  /// Removes a sink entry.
+  ///
+  /// @param key the registry key to remove
+  /// @return `true` iff an entry was removed
   public boolean unregisterSink(final RegistryKey<?> key) {
     return sinks.remove(key);
   }
@@ -229,29 +276,44 @@ public class MessageProcessorRegistry {
     sinks.clear();
   }
 
-  /// Returns an unmodifiable view of registered sink keys.
+  /// Returns the registered sink keys.
+  ///
+  /// @return an unmodifiable view of registered sink keys
   public Set<RegistryKey<?>> getSinkKeys() {
     return sinks.keys();
   }
 
-  /// Returns an unmodifiable view of registered sinks (key → implementation simple name).
+  /// Returns a summary of registered sinks.
+  ///
+  /// @return an unmodifiable view of registered sinks (key → implementation simple name)
   public Map<RegistryKey<?>, String> getAllSinks() {
     return sinks.all();
   }
 
-  /// Gets metrics for a specific sink entry, or an empty map if `key` is not registered.
+  /// Gets metrics for a specific sink entry.
+  ///
+  /// @param key the registry key to look up
+  /// @return the entry's metrics, or an empty map if `key` is not registered
   public Map<String, Object> getSinkMetrics(final RegistryKey<?> key) {
     return sinks.metrics(key);
   }
 
   /// Wraps a sink with error-handling logic that suppresses exceptions. Overload of the operator
   /// [#withErrorHandling(UnaryOperator)] — Java resolves by argument type.
+  ///
+  /// @param sink the sink to wrap
+  /// @param <T>  the pipeline value type
+  /// @return a new sink that logs and swallows exceptions raised by the original
   public static <T> MessageSink<T> withErrorHandling(final MessageSink<T> sink) {
     return RegistryFunctions.withConsumerErrorHandling(sink, LOGGER)::accept;
   }
 
   /// Creates a composite sink that delivers each value to every registered sink under `sinkKeys`,
   /// in order. A failure in one sink is logged at WARNING but does not stop the others.
+  ///
+  /// @param sinkKeys the registry keys whose sinks to fan out to
+  /// @param <T>      the pipeline value type
+  /// @return a fan-out sink that delivers to each registered sink in order
   @SafeVarargs
   public final <T> MessageSink<T> compositeSink(final RegistryKey<T>... sinkKeys) {
     return value -> {
