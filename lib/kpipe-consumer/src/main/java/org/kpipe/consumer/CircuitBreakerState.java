@@ -2,8 +2,8 @@ package org.kpipe.consumer;
 
 /// The three states a [CircuitBreakerController] can be in.
 public enum CircuitBreakerState {
-  /// Normal operation. Outcomes feed [CircuitBreakerStats]; on the first failure that crosses
-  /// the controller's threshold the breaker transitions to [#OPEN].
+  /// Normal operation. Outcomes feed the rolling window; on the first failure that crosses the
+  /// controller's threshold the breaker transitions to [#OPEN].
   CLOSED,
 
   /// Failures crossed the threshold. The consumer is paused; no records are processed until a

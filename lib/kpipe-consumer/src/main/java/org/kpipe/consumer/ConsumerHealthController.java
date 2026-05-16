@@ -15,22 +15,20 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.consumer.Consumer;
 
 /// Host-level health controller. Composes pause arbitration, backpressure watermarks, and
-/// circuit-breaker orchestration into one façade so [KPipeConsumer] holds a single field instead of
-/// six and the ~80 lines of CB state-machine glue live in one place.
+/// circuit-breaker orchestration behind a single façade.
 ///
-/// **What stays public.** [BackpressureController] and [CircuitBreakerController] remain the
-/// user-facing decision modules — both are stateless records with pure boolean methods, easy to
-/// unit-test in isolation. This controller is package-private because it is wired internally by
-/// the consumer; callers configure behaviour through the builder.
+/// [BackpressureController] and [CircuitBreakerController] remain the user-facing decision
+/// modules — stateless records with pure boolean methods, easy to unit-test in isolation. This
+/// controller is package-private; callers configure behaviour through the builder.
 ///
-/// **What this owns.** The pause bitmask (replacing the old `PauseCoordinator`), the CB state
-/// machine (`AtomicReference<CircuitBreakerState>`), the trip timestamp, the probe-timer
-/// `ScheduledFuture`, and the rolling success/failure window. Side effects (`kafkaConsumer.pause`,
-/// `LockSupport.unpark`, command-queue inserts) stay on [KPipeConsumer] — this class signals
-/// transitions through Runnable callbacks supplied at construction so the host's command-queue
-/// invariant (§11) keeps one site.
+/// Owns the pause bitmask, the CB state machine (`AtomicReference<CircuitBreakerState>`), the
+/// trip timestamp, the probe-timer `ScheduledFuture`, and the rolling success/failure window.
+/// Side effects (`kafkaConsumer.pause`, `LockSupport.unpark`, command-queue inserts) stay on
+/// [KPipeConsumer]; transitions are signalled through the [Hook] supplied at construction so the
+/// host owns the single site that drives the command queue.
 ///
-/// **Surface used by KPipeConsumer.**
+/// Surface used by [KPipeConsumer]:
+///
 ///   * [#requestPause] / [#releasePause] for MANUAL pause; returns the "you caused the transition"
 ///     boolean so the caller can decide whether to call `internalPause`.
 ///   * [#recordOutcome] for per-record success/failure; drives the CB state machine and fires the
@@ -42,8 +40,7 @@ final class ConsumerHealthController {
 
   private static final Logger LOGGER = System.getLogger(ConsumerHealthController.class.getName());
 
-  /// Pause sources arbitrated by the internal bitmask. Replaces three separate AtomicBoolean flags
-  /// so resume sites don't have to AND-together checks: the consumer is paused iff at least one
+  /// Pause sources arbitrated by the internal bitmask. The consumer is paused iff at least one
   /// source holds it; resume fires only on the *last* release.
   enum Source {
     MANUAL(1),
@@ -57,22 +54,35 @@ final class ConsumerHealthController {
     }
   }
 
-  /// Side-effect surface the controller delegates to. KPipeConsumer implements this with its
-  /// existing AtomicLong metrics map + OTel `ConsumerMetrics`, plus the `internalPause` /
-  /// `internalResume` choreography. Kept narrow so unit tests can substitute a recording fake.
+  /// Side-effect surface the controller delegates to. KPipeConsumer wires this to its
+  /// `internalPause` / `internalResume` choreography and to the AtomicLong metrics map plus the
+  /// OTel `ConsumerMetrics`. Kept narrow so unit tests can substitute a recording fake.
   interface Hook {
+    /// Invoked when an arbitrary source transitions the consumer into the paused state.
     void onPause();
 
+    /// Invoked when the *last* held source releases the pause and the consumer resumes.
     void onResume();
 
+    /// Invoked when backpressure first crosses the high watermark and requests a pause.
     void onBackpressurePause();
 
+    /// Invoked when backpressure releases its hold, with the elapsed paused duration.
+    ///
+    /// @param ms milliseconds the backpressure pause was held (always `>= 1`)
     void onBackpressureTimeMs(long ms);
 
+    /// Invoked on CLOSED → OPEN and HALF_OPEN → OPEN circuit-breaker transitions.
     void onCircuitBreakerTrip();
 
+    /// Invoked on every circuit-breaker state transition.
+    ///
+    /// @param state the new state
     void onCircuitBreakerStateChange(CircuitBreakerState state);
 
+    /// Invoked when the breaker leaves OPEN, with the elapsed duration spent open.
+    ///
+    /// @param ms milliseconds the breaker stayed in OPEN before probing
     void onCircuitBreakerTimeOpenMs(long ms);
   }
 
@@ -95,6 +105,14 @@ final class ConsumerHealthController {
 
   /// Constructs the controller. `scheduler` is only required when `cbController` is non-null —
   /// it is used to schedule the OPEN → HALF_OPEN probe timer.
+  ///
+  /// @param backpressure the backpressure decision module, or `null` to disable backpressure
+  /// @param cbController the circuit-breaker decision module, or `null` to disable the breaker
+  /// @param scheduler    a scheduled executor used to fire the OPEN → HALF_OPEN probe; required
+  ///                     iff `cbController` is non-null
+  /// @param hook         side-effect callbacks (pause/resume + metric counters); must be non-null
+  /// @throws IllegalArgumentException if `cbController` is non-null and `scheduler` is null, or
+  ///         if `hook` is null
   ConsumerHealthController(
     final BackpressureController backpressure,
     final CircuitBreakerController cbController,
@@ -116,6 +134,7 @@ final class ConsumerHealthController {
 
   /// Adds `source` to the held set.
   ///
+  /// @param source the pause source acquiring the hold
   /// @return `true` iff this call caused the transition from "no sources holding" to "at least
   ///     one source holding" — the caller should now invoke `internalPause()`. Idempotent.
   boolean requestPause(final Source source) {
@@ -124,6 +143,7 @@ final class ConsumerHealthController {
 
   /// Removes `source` from the held set.
   ///
+  /// @param source the pause source releasing its hold
   /// @return `true` iff this call caused the transition from "at least one source holding" to
   ///     "no sources holding" — the caller should now invoke `internalResume()`. Idempotent.
   boolean releasePause(final Source source) {
@@ -152,6 +172,8 @@ final class ConsumerHealthController {
   /// Runs the backpressure decision against the current metric and dispatches the resulting action.
   /// On PAUSE this records the pause-start timestamp, fires the trip + onPause callbacks. On RESUME
   /// this computes the pause duration, fires the duration + onResume callbacks.
+  ///
+  /// @param kafkaConsumer the Kafka consumer whose metric is read by the configured strategy
   void tickBackpressure(final Consumer<?, ?> kafkaConsumer) {
     if (backpressure == null) return;
     switch (backpressure.check(kafkaConsumer, isPaused())) {
@@ -209,6 +231,8 @@ final class ConsumerHealthController {
   /// Outcomes that arrive while `OPEN` (in-flight remnants from before the trip) are ignored —
   /// only the probe timer leaves `OPEN`, and feeding them into stats would skew the window the
   /// breaker uses to re-evaluate later.
+  ///
+  /// @param success `true` for a successful record, `false` for a failure
   void recordOutcome(final boolean success) {
     if (cbController == null) return;
     final var current = cbState.get();
@@ -293,11 +317,9 @@ final class ConsumerHealthController {
     hook.onCircuitBreakerStateChange(CircuitBreakerState.CLOSED);
   }
 
-  // ─────────────────────────── Sliding window (was CircuitBreakerStats) ─────
+  // ─────────────────────────── Sliding window ───────────────────────────────
 
-  /// Count-based sliding window of success/failure outcomes. Inlined from the former
-  /// `CircuitBreakerStats` class — only the controller uses it, so the indirection wasn't earning
-  /// its keep.
+  /// Count-based sliding window of success/failure outcomes.
   ///
   /// Each `record` claims a unique slot via `head.getAndIncrement`, then atomically swaps the
   /// slot. Counters are kept in sync by decrementing the evicted outcome and incrementing the new

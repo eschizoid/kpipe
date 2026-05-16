@@ -106,13 +106,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final ConsumerMetrics otelMetrics;
   private final Tracer tracer;
   private final AtomicLong inFlightCount = new AtomicLong(0);
-  /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. Replaces
-  /// the prior six-field tangle (pauseCoordinator, backpressureController, backpressurePauseStartNanos,
-  /// circuitBreakerController, circuitBreakerStats, circuitBreakerState, circuitBreakerOpenedAtNanos,
-  /// circuitBreakerProbeFuture) with a single field. The underlying decision modules
-  /// ([BackpressureController], [CircuitBreakerController]) remain public + testable on their own;
-  /// this controller owns the side-effect choreography and dispatches transitions through a Hook
-  /// that points back at `internalPause` / `internalResume` and the metric counters.
+  /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. The
+  /// underlying decision modules ([BackpressureController], [CircuitBreakerController]) remain
+  /// public + testable on their own; this controller owns the side-effect choreography and
+  /// dispatches transitions through a Hook that points back at `internalPause` /
+  /// `internalResume` and the metric counters.
   private final ConsumerHealthController health;
 
   private final String deadLetterTopic;
@@ -1087,18 +1085,21 @@ public class KPipeConsumer<K> implements AutoCloseable {
     }
   }
 
-  /// Processes pending commands from the command queue.
+  /// Drains the command queue on the consumer thread. Commands are the only mechanism by which
+  /// off-thread callers can ask Kafka APIs (`pause` / `resume` / `commitSync`) or the
+  /// [OffsetManager] to mutate state — serializing them here keeps those calls single-threaded
+  /// without locks.
   ///
-  /// This method polls commands from the internal command queue and executes the corresponding
-  /// actions:
+  /// Recognized commands:
   ///
-  /// * `PAUSE` - Pauses consumption by calling `consumer.pause()`
-  /// * `RESUME` - Resumes consumption by calling `consumer.resume()`
-  /// * `CLOSE` - Initiates shutdown by setting the running flag to false
+  /// * `Pause` — `kafkaConsumer.pause(assignment)`
+  /// * `Resume` — `kafkaConsumer.resume(assignment)`
+  /// * `Close` — flips the consumer to `CLOSING`
+  /// * `TrackOffset` / `MarkOffsetProcessed` — forwarded to the [OffsetManager]
+  /// * `CommitOffsets` — `kafkaConsumer.commitSync(offsets)` plus offset-manager notification
   ///
-  /// Commands are processed in the order they were submitted to the queue. If an exception occurs
-  /// while processing a command, it will be caught and logged, allowing subsequent commands to be
-  /// processed.
+  /// Commands are processed in submission order. Per-command exceptions are logged at ERROR and
+  /// swallowed so a malformed command cannot halt subsequent ones.
   void processCommands() {
     ConsumerCommand command;
 
@@ -1173,13 +1174,17 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Returns a snapshot of the current metrics collected by this consumer.
   ///
-  /// Available metrics include:
+  /// Available metrics:
   ///
-  /// * `messagesReceived` - count of records received from Kafka
-  /// * `messagesProcessed` - count of records successfully processed
-  /// * `processingErrors` - count of records that failed processing after all retries
-  /// * `retries` - count of retry attempts made for failed records
-  /// * `inFlight` - current number of messages being processed
+  /// * `messagesReceived` — records received from Kafka
+  /// * `messagesProcessed` — records successfully processed
+  /// * `processingErrors` — records that failed processing after all retries
+  /// * `processingDurationTotalMs` — total wall-clock time spent inside `processToSink`
+  /// * `retries` — retry attempts made for failed records
+  /// * `backpressurePauseCount` / `backpressureTimeMs` — backpressure pause count and total ms held
+  /// * `circuitBreakerTrips` / `circuitBreakerTimeOpenMs` — CB trip count and total ms in OPEN
+  /// * `dlqSent` — records sent to the configured DLQ topic
+  /// * `inFlight` — current number of messages being processed (live counter, not a counter delta)
   ///
   /// @return an unmodifiable map of metric names to their current values
   public Map<String, Long> getMetrics() {
@@ -1219,21 +1224,21 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Closes this consumer, stopping message consumption and processing.
   ///
-  /// This method performs a graceful shutdown by:
+  /// Graceful shutdown order:
   ///
-  /// <ol>
-  ///   <li>Handling the unstarted (CREATED) case: state → CLOSED, release the shutdown latch
-  ///   <li>Setting the state to CLOSING to prevent new operations
-  ///   <li>Stopping the periodic metrics-reporter thread (if any)
-  ///   <li>Pausing the consumer and signaling shutdown via the command queue
-  ///   <li>Waiting up to `waitForMessagesTimeout` for in-flight messages to drain
-  ///   <li>Waking up the consumer thread and waiting for its termination
-  ///   <li>Shutting down the virtual thread executor
-  ///   <li>Closing the offset manager to ensure final offsets are committed
-  ///   <li>Setting the state to CLOSED
-  /// </ol>
+  /// 1. Unstarted (CREATED) → CLOSED fast path: release the shutdown latch and return.
+  /// 2. Transition to CLOSING (rejects concurrent close() calls).
+  /// 3. Stop the periodic metrics-reporter thread (if any).
+  /// 4. Pause the consumer and submit a `Close` command.
+  /// 5. Wait up to `waitForMessagesTimeout` for in-flight records to drain.
+  /// 6. Wake up the consumer thread (`wakeup` + `unpark`) and join it.
+  /// 7. Shut down the virtual-thread executor (force-cancel after `executorTerminationTimeout`).
+  /// 8. Drain any batch-pipeline buffers while the offset manager is still alive.
+  /// 9. Shut down the health controller (cancels any pending CB probe timer).
+  /// 10. Close the scheduler, offset manager, and DLQ producer.
+  /// 11. Set state to CLOSED, release the shutdown latch, remove the JVM shutdown hook.
   ///
-  /// This method is idempotent - calling it multiple times has no additional effect.
+  /// Idempotent — calling it multiple times has no additional effect.
   @Override
   public void close() {
     // CREATED → CLOSED: the consumer was built but never started. Skip the drain dance, but still
@@ -1359,22 +1364,20 @@ public class KPipeConsumer<K> implements AutoCloseable {
     }
   }
 
-  /// Processes a single Kafka consumer record using the configured processor function.
-  ///
-  /// This method applies the processor function to transform the record value while handling
-  /// exceptions with configurable retry logic. Processing occurs in the current virtual thread
-  /// without blocking operations that would impact carrier thread performance.
+  /// Processes a single Kafka consumer record using the topic's configured pipeline. Runs in the
+  /// current virtual thread; retries on exception according to `maxRetries` + `retryBackoff`. On
+  /// success the per-record outcome feeds the circuit-breaker window; on retry-exhausted failure
+  /// the record is routed to the DLQ (when configured) and the error handler is invoked.
   ///
   /// Metrics tracked during processing:
   ///
-  /// <ul>
-  ///   <li>messagesReceived - Incremented when a record is received
-  ///   <li>messagesProcessed - Incremented for successful processing
-  ///   <li>retries - Incremented for each retry attempt (not counting an initial attempt)
-  ///   <li>processingErrors - Incremented when processing fails after all retries
-  /// </ul>
+  /// * `messagesReceived` — incremented on entry
+  /// * `messagesProcessed` — incremented on success
+  /// * `processingDurationTotalMs` — incremented on success by the wall-clock duration
+  /// * `retries` — incremented per retry attempt (not the initial attempt)
+  /// * `processingErrors` — incremented when processing fails after all retries
   ///
-  /// @param record The Kafka consumer record to process
+  /// @param record the Kafka consumer record to process
   protected void processRecord(final ConsumerRecord<K, byte[]> record) {
     metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
     otelMetrics.recordMessageReceived(record.topic());

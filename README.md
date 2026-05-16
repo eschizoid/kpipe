@@ -71,20 +71,20 @@ There's also a `kpipe-bom` so you only pin one version across modules — use it
 <details>
 <summary>Module catalog & other build tools</summary>
 
-| Module                            | What it gives you                                                                                                                                   |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kpipe-api`                       | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                                            |
-| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                       |
-| `kpipe-core`                      | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                       |
-| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                                                                     |
-| `kpipe-metrics-otel`              | OpenTelemetry-backed implementation (opt-in)                                                                                                        |
-| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers (opt-in)                                                                                        |
-| `kpipe-schema-registry-confluent` | Confluent Schema Registry client — `lookupById` + `lookupBySubjectVersion` (opt-in)                                                                 |
-| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `Tracer` SPI                                                                                            |
-| `kpipe-consumer`                  | `KPipeConsumer` (hosts lifecycle, metrics-reporter thread, shutdown hook), `BackpressureController`, `CircuitBreakerController`, `PauseCoordinator` |
-| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                     |
-| `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                                                                     |
-| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                                                             |
+| Module                            | What it gives you                                                                                                                                          |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kpipe-api`                       | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                                                   |
+| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                              |
+| `kpipe-core`                      | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                              |
+| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                                                                            |
+| `kpipe-metrics-otel`              | OpenTelemetry-backed implementation (opt-in)                                                                                                               |
+| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers (opt-in)                                                                                               |
+| `kpipe-schema-registry-confluent` | Confluent Schema Registry client — `lookupById` + `lookupBySubjectVersion` (opt-in)                                                                        |
+| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `Tracer` SPI                                                                                                   |
+| `kpipe-consumer`                  | `KPipeConsumer` (hosts lifecycle, metrics-reporter thread, shutdown hook), `BackpressureController`, `CircuitBreakerController`, `ConsumerHealthController` |
+| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                            |
+| `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                                                                            |
+| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                                                                    |
 
 **Gradle (Kotlin) with BOM**
 
@@ -347,7 +347,7 @@ kpipe-bom                                          (Maven BOM — pins versions)
 - **kpipe-producer**: Kafka producer wrapper, `KafkaMessageSink` (in `org.kpipe.producer.sink`), `Tracer` SPI.
 - **kpipe-consumer**: `KPipeConsumer` (hosts lifecycle: `start` / `close` / `awaitShutdown` / `shutdownGracefully` /
   `waitForInFlightDrain` + optional metrics-reporter thread and JVM shutdown hook), `BackpressureController`,
-  `CircuitBreakerController`, `PauseCoordinator`, `KafkaOffsetManager`, `HttpHealthServer`, `consumer.metrics`
+  `CircuitBreakerController`, `ConsumerHealthController`, `KafkaOffsetManager`, `HttpHealthServer`, `consumer.metrics`
   reporters.
 - **kpipe-tracing-otel**: W3C trace context propagation — extract on consume, inject on produce / DLQ. Opt-in module
   (see "Distributed tracing" below).
@@ -553,9 +553,9 @@ The state machine is the standard CLOSED → OPEN → HALF_OPEN → CLOSED cycle
 - **HALF_OPEN**: poll resumes; the next record is the probe. Success → CLOSED (and the window resets). Failure → back to
   OPEN for another `openDuration`.
 
-CB and backpressure pause through the same `PauseCoordinator` (bitmask of MANUAL / BACKPRESSURE / CIRCUIT_BREAKER
-sources), so they don't fight each other — releasing the backpressure source while the CB still holds keeps the consumer
-paused, and vice-versa.
+CB and backpressure pause through the same `ConsumerHealthController` (bitmask of MANUAL / BACKPRESSURE /
+CIRCUIT_BREAKER sources), so they don't fight each other — releasing the backpressure source while the CB still holds
+keeps the consumer paused, and vice-versa.
 
 OTel counters (opt-in via `kpipe-metrics-otel`):
 

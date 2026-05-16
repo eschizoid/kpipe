@@ -17,7 +17,7 @@ import java.util.Objects;
 ///
 /// **State machine** (driven by [KPipeConsumer], not by this controller):
 ///
-///   * `CLOSED` — outcomes feed [CircuitBreakerStats]; on every failure the consumer asks
+///   * `CLOSED` — outcomes feed a rolling window; on every failure the consumer asks
 ///     [#shouldTrip] whether to flip to `OPEN`. The check returns true when both the failure
 ///     rate has crossed `failureThreshold` and the window has at least `windowSize` samples
 ///     (no tripping on a single failure with an empty window).
@@ -27,7 +27,7 @@ import java.util.Objects;
 ///     failure → `OPEN` (timer restarted).
 ///
 /// @param failureThreshold the failure rate (0.0..1.0) at or above which the breaker trips
-/// @param windowSize       the rolling sample size — must match the stats window
+/// @param windowSize       the rolling sample size used by the host's outcome window
 /// @param openDuration     how long the breaker stays in `OPEN` before probing
 public record CircuitBreakerController(double failureThreshold, int windowSize, Duration openDuration) {
   /// Canonical constructor; validates `failureThreshold` is in `(0, 1]`, `windowSize` is positive,
