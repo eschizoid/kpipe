@@ -10,6 +10,7 @@ mockito = "5.18.0"
 testcontainers = "2.0.4"
 postgresql = "42.7.3"
 parallelConsumer = "0.5.3.0"
+reactorKafka = "1.3.23"
 spotless = "8.4.0"
 axion = "1.18.7"
 shadow = "8.3.5"
@@ -47,6 +48,7 @@ testcontainersPostgresql = { module = "org.testcontainers:testcontainers-postgre
 testcontainersKafka = { module = "org.testcontainers:testcontainers-kafka", version.ref = "testcontainers" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 parallelConsumerCore = { module = "io.confluent.parallelconsumer:parallel-consumer-core", version.ref = "parallelConsumer" }
+reactorKafka = { module = "io.projectreactor.kafka:reactor-kafka", version.ref = "reactorKafka" }
 jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
 jgitGpgBc = { module = "org.eclipse.jgit:org.eclipse.jgit.gpg.bc", version.ref = "jgit" }
 

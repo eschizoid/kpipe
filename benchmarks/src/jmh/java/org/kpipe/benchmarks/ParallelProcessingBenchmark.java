@@ -1,31 +1,36 @@
 package org.kpipe.benchmarks;
 
 import java.util.concurrent.TimeUnit;
-import org.openjdk.jmh.annotations.*;
+import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Mode;
+import org.openjdk.jmh.annotations.OperationsPerInvocation;
+import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Benchmark;
 
-/// JMH Benchmark for comparing KPipe's parallel processing engine against the
-/// Confluent Parallel Consumer.
+/// Competitive parallel-consumer throughput benchmark. Four runtimes consume the same seeded
+/// topic from the same embedded broker:
 ///
-/// This benchmark measures raw throughput (messages processed per second) by
-/// simulating a high-concurrency message ingestion scenario using an embedded
-/// Kafka broker powered by Apache Kafka's test kit.
+///   * **KPipe** — virtual-thread-per-record on Loom.
+///   * **Confluent Parallel Consumer** — the de-facto industry baseline, `ProcessingOrder.UNORDERED`
+///     with a 100-worker pool.
+///   * **Reactor Kafka** — `Flux<ReceiverRecord>` on the Reactor `parallel` scheduler with a
+///     matching concurrency limit.
+///   * **Raw `KafkaConsumer` + virtual threads** — the hand-rolled baseline. No framework, no
+///     offset manager. Establishes the floor of "what if I just wrote the loop myself?"
 ///
-/// ### Scenarios:
-/// 1. **KPipe Parallel Mode**: Leverages Java Virtual Threads (Project Loom) for
-///    record-level parallelism with minimal overhead.
-/// 2. **Confluent Parallel Consumer**: Industry-standard library for parallel
-///    processing, using traditional platform thread pools.
+/// Each invocation processes [ParallelProcessingBenchmarkInfrastructure#TARGET_MESSAGES] records.
+/// The `workMicros` `@Param` injects per-record simulated work via `LockSupport.parkNanos` so
+/// the bench covers three workload regimes:
 ///
-/// ### Design Integrity:
-/// - Both frameworks start from the beginning of the topic (`earliest`) for each iteration.
-/// - Both process exactly **10,000 messages** per iteration.
-/// - KPipe uses Loom; Confluent uses a max concurrency of **100**.
+///   * `0 µs` — pure framework overhead (no work per record).
+///   * `100 µs` — typical local enrichment (in-memory transform, no I/O).
+///   * `1000 µs` — typical blocking I/O (HTTP / JDBC / S3 round trip).
 ///
-/// ### Running the Benchmark:
+/// Run all four runtimes across the parameter sweep:
+///
 /// ```bash
 /// ./gradlew :benchmarks:jmh -Pjmh.includes='ParallelProcessingBenchmark'
 /// ```
-@State(Scope.Benchmark)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class ParallelProcessingBenchmark {
@@ -34,23 +39,29 @@ public class ParallelProcessingBenchmark {
 
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)
-  public void kpipeParallelProcessing(final ParallelProcessingBenchmarkInfrastructure.KpipeInvocationContext context) {
+  public void kpipe(final ParallelProcessingBenchmarkInfrastructure.KpipeInvocationContext context) {
     context.start();
-    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages(
-      "kpipeParallelProcessing",
-      context.processedCount()
-    );
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("kpipe", context.processedCount());
   }
 
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)
-  public void confluentParallelProcessing(
-    final ParallelProcessingBenchmarkInfrastructure.ConfluentInvocationContext context
-  ) {
+  public void confluent(final ParallelProcessingBenchmarkInfrastructure.ConfluentInvocationContext context) {
     context.start();
-    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages(
-      "confluentParallelProcessing",
-      context.processedCount()
-    );
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("confluent", context.processedCount());
+  }
+
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void reactor(final ParallelProcessingBenchmarkInfrastructure.ReactorInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("reactor", context.processedCount());
+  }
+
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void raw(final ParallelProcessingBenchmarkInfrastructure.RawInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("raw", context.processedCount());
   }
 }
