@@ -1,8 +1,14 @@
 # KPipe Benchmarks
 
-JMH benchmarks for KPipe — pipeline efficiency, Avro byte handling, parallel processing, and batch sink throughput. Each
-scenario pits KPipe against either a hand-rolled equivalent or a well-known alternative (Confluent Parallel Consumer) so
-the numbers mean something concrete.
+JMH benchmarks for KPipe — pipeline efficiency, Avro byte handling, parallel processing (vs Confluent Parallel
+Consumer / Reactor Kafka / a hand-rolled `KafkaConsumer + virtual-thread executor` baseline), and batch sink
+throughput.
+
+**Read this before quoting numbers:** [METHODOLOGY.md](METHODOLOGY.md) — what each bench measures, how the four
+parallel runtimes are configured, what to record for every published run.
+
+**Latest published numbers:** [results/](results/) — dated snapshots with hardware + JDK + JMH config. Use
+[TEMPLATE.md](results/TEMPLATE.md) when adding a new one.
 
 ## Benchmark Scenarios
 
