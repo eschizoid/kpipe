@@ -54,9 +54,12 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
   static final String TOPIC = "benchmark-topic";
 
-  /// Default number of records seeded per trial. Steady-state throughput is the goal — at 10k
-  /// the group-join + first-poll cost was dominating the measurement.
-  static final int TARGET_MESSAGES = 100_000;
+  /// Default number of records seeded per trial. 10k matches the prior baseline so cross-run
+  /// comparisons stay meaningful. On the in-process broker the broker shares cores with the
+  /// consumer under test; pushing past 10–25k makes the broker the bottleneck and stretches
+  /// every iteration past the safety timeout. For a "real" steady-state number, externalise
+  /// the broker (Testcontainers Kafka with `--cpus` constraints) and bump this to 100k+.
+  static final int TARGET_MESSAGES = 10_000;
 
   /// Topic partitions used to expose parallel scheduler behavior.
   static final int TOPIC_PARTITIONS = 8;
@@ -64,9 +67,9 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// Confluent Parallel Consumer max concurrency (number of worker threads it spins up).
   static final int CONFLUENT_MAX_CONCURRENCY = 100;
 
-  /// Safety timeout for per-invocation completion checks. Generous because 100k records under
-  /// non-trivial per-record work can easily take tens of seconds.
-  private static final long MAX_WAIT_NANOS = TimeUnit.MINUTES.toNanos(2);
+  /// Safety timeout for per-invocation completion checks. The in-process broker can stutter on
+  /// group-join / metadata-update; leave headroom for a slow first poll.
+  private static final long MAX_WAIT_NANOS = TimeUnit.MINUTES.toNanos(3);
 
   private static final Duration PC_CLOSE_TIMEOUT = Duration.ofSeconds(5);
 
@@ -137,6 +140,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       producerProps.putAll(clientProperties);
       producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
       producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
+      // Async send + single `flush()` at the end. Sync per-record `.send().get()` is 50x slower
+      // on the in-process broker and turns trial setup into the bottleneck of the whole run.
+      producerProps.put(ProducerConfig.LINGER_MS_CONFIG, "10");
+      producerProps.put(ProducerConfig.BATCH_SIZE_CONFIG, "65536");
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
         final var value = """
           {
@@ -145,8 +152,9 @@ public final class ParallelProcessingBenchmarkInfrastructure {
           }
           """.getBytes(StandardCharsets.UTF_8);
         for (int i = 0; i < TARGET_MESSAGES; i++) {
-          producer.send(new ProducerRecord<>(TOPIC, value)).get();
+          producer.send(new ProducerRecord<>(TOPIC, value));
         }
+        producer.flush();
       } catch (final Exception e) {
         throw new IllegalStateException("Unable to seed benchmark topic", e);
       }
