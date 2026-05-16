@@ -40,7 +40,9 @@ jobs:
             :lib:kpipe-format-json:jacocoTestReport \
             :lib:kpipe-format-protobuf:jacocoTestReport \
             :lib:kpipe-consumer:jacocoTestReport \
-            :lib:kpipe-producer:jacocoTestReport
+            :lib:kpipe-producer:jacocoTestReport \
+            :lib:kpipe-schema-registry-confluent:jacocoTestReport \
+            :lib:kpipe-tracing-otel:jacocoTestReport
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -57,6 +59,8 @@ jobs:
             ./lib/kpipe-format-protobuf/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-consumer/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-producer/build/reports/jacoco/test/jacocoTestReport.xml
+            ./lib/kpipe-schema-registry-confluent/build/reports/jacoco/test/jacocoTestReport.xml
+            ./lib/kpipe-tracing-otel/build/reports/jacoco/test/jacocoTestReport.xml
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
