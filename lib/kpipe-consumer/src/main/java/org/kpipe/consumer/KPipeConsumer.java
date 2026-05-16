@@ -18,6 +18,7 @@ import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.metrics.ConsumerMetrics;
+import org.kpipe.metrics.KPipeMetricsReporter;
 import org.kpipe.producer.KPipeProducer;
 import org.kpipe.producer.tracing.Tracer;
 import org.kpipe.registry.MessagePipeline;
@@ -64,8 +65,8 @@ import org.kpipe.sink.BatchSink;
 ///     .withRetry(3, Duration.ofSeconds(1))
 ///     .build();
 ///
-/// final var runner = KPipeRunner.builder(consumer).build();
-/// runner.start();
+/// consumer.start();
+/// consumer.awaitShutdown();   // blocks until close() completes
 /// ```
 ///
 /// @param <K> the type of keys in the consumed records
@@ -116,6 +117,21 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final KPipeProducer<K, byte[]> kpipeProducer;
 
   private final Map<String, BatchPipelineWrapper<K, ?>> batchWrappers;
+
+  // ── Folded-in lifecycle host concerns (former KPipeRunner) ──
+  /// Released by `close()` so callers blocked in [#awaitShutdown(Duration)] unblock when the
+  /// consumer reaches CLOSED. Initialised once so the latch is stable across reconfiguration.
+  private final CountDownLatch shutdownLatch = new CountDownLatch(1);
+  /// Periodic metrics-reporter thread. Started at the end of `start()` if any reporters are
+  /// configured; interrupted at the start of `close()`.
+  private volatile Thread metricsReporterThread;
+  private final List<KPipeMetricsReporter> metricsReporters;
+  private final Duration metricsReporterInterval;
+  private final boolean useShutdownHook;
+  /// JVM shutdown hook (when `useShutdownHook=true`); kept so `close()` can remove it explicitly.
+  /// Without this, every constructed consumer accumulates a hook in the JVM's shutdown-hook set
+  /// for the lifetime of the process — a real leak in hosts that build/close many consumers.
+  private volatile Thread shutdownHookThread;
   /// Shared virtual-thread scheduler. Owns batch-pipeline age ticks AND the circuit-breaker
   /// probe timer. Lazily created when either feature is configured; otherwise stays null.
   private final ScheduledExecutorService scheduler;
@@ -201,6 +217,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
     private ConsumerMetrics consumerMetrics;
     private Tracer tracer;
     private CircuitBreakerController circuitBreakerController;
+    private final List<KPipeMetricsReporter> metricsReporters = new ArrayList<>();
+    private Duration metricsReporterInterval = Duration.ofMinutes(1);
+    private boolean useShutdownHook = false;
 
     /// Sets the properties for the Kafka consumer.
     ///
@@ -449,7 +468,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     ///
     /// @return This builder instance for method chaining
     public Builder<K> withBackpressure() {
-      return withBackpressure(10_000, 7_000);
+      return withBackpressure(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK);
     }
 
     /// Enables backpressure control using the given high and low watermarks. When the number of
@@ -570,6 +589,40 @@ public class KPipeConsumer<K> implements AutoCloseable {
       return this;
     }
 
+    /// Adds metrics reporters that run periodically while the consumer is alive. Each reporter is
+    /// invoked every `metricsReporterInterval` (defaults to 60s) on a dedicated platform daemon
+    /// thread. Reporter exceptions are logged at WARNING but do not crash the thread.
+    ///
+    /// @param reporters the collection of reporters to run
+    /// @return this builder instance for method chaining
+    public Builder<K> withMetricsReporters(final Collection<KPipeMetricsReporter> reporters) {
+      this.metricsReporters.addAll(Objects.requireNonNull(reporters, "reporters cannot be null"));
+      return this;
+    }
+
+    /// Sets the interval between metrics-reporter invocations.
+    ///
+    /// @param interval the reporting interval (must be positive)
+    /// @return this builder instance for method chaining
+    public Builder<K> withMetricsInterval(final Duration interval) {
+      Objects.requireNonNull(interval, "interval cannot be null");
+      if (interval.isNegative() || interval.isZero()) {
+        throw new IllegalArgumentException("interval must be positive, got " + interval);
+      }
+      this.metricsReporterInterval = interval;
+      return this;
+    }
+
+    /// Configures whether to register a JVM shutdown hook that calls `close()` on this consumer.
+    /// Use when the host process has no other shutdown coordination.
+    ///
+    /// @param useShutdownHook true to register a JVM shutdown hook
+    /// @return this builder instance for method chaining
+    public Builder<K> withShutdownHook(final boolean useShutdownHook) {
+      this.useShutdownHook = useShutdownHook;
+      return this;
+    }
+
     /// Builds a new KPipeConsumer with the configured settings.
     ///
     /// @return a new KPipeConsumer instance
@@ -681,7 +734,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     this.backpressureController = (
       builder.backpressureController != null
         ? builder.backpressureController
-        : new BackpressureController(10_000, 7_000, null)
+        : new BackpressureController(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK, null)
     ).withStrategy(
       this.sequentialProcessing
         ? BackpressureController.lagStrategy()
@@ -724,6 +777,14 @@ public class KPipeConsumer<K> implements AutoCloseable {
       this.circuitBreakerController != null
         ? new CircuitBreakerStats(this.circuitBreakerController.windowSize())
         : null;
+
+    this.metricsReporters = List.copyOf(builder.metricsReporters);
+    this.metricsReporterInterval = builder.metricsReporterInterval;
+    this.useShutdownHook = builder.useShutdownHook;
+    if (this.useShutdownHook) {
+      this.shutdownHookThread = new Thread(this::close, "kpipe-shutdown-hook");
+      Runtime.getRuntime().addShutdownHook(this.shutdownHookThread);
+    }
 
     if (builder.backpressureController == null) {
       LOGGER.log(
@@ -802,18 +863,119 @@ public class KPipeConsumer<K> implements AutoCloseable {
     return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), scheduler, callbacks);
   }
 
-  /// Creates a message tracker that can monitor the state of in-flight messages. The tracker
-  /// uses the consumer's metrics to determine how many messages have been received versus
-  /// processed.
+  /// Blocks until every in-flight record finishes processing, or `timeout` elapses, or the calling
+  /// thread is interrupted. Replaces the former standalone `MessageTracker.waitForCompletion(...)`
+  /// — uses the live in-flight counter (`totalInFlight()`, which includes buffered batch records)
+  /// rather than re-deriving it from received - processed - errors.
   ///
-  /// @return a new [MessageTracker] instance
-  public MessageTracker createMessageTracker() {
-    return MessageTracker.builder()
-      .withMetrics(this::getMetrics)
-      .withReceivedMetricKey(METRIC_MESSAGES_RECEIVED)
-      .withProcessedMetricKey(METRIC_MESSAGES_PROCESSED)
-      .withErrorsMetricKey(METRIC_PROCESSING_ERRORS)
-      .build();
+  /// @param timeout maximum time to wait
+  /// @return `true` if the drain completed within `timeout`, `false` on timeout or interruption
+  public boolean waitForInFlightDrain(final Duration timeout) {
+    if (totalInFlight() == 0) return true;
+    final var deadline = System.nanoTime() + timeout.toNanos();
+    final var pollNanos = Math.min(timeout.toNanos() / 10, Duration.ofMillis(500).toNanos());
+    final var pollMs = Math.max(1, pollNanos / 1_000_000);
+    try {
+      while (System.nanoTime() < deadline) {
+        if (totalInFlight() == 0) return true;
+        Thread.sleep(pollMs);
+      }
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
+    return totalInFlight() == 0;
+  }
+
+  /// Blocks indefinitely until [#close()] returns. Use [#awaitShutdown(Duration)] for a bounded
+  /// wait that returns a `boolean` instead of throwing.
+  ///
+  /// @throws InterruptedException if the calling thread is interrupted while waiting; the
+  ///     interrupt flag is restored before throwing
+  public void awaitShutdown() throws InterruptedException {
+    try {
+      shutdownLatch.await();
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw e;
+    }
+  }
+
+  /// Blocks up to `timeout` for [#close()] to finish.
+  ///
+  /// @param timeout maximum time to wait
+  /// @return `true` if shutdown completed within `timeout`, `false` on timeout or interruption
+  public boolean awaitShutdown(final Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    try {
+      return shutdownLatch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
+  }
+
+  /// Initiates a graceful shutdown overriding the builder's `waitForMessagesTimeout`. Use when the
+  /// host wants to choose the drain budget at shutdown time (e.g. a signal handler that knows how
+  /// much time it has left). Returns whether the in-flight drain completed within `timeout`.
+  ///
+  /// @param timeout maximum time to wait for in-flight records to drain
+  /// @return `true` if the drain finished cleanly, `false` if records remained when shutdown
+  ///     forced through
+  public boolean shutdownGracefully(final Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    // Snapshot state once. CLOSED → nothing to drain, already done.
+    // CLOSING → another caller is mid-shutdown; await their completion and report the drain
+    // they observed rather than calling pause()/close() on an already-shutting consumer.
+    final var snapshot = state.get();
+    if (snapshot == ConsumerState.CLOSED) return true;
+    if (snapshot == ConsumerState.CLOSING) return awaitShutdown(timeout) && totalInFlight() == 0;
+    pause();
+    final var drained = waitForInFlightDrain(timeout);
+    close();
+    return drained;
+  }
+
+  /// Starts the metrics-reporter thread if any reporters were configured on the builder. Called
+  /// from `start()`; no-op when the list is empty. The thread is a platform daemon so it cannot
+  /// keep the JVM alive past the consumer.
+  private void startMetricsReporterThread() {
+    if (metricsReporters.isEmpty() || metricsReporterInterval.toMillis() <= 0) return;
+    metricsReporterThread = Thread.ofPlatform()
+      .name("kpipe-metrics-reporter")
+      .daemon(true)
+      .start(() -> {
+        final var current = Thread.currentThread();
+        while (state.get() != ConsumerState.CLOSED && !current.isInterrupted()) {
+          for (final var reporter : metricsReporters) {
+            try {
+              reporter.reportMetrics();
+            } catch (final Exception e) {
+              LOGGER.log(Level.WARNING, "Metrics reporter threw", e);
+            }
+          }
+          try {
+            Thread.sleep(metricsReporterInterval.toMillis());
+          } catch (final InterruptedException e) {
+            current.interrupt();
+            break;
+          }
+        }
+      });
+  }
+
+  /// Interrupts and joins the metrics-reporter thread if it's running. Called from `close()`.
+  private void stopMetricsReporterThread() {
+    final var t = metricsReporterThread;
+    if (t == null) return;
+    t.interrupt();
+    try {
+      t.join(1_000);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    } finally {
+      metricsReporterThread = null;
+    }
   }
 
   /// Starts the consumer thread and begins consuming messages from the configured topic. The
@@ -862,12 +1024,19 @@ public class KPipeConsumer<K> implements AutoCloseable {
           } catch (final Exception e) {
             LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
           } finally {
+            // CLOSED is also set at the tail of close(); both paths are idempotent and
+            // CountDownLatch.countDown() past zero is a no-op. This path catches the case where
+            // the consumer thread terminates via an uncaught exception path (transitionToClosing
+            // → outer finally) — close() may not have been called externally, but awaitShutdown
+            // callers must still unblock.
             state.set(ConsumerState.CLOSED);
+            shutdownLatch.countDown();
           }
         }
       });
 
     consumerThread.set(thread);
+    startMetricsReporterThread();
     LOGGER.log(Level.INFO, "Consumer started for topics {0}", topics);
   }
 
@@ -1022,10 +1191,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// This method performs a graceful shutdown by:
   ///
   /// <ol>
+  ///   <li>Handling the unstarted (CREATED) case: state → CLOSED, release the shutdown latch
   ///   <li>Setting the state to CLOSING to prevent new operations
-  ///   <li>Creating a message tracker to monitor in-flight messages
-  ///   <li>Signaling shutdown to stop accepting new messages
-  ///   <li>Waiting for all in-flight messages to complete processing
+  ///   <li>Stopping the periodic metrics-reporter thread (if any)
+  ///   <li>Pausing the consumer and signaling shutdown via the command queue
+  ///   <li>Waiting up to `waitForMessagesTimeout` for in-flight messages to drain
   ///   <li>Waking up the consumer thread and waiting for its termination
   ///   <li>Shutting down the virtual thread executor
   ///   <li>Closing the offset manager to ensure final offsets are committed
@@ -1035,15 +1205,23 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// This method is idempotent - calling it multiple times has no additional effect.
   @Override
   public void close() {
+    // CREATED → CLOSED: the consumer was built but never started. Skip the drain dance, but still
+    // release the shutdown latch so any caller blocked in awaitShutdown() unblocks, and remove
+    // the JVM shutdown hook if one was registered.
+    if (state.compareAndSet(ConsumerState.CREATED, ConsumerState.CLOSED)) {
+      shutdownLatch.countDown();
+      tryRemoveShutdownHook();
+      return;
+    }
     if (!transitionToClosing()) return;
+    stopMetricsReporterThread();
 
-    final var tracker = waitForMessagesTimeout.toMillis() > 0 ? createMessageTracker() : null;
     pause();
     commandQueue.offer(new ConsumerCommand.Close());
 
-    if (tracker != null && tracker.getInFlightMessageCount() > 0) {
-      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", tracker.getInFlightMessageCount());
-      tracker.waitForCompletion(waitForMessagesTimeout.toMillis());
+    if (waitForMessagesTimeout.toMillis() > 0 && totalInFlight() > 0) {
+      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", totalInFlight());
+      waitForInFlightDrain(waitForMessagesTimeout);
     }
 
     if (kafkaConsumer != null) {
@@ -1094,6 +1272,25 @@ public class KPipeConsumer<K> implements AutoCloseable {
     }
     if (kpipeProducer != null) kpipeProducer.close();
     state.set(ConsumerState.CLOSED);
+    shutdownLatch.countDown();
+    tryRemoveShutdownHook();
+  }
+
+  /// Removes the JVM shutdown hook installed in the constructor when `useShutdownHook=true`.
+  /// No-op when no hook was installed or when the JVM is already shutting down (in which case
+  /// `removeShutdownHook` would throw `IllegalStateException` — caught and ignored, the hook is
+  /// running anyway).
+  private void tryRemoveShutdownHook() {
+    final var hook = shutdownHookThread;
+    if (hook == null) return;
+    try {
+      Runtime.getRuntime().removeShutdownHook(hook);
+    } catch (final IllegalStateException e) {
+      // JVM already shutting down — the hook is currently executing, which is exactly the path
+      // that called us. Leave it alone.
+    } finally {
+      shutdownHookThread = null;
+    }
   }
 
   /// Processes multiple Kafka records by submitting each one to the virtual thread executor.

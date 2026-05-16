@@ -38,8 +38,9 @@ closing that gap, not adding more features.
 | 5 | **P3 — User-visible**  | `HttpHealthServer` placement — lib contract or sample → `examples/`?                                                                 | Refactor  | ~30 min   |
 | 6 | **P3 — User-visible**  | Residual build/test config cleanup (consumer parallelism, fork tuning)                                                               | Refactor  | ~30 min   |
 | 7 | **P3 — Audience**      | Spring Boot starter — opt-in module, `@KPipeListener`, auto-wires from `application.yml`. **Only build if a Spring-shop user asks.** | Feature   | ~1 week   |
-| 8 | **P5 — 2.0 candidate** | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                          | Breaking  | ~half day |
-| 9 | **P5 — Speculative**   | Format serialization caches re-wire — only with JMH evidence of allocation/GC pressure                                               | Perf      | ~1–2 days |
+| 8  | **P5 — 2.0 candidate** | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                                                                | Breaking | ~half day |
+| 9  | **P5 — 2.0 candidate** | `Result<T>` sealed type for pipeline outcomes — make filter vs fail explicit at the *type* level instead of through the §12 null/throw convention. See §P5 detail below.   | Breaking | ~1–2 days |
+| 10 | **P5 — Speculative**   | Format serialization caches re-wire — only with JMH evidence of allocation/GC pressure                                                                                     | Perf     | ~1–2 days |
 
 **Why this ordering:**
 
@@ -192,6 +193,52 @@ Kafka users already have Spring Kafka). Promote to P2 if a Spring-shop user expl
 
 Add `KPipeConsumer.waitForInFlightDrain(Duration)` and delete the standalone `MessageTracker` class.
 Fewer types, same capability. Breaking but trivial migration.
+
+### `Result<T>` sealed type for pipeline outcomes
+
+§12 settled "null = filter, throw = fail" as a hard rule and the protobuf `skipBytes(5)` burn
+proved the value. The convention works because it's enforced *by discipline* — readers know null
+means filter, but the compiler doesn't. Move that enforcement to the type system:
+
+```java
+sealed interface Result<T> {
+  record Passed<T>(T value) implements Result<T> {}
+  record Filtered<T>() implements Result<T> {}
+  record Failed<T>(Throwable cause) implements Result<T> {}
+}
+```
+
+`MessagePipeline.apply()` returns `Result<T>` instead of `T` (or null, or throwing). Operators in
+`Operators` and user `UnaryOperator`s stay typed; only the pipeline-runtime boundary upgrades. The
+consumer pattern-matches on the result:
+
+```java
+switch (pipeline.apply(record)) {
+  case Result.Passed<T> p -> sink.accept(p.value());
+  case Result.Filtered<T> _ -> markOffsetProcessed(record);
+  case Result.Failed<T> f -> handleProcessingError(record, f.cause());
+}
+```
+
+Wins:
+- Filter and fail become distinct *types*, not overloaded channels. A reader can't accidentally
+  conflate them, and the compiler enforces exhaustive handling.
+- The §12 doctrine becomes machine-checked. Future refactors can't accidentally introduce a
+  null-swallow path because there's no null to swallow.
+- Operators can opt into structured filtering via a `Filtered.fromPredicate(...)` helper, making
+  the "intentional filter" intent explicit instead of "return null and trust the caller".
+
+Tradeoffs:
+- Every operator call site allocates a `Result.Passed` wrapper. For the hot path that's one
+  allocation per record per stage — measurable in JMH. Mitigation: cache `Filtered` (it's empty
+  anyway) and consider a value-class form once Valhalla lands.
+- Public API break — every existing `UnaryOperator<T>` continues to work, but `MessagePipeline`'s
+  return type changes. Per §16, all callers migrate in the 2.0 PR.
+
+**Decision was deferred in 1.x**: the PLAN previously rejected this as "re-litigates the §12
+doctrine" — but §12 is a convention atop nullable returns, not a type-level guarantee. The 2.0
+window is the right place to upgrade convention → type. Wait for evidence (a real bug that
+typed Results would have caught at compile time) or for a 2.0 budget before pulling the trigger.
 
 ### Format serialization caches
 

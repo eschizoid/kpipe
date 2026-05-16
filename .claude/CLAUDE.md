@@ -142,7 +142,7 @@
     - `org.kpipe.consumer.metrics` — owned by `kpipe-consumer` (reporters that depend on registry types).
     - `org.kpipe.consumer.sink.*` — owned by `kpipe-consumer`.
 - **Split Package Rule**: No two modules may export the same Java package. When a class references types from another
-  module (e.g., `ProcessorMetricsReporter` referencing `MessageProcessorRegistry`), it stays in the module that owns
+  module (e.g., `EntryMetricsReporter` referencing `MessageProcessorRegistry`), it stays in the module that owns
   those types.
 
 ### 10. OpenTelemetry Metrics Strategy
@@ -158,8 +158,11 @@
       `kpipe.consumer.backpressure.time`.
     - Both default to `OpenTelemetry.noop()` — zero cost when not configured.
     - Wired via builder: `.withMetrics(new ConsumerMetrics(otel))` / `.withMetrics(new ProducerMetrics(otel))`.
-- **Log-based reporters** (`ConsumerMetricsReporter`, `ProcessorMetricsReporter`, `SinkMetricsReporter`) remain
-  available as a lightweight fallback for users who do not use OTel.
+- **Log-based reporters**: `ConsumerMetricsReporter` (aggregate consumer-level snapshot — uptime,
+  per-second rates, backpressure totals) plus `EntryMetricsReporter` (per-entry, namespace-aware
+  via `forProcessors(...)` / `forSinks(...)`). 1.13.0 collapsed the prior `ProcessorMetricsReporter`
+  + `SinkMetricsReporter` (structurally identical) into the single `EntryMetricsReporter`. These
+  remain available as a lightweight fallback for users who do not use OTel.
 
 ### 11. KPipeConsumer Concurrency and Safety Patterns
 
@@ -210,7 +213,7 @@
 ### 13. KPipe Fluent Facade (1.10.0) — Layered API Strategy
 
 - **Decision (1.10.0)**: ship a top-level `KPipe` fluent facade in a new `kpipe-api` module that delegates to the
-  existing `MessageProcessorRegistry` / `KPipeConsumer.Builder` / `KPipeRunner.Builder` stack. The facade is purely
+  existing `MessageProcessorRegistry` / `KPipeConsumer.Builder` stack. The facade is purely
   additive — no public 1.x API was changed.
 - **Reasoning**: The 1.10.0 ergonomics pass smoothed surface friction (no-arg ctors, format helpers, DLQ bundle, etc.)
   but left the typical "build a JSON consumer" path at ~10 lines of registry + builder + runner. The fluent facade
@@ -218,7 +221,7 @@
 - **Layered API rule**: the codebase now exposes TWO public surfaces:
     1. **`org.kpipe.KPipe.json/avro/protobuf/bytes/custom(...)`** — fluent, immutable, returns `Stream<T>` →
        `Sink<T>` → `Handle`. The 80% path. Discoverable via IDE auto-complete after the first `.`.
-    2. **`MessageProcessorRegistry` + `KPipeConsumer.Builder` + `KPipeRunner.Builder`** — explicit, multi-step,
+    2. **`MessageProcessorRegistry` + `KPipeConsumer.Builder`** — explicit, multi-step,
        supports custom registries, shared pipelines, programmatic runner config. The 20% path.
 - **Module placement (JPMS):** `Stream<T>`, `Sink<T>`, `Handle` interfaces live in `kpipe-api` (package
   `org.kpipe`). Private impls (`DefaultStream`, `DefaultSink`, `DefaultHandle`) also in `org.kpipe`, package-private.
@@ -307,7 +310,7 @@ These patterns came out of the deep internal audit work and should be preserved 
 This table is the source of truth for which `kpipe-consumer` / `kpipe-core` / `kpipe-format-*` / `kpipe-metrics`
 capabilities are reachable through the **fluent facade** (`KPipe.json/avro/protobuf/bytes/custom(...)` →
 `Stream<T>` → `Sink<T>` → `Handle`, plus `KPipe.multi(props)` → `MultiBuilder`) versus only via the **explicit API**
-(`MessageProcessorRegistry` + `KPipeConsumer.Builder` + `KPipeRunner.Builder`).
+(`MessageProcessorRegistry` + `KPipeConsumer.Builder`).
 
 When adding a new consumer/builder feature: decide whether it belongs on the 80% path (add to `Stream<T>` and
 `MultiBuilder`) or whether it stays as an escape hatch (explicit-only). Update this table in the same PR.
@@ -331,16 +334,16 @@ When adding a new consumer/builder feature: decide whether it belongs on the 80%
 | Custom error handler                        | `kpipe-consumer`       | `Stream.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | `Builder.withErrorHandler(ErrorHandler<K>)`                                                          | Default logs at WARNING (§11).                                                                                                                                                        |
 | Dead-letter topic                           | `kpipe-consumer`       | `Stream.withDeadLetterTopic(String)`                                     | `Builder.withDeadLetterTopic(String)` / `withDeadLetterBundle(...)`                                  | Bundle form pairs DLQ + producer for advanced wiring.                                                                                                                                 |
 | Poll timeout                                | `kpipe-consumer`       | `Stream.withPollTimeout(Duration)`                                       | `Builder.withPollTimeout(Duration)`                                                                  | Default 100ms.                                                                                                                                                                        |
-| Lifecycle handle                            | `kpipe-api`            | `Handle.isHealthy / metrics / awaitShutdown / close`                     | `KPipeRunner.start / awaitShutdown / shutdownGracefully`                                             | `Handle` is `AutoCloseable` (5s graceful default).                                                                                                                                    |
+| Lifecycle handle                            | `kpipe-api`            | `Handle.isHealthy / metrics / awaitShutdown / close`                     | `KPipeConsumer.start / awaitShutdown / shutdownGracefully / waitForInFlightDrain`                    | `Handle` is `AutoCloseable` (5s graceful default). Since 1.13: consumer hosts the lifecycle directly — no separate `KPipeRunner`.                                                    |
 | **Custom `OffsetManager`**                  | `kpipe-consumer`       | — (escape hatch only)                                                    | `Builder.withOffsetManager(...)` / `withOffsetManager(Provider)`                                     | E.g. Postgres/Redis-backed manager.                                                                                                                                                   |
 | **Custom Kafka `Consumer` factory**         | `kpipe-consumer`       | —                                                                        | `Builder.withConsumerProvider(Supplier<Consumer<K,byte[]>>)`                                         | Test seam / SSL configurators.                                                                                                                                                        |
 | **Custom DLQ `KafkaProducer`**              | `kpipe-producer`       | —                                                                        | `Builder.withKafkaProducer(...)` / `withDeadLetterBundle(...)`                                       | Override default producer for the DLQ.                                                                                                                                                |
 | **Rebalance listener**                      | `kpipe-consumer`       | —                                                                        | `Builder.withRebalanceListener(ConsumerRebalanceListener)`                                           | External offset commit hooks, log routing.                                                                                                                                            |
 | **Custom command queue**                    | `kpipe-consumer`       | —                                                                        | `Builder.withCommandQueue(Queue<ConsumerCommand>)`                                                   | Test seam (rarely needed).                                                                                                                                                            |
 | **Thread/executor termination**             | `kpipe-consumer`       | —                                                                        | `Builder.withThreadTerminationTimeout / withExecutorTerminationTimeout / withWaitForMessagesTimeout` | Shutdown tuning.                                                                                                                                                                      |
-| **`KPipeRunner` lifecycle hooks**           | `kpipe-consumer`       | —                                                                        | `KPipeRunner.Builder.withStartAction / withMetricsReporters / withShutdownAction`                    | Start/stop side-effects, periodic metric logging.                                                                                                                                     |
+| **Periodic metrics reporting + shutdown hook**  | `kpipe-consumer`   | —                                                                        | `Builder.withMetricsReporters(...) / withMetricsInterval(...) / withShutdownHook(true)`              | Folded into `KPipeConsumer.Builder` in 1.13. Reporter thread runs while consumer is alive; daemon thread, doesn't keep the JVM up.                                                    |
 | **Health endpoint**                         | `kpipe-consumer`       | —                                                                        | `HttpHealthServer.fromEnv(...)`                                                                      | Run alongside `Handle` in the host process.                                                                                                                                           |
-| **Message tracker**                         | `kpipe-consumer`       | —                                                                        | `KPipeConsumer.createMessageTracker(...)`                                                            | In-flight visibility for tests/diagnostics.                                                                                                                                           |
+| **In-flight drain**                         | `kpipe-consumer`       | `Handle.shutdownGracefully(Duration)`                                    | `KPipeConsumer.waitForInFlightDrain(Duration) / shutdownGracefully(Duration)`                        | Replaces the deleted `MessageTracker` class. Uses the live in-flight counter (includes buffered batch records), not metric-derived.                                                  |
 | **Custom `MessageProcessorRegistry`**       | `kpipe-core`           | —                                                                        | `new MessageProcessorRegistry(...)` + manual wiring                                                  | Pre-shared pipelines across consumers, multi-format orchestrators.                                                                                                                    |
 
 **Reading the table:** rows in **bold** are deliberately escape-hatch-only. The 80%-path features (everything not in
