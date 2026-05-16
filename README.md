@@ -320,7 +320,7 @@ KPipe doesn't have those.
 
 ## Architecture and reliability
 
-KPipe is a lightweight Kafka consumer library that leans hard on Java 25 features — virtual threads, scoped values,
+KPipe is a lightweight Kafka consumer library that leans hard on Java 25 features — virtual threads, sealed types,
 records, JPMS — to keep the runtime predictable.
 
 ### 1. Modular Architecture (JPMS)
@@ -385,9 +385,9 @@ KPipe runs on Java virtual threads (Project Loom) for concurrency.
 
 - Thread-per-record. Each message gets its own virtual thread, so I/O-bound enrichment scales without explicit pool
   sizing.
-- Heavy objects like `Schema.Parser`, `ByteArrayOutputStream`, and Avro encoders are reused via `ScopedValue` rather
-  than `ThreadLocal`. `ThreadLocal` doesn't compose well with virtual threads — under thread-per-record, you get a new
-  `ThreadLocal` map per record, which defeats the cache. `ScopedValue` shares the value within the scope cleanly.
+- No `ThreadLocal` on the hot path. `ThreadLocal` doesn't compose with thread-per-record — every record would get a
+  fresh map, defeating any caching intent. If a future need for thread-local-like state turns up (tenant context,
+  span propagation), we'll reach for `ScopedValue`; the codebase currently has neither.
 
 ### 4. At-least-once delivery via lowest pending offset
 
@@ -1232,8 +1232,9 @@ registry.register(RegistryKey.json("filter"), map -> {
 ### Thread safety and resource management
 
 - Processors should be stateless and thread-safe.
-- KPipe reuses heavy resources via `ScopedValue` (the virtual-thread-safe alternative to `ThreadLocal`). Don't add
-  `ThreadLocal` of your own — it doesn't compose with thread-per-record.
+- Don't add `ThreadLocal` of your own — under thread-per-record it gets a new map for every message and doesn't cache
+  anything. If you need thread-local-like state in a future feature (tenant context, span propagation), reach for
+  `ScopedValue` instead.
 - Side-effectful processors (DB calls, HTTP) need to be safe under high concurrency. With virtual threads you can easily
   have thousands in flight; pool sizing on connection pools matters more than thread count.
 
