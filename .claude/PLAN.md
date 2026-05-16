@@ -1,9 +1,12 @@
 # KPipe — Roadmap & State of the Library
 
-**Last updated:** 2026-05-15
+**Last updated:** 2026-05-16
 **Current released line:** 1.12.0 (Maven Central) — batch sinks, Confluent SR, W3C tracing, circuit breaker, JUnit 6,
 `enableMetrics` removal
-**Active branch:** `feature/docs-sweep`
+**Queued for release:** 1.13.0 on `main` — three breaking changes (`Result<T>` sealed type, Avro/Protobuf codec /
+catalog split, `ConsumerHealthController` facade collapsing `PauseCoordinator` + `CircuitBreakerStats`) plus Codecov
+test-results upload and CI/release wiring for `kpipe-schema-registry-confluent` + `kpipe-tracing-otel`.
+**Active branch:** main (clean)
 
 ---
 
@@ -17,60 +20,39 @@
 | Type safety                            | 9/10        |
 | Error semantics                        | 10/10       |
 | Module taxonomy                        | 9.5/10      |
-| Documentation                          | 7/10        |
+| Documentation                          | 8/10        |
 | Test coverage of the public surface    | 8.5/10      |
-| Aggregate                              | **~8.6/10** |
+| Aggregate                              | **~8.7/10** |
 
-API quality is solid; the gap is **adoption-side documentation**: 1.12's batch / SR / tracing / CB
-features are released but the README still describes the 1.11 surface. The backlog leads with
-closing that gap, not adding more features.
+API quality is solid; the 1.13 cycle closed three breaking-change items that had been deferred to a future major
+(Result<T>, INSTANCE singleton removal, pause/CB/backpressure consolidation) and brought README + Javadoc back in
+sync with the 1.12 + 1.13 surface. The remaining gap is **productivity tooling for adopters** (`kpipe-test`) — the
+backlog now leads with that.
 
 ---
 
 ## Prioritized backlog
 
-| # | Priority               | Item                                                                                                                                 | Type      | Effort    |
-|---|------------------------|--------------------------------------------------------------------------------------------------------------------------------------|-----------|-----------|
-| 1 | **P1 — Adoption**      | Docs sweep — README sections for circuit breaker, tracing, Confluent SR, multi-topic, batch sinks; example apps for each new module  | Docs      | ~1–2 days |
-| 2 | **P2 — Productivity**  | Testing primitives (`kpipe-test`) — `TestStream<T>` analogue of `TopologyTestDriver`, no Testcontainers required                     | Feature   | ~3–4 days |
-| 3 | **P3 — User-visible**  | `Format.INSTANCE` hardening — JVM-global mutable singleton, real on paper, rarely hit; documented footgun for now                    | Hardening | ~1 day    |
-| 4 | **P3 — User-visible**  | `AppConfig` slimdown / split — example infra; decide whether to split or move into `examples/`                                       | Refactor  | ~1 hr     |
-| 5 | **P3 — User-visible**  | `HttpHealthServer` placement — lib contract or sample → `examples/`?                                                                 | Refactor  | ~30 min   |
-| 6 | **P3 — User-visible**  | Residual build/test config cleanup (consumer parallelism, fork tuning)                                                               | Refactor  | ~30 min   |
-| 7 | **P3 — Audience**      | Spring Boot starter — opt-in module, `@KPipeListener`, auto-wires from `application.yml`. **Only build if a Spring-shop user asks.** | Feature   | ~1 week   |
-| 8  | **P5 — 2.0 candidate** | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                                                                | Breaking | ~half day |
-| 9  | ~~**P5 — 2.0 candidate**~~ | ~~`Result<T>` sealed type for pipeline outcomes — make filter vs fail explicit at the *type* level~~ — shipping in 1.13.0 (`MessagePipeline.process()` now returns `Result<T>` with `Passed | Filtered | Failed`). | Breaking | shipped  |
-| 10 | **P5 — Speculative**   | Format serialization caches re-wire — only with JMH evidence of allocation/GC pressure                                                                                     | Perf     | ~1–2 days |
+| #  | Priority                    | Item                                                                                                                                                                                                                | Type      | Effort    |
+|----|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|-----------|
+| 1  | **P2 — Productivity**       | Testing primitives (`kpipe-test`) — `TestStream<T>` analogue of `TopologyTestDriver`, no Testcontainers required                                                                                                    | Feature   | ~3–4 days |
+| 2  | **P3 — User-visible**       | `AppConfig` slimdown / split — example infra; decide whether to split or move into `examples/`                                                                                                                      | Refactor  | ~1 hr     |
+| 3  | **P3 — User-visible**       | `HttpHealthServer` placement — lib contract or sample → `examples/`?                                                                                                                                                | Refactor  | ~30 min   |
+| 4  | **P3 — User-visible**       | Residual build/test config cleanup (consumer parallelism, fork tuning)                                                                                                                                              | Refactor  | ~30 min   |
+| 5  | **P3 — Audience**           | Spring Boot starter — opt-in module, `@KPipeListener`, auto-wires from `application.yml`. **Only build if a Spring-shop user asks.**                                                                                | Feature   | ~1 week   |
+| 6  | ~~**P3 — User-visible**~~   | ~~`Format.INSTANCE` hardening — JVM-global mutable singleton~~ — shipped in 1.13.0. `AvroFormat` / `ProtobufFormat` are now stateless codecs constructed with `new AvroFormat(schema)` / `new ProtobufFormat(descriptor)`; keyed lookup moves to `AvroSchemaCatalog` / `ProtobufDescriptorCatalog`. | Breaking | shipped  |
+| 7  | ~~**P5 — 2.0 candidate**~~  | ~~`MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`~~ — shipped in 1.12.0; `MessageTracker` was deleted, the public method lives on `KPipeConsumer`. (Already marked in §17 / capability table.) | Breaking | shipped  |
+| 8  | ~~**P5 — 2.0 candidate**~~  | ~~`Result<T>` sealed type for pipeline outcomes~~ — shipped in 1.13.0. `MessagePipeline.process()` returns `Result<T>` with `Passed \| Filtered \| Failed`; byte-level entry points (`apply` / `processToSink` / `processToValue`) preserve their pre-1.13 contracts by unwrapping internally. | Breaking | shipped  |
+| 9  | **P5 — Speculative**        | Format serialization caches re-wire — only with JMH evidence of allocation/GC pressure                                                                                                                              | Perf      | ~1–2 days |
 
 **Why this ordering:**
 
-- **Docs first.** 1.12 is on Maven Central, but the README still describes the 1.11 surface — zero
-  examples for CB, tracing, SR, batch sinks. Adoption decisions are made on docs; the doc score
-  dropped because the codebase moved faster than the README. Cheap to close.
-- **kpipe-test second.** Helps users who already adopted KPipe write faster tests. Real value,
-  but it's a productivity multiplier — most useful after the new features are visible to them.
+- **kpipe-test first.** Docs caught up in 1.13 (README + Javadoc audit landed alongside the breaking changes);
+  the next leverage point is letting adopters write unit tests without Testcontainers. Productivity multiplier for
+  every existing and future user, and CI-environment-friendly for shops without Docker.
+- **P3 refactors next.** Cheap (~2 hours total) but worth doing before they accumulate.
 - **Spring starter held until asked.** ~1 week of work for an audience that already has Spring
   Kafka. Build it when a Spring-shop user actively asks, not speculatively.
-
----
-
-## P1 — Docs sweep detail
-
-README is currently 1.11-shaped. What's missing:
-
-- **Circuit breaker section** — `Stream.withCircuitBreaker(0.5, 100, Duration.ofSeconds(30))` example,
-  state machine diagram, OTel metric names.
-- **Tracing section** — `Stream.withTracer(new OtelTracer(otel))`, headers-in-headers-out diagram,
-  how downstream consumers pick up the parent span.
-- **Confluent SR section** — `new ConfluentSchemaResolver(httpClient, baseUrl)` + `lookupBySubjectVersion`
-  at startup, link to the examples app.
-- **Batch sink section** — `Stream.toBatch(sink, BatchPolicy.of(100, Duration.ofSeconds(5)))`,
-  `BatchSink.ofVoid(...)` convenience, the JMH headline (84× throughput at 1ms latency, batch 100).
-- **Multi-topic section** — `KPipe.multi(props).json(t1, ...).avro(t2, ...).start()` example.
-- **Example apps:** at minimum one app per new module (`examples/circuit-breaker`,
-  `examples/tracing`, `examples/schema-registry`). Existing `examples/avro` already migrated to SR.
-
-Side benefit: writing these examples flushes out doc gaps in the API itself.
 
 ---
 
@@ -129,16 +111,16 @@ kpipe-bom                                                    (BOM — pins versi
 | Module                            | What's in it                                                                                                                                                               |
 |-----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                                              |
-| `kpipe-core`                      | Format-agnostic pipeline machinery: `MessageProcessorRegistry`, `MessageFormat` / `SchemaAwareFormat`, `MessageSink`, `Operators`, `MessagePipeline`, `SchemaResolver` SPI |
+| `kpipe-core`                      | Format-agnostic pipeline machinery: `MessageProcessorRegistry`, `MessageFormat`, `MessageSink`, `Operators`, `MessagePipeline` (returns `Result<T>` — `Passed \| Filtered \| Failed`), `SchemaResolver` SPI |
 | `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters; **no OTel API** on classpath                                                              |
 | `kpipe-metrics-otel`              | OpenTelemetry-backed metrics implementation (opt-in)                                                                                                                       |
 | `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers; OTel tracer implementation (opt-in)                                                                                   |
 | `kpipe-schema-registry-confluent` | Confluent Schema Registry client (`ConfluentSchemaResolver`); schema-by-ID + by-subject-version lookup (opt-in)                                                            |
 | `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `KafkaProducerConfig`, `Tracer` SPI                                                                                            |
-| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeRunner`, `BackpressureController`, `CircuitBreakerController`, `PauseCoordinator`, `KafkaOffsetManager`, `HttpHealthServer`                         |
+| `kpipe-consumer`                  | `KPipeConsumer` (hosts lifecycle + metrics-reporter thread), `BackpressureController`, `CircuitBreakerController`, `ConsumerHealthController` (pkg-private façade), `KafkaOffsetManager`, `HttpHealthServer` |
 | `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                                            |
-| `kpipe-format-avro`               | `AvroFormat` (owns its own schema registry), `AvroConsoleSink`                                                                                                             |
-| `kpipe-format-protobuf`           | `ProtobufFormat` (owns its own descriptor registry), `ProtobufConsoleSink`                                                                                                 |
+| `kpipe-format-avro`               | `AvroFormat` (stateless codec, one schema per instance), `AvroSchemaCatalog` (keyed lookup), `AvroConsoleSink`                                                              |
+| `kpipe-format-protobuf`           | `ProtobufFormat` (stateless codec, one descriptor per instance), `ProtobufDescriptorCatalog` (keyed lookup), `ProtobufConsoleSink`                                          |
 | `kpipe-api`                       | `KPipe` fluent facade — `Stream<T>`, `Sink<T>`, `Handle`, `MultiBuilder`                                                                                                   |
 
 **Still planned:**
@@ -151,16 +133,6 @@ kpipe-bom                                                    (BOM — pins versi
 ---
 
 ## P3 detail
-
-### `Format.INSTANCE` hardening
-
-JVM-global mutable singleton holding schema/descriptor maps. Two pipelines in the same process can
-step on each other via `AvroFormat.INSTANCE.addSchema(...)`. Practical hit-rate is low — most users
-have one app with one consumer. Docs carry an explicit footgun warning.
-
-**If this ever bites someone:** make `addSchema` available only on `new AvroFormat()` instances and
-route the facade through a per-stream format instance (preserves API), or delete `INSTANCE` entirely
-(clean break, requires migration). Both are breaking. Defer until someone hits it.
 
 ### `AppConfig` slimdown
 
@@ -187,58 +159,7 @@ Kafka users already have Spring Kafka). Promote to P2 if a Spring-shop user expl
 
 ---
 
-## P5 candidates (2.0 / speculative)
-
-### `MessageTracker` collapse
-
-Add `KPipeConsumer.waitForInFlightDrain(Duration)` and delete the standalone `MessageTracker` class.
-Fewer types, same capability. Breaking but trivial migration.
-
-### `Result<T>` sealed type for pipeline outcomes
-
-§12 settled "null = filter, throw = fail" as a hard rule and the protobuf `skipBytes(5)` burn
-proved the value. The convention works because it's enforced *by discipline* — readers know null
-means filter, but the compiler doesn't. Move that enforcement to the type system:
-
-```java
-sealed interface Result<T> {
-  record Passed<T>(T value) implements Result<T> {}
-  record Filtered<T>() implements Result<T> {}
-  record Failed<T>(Throwable cause) implements Result<T> {}
-}
-```
-
-`MessagePipeline.apply()` returns `Result<T>` instead of `T` (or null, or throwing). Operators in
-`Operators` and user `UnaryOperator`s stay typed; only the pipeline-runtime boundary upgrades. The
-consumer pattern-matches on the result:
-
-```java
-switch (pipeline.apply(record)) {
-  case Result.Passed<T> p -> sink.accept(p.value());
-  case Result.Filtered<T> _ -> markOffsetProcessed(record);
-  case Result.Failed<T> f -> handleProcessingError(record, f.cause());
-}
-```
-
-Wins:
-- Filter and fail become distinct *types*, not overloaded channels. A reader can't accidentally
-  conflate them, and the compiler enforces exhaustive handling.
-- The §12 doctrine becomes machine-checked. Future refactors can't accidentally introduce a
-  null-swallow path because there's no null to swallow.
-- Operators can opt into structured filtering via a `Filtered.fromPredicate(...)` helper, making
-  the "intentional filter" intent explicit instead of "return null and trust the caller".
-
-Tradeoffs:
-- Every operator call site allocates a `Result.Passed` wrapper. For the hot path that's one
-  allocation per record per stage — measurable in JMH. Mitigation: cache `Filtered` (it's empty
-  anyway) and consider a value-class form once Valhalla lands.
-- Public API break — every existing `UnaryOperator<T>` continues to work, but `MessagePipeline`'s
-  return type changes. Per §16, all callers migrate in the 2.0 PR.
-
-**Decision was deferred in 1.x**: the PLAN previously rejected this as "re-litigates the §12
-doctrine" — but §12 is a convention atop nullable returns, not a type-level guarantee. The 2.0
-window is the right place to upgrade convention → type. Wait for evidence (a real bug that
-typed Results would have caught at compile time) or for a 2.0 budget before pulling the trigger.
+## P5 candidates (speculative)
 
 ### Format serialization caches
 
@@ -270,12 +191,14 @@ Don't regress these in any future refactor:
 - **Virtual threads + ScopedValue** — thread-per-record without ThreadLocal scalability traps.
 - **Lowest-pending-offset commits** — at-least-once safety even with parallel processing.
 - **Strategy-based backpressure with hysteresis** — in-flight for parallel, lag for sequential.
-- **PauseCoordinator unification** — multiple pause sources (manual, backpressure, CB) can't auto-resume each other.
+- **ConsumerHealthController unification** — multiple pause sources (manual, backpressure, CB) can't auto-resume each
+  other; CB state machine + backpressure decision + pause arbitration live behind a single façade in `kpipe-consumer`.
 - **Clean module dependency direction** — no cycles, no sideways leaks, no split packages.
 - **OTel as opt-in interface, not transitive dep** — `kpipe-metrics` ships interfaces only.
 - **Concurrency safety in `KPipeConsumer`** — single-read CAS, error-handler-throw safety, nested-finally shutdown,
   `LockSupport.park` for paused state.
-- **Explicit error semantics in `MessagePipeline`** — no silent null swallowing.
+- **Explicit error semantics in `MessagePipeline`** — `process()` returns `Result<T>` (Passed/Filtered/Failed) so the
+  filter-vs-fail distinction is enforced by the compiler, not by convention.
 - **Immutable `DefaultStream`** — branching from a common root is safe.
 - **Professional Maven publishing** — proper signing, POM metadata, separate artifacts, BOM for version unification.
 - **§16 no-deprecation policy** — delete and migrate, don't carry dead overloads.
@@ -290,8 +213,9 @@ Don't regress these in any future refactor:
    facade auto-enable trace propagation when the module is on the classpath, or stay explicit
    (`.withTracer(...)`)?
 3. **Confluent SR scope beyond v1** — TTL cache for `lookupById` (hot-path) and wire-envelope
-   auto-lookup in `AvroFormat`/`ProtobufFormat` decode — both deferred from the initial SR module.
-   Schedule for 1.13?
+   auto-lookup in `AvroFormat` / `ProtobufFormat` decode — both still deferred. With the 1.13
+   codec/catalog split, wire-envelope auto-lookup now has a clean place to live (the catalog can
+   own a `SchemaResolver`-backed loader). Schedule for 1.14?
 4. **Spring starter audience confirmation** — has a Spring-shop user actually asked, or is this
    speculative? Promote to P2 if real demand exists.
 5. **Are there 1.x users in production?** Affects whether 2.0 ships a compat shim package or hard-breaks.
