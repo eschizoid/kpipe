@@ -47,3 +47,7 @@ seed-loop:
 # Open Grafana in the browser
 grafana:
     open http://localhost:3000/d/kpipe-overview
+
+# Trigger the Release workflow on GitHub Actions (releaseType: patch / minor / major)
+release type="minor":
+    gh workflow run release.yaml --ref main -f releaseType={{type}}
