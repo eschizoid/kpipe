@@ -45,9 +45,12 @@ covers three workload regimes: pure framework overhead (0 µs), local enrichment
 trip (1000 µs). At `workMicros=0` the comparison is "who has the lowest per-record overhead?"; at
 `workMicros=1000` it's "who schedules blocking work best?" — those two questions usually have different winners.
 
-Each invocation processes **100,000 records** across **8 partitions**. The previous 10k record count was
-startup-dominated; 100k pushes the harness into the steady-state regime where group-join and first-poll cost
-become statistically negligible.
+Each invocation processes **10,000 records** across **8 partitions** by default — matching the prior
+baseline so cross-run comparisons stay meaningful. The in-process broker shares cores with the consumer
+under test; pushing past 10–25k makes the broker the bottleneck rather than the consumer. The constant in
+`ParallelProcessingBenchmarkInfrastructure.TARGET_MESSAGES` is the knob to turn when running against an
+externalised broker (Testcontainers Kafka with `--cpus` constraints or a dedicated sidecar). See
+[METHODOLOGY.md](METHODOLOGY.md) for the full path to a 100k+ steady-state number.
 
 ### 4. Parallel Processing — Latency Percentiles (`ParallelProcessingLatencyBenchmark`)
 

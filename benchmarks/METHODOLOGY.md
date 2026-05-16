@@ -137,6 +137,14 @@ A few things to keep in mind whenever you quote a number from this suite:
 - **Embedded Kafka shares cores with the consumer.** The broker is in-process. It competes with
   the consumer for CPU. In production the broker is across the network. The headline ordering is
   usually preserved, but absolute numbers will be lower here than in a production setup.
+- **TARGET_MESSAGES defaults to 10,000 for that reason.** Pushing past 10–25k on the in-process
+  broker makes the broker the bottleneck rather than the consumer under test. Group-join latency
+  and KRaft controller events on the same JVM stretch every iteration past the safety timeout.
+  For a "real" 100k+ steady-state number, externalise the broker (Testcontainers Kafka with
+  `--cpus` constraints or a sidecar broker on dedicated hardware) and bump the constant in
+  `ParallelProcessingBenchmarkInfrastructure`. The four-runtime + `workMicros` surface is the
+  actual upgrade in 1.13; the record count stays at the prior baseline so cross-run comparisons
+  keep working.
 - **In-memory disk.** The Kafka test kit uses a tmpfs-style path; `fsync` cost is artificially
   low. Production brokers under replication factor 3 + acks=all have very different write
   latency.
