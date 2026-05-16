@@ -57,3 +57,12 @@ jobs:
             ./lib/kpipe-format-protobuf/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-consumer/build/reports/jacoco/test/jacocoTestReport.xml
             ./lib/kpipe-producer/build/reports/jacoco/test/jacocoTestReport.xml
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: eschizoid/kpipe
+          files: |
+            ./**/build/test-results/test/*.xml
