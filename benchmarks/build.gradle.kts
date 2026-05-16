@@ -12,13 +12,10 @@ dependencies {
   // Benchmark targets
   implementation(libs.kafkaClients)
   implementation(libs.parallelConsumerCore)
-  // Reactor Kafka 1.3.23 (latest stable on Maven Central as of 2026-05-16) and even the 1.4.x
-  // milestones on the Spring repo still pin `kafka-clients:3.6.0`. Running against our 4.2.0
-  // classpath produces a `NoSuchMethodError` on `ConsumerRecord.<init>(...)` because the ctor
-  // shape changed in 4.x. The `reactor` benchmark methods are commented out for now (see
-  // ParallelProcessingBenchmark and ParallelProcessingLatencyBenchmark Javadocs). The dependency
-  // stays on the classpath so the `ReactorInvocationContext` keeps compiling — the day Reactor
-  // Kafka ships a 4.x-compatible release we just re-enable the @Benchmark methods.
+  // Reactor Kafka 1.3.25 (Nov 2025) shipped the fix for issue #420 — avoids the deprecated
+  // ConsumerRecord ctor that was removed in kafka-clients 4.x. Its POM still pins
+  // kafka-clients:3.9.1 but the new binary works when Gradle conflict-resolves the classpath
+  // to our 4.2.0. No `exclude` needed; conflict resolution picks the higher version.
   implementation(libs.reactorKafka)
   implementation(libs.avro)
   implementation(libs.dslJson)
