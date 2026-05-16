@@ -39,7 +39,7 @@ closing that gap, not adding more features.
 | 6 | **P3 — User-visible**  | Residual build/test config cleanup (consumer parallelism, fork tuning)                                                               | Refactor  | ~30 min   |
 | 7 | **P3 — Audience**      | Spring Boot starter — opt-in module, `@KPipeListener`, auto-wires from `application.yml`. **Only build if a Spring-shop user asks.** | Feature   | ~1 week   |
 | 8  | **P5 — 2.0 candidate** | `MessageTracker` collapse — add `KPipeConsumer.waitForInFlightDrain(Duration)`, delete the standalone class                                                                | Breaking | ~half day |
-| 9  | **P5 — 2.0 candidate** | `Result<T>` sealed type for pipeline outcomes — make filter vs fail explicit at the *type* level instead of through the §12 null/throw convention. See §P5 detail below.   | Breaking | ~1–2 days |
+| 9  | ~~**P5 — 2.0 candidate**~~ | ~~`Result<T>` sealed type for pipeline outcomes — make filter vs fail explicit at the *type* level~~ — shipping in 1.13.0 (`MessagePipeline.process()` now returns `Result<T>` with `Passed | Filtered | Failed`). | Breaking | shipped  |
 | 10 | **P5 — Speculative**   | Format serialization caches re-wire — only with JMH evidence of allocation/GC pressure                                                                                     | Perf     | ~1–2 days |
 
 **Why this ordering:**

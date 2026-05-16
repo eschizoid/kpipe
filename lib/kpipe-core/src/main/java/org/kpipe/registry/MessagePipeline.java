@@ -6,20 +6,21 @@ import org.kpipe.sink.MessageSink;
 /// A unified pipeline interface that encapsulates the lifecycle:
 /// byte[] (Kafka) -> T (Deserialized Object) -> T (Processed Object) -> byte[] (Kafka).
 ///
-/// ## Error contract
+/// ## Error contract (1.13.0+)
 ///
-/// `apply()` distinguishes three outcomes:
-/// - **Success** — non-null bytes returned.
-/// - **Intentional filter** — `null` returned. The caller should treat the message as
-///   handled (e.g. commit the offset) but skip downstream sinks.
-/// - **Failure** — any exception is propagated. Implementations of [#deserialize],
-///   [#process], or [#serialize] that fail (malformed input, schema mismatch, etc.)
-///   MUST throw rather than return `null`. The caller is responsible for routing
-///   exceptions to error metrics, retry logic, or DLQ.
+/// `process(T)` returns a [Result] that distinguishes three outcomes at the type level:
+/// - **`Passed<T>`** — non-null processed value flows to the sink.
+/// - **`Filtered<T>`** — intentional drop. The caller treats the message as handled (e.g. commits
+///   the offset) but skips downstream sinks.
+/// - **`Failed<T>`** — non-fatal exception captured. The caller routes the cause to retry / DLQ /
+///   error-handler logic.
 ///
-/// Implementations MUST NOT use `null` as a generic error signal — `null` is reserved
-/// for the intentional-filter case from [#process]. [#deserialize] returning `null`
-/// is treated as a contract violation.
+/// `deserialize(byte[])` still throws on malformed input — Result is reserved for the
+/// `process()` boundary where the filter-vs-fail distinction lives. The byte-level entry points
+/// [#apply], [#processToSink], and [#processToValue] preserve their pre-1.13.0 contracts
+/// (returning null / void for the filter case, propagating exceptions for failures) by
+/// unwrapping the Result internally — so users on the byte boundary need not change. New code
+/// that wants typed handling calls [#process] directly.
 ///
 /// @param <T> The type of the object in the pipeline.
 public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
@@ -39,12 +40,13 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
 
   /// Applies the chain of transformations to the typed object.
   ///
-  /// Returning `null` signals an intentional filter — the caller should skip the
-  /// message without treating it as an error. Throw to signal a real failure.
+  /// Returns a [Result] distinguishing Passed / Filtered / Failed at the type level. The
+  /// implementation may throw fatal exceptions (`Error`, `InterruptedException` etc.) — only
+  /// non-fatal `RuntimeException`s should be captured into `Failed`.
   ///
-  /// @param data The deserialized object.
-  /// @return The processed object, or `null` to filter the message.
-  T process(T data);
+  /// @param data the deserialized object
+  /// @return a `Result<T>` describing the outcome
+  Result<T> process(T data);
 
   /// Returns the terminal sink configured for this pipeline, if any.
   ///
@@ -58,21 +60,25 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
   /// Use this when you want bytes back (e.g. forwarding to another topic). Use
   /// [#processToSink] when you only care about the side-effect of [#getSink].
   ///
-  /// Exceptions propagate; `null` indicates an intentional filter from [#process].
-  /// See the interface-level error contract.
+  /// Preserves the pre-1.13.0 byte-level contract: `null` for intentional filters, exceptions
+  /// propagate for failures. The Result is unwrapped internally so byte-level callers don't see
+  /// the type.
   ///
   /// @param data The input bytes.
   /// @return The output bytes, or `null` if the message was intentionally filtered.
   /// @throws IllegalStateException if [#deserialize] returns `null` (contract violation).
+  /// @throws RuntimeException re-throws the cause from a `Result.Failed` outcome.
   @Override
   default byte[] apply(byte[] data) {
     final var deserialized = deserialize(data);
     if (deserialized == null) throw new IllegalStateException(
       "deserialize() returned null — implementations must throw on malformed input"
     );
-    final var processed = process(deserialized);
-    if (processed == null) return null;
-    return serialize(processed);
+    return switch (process(deserialized)) {
+      case Result.Passed<T> p -> serialize(p.value());
+      case Result.Filtered<T> __ -> null;
+      case Result.Failed<T> f -> throw rethrow(f.cause());
+    };
   }
 
   /// Executes deserialize → process → sink without serializing back to bytes.
@@ -80,20 +86,27 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
   /// Use this when the sink is the terminal step (the common consumer pattern) — it
   /// avoids the wasted serialize() call that [#apply] performs.
   ///
-  /// Exceptions propagate; intentionally filtered messages return silently without
-  /// invoking the sink. See the interface-level error contract.
+  /// Intentionally filtered messages return silently without invoking the sink; failures
+  /// re-throw the captured cause.
   ///
   /// @param data The input bytes.
   /// @throws IllegalStateException if [#deserialize] returns `null` (contract violation).
+  /// @throws RuntimeException re-throws the cause from a `Result.Failed` outcome.
   default void processToSink(byte[] data) {
     final var deserialized = deserialize(data);
     if (deserialized == null) throw new IllegalStateException(
       "deserialize() returned null — implementations must throw on malformed input"
     );
-    final var processed = process(deserialized);
-    if (processed == null) return;
-    final var sink = getSink();
-    if (sink != null) sink.accept(processed);
+    switch (process(deserialized)) {
+      case Result.Passed<T> p -> {
+        final var sink = getSink();
+        if (sink != null) sink.accept(p.value());
+      }
+      case Result.Filtered<T> __ -> {
+        /* intentional filter — no sink invocation */
+      }
+      case Result.Failed<T> f -> throw rethrow(f.cause());
+    }
   }
 
   /// Executes deserialize → process and returns the resulting value without invoking any sink
@@ -101,18 +114,23 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
   /// can buffer the deserialized value alongside the originating Kafka record before flushing
   /// in batches.
   ///
-  /// Exceptions propagate exactly as in [#processToSink]. A `null` return means the message
-  /// was intentionally filtered by [#process] — callers should treat the offset as handled.
+  /// Preserves the pre-1.13.0 contract: `null` return = intentional filter; exceptions for
+  /// failures.
   ///
   /// @param data the input bytes
   /// @return the processed value, or `null` if the message was intentionally filtered
   /// @throws IllegalStateException if [#deserialize] returns `null` (contract violation)
+  /// @throws RuntimeException re-throws the cause from a `Result.Failed` outcome.
   default T processToValue(byte[] data) {
     final var deserialized = deserialize(data);
     if (deserialized == null) throw new IllegalStateException(
       "deserialize() returned null — implementations must throw on malformed input"
     );
-    return process(deserialized);
+    return switch (process(deserialized)) {
+      case Result.Passed<T> p -> p.value();
+      case Result.Filtered<T> __ -> null;
+      case Result.Failed<T> f -> throw rethrow(f.cause());
+    };
   }
 
   /// Composes this pipeline with another of the same type T, running this pipeline's
@@ -120,17 +138,10 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
   /// type. The composed pipeline reuses this pipeline's deserializer/serializer; only
   /// the [#process] and [#getSink] steps from `next` are chained.
   ///
-  /// If this pipeline's `process` returns null (intentional filter), the next pipeline
-  /// is not invoked and the composed pipeline returns null.
+  /// If this pipeline's `process` returns `Filtered` or `Failed`, the next pipeline is not
+  /// invoked and the composed result is the first outcome.
   ///
   /// If `next` has a sink, it runs after this pipeline's sink.
-  ///
-  /// Example — chain enrichment then validation:
-  /// ```java
-  /// final var enrich = registry.pipeline(JsonFormat.INSTANCE).add(addTimestamp).build();
-  /// final var validate = registry.pipeline(JsonFormat.INSTANCE).add(checkRequiredFields).build();
-  /// final var combined = enrich.then(validate);
-  /// ```
   ///
   /// @param next the pipeline to run after this one
   /// @return a composed MessagePipeline driving both stages
@@ -148,10 +159,12 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
       }
 
       @Override
-      public T process(final T data) {
-        final var first = self.process(data);
-        if (first == null) return null;
-        return next.process(first);
+      public Result<T> process(final T data) {
+        return switch (self.process(data)) {
+          case Result.Passed<T> p -> next.process(p.value());
+          case Result.Filtered<T> filtered -> filtered;
+          case Result.Failed<T> failed -> failed;
+        };
       }
 
       @Override
@@ -166,5 +179,15 @@ public interface MessagePipeline<T> extends UnaryOperator<byte[]> {
         };
       }
     };
+  }
+
+  /// Re-throws a captured cause as an unchecked exception. `RuntimeException` and `Error` pass
+  /// through directly; checked exceptions are wrapped in `RuntimeException` (the byte-level
+  /// callers don't declare checked throws). This preserves the pre-1.13.0 propagation behavior
+  /// at the byte-level entry points.
+  private static RuntimeException rethrow(final Throwable cause) {
+    if (cause instanceof RuntimeException re) return re;
+    if (cause instanceof Error err) throw err;
+    return new RuntimeException(cause);
   }
 }
