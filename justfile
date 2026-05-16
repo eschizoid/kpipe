@@ -51,3 +51,32 @@ grafana:
 # Trigger the Release workflow on GitHub Actions (releaseType: patch / minor / major)
 release type="minor":
     gh workflow run release.yaml --ref main -f releaseType={{type}}
+
+# Run the parallel-consumer bench (mode=full|smoke|latency, profilers=gc by default)
+bench mode="full" profilers="gc":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -f benchmarks/build/tmp/jmh/jmh.lock
+    ./gradlew :benchmarks:jmhJar
+    JAR=$(find benchmarks/build/libs -name '*-jmh.jar' | head -1)
+    OUT=benchmarks/results/$(date +%Y-%m-%d)
+    PROF=""
+    if [ -n "{{profilers}}" ]; then PROF="-prof {{profilers}}"; fi
+    mkdir -p benchmarks/results
+    case "{{mode}}" in
+      smoke)
+        java -jar "$JAR" 'ParallelProcessingBenchmark.kpipe' \
+          -p workMicros=0 -wi 1 -i 1 -f 1 \
+          -rf JSON -rff "$OUT-smoke.json" | tee "$OUT-smoke.log"
+        ;;
+      latency)
+        java -jar "$JAR" 'ParallelProcessingLatencyBenchmark' \
+          -wi 3 -i 5 -f 2 $PROF \
+          -rf JSON -rff "$OUT-latency.json" | tee "$OUT-latency.log"
+        ;;
+      full|*)
+        java -jar "$JAR" 'ParallelProcessingBenchmark' \
+          -wi 3 -i 5 -f 2 $PROF \
+          -rf JSON -rff "$OUT.json" | tee "$OUT.log"
+        ;;
+    esac
