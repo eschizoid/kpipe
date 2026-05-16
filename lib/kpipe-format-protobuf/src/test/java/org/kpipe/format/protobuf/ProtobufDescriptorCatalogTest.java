@@ -50,9 +50,7 @@ class ProtobufDescriptorCatalogTest {
 
   @Test
   void allReturnsRegisteredEntries() {
-    final var catalog = new ProtobufDescriptorCatalog()
-      .add("test", descriptor)
-      .add("test2", descriptor);
+    final var catalog = new ProtobufDescriptorCatalog().add("test", descriptor).add("test2", descriptor);
     assertEquals(2, catalog.all().size());
   }
 

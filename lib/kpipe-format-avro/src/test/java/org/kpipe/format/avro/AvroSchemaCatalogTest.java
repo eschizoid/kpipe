@@ -13,8 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class AvroSchemaCatalogTest {
 
-  private static final String USER_SCHEMA_JSON =
-    """
+  private static final String USER_SCHEMA_JSON = """
     {
       "type": "record",
       "name": "User",
@@ -56,9 +55,7 @@ class AvroSchemaCatalogTest {
 
   @Test
   void allReturnsRegisteredEntries() {
-    final var catalog = new AvroSchemaCatalog()
-      .add("user", USER_SCHEMA_JSON)
-      .add("user2", USER_SCHEMA_JSON);
+    final var catalog = new AvroSchemaCatalog().add("user", USER_SCHEMA_JSON).add("user2", USER_SCHEMA_JSON);
     assertEquals(2, catalog.all().size());
   }
 

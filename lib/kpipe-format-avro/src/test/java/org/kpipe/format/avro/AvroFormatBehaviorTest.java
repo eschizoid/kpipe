@@ -10,8 +10,7 @@ import org.junit.jupiter.api.Test;
 
 class AvroFormatBehaviorTest {
 
-  private static final String USER_SCHEMA_JSON =
-    """
+  private static final String USER_SCHEMA_JSON = """
     {
       "type": "record",
       "name": "User",

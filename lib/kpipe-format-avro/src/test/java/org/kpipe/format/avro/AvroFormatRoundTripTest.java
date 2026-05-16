@@ -20,8 +20,7 @@ import org.kpipe.registry.MessageProcessorRegistry;
 
 class AvroFormatRoundTripTest {
 
-  private static final String SIMPLE_SCHEMA_JSON =
-    """
+  private static final String SIMPLE_SCHEMA_JSON = """
     {
       "type": "record",
       "name": "Simple",
