@@ -146,6 +146,12 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       // on the in-process broker and turns trial setup into the bottleneck of the whole run.
       producerProps.put(ProducerConfig.LINGER_MS_CONFIG, "10");
       producerProps.put(ProducerConfig.BATCH_SIZE_CONFIG, "65536");
+      // Disable idempotence for the seed. The Kafka 4.x default enables it, which requires the
+      // broker to track producer ID + sequence numbers; under the test-kit broker the PID epoch
+      // gets reset on retry and produces a flood of OUT_OF_ORDER_SEQUENCE_NUMBER errors. We do
+      // not need exactly-once for trial seeding — at-least-once is fine.
+      producerProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "false");
+      producerProps.put(ProducerConfig.ACKS_CONFIG, "1");
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
         final var value = """
           {
