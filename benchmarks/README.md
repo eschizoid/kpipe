@@ -43,7 +43,18 @@ Each invocation processes **100,000 records** across **8 partitions**. The previ
 startup-dominated; 100k pushes the harness into the steady-state regime where group-join and first-poll cost
 become statistically negligible.
 
-### 4. Batch Sink Throughput (`BatchSinkLatencyBenchmark`)
+### 4. Parallel Processing — Latency Percentiles (`ParallelProcessingLatencyBenchmark`)
+
+Same four runtimes and the same workload sweep as scenario 3, but reports `Mode.SampleTime` and
+`Mode.AverageTime` instead of throughput. JMH publishes `p(0.50)`, `p(0.95)`, `p(0.99)`,
+`p(0.999)`, and `p(1.00)` percentiles for each benchmark — the numbers competitive evaluators
+ask about when "average throughput" is a tie or when tail-latency matters.
+
+Two libraries can rank one way on throughput and the opposite way on p99: a runtime that
+schedules many records in parallel can achieve high average throughput while leaving a few
+records starved at the tail. Reporting both metrics from the same harness makes that visible.
+
+### 5. Batch Sink Throughput (`BatchSinkLatencyBenchmark`)
 
 Quantifies the win from `Stream.toBatch(...)` when the destination has nontrivial per-call cost. The benchmark
 parameterises over batch size (1 / 10 / 100) and a simulated sink latency (10 / 100 / 1000 µs) — the sink calls
