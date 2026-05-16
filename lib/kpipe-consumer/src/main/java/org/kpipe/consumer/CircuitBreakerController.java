@@ -17,7 +17,7 @@ import java.util.Objects;
 ///
 /// **State machine** (driven by [KPipeConsumer], not by this controller):
 ///
-///   * `CLOSED` — outcomes feed [CircuitBreakerStats]; on every failure the consumer asks
+///   * `CLOSED` — outcomes feed a rolling window; on every failure the consumer asks
 ///     [#shouldTrip] whether to flip to `OPEN`. The check returns true when both the failure
 ///     rate has crossed `failureThreshold` and the window has at least `windowSize` samples
 ///     (no tripping on a single failure with an empty window).
@@ -27,7 +27,7 @@ import java.util.Objects;
 ///     failure → `OPEN` (timer restarted).
 ///
 /// @param failureThreshold the failure rate (0.0..1.0) at or above which the breaker trips
-/// @param windowSize       the rolling sample size — must match the stats window
+/// @param windowSize       the rolling sample size used by the host's outcome window
 /// @param openDuration     how long the breaker stays in `OPEN` before probing
 public record CircuitBreakerController(double failureThreshold, int windowSize, Duration openDuration) {
   /// Canonical constructor; validates `failureThreshold` is in `(0, 1]`, `windowSize` is positive,
@@ -47,11 +47,12 @@ public record CircuitBreakerController(double failureThreshold, int windowSize, 
   /// the threshold. Requiring a full window avoids tripping on the first few failures before the
   /// breaker has any signal to work with.
   ///
-  /// @param stats the rolling outcome window the breaker is observing
+  /// @param totalSamples the number of slots currently filled in the rolling window
+  /// @param failureRate  the proportion of failures in the window, in `[0.0, 1.0]`
   /// @return `true` if the breaker should transition CLOSED → OPEN
-  public boolean shouldTrip(final CircuitBreakerStats stats) {
-    if (stats.totalSamples() < windowSize) return false;
-    return stats.failureRate() >= failureThreshold;
+  public boolean shouldTrip(final long totalSamples, final double failureRate) {
+    if (totalSamples < windowSize) return false;
+    return failureRate >= failureThreshold;
   }
 
   /// In `OPEN` state, returns `true` iff `openDuration` has elapsed since the breaker tripped.

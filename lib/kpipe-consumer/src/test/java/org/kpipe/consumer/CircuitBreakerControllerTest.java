@@ -44,36 +44,21 @@ class CircuitBreakerControllerTest {
   @Test
   void shouldTripRequiresFullWindow() {
     final var controller = new CircuitBreakerController(0.5, 10, Duration.ofSeconds(30));
-    final var stats = new CircuitBreakerStats(10);
-
     // 9 failures out of 9 — 100% rate, but the window isn't full yet.
-    for (int i = 0; i < 9; i++) stats.recordFailure();
-    assertFalse(controller.shouldTrip(stats), "should not trip until window has windowSize samples");
-
-    stats.recordFailure();
-    assertTrue(controller.shouldTrip(stats), "should trip once the full window is over threshold");
+    assertFalse(controller.shouldTrip(9, 1.0), "should not trip until window has windowSize samples");
+    assertTrue(controller.shouldTrip(10, 1.0), "should trip once the full window is over threshold");
   }
 
   @Test
   void shouldTripExactlyAtThreshold() {
     final var controller = new CircuitBreakerController(0.5, 10, Duration.ofSeconds(30));
-    final var stats = new CircuitBreakerStats(10);
-
-    for (int i = 0; i < 5; i++) stats.recordSuccess();
-    for (int i = 0; i < 5; i++) stats.recordFailure();
-
-    assertTrue(controller.shouldTrip(stats), "rate exactly at threshold should trip (>= comparison)");
+    assertTrue(controller.shouldTrip(10, 0.5), "rate exactly at threshold should trip (>= comparison)");
   }
 
   @Test
   void shouldTripFalseBelowThreshold() {
     final var controller = new CircuitBreakerController(0.5, 10, Duration.ofSeconds(30));
-    final var stats = new CircuitBreakerStats(10);
-
-    for (int i = 0; i < 6; i++) stats.recordSuccess();
-    for (int i = 0; i < 4; i++) stats.recordFailure();
-
-    assertFalse(controller.shouldTrip(stats), "40% failure rate should not trip a 50% threshold");
+    assertFalse(controller.shouldTrip(10, 0.4), "40% failure rate should not trip a 50% threshold");
   }
 
   @Test
