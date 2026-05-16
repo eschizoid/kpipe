@@ -45,12 +45,8 @@ public class ParallelProcessingLatencyBenchmark {
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("confluent", context.processedCount());
   }
 
-  @Benchmark
-  @OperationsPerInvocation(TARGET_MESSAGES)
-  public void reactor(final ParallelProcessingBenchmarkInfrastructure.ReactorInvocationContext context) {
-    context.start();
-    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("reactor", context.processedCount());
-  }
+  // `reactor` row disabled — Reactor Kafka 1.3.23 (latest stable) is incompatible with
+  // kafka-clients 4.x. Re-enable when upstream ships a 4.x-compatible build.
 
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)

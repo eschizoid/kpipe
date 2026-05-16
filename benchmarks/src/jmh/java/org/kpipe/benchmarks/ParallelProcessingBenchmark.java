@@ -7,16 +7,21 @@ import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
 
-/// Competitive parallel-consumer throughput benchmark. Four runtimes consume the same seeded
-/// topic from the same embedded broker:
+/// Competitive parallel-consumer throughput benchmark. Three runtimes consume the same seeded
+/// topic from the same Testcontainers-managed Kafka broker:
 ///
 ///   * **KPipe** — virtual-thread-per-record on Loom.
 ///   * **Confluent Parallel Consumer** — the de-facto industry baseline, `ProcessingOrder.UNORDERED`
 ///     with a 100-worker pool.
-///   * **Reactor Kafka** — `Flux<ReceiverRecord>` on the Reactor `parallel` scheduler with a
-///     matching concurrency limit.
 ///   * **Raw `KafkaConsumer` + virtual threads** — the hand-rolled baseline. No framework, no
 ///     offset manager. Establishes the floor of "what if I just wrote the loop myself?"
+///
+/// Reactor Kafka is **intentionally disabled** here. Reactor Kafka 1.3.23 (latest stable on Maven
+/// Central as of 2026-05-16) pins `kafka-clients:3.6.0` and calls a `ConsumerRecord` constructor
+/// that was removed in `kafka-clients:4.x`; running it against our 4.2.0 classpath produces a
+/// `NoSuchMethodError` at the first record fetched. The Reactor row will return when an
+/// upstream-compatible release ships. The [ReactorInvocationContext] is kept in the
+/// infrastructure for that day, but no `@Benchmark` method dispatches to it.
 ///
 /// Each invocation processes [ParallelProcessingBenchmarkInfrastructure#TARGET_MESSAGES] records.
 /// The `workMicros` `@Param` injects per-record simulated work via `LockSupport.parkNanos` so
@@ -51,12 +56,8 @@ public class ParallelProcessingBenchmark {
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("confluent", context.processedCount());
   }
 
-  @Benchmark
-  @OperationsPerInvocation(TARGET_MESSAGES)
-  public void reactor(final ParallelProcessingBenchmarkInfrastructure.ReactorInvocationContext context) {
-    context.start();
-    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("reactor", context.processedCount());
-  }
+  // `reactor` benchmark intentionally omitted — see class Javadoc. Reactor Kafka 1.3.23 is
+  // incompatible with kafka-clients 4.x. Re-enable when upstream ships a 4.x-compatible build.
 
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)
