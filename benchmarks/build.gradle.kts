@@ -23,7 +23,11 @@ dependencies {
   // Logging for JMH forks
   implementation(libs.slf4jSimple)
 
-  implementation(libs.kafkaTestCommonRuntime)
+  // Broker for the bench. Testcontainers boots a real Kafka 4.2.0 container in Docker, so the
+  // broker runs in its own JVM on its own cores instead of competing with the consumer under
+  // test for CPU. The old in-process `kafka-test-common-runtime` harness collapsed under load
+  // (consumer + KRaft controller + group coordinator on the same cores).
+  implementation(libs.testcontainersKafka)
 
   implementation(libs.junitJupiterApi)
 }

@@ -22,8 +22,6 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.test.KafkaClusterTestKit;
-import org.apache.kafka.common.test.TestKitNodes;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
@@ -33,6 +31,8 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import org.testcontainers.kafka.KafkaContainer;
+import org.testcontainers.utility.DockerImageName;
 import reactor.core.publisher.Flux;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -54,14 +54,12 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
   static final String TOPIC = "benchmark-topic";
 
-  /// Default number of records seeded per trial. 10k matches the prior baseline so cross-run
-  /// comparisons stay meaningful. The in-process broker shares CPU cores with the consumer under
-  /// test; on commodity dev hardware (Apple Silicon, 10c) pushing past 10–25k makes the broker
-  /// the bottleneck rather than the consumer, group-join latency stretches past the safety
-  /// timeout, and the run never completes a warmup iteration. For a "real" 100k+ steady-state
-  /// number, externalise the broker (Testcontainers Kafka with `--cpus` constraints or a
-  /// dedicated sidecar) and bump this constant.
-  static final int TARGET_MESSAGES = 10_000;
+  /// Default number of records seeded per trial. 25k pushes the harness into the steady-state
+  /// regime where group-join and first-poll cost are statistically small but the run still
+  /// completes in a useful timeframe. Now that the broker runs in a Docker container (not
+  /// in-process), the broker stops fighting the consumer for cores and the consumer is the
+  /// thing being measured.
+  static final int TARGET_MESSAGES = 25_000;
 
   /// Topic partitions used to expose parallel scheduler behavior.
   static final int TOPIC_PARTITIONS = 8;
@@ -69,9 +67,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// Confluent Parallel Consumer max concurrency (number of worker threads it spins up).
   static final int CONFLUENT_MAX_CONCURRENCY = 100;
 
-  /// Safety timeout for per-invocation completion checks. The in-process broker can stutter on
-  /// group-join and metadata-update; leave headroom for a slow first poll.
-  private static final long MAX_WAIT_NANOS = TimeUnit.MINUTES.toNanos(3);
+  /// Safety timeout for per-invocation completion checks. Generous so a single slow first poll
+  /// on container startup doesn't kill an iteration. Steady-state iterations finish well under
+  /// this; the timeout is a circuit-breaker, not a measurement.
+  private static final long MAX_WAIT_NANOS = TimeUnit.MINUTES.toNanos(2);
 
   private static final Duration PC_CLOSE_TIMEOUT = Duration.ofSeconds(5);
 
@@ -386,41 +385,41 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
   }
 
+  /// Testcontainers-backed Kafka broker. Replaces the prior in-process `KafkaClusterTestKit`
+  /// because that harness collapsed under benchmark load on shared cores — the broker, the KRaft
+  /// controller, the group coordinator, and the consumer under test all fought for the same
+  /// CPUs and the consumer never reached its real throughput. Running the broker in a Docker
+  /// container puts it on its own JVM with its own cores, so the consumer is the bottleneck the
+  /// bench is actually trying to measure.
+  ///
+  /// Pinned to the `apache/kafka:4.2.0` image to match the `kafka-clients` version on the
+  /// classpath. Auto-create topics is on so the seed step doesn't have to fight a race with
+  /// topic-metadata propagation.
   private static final class EmbeddedKafkaBackend implements AutoCloseable {
 
-    private KafkaClusterTestKit cluster;
+    private static final DockerImageName KAFKA_IMAGE = DockerImageName.parse("apache/kafka:4.2.0");
+
+    private KafkaContainer container;
 
     void start() {
-      try {
-        final var nodes = new TestKitNodes.Builder()
-          .setCombined(true)
-          .setNumBrokerNodes(1)
-          .setNumControllerNodes(1)
-          .build();
-        cluster = new KafkaClusterTestKit.Builder(nodes)
-          .setConfigProp("auto.create.topics.enable", "true")
-          .setConfigProp("offsets.topic.replication.factor", "1")
-          .setConfigProp("transaction.state.log.replication.factor", "1")
-          .setConfigProp("transaction.state.log.min.isr", "1")
-          .setConfigProp("min.insync.replicas", "1")
-          .build();
-        cluster.format();
-        cluster.startup();
-        cluster.waitForReadyBrokers();
-      } catch (final Exception e) {
-        throw new IllegalStateException("Unable to start embedded Kafka broker", e);
-      }
+      container = new KafkaContainer(KAFKA_IMAGE)
+        .withEnv("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "true")
+        .withEnv("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
+        .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
+        .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
+        .withEnv("KAFKA_MIN_INSYNC_REPLICAS", "1");
+      container.start();
     }
 
     Properties getClientProperties() {
-      final var copy = new Properties();
-      copy.putAll(cluster.clientProperties());
-      return copy;
+      final var props = new Properties();
+      props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, container.getBootstrapServers());
+      return props;
     }
 
     @Override
-    public void close() throws Exception {
-      if (cluster != null) cluster.close();
+    public void close() {
+      if (container != null) container.stop();
     }
   }
 }
