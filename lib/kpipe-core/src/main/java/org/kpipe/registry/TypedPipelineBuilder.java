@@ -135,14 +135,18 @@ public final class TypedPipelineBuilder<T> {
       }
 
       @Override
-      public T process(T data) {
-        if (data == null) return null;
+      public Result<T> process(T data) {
+        if (data == null) return Result.filtered();
         var current = data;
         for (final var operator : pipelineOperators) {
-          current = operator.apply(current);
-          if (current == null) return null;
+          try {
+            current = operator.apply(current);
+          } catch (final RuntimeException e) {
+            return Result.failed(e);
+          }
+          if (current == null) return Result.filtered();
         }
-        return current;
+        return Result.passed(current);
       }
     };
   }

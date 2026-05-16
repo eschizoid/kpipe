@@ -192,19 +192,31 @@
 
 - **Decision (1.9.0)**: `MessagePipeline.apply()` no longer overloads `null` as both "filtered" and "failed". Failures
   throw; `null` means exactly one thing — intentional filtering by `process()`.
+- **Decision (1.13.0)**: `MessagePipeline.process()` returns a sealed `Result<T>` (`Passed | Filtered | Failed`). The
+  three outcomes are now distinct *types* enforced by the compiler — the §12 doctrine moved from "convention enforced
+  by discipline" to "guarantee enforced by exhaustive pattern matching". The byte-level entry points (`apply`,
+  `processToSink`, `processToValue`) preserve their pre-1.13 contracts by unwrapping the Result internally: `null` for
+  intentional filters, re-throwing the captured `Failed.cause` for failures. New code that wants typed handling calls
+  `process()` directly and switches on the result.
 - **Reasoning**: The pre-1.9.0 implementation caught all exceptions in `apply()` and returned `null`. The downstream
   `KPipeConsumer.processTypedRecord` then treated `processed == null` as intentional filtering and incremented
   `messagesProcessed` — masking deserialization errors as successes. The only signal something was wrong was a gauge
-  mismatch (`messagesProcessed` rising while `sinkInvocationCount` stayed at 0).
+  mismatch (`messagesProcessed` rising while `sinkInvocationCount` stayed at 0). 1.9 fixed the *behaviour*; 1.13
+  fixed the *type* so the bug is impossible at compile time.
 - **Real-world burn**: Discovered during the Grafana dashboard session — protobuf seed messages all failed
   deserialization because `skipBytes(5)` was wrong, but the consumer reported them as processed. ~10 minutes wasted on
-  a bug that should have been a single error log.
+  a bug that should have been a single error log. After 1.13.0 the same bug would surface as a `Result.Failed` at the
+  consumer's pattern-match site — no convention to remember, no discipline to maintain.
 - **Implementation invariants**:
     - Null record value throws `IllegalStateException` with a specific message (retryable via the normal exception
       path).
     - Null deserialization result throws `IllegalStateException` (implementations must throw, not return null).
-    - Null `process()` result is the *only* legitimate filter signal — mark offset processed, count as success, no
-      error.
+    - `process()` returns `Result.Passed` (value flows on), `Result.Filtered` (offset committed, sink skipped), or
+      `Result.Failed(cause)` (retry/DLQ/error-handler routes the cause). The `Filtered` value is a shared singleton
+      via `Result.filtered()` to avoid per-record allocation; `Passed` and `Failed` each allocate one record per call.
+    - Operators (`UnaryOperator<T>`) still return `T` (or null for filter) — the Result wrapping lives at the
+      pipeline level, not at every operator. `TypedPipelineBuilder.build()` catches `RuntimeException` from operators
+      and converts to `Result.failed(...)`; null returns become `Result.filtered()`.
 - **Generalizable rule**: When composing `Function<T, R>` chains, never use `null`/`Optional.empty()` to signal both
   "filtered" and "failed". If both states exist, model them as distinct types (sealed `Result<T>` or distinct
   exceptions). Triage heuristic: when a "processed" counter rises but downstream invocations stay at 0, suspect

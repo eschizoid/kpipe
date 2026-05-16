@@ -177,8 +177,8 @@ class KPipeDlqTest {
       }
 
       @Override
-      public String process(final String data) {
-        return data;
+      public org.kpipe.registry.Result<String> process(final String data) {
+        return org.kpipe.registry.Result.passed(data);
       }
     };
   }
