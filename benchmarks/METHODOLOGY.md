@@ -134,26 +134,22 @@ numbers run with `forks=2` minimum.
 
 A few things to keep in mind whenever you quote a number from this suite:
 
-- **Embedded Kafka shares cores with the consumer.** The broker is in-process. It competes with
-  the consumer for CPU. In production the broker is across the network. The headline ordering is
-  usually preserved, but absolute numbers will be lower here than in a production setup.
-- **TARGET_MESSAGES defaults to 10,000 for that reason.** Pushing past 10–25k on the in-process
-  broker makes the broker the bottleneck rather than the consumer under test. Group-join latency
-  and KRaft controller events on the same JVM stretch every iteration past the safety timeout.
-  For a "real" 100k+ steady-state number, externalise the broker (Testcontainers Kafka with
-  `--cpus` constraints or a sidecar broker on dedicated hardware) and bump the constant in
-  `ParallelProcessingBenchmarkInfrastructure`. The four-runtime + `workMicros` surface is the
-  actual upgrade in 1.13; the record count stays at the prior baseline so cross-run comparisons
-  keep working.
-- **In-memory disk.** The Kafka test kit uses a tmpfs-style path; `fsync` cost is artificially
-  low. Production brokers under replication factor 3 + acks=all have very different write
-  latency.
-- **Single-broker.** No replication, no leader election, no rebalance under load. Real failure
-  modes don't show up.
+- **Broker runs in Docker (Testcontainers Kafka 4.2.0), not in-process.** That's the right call
+  for a competitive bench — the broker isn't fighting consumers for cores — but it also means
+  network IO is real (loopback to a container) and absolute numbers are still **lower than a
+  production setup with a network broker on dedicated hardware**. The headline *ordering*
+  between runtimes is what's meaningful; absolute records-per-second is a function of how much
+  of the host's cores Docker / the container runtime is giving the broker.
+- **Single-broker, single-container.** No replication, no leader election, no rebalance under
+  load. The broker container runs replication factor 1 and `min.insync.replicas=1`. Real
+  failure modes won't show up.
 - **Single payload size.** The seed payload is small JSON (~50 bytes). Reactor Kafka's
   `flatMap` strategy can behave differently under 10KB payloads.
 - **Macros vs micros.** This suite measures consumer-side throughput. End-to-end latency
   (produce → consume → process → ack) needs a separate harness.
+- **Docker overhead is real.** The first iteration of every trial pays the container-startup
+  cost. JMH's warmup phase absorbs most of that; if you're spot-checking with `-wi 0`, expect
+  the first measurement iteration to look slow.
 
 ## When the numbers should change
 
