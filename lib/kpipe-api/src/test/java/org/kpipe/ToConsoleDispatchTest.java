@@ -3,20 +3,18 @@ package org.kpipe;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.protobuf.DescriptorProtos;
+import com.google.protobuf.Descriptors;
 import java.util.Map;
 import java.util.Properties;
 import org.apache.avro.SchemaBuilder;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.kpipe.format.avro.AvroConsoleSink;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.json.JsonConsoleSink;
 import org.kpipe.format.protobuf.ProtobufConsoleSink;
+import org.kpipe.format.protobuf.ProtobufFormat;
 import org.kpipe.sink.CompositeMessageSink;
 import org.kpipe.sink.MessageSink;
 
@@ -31,43 +29,34 @@ class ToConsoleDispatchTest {
     return props;
   }
 
-  /// Format → expected `toConsole()` sink type. `bytes` uses a lambda sink (no class to assert
-  /// on), so its expected type is `null` and the test just verifies non-null.
-  static java.util.stream.Stream<Arguments> consoleDispatchCases() {
-    return java.util.stream.Stream.of(
-      Arguments.of("json", (StreamFactory) KPipe::json, JsonConsoleSink.class),
-      Arguments.of("avro", (StreamFactory) KPipe::avro, AvroConsoleSink.class),
-      Arguments.of("protobuf", (StreamFactory) KPipe::protobuf, ProtobufConsoleSink.class),
-      Arguments.of("bytes", (StreamFactory) KPipe::bytes, null)
-    );
-  }
-
-  @ParameterizedTest(name = "{0}.toConsole() dispatches to expected sink")
-  @MethodSource("consoleDispatchCases")
-  void toConsoleDispatchesToFormatAppropriateSink(
-    final String formatName,
-    final StreamFactory factory,
-    final Class<?> expectedSinkType
-  ) {
-    if ("avro".equals(formatName)) registerAvroSchema();
-    try {
-      final var sink = (DefaultSink<?>) factory.create("t", props()).toConsole();
-      if (expectedSinkType == null) assertNotNull(sink.terminalSink());
-      else assertTrue(expectedSinkType.isInstance(sink.terminalSink()), () ->
-        "expected %s, got %s".formatted(expectedSinkType.getSimpleName(), sink.terminalSink().getClass())
-      );
-    } finally {
-      if ("avro".equals(formatName)) AvroFormat.INSTANCE.clearSchemas();
-    }
+  @Test
+  void jsonToConsoleDispatchesToJsonConsoleSink() {
+    final var sink = (DefaultSink<?>) KPipe.json("t", props()).toConsole();
+    assertInstanceOf(JsonConsoleSink.class, sink.terminalSink());
   }
 
   @Test
-  void avroToConsoleThrowsWhenNoDefaultSchemaRegistered() {
-    AvroFormat.INSTANCE.clearSchemas();
-    final var stream = KPipe.avro("topic", props());
-    final var ex = assertThrows(IllegalStateException.class, stream::toConsole);
-    assertTrue(ex.getMessage().contains("Avro"), () -> "expected message to mention Avro: " + ex.getMessage());
-    assertTrue(ex.getMessage().contains("schema"), () -> "expected message to mention schema: " + ex.getMessage());
+  void avroToConsoleDispatchesToAvroConsoleSink() {
+    final var format = new AvroFormat(
+      SchemaBuilder.record("Test").namespace("org.kpipe.test").fields().requiredString("id").endRecord()
+    );
+
+    final var sink = (DefaultSink<?>) KPipe.avro(format, "t", props()).toConsole();
+    assertInstanceOf(AvroConsoleSink.class, sink.terminalSink());
+  }
+
+  @Test
+  void protobufToConsoleDispatchesToProtobufConsoleSink() {
+    final var format = new ProtobufFormat(buildTestDescriptor());
+
+    final var sink = (DefaultSink<?>) KPipe.protobuf(format, "t", props()).toConsole();
+    assertInstanceOf(ProtobufConsoleSink.class, sink.terminalSink());
+  }
+
+  @Test
+  void bytesToConsoleProducesNonNullSink() {
+    final var sink = (DefaultSink<?>) KPipe.bytes("t", props()).toConsole();
+    assertNotNull(sink.terminalSink());
   }
 
   @Test
@@ -86,18 +75,28 @@ class ToConsoleDispatchTest {
     assertInstanceOf(CompositeMessageSink.class, sink.terminalSink());
   }
 
-  private static void registerAvroSchema() {
-    AvroFormat.INSTANCE.clearSchemas();
-    final var schema = SchemaBuilder.record("Test")
-      .namespace("org.kpipe.test")
-      .fields()
-      .requiredString("id")
-      .endRecord();
-    AvroFormat.INSTANCE.addSchema("1", schema.toString());
-  }
-
-  @FunctionalInterface
-  private interface StreamFactory {
-    Stream<?> create(String topic, Properties props);
+  private static Descriptors.Descriptor buildTestDescriptor() {
+    try {
+      final var msg = DescriptorProtos.DescriptorProto.newBuilder()
+        .setName("Test")
+        .addField(
+          DescriptorProtos.FieldDescriptorProto.newBuilder()
+            .setName("id")
+            .setNumber(1)
+            .setType(DescriptorProtos.FieldDescriptorProto.Type.TYPE_STRING)
+            .build()
+        )
+        .build();
+      final var fileProto = DescriptorProtos.FileDescriptorProto.newBuilder()
+        .setName("test.proto")
+        .setSyntax("proto3")
+        .addMessageType(msg)
+        .build();
+      return Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0]).findMessageTypeByName(
+        "Test"
+      );
+    } catch (final Descriptors.DescriptorValidationException e) {
+      throw new RuntimeException(e);
+    }
   }
 }

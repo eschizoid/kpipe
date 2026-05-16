@@ -2,8 +2,8 @@
 ///
 /// Schemas can be fetched by their integer ID (e.g. the value embedded in Confluent's wire-format
 /// envelope) or by subject + version. Responses are unwrapped from the SR `{"schema":"..."}`
-/// envelope so callers receive the raw schema JSON ready to hand off to `AvroFormat.addSchema` or
-/// `ProtobufFormat.addDescriptor`.
+/// envelope so callers receive the raw schema JSON ready to hand off to `AvroFormat.of(...)` or to
+/// build a `ProtobufFormat` from a generated descriptor.
 ///
 /// Add this module to your build only if your pipeline needs to fetch schemas from a Confluent SR
 /// at runtime (or once at startup). Inline / classpath / file-based schema loading is supported
@@ -12,7 +12,7 @@
 /// ```java
 /// final var resolver = new ConfluentSchemaResolver("http://schema-registry:8081");
 /// final var schemaJson = resolver.lookupBySubjectVersion("com.kpipe.customer", "latest");
-/// AvroFormat.INSTANCE.addSchema("1", "com.kpipe.customer", schemaJson);
+/// final var format = AvroFormat.of(schemaJson);
 /// ```
 module org.kpipe.schemaregistry.confluent {
   requires org.kpipe.core;

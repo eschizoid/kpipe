@@ -38,8 +38,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
-/// End-to-end demonstration: SR resolves a schema at startup, the consumer registers it with
-/// `AvroFormat`, and a producer publishes Confluent-wire-format-wrapped records that the
+/// End-to-end demonstration: SR resolves a schema at startup, the consumer builds an
+/// [AvroFormat] from it, and a producer publishes Confluent-wire-format-wrapped records that the
 /// pipeline decodes via `.skipBytes(5)`.
 @Testcontainers(disabledWithoutDocker = true)
 class AppIntegrationTest {
@@ -54,8 +54,7 @@ class AppIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
-                   .asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   )
     .withNetwork(NETWORK)
     .withListener("kafka:19092")
@@ -82,20 +81,19 @@ class AppIntegrationTest {
     final var schemaId = registerSchema();
     final var schema = new Schema.Parser().parse(SCHEMA_JSON);
 
-    // Fetch via the resolver and register with AvroFormat — exactly what App.java does at startup.
+    // Fetch via the resolver and build the format — exactly what App.java does at startup.
+    final AvroFormat format;
     try (final var resolver = new ConfluentSchemaResolver(schemaRegistryUrl())) {
       final var fetched = resolver.lookupBySubjectVersion(SUBJECT, "latest");
       assertEquals(SCHEMA_JSON, fetched);
-      AvroFormat.INSTANCE.addSchema(SUBJECT, fetched);
-      AvroFormat.INSTANCE.withDefaultSchema(SUBJECT);
+      format = AvroFormat.of(fetched);
     }
 
     final var captured = new CopyOnWriteArrayList<GenericRecord>();
     final MessageSink<GenericRecord> capturingSink = captured::add;
 
     try (
-      final var handle = KPipe
-        .avro(topic, consumerProps())
+      final var handle = KPipe.avro(format, topic, consumerProps())
         .withSequentialProcessing(true) // preserve send-order in captured list
         .skipBytes(5)
         .toCustom(capturingSink)
@@ -121,8 +119,12 @@ class AppIntegrationTest {
 
   /// Wraps an Avro-encoded record in the Confluent wire envelope: 1 magic byte (0x00) +
   /// 4-byte big-endian schema id + Avro binary payload.
-  private static byte[] encodeConfluentWireFormat(final Schema schema, final int schemaId, final long id, final String name)
-    throws Exception {
+  private static byte[] encodeConfluentWireFormat(
+    final Schema schema,
+    final int schemaId,
+    final long id,
+    final String name
+  ) throws Exception {
     final var record = new GenericData.Record(schema);
     record.put("id", id);
     record.put("name", name);

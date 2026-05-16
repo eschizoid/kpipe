@@ -14,10 +14,8 @@ import java.time.Duration;
 import org.kpipe.Handle;
 import org.kpipe.KPipe;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
-import org.kpipe.format.avro.AvroConsoleSink;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.json.JsonConsoleSink;
-import org.kpipe.format.protobuf.ProtobufConsoleSink;
 import org.kpipe.format.protobuf.ProtobufFormat;
 import org.kpipe.metrics.otel.OtelConsumerMetrics;
 import org.kpipe.registry.Operators;
@@ -44,18 +42,13 @@ public class DemoApp implements AutoCloseable {
       SHARED_OTEL = GlobalOpenTelemetry.get();
     }
 
+    final AvroFormat avroFormat;
     try (final var resolver = new ConfluentSchemaResolver(config.schemaRegistryUrl())) {
-      AvroFormat.INSTANCE.addSchema(
-        "1",
-        "com.kpipe.customer",
-        resolver.lookupBySubjectVersion("com.kpipe.customer", "latest")
-      );
+      avroFormat = AvroFormat.of(resolver.lookupBySubjectVersion("com.kpipe.customer", "latest"));
     }
-    AvroFormat.INSTANCE.withDefaultSchema("1");
-    ProtobufFormat.INSTANCE.addDescriptor("customer", buildCustomerDescriptor());
-    ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
+    final var protoFormat = new ProtobufFormat(buildCustomerDescriptor());
 
-    try (final var app = new DemoApp(config)) {
+    try (final var app = new DemoApp(config, avroFormat, protoFormat)) {
       LOGGER.log(Level.INFO, "Demo application started — JSON/Avro/Protobuf routes via KPipe.multi");
       app.handle.awaitShutdown();
     } catch (final Exception e) {
@@ -65,9 +58,10 @@ public class DemoApp implements AutoCloseable {
   }
 
   /// Creates and starts the demo application with all three routes attached to a single consumer.
-  /// Caller is responsible for registering the Avro schema (via Schema Registry URL or directly)
-  /// and the Protobuf descriptor before construction.
-  public DemoApp(final DemoConfig config) {
+  /// The Avro [AvroFormat] and Protobuf [ProtobufFormat] are passed in explicitly — the caller is
+  /// responsible for resolving the Avro schema (e.g. via Schema Registry) and building the
+  /// Protobuf descriptor.
+  public DemoApp(final DemoConfig config, final AvroFormat avroFormat, final ProtobufFormat protoFormat) {
     final var kafkaProps = KafkaConsumerConfig.createConsumerConfig(
       config.bootstrapServers(),
       config.consumerGroup() + "-multi"
@@ -84,8 +78,8 @@ public class DemoApp implements AutoCloseable {
           .pipe(Operators.removeFields("password", "ssn"))
           .toCustom(new JsonConsoleSink<>())
       )
-      .avro(config.avroTopic(), s -> s.skipBytes(5).toCustom(new AvroConsoleSink<>()))
-      .protobuf(config.protoTopic(), s -> s.skipBytes(6).toCustom(new ProtobufConsoleSink<>()))
+      .avro(avroFormat, config.avroTopic(), s -> s.skipBytes(5).toConsole())
+      .protobuf(protoFormat, config.protoTopic(), s -> s.skipBytes(6).toConsole())
       .start();
   }
 

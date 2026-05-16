@@ -34,14 +34,14 @@ class AppIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
-                   .asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
+  private ProtobufFormat format;
+
   @BeforeEach
-  void registerDescriptor() {
-    ProtobufFormat.INSTANCE.addDescriptor("customer", App.buildCustomerDescriptor());
-    ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
+  void buildFormat() {
+    format = new ProtobufFormat(App.buildCustomerDescriptor());
   }
 
   @Test
@@ -50,10 +50,10 @@ class AppIntegrationTest {
     final var captured = new CopyOnWriteArrayList<Message>();
     final MessageSink<Message> capturingSink = captured::add;
 
-    final var descriptor = App.buildCustomerDescriptor();
+    final var descriptor = format.descriptor();
 
     try (
-      final var handle = KPipe.protobuf(topic, consumerProps())
+      final var handle = KPipe.protobuf(format, topic, consumerProps())
         .pipe(msg ->
           msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("name"), "processed-by-kpipe").build()
         )

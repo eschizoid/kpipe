@@ -1,170 +1,67 @@
 package org.kpipe.format.protobuf;
 
-import com.google.protobuf.Descriptors;
+import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Predicate;
-import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.RegistryKey;
-import org.kpipe.registry.SchemaAwareFormat;
+import java.util.Objects;
+import org.kpipe.registry.MessageFormat;
 
-/// Protobuf implementation of MessageFormat for KPipe.
+/// Protobuf codec for KPipe — stateless `MessageFormat<Message>` bound to a single
+/// [Descriptor]. One descriptor per instance, no mutable state. For multiple descriptors keyed
+/// by name, use [ProtobufDescriptorCatalog] and pass the resolved descriptor here.
 ///
-/// Manages Protobuf descriptors and provides serialization / deserialization for `Message`
-/// payloads. Descriptors registered via [#addDescriptor] are cached on this instance.
-///
-/// Example:
 /// ```java
-/// final var protoFormat = ProtobufFormat.INSTANCE;
-/// protoFormat.addDescriptor("user", UserProto.getDescriptor());
-/// protoFormat.withDefaultDescriptor("user");
-/// byte[] bytes = protoFormat.serialize(message);
-/// Message result = protoFormat.deserialize(bytes);
+/// // Direct: you have a Descriptor in hand.
+/// final var format = new ProtobufFormat(UserProto.getDescriptor());
+///
+/// // Catalog-mediated: multiple descriptors keyed by name.
+/// final var catalog = new ProtobufDescriptorCatalog();
+/// catalog.add("user", UserProto.getDescriptor());
+/// final var format = new ProtobufFormat(catalog.get("user"));
 /// ```
-public final class ProtobufFormat implements SchemaAwareFormat<Message> {
+public final class ProtobufFormat implements MessageFormat<Message> {
 
-  /// Shared singleton instance — use this rather than constructing a new ProtobufFormat
-  /// unless you need an isolated descriptor scope.
+  private final Descriptor descriptor;
+
+  /// Constructs a codec bound to `descriptor`.
   ///
-  /// **Footgun warning:** this `INSTANCE` is a JVM-global mutable singleton — descriptors
-  /// registered here are visible to every caller using `ProtobufFormat.INSTANCE`. For libraries,
-  /// tests, or any code that needs an isolated descriptor scope, construct a dedicated instance
-  /// with `new ProtobufFormat()` and use distinct descriptor keys.
-  public static final ProtobufFormat INSTANCE = new ProtobufFormat();
-
-  /// Registry key for the pre-built Protobuf logging sink registered by [#newRegistry()].
-  public static final RegistryKey<Message> PROTOBUF_LOGGING = ProtobufRegistryKey.of("protobufLogging");
-
-  private final Map<String, SchemaInfo> schemas = new ConcurrentHashMap<>();
-  private final Map<String, Descriptors.Descriptor> descriptors = new ConcurrentHashMap<>();
-  private String defaultDescriptorKey;
-
-  /// Constructs a new ProtobufFormat instance.
-  public ProtobufFormat() {
-    // Default constructor
+  /// @param descriptor the Protobuf message descriptor used for deserialization (must be non-null)
+  public ProtobufFormat(final Descriptor descriptor) {
+    this.descriptor = Objects.requireNonNull(descriptor, "descriptor cannot be null");
   }
 
-  /// Creates a new [MessageProcessorRegistry] pre-wired with [ProtobufFormat#INSTANCE] and a
-  /// [ProtobufConsoleSink] registered under [#PROTOBUF_LOGGING].
+  /// Returns the descriptor this codec is bound to.
   ///
-  /// Convenience for the common case of "give me a Protobuf registry with a logging sink"; users
-  /// who need an isolated descriptor scope should build the registry directly via
-  /// `new MessageProcessorRegistry(new ProtobufFormat())`.
-  ///
-  /// @return a new pre-configured registry
-  public static MessageProcessorRegistry newRegistry() {
-    final var registry = new MessageProcessorRegistry(INSTANCE);
-    registry.register(PROTOBUF_LOGGING, new ProtobufConsoleSink<>());
-    return registry;
+  /// @return the bound descriptor (never null)
+  public Descriptor descriptor() {
+    return descriptor;
   }
 
   /// Creates a new [ProtobufConsoleSink] for [Message] payloads.
   ///
   /// @return a new console sink
-  public static ProtobufConsoleSink<Message> consoleSink() {
+  public ProtobufConsoleSink<Message> consoleSink() {
     return new ProtobufConsoleSink<>();
   }
 
-  /// Registers a Protobuf descriptor with this format.
+  /// Serializes a Protobuf [Message] to bytes.
   ///
-  /// @param key The key to register the descriptor under
-  /// @param descriptor The Protobuf descriptor
-  /// @return This ProtobufFormat instance
-  public ProtobufFormat addDescriptor(final String key, final Descriptors.Descriptor descriptor) {
-    descriptors.put(key, descriptor);
-    schemas.put(key, new SchemaInfo(descriptor.getFullName(), descriptor.toProto().toString()));
-    return this;
-  }
-
-  /// Sets the default descriptor key to use for deserialization.
-  ///
-  /// @param descriptorKey The descriptor key
-  /// @return This ProtobufFormat instance
-  public ProtobufFormat withDefaultDescriptor(final String descriptorKey) {
-    this.defaultDescriptorKey = descriptorKey;
-    return this;
-  }
-
-  /// Gets a registered descriptor by key.
-  ///
-  /// @param key The descriptor key
-  /// @return The descriptor, or null if not found
-  public Descriptors.Descriptor getDescriptor(final String key) {
-    return descriptors.get(key);
-  }
-
-  /// Returns an unmodifiable view of all schemas registered with this format.
-  ///
-  /// @return Map of schema keys to their schema information
-  @Override
-  public Map<String, SchemaInfo> getSchemas() {
-    return Collections.unmodifiableMap(schemas);
-  }
-
-  /// Finds a schema by its key.
-  ///
-  /// @param key the schema key to search for
-  /// @return an Optional containing the SchemaInfo if found, or empty if not found
-  @Override
-  public Optional<SchemaInfo> findSchema(final String key) {
-    return Optional.ofNullable(schemas.get(key));
-  }
-
-  /// Removes all schemas and descriptors registered with this message format.
-  @Override
-  public void clearSchemas() {
-    schemas.clear();
-    descriptors.clear();
-    defaultDescriptorKey = null;
-  }
-
-  /// Adds a schema to this format. For Protobuf, prefer [addDescriptor] which registers the
-  /// actual descriptor. This method stores schema metadata only.
-  ///
-  /// @param key schema identification key
-  /// @param fullyQualifiedName fully qualified schema name
-  /// @param location location of the schema definition (e.g., .proto file path)
-  @Override
-  public void addSchema(final String key, final String fullyQualifiedName, final String location) {
-    schemas.put(key, new SchemaInfo(fullyQualifiedName, location));
-  }
-
-  /// Finds schemas matching the given predicate.
-  ///
-  /// @param predicate condition to test schemas against
-  /// @return list of matching schema information
-  @Override
-  public List<SchemaInfo> findSchemas(final Predicate<SchemaInfo> predicate) {
-    return schemas.values().stream().filter(predicate).toList();
-  }
-
-  /// Serializes the given Protobuf Message to a byte array.
-  ///
-  /// @param data the Protobuf message to serialize
-  /// @return the serialized byte array
+  /// @param data the message to serialize
+  /// @return the binary-encoded bytes, or null if `data` is null
   @Override
   public byte[] serialize(final Message data) {
     if (data == null) return null;
     return data.toByteArray();
   }
 
-  /// Deserializes the given byte array to a Protobuf Message using the default descriptor.
+  /// Deserializes bytes to a Protobuf [Message] using the bound descriptor.
   ///
-  /// @param data the serialized byte array
-  /// @return the deserialized message as a DynamicMessage
+  /// @param data the binary-encoded bytes
+  /// @return the decoded message (a [DynamicMessage]), or null if `data` is null/empty
   @Override
   public Message deserialize(final byte[] data) {
     if (data == null || data.length == 0) return null;
-    if (defaultDescriptorKey == null) throw new UnsupportedOperationException(
-      "Protobuf deserialization requires a default descriptor key. Use withDefaultDescriptor()."
-    );
-    final var descriptor = descriptors.get(defaultDescriptorKey);
-    if (descriptor == null) throw new IllegalArgumentException(
-      "No descriptor found for key: %s".formatted(defaultDescriptorKey)
-    );
     try {
       return DynamicMessage.parseFrom(descriptor, data);
     } catch (final InvalidProtocolBufferException e) {

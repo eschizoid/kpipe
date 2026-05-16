@@ -101,8 +101,8 @@ public class MessageProcessorRegistry {
 
   /// Creates a new registry with the specified message format.
   ///
-  /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `AvroFormat.INSTANCE`,
-  ///                      `ProtobufFormat.INSTANCE`, `MessageFormat.bytes()`, or a custom impl)
+  /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `new AvroFormat(schema)`,
+  ///                      `new ProtobufFormat(descriptor)`, `MessageFormat.bytes()`, or a custom impl)
   public MessageProcessorRegistry(final MessageFormat<?> messageFormat) {
     this.messageFormat = Objects.requireNonNull(messageFormat, "Message format cannot be null");
   }

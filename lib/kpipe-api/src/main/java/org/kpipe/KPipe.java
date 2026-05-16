@@ -55,47 +55,56 @@ public final class KPipe {
     return new DefaultStream<>(topics, kafkaProps, JsonFormat.INSTANCE, JsonFormat::consoleSink);
   }
 
-  /// Avro-typed stream consuming from `topic`. Messages deserialize to `GenericRecord` using the
-  /// format's configured default schema.
+  /// Avro-typed stream consuming from `topic` using `format` for SerDe. The schema bound to
+  /// `format` is used for both deserialization and the default `toConsole()` sink. Construct
+  /// the format explicitly: `new AvroFormat(schema)` or `AvroFormat.of(schemaJson)`.
   ///
-  /// `toConsole()` throws [IllegalStateException] if no default schema is registered under key
-  /// `"1"` on [AvroFormat#INSTANCE] — the console sink needs the schema to re-encode payloads
-  /// as JSON. Pass `.toCustom(AvroFormat.consoleSink(schema))` to bind a specific schema.
-  ///
+  /// @param format the Avro codec (must be non-null)
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
   /// @return a fluent [Stream] configured for Avro
-  public static Stream<GenericRecord> avro(final String topic, final Properties kafkaProps) {
-    return new DefaultStream<>(topic, kafkaProps, AvroFormat.INSTANCE, AvroFormat::defaultConsoleSink);
+  public static Stream<GenericRecord> avro(final AvroFormat format, final String topic, final Properties kafkaProps) {
+    return new DefaultStream<>(topic, kafkaProps, format, format::consoleSink);
   }
 
-  /// Avro-typed stream consuming from multiple homogeneous topics. See [#avro(String, Properties)]
-  /// for the schema requirement.
+  /// Avro-typed stream consuming from multiple homogeneous topics. See
+  /// [#avro(AvroFormat, String, Properties)].
   ///
+  /// @param format the Avro codec (must be non-null)
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
   /// @return a fluent [Stream] configured for Avro
-  public static Stream<GenericRecord> avro(final Collection<String> topics, final Properties kafkaProps) {
-    return new DefaultStream<>(topics, kafkaProps, AvroFormat.INSTANCE, AvroFormat::defaultConsoleSink);
+  public static Stream<GenericRecord> avro(
+    final AvroFormat format,
+    final Collection<String> topics,
+    final Properties kafkaProps
+  ) {
+    return new DefaultStream<>(topics, kafkaProps, format, format::consoleSink);
   }
 
-  /// Protobuf-typed stream consuming from `topic`. Messages deserialize to
-  /// `com.google.protobuf.Message`.
+  /// Protobuf-typed stream consuming from `topic` using `format` for SerDe. Construct the format
+  /// explicitly: `new ProtobufFormat(descriptor)`.
   ///
+  /// @param format the Protobuf codec (must be non-null)
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
   /// @return a fluent [Stream] configured for Protobuf
-  public static Stream<Message> protobuf(final String topic, final Properties kafkaProps) {
-    return new DefaultStream<>(topic, kafkaProps, ProtobufFormat.INSTANCE, ProtobufFormat::consoleSink);
+  public static Stream<Message> protobuf(final ProtobufFormat format, final String topic, final Properties kafkaProps) {
+    return new DefaultStream<>(topic, kafkaProps, format, format::consoleSink);
   }
 
   /// Protobuf-typed stream consuming from multiple homogeneous topics.
   ///
+  /// @param format the Protobuf codec (must be non-null)
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
   /// @return a fluent [Stream] configured for Protobuf
-  public static Stream<Message> protobuf(final Collection<String> topics, final Properties kafkaProps) {
-    return new DefaultStream<>(topics, kafkaProps, ProtobufFormat.INSTANCE, ProtobufFormat::consoleSink);
+  public static Stream<Message> protobuf(
+    final ProtobufFormat format,
+    final Collection<String> topics,
+    final Properties kafkaProps
+  ) {
+    return new DefaultStream<>(topics, kafkaProps, format, format::consoleSink);
   }
 
   /// Raw `byte[]` stream — identity passthrough, no SerDe. `toConsole()` logs a UTF-8 preview

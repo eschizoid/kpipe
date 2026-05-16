@@ -14,17 +14,17 @@ import org.apache.avro.io.EncoderFactory;
 import org.kpipe.sink.ConsoleSinkSupport;
 import org.kpipe.sink.MessageSink;
 
-/// A sink that logs processed messages with Avro formatting.
+/// A sink that logs processed messages with Avro formatting. Requires a schema to re-encode
+/// byte-array payloads as JSON for human-readable output.
 ///
-/// @param <T> The type of the processed object
-/// @param schema The Avro schema used to decode byte array messages
+/// @param <T>    The type of the processed object
+/// @param schema The Avro schema used to decode byte array messages (must be non-null)
 public record AvroConsoleSink<T>(Schema schema) implements MessageSink<T> {
   private static final Logger LOGGER = System.getLogger(AvroConsoleSink.class.getName());
 
-  /// Creates an `AvroConsoleSink` using the default schema registered under key "1" on
-  /// [AvroFormat#INSTANCE].
-  public AvroConsoleSink() {
-    this(AvroFormat.INSTANCE.getSchema("1"));
+  /// Canonical constructor; rejects a null schema.
+  public AvroConsoleSink {
+    java.util.Objects.requireNonNull(schema, "schema cannot be null");
   }
 
   @Override

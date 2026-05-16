@@ -8,21 +8,17 @@ import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 
-/// Avro consumer that fetches its schema from Confluent Schema Registry at startup, registers it
-/// with `AvroFormat.INSTANCE`, and then runs a normal `KPipe.avro(...)` pipeline.
+/// Avro consumer that fetches its schema from Confluent Schema Registry at startup, builds an
+/// [AvroFormat] from it, and then runs a normal `KPipe.avro(...)` pipeline.
 ///
 /// Environment variables (in addition to the standard `AppConfig`):
 ///
 /// - `SCHEMA_REGISTRY_URL` — base URL of the Schema Registry (e.g. `http://schema-registry:8081`).
 /// - `SCHEMA_SUBJECT` — the SR subject name (commonly `<topic>-value`).
 /// - `SCHEMA_VERSION` — version identifier (`"latest"` or a numeric version). Defaults to `latest`.
-/// - `SCHEMA_KEY` — the registry key the format will register the schema under. Defaults to
-///   the subject name.
 ///
 /// Confluent producers wrap each record in a 5-byte wire envelope (1 magic byte + 4-byte schema
-/// id). The pipeline uses `.skipBytes(5)` to drop that prefix before deserialization. To wire
-/// runtime ID-based lookups in 1.13, replace `skipBytes(5)` + the startup pre-registration with
-/// the `SchemaResolver` SPI once `AvroFormat` calls `resolver.lookupById(...)` automatically.
+/// id). The pipeline uses `.skipBytes(5)` to drop that prefix before deserialization.
 public final class App {
 
   private static final Logger LOGGER = System.getLogger(App.class.getName());
@@ -36,18 +32,16 @@ public final class App {
     final var srUrl = requireEnv("SCHEMA_REGISTRY_URL");
     final var subject = requireEnv("SCHEMA_SUBJECT");
     final var version = System.getenv().getOrDefault("SCHEMA_VERSION", "latest");
-    final var schemaKey = System.getenv().getOrDefault("SCHEMA_KEY", subject);
 
+    final AvroFormat format;
     try (final var resolver = new ConfluentSchemaResolver(srUrl, Duration.ofSeconds(10))) {
       final var schemaJson = resolver.lookupBySubjectVersion(subject, version);
-      AvroFormat.INSTANCE.addSchema(schemaKey, schemaJson);
-      AvroFormat.INSTANCE.withDefaultSchema(schemaKey);
-      LOGGER.log(Level.INFO, "Registered schema {0} (subject={1}, version={2})", schemaKey, subject, version);
+      format = AvroFormat.of(schemaJson);
+      LOGGER.log(Level.INFO, "Resolved schema (subject={0}, version={1})", subject, version);
     }
 
     try (
-      final var handle = KPipe
-        .avro(config.topic(), props)
+      final var handle = KPipe.avro(format, config.topic(), props)
         .skipBytes(5)
         .peek(rec -> LOGGER.log(Level.INFO, "received {0}", rec))
         .toConsole()

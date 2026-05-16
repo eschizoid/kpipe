@@ -6,12 +6,14 @@ package org.kpipe.registry;
 /// actually use:
 ///
 /// - `org.kpipe.format.json.JsonFormat.INSTANCE` — JSON via DSL-JSON (`kpipe-format-json`)
-/// - `org.kpipe.format.avro.AvroFormat.INSTANCE` — Avro (`kpipe-format-avro`)
-/// - `org.kpipe.format.protobuf.ProtobufFormat.INSTANCE` — Protobuf (`kpipe-format-protobuf`)
+/// - `org.kpipe.format.avro.AvroFormat` — Avro (`kpipe-format-avro`); construct with
+///   `new AvroFormat(schema)` or `AvroFormat.of(schemaJson)`.
+/// - `org.kpipe.format.protobuf.ProtobufFormat` — Protobuf (`kpipe-format-protobuf`); construct
+///   with `new ProtobufFormat(descriptor)`.
 /// - [#bytes] — identity passthrough for byte[] payloads (`kpipe-core`)
 ///
-/// Formats whose payloads carry a schema or descriptor (Avro, Protobuf) implement
-/// [SchemaAwareFormat] instead, which adds schema-management methods on top of this contract.
+/// Schema-bound formats (Avro, Protobuf) take their schema or descriptor at construction time so
+/// each format instance owns exactly one wire shape — no JVM-global mutable schema registry.
 ///
 /// @param <T> the type of data handled by this message format
 public interface MessageFormat<T> {

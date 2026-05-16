@@ -1,13 +1,14 @@
 package org.kpipe.format.protobuf;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 import java.util.function.UnaryOperator;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.kpipe.registry.MessageProcessorRegistry;
@@ -15,22 +16,14 @@ import org.kpipe.registry.MessageProcessorRegistry;
 class ProtobufFormatPipelineTest {
 
   private Descriptors.Descriptor descriptor;
+  private ProtobufFormat format;
   private MessageProcessorRegistry registry;
 
   @BeforeEach
   void setUp() throws Exception {
     descriptor = buildTestDescriptor();
-    registry = new MessageProcessorRegistry(ProtobufFormat.INSTANCE);
-
-    final var protoFormat = ProtobufFormat.INSTANCE;
-    protoFormat.addDescriptor("test", descriptor);
-    protoFormat.withDefaultDescriptor("test");
-  }
-
-  @AfterEach
-  void tearDown() {
-    ProtobufFormat.INSTANCE.clearSchemas();
-    ProtobufFormat.INSTANCE.clearSchemas();
+    format = new ProtobufFormat(descriptor);
+    registry = new MessageProcessorRegistry(format);
   }
 
   private DynamicMessage createTestMessage() {
@@ -43,28 +36,7 @@ class ProtobufFormatPipelineTest {
   }
 
   @Test
-  void shouldRegisterAndGetDescriptor() {
-    final var retrieved = ProtobufFormat.INSTANCE.getDescriptor("test");
-    assertNotNull(retrieved);
-    assertEquals("TestMessage", retrieved.getName());
-  }
-
-  @Test
-  void shouldReturnNullForUnregisteredDescriptor() {
-    assertNull(ProtobufFormat.INSTANCE.getDescriptor("nonexistent"));
-  }
-
-  @Test
-  void shouldClearDescriptorRegistry() {
-    assertNotNull(ProtobufFormat.INSTANCE.getDescriptor("test"));
-    ProtobufFormat.INSTANCE.clearSchemas();
-    assertNull(ProtobufFormat.INSTANCE.getDescriptor("test"));
-  }
-
-  @Test
   void shouldChainInlineOperatorsViaPipeline() {
-    // Users now write inline lambdas using the native Protobuf builder API
-    // rather than relying on operator helpers.
     final UnaryOperator<Message> setName = msg ->
       msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("name"), "Processed").build();
     final UnaryOperator<Message> deactivate = msg ->
@@ -74,16 +46,16 @@ class ProtobufFormatPipelineTest {
     registry.register(ProtobufRegistryKey.of("deactivate"), deactivate);
 
     final var pipeline = registry
-      .pipeline(ProtobufFormat.INSTANCE)
+      .pipeline(format)
       .add(ProtobufRegistryKey.of("setName"))
       .add(ProtobufRegistryKey.of("deactivate"))
       .build();
 
-    final var input = ProtobufFormat.INSTANCE.serialize(createTestMessage());
+    final var input = format.serialize(createTestMessage());
     final var output = pipeline.apply(input);
     assertNotNull(output);
 
-    final var result = ProtobufFormat.INSTANCE.deserialize(output);
+    final var result = format.deserialize(output);
     final var desc = result.getDescriptorForType();
     assertEquals("Processed", result.getField(desc.findFieldByName("name")));
     assertEquals(false, result.getField(desc.findFieldByName("active")));
@@ -92,15 +64,13 @@ class ProtobufFormatPipelineTest {
 
   @Test
   void shouldHandleNullInputInPipeline() {
-    // Per MessagePipeline contract, null input is a contract violation; throw rather than swallow.
-    final var pipeline = registry.pipeline(ProtobufFormat.INSTANCE).build();
+    final var pipeline = registry.pipeline(format).build();
     assertThrows(RuntimeException.class, () -> pipeline.apply(null));
   }
 
   @Test
   void shouldHandleEmptyInputInPipeline() {
-    // Empty bytes are not a valid Protobuf message; throw rather than swallow.
-    final var pipeline = registry.pipeline(ProtobufFormat.INSTANCE).build();
+    final var pipeline = registry.pipeline(format).build();
     assertThrows(RuntimeException.class, () -> pipeline.apply(new byte[0]));
   }
 

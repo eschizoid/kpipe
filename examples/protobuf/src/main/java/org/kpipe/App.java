@@ -20,12 +20,11 @@ public final class App {
   static void main() {
     final var config = AppConfig.fromEnv();
 
-    ProtobufFormat.INSTANCE.addDescriptor("customer", buildCustomerDescriptor());
-    ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
+    final var format = new ProtobufFormat(buildCustomerDescriptor());
 
     final var props = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
 
-    try (final var handle = KPipe.protobuf(config.topic(), props).toConsole().start()) {
+    try (final var handle = KPipe.protobuf(format, config.topic(), props).toConsole().start()) {
       LOGGER.log(Level.INFO, "Protobuf consumer started for topic {0}", config.topic());
       handle.awaitShutdown();
     } catch (final Exception e) {
