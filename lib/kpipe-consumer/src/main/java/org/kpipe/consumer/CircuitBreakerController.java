@@ -47,11 +47,12 @@ public record CircuitBreakerController(double failureThreshold, int windowSize, 
   /// the threshold. Requiring a full window avoids tripping on the first few failures before the
   /// breaker has any signal to work with.
   ///
-  /// @param stats the rolling outcome window the breaker is observing
+  /// @param totalSamples the number of slots currently filled in the rolling window
+  /// @param failureRate  the proportion of failures in the window, in `[0.0, 1.0]`
   /// @return `true` if the breaker should transition CLOSED → OPEN
-  public boolean shouldTrip(final CircuitBreakerStats stats) {
-    if (stats.totalSamples() < windowSize) return false;
-    return stats.failureRate() >= failureThreshold;
+  public boolean shouldTrip(final long totalSamples, final double failureRate) {
+    if (totalSamples < windowSize) return false;
+    return failureRate >= failureThreshold;
   }
 
   /// In `OPEN` state, returns `true` iff `openDuration` has elapsed since the breaker tripped.

@@ -104,14 +104,16 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final boolean sequentialProcessing;
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
   private final ConsumerMetrics otelMetrics;
-  private final BackpressureController backpressureController;
   private final Tracer tracer;
   private final AtomicLong inFlightCount = new AtomicLong(0);
-  /// Single source of truth for "who's holding the consumer paused" — replaces three separate
-  /// AtomicBoolean flags (manual / backpressure / circuit breaker) and the AND-of-checks each
-  /// resume site used to maintain. See [PauseCoordinator] for the arbitration semantics.
-  private final PauseCoordinator pauseCoordinator = new PauseCoordinator();
-  private volatile long backpressurePauseStartNanos;
+  /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. Replaces
+  /// the prior six-field tangle (pauseCoordinator, backpressureController, backpressurePauseStartNanos,
+  /// circuitBreakerController, circuitBreakerStats, circuitBreakerState, circuitBreakerOpenedAtNanos,
+  /// circuitBreakerProbeFuture) with a single field. The underlying decision modules
+  /// ([BackpressureController], [CircuitBreakerController]) remain public + testable on their own;
+  /// this controller owns the side-effect choreography and dispatches transitions through a Hook
+  /// that points back at `internalPause` / `internalResume` and the metric counters.
+  private final ConsumerHealthController health;
 
   private final String deadLetterTopic;
   private final KPipeProducer<K, byte[]> kpipeProducer;
@@ -135,17 +137,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// Shared virtual-thread scheduler. Owns batch-pipeline age ticks AND the circuit-breaker
   /// probe timer. Lazily created when either feature is configured; otherwise stays null.
   private final ScheduledExecutorService scheduler;
-
-  /// Circuit-breaker state. All five fields are inert when `circuitBreakerController` is null —
-  /// per-record `recordCircuitBreakerOutcome(...)` short-circuits on the null check, so callers
-  /// who don't configure a breaker pay only a single field read per record.
-  private final CircuitBreakerController circuitBreakerController;
-  private final CircuitBreakerStats circuitBreakerStats;
-  private final AtomicReference<CircuitBreakerState> circuitBreakerState = new AtomicReference<>(
-    CircuitBreakerState.CLOSED
-  );
-  private final AtomicLong circuitBreakerOpenedAtNanos = new AtomicLong(0L);
-  private volatile ScheduledFuture<?> circuitBreakerProbeFuture;
 
   /// Represents an error that occurred during record processing. Contains the original record,
   /// the exception that was thrown, and the number of retry attempts made.
@@ -731,7 +722,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         ? builder.rebalanceListener
         : (this.offsetManager != null ? this.offsetManager.createRebalanceListener() : null);
 
-    this.backpressureController = (
+    final var bp = (
       builder.backpressureController != null
         ? builder.backpressureController
         : new BackpressureController(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK, null)
@@ -772,12 +763,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
       this.batchWrappers = Map.of();
     }
 
-    this.circuitBreakerController = builder.circuitBreakerController;
-    this.circuitBreakerStats =
-      this.circuitBreakerController != null
-        ? new CircuitBreakerStats(this.circuitBreakerController.windowSize())
-        : null;
-
     this.metricsReporters = List.copyOf(builder.metricsReporters);
     this.metricsReporterInterval = builder.metricsReporterInterval;
     this.useShutdownHook = builder.useShutdownHook;
@@ -790,9 +775,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
       LOGGER.log(
         Level.INFO,
         "No backpressure configured, using default {0} strategy (high={1}, low={2})",
-        this.backpressureController.getMetricName(),
-        this.backpressureController.highWatermark(),
-        this.backpressureController.lowWatermark()
+        bp.getMetricName(),
+        bp.highWatermark(),
+        bp.lowWatermark()
       );
     }
 
@@ -822,6 +807,52 @@ public class KPipeConsumer<K> implements AutoCloseable {
     );
 
     this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
+
+    this.health = new ConsumerHealthController(
+      bp,
+      builder.circuitBreakerController,
+      this.scheduler,
+      new ConsumerHealthController.Hook() {
+        @Override
+        public void onPause() {
+          internalPause();
+        }
+
+        @Override
+        public void onResume() {
+          internalResume();
+        }
+
+        @Override
+        public void onBackpressurePause() {
+          metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
+          otelMetrics.recordBackpressurePause();
+        }
+
+        @Override
+        public void onBackpressureTimeMs(final long ms) {
+          metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(ms);
+          otelMetrics.recordBackpressureTime(ms);
+        }
+
+        @Override
+        public void onCircuitBreakerTrip() {
+          metrics.get(METRIC_CIRCUIT_BREAKER_TRIPS).incrementAndGet();
+          otelMetrics.recordCircuitBreakerTrip();
+        }
+
+        @Override
+        public void onCircuitBreakerStateChange(final CircuitBreakerState state) {
+          otelMetrics.recordCircuitBreakerStateChange(state);
+        }
+
+        @Override
+        public void onCircuitBreakerTimeOpenMs(final long ms) {
+          metrics.get(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS).addAndGet(ms);
+          otelMetrics.recordCircuitBreakerTimeOpen(ms);
+        }
+      }
+    );
   }
 
   private <T> BatchPipelineWrapper<K, T> createBatchWrapper(final Builder.BatchSpec<T> spec) {
@@ -1003,7 +1034,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         try {
           while (isRunning()) {
             processCommands();
-            checkBackpressure();
+            health.tickBackpressure(kafkaConsumer);
             if (!isRunning()) break;
             if (isPaused()) {
               processCommands();
@@ -1045,7 +1076,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///
   /// This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
-    if (pauseCoordinator.requestPause(PauseCoordinator.Source.MANUAL)) internalPause();
+    if (health.requestPause(ConsumerHealthController.Source.MANUAL)) internalPause();
   }
 
   private void internalPause() {
@@ -1123,7 +1154,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
-    if (pauseCoordinator.releasePause(PauseCoordinator.Source.MANUAL)) internalResume();
+    if (health.releasePause(ConsumerHealthController.Source.MANUAL)) internalResume();
   }
 
   private void internalResume() {
@@ -1260,8 +1291,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Error draining batch buffer during shutdown", e);
       }
     }
-    final var probe = circuitBreakerProbeFuture;
-    if (probe != null) probe.cancel(false);
+    health.shutdown();
     if (scheduler != null) scheduler.shutdownNow();
     if (offsetManager != null) {
       try {
@@ -1374,7 +1404,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw: {0}", traceEx.getMessage());
       }
       inFlightCount.decrementAndGet();
-      if (pauseCoordinator.isHeldBy(PauseCoordinator.Source.BACKPRESSURE)) {
+      if (health.isHeldBy(ConsumerHealthController.Source.BACKPRESSURE)) {
         // Backpressure is in-flight-count-driven; finishing a record could drop the count below
         // the low watermark, so wake the consumer thread to re-evaluate on its next iteration.
         final var thread = consumerThread.get();
@@ -1418,7 +1448,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       try {
         pipeline.processToSink(record.value());
         markOffsetProcessed(record);
-        recordCircuitBreakerOutcome(true);
+        health.recordOutcome(true);
         return true;
       } catch (final Exception e) {
         if (isInterruptionRelated(e)) {
@@ -1503,7 +1533,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       if (sent) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
     }
     markOffsetProcessed(record);
-    recordCircuitBreakerOutcome(false);
+    health.recordOutcome(false);
     try {
       errorHandler.accept(new ProcessingError<>(record, e, retryCount));
     } catch (final Exception ex) {
@@ -1514,130 +1544,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
         ex.getMessage(),
         ex
       );
-    }
-  }
-
-  /// Feeds a per-record outcome into the circuit breaker state machine. No-op if no breaker is
-  /// configured. Drives all three state transitions:
-  ///
-  ///   * `CLOSED + failure crossing threshold` → `OPEN` (CAS, pause, schedule probe)
-  ///   * `HALF_OPEN + success` → `CLOSED` (CAS, reset stats — fresh window for the next cycle)
-  ///   * `HALF_OPEN + failure` → `OPEN` (CAS, pause, restart probe timer)
-  ///
-  /// Outcomes that arrive while `OPEN` (in-flight records from before pause) are recorded into
-  /// stats but cannot drive transitions — the timer is the only path out of `OPEN`.
-  ///
-  /// All state transitions follow §11's single-read CAS pattern: read state once, decide,
-  /// `compareAndSet`. Lost races are no-ops — another thread already drove the transition.
-  private void recordCircuitBreakerOutcome(final boolean success) {
-    if (circuitBreakerController == null) return;
-    final var current = circuitBreakerState.get();
-    // OPEN-state outcomes are in-flight remnants from before the trip: they can't drive a
-    // transition (only the probe timer leaves OPEN), so feeding them into stats is pure
-    // overhead — and worse, would skew the window the breaker uses to re-evaluate later.
-    if (current == CircuitBreakerState.OPEN) return;
-    if (success) circuitBreakerStats.recordSuccess();
-    else circuitBreakerStats.recordFailure();
-
-    if (current == CircuitBreakerState.CLOSED) {
-      if (!success && circuitBreakerController.shouldTrip(circuitBreakerStats)) {
-        if (circuitBreakerState.compareAndSet(CircuitBreakerState.CLOSED, CircuitBreakerState.OPEN)) tripBreaker();
-      }
-    } else {
-      // HALF_OPEN — the only remaining state after the OPEN early-return
-      final var target = success ? CircuitBreakerState.CLOSED : CircuitBreakerState.OPEN;
-      if (circuitBreakerState.compareAndSet(CircuitBreakerState.HALF_OPEN, target)) {
-        if (success) closeBreaker();
-        else tripBreaker();
-      }
-    }
-  }
-
-  /// Transitions the breaker into OPEN: pause the consumer, schedule a one-shot probe timer, log
-  /// at WARNING. Called on CLOSED→OPEN and HALF_OPEN→OPEN transitions.
-  private void tripBreaker() {
-    circuitBreakerOpenedAtNanos.set(System.nanoTime());
-    LOGGER.log(
-      Level.WARNING,
-      "Circuit breaker tripped: pausing consumer (failureRate={0}, openDuration={1})",
-      circuitBreakerStats.failureRate(),
-      circuitBreakerController.openDuration()
-    );
-    metrics.get(METRIC_CIRCUIT_BREAKER_TRIPS).incrementAndGet();
-    otelMetrics.recordCircuitBreakerTrip();
-    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.OPEN);
-    if (pauseCoordinator.requestPause(PauseCoordinator.Source.CIRCUIT_BREAKER)) internalPause();
-    final var existing = circuitBreakerProbeFuture;
-    if (existing != null) existing.cancel(false);
-    circuitBreakerProbeFuture = scheduler.schedule(
-      this::tryHalfOpen,
-      circuitBreakerController.openDuration().toMillis(),
-      TimeUnit.MILLISECONDS
-    );
-  }
-
-  /// One-shot timer callback. CAS the state OPEN → HALF_OPEN and resume the consumer; the next
-  /// record's outcome will drive the final transition. Lost CAS = already moved on (e.g. a manual
-  /// resume / shutdown), no-op.
-  private void tryHalfOpen() {
-    if (!circuitBreakerState.compareAndSet(CircuitBreakerState.OPEN, CircuitBreakerState.HALF_OPEN)) return;
-    // The probe future has fired (this method IS the firing callback). Null the field so a
-    // subsequent `tripBreaker` cancel doesn't hold a stale completed handle.
-    circuitBreakerProbeFuture = null;
-    final var openedAt = circuitBreakerOpenedAtNanos.get();
-    final var openMs = openedAt == 0L ? 0L : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - openedAt);
-    LOGGER.log(Level.INFO, "Circuit breaker probing: open for {0} ms, resuming consumer", openMs);
-    metrics.get(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS).addAndGet(openMs);
-    otelMetrics.recordCircuitBreakerTimeOpen(openMs);
-    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN);
-    if (pauseCoordinator.releasePause(PauseCoordinator.Source.CIRCUIT_BREAKER)) internalResume();
-  }
-
-  /// Transitions the breaker back to CLOSED after a successful probe. Resets stats so the next
-  /// trip cycle starts with a fresh window.
-  private void closeBreaker() {
-    LOGGER.log(Level.INFO, "Circuit breaker closed: probe succeeded, resuming normal operation");
-    circuitBreakerStats.reset();
-    circuitBreakerOpenedAtNanos.set(0L);
-    otelMetrics.recordCircuitBreakerStateChange(CircuitBreakerState.CLOSED);
-  }
-
-  private void checkBackpressure() {
-    switch (backpressureController.check(kafkaConsumer, isPaused())) {
-      case PAUSE -> {
-        final long value = backpressureController.getMetric(kafkaConsumer);
-        LOGGER.log(
-          Level.WARNING,
-          "Backpressure triggered: pausing consumer ({0}={1})",
-          backpressureController.getMetricName(),
-          value
-        );
-        metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
-        otelMetrics.recordBackpressurePause();
-        backpressurePauseStartNanos = System.nanoTime();
-        if (pauseCoordinator.requestPause(PauseCoordinator.Source.BACKPRESSURE)) internalPause();
-      }
-      case RESUME -> {
-        final long duration = Math.max(
-          1,
-          TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos)
-        );
-        metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(duration);
-        otelMetrics.recordBackpressureTime(duration);
-        if (pauseCoordinator.releasePause(PauseCoordinator.Source.BACKPRESSURE)) {
-          LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
-          internalResume();
-        } else {
-          LOGGER.log(
-            Level.INFO,
-            "Backpressure resolved (paused for {0} ms), other sources still hold the pause: {1}",
-            duration,
-            pauseCoordinator.currentSources()
-          );
-        }
-      }
-      case NONE -> {
-      }
     }
   }
 
