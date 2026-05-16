@@ -12,6 +12,11 @@ dependencies {
   // Benchmark targets
   implementation(libs.kafkaClients)
   implementation(libs.parallelConsumerCore)
+  // Reactor Kafka pulls a transitive kafka-clients; force the project version via the
+  // `kafkaClients` dependency above so all consumers under test hit the same wire stack.
+  implementation(libs.reactorKafka) {
+    exclude(group = "org.apache.kafka", module = "kafka-clients")
+  }
   implementation(libs.avro)
   implementation(libs.dslJson)
 

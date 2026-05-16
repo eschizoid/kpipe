@@ -7,8 +7,12 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -24,51 +28,57 @@ import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.openjdk.jmh.annotations.Level;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
+import reactor.core.publisher.Flux;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOptions;
 
-/// Shared infrastructure for `ParallelProcessingBenchmark`.
+/// Shared infrastructure for the parallel-consumer competitive benchmarks.
 ///
-/// This class holds all non-benchmark mechanics so `ParallelProcessingBenchmark` can focus
-/// only on measured code paths.
+/// Hosts the embedded Kafka broker, topic seeding, and the four invocation-scoped runtimes the
+/// benchmarks compare:
 ///
-/// ### What lives here
-/// - Embedded Kafka lifecycle (startup/shutdown)
-/// - Topic creation and seed-data publishing
-/// - Common consumer property construction
-/// - KPipe and Confluent invocation-scoped setup/teardown
-/// - Shared wait/timeout utility used by benchmark methods
+///   * KPipe (`Stream<byte[]>` + virtual threads)
+///   * Confluent Parallel Consumer (`ProcessingOrder.UNORDERED`, configurable max concurrency)
+///   * Reactor Kafka (`Flux<ReceiverRecord>` on the Reactor `parallel` scheduler)
+///   * Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor` (the hand-rolled baseline)
 ///
-/// ### Why this split exists
-/// - Keeps benchmark methods small and comparable.
-/// - Prevents accidental infrastructure drift between KPipe and Confluent paths.
-/// - Makes JMH state lifecycles explicit (`Trial` vs `Invocation`).
-/// - Improves reliability by centralizing deterministic teardown logic.
+/// Each runtime simulates a per-record workload of `workMicros` microseconds via
+/// `LockSupport.parkNanos`. Setting `workMicros=0` reduces the bench to a pure framework-overhead
+/// comparison; non-zero values expose how each runtime schedules blocking work.
 public final class ParallelProcessingBenchmarkInfrastructure {
 
-  /// Topic used by both benchmark implementations.
   static final String TOPIC = "benchmark-topic";
 
-  /// Number of records seeded and awaited per invocation.
-  static final int TARGET_MESSAGES = 10_000;
+  /// Default number of records seeded per trial. Steady-state throughput is the goal — at 10k
+  /// the group-join + first-poll cost was dominating the measurement.
+  static final int TARGET_MESSAGES = 100_000;
 
   /// Topic partitions used to expose parallel scheduler behavior.
   static final int TOPIC_PARTITIONS = 8;
 
-  /// Safety timeout for per-invocation message completion checks.
-  private static final long MAX_WAIT_NANOS = TimeUnit.SECONDS.toNanos(30);
+  /// Confluent Parallel Consumer max concurrency (number of worker threads it spins up).
+  static final int CONFLUENT_MAX_CONCURRENCY = 100;
 
-  /// Bounded close timeout for Confluent resources.
+  /// Safety timeout for per-invocation completion checks. Generous because 100k records under
+  /// non-trivial per-record work can easily take tens of seconds.
+  private static final long MAX_WAIT_NANOS = TimeUnit.MINUTES.toNanos(2);
+
   private static final Duration PC_CLOSE_TIMEOUT = Duration.ofSeconds(5);
 
   private ParallelProcessingBenchmarkInfrastructure() {}
 
-  /// Waits until `TARGET_MESSAGES` are observed for the current invocation.
-  ///
-  /// @param benchmarkName name used in timeout diagnostics
-  /// @param processedCount invocation-scoped progress counter
+  /// Simulates per-record work. `LockSupport.parkNanos` is the right primitive for "this thread
+  /// is blocked for N µs" — it lets the JVM schedule something else on the carrier thread and is
+  /// the closest cheap approximation of an I/O wait (JDBC commit, HTTP round-trip).
+  static void simulateWork(final int workMicros) {
+    if (workMicros > 0) LockSupport.parkNanos(TimeUnit.MICROSECONDS.toNanos(workMicros));
+  }
+
   static void awaitProcessedMessages(final String benchmarkName, final AtomicInteger processedCount) {
     final long deadline = System.nanoTime() + MAX_WAIT_NANOS;
     while (processedCount.get() < TARGET_MESSAGES) {
@@ -85,10 +95,8 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
   }
 
-  /// Trial-scoped Kafka test environment.
-  ///
-  /// A single embedded broker is started once per JMH trial to avoid startup overhead in the
-  /// measured invocation path.
+  /// Trial-scoped Kafka test environment. One embedded broker per JMH trial; the seed payload is
+  /// produced once.
   @State(Scope.Benchmark)
   public static class KafkaContext {
 
@@ -96,7 +104,6 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     private String bootstrapServers;
     private Properties clientProperties;
 
-    /// Starts embedded Kafka and seeds benchmark data once per trial.
     @Setup(Level.Trial)
     public void setup() {
       final var embeddedBackend = new EmbeddedKafkaBackend();
@@ -107,18 +114,11 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       seedTopic(clientProperties);
     }
 
-    /// Stops embedded Kafka once the trial completes.
     @TearDown(Level.Trial)
     public void tearDown() throws Exception {
       if (backend != null) backend.close();
     }
 
-    /// Builds baseline consumer properties for benchmark consumers.
-    ///
-    /// All consumers get consistent deserializers, offset behavior, and isolated group IDs.
-    ///
-    /// @param groupPrefix prefix used to build a unique invocation-safe group id
-    /// @return a mutable properties instance for consumer construction
     public Properties consumerProps(final String groupPrefix) {
       final var props = new Properties();
       props.putAll(clientProperties);
@@ -127,18 +127,16 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
       props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
       props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+      props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
       return props;
     }
 
-    /// Seeds the shared benchmark topic with `TARGET_MESSAGES` JSON records.
     private static void seedTopic(final Properties clientProperties) {
       createTopicIfMissing(clientProperties);
-
       final var producerProps = new Properties();
       producerProps.putAll(clientProperties);
       producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
       producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
-
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
         final var value = """
           {
@@ -146,7 +144,6 @@ public final class ParallelProcessingBenchmarkInfrastructure {
             "message": "Benchmark message"
           }
           """.getBytes(StandardCharsets.UTF_8);
-
         for (int i = 0; i < TARGET_MESSAGES; i++) {
           producer.send(new ProducerRecord<>(TOPIC, value)).get();
         }
@@ -155,11 +152,9 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       }
     }
 
-    /// Creates the benchmark topic if it does not already exist.
     private static void createTopicIfMissing(final Properties clientProperties) {
       final var adminProps = new Properties();
       adminProps.putAll(clientProperties);
-
       try (final var admin = Admin.create(adminProps)) {
         admin.createTopics(Collections.singletonList(new NewTopic(TOPIC, TOPIC_PARTITIONS, (short) 1))).all().get();
       } catch (final Exception e) {
@@ -168,10 +163,15 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
   }
 
-  /// Invocation-scoped KPipe runtime.
-  ///
-  /// The consumer is built in setup and started in the benchmark method so processing begins
-  /// inside measured time (same timing model as Confluent path).
+  /// Workload parameter shared by every invocation context. Exposed as a JMH `@Param` on the
+  /// benchmark methods so the parameter sweep stays at the benchmark layer.
+  @State(Scope.Benchmark)
+  public static class WorkloadParams {
+
+    @Param({ "0", "100", "1000" })
+    public int workMicros;
+  }
+
   @State(Scope.Thread)
   public static class KpipeInvocationContext {
 
@@ -181,20 +181,19 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     private KPipeConsumer<byte[]> consumer;
 
     @Setup(Level.Invocation)
-    public void setup(final KafkaContext kafkaContext) {
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
       processedCount = new AtomicInteger(0);
-      final var kpipeProps = kafkaContext.consumerProps("kpipe-group");
-      kpipeProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-
+      final var props = kafkaContext.consumerProps("kpipe-group");
+      final var workMicros = params.workMicros;
       final var pipeline = REGISTRY.pipeline(MessageFormat.bytes())
         .add(b -> {
+          simulateWork(workMicros);
           processedCount.incrementAndGet();
           return b;
         })
         .build();
-
       consumer = KPipeConsumer.<byte[]>builder()
-        .withProperties(kpipeProps)
+        .withProperties(props)
         .withTopic(TOPIC)
         .withPipeline(pipeline)
         .withSequentialProcessing(false)
@@ -215,65 +214,166 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
   }
 
-  /// Invocation-scoped Confluent Parallel Consumer runtime.
-  ///
-  /// `Scope.Thread` + `Level.Invocation` ensures each measured invocation receives fresh Confluent
-  /// runtime state and deterministic shutdown.
   @State(Scope.Thread)
   public static class ConfluentInvocationContext {
 
     private AtomicInteger processedCount;
     private KafkaConsumer<byte[], byte[]> kafkaConsumer;
     private ParallelStreamProcessor<byte[], byte[]> processor;
+    private int workMicros;
 
-    /// Creates Confluent runtime for one invocation.
     @Setup(Level.Invocation)
-    public void setup(final KafkaContext kafkaContext) {
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
       processedCount = new AtomicInteger(0);
-
-      final var consumerProps = kafkaContext.consumerProps("confluent-group");
-      consumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-
-      kafkaConsumer = new KafkaConsumer<>(consumerProps);
+      workMicros = params.workMicros;
+      final var props = kafkaContext.consumerProps("confluent-group");
+      kafkaConsumer = new KafkaConsumer<>(props);
       processor = ParallelStreamProcessor.createEosStreamProcessor(
         ParallelConsumerOptions.<byte[], byte[]>builder()
           .ordering(ParallelConsumerOptions.ProcessingOrder.UNORDERED)
-          .maxConcurrency(100)
+          .maxConcurrency(CONFLUENT_MAX_CONCURRENCY)
           .ignoreReflectiveAccessExceptionsForAutoCommitDisabledCheck(true)
           .consumer(kafkaConsumer)
           .build()
       );
-
       processor.subscribe(Collections.singletonList(TOPIC));
     }
 
-    /// Starts Confluent polling inside measured benchmark time.
     void start() {
-      processor.poll(pollContext -> processedCount.incrementAndGet());
+      processor.poll(ctx -> {
+        simulateWork(workMicros);
+        processedCount.incrementAndGet();
+      });
     }
 
-    /// Deterministically tears down Confluent resources for one invocation.
-    ///
-    /// `closeDontDrainFirst` is intentional in benchmarks: we prioritize prompt, bounded shutdown
-    /// to avoid JMH fork-exit warnings from background executor threads.
     @TearDown(Level.Invocation)
     public void tearDown() {
       if (processor != null) processor.closeDontDrainFirst(PC_CLOSE_TIMEOUT);
       if (kafkaConsumer != null) kafkaConsumer.close();
     }
 
-    /// @return invocation-scoped processed message counter
     AtomicInteger processedCount() {
       return processedCount;
     }
   }
 
-  /// Thin wrapper around Kafka test-kit bootstrap and shutdown.
+  /// Reactor Kafka runtime. `KafkaReceiver.receive()` produces a `Flux<ReceiverRecord>`; per-record
+  /// work runs on Reactor's `parallel` scheduler via `flatMap`. Concurrency is bounded by the
+  /// flatMap's `Queues.SMALL_BUFFER_SIZE` plus the scheduler's worker count.
+  @State(Scope.Thread)
+  public static class ReactorInvocationContext {
+
+    private AtomicInteger processedCount;
+    private reactor.core.Disposable subscription;
+    private int workMicros;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
+      processedCount = new AtomicInteger(0);
+      workMicros = params.workMicros;
+      final var props = kafkaContext.consumerProps("reactor-group");
+      final var receiverOptions = ReceiverOptions
+        .<byte[], byte[]>create(props)
+        .subscription(Collections.singletonList(TOPIC));
+      subscription = null;
+      this.receiver = KafkaReceiver.create(receiverOptions);
+    }
+
+    private KafkaReceiver<byte[], byte[]> receiver;
+
+    void start() {
+      subscription = receiver
+        .receive()
+        .parallel(CONFLUENT_MAX_CONCURRENCY)
+        .runOn(reactor.core.scheduler.Schedulers.parallel())
+        .doOnNext(record -> {
+          simulateWork(workMicros);
+          processedCount.incrementAndGet();
+          record.receiverOffset().acknowledge();
+        })
+        .sequential()
+        .subscribe();
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      if (subscription != null && !subscription.isDisposed()) subscription.dispose();
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
+  /// Hand-rolled baseline: plain `KafkaConsumer.poll()` loop with `newVirtualThreadPerTaskExecutor`
+  /// dispatching one task per record. No framework, no offset manager. This is the floor of "what
+  /// if you just wrote the consumer loop yourself on Loom?" — the implicit comparison every
+  /// framework lives next to.
+  @State(Scope.Thread)
+  public static class RawInvocationContext {
+
+    private AtomicInteger processedCount;
+    private KafkaConsumer<byte[], byte[]> kafkaConsumer;
+    private ExecutorService executor;
+    private Thread pollLoop;
+    private final AtomicBoolean running = new AtomicBoolean(true);
+    private int workMicros;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
+      processedCount = new AtomicInteger(0);
+      workMicros = params.workMicros;
+      running.set(true);
+      final var props = kafkaContext.consumerProps("raw-group");
+      kafkaConsumer = new KafkaConsumer<>(props);
+      kafkaConsumer.subscribe(Collections.singletonList(TOPIC));
+      executor = Executors.newVirtualThreadPerTaskExecutor();
+    }
+
+    void start() {
+      pollLoop = Thread.ofPlatform().daemon().start(() -> {
+        while (running.get()) {
+          final var records = kafkaConsumer.poll(Duration.ofMillis(100));
+          for (final var record : records) {
+            executor.submit(() -> {
+              simulateWork(workMicros);
+              processedCount.incrementAndGet();
+            });
+          }
+        }
+      });
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      running.set(false);
+      if (pollLoop != null) {
+        try {
+          pollLoop.join(Duration.ofSeconds(5).toMillis());
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+      if (executor != null) {
+        executor.shutdownNow();
+        try {
+          executor.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+      if (kafkaConsumer != null) kafkaConsumer.close();
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
   private static final class EmbeddedKafkaBackend implements AutoCloseable {
 
     private KafkaClusterTestKit cluster;
 
-    /// Starts a single-node combined KRaft cluster configured for replication factor 1 internals.
     void start() {
       try {
         final var nodes = new TestKitNodes.Builder()
@@ -281,7 +381,6 @@ public final class ParallelProcessingBenchmarkInfrastructure {
           .setNumBrokerNodes(1)
           .setNumControllerNodes(1)
           .build();
-
         cluster = new KafkaClusterTestKit.Builder(nodes)
           .setConfigProp("auto.create.topics.enable", "true")
           .setConfigProp("offsets.topic.replication.factor", "1")
@@ -289,7 +388,6 @@ public final class ParallelProcessingBenchmarkInfrastructure {
           .setConfigProp("transaction.state.log.min.isr", "1")
           .setConfigProp("min.insync.replicas", "1")
           .build();
-
         cluster.format();
         cluster.startup();
         cluster.waitForReadyBrokers();
@@ -298,14 +396,12 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       }
     }
 
-    /// @return client properties required to connect to this embedded cluster
     Properties getClientProperties() {
       final var copy = new Properties();
       copy.putAll(cluster.clientProperties());
       return copy;
     }
 
-    /// Stops the embedded cluster and releases file/network resources.
     @Override
     public void close() throws Exception {
       if (cluster != null) cluster.close();

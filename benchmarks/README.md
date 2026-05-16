@@ -23,13 +23,25 @@ Measures the efficiency of KPipe's magic byte offset handling vs. traditional by
   without creating an intermediate array copy.
 - **Manual Avro Magic Handling**: Strips the magic bytes using `Arrays.copyOfRange` before deserialization.
 
-### 3. Parallel Processing Overhead (`ParallelProcessingBenchmark`)
+### 3. Parallel Processing — Competitive Suite (`ParallelProcessingBenchmark`)
 
-KPipe's virtual-thread parallel processing vs. the Confluent Parallel Consumer.
+Four parallel-consumer runtimes drink from the same seeded topic on the same in-process Kafka broker:
 
-- **KPipe**: thread-per-record on Loom — no pool, no queue, no batching primitives.
-- **Confluent Parallel Consumer**: the de-facto baseline most teams reach for.
-- **Kafka backend**: an in-process broker via the Apache Kafka test kit (no external Kafka).
+- **KPipe** — virtual-thread-per-record on Loom; no pool, no queue.
+- **Confluent Parallel Consumer** — `ProcessingOrder.UNORDERED` with a 100-worker pool. The de-facto industry
+  baseline.
+- **Reactor Kafka** — `Flux<ReceiverRecord>` on the Reactor `parallel` scheduler with a matching concurrency limit.
+- **Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor`** — the hand-rolled baseline. No framework, no offset
+  manager. Establishes the floor of "what if I just wrote the loop myself?"
+
+A `workMicros` `@Param` (`0`, `100`, `1000`) injects per-record work via `LockSupport.parkNanos` so the bench
+covers three workload regimes: pure framework overhead (0 µs), local enrichment (100 µs), and blocking I/O round
+trip (1000 µs). At `workMicros=0` the comparison is "who has the lowest per-record overhead?"; at
+`workMicros=1000` it's "who schedules blocking work best?" — those two questions usually have different winners.
+
+Each invocation processes **100,000 records** across **8 partitions**. The previous 10k record count was
+startup-dominated; 100k pushes the harness into the steady-state regime where group-join and first-poll cost
+become statistically negligible.
 
 ### 4. Batch Sink Throughput (`BatchSinkLatencyBenchmark`)
 
