@@ -49,6 +49,7 @@ public class MessageProcessorRegistry {
   /// (`register`, `getOperator` / `getSink`, etc.) still split by overload / suffix to preserve
   /// the type-safe API; only the *plumbing* is shared.
   private static final class Namespace {
+
     private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> map = new ConcurrentHashMap<>();
 
     <T> void put(final RegistryKey<T> key, final Object value) {
@@ -101,8 +102,9 @@ public class MessageProcessorRegistry {
 
   /// Creates a new registry with the specified message format.
   ///
-  /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`, `AvroFormat.INSTANCE`,
-  ///                      `ProtobufFormat.INSTANCE`, `MessageFormat.bytes()`, or a custom impl)
+  /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`,
+  ///                      `new AvroFormat(schema)`, `new ProtobufFormat(descriptor)`,
+  ///                      `MessageFormat.bytes()`, or a custom impl)
   public MessageProcessorRegistry(final MessageFormat<?> messageFormat) {
     this.messageFormat = Objects.requireNonNull(messageFormat, "Message format cannot be null");
   }
@@ -162,7 +164,10 @@ public class MessageProcessorRegistry {
     return input -> {
       final RegistryEntry<UnaryOperator<T>> entry = operators.getAs(key);
       if (entry == null) {
-        LOGGER.log(Level.WARNING, "No operator registered under key %s — passing input through unchanged".formatted(key));
+        LOGGER.log(
+          Level.WARNING,
+          "No operator registered under key %s — passing input through unchanged".formatted(key)
+        );
         return input;
       }
       return entry.apply(input);
@@ -235,10 +240,7 @@ public class MessageProcessorRegistry {
   /// @param enumClass the enum class whose constants are sinks
   /// @param <T>       the pipeline value type
   /// @param <E>       the enum type implementing `MessageSink<T>`
-  public <T, E extends Enum<E> & MessageSink<T>> void registerSinkEnum(
-    final Class<T> type,
-    final Class<E> enumClass
-  ) {
+  public <T, E extends Enum<E> & MessageSink<T>> void registerSinkEnum(final Class<T> type, final Class<E> enumClass) {
     Objects.requireNonNull(type, "type cannot be null");
     Objects.requireNonNull(enumClass, "enumClass cannot be null");
     for (final var constant : enumClass.getEnumConstants()) {
@@ -326,5 +328,4 @@ public class MessageProcessorRegistry {
       }
     };
   }
-
 }

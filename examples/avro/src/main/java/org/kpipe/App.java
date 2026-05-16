@@ -22,18 +22,14 @@ public final class App {
     final var config = AppConfig.fromEnv();
     final var schemaRegistryUrl = System.getenv().getOrDefault("SCHEMA_REGISTRY_URL", DEFAULT_SCHEMA_REGISTRY_URL);
 
+    final AvroFormat format;
     try (final var resolver = new ConfluentSchemaResolver(schemaRegistryUrl)) {
-      AvroFormat.INSTANCE.addSchema(
-        "1",
-        "com.kpipe.customer",
-        resolver.lookupBySubjectVersion("com.kpipe.customer", "latest")
-      );
+      format = AvroFormat.of(resolver.lookupBySubjectVersion("com.kpipe.customer", "latest"));
     }
-    AvroFormat.INSTANCE.withDefaultSchema("1");
 
     final var props = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
 
-    try (final var handle = KPipe.avro(config.topic(), props).skipBytes(5).toConsole().start()) {
+    try (final var handle = KPipe.avro(format, config.topic(), props).skipBytes(5).toConsole().start()) {
       LOGGER.log(Level.INFO, "Avro consumer started for topic {0}", config.topic());
       handle.awaitShutdown();
     } catch (final Exception e) {

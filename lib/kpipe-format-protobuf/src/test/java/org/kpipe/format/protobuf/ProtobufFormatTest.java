@@ -1,36 +1,46 @@
 package org.kpipe.format.protobuf;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ProtobufFormatTest {
 
-  private ProtobufFormat format;
   private Descriptors.Descriptor descriptor;
+  private ProtobufFormat format;
 
   @BeforeEach
   void setUp() throws Exception {
-    format = ProtobufFormat.INSTANCE;
     descriptor = buildTestDescriptor();
+    format = new ProtobufFormat(descriptor);
   }
 
-  @AfterEach
-  void tearDown() {
-    format.clearSchemas();
-    ProtobufFormat.INSTANCE.clearSchemas();
+  @Test
+  void constructorRejectsNullDescriptor() {
+    assertThrows(NullPointerException.class, () -> new ProtobufFormat(null));
+  }
+
+  @Test
+  void descriptorAccessorReturnsBoundDescriptor() {
+    assertSame(descriptor, format.descriptor());
+  }
+
+  @Test
+  void consoleSinkIsNonNull() {
+    assertNotNull(format.consoleSink());
   }
 
   @Test
   void shouldSerializeAndDeserializeRoundTrip() {
-    format.addDescriptor("test", descriptor);
-    format.withDefaultDescriptor("test");
-
     final var original = DynamicMessage.newBuilder(descriptor)
       .setField(descriptor.findFieldByName("id"), 99L)
       .setField(descriptor.findFieldByName("name"), "RoundTrip")
@@ -55,113 +65,17 @@ class ProtobufFormatTest {
 
   @Test
   void shouldDeserializeNullReturnsNull() {
-    format.addDescriptor("test", descriptor);
-    format.withDefaultDescriptor("test");
     assertNull(format.deserialize(null));
   }
 
   @Test
   void shouldDeserializeEmptyReturnsNull() {
-    format.addDescriptor("test", descriptor);
-    format.withDefaultDescriptor("test");
     assertNull(format.deserialize(new byte[0]));
   }
 
   @Test
-  void shouldThrowWhenNoDefaultDescriptor() {
-    assertThrows(UnsupportedOperationException.class, () -> format.deserialize(new byte[] { 1, 2, 3 }));
-  }
-
-  @Test
-  void shouldThrowWhenDescriptorKeyNotFound() {
-    format.withDefaultDescriptor("missing");
-    assertThrows(IllegalArgumentException.class, () -> format.deserialize(new byte[] { 1, 2, 3 }));
-  }
-
-  @Test
   void shouldThrowOnInvalidProtobufBytes() {
-    format.addDescriptor("test", descriptor);
-    format.withDefaultDescriptor("test");
-    // Invalid protobuf bytes — field tag with wrong wire type
     assertThrows(RuntimeException.class, () -> format.deserialize(new byte[] { (byte) 0xFF, (byte) 0xFF }));
-  }
-
-  @Test
-  void shouldAddDescriptorAndRegisterSchema() {
-    format.addDescriptor("user", descriptor);
-
-    final var schema = format.findSchema("user");
-    assertTrue(schema.isPresent());
-    assertEquals("test.TestMessage", schema.get().fullyQualifiedName());
-  }
-
-  @Test
-  void shouldGetDescriptorByKey() {
-    format.addDescriptor("myKey", descriptor);
-
-    final var retrieved = format.getDescriptor("myKey");
-    assertNotNull(retrieved);
-    assertEquals("TestMessage", retrieved.getName());
-  }
-
-  @Test
-  void shouldReturnNullForUnregisteredDescriptor() {
-    assertNull(format.getDescriptor("nonexistent"));
-  }
-
-  @Test
-  void shouldAddSchemaMetadataOnly() {
-    format.addSchema("proto1", "com.example.Msg", "/path/to/file.proto");
-
-    final var schema = format.findSchema("proto1");
-    assertTrue(schema.isPresent());
-    assertEquals("com.example.Msg", schema.get().fullyQualifiedName());
-    assertEquals("/path/to/file.proto", schema.get().location());
-  }
-
-  @Test
-  void shouldGetAllSchemas() {
-    format.addDescriptor("a", descriptor);
-    format.addSchema("b", "com.example.B", "b.proto");
-
-    final var schemas = format.getSchemas();
-    assertEquals(2, schemas.size());
-  }
-
-  @Test
-  void shouldFindSchemasByPredicate() {
-    format.addDescriptor("test", descriptor);
-    format.addSchema("other", "com.other.Msg", "other.proto");
-
-    final var results = format.findSchemas(s -> s.fullyQualifiedName().startsWith("test."));
-    assertEquals(1, results.size());
-  }
-
-  @Test
-  void shouldClearSchemasAndDescriptors() {
-    format.addDescriptor("test", descriptor);
-    format.withDefaultDescriptor("test");
-
-    format.clearSchemas();
-
-    assertTrue(format.getSchemas().isEmpty());
-    assertNull(format.getDescriptor("test"));
-  }
-
-  @Test
-  void shouldReturnEmptyOptionalForMissingSchema() {
-    assertFalse(format.findSchema("nonexistent").isPresent());
-  }
-
-  @Test
-  void shouldRegisterDescriptorOnSharedInstance() {
-    format.addDescriptor("sync", descriptor);
-
-    // Descriptors registered via this format instance are visible on ProtobufFormat.INSTANCE
-    // when the test fixture's `format` *is* INSTANCE (default singleton path).
-    final var fromInstance = ProtobufFormat.INSTANCE.getDescriptor("sync");
-    assertNotNull(fromInstance);
-    assertEquals("TestMessage", fromInstance.getName());
   }
 
   private static Descriptors.Descriptor buildTestDescriptor() throws Descriptors.DescriptorValidationException {

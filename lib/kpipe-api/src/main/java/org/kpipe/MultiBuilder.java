@@ -31,8 +31,8 @@ import org.kpipe.sink.MessageSink;
 /// ```java
 /// KPipe.multi(props)
 ///     .json("events-json", s -> s.pipe(addTimestamp).toCustom(jsonSink))
-///     .avro("events-avro", s -> s.filter(active).toCustom(avroSink))
-///     .protobuf("events-proto", s -> s.toConsole())
+///     .avro(avroFormat, "events-avro", s -> s.filter(active).toCustom(avroSink))
+///     .protobuf(protoFormat, "events-proto", s -> s.toConsole())
 ///     .start();
 /// ```
 ///
@@ -99,27 +99,35 @@ public final class MultiBuilder {
     return route(topic, JsonFormat.INSTANCE, JsonFormat::consoleSink, configurator);
   }
 
-  /// Registers an Avro route for `topic`. `toConsole()` requires a default schema registered
-  /// under key `"1"` on [AvroFormat#INSTANCE]; otherwise call
-  /// `.toCustom(AvroFormat.consoleSink(schema))`.
+  /// Registers an Avro route for `topic` using `format` for SerDe. The schema bound to `format`
+  /// is used for both deserialization and the default `toConsole()` sink. Construct the format
+  /// explicitly: `new AvroFormat(schema)` or `AvroFormat.of(schemaJson)`.
   ///
+  /// @param format the Avro codec (must be non-null)
   /// @param topic the Kafka topic
   /// @param configurator builds the operator chain and chooses a terminal sink
   /// @return this builder
   public MultiBuilder avro(
+    final AvroFormat format,
     final String topic,
     final Function<Stream<GenericRecord>, Sink<GenericRecord>> configurator
   ) {
-    return route(topic, AvroFormat.INSTANCE, AvroFormat::defaultConsoleSink, configurator);
+    return route(topic, format, format::consoleSink, configurator);
   }
 
-  /// Registers a Protobuf route for `topic`.
+  /// Registers a Protobuf route for `topic` using `format` for SerDe. Construct the format
+  /// explicitly: `new ProtobufFormat(descriptor)`.
   ///
+  /// @param format the Protobuf codec (must be non-null)
   /// @param topic the Kafka topic
   /// @param configurator builds the operator chain and chooses a terminal sink
   /// @return this builder
-  public MultiBuilder protobuf(final String topic, final Function<Stream<Message>, Sink<Message>> configurator) {
-    return route(topic, ProtobufFormat.INSTANCE, ProtobufFormat::consoleSink, configurator);
+  public MultiBuilder protobuf(
+    final ProtobufFormat format,
+    final String topic,
+    final Function<Stream<Message>, Sink<Message>> configurator
+  ) {
+    return route(topic, format, format::consoleSink, configurator);
   }
 
   /// Registers a raw `byte[]` route for `topic` — identity passthrough, no SerDe.

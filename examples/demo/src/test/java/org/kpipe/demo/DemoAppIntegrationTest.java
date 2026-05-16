@@ -26,18 +26,16 @@ class DemoAppIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
-                   .asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
-  @BeforeEach
-  void registerSchemasFromTestResources() throws IOException {
-    AvroFormat.INSTANCE.clearSchemas();
-    AvroFormat.INSTANCE.addSchema("1", "com.kpipe.customer", loadAvroSchema());
-    AvroFormat.INSTANCE.withDefaultSchema("1");
+  private AvroFormat avroFormat;
+  private ProtobufFormat protoFormat;
 
-    ProtobufFormat.INSTANCE.addDescriptor("customer", DemoApp.buildCustomerDescriptor());
-    ProtobufFormat.INSTANCE.withDefaultDescriptor("customer");
+  @BeforeEach
+  void buildFormatsFromTestResources() throws IOException {
+    avroFormat = AvroFormat.of(loadAvroSchema());
+    protoFormat = new ProtobufFormat(DemoApp.buildCustomerDescriptor());
   }
 
   @Test
@@ -45,7 +43,7 @@ class DemoAppIntegrationTest {
     final var config = new DemoConfig(
       kafka.getBootstrapServers(),
       "test-group",
-      "http://localhost:8081", // unused — schemas pre-registered above
+      "http://localhost:8081", // unused — formats built above
       "json-test-topic",
       "avro-test-topic",
       "proto-test-topic",
@@ -54,7 +52,7 @@ class DemoAppIntegrationTest {
       Duration.ofSeconds(60)
     );
 
-    try (final var _ = new DemoApp(config)) {
+    try (final var _ = new DemoApp(config, avroFormat, protoFormat)) {
       final var appThread = Thread.ofVirtual().start(() -> {});
       TimeUnit.SECONDS.sleep(3);
 

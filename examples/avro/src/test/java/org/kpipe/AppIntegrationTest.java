@@ -41,21 +41,19 @@ class AppIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
-                   .asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   private Schema schema;
+  private AvroFormat format;
 
   @BeforeEach
-  void registerSchemaFromTestResource() throws Exception {
-    AvroFormat.INSTANCE.clearSchemas();
+  void loadSchemaFromTestResource() throws Exception {
     try (final var in = getClass().getClassLoader().getResourceAsStream("avro/customer.avsc")) {
       assertNotNull(in, "avro/customer.avsc not found on test classpath");
       schema = new Schema.Parser().parse(in);
     }
-    AvroFormat.INSTANCE.addSchema("1", "com.kpipe.customer", schema.toString());
-    AvroFormat.INSTANCE.withDefaultSchema("1");
+    format = new AvroFormat(schema);
   }
 
   @Test
@@ -64,7 +62,7 @@ class AppIntegrationTest {
     final var captured = new CopyOnWriteArrayList<GenericRecord>();
     final MessageSink<GenericRecord> capturingSink = captured::add;
 
-    try (final var handle = KPipe.avro(topic, consumerProps()).skipBytes(5).toCustom(capturingSink).start()) {
+    try (final var handle = KPipe.avro(format, topic, consumerProps()).skipBytes(5).toCustom(capturingSink).start()) {
       assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
 
       produceUntilConsumed(topic, createConfluentWirePayload(), captured, Duration.ofSeconds(15));

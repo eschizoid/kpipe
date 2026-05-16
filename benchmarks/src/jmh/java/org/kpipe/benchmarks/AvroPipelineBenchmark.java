@@ -37,6 +37,7 @@ import org.openjdk.jmh.infra.Blackhole;
 public class AvroPipelineBenchmark {
 
   private Schema schema;
+  private AvroFormat format;
   private byte[] avroBytes;
   private byte[] avroWithMagicBytes;
   private Function<byte[], byte[]> kpipePipeline;
@@ -85,10 +86,8 @@ public class AvroPipelineBenchmark {
     avroWithMagicBytes[4] = 1;
     System.arraycopy(avroBytes, 0, avroWithMagicBytes, 5, avroBytes.length);
 
-    final var registry = new MessageProcessorRegistry(AvroFormat.INSTANCE);
-    final var format = AvroFormat.INSTANCE;
-    format.addSchema("user", "com.kpipe.User", schemaJson);
-    format.withDefaultSchema("user");
+    format = AvroFormat.of(schemaJson);
+    final var registry = new MessageProcessorRegistry(format);
 
     // Register operators inline using the native Avro API (operator helpers were removed in
     // 1.11.x).
@@ -126,7 +125,6 @@ public class AvroPipelineBenchmark {
   public void manualAvroMagicHandling(final Blackhole bh) {
     // This mimics the manual way of handling magic bytes with copying
     final var stripped = Arrays.copyOfRange(avroWithMagicBytes, 5, avroWithMagicBytes.length);
-    final var format = AvroFormat.INSTANCE;
     final var record = format.deserialize(stripped);
     if (record != null) {
       record.put("processed", true);
