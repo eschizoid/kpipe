@@ -30,6 +30,8 @@ import java.util.Objects;
 /// @param windowSize       the rolling sample size — must match the stats window
 /// @param openDuration     how long the breaker stays in `OPEN` before probing
 public record CircuitBreakerController(double failureThreshold, int windowSize, Duration openDuration) {
+  /// Canonical constructor; validates `failureThreshold` is in `(0, 1]`, `windowSize` is positive,
+  /// and `openDuration` is non-null and positive.
   public CircuitBreakerController {
     if (failureThreshold <= 0.0 || failureThreshold > 1.0) {
       throw new IllegalArgumentException("failureThreshold must be in (0.0, 1.0], got %f".formatted(failureThreshold));
@@ -44,6 +46,9 @@ public record CircuitBreakerController(double failureThreshold, int windowSize, 
   /// In `CLOSED` state, returns `true` iff the window is full AND the failure rate has crossed
   /// the threshold. Requiring a full window avoids tripping on the first few failures before the
   /// breaker has any signal to work with.
+  ///
+  /// @param stats the rolling outcome window the breaker is observing
+  /// @return `true` if the breaker should transition CLOSED → OPEN
   public boolean shouldTrip(final CircuitBreakerStats stats) {
     if (stats.totalSamples() < windowSize) return false;
     return stats.failureRate() >= failureThreshold;
@@ -52,6 +57,11 @@ public record CircuitBreakerController(double failureThreshold, int windowSize, 
   /// In `OPEN` state, returns `true` iff `openDuration` has elapsed since the breaker tripped.
   /// `openedAtNanos` is `System.nanoTime()` from the trip; a `0L` sentinel (never tripped) always
   /// returns `false`.
+  ///
+  /// @param openedAtNanos `System.nanoTime()` captured at the trip, or `0L` if never tripped
+  /// @param nowNanos      the current `System.nanoTime()`
+  /// @return `true` if `openDuration` has elapsed and the consumer should transition
+  ///     OPEN → HALF_OPEN
   public boolean shouldProbe(final long openedAtNanos, final long nowNanos) {
     if (openedAtNanos == 0L) return false;
     return (nowNanos - openedAtNanos) >= openDuration.toNanos();

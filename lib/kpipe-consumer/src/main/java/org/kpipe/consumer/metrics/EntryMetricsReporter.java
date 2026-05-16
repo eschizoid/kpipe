@@ -78,12 +78,19 @@ public record EntryMetricsReporter(
 
   /// Creates a reporter for every operator registered in `registry`, with default log-based
   /// output. Use [#forProcessors(MessageProcessorRegistry, Set)] for a specific subset.
+  ///
+  /// @param registry the processor registry whose operator namespace to report on
+  /// @return a new reporter wired with the [#LOGGING] default output
   public static EntryMetricsReporter forProcessors(final MessageProcessorRegistry registry) {
     Objects.requireNonNull(registry, "registry cannot be null");
     return new EntryMetricsReporter("Processor", registry::getKeys, registry::getMetrics, LOGGING);
   }
 
   /// Creates a reporter for the given subset of operator keys, with default log-based output.
+  ///
+  /// @param registry the processor registry whose operator namespace to report on
+  /// @param keys     the specific operator keys to include in each report
+  /// @return a new reporter wired with the [#LOGGING] default output
   public static EntryMetricsReporter forProcessors(
     final MessageProcessorRegistry registry,
     final Set<RegistryKey<?>> keys
@@ -94,12 +101,19 @@ public record EntryMetricsReporter(
   }
 
   /// Creates a reporter for every sink registered in `registry`, with default log-based output.
+  ///
+  /// @param registry the processor registry whose sink namespace to report on
+  /// @return a new reporter wired with the [#LOGGING] default output
   public static EntryMetricsReporter forSinks(final MessageProcessorRegistry registry) {
     Objects.requireNonNull(registry, "registry cannot be null");
     return new EntryMetricsReporter("Sink", registry::getSinkKeys, registry::getSinkMetrics, LOGGING);
   }
 
   /// Creates a reporter for the given subset of sink keys, with default log-based output.
+  ///
+  /// @param registry the processor registry whose sink namespace to report on
+  /// @param keys     the specific sink keys to include in each report
+  /// @return a new reporter wired with the [#LOGGING] default output
   public static EntryMetricsReporter forSinks(final MessageProcessorRegistry registry, final Set<RegistryKey<?>> keys) {
     Objects.requireNonNull(registry, "registry cannot be null");
     Objects.requireNonNull(keys, "keys cannot be null");
@@ -107,6 +121,9 @@ public record EntryMetricsReporter(
   }
 
   /// Returns a new reporter with the specified output consumer. The other fields are preserved.
+  ///
+  /// @param reporter the consumer to receive each formatted report line
+  /// @return a new reporter routing output through `reporter`
   public EntryMetricsReporter toConsumer(final Consumer<String> reporter) {
     Objects.requireNonNull(reporter, "reporter cannot be null");
     return new EntryMetricsReporter(this.entryKind, this.namesSupplier, this.metricsFetcher, reporter);
