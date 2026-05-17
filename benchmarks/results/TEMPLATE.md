@@ -5,26 +5,26 @@ doesn't apply (e.g., no `perfnorm` data because the run was on macOS), say so ex
 
 ## Environment
 
-| Field | Value |
-|---|---|
-| Date (UTC) | `YYYY-MM-DD HH:MM` |
-| Hardware | e.g., `Apple Silicon M2 Pro, 10 cores, 16 GB` |
-| OS / Kernel | e.g., `macOS 14.5 (Darwin 24.6.0)` |
-| JDK | `java -version` output |
-| Kafka | `4.2.0` (in-process via Apache Kafka test-kit) |
-| KPipe | `git rev-parse HEAD` |
-| Confluent Parallel Consumer | from `gradle/libs.versions.toml` |
-| Reactor Kafka | from `gradle/libs.versions.toml` |
+| Field                       | Value                                          |
+|-----------------------------|------------------------------------------------|
+| Date (UTC)                  | `YYYY-MM-DD HH:MM`                             |
+| Hardware                    | e.g., `Apple Silicon M2 Pro, 10 cores, 16 GB`  |
+| OS / Kernel                 | e.g., `macOS 14.5 (Darwin 24.6.0)`             |
+| JDK                         | `java -version` output                         |
+| Kafka                       | `4.2.0` (in-process via Apache Kafka test-kit) |
+| KPipe                       | `git rev-parse HEAD`                           |
+| Confluent Parallel Consumer | from `gradle/libs.versions.toml`               |
+| Reactor Kafka               | from `gradle/libs.versions.toml`               |
 
 ## JMH configuration
 
-| Parameter | Value |
-|---|---|
-| Warmup iterations | 3 (default) |
-| Measurement iterations | 5 (default) |
-| Forks | 2 (recommended for publishing) |
-| Profilers | `gc` |
-| Result format | `JSON` (artifact attached: `results-YYYY-MM-DD.json`) |
+| Parameter              | Value                                                 |
+|------------------------|-------------------------------------------------------|
+| Warmup iterations      | 3 (default)                                           |
+| Measurement iterations | 5 (default)                                           |
+| Forks                  | 2 (recommended for publishing)                        |
+| Profilers              | `gc`                                                  |
+| Result format          | `JSON` (artifact attached: `results-YYYY-MM-DD.json`) |
 
 ## Scope
 
@@ -41,12 +41,12 @@ doesn't apply (e.g., no `perfnorm` data because the run was on macOS), say so ex
 Records / second, higher is better. `workMicros` is per-record simulated work via
 `LockSupport.parkNanos`.
 
-| Runtime | workMicros=0 | workMicros=100 | workMicros=1000 |
-|---|---:|---:|---:|
-| KPipe | TBD ± TBD | TBD ± TBD | TBD ± TBD |
-| Confluent Parallel Consumer | TBD ± TBD | TBD ± TBD | TBD ± TBD |
-| Reactor Kafka | TBD ± TBD | TBD ± TBD | TBD ± TBD |
-| Raw `KafkaConsumer` + VT | TBD ± TBD | TBD ± TBD | TBD ± TBD |
+| Runtime                     | workMicros=0 | workMicros=100 | workMicros=1000 |
+|-----------------------------|-------------:|---------------:|----------------:|
+| KPipe                       |    TBD ± TBD |      TBD ± TBD |       TBD ± TBD |
+| Confluent Parallel Consumer |    TBD ± TBD |      TBD ± TBD |       TBD ± TBD |
+| Reactor Kafka               |    TBD ± TBD |      TBD ± TBD |       TBD ± TBD |
+| Raw `KafkaConsumer` + VT    |    TBD ± TBD |      TBD ± TBD |       TBD ± TBD |
 
 ### Observations
 
@@ -58,12 +58,12 @@ Records / second, higher is better. `workMicros` is per-record simulated work vi
 
 Per-record time (ms), lower is better. Reported at `workMicros=100` (typical local enrichment).
 
-| Runtime | p50 | p95 | p99 |
-|---|---:|---:|---:|
-| KPipe | TBD | TBD | TBD |
+| Runtime                     | p50 | p95 | p99 |
+|-----------------------------|----:|----:|----:|
+| KPipe                       | TBD | TBD | TBD |
 | Confluent Parallel Consumer | TBD | TBD | TBD |
-| Reactor Kafka | TBD | TBD | TBD |
-| Raw `KafkaConsumer` + VT | TBD | TBD | TBD |
+| Reactor Kafka               | TBD | TBD | TBD |
+| Raw `KafkaConsumer` + VT    | TBD | TBD | TBD |
 
 ### Observations
 
@@ -74,23 +74,23 @@ Per-record time (ms), lower is better. Reported at `workMicros=100` (typical loc
 
 `gc.alloc.rate.norm` (B / op, lower is better) at `workMicros=100`.
 
-| Runtime | B/op |
-|---|---:|
-| KPipe | TBD |
-| Confluent Parallel Consumer | TBD |
-| Reactor Kafka | TBD |
-| Raw `KafkaConsumer` + VT | TBD |
+| Runtime                     | B/op |
+|-----------------------------|-----:|
+| KPipe                       |  TBD |
+| Confluent Parallel Consumer |  TBD |
+| Reactor Kafka               |  TBD |
+| Raw `KafkaConsumer` + VT    |  TBD |
 
 ## Batch sink
 
 See `BatchSinkLatencyBenchmark` — single-runtime, separate sweep. Headline:
 
 | batchSize | sinkLatencyMicros | Throughput (ops/s) |
-|---:|---:|---:|
-| 1 | 10 | TBD |
-| 1 | 1000 | TBD |
-| 100 | 10 | TBD |
-| 100 | 1000 | TBD |
+|----------:|------------------:|-------------------:|
+|         1 |                10 |                TBD |
+|         1 |              1000 |                TBD |
+|       100 |                10 |                TBD |
+|       100 |              1000 |                TBD |
 
 ## Raw output
 

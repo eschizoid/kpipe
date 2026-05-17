@@ -5,13 +5,13 @@ you're tempted to quote a single number from a single run, read this first.
 
 ## What the suite measures
 
-| Bench | Question it answers |
-|---|---|
-| `JsonPipelineBenchmark` | What does KPipe's single-SerDe-cycle save vs naive byte-to-byte chaining? (Design validation, not competitive.) |
-| `AvroPipelineBenchmark` | What does zero-copy magic-byte handling save vs `Arrays.copyOfRange`? (Design validation.) |
-| `ParallelProcessingBenchmark` | How does **throughput** compare across KPipe, Confluent Parallel Consumer, Reactor Kafka, and a hand-rolled `KafkaConsumer + virtual threads`? |
-| `ParallelProcessingLatencyBenchmark` | How do those four runtimes compare on **per-batch latency** (p50, p95, p99)? |
-| `BatchSinkLatencyBenchmark` | What does `Stream.toBatch(...)` save when the destination has nontrivial per-call cost? |
+| Bench                                | Question it answers                                                                                                                            |
+|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `JsonPipelineBenchmark`              | What does KPipe's single-SerDe-cycle save vs naive byte-to-byte chaining? (Design validation, not competitive.)                                |
+| `AvroPipelineBenchmark`              | What does zero-copy magic-byte handling save vs `Arrays.copyOfRange`? (Design validation.)                                                     |
+| `ParallelProcessingBenchmark`        | How does **throughput** compare across KPipe, Confluent Parallel Consumer, Reactor Kafka, and a hand-rolled `KafkaConsumer + virtual threads`? |
+| `ParallelProcessingLatencyBenchmark` | How do those four runtimes compare on **per-batch latency** (p50, p95, p99)?                                                                   |
+| `BatchSinkLatencyBenchmark`          | What does `Stream.toBatch(...)` save when the destination has nontrivial per-call cost?                                                        |
 
 The first two are KPipe-vs-straw-man. They show the design choices paid off but are not
 competitive claims. Use them in design docs, not in pitches.
@@ -23,12 +23,12 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 
 ## What the four parallel runtimes look like
 
-| Runtime | Concurrency primitive | Configured concurrency |
-|---|---|---|
-| **KPipe** | Virtual thread per record (Loom) | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
-| **Confluent Parallel Consumer** | Platform-thread worker pool, `ProcessingOrder.UNORDERED` | `maxConcurrency=100` |
-| **Reactor Kafka** | Reactor `parallel` scheduler via `Flux.parallel(N)` | `parallel(100)` to match Confluent's pool size |
-| **Raw `KafkaConsumer` + virtual threads** | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | Unbounded virtual threads |
+| Runtime                                   | Concurrency primitive                                                                 | Configured concurrency                                                                |
+|-------------------------------------------|---------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| **KPipe**                                 | Virtual thread per record (Loom)                                                      | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
+| **Confluent Parallel Consumer**           | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | `maxConcurrency=100`                                                                  |
+| **Reactor Kafka**                         | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | `parallel(100)` to match Confluent's pool size                                        |
+| **Raw `KafkaConsumer` + virtual threads** | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | Unbounded virtual threads                                                             |
 
 Two of the four (KPipe, raw) lean on Loom. The other two (Confluent, Reactor) lean on platform
 threads. That's the interesting axis. At `workMicros=0` the comparison is essentially "framework
@@ -39,16 +39,16 @@ questions often have different winners.
 
 The Gradle JMH plugin is configured in `benchmarks/build.gradle.kts`. Defaults:
 
-| Parameter | Default | Override |
-|---|---|---|
-| Warmup iterations | 3 | `-Pjmh.warmupIterations=N` |
-| Measurement iterations | 5 | `-Pjmh.iterations=N` |
-| Forks | 1 | `-Pjmh.fork=N` |
-| Threads | 1 | `-Pjmh.threads=N` |
-| Benchmark mode | `thrpt` | n/a (per-benchmark) |
-| Time unit | `s` | n/a |
-| Failure handling | `failOnError = true` | n/a |
-| Result format | `TEXT` | `-Pjmh.resultFormat=JSON` |
+| Parameter              | Default              | Override                   |
+|------------------------|----------------------|----------------------------|
+| Warmup iterations      | 3                    | `-Pjmh.warmupIterations=N` |
+| Measurement iterations | 5                    | `-Pjmh.iterations=N`       |
+| Forks                  | 1                    | `-Pjmh.fork=N`             |
+| Threads                | 1                    | `-Pjmh.threads=N`          |
+| Benchmark mode         | `thrpt`              | n/a (per-benchmark)        |
+| Time unit              | `s`                  | n/a                        |
+| Failure handling       | `failOnError = true` | n/a                        |
+| Result format          | `TEXT`               | `-Pjmh.resultFormat=JSON`  |
 
 Per-benchmark overrides:
 

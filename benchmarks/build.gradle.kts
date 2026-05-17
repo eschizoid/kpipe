@@ -12,11 +12,11 @@ dependencies {
   // Benchmark targets
   implementation(libs.kafkaClients)
   implementation(libs.parallelConsumerCore)
-  // Reactor Kafka pulls a transitive kafka-clients; force the project version via the
-  // `kafkaClients` dependency above so all consumers under test hit the same wire stack.
-  implementation(libs.reactorKafka) {
-    exclude(group = "org.apache.kafka", module = "kafka-clients")
-  }
+  // Reactor Kafka 1.3.25 (Nov 2025) shipped the fix for issue #420 — avoids the deprecated
+  // ConsumerRecord ctor that was removed in kafka-clients 4.x. Its POM still pins
+  // kafka-clients:3.9.1 but the new binary works when Gradle conflict-resolves the classpath
+  // to our 4.2.0. No `exclude` needed; conflict resolution picks the higher version.
+  implementation(libs.reactorKafka)
   implementation(libs.avro)
   implementation(libs.dslJson)
 
