@@ -24,11 +24,11 @@ import org.kpipe.sink.MessageSink;
 /// final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
 ///
 /// // Operator side
-/// registry.register(RegistryKey.json("addTimestamp"),
-///                   m -> { m.put("ts", System.currentTimeMillis()); return m; });
+/// registry.registerOperator(RegistryKey.json("addTimestamp"),
+///                           m -> { m.put("ts", System.currentTimeMillis()); return m; });
 ///
-/// // Sink side — same `register`, just a different functional interface
-/// registry.register(RegistryKey.json("dbSink"), record -> database.insert(record));
+/// // Sink side
+/// registry.registerSink(RegistryKey.json("dbSink"), record -> database.insert(record));
 ///
 /// // Build a pipeline that uses both
 /// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
@@ -37,9 +37,9 @@ import org.kpipe.sink.MessageSink;
 ///   .build();
 /// ```
 ///
-/// **Concurrency**: both maps are [ConcurrentHashMap]s; `register`/`get*`/`unregister*` are
-/// thread-safe. Lookups return wrapping operators/sinks that read the current map entry at
-/// invocation time, so live re-registration is observable.
+/// **Concurrency**: both maps are [ConcurrentHashMap]s; `registerOperator`/`registerSink`/`get*`/
+/// `unregister*` are thread-safe. Lookups return wrapping operators/sinks that read the current
+/// map entry at invocation time, so live re-registration is observable.
 public class MessageProcessorRegistry {
 
   private static final Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
@@ -132,7 +132,7 @@ public class MessageProcessorRegistry {
   /// @param key      the registry key (must be non-null)
   /// @param operator the operator to register (must be non-null)
   /// @param <T>      the pipeline value type the operator acts on
-  public <T> void register(final RegistryKey<T> key, final UnaryOperator<T> operator) {
+  public <T> void registerOperator(final RegistryKey<T> key, final UnaryOperator<T> operator) {
     Objects.requireNonNull(key, "key cannot be null");
     Objects.requireNonNull(operator, "operator cannot be null");
     operators.put(key, operator);
@@ -149,7 +149,7 @@ public class MessageProcessorRegistry {
     Objects.requireNonNull(type, "type cannot be null");
     Objects.requireNonNull(enumClass, "enumClass cannot be null");
     for (final var constant : enumClass.getEnumConstants()) {
-      register(RegistryKey.of(constant.name(), type), constant);
+      registerOperator(RegistryKey.of(constant.name(), type), constant);
     }
   }
 
@@ -216,19 +216,18 @@ public class MessageProcessorRegistry {
   /// @param operator the operator to wrap
   /// @param <T>      the pipeline value type
   /// @return a new operator that logs and swallows exceptions raised by the original
-  public static <T> UnaryOperator<T> withErrorHandling(final UnaryOperator<T> operator) {
+  public static <T> UnaryOperator<T> withOperatorErrorHandling(final UnaryOperator<T> operator) {
     return RegistryFunctions.withOperatorErrorHandling(operator, LOGGER);
   }
 
   // ───────────────────────────── Sinks ─────────────────────────────
 
-  /// Registers a typed sink under `key`. Overload of the operator [#register] — Java resolves
-  /// by argument type ([UnaryOperator] vs [MessageSink]).
+  /// Registers a typed sink under `key`.
   ///
   /// @param key  the registry key (must be non-null)
   /// @param sink the sink to register (must be non-null)
   /// @param <T>  the pipeline value type the sink consumes
-  public <T> void register(final RegistryKey<T> key, final MessageSink<T> sink) {
+  public <T> void registerSink(final RegistryKey<T> key, final MessageSink<T> sink) {
     Objects.requireNonNull(key, "key cannot be null");
     Objects.requireNonNull(sink, "sink cannot be null");
     sinks.put(key, sink);
@@ -244,7 +243,7 @@ public class MessageProcessorRegistry {
     Objects.requireNonNull(type, "type cannot be null");
     Objects.requireNonNull(enumClass, "enumClass cannot be null");
     for (final var constant : enumClass.getEnumConstants()) {
-      register(RegistryKey.of(constant.name(), type), constant);
+      registerSink(RegistryKey.of(constant.name(), type), constant);
     }
   }
 
@@ -300,13 +299,12 @@ public class MessageProcessorRegistry {
     return sinks.metrics(key);
   }
 
-  /// Wraps a sink with error-handling logic that suppresses exceptions. Overload of the operator
-  /// [#withErrorHandling(UnaryOperator)] — Java resolves by argument type.
+  /// Wraps a sink with error-handling logic that suppresses exceptions.
   ///
   /// @param sink the sink to wrap
   /// @param <T>  the pipeline value type
   /// @return a new sink that logs and swallows exceptions raised by the original
-  public static <T> MessageSink<T> withErrorHandling(final MessageSink<T> sink) {
+  public static <T> MessageSink<T> withSinkErrorHandling(final MessageSink<T> sink) {
     return RegistryFunctions.withConsumerErrorHandling(sink, LOGGER)::accept;
   }
 

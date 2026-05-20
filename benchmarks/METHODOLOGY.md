@@ -1,46 +1,45 @@
 # KPipe Benchmark Methodology
 
-This document is how to read the numbers in `benchmarks/results/` and how to reproduce them. If
-you're tempted to quote a single number from a single run, read this first.
+This document is how to read the numbers in `benchmarks/results/` and how to reproduce them. If you're tempted to quote
+a single number from a single run, read this first.
 
 ## What the suite measures
 
 | Bench                                | Question it answers                                                                                                                            |
-|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `JsonPipelineBenchmark`              | What does KPipe's single-SerDe-cycle save vs naive byte-to-byte chaining? (Design validation, not competitive.)                                |
 | `AvroPipelineBenchmark`              | What does zero-copy magic-byte handling save vs `Arrays.copyOfRange`? (Design validation.)                                                     |
 | `ParallelProcessingBenchmark`        | How does **throughput** compare across KPipe, Confluent Parallel Consumer, Reactor Kafka, and a hand-rolled `KafkaConsumer + virtual threads`? |
 | `ParallelProcessingLatencyBenchmark` | How do those four runtimes compare on **per-batch latency** (p50, p95, p99)?                                                                   |
 | `BatchSinkLatencyBenchmark`          | What does `Stream.toBatch(...)` save when the destination has nontrivial per-call cost?                                                        |
 
-The first two are KPipe-vs-straw-man. They show the design choices paid off but are not
-competitive claims. Use them in design docs, not in pitches.
+The first two are KPipe-vs-straw-man. They show the design choices paid off but are not competitive claims. Use them in
+design docs, not in pitches.
 
-The next two are the competitive suite. **These are the ones to quote** when comparing KPipe to
-the alternatives a JVM team would actually pick.
+The next two are the competitive suite. **These are the ones to quote** when comparing KPipe to the alternatives a JVM
+team would actually pick.
 
 The last one is KPipe alone, parameterised across batch size and sink latency.
 
 ## What the four parallel runtimes look like
 
 | Runtime                                   | Concurrency primitive                                                                 | Configured concurrency                                                                |
-|-------------------------------------------|---------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| ----------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | **KPipe**                                 | Virtual thread per record (Loom)                                                      | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
 | **Confluent Parallel Consumer**           | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | `maxConcurrency=100`                                                                  |
 | **Reactor Kafka**                         | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | `parallel(100)` to match Confluent's pool size                                        |
 | **Raw `KafkaConsumer` + virtual threads** | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | Unbounded virtual threads                                                             |
 
-Two of the four (KPipe, raw) lean on Loom. The other two (Confluent, Reactor) lean on platform
-threads. That's the interesting axis. At `workMicros=0` the comparison is essentially "framework
-overhead"; at `workMicros=1000` it's "how does each runtime schedule blocking work?". Those two
-questions often have different winners.
+Two of the four (KPipe, raw) lean on Loom. The other two (Confluent, Reactor) lean on platform threads. That's the
+interesting axis. At `workMicros=0` the comparison is essentially "framework overhead"; at `workMicros=1000` it's "how
+does each runtime schedule blocking work?". Those two questions often have different winners.
 
 ## JMH configuration
 
 The Gradle JMH plugin is configured in `benchmarks/build.gradle.kts`. Defaults:
 
 | Parameter              | Default              | Override                   |
-|------------------------|----------------------|----------------------------|
+| ---------------------- | -------------------- | -------------------------- |
 | Warmup iterations      | 3                    | `-Pjmh.warmupIterations=N` |
 | Measurement iterations | 5                    | `-Pjmh.iterations=N`       |
 | Forks                  | 1                    | `-Pjmh.fork=N`             |
@@ -52,8 +51,8 @@ The Gradle JMH plugin is configured in `benchmarks/build.gradle.kts`. Defaults:
 
 Per-benchmark overrides:
 
-- `ParallelProcessingLatencyBenchmark` sets `Mode.SampleTime + Mode.AverageTime` and
-  `OutputTimeUnit.MILLISECONDS` to publish percentile histograms.
+- `ParallelProcessingLatencyBenchmark` sets `Mode.SampleTime + Mode.AverageTime` and `OutputTimeUnit.MILLISECONDS` to
+  publish percentile histograms.
 - `BatchSinkLatencyBenchmark` parameterises over `batchSize × sinkLatencyMicros`.
 - `ParallelProcessingBenchmark` parameterises over `workMicros` (`0 / 100 / 1000`).
 
@@ -69,9 +68,8 @@ Per-benchmark overrides:
   -Pjmh.resultFormat=JSON
 ```
 
-Two forks instead of one cuts the cross-fork noise on the latency percentiles. The `gc` profiler
-adds allocation rate and GC count per benchmark — required input to the "throughput vs
-allocation-cost" trade-off.
+Two forks instead of one cuts the cross-fork noise on the latency percentiles. The `gc` profiler adds allocation rate
+and GC count per benchmark — required input to the "throughput vs allocation-cost" trade-off.
 
 ### Quick smoke run (for local sanity-check)
 
@@ -83,80 +81,73 @@ allocation-cost" trade-off.
   -Pjmh.fork=1
 ```
 
-One iteration, one warmup, one fork, only the KPipe / 0-µs cell. Useful for verifying the
-harness didn't break after changes; meaningless as a measurement.
+One iteration, one warmup, one fork, only the KPipe / 0-µs cell. Useful for verifying the harness didn't break after
+changes; meaningless as a measurement.
 
 ## What to write down with every published number
 
 A bench number without context is unverifiable. Each entry in `results/` should record:
 
 1. **Date** — when the run completed.
-2. **Hardware** — CPU model, core count, RAM. (Apple Silicon M2 Pro 10c/16GB, AWS m7i.4xlarge,
-   GitHub Actions Linux runner spec, etc.)
+2. **Hardware** — CPU model, core count, RAM. (Apple Silicon M2 Pro 10c/16GB, AWS m7i.4xlarge, GitHub Actions Linux
+   runner spec, etc.)
 3. **OS + kernel** — affects scheduler behaviour, especially for Loom.
 4. **JDK build** — `java -version`. Loom semantics changed across 21 → 25.
 5. **JMH config** — iterations / warmup / forks / profilers actually used.
 6. **Benchmark scope** — which classes and which `@Param` cells.
-7. **Result file** — the raw `results.json` or `results.text` from the run, committed alongside
-   the summary.
+7. **Result file** — the raw `results.json` or `results.text` from the run, committed alongside the summary.
 
 ## Reading the numbers
 
 ### Throughput mode (`ops/s`)
 
-The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(TARGET_MESSAGES)` where
-`TARGET_MESSAGES = 100_000`. So the JMH "ops/s" number is **records processed per second**.
+The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(TARGET_MESSAGES)` where `TARGET_MESSAGES = 100_000`. So
+the JMH "ops/s" number is **records processed per second**.
 
-Don't multiply by `TARGET_MESSAGES`. The `@OperationsPerInvocation` annotation already
-normalises.
+Don't multiply by `TARGET_MESSAGES`. The `@OperationsPerInvocation` annotation already normalises.
 
 ### Sample-time mode (latency percentiles)
 
-`ParallelProcessingLatencyBenchmark` reports per-op time in milliseconds. Same
-`@OperationsPerInvocation` so an "op" is one record, but the published number is "median time to
-process one record at this position in the run". Look at the histogram, not the mean:
+`ParallelProcessingLatencyBenchmark` reports per-op time in milliseconds. Same `@OperationsPerInvocation` so an "op" is
+one record, but the published number is "median time to process one record at this position in the run". Look at the
+histogram, not the mean:
 
 - **p50** — typical record. Lower is better.
 - **p95 / p99** — tail. This is what matters when SLA-bound consumers are involved.
 - **p100** — the worst observation in the run. Highly noisy; don't quote.
 
-A runtime can win on average throughput while losing on p99 — `Flux.parallel(N)` schedules
-records in a fan-out / fan-in pattern that produces good average throughput but occasional
-stragglers.
+A runtime can win on average throughput while losing on p99 — `Flux.parallel(N)` schedules records in a fan-out / fan-in
+pattern that produces good average throughput but occasional stragglers.
 
 ### Within-iteration vs cross-fork variance
 
-The default `forks=1` means all iterations share the same JVM process. Cross-fork variance (JIT
-warmup differences, GC profile differences across forks) doesn't get exposed. For published
-numbers run with `forks=2` minimum.
+The default `forks=1` means all iterations share the same JVM process. Cross-fork variance (JIT warmup differences, GC
+profile differences across forks) doesn't get exposed. For published numbers run with `forks=2` minimum.
 
 ## Caveats
 
 A few things to keep in mind whenever you quote a number from this suite:
 
-- **Broker runs in Docker (Testcontainers Kafka 4.2.0), not in-process.** That's the right call
-  for a competitive bench — the broker isn't fighting consumers for cores — but it also means
-  network IO is real (loopback to a container) and absolute numbers are still **lower than a
-  production setup with a network broker on dedicated hardware**. The headline *ordering*
-  between runtimes is what's meaningful; absolute records-per-second is a function of how much
-  of the host's cores Docker / the container runtime is giving the broker.
-- **Single-broker, single-container.** No replication, no leader election, no rebalance under
-  load. The broker container runs replication factor 1 and `min.insync.replicas=1`. Real
-  failure modes won't show up.
-- **Single payload size.** The seed payload is small JSON (~50 bytes). Reactor Kafka's
-  `flatMap` strategy can behave differently under 10KB payloads.
-- **Macros vs micros.** This suite measures consumer-side throughput. End-to-end latency
-  (produce → consume → process → ack) needs a separate harness.
-- **Docker overhead is real.** The first iteration of every trial pays the container-startup
-  cost. JMH's warmup phase absorbs most of that; if you're spot-checking with `-wi 0`, expect
-  the first measurement iteration to look slow.
+- **Broker runs in Docker (Testcontainers Kafka 4.2.0), not in-process.** That's the right call for a competitive bench
+  — the broker isn't fighting consumers for cores — but it also means network IO is real (loopback to a container) and
+  absolute numbers are still **lower than a production setup with a network broker on dedicated hardware**. The headline
+  _ordering_ between runtimes is what's meaningful; absolute records-per-second is a function of how much of the host's
+  cores Docker / the container runtime is giving the broker.
+- **Single-broker, single-container.** No replication, no leader election, no rebalance under load. The broker container
+  runs replication factor 1 and `min.insync.replicas=1`. Real failure modes won't show up.
+- **Single payload size.** The seed payload is small JSON (~50 bytes). Reactor Kafka's `flatMap` strategy can behave
+  differently under 10KB payloads.
+- **Macros vs micros.** This suite measures consumer-side throughput. End-to-end latency (produce → consume → process →
+  ack) needs a separate harness.
+- **Docker overhead is real.** The first iteration of every trial pays the container-startup cost. JMH's warmup phase
+  absorbs most of that; if you're spot-checking with `-wi 0`, expect the first measurement iteration to look slow.
 
 ## When the numbers should change
 
 Re-publish the results file when **any** of these change:
 
-- A new runtime is added or an existing one is upgraded (Confluent PC version bump, Reactor
-  Kafka version bump, Kafka client version bump).
+- A new runtime is added or an existing one is upgraded (Confluent PC version bump, Reactor Kafka version bump, Kafka
+  client version bump).
 - KPipe's hot-path code changes (offset manager, pipeline builder, consumer thread loop).
 - The JMH config changes (different iteration count, different fork count).
 - The hardware changes.

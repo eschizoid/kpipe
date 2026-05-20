@@ -28,7 +28,7 @@ class MessageProcessorRegistrySinksTest {
     final var testSink = mock(MessageSink.class);
     final var key = RegistryKey.of("testSink", Object.class);
 
-    registry.register(key, testSink);
+    registry.registerSink(key, testSink);
     final var retrieved = registry.getSink(key);
 
     assertNotNull(retrieved);
@@ -40,7 +40,7 @@ class MessageProcessorRegistrySinksTest {
   void shouldUnregisterSink() {
     final var testSink = mock(MessageSink.class);
     final var key = RegistryKey.<Object>of("sinkToRemove", Object.class);
-    registry.register(key, testSink);
+    registry.registerSink(key, testSink);
 
     assertTrue(registry.getAllSinks().containsKey(key));
     final var removed = registry.unregisterSink(key);
@@ -52,7 +52,7 @@ class MessageProcessorRegistrySinksTest {
   @Test
   void shouldClearAllSinks() {
     final var testSink = mock(MessageSink.class);
-    registry.register(RegistryKey.of("testSink", Object.class), testSink);
+    registry.registerSink(RegistryKey.of("testSink", Object.class), testSink);
 
     registry.clearSinks();
 
@@ -63,7 +63,7 @@ class MessageProcessorRegistrySinksTest {
   void shouldNotClearSinksWhenClearingOperators() {
     final var testSink = mock(MessageSink.class);
     final var sinkKey = RegistryKey.of("aSink", Object.class);
-    registry.register(sinkKey, testSink);
+    registry.registerSink(sinkKey, testSink);
 
     registry.clear(); // operator-side only
 
@@ -78,8 +78,8 @@ class MessageProcessorRegistrySinksTest {
     final var key1 = RegistryKey.of("sink1", Object.class);
     final var key2 = RegistryKey.of("sink2", Object.class);
 
-    registry.register(key1, sink1);
-    registry.register(key2, sink2);
+    registry.registerSink(key1, sink1);
+    registry.registerSink(key2, sink2);
 
     registry.compositeSink(key1, key2).accept("processed");
 
@@ -97,8 +97,8 @@ class MessageProcessorRegistrySinksTest {
     final var keyFailing = RegistryKey.of("failingSink", Object.class);
     final var keyWorking = RegistryKey.of("workingSink", Object.class);
 
-    registry.register(keyFailing, failingSink);
-    registry.register(keyWorking, workingSink);
+    registry.registerSink(keyFailing, failingSink);
+    registry.registerSink(keyWorking, workingSink);
 
     registry.compositeSink(keyFailing, keyWorking).accept("processed");
 
@@ -111,7 +111,7 @@ class MessageProcessorRegistrySinksTest {
     final MessageSink<Object> countingSink = value -> callCount.incrementAndGet();
 
     final var key = RegistryKey.of("countingSink", Object.class);
-    registry.register(key, countingSink);
+    registry.registerSink(key, countingSink);
     final var sink = registry.getSink(key);
 
     sink.accept("processed");
@@ -129,7 +129,7 @@ class MessageProcessorRegistrySinksTest {
     };
 
     final var key = RegistryKey.of("failingSink", Object.class);
-    registry.register(key, failingSink);
+    registry.registerSink(key, failingSink);
     final var sink = registry.getSink(key);
 
     try {
@@ -149,7 +149,7 @@ class MessageProcessorRegistrySinksTest {
       throw new RuntimeException("Test failure");
     };
 
-    final var safeSink = MessageProcessorRegistry.withErrorHandling(failingSink);
+    final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(failingSink);
 
     safeSink.accept("processed"); // must not throw
   }
@@ -163,13 +163,13 @@ class MessageProcessorRegistrySinksTest {
   @Test
   void shouldRejectNullKey() {
     final var testSink = mock(MessageSink.class);
-    assertThrows(NullPointerException.class, () -> registry.register(null, testSink));
+    assertThrows(NullPointerException.class, () -> registry.registerSink(null, testSink));
   }
 
   @Test
   void shouldRejectNullSink() {
     assertThrows(NullPointerException.class, () ->
-      registry.register(RegistryKey.<Object>of("test", Object.class), (MessageSink<Object>) null)
+      registry.registerSink(RegistryKey.<Object>of("test", Object.class), (MessageSink<Object>) null)
     );
   }
 
@@ -178,7 +178,7 @@ class MessageProcessorRegistrySinksTest {
     final var key = RegistryKey.<String>of("typedSink", String.class);
     @SuppressWarnings("unchecked")
     final MessageSink<String> testSink = mock(MessageSink.class);
-    registry.register(key, testSink);
+    registry.registerSink(key, testSink);
 
     final var retrieved = registry.getSink(key);
     retrieved.accept("processed");
@@ -189,7 +189,7 @@ class MessageProcessorRegistrySinksTest {
   @Test
   void shouldThrowOnTypeMismatch() {
     final var key = RegistryKey.<String>of("typedSink", String.class);
-    registry.register(key, (MessageSink<String>) msg -> {});
+    registry.registerSink(key, (MessageSink<String>) msg -> {});
 
     assertThrows(ClassCastException.class, () -> {
       @SuppressWarnings("unchecked")

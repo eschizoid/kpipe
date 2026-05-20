@@ -1,418 +1,327 @@
 # KPipe Architecture and Design Principles
 
-## Core Architectural Decisions
+This file is the long-term memory for working in this repo. It records the non-obvious invariants, the footguns that
+have already burned us, and the architectural decisions that aren't recoverable just by reading the code. Things that
+_are_ recoverable from the code (package layout, type signatures, who calls what) are deliberately omitted — read the
+code for those.
 
-### 1. The Byte Boundary Strategy
+## Core invariants
 
-- **Decision**: The top-level `KPipeConsumer` and its pipelines always operate on `byte[]` at their entry and exit
-  points.
-- **Reasoning**: Kafka is natively a byte-array storage and transport system. Keeping the boundary at the `byte[]` level
-  allows for:
-    - Transparent handling of wire formats (e.g., Confluent Magic Bytes).
-    - Flexibility to handle mixed formats in the same application.
-    - Decoupling of Kafka's low-level client configuration from the application's SerDe logic.
-    - Centralized error handling for deserialization failures.
+- **Byte boundary at the consumer entry.** `KPipeConsumer<K>` operates on `byte[]` values. Format SerDe lives inside the
+  pipeline. Mixed wire formats and Confluent magic-byte prefixes are handled inside operators (`skipBytes(n)`), not at
+  the consumer level.
+- **Single SerDe cycle per record.** Deserialize once → chain `UnaryOperator<T>` transforms on the typed object →
+  serialize once. Never compose `Function<byte[], byte[]>` chains; that's the "SerDe tax" the typed pipeline was built
+  to eliminate.
+- **Lowest-pending-offset commits.** `ConcurrentSkipListSet` per partition; offset 102 is not committed until 101 also
+  finishes. This is what makes "at-least-once with parallel processing" honest.
 
-### 2. High-Performance "Single SerDe Cycle" Pipeline
+## Coding standards
 
-- **Decision**: Modernize all message transformations from `Function<byte[], byte[]>` to `UnaryOperator<Object>` (e.g.,
-  `Map<String, Object>` for JSON, `GenericRecord` for Avro).
-- **Reasoning**: Chaining byte-to-byte functions incurs a massive "SerDe tax" by re-serializing data at every step.
-- **Implementation**: The `TypedPipelineBuilder<T>` (via `MessageProcessorRegistry.pipeline()`) acts as the
-  high-performance bridge. It:
-    1. Receives `byte[]`.
-    2. Deserializes **once** into an object of type `T`.
-    3. Applies a chain of `UnaryOperator<T>` transformations on the same object (avoiding copies).
-    4. Optionally sends the typed object to a terminal `MessageSink<T>`.
-    5. Serializes **once** back to `byte[]`.
+- **Java 25 triple-slash Javadoc** (`///`), markdown code blocks (`java ... `). No legacy `/** ... */` or HTML
+  `<pre>{@code ... }</pre>`.
+- **`final var` for locals** wherever possible.
+- **`java.lang.System.Logger`** — not SLF4J, not direct Log4j. Keeps the core library dependency-free.
+- **No `e.printStackTrace()`** — always use the logger.
+- **No fully-qualified class names in code** — if you have to write `java.util.concurrent.ConcurrentHashMap` instead of
+  just `ConcurrentHashMap`, add an import and reformat the code.
 
-### 3. Java 25 Virtual Threads and Scoped Values
+## Testing strategy
 
-- **Decision**: Use Virtual Threads (Project Loom) for parallel processing. When per-record context-sharing is needed,
-  prefer `ScopedValue` over `ThreadLocal`.
-- **Reasoning**: Virtual Threads replace complex thread pool management with a simple "thread-per-record" model.
-  `ScopedValue` is the VT-friendly alternative to `ThreadLocal`, avoiding the scalability traps of inheritable
-  thread-locals on a thread-per-record consumer.
-- **Current state**: VT is used everywhere (consumer poll → record processing). `ScopedValue` is **not** currently
-  used — earlier per-format SerDe caches were torn out as dead infrastructure. The doctrine still stands for any
-  future thread-local-like state we might add (e.g. tenant context, span propagation).
+- **Unit tests**: `lib/{module}/src/test/java`. Focus on pure function transformations.
+- **Integration tests**: `examples/{format}/src/test/java`.
+- **Testcontainers** for end-to-end with Kafka / Schema Registry. Use a `CapturingSink` to verify the actual payload
+  transformation.
+- **Virtual-thread tests** use `Thread.ofVirtual()` directly (not `CompletableFuture`) with `CountDownLatch` for sync.
+  Exercises real VT behaviour.
 
-### 4. Reliable Offset Management ("Lowest Pending Offset")
+---
 
-- **Decision**: Use a `ConcurrentSkipListSet` to track all in-flight offsets per partition.
-- **Reasoning**: Parallel processing leads to out-of-order completions. To ensure "at-least-once" delivery and avoid "
-  gaps" in committed data:
-    - Only the **lowest pending offset** for each partition is eligible for commitment.
-    - Ensures that even if message 102 finishes before message 101, 102 will not be committed until 101 is also
-      finished.
+## §3 Virtual Threads + ScopedValue doctrine
 
-## Coding Standards and Patterns
+VT is used everywhere (consumer poll → record processing). **`ScopedValue` is NOT currently used** — earlier per-format
+SerDe caches were torn out as dead infrastructure. The doctrine still stands for any future thread-local-like state we
+might add (tenant context, span propagation): prefer `ScopedValue` over `ThreadLocal` to avoid the
+inheritable-thread-local scalability trap on a thread-per-record consumer.
 
-### Modern Javadoc Format
+## §5 Strategy-based backpressure
 
-- Use Java 25 triple-slash (///) comments instead of legacy `/** ... */`.
-- Use Markdown-style code blocks (```java ... ```) instead of HTML `<pre>{@code ... }</pre>`.
+`BackpressureController` encapsulates the decision logic. Two strategies, always with hysteresis (high/low watermarks)
+to prevent thrashing:
 
-### Clean Code Principles
+- **In-flight (parallel)** — counts active virtual threads.
+- **Lag (sequential)** — `Σ (end_offset - position)`, the only meaningful metric for one-at-a-time processing.
 
-- Always use `final var` for local variable declarations whenever possible.
-- Use `java.lang.System.Logger` (Standard Java System Logger) instead of SLF4J or direct Log4j to keep the core library
-  dependency-free.
-- Avoid `e.printStackTrace()`; always use the logger for error reporting.
+## §7 Unified Registry (1.13.0, refined 1.14.0)
 
-### Testing Strategy
+**One registry type, two namespaces.** `MessageProcessorRegistry` holds operators (`UnaryOperator<T>`) and sinks
+(`MessageSink<T>`) in separate internal maps, keyed identically by `RegistryKey<T>`. The registration entry points are
+split by namespace — `registerOperator(key, op)` / `registerSink(key, sink)` — and the static error-handling helpers
+follow the same naming: `withOperatorErrorHandling(UnaryOperator<T>)` / `withSinkErrorHandling(MessageSink<T>)`. Lookups
+are `getOperator(key)` / `getSink(key)`, and per-namespace utilities carry the `Sink` suffix (`getSinkKeys`,
+`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`, `compositeSink`).
 
-- **Unit Tests**: Place in `lib/{module}/src/test/java`. Focus on pure function transformations.
-- **Integration Tests**: Place in `examples/{format}/src/test/java`.
-- **Testcontainers**: Use for end-to-end validation involving Kafka and Schema Registry. Always use a `CapturingSink` to
-  verify the actual payload transformation.
-- **Virtual Thread Tests**: Concurrency tests should use `Thread.ofVirtual()` directly rather than `CompletableFuture`
-  to exercise real virtual thread behavior. Use `CountDownLatch` for synchronization between threads.
+**Historical note:** through 1.13 these were `register` / `withErrorHandling` overloaded by argument type. Bare lambdas
+like `x -> x` were ambiguous and needed an explicit cast. 1.14 renamed both pairs per §16 (delete + migrate) to kill the
+overload-ambiguity footgun.
 
-### 5. Strategy-Based Backpressure
+## §8 Centralized error handling
 
-- **Decision**: Decouple backpressure monitoring from the consumer core using a strategy pattern.
-- **In-Flight Strategy (Parallel)**: Monitors active virtual threads to prevent memory exhaustion.
-- **Lag Strategy (Sequential)**: Monitors total consumer lag (`Σ (end_offset - position)`) as the only meaningful metric
-  when processing messages one-by-one.
-- **Hysteresis**: Always uses high and low watermarks to prevent "thrashing" (rapidly toggling between pause and resume
-  states).
-- **Implementation**: `BackpressureController` encapsulates the decision logic, providing static factory methods (
-  `lagStrategy()`, `inFlightStrategy()`) to the `KPipeConsumer`.
+`RegistryFunctions.withOperatorErrorHandling` (for `UnaryOperator<T>`) and `withConsumerErrorHandling` (for
+`MessageSink<T>`) wrap user code so one failing component can't crash the pipeline.
 
-### 6. Refinement of Core Components
+## §9 Modular architecture
 
-- **KPipeConsumer Simplicity**: Minimized internal fields and delegated lifecycle management (initialization, shutdown,
-  backpressure) to specialized controllers (`BackpressureController`, `OffsetManager`).
-- **Composition over Inheritance**: Message transformations are composed using functional operators (Stream.reduce) in
-  `MessageProcessorRegistry` rather than deep inheritance or manual chaining.
+`kpipe-metrics` ← `kpipe-producer` ← `kpipe-consumer`. Each module is published individually to Maven Central;
+`kpipe-consumer` transitively pulls the other two.
 
-### 7. Unified Registry (1.13.0)
+**Split-package rule (JPMS):** no two modules may export the same Java package. When a class references types from
+another module, it stays in the module that owns those types.
 
-- **Decision**: One registry type, two namespaces. `MessageProcessorRegistry` holds both operators
-  (`UnaryOperator<T>`) and sinks (`MessageSink<T>`) in separate internal maps, keyed identically by
-  `RegistryKey<T>`. `MessageSinkRegistry` was deleted in 1.13.0 and its surface absorbed.
-- **Reasoning**: Processors and sinks share lifecycle, metrics, and type-safe key shape; keeping
-  two structurally-identical types behind a colocated facade (1.12's `registry.sinkRegistry().X()`
-  pattern) leaked the layering through callers. Collapsing to one type concentrates the "what is a
-  registry entry, what metrics does it carry, how does error-handling wrap a value" answer in one
-  place.
-- **Implementation**:
-    - `register` is overloaded: `register(RegistryKey<T>, UnaryOperator<T>)` for the operator
-      namespace, `register(RegistryKey<T>, MessageSink<T>)` for the sink namespace. Java resolves
-      by argument type; bare lambdas like `x -> x` are still ambiguous and need an explicit cast.
-    - Symmetric pairs: `getOperator` / `getSink`, `getKeys` / `getSinkKeys`, `getAll` / `getAllSinks`,
-      `getMetrics` / `getSinkMetrics`, `unregister` / `unregisterSink`, `clear` / `clearSinks`,
-      `registerEnum` / `registerSinkEnum`. The operator side keeps the unsuffixed names because it
-      was the larger pre-existing surface; the sink side carries the `Sink` suffix.
-    - `compositeSink(RegistryKey<T>...)` is an instance method on the registry (moved from the
-      former `TypedPipelineBuilder.compositeSink` static).
-    - `withErrorHandling` is overloaded too: one for `UnaryOperator<T>`, one for `MessageSink<T>`.
-    - The shared `RegistryEntry<T>` still centralises metrics tracking.
-- **Migration note (1.12 → 1.13)**: every `registry.sinkRegistry().X(...)` call site becomes
-  `registry.X(...)` (or `registry.XSink(...)` for the suffixed pairs above). `MessageSinkRegistry.JSON_LOGGING`
-  moved to `JsonFormat.JSON_LOGGING`. Per §16, no deprecation shim — callers migrated in the same PR
-  (`arch/registry-collapse`).
+Package ownership:
 
-### 8. Centralized Error Handling
+- `org.kpipe.metrics` → `kpipe-metrics`
+- `org.kpipe.producer.*` → `kpipe-producer`
+- `org.kpipe.sink.*` → `kpipe-producer`
+- `org.kpipe.consumer.*` → `kpipe-consumer`
+- `org.kpipe.consumer.metrics` → `kpipe-consumer` (reporters that depend on registry types)
+- `org.kpipe.consumer.sink.*` → `kpipe-consumer`
 
-- **Decision**: Standardize error suppression and logging logic in `RegistryFunctions`.
-- **Reasoning**: Consistent error handling prevents a single failing component from crashing the entire pipeline.
-- **Implementation**:
-    - `withOperatorErrorHandling`: Specifically for `UnaryOperator<T>`.
-    - `withConsumerErrorHandling`: Specifically for `MessageSink<T>`.
+## §10 OpenTelemetry metrics
 
-### 9. Modular Architecture and Split-Module Strategy
+`kpipe-metrics` ships interfaces against `opentelemetry-api` only — no SDK. Users bring their own SDK (Prometheus, OTLP,
+Jaeger). Both `ConsumerMetrics` / `ProducerMetrics` default to `OpenTelemetry.noop()` (zero cost when not configured)
+and wire via `.withMetrics(...)`.
 
-- **Decision**: Split the library into three submodules: `kpipe-metrics`, `kpipe-producer`, `kpipe-consumer`.
-- **Dependency chain**: `kpipe-metrics` ← `kpipe-producer` ← `kpipe-consumer`
-- **Reasoning**:
-    - **Reduced Surface Area**: Each module carries only the dependencies it needs.
-    - **JPMS Compliance**: Avoid split packages by clearly defining package ownership between modules.
-    - **No Aggregate Artifact**: Each module is published individually to Maven Central. `kpipe-consumer` transitively
-      includes `kpipe-producer` and `kpipe-metrics`, so users only need a single dependency.
-- **Publishing**: Each submodule applies `maven-publish` and `signing`. JReleaser (configured in `:lib`) deploys all
-  three staging directories to Maven Central in a single release.
-- **Package Convention**:
-    - `org.kpipe.metrics` — owned by `kpipe-metrics` (OTel instruments, `KPipeMetricsReporter`,
-      `ConsumerMetricsReporter`).
-    - `org.kpipe.producer.*` — owned by `kpipe-producer`.
-    - `org.kpipe.sink.*` — owned by `kpipe-producer`.
-    - `org.kpipe.consumer.*` — owned by `kpipe-consumer`.
-    - `org.kpipe.consumer.metrics` — owned by `kpipe-consumer` (reporters that depend on registry types).
-    - `org.kpipe.consumer.sink.*` — owned by `kpipe-consumer`.
-- **Split Package Rule**: No two modules may export the same Java package. When a class references types from another
-  module (e.g., `EntryMetricsReporter` referencing `MessageProcessorRegistry`), it stays in the module that owns
-  those types.
+| Component         | Instrument                           | Type      |
+| ----------------- | ------------------------------------ | --------- |
+| `ProducerMetrics` | `kpipe.producer.messages.sent`       | counter   |
+|                   | `kpipe.producer.messages.failed`     | counter   |
+|                   | `kpipe.producer.dlq.sent`            | counter   |
+| `ConsumerMetrics` | `kpipe.consumer.messages.received`   | counter   |
+|                   | `kpipe.consumer.messages.processed`  | counter   |
+|                   | `kpipe.consumer.messages.errors`     | counter   |
+|                   | `kpipe.consumer.processing.duration` | histogram |
+|                   | `kpipe.consumer.messages.inflight`   | gauge     |
+|                   | `kpipe.consumer.backpressure.pauses` | counter   |
+|                   | `kpipe.consumer.backpressure.time`   | counter   |
 
-### 10. OpenTelemetry Metrics Strategy
+Log-based fallback for users who don't run OTel: `ConsumerMetricsReporter` (consumer-wide snapshot) +
+`EntryMetricsReporter` (per-entry, namespace-aware via `forProcessors(...)` / `forSinks(...)`).
 
-- **Decision**: Provide first-class OTel support via `kpipe-metrics` using `opentelemetry-api` only (no SDK).
-- **Reasoning**: Libraries should instrument with the API; users bring their own SDK (Prometheus, OTLP, Jaeger, etc.).
-- **Implementation**:
-    - `ProducerMetrics` — counters: `kpipe.producer.messages.sent`, `kpipe.producer.messages.failed`,
-      `kpipe.producer.dlq.sent`.
-    - `ConsumerMetrics` — counters: `kpipe.consumer.messages.received`, `kpipe.consumer.messages.processed`,
-      `kpipe.consumer.messages.errors`; histogram: `kpipe.consumer.processing.duration`; gauge:
-      `kpipe.consumer.messages.inflight`; counters: `kpipe.consumer.backpressure.pauses`,
-      `kpipe.consumer.backpressure.time`.
-    - Both default to `OpenTelemetry.noop()` — zero cost when not configured.
-    - Wired via builder: `.withMetrics(new ConsumerMetrics(otel))` / `.withMetrics(new ProducerMetrics(otel))`.
-- **Log-based reporters**: `ConsumerMetricsReporter` (aggregate consumer-level snapshot — uptime,
-  per-second rates, backpressure totals) plus `EntryMetricsReporter` (per-entry, namespace-aware
-  via `forProcessors(...)` / `forSinks(...)`). 1.13.0 collapsed the prior `ProcessorMetricsReporter`
-  + `SinkMetricsReporter` (structurally identical) into the single `EntryMetricsReporter`. These
-  remain available as a lightweight fallback for users who do not use OTel.
+## §11 KPipeConsumer concurrency & safety patterns
 
-### 11. KPipeConsumer Concurrency and Safety Patterns
-
-- **State Machine**: All state transitions use single-read `compareAndSet` — read once into a local, decide, CAS. Never
-  use two sequential CAS calls (double-CAS window). Shared helper `transitionToClosing()` is used by `close()` and
+- **State machine.** All transitions use single-read `compareAndSet` — read once into a local, decide, CAS. Never two
+  sequential CAS calls (double-CAS window). Shared helper `transitionToClosing()` is used by `close()` and
   `uncaughtExceptionHandler`.
-- **Error Handler Safety**: Every `errorHandler.accept()` call site is wrapped in try-catch. A throwing user callback
+- **Error handler safety.** Every `errorHandler.accept()` call site is wrapped in try-catch. A throwing user callback
   must never crash the consumer thread, leak in-flight counts, or skip offset marking. `markOffsetProcessed()` is always
   called **before** `errorHandler.accept()`.
-- **Shutdown Guarantee**: `state.set(CLOSED)` lives in a nested `finally` inside the consumer thread's outer `finally`.
+- **Shutdown guarantee.** `state.set(CLOSED)` lives in a nested `finally` inside the consumer thread's outer `finally`.
   Even if `kafkaConsumer.close()` throws, the consumer always reaches terminal state.
-- **LockSupport Park/Unpark**: The consumer thread uses `LockSupport.park()` (not `Thread.sleep()`) when paused. This
-  avoids CPU waste and wakes instantly. Unpark sources:
-    - `internalResume()` — manual or backpressure resume.
-    - `close()` — shutdown path.
-    - `processRecord()` finally block — when `backpressurePaused` is true (in-flight drain triggers re-evaluation).
-      Commands are flushed via `processCommands()` **before** parking so `kafkaConsumer.pause()` executes immediately.
-- **Pipeline Null Handling**: Null record value and null deserialization throw specific `IllegalStateException` messages
-  (retryable via normal exception path). Null `process()` result is intentional filtering — mark offset processed, count
-  as success, no error.
-- **Metrics Immutability**: `getMetrics()` returns `Collections.unmodifiableMap()`. Callers cannot mutate the snapshot.
-- **Thread Safety Boundaries**: `processCommands()` is package-private — external callers cannot invoke
+- **LockSupport park/unpark.** Consumer thread uses `LockSupport.park()` (not `Thread.sleep()`) when paused. Unpark
+  sources: `internalResume()`, `close()`, and `processRecord()` finally block when `backpressurePaused` is true.
+  Commands are flushed via `processCommands()` **before** parking so `kafkaConsumer.pause()` executes immediately.
+- **Pipeline null handling.** Null record value and null deserialization throw specific `IllegalStateException` messages
+  (retryable). Null `process()` result is intentional filtering — mark offset processed, count as success, no error.
+- **Metrics immutability.** `getMetrics()` returns `Collections.unmodifiableMap()`.
+- **Thread-safety boundaries.** `processCommands()` is package-private — external callers can't invoke
   `kafkaConsumer.pause()`/`resume()`/`commitSync()` from arbitrary threads. `isRunning()` snapshots `state.get()` into a
-  local variable before comparing.
+  local before comparing.
 
-### 12. Explicit Pipeline Error Semantics — No Silent Failures
+## §12 Explicit pipeline error semantics — no silent failures
 
-- **Decision (1.9.0)**: `MessagePipeline.apply()` no longer overloads `null` as both "filtered" and "failed". Failures
-  throw; `null` means exactly one thing — intentional filtering by `process()`.
-- **Decision (1.13.0)**: `MessagePipeline.process()` returns a sealed `Result<T>` (`Passed | Filtered | Failed`). The
-  three outcomes are now distinct *types* enforced by the compiler — the §12 doctrine moved from "convention enforced
-  by discipline" to "guarantee enforced by exhaustive pattern matching". The byte-level entry points (`apply`,
-  `processToSink`, `processToValue`) preserve their pre-1.13 contracts by unwrapping the Result internally: `null` for
-  intentional filters, re-throwing the captured `Failed.cause` for failures. New code that wants typed handling calls
-  `process()` directly and switches on the result.
-- **Reasoning**: The pre-1.9.0 implementation caught all exceptions in `apply()` and returned `null`. The downstream
-  `KPipeConsumer.processTypedRecord` then treated `processed == null` as intentional filtering and incremented
-  `messagesProcessed` — masking deserialization errors as successes. The only signal something was wrong was a gauge
-  mismatch (`messagesProcessed` rising while `sinkInvocationCount` stayed at 0). 1.9 fixed the *behaviour*; 1.13
-  fixed the *type* so the bug is impossible at compile time.
-- **Real-world burn**: Discovered during the Grafana dashboard session — protobuf seed messages all failed
-  deserialization because `skipBytes(5)` was wrong, but the consumer reported them as processed. ~10 minutes wasted on
-  a bug that should have been a single error log. After 1.13.0 the same bug would surface as a `Result.Failed` at the
-  consumer's pattern-match site — no convention to remember, no discipline to maintain.
-- **Implementation invariants**:
-    - Null record value throws `IllegalStateException` with a specific message (retryable via the normal exception
-      path).
-    - Null deserialization result throws `IllegalStateException` (implementations must throw, not return null).
-    - `process()` returns `Result.Passed` (value flows on), `Result.Filtered` (offset committed, sink skipped), or
-      `Result.Failed(cause)` (retry/DLQ/error-handler routes the cause). The `Filtered` value is a shared singleton
-      via `Result.filtered()` to avoid per-record allocation; `Passed` and `Failed` each allocate one record per call.
-    - Operators (`UnaryOperator<T>`) still return `T` (or null for filter) — the Result wrapping lives at the
-      pipeline level, not at every operator. `TypedPipelineBuilder.build()` catches `RuntimeException` from operators
-      and converts to `Result.failed(...)`; null returns become `Result.filtered()`.
-- **Generalizable rule**: When composing `Function<T, R>` chains, never use `null`/`Optional.empty()` to signal both
-  "filtered" and "failed". If both states exist, model them as distinct types (sealed `Result<T>` or distinct
-  exceptions). Triage heuristic: when a "processed" counter rises but downstream invocations stay at 0, suspect
-  overloaded null semantics first.
+**Doctrine:** `MessagePipeline.process()` returns sealed `Result<T>` (`Passed | Filtered | Failed`). The three outcomes
+are distinct compiler-enforced types — the §12 rule moved from "convention" to "guarantee enforced by exhaustive pattern
+matching" in 1.13.0.
 
-### 13. KPipe Fluent Facade (1.10.0) — Layered API Strategy
+**Real-world burn:** before 1.9, `apply()` caught all exceptions and returned `null`. The downstream
+`KPipeConsumer.processTypedRecord` treated `processed == null` as intentional filtering and incremented
+`messagesProcessed` — masking deserialization errors as successes. Discovered during a Grafana session: protobuf seed
+messages all failed deserialization (`skipBytes(5)` was wrong) but were reported as processed. The only signal was
+`messagesProcessed` rising while `sinkInvocationCount` stayed at 0.
 
-- **Decision (1.10.0)**: ship a top-level `KPipe` fluent facade in a new `kpipe-api` module that delegates to the
-  existing `MessageProcessorRegistry` / `KPipeConsumer.Builder` stack. The facade is purely
-  additive — no public 1.x API was changed.
-- **Reasoning**: The 1.10.0 ergonomics pass smoothed surface friction (no-arg ctors, format helpers, DLQ bundle, etc.)
-  but left the typical "build a JSON consumer" path at ~10 lines of registry + builder + runner. The fluent facade
-  gets the common case to 5 lines without breaking anyone.
-- **Layered API rule**: the codebase now exposes TWO public surfaces:
-    1. **`org.kpipe.KPipe.json/avro/protobuf/bytes/custom(...)`** — fluent, immutable, returns `Stream<T>` →
-       `Sink<T>` → `Handle`. The 80% path. Discoverable via IDE auto-complete after the first `.`.
-    2. **`MessageProcessorRegistry` + `KPipeConsumer.Builder`** — explicit, multi-step,
-       supports custom registries, shared pipelines, programmatic runner config. The 20% path.
-- **Module placement (JPMS):** `Stream<T>`, `Sink<T>`, `Handle` interfaces live in `kpipe-api` (package
-  `org.kpipe`). Private impls (`DefaultStream`, `DefaultSink`, `DefaultHandle`) also in `org.kpipe`, package-private.
-  This keeps the user-facing import path clean (`import org.kpipe.KPipe;`) and avoids the `org.kpipe.facade` split-
-  package cost while still letting `kpipe-core` own the registry/sink/format types in `org.kpipe.registry` and
-  `org.kpipe.sink`.
-- **Immutability contract on `Stream<T>`**: `DefaultStream` is a Java record. Every fluent method returns a NEW
-  `DefaultStream` instance carrying the updated configuration. The original is never mutated. Branching from a
-  common root is safe — `s.pipe(a)` and `s.pipe(b)` produce independent streams. Operators are stored as an
-  immutable `List.copyOf(...)`. The record form keeps "adding a fluent setter is a one-place change" honest:
-  declare the component, add the `with*` method, reference it in `DefaultSink.buildPipeline` if it affects pipeline
-  construction.
-- **`Handle` is `AutoCloseable`** with a default `close()` that performs `shutdownGracefully(Duration.ofSeconds(5))`.
-  Use try-with-resources to guarantee cleanup. `metrics()` returns `Map<String, Long>` (typed), not `Map<String,
-  Object>`.
-- **`toConsole()` dispatch** uses a per-factory `Function<T, MessageSink<T>>` lambda baked into the `DefaultStream`
-  at construction time. No `instanceof MessageFormat` checks. Avro's factory throws `IllegalStateException` if no
-  default schema is registered.
-- **Test contract**: facade has both unit tests (composition + dispatch) and a Testcontainers end-to-end test that
-  spins up a real broker and verifies the entire chain through `start()` / `Handle.metrics()` / `shutdownGracefully()`.
+**Invariants:**
 
-### 14. Audit-Derived Concurrency Patterns
+- Null record value or null deserialization → throw `IllegalStateException` (retryable). Format implementations must
+  throw, not return null.
+- `process()` returns `Result.Passed` / `Result.Filtered` / `Result.Failed(cause)`. `Result.filtered()` is a **shared
+  singleton** to avoid per-record allocation; `Passed` and `Failed` allocate one record per call.
+- Operators (`UnaryOperator<T>`) still return `T` or null-for-filter — `Result` wrapping lives at the pipeline level.
+  `TypedPipelineBuilder.build()` catches `RuntimeException` from operators → `Result.failed(...)`; null returns →
+  `Result.filtered()`.
+- Byte-level entry points (`apply` / `processToSink` / `processToValue`) preserve pre-1.13 contracts by unwrapping the
+  Result internally: null for filters, re-throw `Failed.cause` for failures.
 
-These patterns came out of the deep internal audit work and should be preserved across the codebase:
+**Generalizable rule:** when composing `Function<T, R>` chains, never use `null`/`Optional.empty()` to signal both
+"filtered" and "failed." Model them as distinct types or distinct exceptions. **Triage heuristic:** when a "processed"
+counter rises but downstream invocations stay at 0, suspect overloaded null semantics first.
 
-- **Atomic remove-if-empty on `ConcurrentHashMap` of mutable collections**: NEVER do
-  `if (set.isEmpty()) map.remove(key)` after a separate `set.remove(value)` — the check-then-act is non-atomic and
-  a concurrent `computeIfAbsent` can repopulate the set between the check and the map removal. Always use
-  `map.computeIfPresent(key, (k, v) -> { v.remove(value); return v.isEmpty() ? null : v; })`. The bucket lock makes
-  the whole sequence atomic.
-- **`ConcurrentSkipListSet.first()` is a check-then-act trap**: pattern `if (!set.isEmpty()) set.first()` can throw
-  `NoSuchElementException` under contention. Wrap in a `safeFirst` helper that returns `null` on
-  `NoSuchElementException`. Apply the same pattern for `last()`.
-- **`(Properties) parent.clone()`, NOT `new Properties(parent)`**: `new Properties(parent)` makes the parent a
-  *fallback for `getProperty()`*, not a copy. `putIfAbsent` operates on the new instance only and silently shadows
-  parent entries. Always `clone()` when you intend to derive a copy.
-- **CAS-to-CAS happens-before doesn't extend to post-CAS field writes**: if `start()` does
-  `state.compareAndSet(...)` then assigns `scheduler = ...`, a concurrent `close()` that does its own
-  `state.compareAndSet(...)` is NOT guaranteed to see `scheduler` (the assignment is after the CAS in program order).
-  Mark such fields `volatile`, or move the assignment into the CAS-protected critical section.
-- **`Kafka.endOffsets(...)` without a `Duration`** uses the consumer's `default.api.timeout.ms` (60s default). On a
-  hot path (every consumer-loop iteration), a slow broker stalls the entire consumer. Always pass a bounded timeout.
-- **`catch (Exception) { return defaultValue; }` is a silent-failure trap**: never swallow without logging at
-  WARNING. If you catch `InterruptException` (Kafka) or `InterruptedException`, **always** call
-  `Thread.currentThread().interrupt()` to restore the flag for downstream code.
-- **Don't expose internal counters through public APIs**: if a method takes an `AtomicLong` parameter for
-  "optionally update this counter on success," it's leaking implementation detail. Return a `boolean` and let the
-  caller update its own counter.
+## §13 Fluent facade (1.10.0+)
 
-### 15. Multi-Topic Dispatch (1.11.0)
+**Layered API.** Two public surfaces:
 
-- **Decision**: One `KPipeConsumer` can host either one shared pipeline across N topics (homogeneous) or a
-  per-topic pipeline map (heterogeneous), but always through one Kafka consumer / one consumer-group / one
-  offset manager.
-- **Internal model**: `KPipeConsumer` stores `Map<String, MessagePipeline<?>> pipelines`. The homogeneous path
-  (`Builder.withPipeline(...)`) replicates the same pipeline reference across every subscribed topic at construction
-  time; the heterogeneous path (`Builder.withPipelines(Map)`) takes the map directly and derives the topic set from
-  its keys. `tryProcessRecord` does a single `pipelines.get(record.topic())` per record. The map is built via
-  `Map.copyOf(...)`, so for typical small route counts it's `Map1`/`MapN` (identity-fast `String#equals` lookup),
-  not `HashMap`.
-- **Unrouted-topic policy**: if a record arrives for a topic with no registered pipeline (rebalance race, config
-  error), **drop + log at WARNING + mark offset processed**. Never throw (would crash the consumer thread for a
-  config error) and never DLQ (we don't have a per-topic DLQ). The "mark processed" part is critical — without
-  it, the same record gets re-fetched forever.
-- **Facade split**: homogeneous via `KPipe.json/avro/protobuf/bytes/custom(Collection<String>, Properties)`;
-  heterogeneous via `KPipe.multi(props).json(topic, configurator).avro(...)...start()`. Single-string overloads
-  remain unchanged. Mixing `withTopic`/`withTopics` with `withPipelines` is rejected as a config error (silent
-  override would mask user mistakes).
-- **Metrics**: OTel `kpipe.consumer.*` instruments now carry both a `pipeline` attribute (consumer-wide) and a
-  `topic` attribute (per record). Per-topic `Attributes` are cached via `computeIfAbsent` so the per-record metric
-  path is allocation-free after each topic has been seen once.
+1. **`org.kpipe.KPipe.json/avro/protobuf/bytes/custom(...)`** — fluent, immutable, returns `Stream<T>` → `Sink<T>` →
+   `Handle`. The 80% path.
+2. **`MessageProcessorRegistry` + `KPipeConsumer.Builder`** — explicit, multi-step. The 20% path.
 
-### 16. No-Deprecation Policy
+**Immutability contract.** `DefaultStream` is a Java record; every fluent method returns a NEW instance carrying updated
+config. Operators are stored as `List.copyOf(...)`. Branching from a common root is safe: `s.pipe(a)` and `s.pipe(b)`
+produce independent streams. Adding a new fluent setter is a one-place change: declare the component, add the `with*`
+method, reference in `DefaultSink.buildPipeline` if it affects pipeline construction.
 
-- **Decision**: When a public API has to go, **delete it and migrate all callers**. Do not deprecate, do not add
-  `@Deprecated`, do not add `since = "..."` annotations.
-- **Reasoning**: Deprecation cycles bloat the surface, train users to ignore warnings, and rot in place when the
-  promised "removal in next major" never happens. The library is pre-1.x-stable enough that hard breaks with a
-  release-note migration are cleaner than carrying dead overloads. Tests and examples are migrated in the same PR
-  that deletes the method, so callers always have a working reference.
-- **Enforcement**: zero `@Deprecated` annotations and zero `@deprecated` Javadoc tags should ever land in the
-  codebase. If something needs to be removed, the PR description mentions the removal explicitly.
+`Handle` is `AutoCloseable` with a default `close()` that calls `shutdownGracefully(Duration.ofSeconds(5))`. `metrics()`
+returns `Map<String, Long>` (typed).
 
-### 17. Core ↔ Facade Capability Mapping
+## §14 Audit-derived concurrency patterns
 
-This table is the source of truth for which `kpipe-consumer` / `kpipe-core` / `kpipe-format-*` / `kpipe-metrics`
-capabilities are reachable through the **fluent facade** (`KPipe.json/avro/protobuf/bytes/custom(...)` →
-`Stream<T>` → `Sink<T>` → `Handle`, plus `KPipe.multi(props)` → `MultiBuilder`) versus only via the **explicit API**
-(`MessageProcessorRegistry` + `KPipeConsumer.Builder`).
+These came out of deep internal audit work — preserve across the codebase.
+
+- **Atomic remove-if-empty on `ConcurrentHashMap` of mutable collections.** Never do
+  `if (set.isEmpty()) map.remove(key)` after a separate `set.remove(value)` — non-atomic, a concurrent `computeIfAbsent`
+  can repopulate the set between the check and the map removal. Use
+  `map.computeIfPresent(key, (k, v) -> { v.remove(value); return v.isEmpty() ? null : v; })`. The bucket lock makes the
+  whole sequence atomic.
+- **`ConcurrentSkipListSet.first()` is a check-then-act trap.** `if (!set.isEmpty()) set.first()` can throw
+  `NoSuchElementException` under contention. Wrap in `safeFirst` returning `null` on `NoSuchElementException`. Same for
+  `last()`.
+- **`(Properties) parent.clone()`, NOT `new Properties(parent)`.** The latter makes parent a _fallback for
+  `getProperty()`_, not a copy. `putIfAbsent` operates on the new instance only and silently shadows parent entries.
+  Always `clone()` when deriving a copy.
+- **CAS-to-CAS happens-before doesn't extend to post-CAS field writes.** If `start()` does `state.compareAndSet(...)`
+  then assigns `scheduler = ...`, a concurrent `close()` doing its own CAS is NOT guaranteed to see `scheduler`. Mark
+  such fields `volatile`, or move the assignment inside the CAS-protected critical section.
+- **`Kafka.endOffsets(...)` without a `Duration`** uses `default.api.timeout.ms` (60s default). On a hot path, a slow
+  broker stalls the entire consumer. Always pass a bounded timeout.
+- **`catch (Exception) { return defaultValue; }` is a silent-failure trap.** Never swallow without logging at WARNING.
+  If you catch `InterruptException` (Kafka) or `InterruptedException`, **always** call
+  `Thread.currentThread().interrupt()` to restore the flag.
+- **Don't expose internal counters through public APIs.** A method taking `AtomicLong` for "optionally update this
+  counter on success" leaks implementation detail. Return `boolean` and let the caller update its own counter.
+
+## §15 Multi-topic dispatch (1.11.0)
+
+One `KPipeConsumer`, one Kafka consumer, one consumer-group, one offset manager. Either a single shared pipeline across
+N topics (homogeneous, `Builder.withPipeline(...)`) or a per-topic pipeline map (heterogeneous,
+`Builder.withPipelines(Map)`).
+
+**Unrouted-topic policy.** If a record arrives for a topic with no registered pipeline (rebalance race, config error):
+**drop + log at WARNING + mark offset processed.** Never throw (would crash the consumer thread for a config error) and
+never DLQ (no per-topic DLQ exists). The "mark processed" part is critical — without it, the same record gets re-fetched
+forever.
+
+**Config-error rejection.** Mixing `withTopic`/`withTopics` with `withPipelines` is rejected as a config error (silent
+override would mask user mistakes).
+
+## §16 No-deprecation policy
+
+When a public API has to go: **delete it and migrate all callers in the same PR.** No `@Deprecated`, no `@deprecated`
+Javadoc, no `since = "..."`.
+
+**Reasoning:** deprecation cycles bloat the surface, train users to ignore warnings, and rot in place when the promised
+"removal in next major" never happens. The PR description mentions the removal explicitly so callers always have a
+working reference.
+
+## §17 Core ↔ Facade capability mapping
+
+Source of truth for which capabilities are on the fluent facade (`KPipe.X(...)` → `Stream<T>` → `Sink<T>` → `Handle`,
+plus `KPipe.multi(props)` → `MultiBuilder`) versus only via the explicit API (`MessageProcessorRegistry` +
+`KPipeConsumer.Builder`).
 
 When adding a new consumer/builder feature: decide whether it belongs on the 80% path (add to `Stream<T>` and
-`MultiBuilder`) or whether it stays as an escape hatch (explicit-only). Update this table in the same PR.
+`MultiBuilder`) or stays as an escape hatch (explicit-only). Update this table in the same PR. Rows in **bold** are
+deliberately escape-hatch-only.
 
-| Capability                                  | Source module          | Facade path                                                              | Explicit-API path                                                                                    | Notes                                                                                                                                                                                 |
-|---------------------------------------------|------------------------|--------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Format selection                            | `kpipe-format-*`       | `KPipe.json/avro/protobuf/bytes/custom(...)`                             | `new MessageProcessorRegistry(format)`                                                               | Custom format: pass any `MessageFormat<T>` to `KPipe.custom`.                                                                                                                         |
-| Topic subscription (homogeneous)            | `kpipe-consumer`       | `KPipe.X(topic, props)`                                                  | `Builder.withTopic(s) / withTopics(...)`                                                             | One topic-set, one shared pipeline.                                                                                                                                                   |
-| Topic subscription (heterogeneous)          | `kpipe-consumer`       | `KPipe.multi(props).json(...).avro(...)...start()`                       | `Builder.withPipelines(Map<String, MessagePipeline<?>>)`                                             | Per-topic dispatch (§15).                                                                                                                                                             |
-| Operator chain (`pipe/filter/peek/when`)    | `kpipe-core`           | `Stream.pipe / filter / peek / when`                                     | `MessageProcessorRegistry.pipeline(format).add(...)`                                                 | Identical operator semantics.                                                                                                                                                         |
-| Custom terminal sink                        | `kpipe-core`           | `Stream.toCustom(MessageSink<T>)`                                        | `registry.register(key, sink)`                                                                   | Any `MessageSink<T>`; facade also offers `.toConsole()`.                                                                                                                              |
-| Multi-sink fanout                           | `kpipe-core`           | `Stream.toMulti(sinks...)`                                               | `new CompositeMessageSink<>(...)`                                                                    | Best-effort delivery; per-sink errors logged + suppressed.                                                                                                                            |
-| Batch sink (size + age flush)               | `kpipe-core`           | `Stream.toBatch(BatchSink<T>, BatchPolicy)`                              | `Builder.withBatchPipeline(topic, pipeline, sink, policy)` (multi-call for heterogeneous batch)      | `BatchSink<T>` returns `BatchResult` for per-record DLQ; `BatchSink.ofVoid(consumer)` wraps void-style sinks (whole-batch DLQ on throw). Both sequential and parallel modes. See §18. |
-| Batch sink (multi-topic via `MultiBuilder`) | `kpipe-api`            | `KPipe.multi(props).json(topic, s -> s.toBatch(sink, policy))...start()` | `Builder.withBatchPipeline(...)` × N                                                                 | One consumer-group, mixed batch + non-batch routes.                                                                                                                                   |
-| Skip wire-format prefix                     | `kpipe-core`           | `Stream.skipBytes(int)`                                                  | `TypedPipelineBuilder.skipBytes(int)`                                                                | Confluent envelope: 5 (Avro) / 6 (Proto single-msg).                                                                                                                                  |
-| Retry policy                                | `kpipe-consumer`       | `Stream.withRetry(int, Duration)`                                        | `Builder.withRetry(int, Duration)`                                                                   |                                                                                                                                                                                       |
-| Backpressure (default watermarks)           | `kpipe-consumer`       | `Stream.withBackpressure()`                                              | `Builder.withBackpressure(BackpressureController)`                                                   | Defaults: pause 10k, resume 7k.                                                                                                                                                       |
-| Backpressure (custom watermarks)            | `kpipe-consumer`       | `Stream.withBackpressure(high, low)`                                     | `Builder.withBackpressure(BackpressureController)`                                                   | High/low strategy auto-derived from `sequentialProcessing`.                                                                                                                           |
-| Sequential processing                       | `kpipe-consumer`       | `Stream.withSequentialProcessing(boolean)`                               | `Builder.withSequentialProcessing(boolean)`                                                          | Switches backpressure to lag-based (§5).                                                                                                                                              |
-| OTel/custom metrics                         | `kpipe-metrics(-otel)` | `Stream.withMetrics(ConsumerMetrics)` / `MultiBuilder.withMetrics(...)`  | `Builder.withMetrics(ConsumerMetrics)`                                                               | Single-format and multi-topic both supported.                                                                                                                                         |
-| Custom error handler                        | `kpipe-consumer`       | `Stream.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | `Builder.withErrorHandler(ErrorHandler<K>)`                                                          | Default logs at WARNING (§11).                                                                                                                                                        |
-| Dead-letter topic                           | `kpipe-consumer`       | `Stream.withDeadLetterTopic(String)`                                     | `Builder.withDeadLetterTopic(String)` / `withDeadLetterBundle(...)`                                  | Bundle form pairs DLQ + producer for advanced wiring.                                                                                                                                 |
-| Poll timeout                                | `kpipe-consumer`       | `Stream.withPollTimeout(Duration)`                                       | `Builder.withPollTimeout(Duration)`                                                                  | Default 100ms.                                                                                                                                                                        |
-| Lifecycle handle                            | `kpipe-api`            | `Handle.isHealthy / metrics / awaitShutdown / close`                     | `KPipeConsumer.start / awaitShutdown / shutdownGracefully / waitForInFlightDrain`                    | `Handle` is `AutoCloseable` (5s graceful default). Since 1.13: consumer hosts the lifecycle directly — no separate `KPipeRunner`.                                                    |
-| **Custom `OffsetManager`**                  | `kpipe-consumer`       | — (escape hatch only)                                                    | `Builder.withOffsetManager(...)` / `withOffsetManager(Provider)`                                     | E.g. Postgres/Redis-backed manager.                                                                                                                                                   |
-| **Custom Kafka `Consumer` factory**         | `kpipe-consumer`       | —                                                                        | `Builder.withConsumerProvider(Supplier<Consumer<K,byte[]>>)`                                         | Test seam / SSL configurators.                                                                                                                                                        |
-| **Custom DLQ `KafkaProducer`**              | `kpipe-producer`       | —                                                                        | `Builder.withKafkaProducer(...)` / `withDeadLetterBundle(...)`                                       | Override default producer for the DLQ.                                                                                                                                                |
-| **Rebalance listener**                      | `kpipe-consumer`       | —                                                                        | `Builder.withRebalanceListener(ConsumerRebalanceListener)`                                           | External offset commit hooks, log routing.                                                                                                                                            |
-| **Custom command queue**                    | `kpipe-consumer`       | —                                                                        | `Builder.withCommandQueue(Queue<ConsumerCommand>)`                                                   | Test seam (rarely needed).                                                                                                                                                            |
-| **Thread/executor termination**             | `kpipe-consumer`       | —                                                                        | `Builder.withThreadTerminationTimeout / withExecutorTerminationTimeout / withWaitForMessagesTimeout` | Shutdown tuning.                                                                                                                                                                      |
-| **Periodic metrics reporting + shutdown hook**  | `kpipe-consumer`   | —                                                                        | `Builder.withMetricsReporters(...) / withMetricsInterval(...) / withShutdownHook(true)`              | Folded into `KPipeConsumer.Builder` in 1.13. Reporter thread runs while consumer is alive; daemon thread, doesn't keep the JVM up.                                                    |
-| **Health endpoint**                         | `kpipe-consumer`       | —                                                                        | `HttpHealthServer.fromEnv(...)`                                                                      | Run alongside `Handle` in the host process.                                                                                                                                           |
-| **In-flight drain**                         | `kpipe-consumer`       | `Handle.shutdownGracefully(Duration)`                                    | `KPipeConsumer.waitForInFlightDrain(Duration) / shutdownGracefully(Duration)`                        | Replaces the deleted `MessageTracker` class. Uses the live in-flight counter (includes buffered batch records), not metric-derived.                                                  |
-| **Custom `MessageProcessorRegistry`**       | `kpipe-core`           | —                                                                        | `new MessageProcessorRegistry(...)` + manual wiring                                                  | Pre-shared pipelines across consumers, multi-format orchestrators.                                                                                                                    |
+| Capability                                     | Source module                                           | Facade path                                                              | Explicit-API path                                                                                    | Notes                                                                                                                                                                                 |
+| ---------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Format selection                               | `kpipe-format-*`                                        | `KPipe.json/avro/protobuf/bytes/custom(...)`                             | `new MessageProcessorRegistry(format)`                                                               | Custom format: pass any `MessageFormat<T>` to `KPipe.custom`.                                                                                                                         |
+| Topic subscription (homogeneous)               | `kpipe-consumer`                                        | `KPipe.X(topic, props)`                                                  | `Builder.withTopic(s) / withTopics(...)`                                                             | One topic-set, one shared pipeline.                                                                                                                                                   |
+| Topic subscription (heterogeneous)             | `kpipe-consumer`                                        | `KPipe.multi(props).json(...).avro(...)...start()`                       | `Builder.withPipelines(Map<String, MessagePipeline<?>>)`                                             | Per-topic dispatch (§15).                                                                                                                                                             |
+| Operator chain (`pipe/filter/peek/when`)       | `kpipe-core`                                            | `Stream.pipe / filter / peek / when`                                     | `MessageProcessorRegistry.pipeline(format).add(...)`                                                 | Identical operator semantics.                                                                                                                                                         |
+| Custom terminal sink                           | `kpipe-core`                                            | `Stream.toCustom(MessageSink<T>)`                                        | `registry.registerSink(key, sink)`                                                                   | Any `MessageSink<T>`; facade also offers `.toConsole()`.                                                                                                                              |
+| Multi-sink fanout                              | `kpipe-core`                                            | `Stream.toMulti(sinks...)`                                               | `new CompositeMessageSink<>(...)`                                                                    | Best-effort delivery; per-sink errors logged + suppressed.                                                                                                                            |
+| Batch sink (size + age flush)                  | `kpipe-core`                                            | `Stream.toBatch(BatchSink<T>, BatchPolicy)`                              | `Builder.withBatchPipeline(topic, pipeline, sink, policy)` (multi-call for heterogeneous batch)      | `BatchSink<T>` returns `BatchResult` for per-record DLQ; `BatchSink.ofVoid(consumer)` wraps void-style sinks (whole-batch DLQ on throw). Both sequential and parallel modes. See §18. |
+| Batch sink (multi-topic via `MultiBuilder`)    | `kpipe-api`                                             | `KPipe.multi(props).json(topic, s -> s.toBatch(sink, policy))...start()` | `Builder.withBatchPipeline(...)` × N                                                                 | One consumer-group, mixed batch + non-batch routes.                                                                                                                                   |
+| Skip wire-format prefix                        | `kpipe-core`                                            | `Stream.skipBytes(int)`                                                  | `TypedPipelineBuilder.skipBytes(int)`                                                                | Confluent envelope: 5 (Avro) / 6 (Proto single-msg).                                                                                                                                  |
+| Confluent SR per-record auto-lookup            | `kpipe-format-avro` + `kpipe-schema-registry-confluent` | `Stream.withSchemaRegistry(SchemaResolver)`                              | `AvroFormat.withRegistry(SchemaResolver)`                                                            | Reads wire envelope, caches schemas by ID (immutable in SR; no TTL). Avro-only — Protobuf needs runtime `.proto` compilation. See §19.                                                |
+| Pipeline outcome counters (OTel)               | `kpipe-metrics-otel`                                    | `Stream.peekResult(PipelineMetricsObserver)`                             | hand a `Consumer<Result<T>>` to `peekResult`                                                         | Emits `kpipe.pipeline.passed/filtered/failed` counters. Observer-only — doesn't suppress or reroute (see §11 observer-wrap layer).                                                    |
+| Retry policy                                   | `kpipe-consumer`                                        | `Stream.withRetry(int, Duration)`                                        | `Builder.withRetry(int, Duration)`                                                                   |                                                                                                                                                                                       |
+| Backpressure (default watermarks)              | `kpipe-consumer`                                        | `Stream.withBackpressure()`                                              | `Builder.withBackpressure(BackpressureController)`                                                   | Defaults: pause 10k, resume 7k.                                                                                                                                                       |
+| Backpressure (custom watermarks)               | `kpipe-consumer`                                        | `Stream.withBackpressure(high, low)`                                     | `Builder.withBackpressure(BackpressureController)`                                                   | High/low strategy auto-derived from `sequentialProcessing`.                                                                                                                           |
+| Sequential processing                          | `kpipe-consumer`                                        | `Stream.withSequentialProcessing(boolean)`                               | `Builder.withSequentialProcessing(boolean)`                                                          | Switches backpressure to lag-based (§5).                                                                                                                                              |
+| OTel/custom metrics                            | `kpipe-metrics(-otel)`                                  | `Stream.withMetrics(ConsumerMetrics)` / `MultiBuilder.withMetrics(...)`  | `Builder.withMetrics(ConsumerMetrics)`                                                               | Single-format and multi-topic both supported.                                                                                                                                         |
+| Custom error handler                           | `kpipe-consumer`                                        | `Stream.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | `Builder.withErrorHandler(ErrorHandler<K>)`                                                          | Default logs at WARNING (§11).                                                                                                                                                        |
+| Dead-letter topic                              | `kpipe-consumer`                                        | `Stream.withDeadLetterTopic(String)`                                     | `Builder.withDeadLetterTopic(String)` / `withDeadLetterBundle(...)`                                  | Bundle form pairs DLQ + producer for advanced wiring.                                                                                                                                 |
+| Poll timeout                                   | `kpipe-consumer`                                        | `Stream.withPollTimeout(Duration)`                                       | `Builder.withPollTimeout(Duration)`                                                                  | Default 100ms.                                                                                                                                                                        |
+| Lifecycle handle                               | `kpipe-api`                                             | `Handle.isHealthy / metrics / awaitShutdown / close`                     | `KPipeConsumer.start / awaitShutdown / shutdownGracefully / waitForInFlightDrain`                    | `Handle` is `AutoCloseable` (5s graceful default). Since 1.13: consumer hosts the lifecycle directly — no separate `KPipeRunner`.                                                     |
+| **Custom `OffsetManager`**                     | `kpipe-consumer`                                        | — (escape hatch only)                                                    | `Builder.withOffsetManager(...)` / `withOffsetManager(Provider)`                                     | E.g. Postgres/Redis-backed manager.                                                                                                                                                   |
+| **Custom Kafka `Consumer` factory**            | `kpipe-consumer`                                        | —                                                                        | `Builder.withConsumerProvider(Supplier<Consumer<K,byte[]>>)`                                         | Test seam / SSL configurators.                                                                                                                                                        |
+| **Custom DLQ `KafkaProducer`**                 | `kpipe-producer`                                        | —                                                                        | `Builder.withKafkaProducer(...)` / `withDeadLetterBundle(...)`                                       | Override default producer for the DLQ.                                                                                                                                                |
+| **Rebalance listener**                         | `kpipe-consumer`                                        | —                                                                        | `Builder.withRebalanceListener(ConsumerRebalanceListener)`                                           | External offset commit hooks, log routing.                                                                                                                                            |
+| **Custom command queue**                       | `kpipe-consumer`                                        | —                                                                        | `Builder.withCommandQueue(Queue<ConsumerCommand>)`                                                   | Test seam (rarely needed).                                                                                                                                                            |
+| **Thread/executor termination**                | `kpipe-consumer`                                        | —                                                                        | `Builder.withThreadTerminationTimeout / withExecutorTerminationTimeout / withWaitForMessagesTimeout` | Shutdown tuning.                                                                                                                                                                      |
+| **Periodic metrics reporting + shutdown hook** | `kpipe-consumer`                                        | —                                                                        | `Builder.withMetricsReporters(...) / withMetricsInterval(...) / withShutdownHook(true)`              | Folded into `KPipeConsumer.Builder` in 1.13. Reporter thread is daemon, doesn't keep the JVM up.                                                                                      |
+| **Health endpoint**                            | `kpipe-consumer`                                        | —                                                                        | `HttpHealthServer.fromEnv(...)`                                                                      | Run alongside `Handle` in the host process.                                                                                                                                           |
+| **In-flight drain**                            | `kpipe-consumer`                                        | `Handle.shutdownGracefully(Duration)`                                    | `KPipeConsumer.waitForInFlightDrain(Duration) / shutdownGracefully(Duration)`                        | Replaces the deleted `MessageTracker` class. Uses the live in-flight counter (includes buffered batch records), not metric-derived.                                                   |
+| **Custom `MessageProcessorRegistry`**          | `kpipe-core`                                            | —                                                                        | `new MessageProcessorRegistry(...)` + manual wiring                                                  | Pre-shared pipelines across consumers, multi-format orchestrators.                                                                                                                    |
 
-**Reading the table:** rows in **bold** are deliberately escape-hatch-only. The 80%-path features (everything not in
-bold) are discoverable via the facade's IDE auto-complete after the first `.`. If a user reaches for an explicit-API
-escape hatch, they're either operating an advanced topology or building a backend that should live in its own module
-(e.g. a Postgres `OffsetManager`).
+## §18 Batch sink architecture (1.12.0)
 
-### 18. Batch Sink Architecture (1.12.0)
+- **One `BatchSink<T> extends Function<List<T>, BatchResult>`.** Implementations that report per-record outcomes return
+  `BatchResult` directly; void-style consumers wrap with `BatchSink.ofVoid(consumer::accept)` — normal return →
+  `BatchResult.allSucceeded(size)`, throw → `BatchResult.allFailed(size, e)`. **No separate `PartialBatchSink`** — the
+  void shape is just a special case (collapsed in 1.12.0).
+- **Coverage contract enforced.** A `BatchResult` whose `succeededIndexes` ∪ `failedByIndex.keys()` doesn't cover every
+  `[0, batchSize)` is a contract violation. `BatchPipelineWrapper` flags missing indexes with a synthetic
+  `IllegalStateException` and routes them to the DLQ rather than silently marking them processed (§12). Out-of-range
+  indexes are logged at WARNING; a `null` `BatchResult` is treated as whole-batch failure.
+- **`BatchPipelineWrapper` owns buffer + lock + gauge + age-tick.** One wrapper per topic; `ReentrantLock` protects
+  `enqueue` / `tick` / `close` / `flushLocked` so parallel-mode workers can enqueue concurrently while a flush is
+  mid-flight. Constructed in the consumer ctor, started in `start()`, drained in `close()`.
+- **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
+  for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
+  watermark. The wrapper's `bufferedCount()` is added to `KPipeConsumer.totalInFlight()` to close that gap.
+- **Offset commits use `OffsetManager` directly, not the command queue.** The command queue serializes Kafka-consumer
+  calls (pause/resume/commitSync) on the consumer thread; `OffsetManager.markOffsetProcessed` is already thread-safe.
+  Bypassing the queue means shutdown drain works even after the consumer thread has exited.
+- **Whole-batch shutdown drain happens BEFORE `offsetManager.close()`.** Order in `close()`: pause + Close-command +
+  wait-for-in-flight + join consumer thread + shutdown executor → drain all batch wrappers → close offset manager →
+  close producer → state = CLOSED.
+- **Multi-topic batching is heterogeneous-only via `MultiBuilder`.** A consumer can host any mix of regular and batch
+  routes, but a single topic can only appear in one or the other — the disjoint-set check fires in `Builder.build()`.
+- **Bench harness** lives in `benchmarks/`. `BatchSinkLatencyBenchmark` drives the public facade through `MockConsumer`
+  so `BatchPipelineWrapper` stays package-private.
 
-- **One sink interface, two usage shapes.** `BatchSink<T> extends Function<List<T>, BatchResult>` is
-  the single batch terminal. Implementations that report per-record outcomes return `BatchResult`
-  directly; void-style consumers (transactional commits, fire-and-forget HTTP POSTs) wrap with
-  `BatchSink.ofVoid(consumer::accept)` — `consumer.accept` returning normally maps to
-  `BatchResult.allSucceeded(size)`, throwing maps to `BatchResult.allFailed(size, e)`. There is
-  **no separate `PartialBatchSink` interface** — that was collapsed in 1.12.0 because the void
-  shape is just a special case of the partial one (and the duplication cost two interfaces, two
-  facade records, two builder methods, and a nullable-mutual-exclusion invariant in `BatchSpec`).
-- **Coverage contract is enforced.** A `BatchResult` whose `succeededIndexes` ∪
-  `failedByIndex.keys()` does not cover every position `[0, batchSize)` is a contract violation.
-  `BatchPipelineWrapper` flags missing indexes with a synthetic `IllegalStateException` and
-  routes them to the DLQ rather than silently marking them processed (§12 "no silent failures").
-  Out-of-range indexes are logged at WARNING; a `null` `BatchResult` is treated as whole-batch
-  failure with a clear log line.
-- **Buffering lives in `BatchPipelineWrapper`** — one wrapper per topic, owns its own buffer +
-  `ReentrantLock` + `bufferedCount` gauge + age-tick `ScheduledFuture`. The lock protects
-  `enqueue` / `tick` / `close` / `flushLocked` so parallel-mode workers can `enqueue` concurrently
-  while a flush is mid-flight. Constructed once per `BatchSpec` in the consumer constructor;
-  started in `KPipeConsumer.start()` (registers the tick); drained in `close()` (one final flush
-  before the offset manager closes).
-- **Backpressure participation in parallel mode.** `inFlightCount` is decremented the moment
-  `processRecord` returns — for a batch path, that's "the record was buffered," which would make
-  buffered records invisible to the in-flight watermark. The wrapper's `bufferedCount()` is
-  added to `KPipeConsumer.totalInFlight()` to close that gap. `enqueue` increments it before
-  releasing the lock; `flushLocked` decrements it in `finally` by the snapshot size so the gauge
-  stays correct even if the user sink throws.
-- **Offset commits use the `OffsetManager` directly, not the command queue.** The command queue
-  exists to serialize Kafka-consumer calls (pause/resume/commitSync) on the consumer thread;
-  `OffsetManager.markOffsetProcessed` is already thread-safe (`ConcurrentHashMap` +
-  `ConcurrentSkipListSet`). Bypassing the queue from the wrapper's flush callback means the
-  shutdown drain works even after the consumer thread has exited — the alternative would have
-  the queue accumulating commands that never get processed.
-- **Whole-batch shutdown drain happens BEFORE `offsetManager.close()`.** Order in
-  `KPipeConsumer.close()`: pause + Close-command + wait-for-in-flight + join consumer thread +
-  shutdown executor → drain all batch wrappers → close offset manager → close producer → state =
-  CLOSED. The drain runs while the offset manager is still alive so the freshly marked offsets
-  are part of the final commit.
-- **Sequential vs parallel choice is on the user.** Default is parallel (matches the rest of the
-  consumer); `Stream.withSequentialProcessing(true)` switches to per-partition ordering. Batch
-  works in both modes — sequential is simpler reasoning but loses Loom's free parallelism;
-  parallel needs the `bufferedCount` machinery above.
-- **Multi-topic batching is heterogeneous-only via `MultiBuilder`.** A consumer may host any mix
-  of regular pipelines (`withPipeline` / `withPipelines`) and batch routes (`withBatchPipeline`
-  multi-call), but a single topic can only appear in one or the other — the disjoint-set check
-  fires in `Builder.build()`. The facade composes naturally: each `KPipe.multi(...).json(topic,
-  s -> s.toBatch(...))` route is a single-topic `DefaultBatchSink` that the multi-builder
-  collects and wires through `withBatchPipeline` at start time.
-- **Bench harness** lives in the existing `benchmarks/` module (NOT a new `lib/kpipe-bench`
-  module). `BatchSinkLatencyBenchmark` parameterises over `batchSize × sinkLatencyMicros` and
-  drives the public facade through `MockConsumer` so `BatchPipelineWrapper` stays
-  package-private.
+## §19 Confluent SR auto-lookup (1.14.0)
+
+**Two modes, one format class.** `AvroFormat` now operates in either static mode (`new AvroFormat(schema)` — single
+schema for the lifetime of the codec) or registry mode (`AvroFormat.withRegistry(SchemaResolver)` — per-record envelope
+read + schema lookup). The mode is decided at construction and never changes. Registry mode rejects `serialize` with
+`UnsupportedOperationException` — KPipe is consumer-first; if you need writer-side SR, construct the format in static
+mode with the writer schema you want.
+
+**Why per-record lookup matters even with FORWARD-compatible evolution.** A static-fetch-at-startup codec reads the
+schema once and treats it as both writer and reader. When the producer rolls v2, v2 bytes hit the consumer and the
+static reader decodes them against v1 — silently corrupting the output (extra v2 fields read as part of the next field,
+or v1 fields offset wrong if a field was removed). FORWARD compatibility at the SR level allows non-append evolution
+(field removal with defaults, type promotion, union reordering) which the static path can't decode safely. Per-record
+auto-lookup uses the actual writer schema for each record, then projects to the reader schema via
+`GenericDatumReader(writerSchema, readerSchema)` — Avro's schema-resolution rules handle the evolution.
+
+**Cache design.** `CachedSchemaResolver` in `kpipe-schema-registry-confluent` wraps any `SchemaResolver` with a
+`ConcurrentHashMap<Integer, String>` cache. No TTL, no LRU eviction — Confluent SR schema IDs are immutable, so
+cache-by-ID is trivially correct and cardinality is naturally bounded (typically tens of distinct schemas across the
+lifetime of a topic). `computeIfAbsent` atomicizes load+store so concurrent misses on the same ID collapse to one HTTP
+call. The format itself caches _parsed_ `Schema` instances by ID on top of the resolver — two-level cache, both correct
+because IDs never reassign.
+
+**No `skipBytes(5)` when registry-backed.** The format reads the 5-byte envelope itself. Combining
+`.withSchemaRegistry(...)` with `.skipBytes(5)` would strip the envelope before the format sees it, leaving the schema
+ID unreadable. Users who set both get a decode error; documented in `Stream.skipBytes` Javadoc.
+
+**Protobuf is deferred.** Confluent Protobuf SR returns `.proto` source text (not a binary descriptor), so runtime
+auto-lookup needs `.proto` compilation — out of scope for 1.14. The static `new ProtobufFormat(descriptor)` +
+`.skipBytes(6)` path remains for the single-top-level-message case.
+
+**Generalizable rule:** when SR returns by-ID, cache forever in-process — the immutability of the key removes every
+cache-coherence concern that would otherwise need TTLs or invalidation protocols.

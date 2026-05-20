@@ -13,10 +13,13 @@ import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.tracing.Tracer;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.Operators;
+import org.kpipe.registry.Result;
+import org.kpipe.registry.SchemaResolver;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 import org.kpipe.sink.CompositeMessageSink;
@@ -50,7 +53,10 @@ record DefaultStream<T>(
   String deadLetterTopic,
   Duration pollTimeout,
   Tracer tracer,
-  CircuitBreakerController circuitBreaker
+  CircuitBreakerController circuitBreaker,
+  Runnable onFilteredObserver,
+  Consumer<Throwable> onFailedObserver,
+  Consumer<Result<T>> peekResultObserver
 ) implements Stream<T> {
   /// Public constructor used by [KPipe] factories — single topic, empty pipeline, default
   /// retry / backpressure settings.
@@ -84,6 +90,9 @@ record DefaultStream<T>(
       null,
       false,
       0,
+      null,
+      null,
+      null,
       null,
       null,
       null,
@@ -165,6 +174,26 @@ record DefaultStream<T>(
   }
 
   @Override
+  public Stream<T> withSchemaRegistry(final SchemaResolver resolver) {
+    Objects.requireNonNull(resolver, "resolver cannot be null");
+    @SuppressWarnings("unchecked")
+    final var newFormat = (MessageFormat<T>) registryBackedFormat(format, resolver);
+    return mutate(m -> m.format = newFormat);
+  }
+
+  /// Returns a registry-backed variant of `format` for any format type that supports it. Today
+  /// this is Avro only — Protobuf SR auto-lookup needs runtime `.proto` text compilation and
+  /// has not shipped.
+  private static MessageFormat<?> registryBackedFormat(final MessageFormat<?> format, final SchemaResolver resolver) {
+    if (format instanceof AvroFormat) return AvroFormat.withRegistry(resolver);
+    throw new UnsupportedOperationException(
+      "withSchemaRegistry is not supported for format " +
+        format.getClass().getSimpleName() +
+        " — currently only Avro is wired for per-record schema lookup. Protobuf SR auto-lookup is on the roadmap."
+    );
+  }
+
+  @Override
   public Stream<T> withMetrics(final ConsumerMetrics metrics) {
     Objects.requireNonNull(metrics, "metrics cannot be null");
     return mutate(m -> m.consumerMetrics = metrics);
@@ -207,6 +236,24 @@ record DefaultStream<T>(
   public Stream<T> withCircuitBreaker(final CircuitBreakerController controller) {
     Objects.requireNonNull(controller, "controller cannot be null");
     return mutate(m -> m.circuitBreaker = controller);
+  }
+
+  @Override
+  public Stream<T> onFiltered(final Runnable observer) {
+    Objects.requireNonNull(observer, "observer cannot be null");
+    return mutate(m -> m.onFilteredObserver = observer);
+  }
+
+  @Override
+  public Stream<T> onFailed(final Consumer<Throwable> observer) {
+    Objects.requireNonNull(observer, "observer cannot be null");
+    return mutate(m -> m.onFailedObserver = observer);
+  }
+
+  @Override
+  public Stream<T> peekResult(final Consumer<Result<T>> observer) {
+    Objects.requireNonNull(observer, "observer cannot be null");
+    return mutate(m -> m.peekResultObserver = observer);
   }
 
   @Override
@@ -274,6 +321,9 @@ record DefaultStream<T>(
     Duration pollTimeout;
     Tracer tracer;
     CircuitBreakerController circuitBreaker;
+    Runnable onFilteredObserver;
+    Consumer<Throwable> onFailedObserver;
+    Consumer<Result<T>> peekResultObserver;
 
     static <T> Mut<T> from(final DefaultStream<T> s) {
       final var m = new Mut<T>();
@@ -294,6 +344,9 @@ record DefaultStream<T>(
       m.pollTimeout = s.pollTimeout;
       m.tracer = s.tracer;
       m.circuitBreaker = s.circuitBreaker;
+      m.onFilteredObserver = s.onFilteredObserver;
+      m.onFailedObserver = s.onFailedObserver;
+      m.peekResultObserver = s.peekResultObserver;
       return m;
     }
 
@@ -315,7 +368,10 @@ record DefaultStream<T>(
         deadLetterTopic,
         pollTimeout,
         tracer,
-        circuitBreaker
+        circuitBreaker,
+        onFilteredObserver,
+        onFailedObserver,
+        peekResultObserver
       );
     }
   }

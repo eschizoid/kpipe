@@ -8,6 +8,8 @@ import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.tracing.Tracer;
+import org.kpipe.registry.Result;
+import org.kpipe.registry.SchemaResolver;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 import org.kpipe.sink.MessageSink;
@@ -164,6 +166,52 @@ public interface Stream<T> {
   /// @throws NullPointerException if `controller` is null
   Stream<T> withCircuitBreaker(final CircuitBreakerController controller);
 
+  /// Returns a new stream that invokes `observer` whenever a record is intentionally filtered
+  /// (an operator returned `null`). The observer is for visibility — it does **not** affect
+  /// pipeline flow, suppress the filter, or reroute the record. Use [#withErrorHandler] or
+  /// [#withDeadLetterTopic] for real failure routing; this is purely a hook for logging and
+  /// metrics.
+  ///
+  /// Runs on the consumer thread immediately after the pipeline returns `Filtered`. If the
+  /// observer throws, the exception is logged at WARNING and swallowed so observer bugs cannot
+  /// crash the pipeline. Calling this method more than once replaces the previous observer —
+  /// for fan-out, compose externally.
+  ///
+  /// @param observer a side-effect invoked when a record is filtered (must not be null)
+  /// @return a new stream with the observer attached
+  /// @throws NullPointerException if `observer` is null
+  Stream<T> onFiltered(final Runnable observer);
+
+  /// Returns a new stream that invokes `observer` with the captured cause whenever the pipeline
+  /// returns `Failed`. The observer is for visibility — it does **not** suppress the failure or
+  /// stop the failure from reaching retry / DLQ / `withErrorHandler` logic.
+  ///
+  /// Runs on the consumer thread immediately after the pipeline returns `Failed`. If the
+  /// observer throws, the exception is logged at WARNING and swallowed. Calling this method more
+  /// than once replaces the previous observer.
+  ///
+  /// **Use this for the §12 visibility burn.** When `messagesProcessed` rises but the sink stays
+  /// at 0, attach `onFailed(cause -> log.warn("pipeline failed", cause))` to surface what's
+  /// actually being lost.
+  ///
+  /// @param observer a side-effect invoked with the failure cause (must not be null)
+  /// @return a new stream with the observer attached
+  /// @throws NullPointerException if `observer` is null
+  Stream<T> onFailed(final Consumer<Throwable> observer);
+
+  /// Returns a new stream that invokes `observer` with every [Result] the pipeline produces —
+  /// `Passed`, `Filtered`, or `Failed`. The lowest-level observer hook; use this for full
+  /// pattern-matching diagnostic taps. Does **not** affect pipeline flow.
+  ///
+  /// Runs on the consumer thread before any downstream sink invocation. If the observer throws,
+  /// the exception is logged at WARNING and swallowed. Calling this method more than once
+  /// replaces the previous observer.
+  ///
+  /// @param observer a side-effect invoked with every pipeline outcome (must not be null)
+  /// @return a new stream with the observer attached
+  /// @throws NullPointerException if `observer` is null
+  Stream<T> peekResult(final Consumer<Result<T>> observer);
+
   /// Returns a new stream with a custom error handler. The handler is invoked after retries are
   /// exhausted (or immediately when `maxRetries == 0`) with the failing record, the exception,
   /// and the retry count. The default handler logs at WARNING.
@@ -196,10 +244,36 @@ public interface Stream<T> {
   /// (1 magic + 4 schema id) for Avro, or 6-byte envelope (5 + 1 message-index varint) for the
   /// single-top-level-message Protobuf case.
   ///
+  /// Prefer [#withSchemaRegistry(SchemaResolver)] for Avro on Confluent SR — it consumes the
+  /// envelope and resolves the correct writer schema per record, which is also what makes
+  /// schema-evolution-correct decoding work. `skipBytes(5)` only strips the prefix; it does not
+  /// fix the static-reader-schema correctness hole described in the project README.
+  ///
   /// @param n the number of leading bytes to skip (must be ≥ 0)
   /// @return a new stream with the skip configured
   /// @throws IllegalArgumentException if `n` is negative
   Stream<T> skipBytes(final int n);
+
+  /// Switches the stream's format into Schema-Registry mode. Only supported when the originating
+  /// format honours the [SchemaResolver] SPI — at the time of writing, [Avro
+  /// (`kpipe-format-avro`)](https://github.com/eschizoid/kpipe). Each record's Confluent wire
+  /// envelope (1-byte magic + 4-byte schema ID) is consumed inside the format, the writer schema
+  /// is resolved via `resolver` (cache it with `CachedSchemaResolver` from
+  /// `kpipe-schema-registry-confluent`), and the remaining bytes are decoded against that
+  /// schema. Do NOT combine with `skipBytes(5)` — the format already strips the envelope.
+  ///
+  /// **Protobuf is not yet supported** through this entry point. Protobuf SR auto-lookup
+  /// requires runtime `.proto` text compilation (protoc-jar) which is out of scope for the
+  /// current release; use `kpipe-format-protobuf` with `skipBytes(6)` and a single descriptor
+  /// for now.
+  ///
+  /// @param resolver the schema resolver (typically a `CachedSchemaResolver` wrapping a
+  ///                 `ConfluentSchemaResolver`)
+  /// @return a new stream with the registry-backed format wired in
+  /// @throws NullPointerException if `resolver` is null
+  /// @throws UnsupportedOperationException if the underlying format does not support
+  ///         registry-backed mode
+  Stream<T> withSchemaRegistry(final SchemaResolver resolver);
 
   /// Terminates the stream with a format-appropriate console sink and returns a [Sink] ready
   /// to start. For Avro streams this requires that a default schema has been registered; see
