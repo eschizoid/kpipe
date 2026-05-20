@@ -1,12 +1,12 @@
 # Benchmark snapshot — YYYY-MM-DD
 
-Copy this file when publishing a fresh benchmark run. Fill in every section. If a section
-doesn't apply (e.g., no `perfnorm` data because the run was on macOS), say so explicitly.
+Copy this file when publishing a fresh benchmark run. Fill in every section. If a section doesn't apply (e.g., no
+`perfnorm` data because the run was on macOS), say so explicitly.
 
 ## Environment
 
 | Field                       | Value                                          |
-|-----------------------------|------------------------------------------------|
+| --------------------------- | ---------------------------------------------- |
 | Date (UTC)                  | `YYYY-MM-DD HH:MM`                             |
 | Hardware                    | e.g., `Apple Silicon M2 Pro, 10 cores, 16 GB`  |
 | OS / Kernel                 | e.g., `macOS 14.5 (Darwin 24.6.0)`             |
@@ -19,7 +19,7 @@ doesn't apply (e.g., no `perfnorm` data because the run was on macOS), say so ex
 ## JMH configuration
 
 | Parameter              | Value                                                 |
-|------------------------|-------------------------------------------------------|
+| ---------------------- | ----------------------------------------------------- |
 | Warmup iterations      | 3 (default)                                           |
 | Measurement iterations | 5 (default)                                           |
 | Forks                  | 2 (recommended for publishing)                        |
@@ -38,11 +38,10 @@ doesn't apply (e.g., no `perfnorm` data because the run was on macOS), say so ex
 
 ## Throughput — ParallelProcessingBenchmark
 
-Records / second, higher is better. `workMicros` is per-record simulated work via
-`LockSupport.parkNanos`.
+Records / second, higher is better. `workMicros` is per-record simulated work via `LockSupport.parkNanos`.
 
 | Runtime                     | workMicros=0 | workMicros=100 | workMicros=1000 |
-|-----------------------------|-------------:|---------------:|----------------:|
+| --------------------------- | -----------: | -------------: | --------------: |
 | KPipe                       |    TBD ± TBD |      TBD ± TBD |       TBD ± TBD |
 | Confluent Parallel Consumer |    TBD ± TBD |      TBD ± TBD |       TBD ± TBD |
 | Reactor Kafka               |    TBD ± TBD |      TBD ± TBD |       TBD ± TBD |
@@ -59,7 +58,7 @@ Records / second, higher is better. `workMicros` is per-record simulated work vi
 Per-record time (ms), lower is better. Reported at `workMicros=100` (typical local enrichment).
 
 | Runtime                     | p50 | p95 | p99 |
-|-----------------------------|----:|----:|----:|
+| --------------------------- | --: | --: | --: |
 | KPipe                       | TBD | TBD | TBD |
 | Confluent Parallel Consumer | TBD | TBD | TBD |
 | Reactor Kafka               | TBD | TBD | TBD |
@@ -75,7 +74,7 @@ Per-record time (ms), lower is better. Reported at `workMicros=100` (typical loc
 `gc.alloc.rate.norm` (B / op, lower is better) at `workMicros=100`.
 
 | Runtime                     | B/op |
-|-----------------------------|-----:|
+| --------------------------- | ---: |
 | KPipe                       |  TBD |
 | Confluent Parallel Consumer |  TBD |
 | Reactor Kafka               |  TBD |
@@ -86,7 +85,7 @@ Per-record time (ms), lower is better. Reported at `workMicros=100` (typical loc
 See `BatchSinkLatencyBenchmark` — single-runtime, separate sweep. Headline:
 
 | batchSize | sinkLatencyMicros | Throughput (ops/s) |
-|----------:|------------------:|-------------------:|
+| --------: | ----------------: | -----------------: |
 |         1 |                10 |                TBD |
 |         1 |              1000 |                TBD |
 |       100 |                10 |                TBD |
@@ -94,8 +93,8 @@ See `BatchSinkLatencyBenchmark` — single-runtime, separate sweep. Headline:
 
 ## Raw output
 
-The full JMH JSON output is attached as `results-YYYY-MM-DD.json`. The `gc` profiler section in
-that file is the source of truth for allocation rates.
+The full JMH JSON output is attached as `results-YYYY-MM-DD.json`. The `gc` profiler section in that file is the source
+of truth for allocation rates.
 
 ## Pitfalls in this run
 

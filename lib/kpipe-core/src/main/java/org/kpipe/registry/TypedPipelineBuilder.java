@@ -119,13 +119,22 @@ public final class TypedPipelineBuilder<T> {
       @Override
       public T deserialize(byte[] data) {
         if (data == null) return null;
+        final var formatName = format.getClass().getSimpleName();
         if (bytesToSkip > 0) {
           if (data.length <= bytesToSkip) return null;
           final var actualData = new byte[data.length - bytesToSkip];
           System.arraycopy(data, bytesToSkip, actualData, 0, actualData.length);
-          return format.deserialize(actualData);
+          try {
+            return format.deserialize(actualData);
+          } catch (final RuntimeException e) {
+            throw PipelineDiagnostics.wrap(data, bytesToSkip, formatName, e);
+          }
         }
-        return format.deserialize(data);
+        try {
+          return format.deserialize(data);
+        } catch (final RuntimeException e) {
+          throw PipelineDiagnostics.wrap(data, 0, formatName, e);
+        }
       }
 
       @Override

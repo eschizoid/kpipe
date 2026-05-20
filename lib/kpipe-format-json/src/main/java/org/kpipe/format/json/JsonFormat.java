@@ -43,7 +43,7 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   /// @return a new pre-configured registry
   public static MessageProcessorRegistry newRegistry() {
     final var registry = new MessageProcessorRegistry(INSTANCE);
-    registry.register(JSON_LOGGING, new JsonConsoleSink<>());
+    registry.registerSink(JSON_LOGGING, new JsonConsoleSink<>());
     return registry;
   }
 

@@ -47,7 +47,7 @@ class MessageProcessorRegistryJsonTest {
   @Test
   void shouldRegisterAndRetrieveJsonOperator() {
     final var key = RegistryKey.json("testOperator");
-    registry.register(key, obj -> {
+    registry.registerOperator(key, obj -> {
       obj.put("test", "value");
       return obj;
     });
@@ -63,11 +63,11 @@ class MessageProcessorRegistryJsonTest {
     final var op1 = RegistryKey.json("op1");
     final var op2 = RegistryKey.json("op2");
 
-    registry.register(op1, obj -> {
+    registry.registerOperator(op1, obj -> {
       obj.put("op1", "val1");
       return obj;
     });
-    registry.register(op2, obj -> {
+    registry.registerOperator(op2, obj -> {
       obj.put("op2", "val2");
       return obj;
     });
@@ -96,7 +96,7 @@ class MessageProcessorRegistryJsonTest {
     final UnaryOperator<Map<String, Object>> operator = message -> {
       throw new RuntimeException("Test exception");
     };
-    final var safeOperator = MessageProcessorRegistry.withErrorHandling(operator);
+    final var safeOperator = MessageProcessorRegistry.withOperatorErrorHandling(operator);
 
     final var input = new java.util.HashMap<String, Object>();
     final var result = safeOperator.apply(input);
@@ -109,7 +109,7 @@ class MessageProcessorRegistryJsonTest {
     final MessageSink<Map<String, Object>> sink = message -> {
       throw new RuntimeException("Test exception");
     };
-    final var safeSink = MessageProcessorRegistry.withErrorHandling(sink);
+    final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(sink);
 
     assertDoesNotThrow(() -> safeSink.accept(new java.util.HashMap<>()));
   }
@@ -140,7 +140,7 @@ class MessageProcessorRegistryJsonTest {
   @Test
   void shouldTrackRegisteredProcessors() {
     final var key = RegistryKey.json("p1");
-    registry.register(key, obj -> obj);
+    registry.registerOperator(key, obj -> obj);
 
     assertTrue(registry.getKeys().contains(key));
   }
@@ -148,7 +148,7 @@ class MessageProcessorRegistryJsonTest {
   @Test
   void shouldUnregisterProcessor() {
     final var key = RegistryKey.json("p1");
-    registry.register(key, obj -> obj);
+    registry.registerOperator(key, obj -> obj);
 
     assertTrue(registry.getKeys().contains(key));
     final var removed = registry.unregister(key);
@@ -160,7 +160,7 @@ class MessageProcessorRegistryJsonTest {
   @Test
   void shouldTrackMetrics() {
     final var key = RegistryKey.json("metricsTest");
-    registry.register(key, obj -> obj);
+    registry.registerOperator(key, obj -> obj);
 
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key).build();
 
@@ -174,7 +174,7 @@ class MessageProcessorRegistryJsonTest {
   @Test
   void shouldRegisterAndRetrieveTypedOperator() {
     final var key = RegistryKey.json("typedOp");
-    registry.register(key, obj -> {
+    registry.registerOperator(key, obj -> {
       obj.put("typed", "success");
       return obj;
     });
@@ -190,7 +190,7 @@ class MessageProcessorRegistryJsonTest {
   @Test
   void shouldComposePipelineUsingBuilder() {
     final var key1 = RegistryKey.json("builderOp1");
-    registry.register(key1, obj -> {
+    registry.registerOperator(key1, obj -> {
       obj.put("b1", "v1");
       return obj;
     });

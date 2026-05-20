@@ -13,6 +13,7 @@ import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.json.JsonFormat;
 import org.kpipe.format.protobuf.ProtobufFormat;
 import org.kpipe.registry.MessageFormat;
+import org.kpipe.registry.SchemaResolver;
 import org.kpipe.sink.MessageSink;
 
 /// Top-level fluent facade for KPipe. Provides static factories for the supported message
@@ -80,6 +81,35 @@ public final class KPipe {
     final Properties kafkaProps
   ) {
     return new DefaultStream<>(topics, kafkaProps, format, format::consoleSink);
+  }
+
+  /// Avro-typed stream wired for per-record Confluent Schema Registry lookup. The wire envelope
+  /// is consumed by the format itself; do NOT pair this overload with `.skipBytes(5)`.
+  ///
+  /// Equivalent to `avro(AvroFormat.withRegistry(resolver), topic, kafkaProps)`. Provided so the
+  /// "Confluent Avro topic in one line" pitch is genuinely one line. Wrap the underlying SR
+  /// resolver with `CachedSchemaResolver` for the cache; that bookkeeping is your responsibility
+  /// since the resolver typically outlives a single stream.
+  ///
+  /// @param topic the Kafka topic to consume
+  /// @param kafkaProps the Kafka consumer properties
+  /// @param resolver the schema resolver (must be non-null; typically a `CachedSchemaResolver`)
+  /// @return a fluent [Stream] configured for Avro with per-record schema lookup
+  public static Stream<GenericRecord> avro(
+    final String topic,
+    final Properties kafkaProps,
+    final SchemaResolver resolver
+  ) {
+    final var format = AvroFormat.withRegistry(resolver);
+    return new DefaultStream<>(topic, kafkaProps, format, KPipe::registryModeConsoleSinkUnsupported);
+  }
+
+  private static MessageSink<GenericRecord> registryModeConsoleSinkUnsupported() {
+    throw new IllegalStateException(
+      "toConsole() requires a fixed schema; an AvroFormat in Schema-Registry mode has none. " +
+        "Use .toCustom(...) with your own sink, or construct the stream via " +
+        "KPipe.avro(new AvroFormat(schema), topic, props) to keep the console-sink path."
+    );
   }
 
   /// Protobuf-typed stream consuming from `topic` using `format` for SerDe. Construct the format

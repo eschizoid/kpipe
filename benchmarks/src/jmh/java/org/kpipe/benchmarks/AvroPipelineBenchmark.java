@@ -103,8 +103,8 @@ public class AvroPipelineBenchmark {
       return r;
     };
 
-    registry.register(op1, setProcessed);
-    registry.register(op2, renameProcessed);
+    registry.registerOperator(op1, setProcessed);
+    registry.registerOperator(op2, renameProcessed);
 
     kpipePipeline = registry.pipeline(format).add(op1, op2).build();
     kpipeMagicPipeline = registry.pipeline(format).skipBytes(5).add(op1, op2).build();

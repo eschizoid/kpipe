@@ -42,8 +42,8 @@ class ProtobufFormatPipelineTest {
     final UnaryOperator<Message> deactivate = msg ->
       msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("active"), false).build();
 
-    registry.register(ProtobufRegistryKey.of("setName"), setName);
-    registry.register(ProtobufRegistryKey.of("deactivate"), deactivate);
+    registry.registerOperator(ProtobufRegistryKey.of("setName"), setName);
+    registry.registerOperator(ProtobufRegistryKey.of("deactivate"), deactivate);
 
     final var pipeline = registry
       .pipeline(format)

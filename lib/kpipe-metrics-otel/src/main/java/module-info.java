@@ -14,6 +14,7 @@
 /// requires `opentelemetry-api`.
 module org.kpipe.metrics.otel {
   requires org.kpipe.metrics;
+  requires transitive org.kpipe.core;
   requires io.opentelemetry.api;
 
   exports org.kpipe.metrics.otel;

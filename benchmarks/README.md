@@ -25,26 +25,24 @@ Measures the efficiency of KPipe's magic byte offset handling vs. traditional by
 
 ### 3. Parallel Processing — Competitive Suite (`ParallelProcessingBenchmark`)
 
-Four parallel-consumer runtimes drink from the same seeded topic on a **Testcontainers-managed
-Kafka 4.2.0 broker** (Docker; broker runs in its own JVM on its own cores so it isn't fighting the
-consumer under test for CPU):
+Four parallel-consumer runtimes drink from the same seeded topic on a **Testcontainers-managed Kafka 4.2.0 broker**
+(Docker; broker runs in its own JVM on its own cores so it isn't fighting the consumer under test for CPU):
 
 - **KPipe** — virtual-thread-per-record on Loom; no pool, no queue.
-- **Confluent Parallel Consumer** — `ProcessingOrder.UNORDERED` with a 100-worker pool. The de-facto industry
-  baseline.
+- **Confluent Parallel Consumer** — `ProcessingOrder.UNORDERED` with a 100-worker pool. The de-facto industry baseline.
 - **Reactor Kafka** — `Flux<ReceiverRecord>` on the Reactor `parallel` scheduler with a matching concurrency limit.
 - **Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor`** — the hand-rolled baseline. No framework, no offset
   manager. Establishes the floor of "what if I just wrote the loop myself?"
 
-A `workMicros` `@Param` (`0`, `100`, `1000`) injects per-record work via `LockSupport.parkNanos` so the bench
-covers three workload regimes: pure framework overhead (0 µs), local enrichment (100 µs), and blocking I/O round
-trip (1000 µs). At `workMicros=0` the comparison is "who has the lowest per-record overhead?"; at
-`workMicros=1000` it's "who schedules blocking work best?" — those two questions usually have different winners.
+A `workMicros` `@Param` (`0`, `100`, `1000`) injects per-record work via `LockSupport.parkNanos` so the bench covers
+three workload regimes: pure framework overhead (0 µs), local enrichment (100 µs), and blocking I/O round trip (1000
+µs). At `workMicros=0` the comparison is "who has the lowest per-record overhead?"; at `workMicros=1000` it's "who
+schedules blocking work best?" — those two questions usually have different winners.
 
-Each invocation processes **25,000 records** across **8 partitions**. Because the broker is in its own container
-(not in-process), pushing the record count higher actually scales the consumer workload instead of bottlenecking on
-broker contention. **Docker must be running** before invoking the bench; Testcontainers will pull
-`apache/kafka:4.2.0` and start the container at trial setup.
+Each invocation processes **25,000 records** across **8 partitions**. Because the broker is in its own container (not
+in-process), pushing the record count higher actually scales the consumer workload instead of bottlenecking on broker
+contention. **Docker must be running** before invoking the bench; Testcontainers will pull `apache/kafka:4.2.0` and
+start the container at trial setup.
 
 ### 4. Batch Sink Throughput (`BatchSinkLatencyBenchmark`)
 

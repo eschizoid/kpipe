@@ -100,8 +100,8 @@ public final class Operators {
   /// Wraps an operator with error handling that suppresses exceptions and returns the original
   /// input on failure.
   ///
-  /// Convenience facade over [MessageProcessorRegistry#withErrorHandling] so users can stay on
-  /// the [Operators] namespace without importing the registry just to wrap an operator.
+  /// Convenience facade over [MessageProcessorRegistry#withOperatorErrorHandling] so users can
+  /// stay on the [Operators] namespace without importing the registry just to wrap an operator.
   ///
   /// Example:
   /// ```java
@@ -112,7 +112,7 @@ public final class Operators {
   /// @param <T> the operator's value type
   /// @return an operator that returns its input on exception (logged via the registry's logger)
   public static <T> UnaryOperator<T> safe(final UnaryOperator<T> op) {
-    return MessageProcessorRegistry.withErrorHandling(op);
+    return MessageProcessorRegistry.withOperatorErrorHandling(op);
   }
 
   /// Returns an operator that filters out messages missing the given field.

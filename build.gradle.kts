@@ -77,22 +77,26 @@ allprojects {
       trimTrailingWhitespace()
       endWithNewline()
     }
-    format("markdown") {
-      target("*.md")
-      prettier(
-        mapOf(
-          "prettier" to "3.8.1",
-          "prettier-plugin-java" to "2.8.1",
-        ),
-      ).config(
-        mapOf(
-          "plugins" to listOf("prettier-plugin-java"),
-          "printWidth" to 120,
-          "proseWrap" to "always",
-          "tabWidth" to 2,
-        ),
-      )
-    }
+  }
+}
+
+spotless {
+  format("markdown") {
+    target("**/*.md")
+    targetExclude("**/build/**", "**/.gradle/**", "**/node_modules/**")
+    prettier(
+      mapOf(
+        "prettier" to "3.8.1",
+        "prettier-plugin-java" to "2.8.1",
+      ),
+    ).config(
+      mapOf(
+        "plugins" to listOf("prettier-plugin-java"),
+        "printWidth" to 120,
+        "proseWrap" to "always",
+        "tabWidth" to 2,
+      ),
+    )
   }
 }
 

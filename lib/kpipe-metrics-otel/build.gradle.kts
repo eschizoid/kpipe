@@ -20,6 +20,7 @@ repositories {
 
 dependencies {
   api(project(":lib:kpipe-metrics"))
+  api(project(":lib:kpipe-core"))
   api(libs.opentelemetryApi)
 
   testImplementation(platform(libs.junitBom))

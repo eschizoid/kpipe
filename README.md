@@ -18,6 +18,8 @@ What it does:
 - Composable `UnaryOperator<T>` pipelines that deserialize once and serialize once
 - At-least-once delivery via lowest-pending-offset commits, even with parallel processing
 - In-flight or lag-based backpressure with hysteresis
+- Dead-letter routing, retries, and a circuit breaker — one fluent setter each
+- Multi-topic dispatch (homogeneous or heterogeneous-format) through a single consumer / consumer-group
 - Minimal framework code on the hot path
 
 The target audience is anyone running Kafka consumers that transform, enrich, or route — and would rather not glue their
@@ -32,7 +34,9 @@ There are two public entry points; pick whichever matches the shape of your prob
 | **`KPipe` fluent facade** (`kpipe-api`)                | 5-line `KPipe.json("topic", props).pipe(...).toConsole().start()`. Returns a `Stream<T>` → `Sink<T>` → `Handle` chain. Immutable, IDE-discoverable.                                 | The common path — most users start here.                                       |
 | **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumer.Builder`. Multi-step, supports custom registries, shared pipelines, custom offset managers, periodic metrics reporting via the builder. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
 
-The facade is a thin layer on top of the explicit API, so dropping down when you outgrow it doesn't cost anything.
+The facade is a thin layer on top of the explicit API, so dropping down when you outgrow it doesn't cost anything. See
+[`docs/escape-hatches.md`](docs/escape-hatches.md) for the full capability map and worked examples of the explicit-only
+features (custom `OffsetManager`, rebalance listeners, pre-shared registries, etc.).
 
 ---
 
@@ -71,20 +75,20 @@ There's also a `kpipe-bom` so you only pin one version across modules — use it
 <details>
 <summary>Module catalog & other build tools</summary>
 
-| Module                            | What it gives you                                                                                                                                          |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kpipe-api`                       | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                                                   |
-| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                              |
-| `kpipe-core`                      | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                              |
-| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                                                                            |
-| `kpipe-metrics-otel`              | OpenTelemetry-backed implementation (opt-in)                                                                                                               |
-| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers (opt-in)                                                                                               |
-| `kpipe-schema-registry-confluent` | Confluent Schema Registry client — `lookupById` + `lookupBySubjectVersion` (opt-in)                                                                        |
-| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `Tracer` SPI                                                                                                   |
+| Module                            | What it gives you                                                                                                                                           |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kpipe-api`                       | High-level fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                                                    |
+| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                                                               |
+| `kpipe-core`                      | Low-level building blocks: registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                               |
+| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                                                                             |
+| `kpipe-metrics-otel`              | OpenTelemetry-backed implementation (opt-in)                                                                                                                |
+| `kpipe-tracing-otel`              | W3C trace context propagation through Kafka headers (opt-in)                                                                                                |
+| `kpipe-schema-registry-confluent` | Confluent Schema Registry client — `lookupById` + `lookupBySubjectVersion` (opt-in)                                                                         |
+| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, `Tracer` SPI                                                                                                    |
 | `kpipe-consumer`                  | `KPipeConsumer` (hosts lifecycle, metrics-reporter thread, shutdown hook), `BackpressureController`, `CircuitBreakerController`, `ConsumerHealthController` |
-| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                            |
-| `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                                                                            |
-| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                                                                    |
+| `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                             |
+| `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                                                                             |
+| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                                                                     |
 
 **Gradle (Kotlin) with BOM**
 
@@ -155,6 +159,30 @@ KPipe.json("events", kafkaProps)
 
 A working JSON Kafka consumer that strips the `password` field, stamps a timestamp, and logs to console. Behind the
 scenes the chain assembles a `MessageProcessorRegistry` and a `KPipeConsumer` — you don't have to touch either of them.
+
+### 2b. Production wiring — ten lines
+
+The same shape with the operational stack turned on: retry, backpressure with default watermarks, a dead-letter topic,
+and a custom sink instead of the console. Everything below is one-liner toggle on top of the §2 chain.
+
+```java
+try (var handle = KPipe.json("orders", kafkaProps)
+    .pipe(enrich)
+    .filter(order -> order.total() > 0)
+    .withRetry(3, Duration.ofMillis(100))
+    .withBackpressure()                            // pause at 10k in-flight, resume at 7k
+    .withDeadLetterTopic("orders.dlq")             // bad records flow here after retries exhaust
+    .onFailed(cause -> log.warn("processing failed", cause))   // observer, not a handler — log only
+    .toCustom(WarehouseSink.create())
+    .start()) {
+  handle.awaitShutdown();
+}
+```
+
+`Handle` is `AutoCloseable` and `close()` calls `shutdownGracefully(Duration.ofSeconds(5))` by default. The DLQ wires a
+`KafkaProducer` from the same properties; provide your own via `.withDeadLetterBundle(...)` if you need a different
+configuration. See [`docs/escape-hatches.md`](docs/escape-hatches.md) for the full set of explicit-only options (custom
+`OffsetManager`, rebalance listeners, multi-topic heterogeneous dispatch).
 
 ### 3. The full fluent surface
 
@@ -386,8 +414,8 @@ KPipe runs on Java virtual threads (Project Loom) for concurrency.
 - Thread-per-record. Each message gets its own virtual thread, so I/O-bound enrichment scales without explicit pool
   sizing.
 - No `ThreadLocal` on the hot path. `ThreadLocal` doesn't compose with thread-per-record — every record would get a
-  fresh map, defeating any caching intent. If a future need for thread-local-like state turns up (tenant context,
-  span propagation), we'll reach for `ScopedValue`; the codebase currently has neither.
+  fresh map, defeating any caching intent. If a future need for thread-local-like state turns up (tenant context, span
+  propagation), we'll reach for `ScopedValue`; the codebase currently has neither.
 
 ### 4. At-least-once delivery via lowest pending offset
 
@@ -460,9 +488,9 @@ Error handling is layered:
   ```
 - Custom error handler: `.withErrorHandler(...)` to route failures somewhere other than a Kafka topic — an external DB,
   alerting system, whatever.
-- Per-processor and per-sink wrapping: `MessageProcessorRegistry.withErrorHandling()` and
-  `MessageProcessorRegistry.withErrorHandling()` (overloaded for both operators and sinks) swallow failures at the
-  boundary so one bad processor doesn't take down the pipeline.
+- Per-processor and per-sink wrapping: `MessageProcessorRegistry.withOperatorErrorHandling()` and
+  `MessageProcessorRegistry.withSinkErrorHandling()` swallow failures at the boundary so one bad processor doesn't take
+  down the pipeline.
 
 ### 8. Backpressure
 
@@ -648,13 +676,13 @@ import org.kpipe.registry.RegistryKey;
 final var registry = new MessageProcessorRegistry("myApp");
 
 final var stampKey = RegistryKey.json("addTimestamp");
-registry.register(stampKey, addField("processedAt", System.currentTimeMillis()));
+registry.registerOperator(stampKey, addField("processedAt", System.currentTimeMillis()));
 
 final var sanitizeKey = RegistryKey.json("sanitize");
-registry.register(sanitizeKey, removeFields("password", "ssn"));
+registry.registerOperator(sanitizeKey, removeFields("password", "ssn"));
 
 final var lowerEmailKey = RegistryKey.json("lowerEmail");
-registry.register(lowerEmailKey, transformField("email", v -> ((String) v).toLowerCase()));
+registry.registerOperator(lowerEmailKey, transformField("email", v -> ((String) v).toLowerCase()));
 
 // Single deserialization → many transformations → single serialization
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
@@ -686,7 +714,7 @@ final var format = AvroFormat.of("""
 // Avro records are schema-bound: use inline lambdas with the native Avro API for value transforms.
 // `Operators.filter`, `tap`, `compose` etc. work for any payload type, including GenericRecord.
 final var lowerNameKey = AvroRegistryKey.of("lowerName");
-registry.register(lowerNameKey, record -> {
+registry.registerOperator(lowerNameKey, record -> {
   if (record.get("name") != null) record.put("name", record.get("name").toString().toLowerCase());
   return record;
 });
@@ -699,10 +727,12 @@ final var confluentPipeline = registry.pipeline(format).skipBytes(5).add(lowerNa
 
 #### Confluent Schema Registry
 
-For Confluent-style deployments where schemas live in a Schema Registry rather than on the classpath, the
-`kpipe-schema-registry-confluent` module ships an HTTP client that resolves schemas by ID or by subject-version. It
-exposes the `SchemaResolver` SPI from `kpipe-core` so future versions can wire wire-envelope auto-lookup directly into
-`AvroFormat` / `ProtobufFormat` — for now you fetch the schema at startup and construct an `AvroFormat` from it.
+For Confluent-style deployments where schemas live in a registry rather than on the classpath, the
+`kpipe-schema-registry-confluent` module ships an HTTP client and an in-process cache. Per-record auto-lookup is wired
+into `AvroFormat`: the format reads the wire envelope (1-byte magic + 4-byte schema ID) off each record, resolves the
+writer's schema, caches it by ID, and decodes the remaining bytes against it. This is the schema-evolution-correct path
+— every record decodes against its actual writer schema, so producer evolution doesn't silently corrupt consumer output
+the way a static-fetch-at-startup pattern would.
 
 Add the dependency:
 
@@ -710,31 +740,53 @@ Add the dependency:
 implementation("io.github.eschizoid:kpipe-schema-registry-confluent:1.12.0")
 ```
 
-Resolve a schema at startup:
+Wire the fluent facade with the SR-shorthand factory:
 
 ```java
 import java.time.Duration;
-import org.kpipe.format.avro.AvroFormat;
+import org.kpipe.KPipe;
+import org.kpipe.schemaregistry.confluent.CachedSchemaResolver;
 import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 
-try (final var resolver = new ConfluentSchemaResolver("http://schema-registry:8081", Duration.ofSeconds(10))) {
-  // Fetch by subject-version (config-time) and build a format directly:
-  final String schemaJson = resolver.lookupBySubjectVersion("user-value", "latest");
-  final var format = AvroFormat.of(schemaJson);
-
-  // Fetch by ID (runtime, e.g. from a wire-envelope decode loop):
-  final String byId = resolver.lookupById(42);
+// One resolver for the process; CachedSchemaResolver caches by ID with no TTL (Confluent SR IDs
+// are immutable, so cache-by-ID is trivially correct).
+try (final var resolver = new CachedSchemaResolver(
+        new ConfluentSchemaResolver("http://schema-registry:8081", Duration.ofSeconds(10)));
+     final var handle = KPipe.avro("orders", kafkaProps, resolver)   // ← one-line SR consumer
+         .pipe(record -> enrich(record))
+         .toCustom(WarehouseSink.create())
+         .start()) {
+  handle.awaitShutdown();
 }
 ```
 
-The single-arg constructor `new ConfluentSchemaResolver(baseUrl)` defaults the request timeout to 10s; an internal
-`HttpClient` is built from the timeout. The module has no Jackson dependency (the SR envelope is unwrapped by a
-hand-rolled parser scoped to the response shape) and is opt-in: `kpipe-format-avro`'s built-in `http://` schema fetcher
-was removed in 1.12, calling it now throws with a migration message pointing here.
+The factory above is equivalent to `KPipe.avro(AvroFormat.withRegistry(resolver), "orders", props)`. The format reads
+the envelope per record. Do **not** combine `withSchemaRegistry(...)` with `skipBytes(5)` — the format already consumes
+the envelope. The static-mode path is still supported for shops with strict append-only evolution who fetch the schema
+once at startup:
 
-**v1 scope and what's deferred:** read-only lookups. No schema publishing (Confluent's own producer client handles
-that). No caching — every call is a fresh HTTP request; acceptable for startup-time `lookupBySubjectVersion`, you'll
-want an external cache before wiring `lookupById` into a hot path. No compatibility checks.
+```java
+try (final var resolver = new ConfluentSchemaResolver("http://schema-registry:8081")) {
+  final var schemaJson = resolver.lookupBySubjectVersion("orders-value", "latest");
+  final var format = AvroFormat.of(schemaJson);
+  // Pass `format` to KPipe.avro(topic, props, format) and pair with .skipBytes(5).
+}
+```
+
+The explicit `lookupById(int)` and `lookupBySubjectVersion(subject, version)` calls remain available on
+`ConfluentSchemaResolver` for users who want to manage their own caching or fetch a known schema at startup.
+
+**Cache semantics.** `CachedSchemaResolver` uses a `ConcurrentHashMap` with no TTL and no LRU eviction. Confluent SR
+schema IDs are immutable — ID 42 today means the same schema tomorrow — so cache-by-ID is trivially correct and cache
+cardinality is naturally bounded (typically tens of distinct schemas across the lifetime of a topic, even with active
+evolution). The first record carrying a new schema ID costs one HTTP round trip; every subsequent record with that ID is
+a hit. Hit / miss / size counters are exposed via the resolver's accessors and can be bound to OTel via
+`PipelineMetricsObserver.bindSchemaRegistryCache(...)` (see [Observability](#observability) below).
+
+**Scope.** Avro only for now. Protobuf SR auto-lookup needs runtime `.proto` text compilation and has not shipped — use
+`kpipe-format-protobuf` with a compiled descriptor and `skipBytes(6)` for the single-top-level-message case. No schema
+publishing (Confluent's own producer client handles that). No compatibility checks at the consumer — those run at
+registration time inside SR.
 
 ### Protobuf
 
@@ -752,14 +804,14 @@ final var format = new ProtobufFormat(CustomerProto.Customer.getDescriptor());
 final var registry = new MessageProcessorRegistry("myApp", format);
 
 final var clearEmailKey = ProtobufRegistryKey.of("clearEmail");
-registry.register(clearEmailKey, msg -> {
+registry.registerOperator(clearEmailKey, msg -> {
   final var emailField = msg.getDescriptorForType().findFieldByName("email");
   return msg.toBuilder().clearField(emailField).build();
 });
 
 // Register the protobuf console sink yourself (defaults are no longer auto-registered)
 final var protoLoggingKey = ProtobufRegistryKey.of("protobufLogging");
-registry.register(protoLoggingKey, new org.kpipe.format.protobuf.ProtobufConsoleSink<>());
+registry.registerSink(protoLoggingKey, new org.kpipe.format.protobuf.ProtobufConsoleSink<>());
 
 final var pipeline = registry
   .pipeline(format)
@@ -794,7 +846,7 @@ final var avroConsoleSink = new AvroConsoleSink<GenericRecord>(schema);
 final var protobufConsoleSink = new ProtobufConsoleSink<Message>();
 
 // Register and use via the pipeline builder
-registry.register(JsonFormat.JSON_LOGGING, jsonConsoleSink);
+registry.registerSink(JsonFormat.JSON_LOGGING, jsonConsoleSink);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
@@ -814,16 +866,16 @@ final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
 ### Registering sinks
 
 `MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape.
-`register(key, operator)` and `register(key, sink)` are overloads of one method; lookups use `getOperator(key)` and
+`registerOperator(key, op)` and `registerSink(key, sink)` are the entry points; lookups use `getOperator(key)` and
 `getSink(key)`. Per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`,
 `compositeSink`) keep the surfaces separate without forcing users through a sub-object.
 
 ```java
 final var registry = new MessageProcessorRegistry();
 
-// Register a sink — `register` is overloaded; Java picks the MessageSink variant
+// Register a sink under a typed key
 final var dbKey = RegistryKey.of("database", Map.class);
-registry.register(dbKey, databaseSink);
+registry.registerSink(dbKey, databaseSink);
 
 // Use it in a pipeline
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json("enrich")).toSink(dbKey).build();
@@ -833,10 +885,10 @@ final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json
 
 ```java
 // Wrap a sink or operator with error handling (suppresses exceptions, logs errors)
-final var safeSink = MessageProcessorRegistry.withErrorHandling(riskySink);
-final var safeOperator = MessageProcessorRegistry.withErrorHandling(riskyOperator);
+final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(riskySink);
+final var safeOperator = MessageProcessorRegistry.withOperatorErrorHandling(riskyOperator);
 
-registry.register(RegistryKey.json("safeDatabase"), safeSink);
+registry.registerSink(RegistryKey.json("safeDatabase"), safeSink);
 ```
 
 ### Kafka producer sink
@@ -1223,7 +1275,7 @@ Return `null` from an operator to skip a record. KPipe stops processing it — n
 offset is still committed (the record is treated as intentionally filtered, not failed).
 
 ```java
-registry.register(RegistryKey.json("filter"), map -> {
+registry.registerOperator(RegistryKey.json("filter"), map -> {
   if ("internal".equals(map.get("type"))) return null; // Skip this message
   return map;
 });
@@ -1264,6 +1316,55 @@ guarantees per-partition ordering. Use that:
 - KPipe commits per-partition lowest-pending-offset, so as long as related events share a key, they land on one
   partition and KPipe processes them in order without skipping.
 - For strict per-partition serial processing (one record at a time), turn on `.withSequentialProcessing(true)`.
+
+---
+
+## Observability
+
+Two OTel pieces ship in `kpipe-metrics-otel`:
+
+- **`OtelConsumerMetrics`** — implements `ConsumerMetrics`. Wire on the consumer builder / `Stream.withMetrics(...)` and
+  get the standard `kpipe.consumer.*` counters and histograms (received, processed, errors, processing duration,
+  in-flight gauge, backpressure pauses, circuit-breaker state changes).
+- **`PipelineMetricsObserver`** — implements `Consumer<Result<?>>`. Hand to `Stream.peekResult(observer)` and every
+  `Passed` / `Filtered` / `Failed` outcome increments the matching `kpipe.pipeline.*` counter. This is how you make the
+  §12 "processed counter rises but sink stays at 0" condition visible at the metrics layer instead of having to scrape
+  logs.
+
+```java
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import org.kpipe.metrics.otel.OtelConsumerMetrics;
+import org.kpipe.metrics.otel.PipelineMetricsObserver;
+
+final var otel = GlobalOpenTelemetry.get();
+final var consumerMetrics = new OtelConsumerMetrics(otel, "orders-consumer");
+final var observer = new PipelineMetricsObserver(otel, "orders");
+
+try (var handle = KPipe.json("orders", kafkaProps)
+    .pipe(enrich)
+    .withMetrics(consumerMetrics)             // standard kpipe.consumer.* metrics
+    .peekResult(observer)                     // per-Result-variant counters
+    .toCustom(WarehouseSink.create())
+    .start()) {
+  handle.awaitShutdown();
+}
+```
+
+If you're using Confluent SR auto-lookup, bind the cache counters too so cache hit rate is visible alongside the
+pipeline outcomes:
+
+```java
+final var resolver = new CachedSchemaResolver(new ConfluentSchemaResolver("http://schema-registry:8081"));
+
+final var observer = new PipelineMetricsObserver(otel, "orders").bindSchemaRegistryCache(
+  resolver::hitCount,
+  resolver::missCount,
+  () -> (long) resolver.size()
+);
+```
+
+The observer takes `LongSupplier`s rather than the resolver itself so `kpipe-metrics-otel` doesn't acquire a transitive
+dependency on `kpipe-schema-registry-confluent`. Wire whichever cache you actually use; the suppliers don't care.
 
 ---
 
