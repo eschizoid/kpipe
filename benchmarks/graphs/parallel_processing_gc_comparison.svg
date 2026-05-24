@@ -23,7 +23,7 @@
   <rect class="bg" x="0" y="0" width="1180" height="900"/>
 
   <text x="28" y="40" class="title">ParallelProcessingBenchmark — 4-runtime competitive suite</text>
-  <text x="28" y="62" class="subtitle">JMH Throughput + gc profiler. 25,000 records · 8 partitions · forks=2 · iter=5 · Testcontainers Kafka 4.2.0 · Apple Silicon 10c · JDK 25.0.2</text>
+  <text x="28" y="62" class="subtitle">JMH Throughput + gc profiler. 25,000 records · 8 partitions · forks=2 · iter=5 · Testcontainers Kafka 4.2.0 · Apple Silicon 10c · JDK 25.0.2 · run 2026-05-24</text>
 
   <!-- Legend strip above the panel -->
   <rect x="48" y="78" width="10" height="10" class="raw"/>
@@ -60,55 +60,55 @@
   <text x="115" y="164" class="small" text-anchor="end">600k</text>
 
   <!-- 3 groups: workMicros=0 (x~200), =100 (x~540), =1000 (x~880). Each group has 4 bars, 40px wide, 4px gap. -->
-  <!-- y = 400 - (score / 600000 * 240) -->
+  <!-- y = 400 - round(score / 600000 * 240) -->
 
   <!-- GROUP 1: workMicros=0 -->
-  <!-- Raw 542859 → h=217 -->
-  <rect x="200" y="183" width="40" height="217" class="raw"/>
-  <text x="220" y="178" class="value" text-anchor="middle">542k</text>
-  <!-- KPipe 473491 → h=189 -->
-  <rect x="244" y="211" width="40" height="189" class="kpipe"/>
-  <text x="264" y="206" class="value" text-anchor="middle">473k</text>
-  <!-- Reactor 256648 → h=103 -->
-  <rect x="288" y="297" width="40" height="103" class="reactor"/>
-  <text x="308" y="292" class="value" text-anchor="middle">257k</text>
-  <!-- Confluent 100106 → h=40 -->
-  <rect x="332" y="360" width="40" height="40" class="confluent"/>
-  <text x="352" y="355" class="value" text-anchor="middle">100k</text>
+  <!-- Raw 557439 → h=223 -->
+  <rect x="200" y="177" width="40" height="223" class="raw"/>
+  <text x="220" y="172" class="value" text-anchor="middle">557k</text>
+  <!-- KPipe 542412 → h=217 -->
+  <rect x="244" y="183" width="40" height="217" class="kpipe"/>
+  <text x="264" y="178" class="value" text-anchor="middle">542k</text>
+  <!-- Reactor 150081 → h=60 -->
+  <rect x="288" y="340" width="40" height="60" class="reactor"/>
+  <text x="308" y="335" class="value" text-anchor="middle">150k</text>
+  <!-- Confluent 109952 → h=44 -->
+  <rect x="332" y="356" width="40" height="44" class="confluent"/>
+  <text x="352" y="351" class="value" text-anchor="middle">110k</text>
 
   <text x="286" y="425" class="label" text-anchor="middle">workMicros = 0</text>
   <text x="286" y="442" class="small" text-anchor="middle">pure framework overhead</text>
 
   <!-- GROUP 2: workMicros=100 (offset +340) -->
-  <!-- Raw 500231 → h=200 -->
-  <rect x="540" y="200" width="40" height="200" class="raw"/>
-  <text x="560" y="195" class="value" text-anchor="middle">500k</text>
-  <!-- KPipe 461273 → h=184 -->
-  <rect x="584" y="216" width="40" height="184" class="kpipe"/>
-  <text x="604" y="211" class="value" text-anchor="middle">461k</text>
-  <!-- Reactor 77542 → h=31 -->
-  <rect x="628" y="369" width="40" height="31" class="reactor"/>
-  <text x="648" y="364" class="value" text-anchor="middle">78k</text>
-  <!-- Confluent 108194 → h=43 -->
-  <rect x="672" y="357" width="40" height="43" class="confluent"/>
-  <text x="692" y="352" class="value" text-anchor="middle">108k</text>
+  <!-- Raw 520859 → h=208 -->
+  <rect x="540" y="192" width="40" height="208" class="raw"/>
+  <text x="560" y="187" class="value" text-anchor="middle">521k</text>
+  <!-- KPipe 490543 → h=196 -->
+  <rect x="584" y="204" width="40" height="196" class="kpipe"/>
+  <text x="604" y="199" class="value" text-anchor="middle">491k</text>
+  <!-- Reactor 72595 → h=29 -->
+  <rect x="628" y="371" width="40" height="29" class="reactor"/>
+  <text x="648" y="366" class="value" text-anchor="middle">73k</text>
+  <!-- Confluent 114362 → h=46 -->
+  <rect x="672" y="354" width="40" height="46" class="confluent"/>
+  <text x="692" y="349" class="value" text-anchor="middle">114k</text>
 
   <text x="626" y="425" class="label" text-anchor="middle">workMicros = 100</text>
   <text x="626" y="442" class="small" text-anchor="middle">local enrichment</text>
 
   <!-- GROUP 3: workMicros=1000 (offset +340 again) -->
-  <!-- Raw 482639 → h=193 -->
-  <rect x="880" y="207" width="40" height="193" class="raw"/>
-  <text x="900" y="202" class="value" text-anchor="middle">483k</text>
-  <!-- KPipe 430526 → h=172 -->
-  <rect x="924" y="228" width="40" height="172" class="kpipe"/>
-  <text x="944" y="223" class="value" text-anchor="middle">431k</text>
-  <!-- Reactor 8979 → h=4 (tiny — emphasise with label outside) -->
+  <!-- Raw 417920 → h=167 -->
+  <rect x="880" y="233" width="40" height="167" class="raw"/>
+  <text x="900" y="228" class="value" text-anchor="middle">418k</text>
+  <!-- KPipe 483061 → h=193  (KPipe AHEAD of Raw at this cell) -->
+  <rect x="924" y="207" width="40" height="193" class="kpipe"/>
+  <text x="944" y="202" class="value" text-anchor="middle">483k</text>
+  <!-- Reactor 9079 → h=4 (tiny — emphasise with label outside) -->
   <rect x="968" y="396" width="40" height="4" class="reactor"/>
   <text x="988" y="391" class="value" text-anchor="middle" fill="#7c3aed">9k ⚠</text>
-  <!-- Confluent 64715 → h=26 -->
-  <rect x="1012" y="374" width="40" height="26" class="confluent"/>
-  <text x="1032" y="369" class="value" text-anchor="middle">65k</text>
+  <!-- Confluent 67726 → h=27 -->
+  <rect x="1012" y="373" width="40" height="27" class="confluent"/>
+  <text x="1032" y="368" class="value" text-anchor="middle">68k</text>
 
   <text x="966" y="425" class="label" text-anchor="middle">workMicros = 1000</text>
   <text x="966" y="442" class="small" text-anchor="middle">blocking I/O round trip</text>
@@ -124,24 +124,24 @@
   <line x1="76" y1="710" x2="386" y2="710" class="axis"/>
   <line x1="76" y1="580" x2="76" y2="710" class="axis"/>
 
-  <!-- max 1000 B/op, 1 B = 0.13 px -->
-  <rect x="100" y="703" width="50" height="7" class="confluent"/>
-  <text x="125" y="697" class="value" text-anchor="middle">34</text>
+  <!-- max 1000 B/op, scale = 0.13 px/B -->
+  <rect x="100" y="706" width="50" height="4" class="confluent"/>
+  <text x="125" y="700" class="value" text-anchor="middle">34</text>
   <text x="125" y="728" class="small" text-anchor="middle">Conf.</text>
 
   <rect x="160" y="703" width="50" height="7" class="raw"/>
   <text x="185" y="697" class="value" text-anchor="middle">55</text>
   <text x="185" y="728" class="small" text-anchor="middle">Raw</text>
 
-  <rect x="220" y="687" width="50" height="23" class="reactor"/>
-  <text x="245" y="681" class="value" text-anchor="middle">175</text>
+  <rect x="220" y="689" width="50" height="21" class="reactor"/>
+  <text x="245" y="683" class="value" text-anchor="middle">162</text>
   <text x="245" y="728" class="small" text-anchor="middle">Reactor</text>
 
   <rect x="280" y="590" width="50" height="120" class="kpipe"/>
   <text x="305" y="584" class="value" text-anchor="middle">924</text>
   <text x="305" y="728" class="small" text-anchor="middle">KPipe</text>
 
-  <!-- Panel 2: gc.count -->
+  <!-- Panel 2: gc.count (max scaled to 400 because Confluent at 372 is now the tallest) -->
   <rect x="416" y="516" width="378" height="220" class="panel"/>
   <text x="436" y="540" class="h3">gc.count (events during measurement)</text>
   <text x="436" y="557" class="small">lower is better</text>
@@ -149,22 +149,22 @@
   <line x1="464" y1="710" x2="774" y2="710" class="axis"/>
   <line x1="464" y1="580" x2="464" y2="710" class="axis"/>
 
-  <!-- max ~300, 1 = 0.43 px -->
-  <rect x="488" y="670" width="50" height="40" class="raw"/>
-  <text x="513" y="664" class="value" text-anchor="middle">93</text>
+  <!-- max ~400, scale = 0.325 px/event -->
+  <rect x="488" y="680" width="50" height="30" class="raw"/>
+  <text x="513" y="674" class="value" text-anchor="middle">93</text>
   <text x="513" y="728" class="small" text-anchor="middle">Raw</text>
 
-  <rect x="548" y="668" width="50" height="42" class="kpipe"/>
-  <text x="573" y="662" class="value" text-anchor="middle">98</text>
+  <rect x="548" y="678" width="50" height="32" class="kpipe"/>
+  <text x="573" y="672" class="value" text-anchor="middle">98</text>
   <text x="573" y="728" class="small" text-anchor="middle">KPipe</text>
 
-  <rect x="608" y="628" width="50" height="82" class="confluent"/>
-  <text x="633" y="622" class="value" text-anchor="middle">192</text>
-  <text x="633" y="728" class="small" text-anchor="middle">Conf.</text>
+  <rect x="608" y="667" width="50" height="43" class="reactor"/>
+  <text x="633" y="661" class="value" text-anchor="middle">131</text>
+  <text x="633" y="728" class="small" text-anchor="middle">Reactor</text>
 
-  <rect x="668" y="594" width="50" height="116" class="reactor"/>
-  <text x="693" y="588" class="value" text-anchor="middle">272</text>
-  <text x="693" y="728" class="small" text-anchor="middle">Reactor</text>
+  <rect x="668" y="589" width="50" height="121" class="confluent"/>
+  <text x="693" y="583" class="value" text-anchor="middle">372</text>
+  <text x="693" y="728" class="small" text-anchor="middle">Conf.</text>
 
   <!-- Panel 3: gc.time ms -->
   <rect x="804" y="516" width="348" height="220" class="panel"/>
@@ -174,29 +174,29 @@
   <line x1="836" y1="710" x2="1130" y2="710" class="axis"/>
   <line x1="836" y1="580" x2="836" y2="710" class="axis"/>
 
-  <!-- max ~800, 1 = 0.16 px -->
+  <!-- max ~800, scale = 0.1625 px/ms -->
   <rect x="858" y="692" width="50" height="18" class="raw"/>
-  <text x="883" y="686" class="value" text-anchor="middle">112</text>
+  <text x="883" y="686" class="value" text-anchor="middle">110</text>
   <text x="883" y="728" class="small" text-anchor="middle">Raw</text>
 
-  <rect x="918" y="683" width="50" height="27" class="kpipe"/>
-  <text x="943" y="677" class="value" text-anchor="middle">166</text>
+  <rect x="918" y="689" width="50" height="21" class="kpipe"/>
+  <text x="943" y="683" class="value" text-anchor="middle">132</text>
   <text x="943" y="728" class="small" text-anchor="middle">KPipe</text>
 
-  <rect x="978" y="628" width="50" height="82" class="confluent"/>
-  <text x="1003" y="622" class="value" text-anchor="middle">515</text>
+  <rect x="978" y="632" width="50" height="78" class="confluent"/>
+  <text x="1003" y="626" class="value" text-anchor="middle">482</text>
   <text x="1003" y="728" class="small" text-anchor="middle">Conf.</text>
 
-  <rect x="1038" y="593" width="50" height="117" class="reactor"/>
-  <text x="1063" y="587" class="value" text-anchor="middle">732</text>
+  <rect x="1038" y="619" width="50" height="91" class="reactor"/>
+  <text x="1063" y="613" class="value" text-anchor="middle">558</text>
   <text x="1063" y="728" class="small" text-anchor="middle">Reactor</text>
 
   <!-- Summary panel -->
   <rect x="28" y="754" width="1124" height="130" class="panel"/>
   <text x="48" y="780" class="h2">Summary</text>
 
-  <text x="48" y="804" class="note">• Raw KafkaConsumer + virtual threads is the fastest runtime. KPipe trails by 5–15% across the sweep — small measurable framework cost, very close.</text>
-  <text x="48" y="824" class="note">• Reactor Kafka collapses under blocking work: 257k → 78k → 9k ops/sec as workMicros grows. At workMicros=1000 it is 48× slower than KPipe and 7× slower than Confluent.</text>
-  <text x="48" y="844" class="note">• KPipe degrades gracefully (473k → 461k → 431k). Virtual threads scale beyond the partition count; each blocked record costs only kilobytes of stack.</text>
+  <text x="48" y="804" class="note">• KPipe matches raw Loom at light workloads and beats it under blocking work: within 3–6% of Raw at workMicros=0..100, and ~16% ahead of Raw at workMicros=1000.</text>
+  <text x="48" y="824" class="note">• Reactor Kafka collapses under blocking work: 150k → 73k → 9k ops/sec as workMicros grows. At workMicros=1000 it is 53× slower than KPipe and 7.5× slower than Confluent.</text>
+  <text x="48" y="844" class="note">• KPipe degrades gracefully (542k → 491k → 483k). Virtual threads scale beyond the partition count; each blocked record costs only kilobytes of stack.</text>
   <text x="48" y="864" class="note">• KPipe allocates ~924 B/op vs Confluent's 34 B/op — most in the table. At this throughput the JVM's young gen absorbs it without depressing ops/sec. Watch on tight heaps.</text>
 </svg>
