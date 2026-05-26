@@ -2,29 +2,21 @@ package org.kpipe.format.json;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.dslplatform.json.DslJson;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
+import com.alibaba.fastjson2.JSON;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.kpipe.registry.MessageProcessorRegistry;
 
 class JsonFormatPipelineTest {
 
-  private static final DslJson<Map<String, Object>> DSL_JSON = new DslJson<>();
   private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
-  private static String normalizeJson(String json) {
-    try (
-      final var input = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
-      final var output = new ByteArrayOutputStream()
-    ) {
-      final var parsed = DSL_JSON.deserialize(Map.class, input);
-      DSL_JSON.serialize(parsed, output);
-      return output.toString(StandardCharsets.UTF_8);
-    } catch (final IOException e) {
+  /// Round-trips the input through fastjson2 so the test compares canonical
+  /// representations rather than raw byte-equality (which would break on whitespace).
+  private static String normalizeJson(final String json) {
+    try {
+      return JSON.toJSONString(JSON.parse(json.getBytes(StandardCharsets.UTF_8)));
+    } catch (final Exception e) {
       return "{}";
     }
   }

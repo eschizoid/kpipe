@@ -1,6 +1,6 @@
 /// KPipe consumer module — Kafka consumer pipeline, processing, and sink infrastructure.
 ///
-/// Format-specific runtimes (DSL-JSON, Avro, Protobuf) are provided by separate modules:
+/// Format-specific runtimes (fastjson2, Avro, Protobuf) are provided by separate modules:
 /// `kpipe-format-json`, `kpipe-format-avro`, `kpipe-format-protobuf`.
 module org.kpipe.consumer {
   requires transitive org.kpipe.core;

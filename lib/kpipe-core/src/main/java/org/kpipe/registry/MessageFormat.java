@@ -5,7 +5,7 @@ package org.kpipe.registry;
 /// Implementations live in their own modules so users only pull in the format runtimes they
 /// actually use:
 ///
-/// - `org.kpipe.format.json.JsonFormat.INSTANCE` — JSON via DSL-JSON (`kpipe-format-json`)
+/// - `org.kpipe.format.json.JsonFormat.INSTANCE` — JSON via fastjson2 (`kpipe-format-json`)
 /// - `org.kpipe.format.avro.AvroFormat` — Avro (`kpipe-format-avro`); construct with
 ///   `new AvroFormat(schema)` or `AvroFormat.of(schemaJson)`.
 /// - `org.kpipe.format.protobuf.ProtobufFormat` — Protobuf (`kpipe-format-protobuf`); construct

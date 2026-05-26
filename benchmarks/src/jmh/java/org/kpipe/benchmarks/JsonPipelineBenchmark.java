@@ -113,7 +113,7 @@ public class JsonPipelineBenchmark {
     // So the "competitor" is really KPipe's single SerDe vs manual deserialization.
 
     // Let's benchmark a typical usage pattern:
-    // 1. Deserialization (Jackson/DslJson/etc.)
+    // 1. Deserialization (Jackson/fastjson2/etc.)
     // 2. Logic
     // 3. Serialization
 

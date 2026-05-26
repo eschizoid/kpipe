@@ -1299,7 +1299,7 @@ shape (I/O vs CPU bound), partitioning, and message size — these are micro-lev
 
 - Zero-copy magic-byte handling. For Avro from Confluent Schema Registry, KPipe takes an `offset` parameter to skip
   magic bytes and schema IDs without `Arrays.copyOfRange`.
-- DslJson for JSON parsing. Cuts parse overhead and GC pressure compared to Jackson on the hot path.
+- fastjson2 for JSON parsing. Faster than Jackson on the hot path with similar GC pressure, and actively maintained.
 
 The latest parallel benchmark in [`benchmarks/README.md`](benchmarks/README.md) shows KPipe ahead of Confluent Parallel
 Consumer on throughput, with a higher allocation footprint. Scenario-specific — not a blanket claim.
@@ -1415,7 +1415,7 @@ Grafana is at [http://localhost:3000](http://localhost:3000); the app health end
 KPipe leans on:
 
 - [Project Loom](https://openjdk.org/projects/loom/) for virtual threads.
-- [DslJson](https://github.com/ngs-doo/dsl-json) for the JSON hot path.
+- [fastjson2](https://github.com/alibaba/fastjson2) for the JSON hot path.
 
 ---
 
