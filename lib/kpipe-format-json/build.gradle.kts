@@ -21,9 +21,7 @@ repositories {
 dependencies {
   api(project(":lib:kpipe-core"))
 
-  implementation(libs.dslJson)
-  annotationProcessor(libs.dslJson)
-  testAnnotationProcessor(libs.dslJson)
+  implementation(libs.fastjson2)
 
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)

@@ -6,7 +6,7 @@ a single number from a single run, read this first.
 ## What the suite measures
 
 | Bench                                | Question it answers                                                                                                                            |
-|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `JsonPipelineBenchmark`              | What does KPipe's single-SerDe-cycle save vs naive byte-to-byte chaining? (Design validation, not competitive.)                                |
 | `AvroPipelineBenchmark`              | What does zero-copy magic-byte handling save vs `Arrays.copyOfRange`? (Design validation.)                                                     |
 | `ParallelProcessingBenchmark`        | How does **throughput** compare across KPipe, Confluent Parallel Consumer, Reactor Kafka, and a hand-rolled `KafkaConsumer + virtual threads`? |
@@ -24,7 +24,7 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 ## What the four parallel runtimes look like
 
 | Runtime                                   | Concurrency primitive                                                                 | Configured concurrency                                                                |
-|-------------------------------------------|---------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| ----------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | **KPipe**                                 | Virtual thread per record (Loom)                                                      | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
 | **Confluent Parallel Consumer**           | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | `maxConcurrency=100`                                                                  |
 | **Reactor Kafka**                         | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | `parallel(100)` to match Confluent's pool size                                        |
@@ -39,7 +39,7 @@ does each runtime schedule blocking work?". Those two questions often have diffe
 The Gradle JMH plugin is configured in `benchmarks/build.gradle.kts`. Defaults:
 
 | Parameter              | Default              | Override                   |
-|------------------------|----------------------|----------------------------|
+| ---------------------- | -------------------- | -------------------------- |
 | Warmup iterations      | 3                    | `-Pjmh.warmupIterations=N` |
 | Measurement iterations | 5                    | `-Pjmh.iterations=N`       |
 | Forks                  | 1                    | `-Pjmh.fork=N`             |

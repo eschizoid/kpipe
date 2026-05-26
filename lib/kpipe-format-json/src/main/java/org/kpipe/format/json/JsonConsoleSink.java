@@ -1,13 +1,9 @@
 package org.kpipe.format.json;
 
-import com.dslplatform.json.DslJson;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import com.alibaba.fastjson2.JSON;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
 import org.kpipe.sink.ConsoleSinkSupport;
 import org.kpipe.sink.MessageSink;
 
@@ -16,7 +12,6 @@ import org.kpipe.sink.MessageSink;
 /// @param <T> The type of the processed object
 public record JsonConsoleSink<T>() implements MessageSink<T> {
   private static final Logger LOGGER = System.getLogger(JsonConsoleSink.class.getName());
-  private static final DslJson<Object> DSL_JSON = new DslJson<>();
 
   @Override
   public void accept(final T processedValue) {
@@ -41,14 +36,10 @@ public record JsonConsoleSink<T>() implements MessageSink<T> {
       final var strValue = new String(bytes, StandardCharsets.UTF_8);
       if (isLikelyJson(strValue)) {
         try {
-          final var trimmed = strValue.trim();
-          final var json = trimmed.startsWith("[")
-            ? DSL_JSON.deserialize(List.class, new ByteArrayInputStream(bytes))
-            : DSL_JSON.deserialize(Map.class, new ByteArrayInputStream(bytes));
-          try (final var out = new ByteArrayOutputStream()) {
-            DSL_JSON.serialize(json, out);
-            return out.toString(StandardCharsets.UTF_8);
-          }
+          // fastjson2's JSON.parse handles both object and array roots transparently — no
+          // need to branch on the leading char.
+          final var json = JSON.parse(bytes);
+          return JSON.toJSONString(json);
         } catch (final Exception e) {
           LOGGER.log(Level.ERROR, "Failed to parse/format as JSON, falling back to raw string", e);
           return strValue;

@@ -19,7 +19,6 @@ dependencies {
   implementation(project(":lib:kpipe-schema-registry-confluent"))
   implementation(project(":lib:kpipe-producer"))
   implementation(project(":lib:kpipe-metrics-otel"))
-  implementation(rootProject.libs.dslJson)
   implementation(rootProject.libs.avro)
   implementation(rootProject.libs.protobufJava)
   implementation(rootProject.libs.protobufUtil)

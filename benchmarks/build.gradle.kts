@@ -18,7 +18,6 @@ dependencies {
   // to our 4.2.0. No `exclude` needed; conflict resolution picks the higher version.
   implementation(libs.reactorKafka)
   implementation(libs.avro)
-  implementation(libs.dslJson)
 
   // Logging for JMH forks
   implementation(libs.slf4jSimple)

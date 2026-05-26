@@ -26,7 +26,6 @@ subprojects {
     testImplementation(rootProject.libs.testcontainers)
     testImplementation(rootProject.libs.testcontainersJunitJupiter)
     testImplementation(rootProject.libs.testcontainersKafka)
-    testImplementation(rootProject.libs.dslJson)
     testRuntimeOnly(rootProject.libs.junitPlatformLauncher)
   }
 
