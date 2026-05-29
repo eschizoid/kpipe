@@ -9,7 +9,7 @@ a single number from a single run, read this first.
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `JsonPipelineBenchmark`              | What does KPipe's single-SerDe-cycle save vs naive byte-to-byte chaining? (Design validation, not competitive.)                                |
 | `AvroPipelineBenchmark`              | What does zero-copy magic-byte handling save vs `Arrays.copyOfRange`? (Design validation.)                                                     |
-| `ParallelProcessingBenchmark`        | How does **throughput** compare across KPipe, Confluent Parallel Consumer, Reactor Kafka, and a hand-rolled `KafkaConsumer + virtual threads`? |
+| `ParallelProcessingBenchmark`        | How does **throughput** compare across KPipe (PARALLEL + KEY_ORDERED), the Kafka Share Consumer (KIP-932), Confluent Parallel Consumer, Reactor Kafka, and a hand-rolled `KafkaConsumer + virtual threads`? |
 | `ParallelProcessingLatencyBenchmark` | How do those four runtimes compare on **per-batch latency** (p50, p95, p99)?                                                                   |
 | `BatchSinkLatencyBenchmark`          | What does `Stream.toBatch(...)` save when the destination has nontrivial per-call cost?                                                        |
 
@@ -21,18 +21,38 @@ team would actually pick.
 
 The last one is KPipe alone, parameterised across batch size and sink latency.
 
-## What the four parallel runtimes look like
+## What the parallel runtimes look like
 
-| Runtime                                   | Concurrency primitive                                                                 | Configured concurrency                                                                |
-| ----------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| **KPipe**                                 | Virtual thread per record (Loom)                                                      | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
-| **Confluent Parallel Consumer**           | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | `maxConcurrency=100`                                                                  |
-| **Reactor Kafka**                         | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | `parallel(100)` to match Confluent's pool size                                        |
-| **Raw `KafkaConsumer` + virtual threads** | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | Unbounded virtual threads                                                             |
+| Runtime                                   | Concurrency primitive                                                                 | Ordering        | Configured concurrency                                                                |
+| ----------------------------------------- | ------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------- |
+| **KPipe (PARALLEL)**                      | Virtual thread per record (Loom)                                                      | none            | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
+| **KPipe (KEY_ORDERED)**                   | Per-key serial queues, each drained by a virtual thread                               | **per-key**     | Unbounded across keys; serial within a key                                            |
+| **Kafka Share Consumer (KIP-932)**        | One `KafkaShareConsumer` + `newVirtualThreadPerTaskExecutor`, per-poll-batch barrier  | none            | Unbounded virtual threads; barrier bounds it to one in-flight batch                   |
+| **Confluent Parallel Consumer**           | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | none            | `maxConcurrency=100`                                                                  |
+| **Reactor Kafka**                         | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | none            | `parallel(100)` to match Confluent's pool size                                        |
+| **Raw `KafkaConsumer` + virtual threads** | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | none            | Unbounded virtual threads                                                             |
 
-Two of the four (KPipe, raw) lean on Loom. The other two (Confluent, Reactor) lean on platform threads. That's the
-interesting axis. At `workMicros=0` the comparison is essentially "framework overhead"; at `workMicros=1000` it's "how
-does each runtime schedule blocking work?". Those two questions often have different winners.
+Loom-based (KPipe PARALLEL/KEY_ORDERED, share, raw) vs platform-threaded (Confluent, Reactor) is the interesting axis. At
+`workMicros=0` the comparison is essentially "framework overhead"; at `workMicros=1000` it's "how does each runtime
+schedule blocking work?". Those two questions often have different winners.
+
+### Apples-to-apples — read these comparisons honestly
+
+The share consumer and the key-ordered dispatcher do **not** solve the same problem, so the suite pins every variable
+except the consumption mechanism (same broker, same seeded data, same `workMicros`, same `@OperationsPerInvocation`
+throughput metric, work fanned to virtual threads everywhere) and you read each pairing for what it actually isolates:
+
+- **KPipe PARALLEL vs Share Consumer** is the fair head-to-head: both unordered, both at-least-once, both one process
+  with virtual-thread fan-out. The only difference is the fetch+durability protocol — KPipe's fetch + lowest-pending
+  offset commit vs the share-acquire + per-record acknowledgement path. The share arm's per-poll-batch barrier (process
+  the batch, then poll again, which implicitly ACCEPTs it) is the honest cost of processing a share batch concurrently
+  while staying at-least-once, not a handicap.
+- **KEY_ORDERED is the ordering tax, not a rival.** It is the only arm that guarantees per-key order; no other runtime
+  here (share included) can provide ordering at all. Read its gap below the unordered arms as "what ordering costs,"
+  never as "X beats KEY_ORDERED."
+- **Single process, not scale-out.** Every arm is one consuming process. This deliberately does **not** test the share
+  consumer's headline feature — members beyond partition count — which would need a multi-instance share group. That's a
+  separate experiment; the numbers here say nothing about it.
 
 ## JMH configuration
 
@@ -141,6 +161,12 @@ A few things to keep in mind whenever you quote a number from this suite:
   ack) needs a separate harness.
 - **Docker overhead is real.** The first iteration of every trial pays the container-startup cost. JMH's warmup phase
   absorbs most of that; if you're spot-checking with `-wi 0`, expect the first measurement iteration to look slow.
+- **Share-group setup is unvalidated until a real Docker run.** The share arm needs broker-side KIP-932 support (the
+  `share` rebalance protocol + the `__share_group_state` topic, set via container env) and the share group's start
+  offset reset to `earliest` (a group config set via Admin — the default `latest` would skip every seeded record and
+  time the bench out). These were written against the 4.2.0 client API but **not run** (no Docker in the authoring
+  environment). On the first real run, if the `share` cell times out, check those two things first: broker share
+  coordinator logs, and whether `share.auto.offset.reset` took.
 
 ## When the numbers should change
 
