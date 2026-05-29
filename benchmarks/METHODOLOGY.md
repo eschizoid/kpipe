@@ -161,12 +161,16 @@ A few things to keep in mind whenever you quote a number from this suite:
   ack) needs a separate harness.
 - **Docker overhead is real.** The first iteration of every trial pays the container-startup cost. JMH's warmup phase
   absorbs most of that; if you're spot-checking with `-wi 0`, expect the first measurement iteration to look slow.
-- **Share-group setup is unvalidated until a real Docker run.** The share arm needs broker-side KIP-932 support (the
-  `share` rebalance protocol + the `__share_group_state` topic, set via container env) and the share group's start
+- **Share-group setup is validated end-to-end (Docker, Kafka 4.2.0).** The share arm needs broker-side KIP-932 support
+  (the `share` rebalance protocol + the `__share_group_state` topic, set via container env) and the share group's start
   offset reset to `earliest` (a group config set via Admin — the default `latest` would skip every seeded record and
-  time the bench out). These were written against the 4.2.0 client API but **not run** (no Docker in the authoring
-  environment). On the first real run, if the `share` cell times out, check those two things first: broker share
+  time the bench out). A smoke run confirmed the group forms, assigns all 8 partitions, and consumes the seeded
+  records. If a future run regresses and the `share` cell times out, check those two things first: broker share
   coordinator logs, and whether `share.auto.offset.reset` took.
+- **The `share` arm looks protocol-bound, not work-bound.** In smoke runs its throughput is roughly flat across
+  `workMicros` — the share-acquire/ack path (and `__share_group_state` writes per ack batch) dominates, not the
+  per-record work. Tune poll batch size / ack batching and re-measure before quoting share numbers, and never read the
+  share ↔ KEY_ORDERED gap as an ordering verdict — they are not rivals.
 
 ## When the numbers should change
 
