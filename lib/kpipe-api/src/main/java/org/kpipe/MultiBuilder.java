@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 import org.apache.avro.generic.GenericRecord;
 import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.json.JsonFormat;
 import org.kpipe.format.protobuf.ProtobufFormat;
@@ -47,6 +48,8 @@ public final class MultiBuilder {
   private ConsumerMetrics consumerMetrics;
   private Tracer tracer;
   private CircuitBreakerController circuitBreaker;
+  private ProcessingMode processingMode = ProcessingMode.PARALLEL;
+  private Integer keyOrderedMaxKeys;
 
   MultiBuilder(final Properties kafkaProps) {
     this.kafkaProps = (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone();
@@ -83,6 +86,30 @@ public final class MultiBuilder {
   /// @return this builder
   public MultiBuilder withCircuitBreaker(final CircuitBreakerController controller) {
     this.circuitBreaker = Objects.requireNonNull(controller, "controller cannot be null");
+    return this;
+  }
+
+  /// Sets the [ProcessingMode] for the underlying consumer. Processing mode is a consumer-wide
+  /// setting (one consumer = one mode), so it lives here rather than on per-route streams.
+  /// Attempting to set processing mode inside a route configurator (e.g.
+  /// `.json(topic, s -> s.withProcessingMode(KEY_ORDERED))`) is rejected at [#start()] to
+  /// prevent the silent-ignore footgun.
+  ///
+  /// @param mode the processing mode (must not be null)
+  /// @return this builder
+  public MultiBuilder withProcessingMode(final ProcessingMode mode) {
+    this.processingMode = Objects.requireNonNull(mode, "mode cannot be null");
+    return this;
+  }
+
+  /// Sets the LRU cap on distinct keys for `ProcessingMode.KEY_ORDERED`. No-op for other
+  /// modes. Default is `ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS` (10,000).
+  ///
+  /// @param maxKeys positive LRU cap
+  /// @return this builder
+  public MultiBuilder withKeyOrderedMaxKeys(final int maxKeys) {
+    if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
+    this.keyOrderedMaxKeys = maxKeys;
     return this;
   }
 
@@ -198,6 +225,7 @@ public final class MultiBuilder {
     for (final var entry : routes.entrySet()) {
       final var topic = entry.getKey();
       final var sink = entry.getValue();
+      rejectPerRouteConsumerWideSettings(topic, sink);
       if (sink instanceof DefaultSink<?> ds) {
         nonBatchPipelines.put(topic, ds.buildPipeline());
       } else if (sink instanceof DefaultBatchSink<?> dbs) {
@@ -206,10 +234,40 @@ public final class MultiBuilder {
     }
 
     if (!nonBatchPipelines.isEmpty()) consumerBuilder.withPipelines(nonBatchPipelines);
+    consumerBuilder.withProcessingMode(processingMode);
+    if (keyOrderedMaxKeys != null) consumerBuilder.withKeyOrderedMaxKeys(keyOrderedMaxKeys);
     if (consumerMetrics != null) consumerBuilder.withMetrics(consumerMetrics);
     if (tracer != null) consumerBuilder.withTracer(tracer);
     if (circuitBreaker != null) consumerBuilder.withCircuitBreaker(circuitBreaker);
     return DefaultHandle.startAndWrap(consumerBuilder.build());
+  }
+
+  /// Processing mode and the KEY_ORDERED LRU cap are consumer-wide settings — one
+  /// [KPipeConsumer] runs in exactly one mode with one cap. If a route configurator sets a
+  /// non-default value (`s -> s.withProcessingMode(...)` or
+  /// `s -> s.withKeyOrderedMaxKeys(...)`), the per-route setting would be silently dropped
+  /// because [#start()] builds a single consumer. Detect that here and fail loudly so the
+  /// user moves the call up to `MultiBuilder.withProcessingMode(...)` /
+  /// `MultiBuilder.withKeyOrderedMaxKeys(...)`.
+  private static void rejectPerRouteConsumerWideSettings(final String topic, final Sink<?> sink) {
+    final DefaultStream<?> stream;
+    if (sink instanceof DefaultSink<?> ds) stream = ds.stream();
+    else if (sink instanceof DefaultBatchSink<?> dbs) stream = dbs.stream();
+    else return;
+    if (stream.processingMode() != ProcessingMode.PARALLEL) throw new IllegalStateException(
+      "Route '%s' sets withProcessingMode(%s) on its Stream, but processing mode is a consumer-wide setting. ".formatted(
+          topic,
+          stream.processingMode()
+        ) +
+        "Move the call to MultiBuilder.withProcessingMode(...) instead."
+    );
+    if (stream.keyOrderedMaxKeys() != ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS) throw new IllegalStateException(
+      "Route '%s' sets withKeyOrderedMaxKeys(%d) on its Stream, but the LRU cap is a consumer-wide setting. ".formatted(
+          topic,
+          stream.keyOrderedMaxKeys()
+        ) +
+        "Move the call to MultiBuilder.withKeyOrderedMaxKeys(...) instead."
+    );
   }
 
   /// Type witness: pulls the typed pipeline + sink off the route, then calls the typed builder

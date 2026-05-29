@@ -29,7 +29,8 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
       .withProperties(stream.kafkaProps())
       .withTopics(stream.topics())
       .withPipeline(buildPipeline())
-      .withSequentialProcessing(stream.sequentialProcessing());
+      .withProcessingMode(stream.processingMode())
+      .withKeyOrderedMaxKeys(stream.keyOrderedMaxKeys());
 
     if (stream.maxRetries() > 0) consumerBuilder.withRetry(stream.maxRetries(), stream.retryBackoff());
     if (stream.backpressureHigh() != null) consumerBuilder.withBackpressure(

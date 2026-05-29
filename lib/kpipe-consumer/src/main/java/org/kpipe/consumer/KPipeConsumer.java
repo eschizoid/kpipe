@@ -6,6 +6,7 @@ import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
@@ -89,7 +90,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final Consumer<K, byte[]> kafkaConsumer;
   private final Set<String> topics;
   private final Map<String, MessagePipeline<?>> pipelines;
-  private final ExecutorService virtualThreadExecutor;
   private final Duration pollTimeout;
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
   private final Duration waitForMessagesTimeout;
@@ -101,11 +101,21 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final int maxRetries;
   private final Duration retryBackoff;
   private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.CREATED);
-  private final boolean sequentialProcessing;
+  /// Guards [#releaseConstructedResources] so it runs exactly once no matter which path ends
+  /// the consumer: external `close()`, the never-started fast path, or the consumer thread
+  /// terminating on its own (uncaught exception / interruption). Without this, a self-
+  /// terminating consumer thread would set state=CLOSED and a later `close()` would short-
+  /// circuit, leaking the dispatcher / scheduler / offset manager / DLQ producer / batch
+  /// wrappers for the JVM's lifetime.
+  private final AtomicBoolean resourcesReleased = new AtomicBoolean(false);
+  private final ProcessingMode processingMode;
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
   private final ConsumerMetrics otelMetrics;
   private final Tracer tracer;
-  private final AtomicLong inFlightCount = new AtomicLong(0);
+  /// Owns the per-mode dispatch strategy and the in-flight counter for non-sequential modes.
+  /// Constructed once in the consumer constructor from [#processingMode]; closed in `close()`
+  /// before `offsetManager.close()` per the §18 drain order.
+  private final Dispatcher<K> dispatcher;
   /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. The
   /// underlying decision modules ([BackpressureController], [CircuitBreakerController]) remain
   /// public + testable on their own; this controller owns the side-effect choreography and
@@ -191,7 +201,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
       );
     private int maxRetries = 0;
     private Duration retryBackoff = Duration.ofMillis(500);
-    private boolean sequentialProcessing = false;
+    private ProcessingMode processingMode = ProcessingMode.PARALLEL;
+    private int keyOrderedMaxKeys = KeyOrderedDispatcher.DEFAULT_MAX_KEYS;
     private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
     private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
@@ -349,13 +360,35 @@ public class KPipeConsumer<K> implements AutoCloseable {
       return this;
     }
 
-    /// Configures whether messages should be processed sequentially.
+    /// Selects the processing mode. See [ProcessingMode] for semantics.
     ///
-    /// @param sequential If true, messages will be processed in order; if false, parallel
-    ///     processing is used
+    /// - `SEQUENTIAL`: one record at a time per partition, in offset order. Lag-based
+    ///   backpressure.
+    /// - `PARALLEL` (default): virtual thread per record, no ordering. In-flight-based
+    ///   backpressure.
+    /// - `KEY_ORDERED`: per-key serial processing with LRU cap (default 10,000 keys, see
+    ///   [#withKeyOrderedMaxKeys]). In-flight-based backpressure.
+    ///
+    /// @param mode The processing mode (must be non-null)
     /// @return This builder instance for method chaining
-    public Builder<K> withSequentialProcessing(final boolean sequential) {
-      this.sequentialProcessing = sequential;
+    public Builder<K> withProcessingMode(final ProcessingMode mode) {
+      this.processingMode = Objects.requireNonNull(mode, "ProcessingMode must not be null");
+      return this;
+    }
+
+    /// LRU cap on distinct keys held in-memory simultaneously when using
+    /// [ProcessingMode#KEY_ORDERED]. Below this many distinct in-flight keys, each key gets
+    /// its own serial queue + virtual thread. Above it, least-recently-used keys with empty
+    /// queues are evicted to make room.
+    ///
+    /// Default 10,000. Has no effect for `SEQUENTIAL` or `PARALLEL` modes.
+    ///
+    /// @param maxKeys LRU cap (must be positive)
+    /// @return This builder instance for method chaining
+    /// @throws IllegalArgumentException if `maxKeys` is non-positive
+    public Builder<K> withKeyOrderedMaxKeys(final int maxKeys) {
+      if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
+      this.keyOrderedMaxKeys = maxKeys;
       return this;
     }
 
@@ -457,7 +490,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
     ///
     /// @return This builder instance for method chaining
     public Builder<K> withBackpressure() {
-      return withBackpressure(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK);
+      return withBackpressure(
+        BackpressureController.DEFAULT_HIGH_WATERMARK,
+        BackpressureController.DEFAULT_LOW_WATERMARK
+      );
     }
 
     /// Enables backpressure control using the given high and low watermarks. When the number of
@@ -668,10 +704,19 @@ public class KPipeConsumer<K> implements AutoCloseable {
         "Poll timeout must be positive"
       );
       if (offsetManager != null || offsetManagerProvider != null) kafkaProps.setProperty("enable.auto.commit", "false");
-      if (backpressureController != null && sequentialProcessing) {
+      if (backpressureController != null && processingMode == ProcessingMode.SEQUENTIAL) {
         LOGGER.log(
           System.Logger.Level.INFO,
           "Sequential processing enabled with backpressure: switching to lag-based monitoring."
+        );
+      }
+      if (keyOrderedMaxKeys != KeyOrderedDispatcher.DEFAULT_MAX_KEYS && processingMode != ProcessingMode.KEY_ORDERED) {
+        LOGGER.log(
+          System.Logger.Level.WARNING,
+          "withKeyOrderedMaxKeys({0}) was set but processing mode is {1} — the setting will be ignored. " +
+            "Call withProcessingMode(ProcessingMode.KEY_ORDERED) to use it.",
+          keyOrderedMaxKeys,
+          processingMode
         );
       }
       return new KPipeConsumer<>(this);
@@ -703,11 +748,15 @@ public class KPipeConsumer<K> implements AutoCloseable {
     this.errorHandler = builder.errorHandler;
     this.maxRetries = builder.maxRetries;
     this.retryBackoff = builder.retryBackoff;
-    this.sequentialProcessing = builder.sequentialProcessing;
+    this.processingMode = builder.processingMode;
     this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
     this.threadTerminationTimeout = builder.threadTerminationTimeout;
     this.executorTerminationTimeout = builder.executorTerminationTimeout;
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    this.dispatcher = switch (this.processingMode) {
+      case SEQUENTIAL -> new SequentialDispatcher<>();
+      case PARALLEL -> new ParallelDispatcher<>(this::handleParallelRejection, this.executorTerminationTimeout);
+      case KEY_ORDERED -> new KeyOrderedDispatcher<>(builder.keyOrderedMaxKeys);
+    };
     this.offsetManager =
       builder.offsetManager != null
         ? builder.offsetManager
@@ -723,9 +772,13 @@ public class KPipeConsumer<K> implements AutoCloseable {
     final var bp = (
       builder.backpressureController != null
         ? builder.backpressureController
-        : new BackpressureController(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK, null)
+        : new BackpressureController(
+            BackpressureController.DEFAULT_HIGH_WATERMARK,
+            BackpressureController.DEFAULT_LOW_WATERMARK,
+            null
+          )
     ).withStrategy(
-      this.sequentialProcessing
+      this.processingMode == ProcessingMode.SEQUENTIAL
         ? BackpressureController.lagStrategy()
         : BackpressureController.inFlightStrategy(this::totalInFlight)
     );
@@ -892,28 +945,60 @@ public class KPipeConsumer<K> implements AutoCloseable {
     return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), scheduler, callbacks);
   }
 
-  /// Blocks until every in-flight record finishes processing, or `timeout` elapses, or the calling
-  /// thread is interrupted. Replaces the former standalone `MessageTracker.waitForCompletion(...)`
-  /// — uses the live in-flight counter (`totalInFlight()`, which includes buffered batch records)
-  /// rather than re-deriving it from received - processed - errors.
+  /// Blocks until the dispatcher's in-flight records finish processing, or `timeout` elapses, or
+  /// the calling thread is interrupted. Replaces the former standalone
+  /// `MessageTracker.waitForCompletion(...)`.
+  ///
+  /// Waits on `dispatcher.pendingCount()` — records a worker is actively processing — NOT
+  /// `totalInFlight()`. The latter also counts buffered batch records, which never flush during a
+  /// drain (only on a size/age trigger or `BatchPipelineWrapper.close()` at teardown), so waiting
+  /// on them would always burn the full `timeout`. Buffered batches are flushed + committed by the
+  /// teardown that follows, so a `true` return here means "active processing is done, safe to tear
+  /// down."
   ///
   /// @param timeout maximum time to wait
-  /// @return `true` if the drain completed within `timeout`, `false` on timeout or interruption
+  /// @return `true` if active processing drained in time, else `false`
   public boolean waitForInFlightDrain(final Duration timeout) {
-    if (totalInFlight() == 0) return true;
+    if (dispatcher.pendingCount() == 0) return true;
     final var deadline = System.nanoTime() + timeout.toNanos();
     final var pollNanos = Math.min(timeout.toNanos() / 10, Duration.ofMillis(500).toNanos());
     final var pollMs = Math.max(1, pollNanos / 1_000_000);
     try {
       while (System.nanoTime() < deadline) {
-        if (totalInFlight() == 0) return true;
+        if (dispatcher.pendingCount() == 0) return true;
         Thread.sleep(pollMs);
       }
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       return false;
     }
-    return totalInFlight() == 0;
+    return dispatcher.pendingCount() == 0;
+  }
+
+  /// Runs on the consumer thread, at the top of its `finally`, before any teardown. The poll
+  /// loop exits the moment `state` becomes CLOSING, so without this the finally would tear the
+  /// dispatcher + offset manager down while in-flight workers are still finishing — abandoning
+  /// their offsets. Here we keep pumping the command queue (so finishing workers'
+  /// MarkOffsetProcessed / CommitOffsets commands are applied to the still-open offset manager
+  /// and Kafka consumer) and wait for the dispatcher's pending work to settle, bounded by
+  /// `waitForMessagesTimeout`. A final `processCommands()` flushes anything the last workers
+  /// enqueued. Only the consumer thread may touch the Kafka consumer, so this must run here,
+  /// not on the close() thread.
+  ///
+  /// We wait on `dispatcher.pendingCount()`, NOT `totalInFlight()`: the latter also counts
+  /// buffered batch records, which don't enqueue commands and won't flush on their own (size-only
+  /// / long-maxAge policies). They're flushed by each `BatchPipelineWrapper.close()` in
+  /// `releaseConstructedResources()` right after this returns — so waiting on them here would just
+  /// burn the whole timeout while the dispatcher is already idle.
+  private void drainInFlightBeforeTeardown() {
+    if (waitForMessagesTimeout.toMillis() > 0) {
+      final var deadline = System.nanoTime() + waitForMessagesTimeout.toNanos();
+      while (dispatcher.pendingCount() > 0 && System.nanoTime() < deadline) {
+        processCommands();
+        LockSupport.parkNanos(Duration.ofMillis(5).toNanos());
+      }
+    }
+    processCommands();
   }
 
   /// Blocks indefinitely until [#close()] returns. Use [#awaitShutdown(Duration)] for a bounded
@@ -1047,19 +1132,21 @@ public class KPipeConsumer<K> implements AutoCloseable {
         } catch (final Exception e) {
           if (isRunning()) LOGGER.log(Level.WARNING, "Error in consumer thread", e);
         } finally {
+          // Drain in-flight work + commands before teardown (see method docs).
+          drainInFlightBeforeTeardown();
           try {
-            kafkaConsumer.close();
-            LOGGER.log(Level.INFO, "Consumer closed for topics {0}", topics);
-          } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
+            // Release ctor resources before closing the consumer (see method docs).
+            releaseConstructedResources();
           } finally {
-            // CLOSED is also set at the tail of close(); both paths are idempotent and
-            // CountDownLatch.countDown() past zero is a no-op. This path catches the case where
-            // the consumer thread terminates via an uncaught exception path (transitionToClosing
-            // → outer finally) — close() may not have been called externally, but awaitShutdown
-            // callers must still unblock.
-            state.set(ConsumerState.CLOSED);
-            shutdownLatch.countDown();
+            try {
+              kafkaConsumer.close();
+              LOGGER.log(Level.INFO, "Consumer closed for topics {0}", topics);
+            } catch (final Exception e) {
+              LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
+            } finally {
+              state.set(ConsumerState.CLOSED);
+              shutdownLatch.countDown();
+            }
           }
         }
       });
@@ -1184,7 +1271,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// * `backpressurePauseCount` / `backpressureTimeMs` — backpressure pause count and total ms held
   /// * `circuitBreakerTrips` / `circuitBreakerTimeOpenMs` — CB trip count and total ms in OPEN
   /// * `dlqSent` — records sent to the configured DLQ topic
-  /// * `inFlight` — current number of messages being processed (live counter, not a counter delta)
+  /// * `inFlight` — current number of messages held by the consumer (live counter, not a counter
+  /// delta).
+  ///   Sums the dispatcher's pending count (records currently being processed or queued per-key)
+  ///   AND any records buffered inside batch-sink wrappers awaiting size/age flush.
   ///
   /// @return an unmodifiable map of metric names to their current values
   public Map<String, Long> getMetrics() {
@@ -1192,8 +1282,20 @@ public class KPipeConsumer<K> implements AutoCloseable {
       .entrySet()
       .stream()
       .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(), (a, _) -> a, HashMap::new));
-    snapshot.put("inFlight", inFlightCount.get());
+    snapshot.put("inFlight", totalInFlight());
     return Collections.unmodifiableMap(snapshot);
+  }
+
+  /// Snapshot of the top `n` keys by current queue depth in the underlying dispatcher,
+  /// ordered deepest-first. Returns an empty list for SEQUENTIAL and PARALLEL modes (no
+  /// per-key structure); only [ProcessingMode#KEY_ORDERED] populates this. Intended for
+  /// ad-hoc diagnostics — heap-dump replacement, REPL inspection, JMX panels — not for
+  /// continuous metric emission, since per-key cardinality is unbounded.
+  ///
+  /// @param n maximum number of entries to return (must be positive)
+  /// @return ordered list of `(key, queueDepth)` entries; never null, may be empty
+  public List<Map.Entry<Object, Integer>> topKeyQueueDepths(final int n) {
+    return dispatcher.topKeyQueueDepths(n);
   }
 
   /// Returns the rebalance listener for this consumer.
@@ -1224,39 +1326,56 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Closes this consumer, stopping message consumption and processing.
   ///
-  /// Graceful shutdown order:
+  /// Graceful shutdown:
   ///
-  /// 1. Unstarted (CREATED) → CLOSED fast path: release the shutdown latch and return.
-  /// 2. Transition to CLOSING (rejects concurrent close() calls).
+  /// 1. Unstarted (CREATED) → CLOSED fast path: release every constructor-created resource via
+  ///    [#releaseConstructedResources], close the Kafka consumer directly (no consumer thread
+  ///    ran), release the shutdown latch, remove the JVM hook, return.
+  /// 2. Otherwise transition to CLOSING (rejects concurrent / repeat close() calls).
   /// 3. Stop the periodic metrics-reporter thread (if any).
-  /// 4. Pause the consumer and submit a `Close` command.
-  /// 5. Wait up to `waitForMessagesTimeout` for in-flight records to drain.
-  /// 6. Wake up the consumer thread (`wakeup` + `unpark`) and join it.
-  /// 7. Shut down the virtual-thread executor (force-cancel after `executorTerminationTimeout`).
-  /// 8. Drain any batch-pipeline buffers while the offset manager is still alive.
-  /// 9. Shut down the health controller (cancels any pending CB probe timer).
-  /// 10. Close the scheduler, offset manager, and DLQ producer.
-  /// 11. Set state to CLOSED, release the shutdown latch, remove the JVM shutdown hook.
+  /// 4. Submit a `Close` command (the CLOSING transition already halts the poll loop).
+  /// 5. Signal the dispatcher to abandon any in-flight stall (e.g. the KEY_ORDERED saturation
+  ///    hold) so the consumer thread can drop its pending count promptly.
+  /// 6. Wait up to `waitForMessagesTimeout` for in-flight records to drain.
+  /// 7. Wake the consumer thread (`wakeup` + `unpark`) and join it. The consumer thread's own
+  ///    finally closes the Kafka consumer and runs step 8.
+  /// 8. [#releaseConstructedResources]: close the dispatcher, drain batch-pipeline buffers
+  ///    (while the offset manager is still alive), shut down the health controller + scheduler,
+  ///    close the offset manager and DLQ producer, and remove the JVM shutdown hook. CAS-guarded
+  ///    so it runs exactly once whether triggered here or by the consumer thread's finally (or
+  ///    by a self-terminating consumer thread that never saw an external close()).
+  /// 9. Set state to CLOSED and release the shutdown latch.
   ///
   /// Idempotent — calling it multiple times has no additional effect.
   @Override
   public void close() {
-    // CREATED → CLOSED: the consumer was built but never started. Skip the drain dance, but still
-    // release the shutdown latch so any caller blocked in awaitShutdown() unblocks, and remove
-    // the JVM shutdown hook if one was registered.
+    // CREATED → CLOSED: the consumer was built but never started. Skip the drain dance, but
+    // still release every resource the constructor created — the dispatcher (executor/worker
+    // pool), batch wrappers, scheduler, offset manager, DLQ producer, AND the Kafka consumer
+    // itself. releaseConstructedResources() also removes the JVM shutdown hook. The consumer
+    // thread that normally closes kafkaConsumer in its finally never ran, so we close it here
+    // directly. Then unblock awaitShutdown() callers.
     if (state.compareAndSet(ConsumerState.CREATED, ConsumerState.CLOSED)) {
+      releaseConstructedResources();
+      closeKafkaConsumerQuietly();
       shutdownLatch.countDown();
-      tryRemoveShutdownHook();
       return;
     }
     if (!transitionToClosing()) return;
     stopMetricsReporterThread();
 
-    pause();
+    // No pause command needed: CLOSING already halts the poll loop (isRunning() is false), and
+    // wakeup()/unpark() below break any in-progress poll. internalPause() no-ops at CLOSING.
     commandQueue.offer(new ConsumerCommand.Close());
 
-    if (waitForMessagesTimeout.toMillis() > 0 && totalInFlight() > 0) {
-      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", totalInFlight());
+    // Signal the dispatcher to abandon any in-flight stall BEFORE we wait on drain + join.
+    // No-op for SEQUENTIAL/PARALLEL; KEY_ORDERED uses this to break out of its saturation
+    // yield-loop so the consumer thread can drop its pending count and let close() proceed
+    // promptly instead of spinning past threadTerminationTimeout.
+    dispatcher.signalShutdown();
+
+    if (waitForMessagesTimeout.toMillis() > 0 && dispatcher.pendingCount() > 0) {
+      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", dispatcher.pendingCount());
       waitForInFlightDrain(waitForMessagesTimeout);
     }
 
@@ -1279,16 +1398,54 @@ public class KPipeConsumer<K> implements AutoCloseable {
       }
     }
 
-    try {
-      virtualThreadExecutor.shutdown();
-      if (
-        !virtualThreadExecutor.awaitTermination(executorTerminationTimeout.toMillis(), TimeUnit.MILLISECONDS)
-      ) LOGGER.log(Level.WARNING, "{0} tasks not processed", virtualThreadExecutor.shutdownNow().size());
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      virtualThreadExecutor.shutdownNow();
+    if (thread != null && thread.isAlive()) {
+      // Join timed out — the consumer thread is still running (e.g. SEQUENTIAL mode stuck inside
+      // a hung pipeline). Do NOT tear down resources from here: the thread may still be using the
+      // offset manager / producer, and closing them underneath it would risk use-after-close.
+      // We also must not set CLOSED or count the latch — that would make awaitShutdown() report a
+      // clean shutdown while the thread is alive. Interrupt to nudge it out of any blocking call;
+      // its own finally runs releaseConstructedResources() + state=CLOSED + countDown when it
+      // terminates, so awaitShutdown() stays blocked until the consumer is genuinely done.
+      LOGGER.log(
+        Level.WARNING,
+        "Consumer thread did not terminate within {0}ms; interrupting and leaving teardown to its finally block",
+        threadTerminationTimeout.toMillis()
+      );
+      thread.interrupt();
+      return;
     }
 
+    // Thread has terminated — its finally already ran releaseConstructedResources() (which also
+    // closed kafkaConsumer and removed the shutdown hook) + state=CLOSED + countDown. The calls
+    // below are an idempotent safety net for the rare path where there is no consumer thread.
+    releaseConstructedResources();
+    state.set(ConsumerState.CLOSED);
+    shutdownLatch.countDown();
+  }
+
+  /// Closes every resource the constructor created EXCEPT `kafkaConsumer`. Invoked from three
+  /// paths, CAS-guarded so it runs exactly once: (1) the normal `close()` path after the
+  /// consumer thread joins; (2) the never-started fast path; (3) the consumer thread's own
+  /// finally when it self-terminates (uncaught throwable / interruption) without an external
+  /// `close()` — in that case it sets state=CLOSED, which would make a later `close()` a no-op,
+  /// so this is the only chance to release these resources.
+  ///
+  /// `kafkaConsumer` is excluded: on paths (1) and (3) the consumer thread's finally closes it,
+  /// and on path (2) the fast path closes it via [#closeKafkaConsumerQuietly]. Closing a
+  /// KafkaConsumer from two threads would throw ConcurrentModificationException. Order matters —
+  /// dispatcher → batch wrappers → offset manager → producer — so batch buffers flush (marking
+  /// their offsets) while the offset manager is still alive. Critically, all three callers run
+  /// this BEFORE closing `kafkaConsumer`: `offsetManager.close()` does a final commitSync on the
+  /// consumer, which would throw (and silently drop the last offsets) on an already-closed one.
+  private void releaseConstructedResources() {
+    if (!resourcesReleased.compareAndSet(false, true)) return; // already released by another path
+    // Every step is best-effort: the CAS above already fired, so a throw here would leak the
+    // remaining resources (no path retries). Catch + log each so teardown always runs to the end.
+    try {
+      dispatcher.close();
+    } catch (final Exception e) {
+      LOGGER.log(Level.WARNING, "Error closing dispatcher during shutdown", e);
+    }
     for (final var wrapper : batchWrappers.values()) {
       try {
         wrapper.close();
@@ -1296,19 +1453,44 @@ public class KPipeConsumer<K> implements AutoCloseable {
         LOGGER.log(Level.WARNING, "Error draining batch buffer during shutdown", e);
       }
     }
-    health.shutdown();
+    try {
+      health.shutdown();
+    } catch (final Exception e) {
+      LOGGER.log(Level.WARNING, "Error shutting down health server during shutdown", e);
+    }
     if (scheduler != null) scheduler.shutdownNow();
     if (offsetManager != null) {
       try {
         offsetManager.close();
-      } catch (Exception e) {
+      } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Error closing offset manager", e);
       }
     }
-    if (kpipeProducer != null) kpipeProducer.close();
-    state.set(ConsumerState.CLOSED);
-    shutdownLatch.countDown();
+    if (kpipeProducer != null) {
+      try {
+        kpipeProducer.close();
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error closing producer during shutdown", e);
+      }
+    }
+    // Deregister the JVM shutdown hook last. It's registered in the ctor (when
+    // useShutdownHook=true), so it exists even for a never-started consumer and a
+    // self-terminating consumer thread. Doing it here — inside the CAS-guarded release — means
+    // every terminal path removes it; otherwise a self-terminated thread (which sets
+    // state=CLOSED, making a later close() a no-op at transitionToClosing) would leave the
+    // hook registered for the JVM's lifetime, pinning this consumer in memory.
     tryRemoveShutdownHook();
+  }
+
+  /// Closes `kafkaConsumer`, swallowing+logging any error. Used only on the never-started fast
+  /// path, where the consumer thread (the normal owner of this close) never ran.
+  private void closeKafkaConsumerQuietly() {
+    if (kafkaConsumer == null) return;
+    try {
+      kafkaConsumer.close();
+    } catch (final Exception e) {
+      LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
+    }
   }
 
   /// Removes the JVM shutdown hook installed in the constructor when `useShutdownHook=true`.
@@ -1328,39 +1510,51 @@ public class KPipeConsumer<K> implements AutoCloseable {
     }
   }
 
-  /// Processes multiple Kafka records by submitting each one to the virtual thread executor.
+  /// Processes a batch of Kafka records by dispatching each to the configured [Dispatcher].
+  /// The dispatcher chooses the per-record execution thread according to its [ProcessingMode]:
+  ///
+  /// - `SequentialDispatcher` runs each record inline on the consumer thread.
+  /// - `ParallelDispatcher` submits each record to its virtual-thread executor.
+  /// - `KeyOrderedDispatcher` enqueues records onto a per-key serial queue + virtual thread.
+  ///
+  /// The dispatcher also owns the in-flight counter (for non-sequential modes) and feeds
+  /// [#totalInFlight] via `dispatcher.pendingCount()`.
   ///
   /// @param records the batch of records to process
   protected void processRecords(final ConsumerRecords<K, byte[]> records) {
     for (final var record : records) {
       if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
-      inFlightCount.incrementAndGet();
+      dispatcher.dispatch(record, () -> processRecord(record), this::afterRecordComplete);
+    }
+  }
 
-      if (sequentialProcessing) {
-        processRecord(record);
-      } else {
-        try {
-          virtualThreadExecutor.submit(() -> processRecord(record));
-        } catch (final RejectedExecutionException e) {
-          inFlightCount.decrementAndGet();
-          if (isRunning()) {
-            LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
-            metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-            otelMetrics.recordProcessingError(record.topic());
-            try {
-              errorHandler.accept(new ProcessingError<>(record, e, 0));
-            } catch (final Exception ex) {
-              LOGGER.log(
-                Level.ERROR,
-                "Error handler threw while handling rejected task at offset {0}: {1}",
-                record.offset(),
-                ex.getMessage(),
-                ex
-              );
-            }
-          }
-        }
-      }
+  /// Surfaces a rejection from `ParallelDispatcher`'s executor (typically during shutdown)
+  /// back to the consumer's error path. Mirrors the prior inline behavior in `processRecords`.
+  private void handleParallelRejection(final ConsumerRecord<K, byte[]> record, final RejectedExecutionException e) {
+    if (!isRunning()) return;
+    LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
+    metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+    otelMetrics.recordProcessingError(record.topic());
+    try {
+      errorHandler.accept(new ProcessingError<>(record, e, 0));
+    } catch (final Exception ex) {
+      LOGGER.log(
+        Level.ERROR,
+        "Error handler threw while handling rejected task at offset %d: %s".formatted(record.offset(), ex.getMessage()),
+        ex
+      );
+    }
+  }
+
+  /// Runs after every record finishes (on whichever thread executed it). Unparks the consumer
+  /// thread when backpressure is currently holding it — a record completion may have dropped
+  /// the in-flight count below the low watermark, so the consumer thread needs to re-evaluate
+  /// on its next iteration. Previously inlined into `processRecord`'s finally block; moved
+  /// here so the dispatcher owns the post-record callback uniformly across modes.
+  private void afterRecordComplete() {
+    if (health.isHeldBy(ConsumerHealthController.Source.BACKPRESSURE)) {
+      final var thread = consumerThread.get();
+      if (thread != null) LockSupport.unpark(thread);
     }
   }
 
@@ -1406,13 +1600,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
       } catch (final Exception traceEx) {
         LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw: {0}", traceEx.getMessage());
       }
-      inFlightCount.decrementAndGet();
-      if (health.isHeldBy(ConsumerHealthController.Source.BACKPRESSURE)) {
-        // Backpressure is in-flight-count-driven; finishing a record could drop the count below
-        // the low watermark, so wake the consumer thread to re-evaluate on its next iteration.
-        final var thread = consumerThread.get();
-        if (thread != null) LockSupport.unpark(thread);
-      }
+      // In-flight count + backpressure-unpark handled by the dispatcher's `onComplete`
+      // callback (`afterRecordComplete`). See `processRecords`.
     }
   }
 
@@ -1467,14 +1656,14 @@ public class KPipeConsumer<K> implements AutoCloseable {
     return false;
   }
 
-  /// Returns the total number of records currently being tracked for backpressure: the dispatched
-  /// in-flight count plus the sum of records buffered across all configured batch wrappers.
-  /// Without the buffered piece, a slow batch sink under parallel mode would let the buffer grow
-  /// unbounded — the consumer thread decrements `inFlightCount` the moment a record finishes
-  /// `processRecord` (which for batch is "the record was buffered"), so the buffer would be
-  /// invisible to the watermark check.
+  /// Returns the total number of records currently being tracked for backpressure: whatever
+  /// the per-mode dispatcher reports as pending plus the sum of records buffered across all
+  /// configured batch wrappers. Without the buffered piece, a slow batch sink would let the
+  /// buffer grow unbounded — the dispatcher decrements its counter the moment a record
+  /// finishes `processRecord` (which for batch is "the record was buffered"), so the buffer
+  /// would otherwise be invisible to the watermark check.
   private long totalInFlight() {
-    var total = inFlightCount.get();
+    var total = dispatcher.pendingCount();
     for (final var wrapper : batchWrappers.values()) total += wrapper.bufferedCount();
     return total;
   }

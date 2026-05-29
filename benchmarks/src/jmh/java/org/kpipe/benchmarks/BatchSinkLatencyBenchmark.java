@@ -15,6 +15,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.format.json.JsonFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.sink.BatchPolicy;
@@ -150,7 +151,7 @@ public class BatchSinkLatencyBenchmark {
       final var builder = KPipeConsumer.<byte[]>builder()
         .withProperties(props)
         .withConsumer(() -> mockConsumer)
-        .withSequentialProcessing(true)
+        .withProcessingMode(ProcessingMode.SEQUENTIAL)
         .withPollTimeout(Duration.ofMillis(10));
 
       if (trial.batchSize == 1) {

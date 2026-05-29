@@ -1,6 +1,7 @@
 package org.kpipe;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 
 /// Runtime handle for a started KPipe pipeline. Wraps the underlying `KPipeConsumer` and exposes
@@ -38,6 +39,22 @@ public interface Handle extends AutoCloseable {
   /// @param timeout maximum wait for in-flight drain
   /// @return true if shutdown completed cleanly
   boolean shutdownGracefully(final Duration timeout);
+
+  /// Snapshot of the top `n` keys by current queue depth, deepest-first. Only meaningful for
+  /// `ProcessingMode.KEY_ORDERED` consumers — returns an empty list for SEQUENTIAL and
+  /// PARALLEL modes. Intended for ad-hoc diagnostics, not continuous metric emission. The
+  /// null-keyed queue (records with a `null` Kafka key) appears with a `null` entry key in
+  /// the result; `byte[]` keys are returned as a defensive copy.
+  ///
+  /// Default implementation returns an empty list so downstream `Handle` implementations
+  /// outside this repository don't break when this method is added.
+  ///
+  /// @param n maximum number of entries to return (must be positive)
+  /// @return ordered list of `(key, queueDepth)` entries; never null, may be empty
+  default List<Map.Entry<Object, Integer>> topKeyQueueDepths(final int n) {
+    if (n <= 0) throw new IllegalArgumentException("n must be positive, got " + n);
+    return List.of();
+  }
 
   /// Default close — graceful shutdown with a 5-second timeout.
   @Override

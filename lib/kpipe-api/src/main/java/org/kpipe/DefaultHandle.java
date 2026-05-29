@@ -1,6 +1,7 @@
 package org.kpipe;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.kpipe.consumer.KPipeConsumer;
@@ -38,6 +39,11 @@ record DefaultHandle(KPipeConsumer<byte[]> consumer) implements Handle {
   public boolean shutdownGracefully(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
     return consumer.shutdownGracefully(timeout);
+  }
+
+  @Override
+  public List<Map.Entry<Object, Integer>> topKeyQueueDepths(final int n) {
+    return consumer.topKeyQueueDepths(n);
   }
 
   /// Starts `consumer` and returns it wrapped in a `DefaultHandle`. If `start()` throws, closes

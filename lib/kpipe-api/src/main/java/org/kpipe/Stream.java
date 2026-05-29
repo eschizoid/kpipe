@@ -6,6 +6,7 @@ import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.tracing.Tracer;
 import org.kpipe.registry.Result;
@@ -110,13 +111,29 @@ public interface Stream<T> {
   /// @throws IllegalArgumentException if the watermarks are invalid
   Stream<T> withBackpressure(final long high, final long low);
 
-  /// Returns a new stream with the processing mode set. Sequential mode processes one message
-  /// per partition at a time and uses lag-based backpressure; parallel mode (the default) uses
-  /// virtual threads per record and in-flight backpressure.
+  /// Returns a new stream with the processing mode set. See [ProcessingMode] for semantics:
   ///
-  /// @param sequential true for sequential per-partition processing; false for parallel
+  /// - `SEQUENTIAL`: one message at a time per partition, in offset order. Lag-based
+  ///   backpressure.
+  /// - `PARALLEL` (default): virtual thread per record. No ordering guarantees. In-flight
+  ///   backpressure.
+  /// - `KEY_ORDERED`: per-key serial processing on a virtual thread per key, with an LRU cap
+  ///   (default 10,000 keys; override with [#withKeyOrderedMaxKeys]). Records with the same
+  ///   key process in order; different keys process in parallel. In-flight backpressure.
+  ///
+  /// @param mode the processing mode (must be non-null)
   /// @return a new stream with the processing mode configured
-  Stream<T> withSequentialProcessing(final boolean sequential);
+  /// @throws NullPointerException if `mode` is null
+  Stream<T> withProcessingMode(final ProcessingMode mode);
+
+  /// Sets the LRU cap on distinct keys held in-memory simultaneously when this stream uses
+  /// [ProcessingMode#KEY_ORDERED]. Default 10,000. Has no effect for `SEQUENTIAL` or
+  /// `PARALLEL` modes.
+  ///
+  /// @param maxKeys LRU cap (must be positive)
+  /// @return a new stream with the key cap configured
+  /// @throws IllegalArgumentException if `maxKeys` is non-positive
+  Stream<T> withKeyOrderedMaxKeys(final int maxKeys);
 
   /// Returns a new stream with an OpenTelemetry-backed (or any custom) [ConsumerMetrics]
   /// implementation attached. Use `new OtelConsumerMetrics(otel, "consumer-name")` from
@@ -305,11 +322,11 @@ public interface Stream<T> {
   /// sink itself throws, every record is sent to the DLQ with the thrown exception (whole-batch
   /// fallback).
   ///
-  /// **Both processing modes are supported.** Default is parallel; call
-  /// [#withSequentialProcessing] to switch to per-partition ordering. Under parallel mode,
-  /// buffered records participate in the in-flight backpressure metric so a slow sink cannot let
-  /// the buffer grow unbounded. Single-topic streams via [KPipe#json]/[KPipe#avro]/etc; for
-  /// multi-topic batch consumers use the [KPipe#multi] builder.
+  /// **All processing modes are supported.** Default is parallel; call [#withProcessingMode]
+  /// to switch to per-partition or per-key ordering. Under the in-flight-backpressure modes
+  /// (`PARALLEL` and `KEY_ORDERED`), buffered records count toward the in-flight metric so a
+  /// slow sink cannot let the buffer grow unbounded; `SEQUENTIAL` uses lag-based backpressure
+  /// instead. For multi-topic batch consumers, use the [KPipe#multi] builder.
   ///
   /// @param sink the batch sink invoked on each flush (must not be null)
   /// @param policy the size/age flush thresholds (must not be null)

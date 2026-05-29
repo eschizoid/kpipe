@@ -247,8 +247,9 @@ deliberately escape-hatch-only.
 | Pipeline outcome counters (OTel)               | `kpipe-metrics-otel`                                    | `Stream.peekResult(PipelineMetricsObserver)`                             | hand a `Consumer<Result<T>>` to `peekResult`                                                         | Emits `kpipe.pipeline.passed/filtered/failed` counters. Observer-only — doesn't suppress or reroute (see §11 observer-wrap layer).                                                    |
 | Retry policy                                   | `kpipe-consumer`                                        | `Stream.withRetry(int, Duration)`                                        | `Builder.withRetry(int, Duration)`                                                                   |                                                                                                                                                                                       |
 | Backpressure (default watermarks)              | `kpipe-consumer`                                        | `Stream.withBackpressure()`                                              | `Builder.withBackpressure(BackpressureController)`                                                   | Defaults: pause 10k, resume 7k.                                                                                                                                                       |
-| Backpressure (custom watermarks)               | `kpipe-consumer`                                        | `Stream.withBackpressure(high, low)`                                     | `Builder.withBackpressure(BackpressureController)`                                                   | High/low strategy auto-derived from `sequentialProcessing`.                                                                                                                           |
-| Sequential processing                          | `kpipe-consumer`                                        | `Stream.withSequentialProcessing(boolean)`                               | `Builder.withSequentialProcessing(boolean)`                                                          | Switches backpressure to lag-based (§5).                                                                                                                                              |
+| Backpressure (custom watermarks)               | `kpipe-consumer`                                        | `Stream.withBackpressure(high, low)`                                     | `Builder.withBackpressure(BackpressureController)`                                                   | High/low strategy auto-derived from `ProcessingMode`.                                                                                                                                 |
+| Processing mode                                | `kpipe-consumer`                                        | `Stream.withProcessingMode(ProcessingMode)`                              | `Builder.withProcessingMode(ProcessingMode)`                                                         | Three modes: `SEQUENTIAL` (lag-based BP §5), `PARALLEL` (default, in-flight BP), `KEY_ORDERED` (per-key serial via `KeyOrderedDispatcher`, in-flight BP). See §20.                    |
+| Key-ordered LRU cap                            | `kpipe-consumer`                                        | `Stream.withKeyOrderedMaxKeys(int)`                                      | `Builder.withKeyOrderedMaxKeys(int)`                                                                 | Default 10,000 distinct keys held in memory. Only meaningful for `KEY_ORDERED`. Null-keyed records share a single sentinel queue.                                                     |
 | OTel/custom metrics                            | `kpipe-metrics(-otel)`                                  | `Stream.withMetrics(ConsumerMetrics)` / `MultiBuilder.withMetrics(...)`  | `Builder.withMetrics(ConsumerMetrics)`                                                               | Single-format and multi-topic both supported.                                                                                                                                         |
 | Custom error handler                           | `kpipe-consumer`                                        | `Stream.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | `Builder.withErrorHandler(ErrorHandler<K>)`                                                          | Default logs at WARNING (§11).                                                                                                                                                        |
 | Dead-letter topic                              | `kpipe-consumer`                                        | `Stream.withDeadLetterTopic(String)`                                     | `Builder.withDeadLetterTopic(String)` / `withDeadLetterBundle(...)`                                  | Bundle form pairs DLQ + producer for advanced wiring.                                                                                                                                 |
@@ -262,7 +263,7 @@ deliberately escape-hatch-only.
 | **Thread/executor termination**                | `kpipe-consumer`                                        | —                                                                        | `Builder.withThreadTerminationTimeout / withExecutorTerminationTimeout / withWaitForMessagesTimeout` | Shutdown tuning.                                                                                                                                                                      |
 | **Periodic metrics reporting + shutdown hook** | `kpipe-consumer`                                        | —                                                                        | `Builder.withMetricsReporters(...) / withMetricsInterval(...) / withShutdownHook(true)`              | Folded into `KPipeConsumer.Builder` in 1.13. Reporter thread is daemon, doesn't keep the JVM up.                                                                                      |
 | **Health endpoint**                            | `kpipe-consumer`                                        | —                                                                        | `HttpHealthServer.fromEnv(...)`                                                                      | Run alongside `Handle` in the host process.                                                                                                                                           |
-| **In-flight drain**                            | `kpipe-consumer`                                        | `Handle.shutdownGracefully(Duration)`                                    | `KPipeConsumer.waitForInFlightDrain(Duration) / shutdownGracefully(Duration)`                        | Replaces the deleted `MessageTracker` class. Uses the live in-flight counter (includes buffered batch records), not metric-derived.                                                   |
+| **In-flight drain**                            | `kpipe-consumer`                                        | `Handle.shutdownGracefully(Duration)`                                    | `KPipeConsumer.waitForInFlightDrain(Duration) / shutdownGracefully(Duration)`                        | Replaces the deleted `MessageTracker` class. Waits on `dispatcher.pendingCount()` (records a worker is actively processing), NOT `totalInFlight()`. Buffered batch records are excluded — they never flush mid-drain, only on size/age trigger or `BatchPipelineWrapper.close()` at teardown, so waiting on them just burns the timeout; teardown flushes + commits them right after. Backpressure still uses `totalInFlight()` (buffered records count for memory pressure).                                                   |
 | **Custom `MessageProcessorRegistry`**          | `kpipe-core`                                            | —                                                                        | `new MessageProcessorRegistry(...)` + manual wiring                                                  | Pre-shared pipelines across consumers, multi-format orchestrators.                                                                                                                    |
 
 ## §18 Batch sink architecture (1.12.0)
@@ -325,3 +326,56 @@ auto-lookup needs `.proto` compilation — out of scope for 1.14. The static `ne
 
 **Generalizable rule:** when SR returns by-ID, cache forever in-process — the immutability of the key removes every
 cache-coherence concern that would otherwise need TTLs or invalidation protocols.
+
+## §20 Dispatcher abstraction (1.15.0)
+
+**Three-way dispatch.** `KPipeConsumer` no longer branches on a `sequentialProcessing` boolean. Instead, a sealed
+`Dispatcher<K>` interface has three implementations selected at construction time from a `ProcessingMode` enum:
+
+- `SequentialDispatcher` — runs each record inline on the consumer thread. `pendingCount()` returns 0 or 1 (incremented
+  around the inline `processTask.run()`) so `inFlight` metrics and `shutdownGracefully(timeout)` drain reporting stay
+  accurate. Lag-based backpressure doesn't consult the value.
+- `ParallelDispatcher` — owns the virtual-thread executor and an `AtomicLong` in-flight counter. Submits per-record.
+- `KeyOrderedDispatcher` — LRU map keyed by record key (null → single sentinel). Each key gets its own serial queue
+  drained by a virtual-thread worker. Workers exit when the queue empties; new records for the same key start a fresh
+  worker. Cap on distinct keys is configurable (`withKeyOrderedMaxKeys`, default 10,000); eviction walks LRU from
+  oldest, skipping non-empty queues. If all queues at cap are non-empty, dispatch holds (releases lock, yields, retries)
+  — implicit backpressure for the KEY_ORDERED path.
+
+**In-flight ownership.** Pre-1.15 `KPipeConsumer` held `AtomicLong inFlightCount` directly and called
+`incrementAndGet()` in `processRecords` and `decrementAndGet()` in `processRecord`'s finally. 1.15 moved that ownership
+into each dispatcher: all three now own their own `pendingCount()`. `SequentialDispatcher` tracks a 0/1 counter
+incremented around the inline `processTask.run()` — lag-based backpressure doesn't read it, but `inFlight` metrics and
+`shutdownGracefully(timeout)` drain reporting do, and a hardcoded 0 would lie to both. `ParallelDispatcher` and
+`KeyOrderedDispatcher` each own a real counter exposed via `pendingCount()`. `KPipeConsumer.totalInFlight()` is now
+`dispatcher.pendingCount() + Σ batchWrappers.bufferedCount()`.
+
+**Post-record callback.** `processRecord` used to unpark the consumer thread when backpressure was held. That logic
+moved to `KPipeConsumer.afterRecordComplete()`, which the dispatcher invokes via the `onComplete` argument to
+`dispatch()`. This makes the dispatcher mode-agnostic about the consumer's internal state while preserving the
+unpark-on-completion invariant.
+
+**Migration (§16 delete + migrate).** `withSequentialProcessing(boolean)` deleted from both `KPipeConsumer.Builder` and
+the fluent `Stream` facade. Callers migrate to `withProcessingMode(ProcessingMode.SEQUENTIAL)` /
+`withProcessingMode(ProcessingMode.PARALLEL)`. The 23 call sites (lib + tests + benchmarks + examples + docs) were
+updated in the same PR per the no-deprecation policy.
+
+**KEY_ORDERED operability bundle.** Three observability/diagnostic additions ship alongside the dispatcher:
+
+- **One-shot stall WARN.** `KeyOrderedDispatcher.allocateNewQueue` logs a WARNING the first time the LRU cap saturates
+  with every queue non-empty (guarded by `AtomicBoolean.compareAndSet`). Repeating per stall would flood logs under
+  sustained saturation; one signal is enough to tell an operator to raise `withKeyOrderedMaxKeys`.
+- **`topKeyQueueDepths(int n)`** on `Dispatcher` + `KPipeConsumer` + `Handle`. Snapshot of the deepest `n` per-key
+  queues for ad-hoc diagnostics (heap-dump replacement, JMX, REPL). Default returns empty list for SEQUENTIAL /
+  PARALLEL. Deliberately NOT wired to OTel — per-key cardinality is unbounded.
+- **Builder warn-log on silent-ignore.** `KPipeConsumer.Builder.build()` logs WARNING when `withKeyOrderedMaxKeys` was
+  set but mode != KEY_ORDERED. Java builders silent-ignore by convention; this surfaces the misconfig without breaking
+  chaining.
+
+**Lock contention baseline.** `benchmarks/KeyOrderedDispatchBenchmark` measures KEY_ORDERED vs PARALLEL throughput via
+MockConsumer (no Docker), parametrized over key cardinality. The KEY_ORDERED dispatcher uses a single `ReentrantLock`
+for all LRU + queue mutations; the bench shows the expected lock-attributable throughput gap. Future striped-locking or
+Caffeine work should re-run this bench and demonstrate a measurable win before landing.
+
+**Generalizable rule:** when adding a third mode to a binary switch, do the rename in the same PR. Trying to keep the
+old boolean alongside a new enum creates "which one wins?" footguns that always come back as bugs.

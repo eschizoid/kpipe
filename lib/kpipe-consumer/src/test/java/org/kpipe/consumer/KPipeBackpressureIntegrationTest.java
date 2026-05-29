@@ -329,7 +329,7 @@ class KPipeBackpressureIntegrationTest {
         )
         // Low watermark=2, High watermark=5
         .withBackpressure(5, 2)
-        .withSequentialProcessing(true)
+        .withProcessingMode(ProcessingMode.SEQUENTIAL)
         .withConsumer(() -> mockConsumer)
         .build();
 
@@ -352,7 +352,7 @@ class KPipeBackpressureIntegrationTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
-        .withSequentialProcessing(true)
+        .withProcessingMode(ProcessingMode.SEQUENTIAL)
         .withBackpressure(10_000, 7_000)
         .build();
 
@@ -374,7 +374,6 @@ class KPipeBackpressureIntegrationTest {
       assertEquals(10L, mc.endOffsets(List.of(PARTITION)).get(PARTITION));
     }
   }
-
 
   /// Builds a MockConsumer that is pre-assigned to the test partition. The subscribe()
   /// override is a no-op so that KPipeConsumer's start() doesn't conflict with the

@@ -19,6 +19,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 import org.testcontainers.junit.jupiter.Container;
@@ -36,8 +37,7 @@ class StreamBatchIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
-                   .asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   @Test
@@ -57,7 +57,7 @@ class StreamBatchIntegrationTest {
     final var policy = new BatchPolicy(10, Duration.ofSeconds(2));
 
     final var handle = KPipe.json(topic, consumerProps)
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .toBatch(batchSink, policy)
       .start();
 

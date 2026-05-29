@@ -23,6 +23,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.registry.MessageFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.openjdk.jmh.annotations.Level;
@@ -33,7 +34,6 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
-import reactor.core.publisher.Flux;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOptions;
 
@@ -211,7 +211,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
         .withProperties(props)
         .withTopic(TOPIC)
         .withPipeline(pipeline)
-        .withSequentialProcessing(false)
+        .withProcessingMode(ProcessingMode.PARALLEL)
         .build();
     }
 
@@ -287,9 +287,9 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       processedCount = new AtomicInteger(0);
       workMicros = params.workMicros;
       final var props = kafkaContext.consumerProps("reactor-group");
-      final var receiverOptions = ReceiverOptions
-        .<byte[], byte[]>create(props)
-        .subscription(Collections.singletonList(TOPIC));
+      final var receiverOptions = ReceiverOptions.<byte[], byte[]>create(props).subscription(
+        Collections.singletonList(TOPIC)
+      );
       subscription = null;
       this.receiver = KafkaReceiver.create(receiverOptions);
     }
@@ -346,17 +346,19 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
 
     void start() {
-      pollLoop = Thread.ofPlatform().daemon().start(() -> {
-        while (running.get()) {
-          final var records = kafkaConsumer.poll(Duration.ofMillis(100));
-          for (final var record : records) {
-            executor.submit(() -> {
-              simulateWork(workMicros);
-              processedCount.incrementAndGet();
-            });
+      pollLoop = Thread.ofPlatform()
+        .daemon()
+        .start(() -> {
+          while (running.get()) {
+            final var records = kafkaConsumer.poll(Duration.ofMillis(100));
+            for (final var record : records) {
+              executor.submit(() -> {
+                simulateWork(workMicros);
+                processedCount.incrementAndGet();
+              });
+            }
           }
-        }
-      });
+        });
     }
 
     @TearDown(Level.Invocation)

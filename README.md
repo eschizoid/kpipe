@@ -48,8 +48,8 @@ For the 5-line fluent path (recommended), pull `kpipe-api` plus the format modul
 
 ```kotlin
 // Gradle (Kotlin) — JSON via the fluent API
-implementation("io.github.eschizoid:kpipe-api:1.12.0")
-implementation("io.github.eschizoid:kpipe-format-json:1.12.0")
+implementation("io.github.eschizoid:kpipe-api:1.15.0")
+implementation("io.github.eschizoid:kpipe-format-json:1.15.0")
 ```
 
 ```xml
@@ -57,12 +57,12 @@ implementation("io.github.eschizoid:kpipe-format-json:1.12.0")
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-api</artifactId>
-  <version>1.12.0</version>
+  <version>1.15.0</version>
 </dependency>
 <dependency>
   <groupId>io.github.eschizoid</groupId>
   <artifactId>kpipe-format-json</artifactId>
-  <version>1.12.0</version>
+  <version>1.15.0</version>
 </dependency>
 ```
 
@@ -93,7 +93,7 @@ There's also a `kpipe-bom` so you only pin one version across modules — use it
 **Gradle (Kotlin) with BOM**
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.12.0"))
+implementation(platform("io.github.eschizoid:kpipe-bom:1.15.0"))
 implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")
 // add kpipe-metrics-otel only if you want OpenTelemetry-backed metrics
@@ -103,7 +103,7 @@ implementation("io.github.eschizoid:kpipe-metrics-otel")
 **Gradle (Groovy)**
 
 ```groovy
-implementation platform('io.github.eschizoid:kpipe-bom:1.12.0')
+implementation platform('io.github.eschizoid:kpipe-bom:1.15.0')
 implementation 'io.github.eschizoid:kpipe-api'
 implementation 'io.github.eschizoid:kpipe-format-json'
 ```
@@ -116,7 +116,7 @@ implementation 'io.github.eschizoid:kpipe-format-json'
     <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe-bom</artifactId>
-      <version>1.12.0</version>
+      <version>1.15.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -138,8 +138,8 @@ implementation 'io.github.eschizoid:kpipe-format-json'
 **SBT**
 
 ```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.12.0"
-libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.12.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.15.0"
+libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.15.0"
 ```
 
 </details>
@@ -189,29 +189,31 @@ configuration. See [`docs/escape-hatches.md`](docs/escape-hatches.md) for the fu
 The `Stream<T>` returned by `KPipe.json/avro/protobuf/bytes/custom(...)` is the API. Type a `.` after it and the IDE
 shows you everything that exists:
 
-| Method                                                             | What it does                                                            |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| `.pipe(UnaryOperator<T> op)`                                       | append an operator to the pipeline                                      |
-| `.filter(Predicate<T> keep)`                                       | drop messages where predicate returns false                             |
-| `.peek(Consumer<T> sideEffect)`                                    | observe without modifying (logging, metrics)                            |
-| `.when(Predicate, ifTrue, ifFalse)`                                | branch the pipeline conditionally                                       |
-| `.skipBytes(int n)`                                                | drop a leading wire-format prefix (Confluent: 5 for Avro, 6 for Proto)  |
-| `.withRetry(int max, Duration backoff)`                            | configure retry behavior                                                |
-| `.withBackpressure()` / `.withBackpressure(high, low)`             | enable backpressure with default or explicit watermarks                 |
-| `.withSequentialProcessing(boolean)`                               | force one-at-a-time per partition                                       |
-| `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate exceeds threshold (see below)   |
-| `.withTracer(Tracer t)`                                            | propagate W3C trace context through Kafka headers                       |
-| `.withDeadLetterTopic(String)`                                     | route failed records to a DLQ topic after retries are exhausted         |
-| `.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | custom failure handler (DB, alerting, anything not a Kafka topic)       |
-| `.withMetrics(ConsumerMetrics m)`                                  | wire OTel or custom metrics (default `ConsumerMetrics.noop()`)          |
-| `.withPollTimeout(Duration d)`                                     | override Kafka poll timeout (default 100ms)                             |
-| `.toConsole()`                                                     | terminate with the format-appropriate console sink                      |
-| `.toCustom(MessageSink<T> sink)`                                   | terminate with your own sink                                            |
-| `.toMulti(MessageSink<T>... sinks)`                                | fan-out to multiple sinks                                               |
-| `.toBatch(BatchSink<T> sink, BatchPolicy policy)`                  | terminate with a batch sink (size / age flush, optional per-record DLQ) |
+| Method                                                             | What it does                                                                                 |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `.pipe(UnaryOperator<T> op)`                                       | append an operator to the pipeline                                                           |
+| `.filter(Predicate<T> keep)`                                       | drop messages where predicate returns false                                                  |
+| `.peek(Consumer<T> sideEffect)`                                    | observe without modifying (logging, metrics)                                                 |
+| `.when(Predicate, ifTrue, ifFalse)`                                | branch the pipeline conditionally                                                            |
+| `.skipBytes(int n)`                                                | drop a leading wire-format prefix (Confluent: 5 for Avro, 6 for Proto)                       |
+| `.withRetry(int max, Duration backoff)`                            | configure retry behavior                                                                     |
+| `.withBackpressure()` / `.withBackpressure(high, low)`             | enable backpressure with default or explicit watermarks                                      |
+| `.withProcessingMode(ProcessingMode)`                              | `SEQUENTIAL` (per-partition serial), `PARALLEL` (default), or `KEY_ORDERED` (per-key serial) |
+| `.withKeyOrderedMaxKeys(int)`                                      | LRU cap on distinct keys in `KEY_ORDERED` (default 10,000)                                   |
+| `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate exceeds threshold (see below)                        |
+| `.withTracer(Tracer t)`                                            | propagate W3C trace context through Kafka headers                                            |
+| `.withDeadLetterTopic(String)`                                     | route failed records to a DLQ topic after retries are exhausted                              |
+| `.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | custom failure handler (DB, alerting, anything not a Kafka topic)                            |
+| `.withMetrics(ConsumerMetrics m)`                                  | wire OTel or custom metrics (default `ConsumerMetrics.noop()`)                               |
+| `.withPollTimeout(Duration d)`                                     | override Kafka poll timeout (default 100ms)                                                  |
+| `.toConsole()`                                                     | terminate with the format-appropriate console sink                                           |
+| `.toCustom(MessageSink<T> sink)`                                   | terminate with your own sink                                                                 |
+| `.toMulti(MessageSink<T>... sinks)`                                | fan-out to multiple sinks                                                                    |
+| `.toBatch(BatchSink<T> sink, BatchPolicy policy)`                  | terminate with a batch sink (size / age flush, optional per-record DLQ)                      |
 
 The terminal `Sink<T>.start()` returns a `Handle` exposing `isHealthy()`, `metrics()`, `awaitShutdown(Duration)`,
-`shutdownGracefully(Duration)`, and `close()`.
+`shutdownGracefully(Duration)`, `topKeyQueueDepths(int)` (for `KEY_ORDERED` diagnostics — empty list for other modes),
+and `close()`.
 
 ### 4. Consuming from multiple topics
 
@@ -429,13 +431,21 @@ KPipe never commits past an in-flight record. The implementation:
 
 ### 5. Parallel vs. sequential processing
 
-Two modes, picked based on whether per-partition order matters:
+Three modes via `.withProcessingMode(ProcessingMode)`:
 
-- Parallel (default). Stateless transformations like enrichment or masking. High throughput on virtual threads. Offsets
-  commit by lowest pending offset.
-- Sequential (`.withSequentialProcessing(true)`). Stateful transformations where per-partition order matters (balance
-  updates, sequence-dependent events). One message per partition at a time. Backpressure switches to monitoring consumer
-  lag — the gap between partition end-offset and consumer position — since in-flight count is always ≤ 1.
+- `PARALLEL` (default). Stateless transformations like enrichment or masking. Virtual thread per record, no ordering.
+  Offsets commit by lowest pending offset.
+- `SEQUENTIAL` (`.withProcessingMode(ProcessingMode.SEQUENTIAL)`). Stateful transformations where strict per-partition
+  order matters. One message per partition at a time. Backpressure switches to monitoring consumer lag — the gap between
+  partition end-offset and consumer position — since in-flight count is always ≤ 1.
+- `KEY_ORDERED` (`.withProcessingMode(ProcessingMode.KEY_ORDERED)`). Records sharing a key process serially on a per-key
+  virtual thread; different keys process in parallel. The production sweet spot for stateful workloads where order
+  matters per entity (per user, per order, per session) but entities are independent. LRU cap on active keys defaults to
+  10,000; override with `.withKeyOrderedMaxKeys(int)`. Records with `null` keys all serialize through a single sentinel
+  queue. When the cap saturates with every queue non-empty, dispatch stalls the consumer thread until a queue drains —
+  this acts as implicit backpressure, and a one-shot `WARNING` log fires the first time it happens to hint at raising
+  the cap. For diagnostics under high cardinality, `Handle.topKeyQueueDepths(int n)` returns a snapshot of the deepest
+  per-key queues.
 
 ### 6. External offset management
 
@@ -604,7 +614,7 @@ on produce and on DLQ writes. The implementation lives in the opt-in `kpipe-trac
 Add the dependency:
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe-tracing-otel:1.12.0")
+implementation("io.github.eschizoid:kpipe-tracing-otel:1.15.0")
 ```
 
 Wire it on the stream:
@@ -737,7 +747,7 @@ the way a static-fetch-at-startup pattern would.
 Add the dependency:
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe-schema-registry-confluent:1.12.0")
+implementation("io.github.eschizoid:kpipe-schema-registry-confluent:1.15.0")
 ```
 
 Wire the fluent facade with the SR-shorthand factory:
@@ -1315,7 +1325,11 @@ guarantees per-partition ordering. Use that:
   key to the same partition.
 - KPipe commits per-partition lowest-pending-offset, so as long as related events share a key, they land on one
   partition and KPipe processes them in order without skipping.
-- For strict per-partition serial processing (one record at a time), turn on `.withSequentialProcessing(true)`.
+- For strict per-partition serial processing (one record at a time), set
+  `.withProcessingMode(ProcessingMode.SEQUENTIAL)`.
+- For per-key serial processing where different keys run in parallel, set
+  `.withProcessingMode(ProcessingMode.KEY_ORDERED)`. This is the production sweet spot — entity-level ordering with
+  cross-entity parallelism.
 
 ---
 

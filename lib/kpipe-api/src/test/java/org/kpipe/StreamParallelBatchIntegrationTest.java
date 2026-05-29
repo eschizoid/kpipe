@@ -46,8 +46,7 @@ class StreamParallelBatchIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
-                   .asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   @Test
@@ -68,8 +67,8 @@ class StreamParallelBatchIntegrationTest {
     // tail.
     final var policy = new BatchPolicy(20, Duration.ofSeconds(2));
 
-    // No `.withSequentialProcessing(true)` — the stream runs in parallel by default. This is
-    // the configuration this test guards.
+    // No `.withProcessingMode(ProcessingMode.SEQUENTIAL)` — the stream runs in parallel by
+    // default. This is the configuration this test guards.
     final var handle = KPipe.json(topic, consumerProps).toBatch(batchSink, policy).start();
 
     try {
