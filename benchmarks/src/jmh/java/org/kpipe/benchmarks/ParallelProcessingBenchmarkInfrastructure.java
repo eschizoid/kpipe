@@ -5,8 +5,11 @@ import io.confluent.parallelconsumer.ParallelStreamProcessor;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -14,12 +17,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AlterConfigOp;
+import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.KafkaShareConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.kpipe.consumer.KPipeConsumer;
@@ -39,17 +46,19 @@ import reactor.kafka.receiver.ReceiverOptions;
 
 /// Shared infrastructure for the parallel-consumer competitive benchmarks.
 ///
-/// Hosts the embedded Kafka broker, topic seeding, and the four invocation-scoped runtimes the
+/// Hosts the embedded Kafka broker, topic seeding, and the invocation-scoped runtimes the
 /// benchmarks compare:
 ///
-///   * KPipe (`Stream<byte[]>` + virtual threads)
+///   * KPipe PARALLEL (virtual-thread-per-record) and KEY_ORDERED (per-key serial queues)
+///   * Kafka Share Consumer (KIP-932) — single consumer + virtual-thread fan-out
 ///   * Confluent Parallel Consumer (`ProcessingOrder.UNORDERED`, configurable max concurrency)
 ///   * Reactor Kafka (`Flux<ReceiverRecord>` on the Reactor `parallel` scheduler)
 ///   * Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor` (the hand-rolled baseline)
 ///
 /// Each runtime simulates a per-record workload of `workMicros` microseconds via
 /// `LockSupport.parkNanos`. Setting `workMicros=0` reduces the bench to a pure framework-overhead
-/// comparison; non-zero values expose how each runtime schedules blocking work.
+/// comparison; non-zero values expose how each runtime schedules blocking work. All arms except
+/// KEY_ORDERED are unordered — read KEY_ORDERED's gap as the cost of per-key ordering.
 public final class ParallelProcessingBenchmarkInfrastructure {
 
   static final String TOPIC = "benchmark-topic";
@@ -63,6 +72,13 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
   /// Topic partitions used to expose parallel scheduler behavior.
   static final int TOPIC_PARTITIONS = 8;
+
+  /// Distinct record keys seeded into the topic (`key = i % KEY_CARDINALITY`). Only the
+  /// KEY_ORDERED arm reads keys — the unordered arms (PARALLEL, Confluent, Reactor, raw, share)
+  /// ignore them, so the same seeded data drives every runtime. 1,000 keys over TARGET_MESSAGES
+  /// gives ~25 records/key: enough per-key queue depth for ordering to actually constrain
+  /// scheduling, while staying well under the dispatcher's 10,000-key LRU cap (no eviction).
+  static final int KEY_CARDINALITY = 1_000;
 
   /// Confluent Parallel Consumer max concurrency (number of worker threads it spins up).
   static final int CONFLUENT_MAX_CONCURRENCY = 100;
@@ -135,6 +151,28 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       return props;
     }
 
+    /// Admin client props (bootstrap only). Used by the share arm to set the share-group's
+    /// start-offset policy before it joins.
+    public Properties adminProps() {
+      final var props = new Properties();
+      props.putAll(clientProperties);
+      props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+      return props;
+    }
+
+    /// Minimal props for a [org.apache.kafka.clients.consumer.KafkaShareConsumer]. Deliberately
+    /// excludes `auto.offset.reset` / `enable.auto.commit` — those are plain-consumer configs
+    /// that don't apply to share groups (the group's start offset is a group config, see the
+    /// share context's Admin call).
+    public Properties shareConsumerProps(final String groupId) {
+      final var props = new Properties();
+      props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+      props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+      props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+      props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+      return props;
+    }
+
     private static void seedTopic(final Properties clientProperties) {
       createTopicIfMissing(clientProperties);
       final var producerProps = new Properties();
@@ -158,8 +196,11 @@ public final class ParallelProcessingBenchmarkInfrastructure {
             "message": "Benchmark message"
           }
           """.getBytes(StandardCharsets.UTF_8);
+        // Precompute the key set once; reuse the byte[] per record (keys are immutable here).
+        final var keys = new byte[KEY_CARDINALITY][];
+        for (int k = 0; k < KEY_CARDINALITY; k++) keys[k] = Integer.toString(k).getBytes(StandardCharsets.UTF_8);
         for (int i = 0; i < TARGET_MESSAGES; i++) {
-          producer.send(new ProducerRecord<>(TOPIC, value));
+          producer.send(new ProducerRecord<>(TOPIC, keys[i % KEY_CARDINALITY], value));
         }
         producer.flush();
       } catch (final Exception e) {
@@ -212,6 +253,54 @@ public final class ParallelProcessingBenchmarkInfrastructure {
         .withTopic(TOPIC)
         .withPipeline(pipeline)
         .withProcessingMode(ProcessingMode.PARALLEL)
+        .build();
+    }
+
+    void start() {
+      consumer.start();
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      if (consumer != null) consumer.close();
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
+  /// KPipe in KEY_ORDERED mode: same single consumer + virtual threads as the PARALLEL arm, but
+  /// records are dispatched to per-key serial queues so processing within a key is strictly
+  /// ordered. This is the ONLY arm in the suite that provides an ordering guarantee — it exists
+  /// to quantify the per-key ordering tax relative to the unordered runtimes (PARALLEL, share,
+  /// Confluent, Reactor, raw). It is NOT a like-for-like rival of the ShareConsumer arm, which
+  /// offers no ordering at all; read the gap as "cost of ordering," not "X beats Y".
+  @State(Scope.Thread)
+  public static class KpipeKeyOrderedInvocationContext {
+
+    private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
+
+    private AtomicInteger processedCount;
+    private KPipeConsumer<byte[]> consumer;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
+      processedCount = new AtomicInteger(0);
+      final var props = kafkaContext.consumerProps("kpipe-keyordered-group");
+      final var workMicros = params.workMicros;
+      final var pipeline = REGISTRY.pipeline(MessageFormat.bytes())
+        .add(b -> {
+          simulateWork(workMicros);
+          processedCount.incrementAndGet();
+          return b;
+        })
+        .build();
+      consumer = KPipeConsumer.<byte[]>builder()
+        .withProperties(props)
+        .withTopic(TOPIC)
+        .withPipeline(pipeline)
+        .withProcessingMode(ProcessingMode.KEY_ORDERED)
         .build();
     }
 
@@ -387,6 +476,128 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
   }
 
+  /// Kafka 4.x Share Consumer (KIP-932) runtime. A single `KafkaShareConsumer` polls the topic;
+  /// each polled batch is fanned out to virtual threads, then the loop waits for the whole batch
+  /// to finish before polling again. The next `poll()` implicitly acknowledges the prior batch as
+  /// ACCEPT, so the barrier is what keeps this at-least-once: a record is only acked after its
+  /// work completes.
+  ///
+  /// ### Apples-to-apples framing
+  ///
+  /// This is the controlled comparison against KPipe-PARALLEL: one consuming process, work fanned
+  /// to virtual threads, same broker / seed / workload / metric. The only thing that differs is
+  /// the fetch+durability protocol — share-acquire + per-record acknowledgement here, versus
+  /// fetch + lowest-pending offset commit in KPipe. Neither this arm nor PARALLEL provides
+  /// ordering. The batch barrier is the honest cost of safely processing a share batch
+  /// concurrently; it is not an artificial handicap.
+  ///
+  /// ### Share-group start offset (verify on first Docker run)
+  ///
+  /// A fresh share group's start offset is the GROUP config `share.auto.offset.reset` (broker
+  /// default `latest`), NOT the consumer's `auto.offset.reset`. Left at `latest`, the group would
+  /// skip every pre-seeded record and the bench would time out. We set it to `earliest` per group
+  /// via `incrementalAlterConfigs` before subscribing. If the broker rejects that key, the
+  /// fallback is a broker-level default for share groups — check the 4.2.0 docs for the exact
+  /// name.
+  @State(Scope.Thread)
+  public static class ShareConsumerInvocationContext {
+
+    private AtomicInteger processedCount;
+    private KafkaShareConsumer<byte[], byte[]> shareConsumer;
+    private ExecutorService executor;
+    private Thread pollLoop;
+    private final AtomicBoolean running = new AtomicBoolean(true);
+    private int workMicros;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
+      processedCount = new AtomicInteger(0);
+      workMicros = params.workMicros;
+      running.set(true);
+      final var groupId = "kpipe-share-group-%s".formatted(UUID.randomUUID());
+
+      // Make this fresh share group read the pre-seeded records (default is `latest` → skip all).
+      try (final var admin = Admin.create(kafkaContext.adminProps())) {
+        final var resource = new ConfigResource(ConfigResource.Type.GROUP, groupId);
+        admin
+          .incrementalAlterConfigs(
+            Map.of(
+              resource,
+              List.of(
+                new AlterConfigOp(new ConfigEntry("share.auto.offset.reset", "earliest"), AlterConfigOp.OpType.SET)
+              )
+            )
+          )
+          .all()
+          .get();
+      } catch (final Exception e) {
+        throw new IllegalStateException(
+          "Unable to set share.auto.offset.reset=earliest for group " + groupId + " (share-group support configured?)",
+          e
+        );
+      }
+
+      shareConsumer = new KafkaShareConsumer<>(kafkaContext.shareConsumerProps(groupId));
+      shareConsumer.subscribe(Collections.singletonList(TOPIC));
+      executor = Executors.newVirtualThreadPerTaskExecutor();
+    }
+
+    void start() {
+      pollLoop = Thread.ofPlatform()
+        .daemon()
+        .start(() -> {
+          while (running.get()) {
+            final var records = shareConsumer.poll(Duration.ofMillis(100));
+            if (records.isEmpty()) continue;
+            final var batch = new CountDownLatch(records.count());
+            for (final var record : records) {
+              executor.submit(() -> {
+                try {
+                  simulateWork(workMicros);
+                  processedCount.incrementAndGet();
+                } finally {
+                  batch.countDown();
+                }
+              });
+            }
+            // Barrier: finish the batch before the next poll() acks it.
+            try {
+              batch.await();
+            } catch (final InterruptedException e) {
+              Thread.currentThread().interrupt();
+              return;
+            }
+          }
+        });
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      running.set(false);
+      if (pollLoop != null) {
+        try {
+          pollLoop.join(Duration.ofSeconds(5).toMillis());
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+      if (executor != null) {
+        executor.shutdownNow();
+        try {
+          executor.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+      // Safe to close from this thread: the poll loop has joined, so nothing else touches it.
+      if (shareConsumer != null) shareConsumer.close();
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
   /// Testcontainers-backed Kafka broker. Replaces the prior in-process `KafkaClusterTestKit`
   /// because that harness collapsed under benchmark load on shared cores — the broker, the KRaft
   /// controller, the group coordinator, and the consumer under test all fought for the same
@@ -409,7 +620,14 @@ public final class ParallelProcessingBenchmarkInfrastructure {
         .withEnv("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1")
         .withEnv("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1")
-        .withEnv("KAFKA_MIN_INSYNC_REPLICAS", "1");
+        .withEnv("KAFKA_MIN_INSYNC_REPLICAS", "1")
+        // Share-group (KIP-932) support for the share arm. The group coordinator
+        // must offer the "share" rebalance protocol, and __share_group_state needs
+        // single-broker replication. VERIFY ON FIRST RUN: if a share group never
+        // forms, check these env names vs the 4.2.0 broker configs + broker log.
+        .withEnv("KAFKA_GROUP_COORDINATOR_REBALANCE_PROTOCOLS", "classic,consumer,share")
+        .withEnv("KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR", "1")
+        .withEnv("KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR", "1");
       container.start();
     }
 
