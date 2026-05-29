@@ -13,6 +13,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.jupiter.api.Test;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.producer.config.KafkaProducerConfig;
 import org.kpipe.sink.MessageSink;
 import org.testcontainers.junit.jupiter.Container;
@@ -27,8 +28,7 @@ class AppIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
-                   .asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   @Test
@@ -43,9 +43,8 @@ class AppIntegrationTest {
     };
 
     try (
-      final var handle = KPipe
-        .json(topic, consumerProps())
-        .withSequentialProcessing(true)
+      final var handle = KPipe.json(topic, consumerProps())
+        .withProcessingMode(ProcessingMode.SEQUENTIAL)
         .withCircuitBreaker(0.5, 5, Duration.ofMillis(300))
         .toCustom(flakySink)
         .start()
@@ -88,7 +87,8 @@ class AppIntegrationTest {
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       for (int i = 0; i < count; i++) {
         final var payload = """
-          {"id":%d,"event":"e%d"}""".formatted(i, i).getBytes(StandardCharsets.UTF_8);
+          {"id":%d,"event":"e%d"}""".formatted(i, i)
+          .getBytes(StandardCharsets.UTF_8);
         producer.send(new ProducerRecord<>(topic, payload)).get();
       }
     }

@@ -56,7 +56,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           throw new RuntimeException("simulated downstream failure");
@@ -89,7 +89,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           throw new RuntimeException("downstream down");
@@ -126,7 +126,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           final var seq = processed.incrementAndGet();
@@ -164,7 +164,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           final var seq = processed.incrementAndGet();
@@ -194,7 +194,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           throw new RuntimeException("every record fails");

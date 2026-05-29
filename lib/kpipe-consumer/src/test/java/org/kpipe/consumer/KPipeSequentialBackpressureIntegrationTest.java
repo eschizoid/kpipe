@@ -68,7 +68,7 @@ class KPipeSequentialBackpressureIntegrationTest {
       )
       // Low watermark=2, High watermark=5
       .withBackpressure(5, 2)
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withConsumer(() -> mockConsumer)
       .build();
 

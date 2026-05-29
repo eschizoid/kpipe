@@ -53,7 +53,8 @@ record DefaultBatchSink<T>(
   public Handle start() {
     final var consumerBuilder = KPipeConsumer.<byte[]>builder()
       .withProperties(stream.kafkaProps())
-      .withSequentialProcessing(stream.sequentialProcessing())
+      .withProcessingMode(stream.processingMode())
+      .withKeyOrderedMaxKeys(stream.keyOrderedMaxKeys())
       .withBatchPipeline(topic(), buildPipeline(), batchSink, batchPolicy);
 
     if (stream.maxRetries() > 0) consumerBuilder.withRetry(stream.maxRetries(), stream.retryBackoff());

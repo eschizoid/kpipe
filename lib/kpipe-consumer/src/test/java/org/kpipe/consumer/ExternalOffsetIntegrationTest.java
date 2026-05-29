@@ -223,7 +223,7 @@ class ExternalOffsetIntegrationTest {
           return val;
         })
       )
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .build();
 
     // 5. Start Consumer

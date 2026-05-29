@@ -5,6 +5,7 @@ import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.consumer.config.AppConfig;
 import org.kpipe.consumer.config.KafkaConsumerConfig;
 import org.kpipe.sink.MessageSink;
@@ -34,9 +35,8 @@ public final class App {
     };
 
     try (
-      final var handle = KPipe
-        .json(config.topic(), props)
-        .withSequentialProcessing(true)
+      final var handle = KPipe.json(config.topic(), props)
+        .withProcessingMode(ProcessingMode.SEQUENTIAL)
         .withCircuitBreaker(0.5, 5, Duration.ofMillis(500))
         .toCustom(flakySink)
         .start()

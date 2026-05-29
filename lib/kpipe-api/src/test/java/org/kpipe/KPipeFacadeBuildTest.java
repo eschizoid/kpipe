@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.format.json.JsonFormat;
 
 /// Verifies that each top-level [KPipe] factory returns a non-null [Stream] and that the chain
@@ -44,13 +45,13 @@ class KPipeFacadeBuildTest {
     final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
       .withRetry(5, java.time.Duration.ofMillis(100))
       .withBackpressure(2_000, 1_000)
-      .withSequentialProcessing(true);
+      .withProcessingMode(ProcessingMode.SEQUENTIAL);
 
     assertEquals(5, stream.maxRetries());
     assertEquals(java.time.Duration.ofMillis(100), stream.retryBackoff());
     assertEquals(2_000L, stream.backpressureHigh());
     assertEquals(1_000L, stream.backpressureLow());
-    assertTrue(stream.sequentialProcessing());
+    assertEquals(ProcessingMode.SEQUENTIAL, stream.processingMode());
   }
 
   @Test
@@ -104,8 +105,54 @@ class KPipeFacadeBuildTest {
         .filter(_ -> true)
         .withRetry(2, java.time.Duration.ofMillis(50))
         .withBackpressure()
-        .withSequentialProcessing(false)
+        .withProcessingMode(ProcessingMode.PARALLEL)
         .toCustom(_ -> {})
+    );
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteProcessingMode() {
+    // Processing mode is a consumer-wide setting. If a route configurator sets KEY_ORDERED or
+    // SEQUENTIAL, MultiBuilder.start() would silently drop it because only one mode wins on
+    // the underlying consumer. We detect and fail loud at start() time.
+    final var multi = KPipe.multi(props()).json("topic-a", s ->
+      s.withProcessingMode(ProcessingMode.KEY_ORDERED).toCustom(_ -> {})
+    );
+    final var ex = assertThrows(IllegalStateException.class, multi::start);
+    assertTrue(
+      ex.getMessage().contains("KEY_ORDERED"),
+      () -> "message should name the offending mode: " + ex.getMessage()
+    );
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withProcessingMode"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteKeyOrderedMaxKeys() {
+    // Same footgun as withProcessingMode — withKeyOrderedMaxKeys on a route would be silently
+    // dropped because the LRU cap is a consumer-wide setting. Fail loud at start().
+    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withKeyOrderedMaxKeys(50_000).toCustom(_ -> {}));
+    final var ex = assertThrows(IllegalStateException.class, multi::start);
+    assertTrue(ex.getMessage().contains("50000"), () -> "message should name the offending value: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withKeyOrderedMaxKeys"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
+  }
+
+  @Test
+  void multiBuilderAcceptsConsumerWideProcessingMode() {
+    // The legitimate path: set processing mode on the MultiBuilder itself, leave routes default.
+    // We're not calling .start() here because that would try to open a real Kafka connection;
+    // chaining-without-start is sufficient to prove the API surface compiles and configures.
+    assertDoesNotThrow(() ->
+      KPipe.multi(props())
+        .withProcessingMode(ProcessingMode.KEY_ORDERED)
+        .withKeyOrderedMaxKeys(5_000)
+        .json("topic-a", s -> s.toCustom(_ -> {}))
+        .json("topic-b", s -> s.toCustom(_ -> {}))
     );
   }
 }

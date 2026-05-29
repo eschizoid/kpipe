@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import org.kpipe.consumer.CircuitBreakerController;
 import org.kpipe.consumer.KPipeConsumer;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.metrics.ConsumerMetrics;
 import org.kpipe.producer.tracing.Tracer;
@@ -46,7 +47,8 @@ record DefaultStream<T>(
   Duration retryBackoff,
   Long backpressureHigh,
   Long backpressureLow,
-  boolean sequentialProcessing,
+  ProcessingMode processingMode,
+  int keyOrderedMaxKeys,
   int skipBytes,
   ConsumerMetrics consumerMetrics,
   Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler,
@@ -88,7 +90,8 @@ record DefaultStream<T>(
       Duration.ofMillis(500),
       null,
       null,
-      false,
+      ProcessingMode.PARALLEL,
+      ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS,
       0,
       null,
       null,
@@ -163,8 +166,15 @@ record DefaultStream<T>(
   }
 
   @Override
-  public Stream<T> withSequentialProcessing(final boolean sequential) {
-    return mutate(m -> m.sequentialProcessing = sequential);
+  public Stream<T> withProcessingMode(final ProcessingMode mode) {
+    Objects.requireNonNull(mode, "mode cannot be null");
+    return mutate(m -> m.processingMode = mode);
+  }
+
+  @Override
+  public Stream<T> withKeyOrderedMaxKeys(final int maxKeys) {
+    if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
+    return mutate(m -> m.keyOrderedMaxKeys = maxKeys);
   }
 
   @Override
@@ -313,7 +323,8 @@ record DefaultStream<T>(
     Duration retryBackoff;
     Long backpressureHigh;
     Long backpressureLow;
-    boolean sequentialProcessing;
+    ProcessingMode processingMode;
+    int keyOrderedMaxKeys;
     int skipBytes;
     ConsumerMetrics consumerMetrics;
     Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler;
@@ -336,7 +347,8 @@ record DefaultStream<T>(
       m.retryBackoff = s.retryBackoff;
       m.backpressureHigh = s.backpressureHigh;
       m.backpressureLow = s.backpressureLow;
-      m.sequentialProcessing = s.sequentialProcessing;
+      m.processingMode = s.processingMode;
+      m.keyOrderedMaxKeys = s.keyOrderedMaxKeys;
       m.skipBytes = s.skipBytes;
       m.consumerMetrics = s.consumerMetrics;
       m.errorHandler = s.errorHandler;
@@ -361,7 +373,8 @@ record DefaultStream<T>(
         retryBackoff,
         backpressureHigh,
         backpressureLow,
-        sequentialProcessing,
+        processingMode,
+        keyOrderedMaxKeys,
         skipBytes,
         consumerMetrics,
         errorHandler,

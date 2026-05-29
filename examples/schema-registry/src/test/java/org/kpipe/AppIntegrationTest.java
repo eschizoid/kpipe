@@ -27,6 +27,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
+import org.kpipe.consumer.ProcessingMode;
 import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 import org.kpipe.sink.MessageSink;
@@ -94,7 +95,7 @@ class AppIntegrationTest {
 
     try (
       final var handle = KPipe.avro(format, topic, consumerProps())
-        .withSequentialProcessing(true) // preserve send-order in captured list
+        .withProcessingMode(ProcessingMode.SEQUENTIAL) // preserve send-order in captured list
         .skipBytes(5)
         .toCustom(capturingSink)
         .start()

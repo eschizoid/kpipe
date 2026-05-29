@@ -5,19 +5,27 @@ import static org.mockito.Mockito.*;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kpipe.sink.BatchPolicy;
+import org.kpipe.sink.BatchSink;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -57,6 +65,355 @@ class KPipeConsumerTest {
 
   private ConsumerRecord<String, byte[]> createRecord(final long offset, final String key, final String value) {
     return new ConsumerRecord<>(TOPIC, 0, offset, key, value.getBytes());
+  }
+
+  /// Records whether close() was called — a probe for "did the consumer release its ctor
+  /// resources?". Everything else is a minimal no-op OffsetManager impl.
+  private static final class RecordingOffsetManager implements OffsetManager<String> {
+
+    final AtomicBoolean closed = new AtomicBoolean(false);
+    final AtomicInteger marks = new AtomicInteger(0);
+    final AtomicBoolean markedAfterClose = new AtomicBoolean(false);
+    // Optional probe: the real KafkaOffsetManager.close() does a final commitSync on the Kafka
+    // consumer, so the consumer must still be open when the offset manager is closed. Set this to
+    // the MockConsumer to record whether it was still open at close() time.
+    volatile MockConsumer<String, byte[]> consumerProbe;
+    final AtomicBoolean consumerOpenWhenClosed = new AtomicBoolean(false);
+
+    @Override
+    public OffsetManager<String> start() {
+      return this;
+    }
+
+    @Override
+    public OffsetManager<String> stop() {
+      return this;
+    }
+
+    @Override
+    public void trackOffset(final ConsumerRecord<String, byte[]> record) {}
+
+    @Override
+    public void markOffsetProcessed(final ConsumerRecord<String, byte[]> record) {
+      if (closed.get()) markedAfterClose.set(true);
+      marks.incrementAndGet();
+    }
+
+    @Override
+    public void notifyCommitComplete(final String commitId, final boolean success) {}
+
+    @Override
+    public OffsetState getState() {
+      return OffsetState.CREATED;
+    }
+
+    @Override
+    public boolean isRunning() {
+      return true;
+    }
+
+    @Override
+    public Map<String, Object> getStatistics() {
+      return Map.of();
+    }
+
+    @Override
+    public void close() {
+      if (consumerProbe != null) consumerOpenWhenClosed.set(!consumerProbe.closed());
+      closed.set(true);
+    }
+  }
+
+  @Test
+  void consumerThreadSelfTerminationReleasesConstructorResources() throws InterruptedException {
+    // If the consumer thread dies on its own (uncaught Throwable / interruption) without
+    // close() being called, its finally sets state=CLOSED — which makes any later close() a
+    // no-op. So the finally must itself release the ctor-created resources (dispatcher,
+    // scheduler, offset manager, DLQ producer, batch wrappers) or they leak for the JVM's
+    // lifetime. Probe via a RecordingOffsetManager: poll() throws an Error (escapes the loop's
+    // catch(Exception), so the finally still runs), then assert the manager was closed.
+    final var manager = new RecordingOffsetManager();
+    final var mock = new MockConsumer<String, byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+
+      @Override
+      public synchronized ConsumerRecords<String, byte[]> poll(final Duration timeout) {
+        throw new Error("simulated unexpected consumer-thread failure");
+      }
+    };
+    final var consumer = KPipeConsumer.<String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withOffsetManager(manager)
+      // Registers a real JVM shutdown hook in the ctor so the hook-removal path inside
+      // releaseConstructedResources() is exercised on self-termination. (The JVM hook
+      // registry
+      // isn't introspectable without fragile JDK-internal reflection, so we can't assert the
+      // hook is gone directly — but the manager.closed assertion below proves
+      // releaseConstructedResources() ran to completion, and hook removal is its last step.)
+      .withShutdownHook(true)
+      .build();
+
+    consumer.start();
+
+    final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+    while (!manager.closed.get() && System.nanoTime() < deadline) Thread.sleep(10);
+    assertTrue(
+      manager.closed.get(),
+      "a self-terminating consumer thread must release ctor resources (here: the offset manager)"
+    );
+  }
+
+  @Test
+  void closeDoesNotTearDownResourcesWhileConsumerThreadIsStuck() throws InterruptedException {
+    // If thread.join times out because the consumer thread is stuck (here: SEQUENTIAL mode
+    // blocked inside the pipeline), close() must NOT tear down resources the live thread may
+    // still use, and must not set CLOSED / count the latch (which would falsely report a clean
+    // shutdown). It interrupts the thread and leaves teardown to the thread's own finally.
+    // Probe with a RecordingOffsetManager: it must NOT be closed by close() on the timeout
+    // path — only once the thread is unblocked and its finally runs.
+    final var manager = new RecordingOffsetManager();
+    final var entered = new CountDownLatch(1);
+    final var gate = new CountDownLatch(1);
+
+    final var mock = new MockConsumer<String, byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    final var tp = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(tp));
+    mock.updateBeginningOffsets(Map.of(tp, 0L));
+    mock.addRecord(createRecord(0, "k", "v"));
+
+    final var consumer = KPipeConsumer.<String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .withPipeline(
+        TestPipelines.sideEffect(v -> {
+          entered.countDown();
+          // Block until the gate opens, swallowing interrupts so close()'s interrupt
+          // can't
+          // free the thread — it must stay alive (and stuck) while we assert close's
+          // behavior.
+          while (true) {
+            try {
+              gate.await();
+              break;
+            } catch (final InterruptedException e) {
+              // swallow; keep blocking
+            }
+          }
+          return v;
+        })
+      )
+      .withConsumer(() -> mock)
+      .withOffsetManager(manager)
+      .withWaitForMessagesTimeout(Duration.ofMillis(200))
+      .withThreadTerminationTimeout(Duration.ofMillis(200))
+      .build();
+
+    consumer.start();
+    assertTrue(entered.await(2, TimeUnit.SECONDS), "consumer thread must enter the pipeline and block");
+
+    consumer.close(); // join times out (thread stuck) → interrupts + returns WITHOUT teardown
+
+    assertFalse(manager.closed.get(), "close() must not tear down resources while the consumer thread is still alive");
+
+    // Unblock the thread → its finally runs releaseConstructedResources → manager closed.
+    gate.countDown();
+    final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+    while (!manager.closed.get() && System.nanoTime() < deadline) Thread.sleep(10);
+    assertTrue(manager.closed.get(), "once the thread unblocks and exits, its finally must release resources");
+  }
+
+  @Test
+  void closeDrainsInFlightOffsetMarksBeforeTearingDownResources() throws InterruptedException {
+    // On a normal close(), the consumer loop exits the instant state becomes CLOSING. A record
+    // still in flight (PARALLEL mode, slow pipeline) finishes after that and enqueues its
+    // MarkOffsetProcessed command. The consumer thread's finally must drain that command — while
+    // the offset manager is still open — before releaseConstructedResources() closes it.
+    // Otherwise the offset is silently abandoned (at-least-once breaks: the record reprocesses
+    // on restart). Probe: the offset must be marked, and marked BEFORE the manager is closed.
+    final var manager = new RecordingOffsetManager();
+    final var entered = new CountDownLatch(1);
+
+    final var mock = new MockConsumer<String, byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    final var tp = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(tp));
+    mock.updateBeginningOffsets(Map.of(tp, 0L));
+    mock.addRecord(createRecord(0, "k", "v"));
+
+    final var consumer = KPipeConsumer.<String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessingMode(ProcessingMode.PARALLEL)
+      .withPipeline(
+        TestPipelines.sideEffect(v -> {
+          entered.countDown();
+          // Still in flight when close() fires, so the drain has to wait for us.
+          try {
+            Thread.sleep(150);
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+          return v;
+        })
+      )
+      .withConsumer(() -> mock)
+      .withOffsetManager(manager)
+      .withWaitForMessagesTimeout(Duration.ofSeconds(2))
+      .withThreadTerminationTimeout(Duration.ofSeconds(2))
+      .build();
+
+    consumer.start();
+    assertTrue(entered.await(2, TimeUnit.SECONDS), "the record must reach the pipeline before we close");
+
+    consumer.close();
+
+    assertTrue(manager.marks.get() >= 1, "the in-flight record's offset must be marked during close, not abandoned");
+    assertFalse(
+      manager.markedAfterClose.get(),
+      "the offset must be marked BEFORE the offset manager is closed by releaseConstructedResources()"
+    );
+  }
+
+  @Test
+  void closeClosesOffsetManagerWhileKafkaConsumerStillOpen() throws InterruptedException {
+    // KafkaOffsetManager.close() runs a final commitSync on the Kafka consumer to flush the last
+    // safe offsets. So on shutdown the offset manager must be closed while the consumer is still
+    // open — closing the consumer first makes that commit throw (swallowed), losing offsets. The
+    // consumer thread's finally must release ctor resources (which closes the offset manager)
+    // before it closes the Kafka consumer. Probe: record whether the consumer was still open when
+    // the manager's close() ran.
+    final var manager = new RecordingOffsetManager();
+    final var mock = new MockConsumer<String, byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    manager.consumerProbe = mock;
+    final var tp = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(tp));
+    mock.updateBeginningOffsets(Map.of(tp, 0L));
+
+    final var consumer = KPipeConsumer.<String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withOffsetManager(manager)
+      .build();
+
+    consumer.start();
+    consumer.close();
+
+    // The thread's finally runs releaseConstructedResources (→ manager.close) before
+    // kafkaConsumer.close(); wait for it to land.
+    final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+    while (!manager.closed.get() && System.nanoTime() < deadline) Thread.sleep(10);
+    assertTrue(manager.closed.get(), "the offset manager must be closed during shutdown");
+    assertTrue(
+      manager.consumerOpenWhenClosed.get(),
+      "the offset manager must be closed (final commitSync) while the Kafka consumer is still open"
+    );
+  }
+
+  @Test
+  void closeDoesNotBurnTimeoutWaitingForBufferedBatchRecords() throws InterruptedException {
+    // A size-only batch policy (maxSize=100) means a single buffered record never auto-flushes —
+    // it's flushed by BatchPipelineWrapper.close() at teardown. So the in-flight drain must wait
+    // only on the dispatcher's active work (pendingCount), not totalInFlight (which counts the
+    // buffered record); otherwise close() burns the whole waitForMessagesTimeout while the
+    // dispatcher is already idle. Probe: close() returns well under the timeout AND the buffered
+    // record is still flushed + its offset marked at teardown.
+    final var manager = new RecordingOffsetManager();
+    final var flushedCount = new AtomicInteger(0);
+    final var processed = new CountDownLatch(1);
+
+    final var mock = new MockConsumer<String, byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    final var tp = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(tp));
+    mock.updateBeginningOffsets(Map.of(tp, 0L));
+    mock.addRecord(createRecord(0, "k", "v"));
+
+    final var waitTimeout = Duration.ofSeconds(3);
+    final var consumer = KPipeConsumer.<String>builder()
+      .withProperties(properties)
+      .withConsumer(() -> mock)
+      .withOffsetManager(manager)
+      .withBatchPipeline(
+        TOPIC,
+        TestPipelines.sideEffect(v -> {
+          processed.countDown();
+          return v;
+        }),
+        BatchSink.ofVoid(batch -> flushedCount.addAndGet(batch.size())),
+        BatchPolicy.ofSize(100)
+      )
+      .withPollTimeout(Duration.ofMillis(10))
+      .withWaitForMessagesTimeout(waitTimeout)
+      .withThreadTerminationTimeout(Duration.ofSeconds(3))
+      .build();
+
+    consumer.start();
+    assertTrue(processed.await(2, TimeUnit.SECONDS), "the record must be processed and buffered");
+    // Confirm the record is buffered (in-flight gauge counts it) and the dispatcher is idle.
+    final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+    while (consumer.getMetrics().getOrDefault("inFlight", 0L) < 1 && System.nanoTime() < deadline) Thread.sleep(5);
+    assertEquals(1L, consumer.getMetrics().get("inFlight"), "the record should be buffered, not yet flushed");
+
+    final var startNs = System.nanoTime();
+    consumer.close();
+    final var elapsed = Duration.ofNanos(System.nanoTime() - startNs);
+
+    assertTrue(
+      elapsed.compareTo(waitTimeout.dividedBy(2)) < 0,
+      () -> "close() must not burn the drain timeout on a buffered batch; took " + elapsed.toMillis() + "ms"
+    );
+    assertEquals(1, flushedCount.get(), "the buffered record must still be flushed at teardown");
+    assertTrue(manager.marks.get() >= 1, "the flushed record's offset must be marked at teardown");
+  }
+
+  @Test
+  void closeBeforeStartReleasesKafkaConsumer() {
+    // A consumer built but never started must still release every resource the constructor
+    // opened when closed — most importantly the Kafka consumer itself. The CREATED → CLOSED
+    // fast path used to return without closing it, leaking network connections + threads.
+    final var mock = new MockConsumer<String, byte[]>("earliest");
+    final var consumer = KPipeConsumer.<String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .build();
+
+    consumer.close(); // never started → takes the fast path
+
+    assertTrue(mock.closed(), "never-started close must close the underlying Kafka consumer");
   }
 
   @Test
@@ -280,8 +637,18 @@ class KPipeConsumerTest {
 
   @Test
   void closeShouldEnqueueCloseCommand() {
-    // Arrange
-    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    // close() signals shutdown by offering a Close command to the queue. We can't assert on
+    // residual queue contents: the consumer thread's finally drains the queue on the way out
+    // (so late MarkOffsetProcessed commands aren't abandoned), which legitimately consumes the
+    // Close command too. Record the offer instead, so the test survives that drain.
+    final var closeOffered = new AtomicBoolean(false);
+    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>() {
+      @Override
+      public boolean offer(final ConsumerCommand command) {
+        if (command instanceof ConsumerCommand.Close) closeOffered.set(true);
+        return super.offer(command);
+      }
+    };
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
@@ -295,7 +662,7 @@ class KPipeConsumerTest {
     consumer.close();
 
     // Assert
-    assertTrue(commandQueue.contains(new ConsumerCommand.Close()));
+    assertTrue(closeOffered.get(), "close() must enqueue a Close command to signal shutdown");
   }
 
   @Test
@@ -498,7 +865,7 @@ class KPipeConsumerTest {
           return b;
         })
       )
-      .withSequentialProcessing(true)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .build();
 
     final var records = new ConsumerRecords<String, byte[]>(
@@ -514,6 +881,53 @@ class KPipeConsumerTest {
 
     // Assert
     assertEquals(List.of("v1", "v2", "v3"), processed);
+    consumer.close();
+  }
+
+  @Test
+  void keyOrderedProcessingPreservesPerKeyOrder() throws InterruptedException {
+    // Records arrive in the deliberately interleaved order alpha-1, beta-1, alpha-2, beta-2,
+    // alpha-3, beta-3. KEY_ORDERED must produce two strictly-ordered per-key sub-sequences;
+    // the overall interleaving between keys can be anything.
+    final var processed = new java.util.concurrent.ConcurrentHashMap<String, java.util.List<String>>();
+    processed.put("alpha", new java.util.concurrent.CopyOnWriteArrayList<>());
+    processed.put("beta", new java.util.concurrent.CopyOnWriteArrayList<>());
+    final var latch = new java.util.concurrent.CountDownLatch(6);
+
+    final var consumer = KPipeConsumer.<String>builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(
+        TestPipelines.sideEffect(b -> {
+          final var payload = new String(b);
+          processed.get(payload.split("-")[0]).add(payload);
+          latch.countDown();
+          return b;
+        })
+      )
+      .withProcessingMode(ProcessingMode.KEY_ORDERED)
+      .build();
+
+    final var records = new ConsumerRecords<String, byte[]>(
+      Map.of(
+        new TopicPartition(TOPIC, 0),
+        List.of(
+          createRecord(0, "alpha", "alpha-1"),
+          createRecord(1, "beta", "beta-1"),
+          createRecord(2, "alpha", "alpha-2"),
+          createRecord(3, "beta", "beta-2"),
+          createRecord(4, "alpha", "alpha-3"),
+          createRecord(5, "beta", "beta-3")
+        )
+      ),
+      Map.of()
+    );
+
+    consumer.processRecords(records);
+    assertTrue(latch.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+    assertEquals(List.of("alpha-1", "alpha-2", "alpha-3"), processed.get("alpha"));
+    assertEquals(List.of("beta-1", "beta-2", "beta-3"), processed.get("beta"));
     consumer.close();
   }
 }
