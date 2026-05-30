@@ -43,9 +43,12 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 > returns zero results on Maven Central. The benchmarks therefore still depend on the deprecated
 > `io.confluent.parallelconsumer:parallel-consumer-core:0.5.3.0`. Swap when Stubbs publishes a release.
 
-Loom-based (KPipe PARALLEL/KEY_ORDERED, share, raw) vs platform-threaded (Confluent, Reactor) is the interesting axis.
-At `workMicros=0` the comparison is essentially "framework overhead"; at `workMicros=1000` it's "how does each runtime
-schedule blocking work?". Those two questions often have different winners.
+Two axes worth attention. **Threading model**: Loom-based (KPipe PARALLEL/KEY_ORDERED, share, raw) vs
+platform-threaded (single-threaded, Confluent's three modes, Reactor) — Loom absorbs blocking work; platform pools
+don't. **Ordering coordination**: light (UNORDERED, KEY across many keys) vs heavy (CPC PARTITION's per-partition
+locks); the gap between CPC KEY and CPC PARTITION makes this visible even though both have the same 100-worker pool.
+At `workMicros=0` the suite measures framework overhead; at `workMicros=1000` it measures blocking-work scheduling.
+Those two questions often have different winners.
 
 ### Apples-to-apples — read these comparisons honestly
 
@@ -109,14 +112,17 @@ and GC count per benchmark — required input to the "throughput vs allocation-c
 
 ```bash
 ./gradlew :benchmarks:jmh \
-  -Pjmh.includes='ParallelProcessingBenchmark.kpipe.*workMicros=0' \
+  -Pjmh.includes='ParallelProcessingBenchmark\.kpipe$' \
   -Pjmh.iterations=1 \
   -Pjmh.warmupIterations=1 \
   -Pjmh.fork=1
 ```
 
-One iteration, one warmup, one fork, only the KPipe / 0-µs cell. Useful for verifying the harness didn't break after
-changes; meaningless as a measurement.
+One iteration, one warmup, one fork, only the KPipe arm. Useful for verifying the harness didn't break after changes;
+meaningless as a measurement. Note: `-Pjmh.includes` is a regex matched against the benchmark FQN — `@Param` values
+(like `workMicros`) are **not** part of the FQN and can't be filtered through this property, so the smoke run
+exercises all three `workMicros` cells of the included arm. Swap `kpipe` for any other arm name (`share`,
+`kpipeKeyOrdered`, `singleThread`, `confluentKey`, etc.) to spot-check that one.
 
 ## What to write down with every published number
 
