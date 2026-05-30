@@ -533,9 +533,9 @@ class KPipeConsumerMockingTest {
 
   @Test
   void shouldHandleNullValueInRecord() throws Exception {
-    // Null record value is a contract violation: pipeline deserialize() returns null,
-    // MessagePipeline.processToSink throws IllegalStateException, the consumer counts it as
-    // an error, invokes the error handler, and marks the offset as processed.
+    // Null record value is a contract violation: pipeline.deserializeOrFail() throws
+    // IllegalStateException, the consumer counts it as an error, invokes the error handler,
+    // and marks the offset as processed.
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     final var functionalConsumer = new TestableKPipeConsumer<>(

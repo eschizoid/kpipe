@@ -95,8 +95,8 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   }
 
   /// Adds `(record, value)` to the buffer. If the new size meets the policy threshold, flushes
-  /// inline. The caller must already have invoked `pipeline.processToValue(...)` with `value`
-  /// non-null (filtered records skip enqueueing entirely).
+  /// inline. The caller must already have driven the pipeline (`pipeline.process(...)`) and only
+  /// enqueue the `Passed` value; filtered records skip enqueueing entirely.
   ///
   /// `bufferedCount` is incremented before the lock is released so the in-flight backpressure
   /// strategy observes the new buffered record on its next check. The matching decrement happens

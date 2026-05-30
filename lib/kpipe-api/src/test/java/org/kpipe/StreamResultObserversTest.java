@@ -11,12 +11,12 @@ import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.Result;
-import org.kpipe.sink.MessageSink;
 
 /// Exercises the [Stream] fluent facade's `onFiltered` / `onFailed` / `peekResult` observer
-/// hooks. The pipeline is built via the public facade and driven through `processToSink` so we
-/// exercise the same wrapping path the live consumer takes — no Kafka required.
+/// hooks. The pipeline is built via the public facade and driven through the same
+/// deserialize → process → sink path the live consumer takes (no Kafka required).
 class StreamResultObserversTest {
 
   private static Properties props() {
@@ -26,8 +26,26 @@ class StreamResultObserversTest {
     return p;
   }
 
-  private static DefaultSink<Map<String, Object>> sinkWith(final MessageSink<Map<String, Object>> terminal) {
-    return (DefaultSink<Map<String, Object>>) KPipe.json("topic", props()).toCustom(terminal);
+  /// Drive a pipeline from raw bytes the way `KPipeConsumer` would: deserialize,
+  /// `switch (process(...))`, invoke the sink on `Passed`, no-op on `Filtered`,
+  /// re-throw the cause on `Failed`. Mirrors what the old `MessagePipeline.processToSink`
+  /// did before the byte-level entry points were removed.
+  private static <T> void drive(final MessagePipeline<T> pipeline, final byte[] data) {
+    final var value = pipeline.deserializeOrFail(data);
+    switch (pipeline.process(value)) {
+      case Result.Passed<T> p -> {
+        final var sink = pipeline.getSink();
+        if (sink != null) sink.accept(p.value());
+      }
+      case Result.Filtered<T> __ -> {
+        /* intentional drop */
+      }
+      case Result.Failed<T> f -> {
+        if (f.cause() instanceof RuntimeException re) throw re;
+        if (f.cause() instanceof Error err) throw err;
+        throw new RuntimeException(f.cause());
+      }
+    }
   }
 
   @Test
@@ -40,8 +58,8 @@ class StreamResultObserversTest {
       .toCustom(m -> {});
 
     @SuppressWarnings("unchecked")
-    final var pipeline = (org.kpipe.registry.MessagePipeline<Map<String, Object>>) sink.buildPipeline();
-    pipeline.processToSink("{}".getBytes());
+    final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
+    drive(pipeline, "{}".getBytes());
 
     assertEquals(1, fired.get());
   }
@@ -55,8 +73,8 @@ class StreamResultObserversTest {
       .toCustom(m -> {});
 
     @SuppressWarnings("unchecked")
-    final var pipeline = (org.kpipe.registry.MessagePipeline<Map<String, Object>>) sink.buildPipeline();
-    pipeline.processToSink("{\"k\":\"v\"}".getBytes());
+    final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
+    drive(pipeline, "{\"k\":\"v\"}".getBytes());
 
     assertEquals(0, fired.get());
   }
@@ -74,8 +92,8 @@ class StreamResultObserversTest {
       .toCustom(m -> {});
 
     @SuppressWarnings("unchecked")
-    final var pipeline = (org.kpipe.registry.MessagePipeline<Map<String, Object>>) sink.buildPipeline();
-    final var thrown = assertThrows(RuntimeException.class, () -> pipeline.processToSink("{}".getBytes()));
+    final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
+    final var thrown = assertThrows(RuntimeException.class, () -> drive(pipeline, "{}".getBytes()));
 
     assertSame(boom, thrown);
     assertSame(boom, capturedCause.get());
@@ -103,10 +121,10 @@ class StreamResultObserversTest {
       .toCustom(m -> {});
 
     @SuppressWarnings("unchecked")
-    final var pipeline = (org.kpipe.registry.MessagePipeline<Map<String, Object>>) sink.buildPipeline();
-    pipeline.processToSink("{\"keep\":\"yes\"}".getBytes());
-    pipeline.processToSink("{\"drop\":\"me\"}".getBytes());
-    assertThrows(RuntimeException.class, () -> pipeline.processToSink("{\"keep\":\"yes\",\"explode\":1}".getBytes()));
+    final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
+    drive(pipeline, "{\"keep\":\"yes\"}".getBytes());
+    drive(pipeline, "{\"drop\":\"me\"}".getBytes());
+    assertThrows(RuntimeException.class, () -> drive(pipeline, "{\"keep\":\"yes\",\"explode\":1}".getBytes()));
 
     assertEquals(1, passed.get());
     assertEquals(1, filtered.get());
@@ -124,8 +142,8 @@ class StreamResultObserversTest {
       .toCustom(m -> {});
 
     @SuppressWarnings("unchecked")
-    final var pipeline = (org.kpipe.registry.MessagePipeline<Map<String, Object>>) sink.buildPipeline();
-    pipeline.processToSink("{}".getBytes()); // must not throw despite observer bug
+    final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
+    drive(pipeline, "{}".getBytes()); // must not throw despite observer bug
   }
 
   @Test
@@ -156,8 +174,8 @@ class StreamResultObserversTest {
       .toCustom((Map<String, Object> v) -> seenAtSink.set(v));
 
     @SuppressWarnings("unchecked")
-    final var pipeline = (org.kpipe.registry.MessagePipeline<Map<String, Object>>) sink.buildPipeline();
-    pipeline.processToSink("{\"any\":\"value\"}".getBytes());
+    final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
+    drive(pipeline, "{\"any\":\"value\"}".getBytes());
 
     assertNull(seenAtSink.get(), "filtered records must not reach the sink");
   }
@@ -182,8 +200,8 @@ class StreamResultObserversTest {
       .toCustom(m -> {});
 
     @SuppressWarnings("unchecked")
-    final var pipeline = (org.kpipe.registry.MessagePipeline<Map<String, Object>>) sink.buildPipeline();
-    pipeline.processToSink("{}".getBytes());
+    final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
+    drive(pipeline, "{}".getBytes());
 
     assertEquals(0, first.get(), "first observer must be replaced by the second call");
     assertEquals(1, second.get());
@@ -199,16 +217,10 @@ class StreamResultObserversTest {
       .toCustom(m -> {});
 
     @SuppressWarnings("unchecked")
-    final var pipeline = (org.kpipe.registry.MessagePipeline<Map<String, Object>>) sink.buildPipeline();
-    pipeline.processToSink("{\"keep\":\"yes\"}".getBytes());
-    pipeline.processToSink("{\"drop\":\"me\"}".getBytes());
+    final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
+    drive(pipeline, "{\"keep\":\"yes\"}".getBytes());
+    drive(pipeline, "{\"drop\":\"me\"}".getBytes());
 
     assertEquals(0, failedFired.get());
-  }
-
-  // Suppresses the unused-variable warning on sinkWith — kept for readability of test setups.
-  @SuppressWarnings("unused")
-  private static void useSinkWith(final MessageSink<Map<String, Object>> s) {
-    sinkWith(s);
   }
 }

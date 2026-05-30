@@ -23,6 +23,7 @@ import org.kpipe.metrics.KPipeMetricsReporter;
 import org.kpipe.producer.KPipeProducer;
 import org.kpipe.producer.tracing.Tracer;
 import org.kpipe.registry.MessagePipeline;
+import org.kpipe.registry.Result;
 import org.kpipe.sink.BatchPolicy;
 import org.kpipe.sink.BatchSink;
 
@@ -1626,7 +1627,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       }
 
       try {
-        pipeline.processToSink(record.value());
+        driveSinkedPipeline(pipeline, record.value());
         markOffsetProcessed(record);
         health.recordOutcome(true);
         return true;
@@ -1662,16 +1663,22 @@ public class KPipeConsumer<K> implements AutoCloseable {
     final Tracer.SpanScope span
   ) {
     try {
-      final var value = wrapper.pipeline().processToValue(record.value());
-      if (value == null) {
-        // Intentional filter — mark processed immediately; nothing to buffer.
-        markOffsetProcessed(record);
-        return true;
+      final var pipeline = wrapper.pipeline();
+      final var deserialized = pipeline.deserializeOrFail(record.value());
+      switch (pipeline.process(deserialized)) {
+        case Result.Passed<T> p -> {
+          wrapper.enqueue(record, p.value());
+          // Buffered: messagesProcessed will be incremented in the flush callback when the batch
+          // is committed to the user sink.
+          return false;
+        }
+        case Result.Filtered<T> __ -> {
+          // Intentional filter — mark processed immediately; nothing to buffer.
+          markOffsetProcessed(record);
+          return true;
+        }
+        case Result.Failed<T> f -> throw rethrowResultCause(f.cause());
       }
-      wrapper.enqueue(record, value);
-      // Buffered: messagesProcessed will be incremented in the flush callback when the batch is
-      // committed to the user sink.
-      return false;
     } catch (final Exception e) {
       if (isInterruptionRelated(e)) {
         Thread.currentThread().interrupt();
@@ -1680,6 +1687,33 @@ public class KPipeConsumer<K> implements AutoCloseable {
       handleProcessingError(record, e, 0, span);
       return false;
     }
+  }
+
+  /// Drive a pipeline (with erased element type) from raw bytes to its terminal sink. Throws if
+  /// the pipeline reports `Failed` so the calling retry/error path handles it the same way it
+  /// always did. Returns normally on `Passed` (after the sink runs) and on `Filtered`.
+  private static <T> void driveSinkedPipeline(final MessagePipeline<T> pipeline, final byte[] data) {
+    final var deserialized = pipeline.deserializeOrFail(data);
+    switch (pipeline.process(deserialized)) {
+      case Result.Passed<T> p -> {
+        final var sink = pipeline.getSink();
+        if (sink != null) sink.accept(p.value());
+      }
+      case Result.Filtered<T> __ -> {
+        /* intentional filter — no sink invocation */
+      }
+      case Result.Failed<T> f -> throw rethrowResultCause(f.cause());
+    }
+  }
+
+  /// Re-throw a captured `Result.Failed` cause as an unchecked exception so the retry/error path
+  /// can catch it. Mirrors the legacy MessagePipeline byte-level entry point behavior — it just
+  /// lives here now, where the catching happens, rather than buried in three duplicated unwrap
+  /// blocks inside MessagePipeline.
+  private static RuntimeException rethrowResultCause(final Throwable cause) {
+    if (cause instanceof RuntimeException re) return re;
+    if (cause instanceof Error err) throw err;
+    return new RuntimeException(cause);
   }
 
   private void markOffsetProcessed(final ConsumerRecord<K, byte[]> record) {
