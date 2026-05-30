@@ -90,9 +90,10 @@ public final class MultiBuilder {
   }
 
   /// Sets the [ProcessingMode] for the underlying consumer. Processing mode is a consumer-wide
-  /// setting (one consumer = one mode), so it lives here rather than on per-route streams. The
-  /// per-route configurator receives a [RouteStream] that doesn't expose `withProcessingMode` at
-  /// all, so trying to set it inside a route lambda is a compile error.
+  /// setting (one consumer = one mode), so it lives here rather than on per-route streams.
+  /// Attempting to set processing mode inside a route configurator (e.g.
+  /// `.json(topic, s -> s.withProcessingMode(KEY_ORDERED))`) is rejected at [#start()] to
+  /// prevent the silent-ignore footgun.
   ///
   /// @param mode the processing mode (must not be null)
   /// @return this builder
@@ -120,7 +121,7 @@ public final class MultiBuilder {
   /// @return this builder
   public MultiBuilder json(
     final String topic,
-    final Function<RouteStream<Map<String, Object>>, Sink<Map<String, Object>>> configurator
+    final Function<Stream<Map<String, Object>>, Sink<Map<String, Object>>> configurator
   ) {
     return route(topic, JsonFormat.INSTANCE, JsonFormat::consoleSink, configurator);
   }
@@ -136,7 +137,7 @@ public final class MultiBuilder {
   public MultiBuilder avro(
     final AvroFormat format,
     final String topic,
-    final Function<RouteStream<GenericRecord>, Sink<GenericRecord>> configurator
+    final Function<Stream<GenericRecord>, Sink<GenericRecord>> configurator
   ) {
     return route(topic, format, format::consoleSink, configurator);
   }
@@ -151,7 +152,7 @@ public final class MultiBuilder {
   public MultiBuilder protobuf(
     final ProtobufFormat format,
     final String topic,
-    final Function<RouteStream<Message>, Sink<Message>> configurator
+    final Function<Stream<Message>, Sink<Message>> configurator
   ) {
     return route(topic, format, format::consoleSink, configurator);
   }
@@ -161,7 +162,7 @@ public final class MultiBuilder {
   /// @param topic the Kafka topic
   /// @param configurator builds the operator chain and chooses a terminal sink
   /// @return this builder
-  public MultiBuilder bytes(final String topic, final Function<RouteStream<byte[]>, Sink<byte[]>> configurator) {
+  public MultiBuilder bytes(final String topic, final Function<Stream<byte[]>, Sink<byte[]>> configurator) {
     return route(topic, MessageFormat.bytes(), KPipe::bytesConsoleSink, configurator);
   }
 
@@ -176,7 +177,7 @@ public final class MultiBuilder {
   public <T> MultiBuilder custom(
     final String topic,
     final MessageFormat<T> format,
-    final Function<RouteStream<T>, Sink<T>> configurator
+    final Function<Stream<T>, Sink<T>> configurator
   ) {
     return route(topic, format, () -> value -> LOGGER.log(Level.INFO, "{0}", value), configurator);
   }
@@ -185,7 +186,7 @@ public final class MultiBuilder {
     final String topic,
     final MessageFormat<T> format,
     final Supplier<MessageSink<T>> defaultConsoleSinkFactory,
-    final Function<RouteStream<T>, Sink<T>> configurator
+    final Function<Stream<T>, Sink<T>> configurator
   ) {
     Objects.requireNonNull(topic, "topic cannot be null");
     if (topic.isBlank()) throw new IllegalArgumentException("topic cannot be blank");
@@ -224,6 +225,7 @@ public final class MultiBuilder {
     for (final var entry : routes.entrySet()) {
       final var topic = entry.getKey();
       final var sink = entry.getValue();
+      rejectPerRouteConsumerWideSettings(topic, sink);
       if (sink instanceof DefaultSink<?> ds) {
         nonBatchPipelines.put(topic, ds.buildPipeline());
       } else if (sink instanceof DefaultBatchSink<?> dbs) {
@@ -238,6 +240,34 @@ public final class MultiBuilder {
     if (tracer != null) consumerBuilder.withTracer(tracer);
     if (circuitBreaker != null) consumerBuilder.withCircuitBreaker(circuitBreaker);
     return DefaultHandle.startAndWrap(consumerBuilder.build());
+  }
+
+  /// Processing mode and the KEY_ORDERED LRU cap are consumer-wide settings — one
+  /// [KPipeConsumer] runs in exactly one mode with one cap. If a route configurator sets a
+  /// non-default value (`s -> s.withProcessingMode(...)` or
+  /// `s -> s.withKeyOrderedMaxKeys(...)`), the per-route setting would be silently dropped
+  /// because [#start()] builds a single consumer. Detect that here and fail loudly so the
+  /// user moves the call up to `MultiBuilder.withProcessingMode(...)` /
+  /// `MultiBuilder.withKeyOrderedMaxKeys(...)`.
+  private static void rejectPerRouteConsumerWideSettings(final String topic, final Sink<?> sink) {
+    final DefaultStream<?> stream;
+    if (sink instanceof DefaultSink<?> ds) stream = ds.stream();
+    else if (sink instanceof DefaultBatchSink<?> dbs) stream = dbs.stream();
+    else return;
+    if (stream.processingMode() != ProcessingMode.PARALLEL) throw new IllegalStateException(
+      "Route '%s' sets withProcessingMode(%s) on its Stream, but processing mode is a consumer-wide setting. ".formatted(
+          topic,
+          stream.processingMode()
+        ) +
+        "Move the call to MultiBuilder.withProcessingMode(...) instead."
+    );
+    if (stream.keyOrderedMaxKeys() != ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS) throw new IllegalStateException(
+      "Route '%s' sets withKeyOrderedMaxKeys(%d) on its Stream, but the LRU cap is a consumer-wide setting. ".formatted(
+          topic,
+          stream.keyOrderedMaxKeys()
+        ) +
+        "Move the call to MultiBuilder.withKeyOrderedMaxKeys(...) instead."
+    );
   }
 
   /// Type witness: pulls the typed pipeline + sink off the route, then calls the typed builder
