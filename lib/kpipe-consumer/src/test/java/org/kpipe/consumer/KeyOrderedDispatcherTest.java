@@ -551,8 +551,8 @@ class KeyOrderedDispatcherTest {
   void dispatchAfterSignalShutdownStillProcessesNormally() throws InterruptedException {
     // signalShutdown() must only break the saturation yield-loop — it must NOT cause a
     // normal dispatch to skip its work. Skipping would orphan the offset that
-    // KPipeConsumer.processRecords already enqueued as TrackOffset, leaving pending offsets
-    // that no worker ever marks processed.
+    // KPipeConsumer.processRecords already tracked on the offset manager, leaving pending
+    // offsets that no worker ever marks processed.
     final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var processed = new CountDownLatch(1);
 

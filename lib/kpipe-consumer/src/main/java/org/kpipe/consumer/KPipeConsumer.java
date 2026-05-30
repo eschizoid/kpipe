@@ -977,13 +977,13 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Runs on the consumer thread, at the top of its `finally`, before any teardown. The poll
   /// loop exits the moment `state` becomes CLOSING, so without this the finally would tear the
-  /// dispatcher + offset manager down while in-flight workers are still finishing — abandoning
-  /// their offsets. Here we keep pumping the command queue (so finishing workers'
-  /// MarkOffsetProcessed / CommitOffsets commands are applied to the still-open offset manager
-  /// and Kafka consumer) and wait for the dispatcher's pending work to settle, bounded by
-  /// `waitForMessagesTimeout`. A final `processCommands()` flushes anything the last workers
-  /// enqueued. Only the consumer thread may touch the Kafka consumer, so this must run here,
-  /// not on the close() thread.
+  /// dispatcher + offset manager down while in-flight workers are still finishing. We keep
+  /// pumping the command queue (so any pending `CommitOffsets` triggered by the scheduler land on
+  /// the still-open Kafka consumer) and wait for the dispatcher's pending work to settle, bounded
+  /// by `waitForMessagesTimeout`. Finishing workers mark their offsets directly on the
+  /// thread-safe `OffsetManager`, so those don't need the command queue. A final
+  /// `processCommands()` flushes anything the last workers enqueued. Only the consumer thread may
+  /// touch the Kafka consumer, so this must run here, not on the close() thread.
   ///
   /// We wait on `dispatcher.pendingCount()`, NOT `totalInFlight()`: the latter also counts
   /// buffered batch records, which don't enqueue commands and won't flush on their own (size-only
@@ -1182,8 +1182,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// * `Pause` — `kafkaConsumer.pause(assignment)`
   /// * `Resume` — `kafkaConsumer.resume(assignment)`
   /// * `Close` — flips the consumer to `CLOSING`
-  /// * `TrackOffset` / `MarkOffsetProcessed` — forwarded to the [OffsetManager]
   /// * `CommitOffsets` — `kafkaConsumer.commitSync(offsets)` plus offset-manager notification
+  ///
+  /// Offset tracking + per-record marking do NOT go through this queue — they call `OffsetManager`
+  /// directly from whichever thread finishes processing (the manager is already thread-safe).
   ///
   /// Commands are processed in submission order. Per-command exceptions are logged at ERROR and
   /// swallowed so a malformed command cannot halt subsequent ones.
@@ -1204,20 +1206,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
           case ConsumerCommand.Close _ -> {
             state.set(ConsumerState.CLOSING);
             LOGGER.log(Level.INFO, "Consumer shutdown initiated for topics {0}", topics);
-          }
-          case ConsumerCommand.TrackOffset cmd -> {
-            if (offsetManager != null) {
-              @SuppressWarnings("unchecked")
-              final var record = (ConsumerRecord<K, byte[]>) cmd.record();
-              offsetManager.trackOffset(record);
-            }
-          }
-          case ConsumerCommand.MarkOffsetProcessed cmd -> {
-            if (offsetManager != null) {
-              @SuppressWarnings("unchecked")
-              final var record = (ConsumerRecord<K, byte[]>) cmd.record();
-              offsetManager.markOffsetProcessed(record);
-            }
           }
           case ConsumerCommand.CommitOffsets cmd -> {
             try {
@@ -1523,7 +1511,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// @param records the batch of records to process
   protected void processRecords(final ConsumerRecords<K, byte[]> records) {
     for (final var record : records) {
-      if (offsetManager != null) commandQueue.offer(new ConsumerCommand.TrackOffset(record));
+      if (offsetManager != null) offsetManager.trackOffset(record);
       dispatcher.dispatch(record, () -> processRecord(record), this::afterRecordComplete);
     }
   }
@@ -1695,7 +1683,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   }
 
   private void markOffsetProcessed(final ConsumerRecord<K, byte[]> record) {
-    if (offsetManager != null) commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
+    if (offsetManager != null) offsetManager.markOffsetProcessed(record);
   }
 
   private void handleProcessingError(
