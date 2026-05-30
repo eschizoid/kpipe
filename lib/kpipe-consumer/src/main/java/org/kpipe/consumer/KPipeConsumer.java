@@ -1315,59 +1315,77 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Closes this consumer, stopping message consumption and processing.
   ///
-  /// Graceful shutdown:
+  /// Three terminal paths converge on the same final state (`CLOSED`, latch released, all
+  /// resources freed):
   ///
-  /// 1. Unstarted (CREATED) → CLOSED fast path: release every constructor-created resource via
-  ///    [#releaseConstructedResources], close the Kafka consumer directly (no consumer thread
-  ///    ran), release the shutdown latch, remove the JVM hook, return.
-  /// 2. Otherwise transition to CLOSING (rejects concurrent / repeat close() calls).
-  /// 3. Stop the periodic metrics-reporter thread (if any).
-  /// 4. Submit a `Close` command (the CLOSING transition already halts the poll loop).
-  /// 5. Signal the dispatcher to abandon any in-flight stall (e.g. the KEY_ORDERED saturation
-  ///    hold) so the consumer thread can drop its pending count promptly.
-  /// 6. Wait up to `waitForMessagesTimeout` for in-flight records to drain.
-  /// 7. Wake the consumer thread (`wakeup` + `unpark`) and join it. The consumer thread's own
-  ///    finally closes the Kafka consumer and runs step 8.
-  /// 8. [#releaseConstructedResources]: close the dispatcher, drain batch-pipeline buffers
-  ///    (while the offset manager is still alive), shut down the health controller + scheduler,
-  ///    close the offset manager and DLQ producer, and remove the JVM shutdown hook. CAS-guarded
-  ///    so it runs exactly once whether triggered here or by the consumer thread's finally (or
-  ///    by a self-terminating consumer thread that never saw an external close()).
-  /// 9. Set state to CLOSED and release the shutdown latch.
+  /// 1. **Never-started fast path.** CREATED → CLOSED via [#closeNeverStarted]: release every
+  ///    constructor-created resource, close the Kafka consumer directly, count down the latch.
+  /// 2. **Normal shutdown.** Transition to CLOSING, then [#initiateShutdown] (stop reporter,
+  ///    queue Close, signal dispatcher, drain in-flight), then [#waitForConsumerThreadToJoin]
+  ///    (wakeup + unpark + join). If the thread joined cleanly, [#finalizeAfterThreadJoined]
+  ///    runs the (idempotent) release + state=CLOSED + countDown as a safety net — the consumer
+  ///    thread's own finally has already done the work in the common case.
+  /// 3. **Join-timeout escape.** The consumer thread is still alive after
+  ///    `threadTerminationTimeout` (e.g. SEQUENTIAL mode stuck in a hung pipeline). Interrupt
+  ///    and return — tearing down resources here would race a live thread that still holds the
+  ///    offset manager / producer. The thread's own finally handles the final transition when
+  ///    it eventually exits.
+  ///
+  /// The consumer thread's own finally (in [#start]) mirrors path 2's teardown when it
+  /// self-terminates (uncaught throw, internal error). All terminal paths CAS-guard
+  /// [#releaseConstructedResources] so resources are freed exactly once regardless of which
+  /// path runs first.
   ///
   /// Idempotent — calling it multiple times has no additional effect.
   @Override
   public void close() {
-    // CREATED → CLOSED: the consumer was built but never started. Skip the drain dance, but
-    // still release every resource the constructor created — the dispatcher (executor/worker
-    // pool), batch wrappers, scheduler, offset manager, DLQ producer, AND the Kafka consumer
-    // itself. releaseConstructedResources() also removes the JVM shutdown hook. The consumer
-    // thread that normally closes kafkaConsumer in its finally never ran, so we close it here
-    // directly. Then unblock awaitShutdown() callers.
     if (state.compareAndSet(ConsumerState.CREATED, ConsumerState.CLOSED)) {
-      releaseConstructedResources();
-      closeKafkaConsumerQuietly();
-      shutdownLatch.countDown();
+      closeNeverStarted();
       return;
     }
     if (!transitionToClosing()) return;
+
+    initiateShutdown();
+    if (!waitForConsumerThreadToJoin()) return;
+    finalizeAfterThreadJoined();
+  }
+
+  /// Path 1 of [#close]: the consumer was built but never started, so the consumer thread that
+  /// normally closes `kafkaConsumer` in its finally never ran. Release every constructor-created
+  /// resource, close the Kafka consumer directly, and unblock [#awaitShutdown] callers.
+  private void closeNeverStarted() {
+    releaseConstructedResources();
+    closeKafkaConsumerQuietly();
+    shutdownLatch.countDown();
+  }
+
+  /// Stop the metrics reporter, ask the consumer loop to halt, and let any in-flight records
+  /// drain before we start waking and joining the consumer thread.
+  ///
+  /// No pause command needed: CLOSING already halts the poll loop ([#isRunning] is false), and
+  /// the subsequent `wakeup`/`unpark` in [#waitForConsumerThreadToJoin] breaks any in-progress
+  /// poll. The Close command exists for logging + symmetry; the actual halt signal is the state
+  /// transition done by [#transitionToClosing]. The dispatcher signal is a no-op for
+  /// SEQUENTIAL/PARALLEL; KEY_ORDERED uses it to break out of its saturation yield-loop so the
+  /// consumer thread can drop its pending count and let `close()` proceed promptly instead of
+  /// spinning past `threadTerminationTimeout`.
+  private void initiateShutdown() {
     stopMetricsReporterThread();
-
-    // No pause command needed: CLOSING already halts the poll loop (isRunning() is false), and
-    // wakeup()/unpark() below break any in-progress poll. internalPause() no-ops at CLOSING.
     commandQueue.offer(new ConsumerCommand.Close());
-
-    // Signal the dispatcher to abandon any in-flight stall BEFORE we wait on drain + join.
-    // No-op for SEQUENTIAL/PARALLEL; KEY_ORDERED uses this to break out of its saturation
-    // yield-loop so the consumer thread can drop its pending count and let close() proceed
-    // promptly instead of spinning past threadTerminationTimeout.
     dispatcher.signalShutdown();
-
     if (waitForMessagesTimeout.toMillis() > 0 && dispatcher.pendingCount() > 0) {
       LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", dispatcher.pendingCount());
       waitForInFlightDrain(waitForMessagesTimeout);
     }
+  }
 
+  /// Wakes the consumer thread and joins it within `threadTerminationTimeout`.
+  ///
+  /// @return `true` if the thread terminated (or was never registered, which can happen if
+  ///     `close()` races with the tail of `start()` before `consumerThread.set(...)`); `false`
+  ///     if the join timed out and the thread is still alive — caller must NOT tear down
+  ///     resources in that case (use-after-close hazard).
+  private boolean waitForConsumerThreadToJoin() {
     if (kafkaConsumer != null) {
       try {
         kafkaConsumer.wakeup();
@@ -1388,25 +1406,25 @@ public class KPipeConsumer<K> implements AutoCloseable {
     }
 
     if (thread != null && thread.isAlive()) {
-      // Join timed out — the consumer thread is still running (e.g. SEQUENTIAL mode stuck inside
-      // a hung pipeline). Do NOT tear down resources from here: the thread may still be using the
-      // offset manager / producer, and closing them underneath it would risk use-after-close.
-      // We also must not set CLOSED or count the latch — that would make awaitShutdown() report a
-      // clean shutdown while the thread is alive. Interrupt to nudge it out of any blocking call;
-      // its own finally runs releaseConstructedResources() + state=CLOSED + countDown when it
-      // terminates, so awaitShutdown() stays blocked until the consumer is genuinely done.
       LOGGER.log(
         Level.WARNING,
         "Consumer thread did not terminate within {0}ms; interrupting and leaving teardown to its finally block",
         threadTerminationTimeout.toMillis()
       );
       thread.interrupt();
-      return;
+      return false;
     }
+    return true;
+  }
 
-    // Thread has terminated — its finally already ran releaseConstructedResources() (which also
-    // closed kafkaConsumer and removed the shutdown hook) + state=CLOSED + countDown. The calls
-    // below are an idempotent safety net for the rare path where there is no consumer thread.
+  /// Idempotent finalizer for path 2 of [#close]. On the normal path the consumer thread's own
+  /// finally has already run [#releaseConstructedResources] (which closes `kafkaConsumer` and
+  /// removes the shutdown hook) + state=CLOSED + countDown; this is the safety net for the
+  /// `consumerThread.get() == null` race (close() called between the VT spawn and the
+  /// `consumerThread.set(...)` line in `start()`), where the VT may exit before either side has
+  /// finalized. CAS guards inside `releaseConstructedResources` and on the latch keep the
+  /// double-invoke safe.
+  private void finalizeAfterThreadJoined() {
     releaseConstructedResources();
     state.set(ConsumerState.CLOSED);
     shutdownLatch.countDown();
