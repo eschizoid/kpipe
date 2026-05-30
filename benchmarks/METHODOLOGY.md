@@ -10,7 +10,7 @@ a single number from a single run, read this first.
 | `JsonPipelineBenchmark`              | What does KPipe's single-SerDe-cycle save vs naive byte-to-byte chaining? (Design validation, not competitive.)                                                                                             |
 | `AvroPipelineBenchmark`              | What does zero-copy magic-byte handling save vs `Arrays.copyOfRange`? (Design validation.)                                                                                                                  |
 | `ParallelProcessingBenchmark`        | How does **throughput** compare across KPipe (PARALLEL + KEY_ORDERED), the Kafka Share Consumer (KIP-932), Confluent Parallel Consumer, Reactor Kafka, and a hand-rolled `KafkaConsumer + virtual threads`? |
-| `ParallelProcessingLatencyBenchmark` | How do those four runtimes compare on **per-batch latency** (p50, p95, p99)?                                                                                                                                |
+| `ParallelProcessingLatencyBenchmark` | How do KPipe, Confluent PC, Reactor, and raw `KafkaConsumer + VT` compare on **per-batch latency** (p50, p95, p99)?                                                                                         |
 | `BatchSinkLatencyBenchmark`          | What does `Stream.toBatch(...)` save when the destination has nontrivial per-call cost?                                                                                                                     |
 
 The first two are KPipe-vs-straw-man. They show the design choices paid off but are not competitive claims. Use them in
@@ -58,6 +58,9 @@ throughput metric, work fanned to virtual threads everywhere) and you read each 
   offset commit vs the share-acquire + per-record acknowledgement path. The share arm's per-poll-batch barrier (process
   the batch, then poll again, which implicitly ACCEPTs it) is the honest cost of processing a share batch concurrently
   while staying at-least-once, not a handicap.
+- **KPipe KEY_ORDERED vs Confluent PC KEY** is the cleanest cross-library "what does per-key ordering cost?"
+  comparison: same guarantee (per-key FIFO), different implementations (KPipe's per-key VT-per-queue vs CPC's
+  platform-thread pool with key gating). Read the gap as an implementation cost, not a guarantee difference.
 - **KEY_ORDERED is the ordering tax, not a rival.** It is the only arm that guarantees per-key order; no other runtime
   here (share included) can provide ordering at all. Read its gap below the unordered arms as "what ordering costs,"
   never as "X beats KEY_ORDERED."
@@ -178,10 +181,11 @@ A few things to keep in mind whenever you quote a number from this suite:
   time the bench out). A smoke run confirmed the group forms, assigns all 8 partitions, and consumes the seeded records.
   If a future run regresses and the `share` cell times out, check those two things first: broker share coordinator logs,
   and whether `share.auto.offset.reset` took.
-- **The `share` arm looks protocol-bound, not work-bound.** In smoke runs its throughput is roughly flat across
-  `workMicros` — the share-acquire/ack path (and `__share_group_state` writes per ack batch) dominates, not the
-  per-record work. Tune poll batch size / ack batching and re-measure before quoting share numbers, and never read the
-  share ↔ KEY_ORDERED gap as an ordering verdict — they are not rivals.
+- **The `share` arm looks protocol-bound, not work-bound.** In the publishing runs (see
+  `results/2026-05-29.md` and `results/2026-05-30.md`) its throughput is roughly flat across `workMicros` — the
+  share-acquire/ack path (and `__share_group_state` writes per ack batch) dominates, not the per-record work. Tune poll
+  batch size / ack batching and re-measure before quoting share numbers, and never read the share ↔ KEY_ORDERED gap as
+  an ordering verdict — they are not rivals.
 
 ## When the numbers should change
 
