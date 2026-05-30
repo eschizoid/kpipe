@@ -23,14 +23,25 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 
 ## What the parallel runtimes look like
 
-| Runtime                                   | Concurrency primitive                                                                 | Ordering    | Configured concurrency                                                                |
-| ----------------------------------------- | ------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------- |
-| **KPipe (PARALLEL)**                      | Virtual thread per record (Loom)                                                      | none        | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
-| **KPipe (KEY_ORDERED)**                   | Per-key serial queues, each drained by a virtual thread                               | **per-key** | Unbounded across keys; serial within a key                                            |
-| **Kafka Share Consumer (KIP-932)**        | One `KafkaShareConsumer` + `newVirtualThreadPerTaskExecutor`, per-poll-batch barrier  | none        | Unbounded virtual threads; barrier bounds it to one in-flight batch                   |
-| **Confluent Parallel Consumer**           | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | none        | `maxConcurrency=100`                                                                  |
-| **Reactor Kafka**                         | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | none        | `parallel(100)` to match Confluent's pool size                                        |
-| **Raw `KafkaConsumer` + virtual threads** | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | none        | Unbounded virtual threads                                                             |
+| Runtime                                          | Concurrency primitive                                                                 | Ordering          | Configured concurrency                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| **Single-threaded `KafkaConsumer`**              | One platform thread, `poll()` + inline processing, no fan-out                         | **per-partition** | 1 thread (the floor; the default most teams ship with)                                |
+| **KPipe (PARALLEL)**                             | Virtual thread per record (Loom)                                                      | none              | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
+| **KPipe (KEY_ORDERED)**                          | Per-key serial queues, each drained by a virtual thread                               | **per-key**       | Unbounded across keys; serial within a key                                            |
+| **Kafka Share Consumer (KIP-932)**               | One `KafkaShareConsumer` + `newVirtualThreadPerTaskExecutor`, per-poll-batch barrier  | none              | Unbounded virtual threads; barrier bounds it to one in-flight batch                   |
+| **Confluent Parallel Consumer (UNORDERED)**      | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | none              | `maxConcurrency=100`                                                                  |
+| **Confluent Parallel Consumer (KEY)**            | Same pool, `ProcessingOrder.KEY`                                                      | **per-key**       | `maxConcurrency=100`; at most one in-flight per key                                   |
+| **Confluent Parallel Consumer (PARTITION)**      | Same pool, `ProcessingOrder.PARTITION`                                                | **per-partition** | `maxConcurrency=100`; capped at partition count (8)                                   |
+| **Reactor Kafka**                                | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | none              | `parallel(100)` to match Confluent's pool size                                        |
+| **Raw `KafkaConsumer` + virtual threads**        | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | none              | Unbounded virtual threads                                                             |
+
+> **Confluent Parallel Consumer dependency note.** As of 2026-05, `confluentinc/parallel-consumer` is officially no
+> longer maintained ("Update README with maintenance notice", commit on `master` 2026-05-21) and points to
+> [`astubbs/parallel-consumer`](https://github.com/astubbs/parallel-consumer) as the active fork. That fork has set up
+> Maven Central publishing infrastructure (commit "feat(publish): Maven Central publishing", 2026-04-22) but **has not
+> yet released a stable artifact** — the source pom is `0.6.0.0-SNAPSHOT` and `io.github.astubbs.parallelconsumer`
+> returns zero results on Maven Central. The benchmarks therefore still depend on the deprecated
+> `io.confluent.parallelconsumer:parallel-consumer-core:0.5.3.0`. Swap when Stubbs publishes a release.
 
 Loom-based (KPipe PARALLEL/KEY_ORDERED, share, raw) vs platform-threaded (Confluent, Reactor) is the interesting axis.
 At `workMicros=0` the comparison is essentially "framework overhead"; at `workMicros=1000` it's "how does each runtime

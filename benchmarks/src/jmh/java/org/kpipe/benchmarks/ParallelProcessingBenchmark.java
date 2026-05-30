@@ -7,22 +7,25 @@ import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 
-/// Competitive parallel-consumer throughput benchmark. Six runtimes consume the same seeded
+/// Competitive parallel-consumer throughput benchmark. Nine runtimes consume the same seeded
 /// topic from the same Testcontainers-managed Kafka broker:
 ///
+///   * **Single-threaded `KafkaConsumer`** — poll loop with inline processing, no fan-out. The
+///     default pattern most teams ship with; the floor that motivates the rest.
 ///   * **KPipe (PARALLEL)** — virtual-thread-per-record on Loom. Unordered.
-///   * **KPipe (KEY_ORDERED)** — per-key serial queues on virtual threads. The only arm with an
-///     ordering guarantee; included to measure the per-key ordering tax, not as a head-to-head.
+///   * **KPipe (KEY_ORDERED)** — per-key serial queues on virtual threads. Rival: `confluentKey`.
 ///   * **Kafka Share Consumer (KIP-932)** — one share consumer + virtual-thread fan-out, the
 ///     controlled apples-to-apples rival of KPipe PARALLEL. Unordered.
-///   * **Confluent Parallel Consumer** — `ProcessingOrder.UNORDERED`, 100-worker pool.
+///   * **Confluent Parallel Consumer (UNORDERED)** — `ProcessingOrder.UNORDERED`.
+///   * **Confluent Parallel Consumer (KEY)** — `ProcessingOrder.KEY`, per-key FIFO.
+///   * **Confluent Parallel Consumer (PARTITION)** — `ProcessingOrder.PARTITION`.
 ///   * **Reactor Kafka** — `Flux<ReceiverRecord>` on the Reactor `parallel` scheduler with a
 ///     matching concurrency limit. Re-enabled after Reactor Kafka 1.3.25 (Nov 2025) shipped the
 ///     fix for issue #420 (avoid the deprecated `ConsumerRecord` ctor that was removed in
 ///     `kafka-clients:4.x`); the dependency's POM still pins `kafka-clients:3.9.1` but the new
 ///     binary works when Gradle conflict-resolves to our 4.2.0.
-///   * **Raw `KafkaConsumer` + virtual threads** — the hand-rolled baseline. No framework, no
-///     offset manager. Establishes the floor of "what if I just wrote the loop myself?"
+///   * **Raw `KafkaConsumer` + virtual threads** — hand-rolled loop with VT fan-out. The
+///     Loom-only floor; what you get without a framework but with Loom.
 ///
 /// Each invocation processes [ParallelProcessingBenchmarkInfrastructure#TARGET_MESSAGES] records.
 /// The `workMicros` `@Param` injects per-record simulated work via `LockSupport.parkNanos` so
@@ -81,9 +84,9 @@ public class ParallelProcessingBenchmark {
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("share", context.processedCount());
   }
 
-  /// KPipe in KEY_ORDERED mode — the only arm with an ordering guarantee (per-key FIFO). Read
-  /// the gap versus the unordered arms as the cost of ordering, NOT as a head-to-head loss: no
-  /// other runtime in this suite (share included) can provide per-key ordering at all.
+  /// KPipe in KEY_ORDERED mode — per-key FIFO guarantee. Rival: `confluentKey`. Read the gap
+  /// versus the unordered arms as the cost of ordering, NOT as a head-to-head loss against any
+  /// unordered runtime.
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)
   public void kpipeKeyOrdered(
@@ -91,5 +94,35 @@ public class ParallelProcessingBenchmark {
   ) {
     context.start();
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("kpipe-key-ordered", context.processedCount());
+  }
+
+  /// Single-threaded `KafkaConsumer` poll loop with inline processing — no framework, no fan-out.
+  /// The default pattern most teams ship with; the floor that motivates every framework's
+  /// existence. Per-partition ordering is implicit (one thread).
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void singleThread(final ParallelProcessingBenchmarkInfrastructure.SingleThreadInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("single-thread", context.processedCount());
+  }
+
+  /// Confluent Parallel Consumer, `ProcessingOrder.KEY` — per-key FIFO. The cross-library rival
+  /// of `kpipeKeyOrdered` for the "what does key ordering cost?" question.
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void confluentKey(final ParallelProcessingBenchmarkInfrastructure.ConfluentKeyInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("confluent-key", context.processedCount());
+  }
+
+  /// Confluent Parallel Consumer, `ProcessingOrder.PARTITION` — strict per-partition ordering,
+  /// parallelism capped at the partition count (8 here).
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void confluentPartition(
+    final ParallelProcessingBenchmarkInfrastructure.ConfluentPartitionInvocationContext context
+  ) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("confluent-partition", context.processedCount());
   }
 }
