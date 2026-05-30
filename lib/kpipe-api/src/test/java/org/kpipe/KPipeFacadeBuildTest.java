@@ -110,37 +110,9 @@ class KPipeFacadeBuildTest {
     );
   }
 
-  @Test
-  void multiBuilderRejectsPerRouteProcessingMode() {
-    // Processing mode is a consumer-wide setting. If a route configurator sets KEY_ORDERED or
-    // SEQUENTIAL, MultiBuilder.start() would silently drop it because only one mode wins on
-    // the underlying consumer. We detect and fail loud at start() time.
-    final var multi = KPipe.multi(props()).json("topic-a", s ->
-      s.withProcessingMode(ProcessingMode.KEY_ORDERED).toCustom(_ -> {})
-    );
-    final var ex = assertThrows(IllegalStateException.class, multi::start);
-    assertTrue(
-      ex.getMessage().contains("KEY_ORDERED"),
-      () -> "message should name the offending mode: " + ex.getMessage()
-    );
-    assertTrue(
-      ex.getMessage().contains("MultiBuilder.withProcessingMode"),
-      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
-    );
-  }
-
-  @Test
-  void multiBuilderRejectsPerRouteKeyOrderedMaxKeys() {
-    // Same footgun as withProcessingMode — withKeyOrderedMaxKeys on a route would be silently
-    // dropped because the LRU cap is a consumer-wide setting. Fail loud at start().
-    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withKeyOrderedMaxKeys(50_000).toCustom(_ -> {}));
-    final var ex = assertThrows(IllegalStateException.class, multi::start);
-    assertTrue(ex.getMessage().contains("50000"), () -> "message should name the offending value: " + ex.getMessage());
-    assertTrue(
-      ex.getMessage().contains("MultiBuilder.withKeyOrderedMaxKeys"),
-      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
-    );
-  }
+  // Note: tests for "MultiBuilder rejects per-route withProcessingMode / withKeyOrderedMaxKeys"
+  // used to live here. Those settings are no longer reachable on a route configurator's
+  // RouteStream surface (compile-time impossible), so there's nothing left to test at runtime.
 
   @Test
   void multiBuilderAcceptsConsumerWideProcessingMode() {
