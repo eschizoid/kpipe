@@ -8,7 +8,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
@@ -219,45 +218,5 @@ class RebalanceListenerTest {
 
     // Assert - command should still be in the queue (not drain)
     assertEquals(1, commandQueue.size());
-  }
-
-  /// Verifies that `drainCommandQueue` preserves the original relative order of commands that
-  /// belong to surviving (non-revoked) partitions. We pre-load 5 commands across two partitions
-  /// (P1 will be revoked, P2 will survive). After revoking P1 only P2's commands must remain,
-  /// and they must appear in their original insertion order.
-  @Test
-  void drainPreservesOrderForSurvivingPartitions() {
-    // Arrange: alternate TrackOffset / MarkOffsetProcessed commands across P1 (partition0) and
-    // P2 (partition1). After revoking partition0, only partition1's commands should remain.
-    final var p1Track = new ConsumerRecord<>("test", 0, 10L, "k", "v".getBytes());
-    final var p2TrackA = new ConsumerRecord<>("test", 1, 100L, "k", "v".getBytes());
-    final var p1Mark = new ConsumerRecord<>("test", 0, 11L, "k", "v".getBytes());
-    final var p2Mark = new ConsumerRecord<>("test", 1, 100L, "k", "v".getBytes());
-    final var p2TrackB = new ConsumerRecord<>("test", 1, 101L, "k", "v".getBytes());
-
-    commandQueue.offer(new ConsumerCommand.TrackOffset(p1Track));
-    commandQueue.offer(new ConsumerCommand.TrackOffset(p2TrackA));
-    commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(p1Mark));
-    commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(p2Mark));
-    commandQueue.offer(new ConsumerCommand.TrackOffset(p2TrackB));
-
-    // Act: revoke partition0 only.
-    listener.onPartitionsRevoked(List.of(partition0));
-
-    // Assert: only partition1's three commands remain, in their original relative order.
-    final var remaining = new ArrayList<>(commandQueue);
-    assertEquals(3, remaining.size(), "only the three partition1 commands should survive");
-
-    final var first = assertInstanceOf(ConsumerCommand.TrackOffset.class, remaining.get(0));
-    assertEquals(1, first.record().partition());
-    assertEquals(100L, first.record().offset());
-
-    final var second = assertInstanceOf(ConsumerCommand.MarkOffsetProcessed.class, remaining.get(1));
-    assertEquals(1, second.record().partition());
-    assertEquals(100L, second.record().offset());
-
-    final var third = assertInstanceOf(ConsumerCommand.TrackOffset.class, remaining.get(2));
-    assertEquals(1, third.record().partition());
-    assertEquals(101L, third.record().offset());
   }
 }

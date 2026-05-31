@@ -120,14 +120,6 @@ public record RebalanceListener(
               .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
             if (!filteredOffsets.isEmpty()) remainingCommands.add(commitCmd.withOffsets(filteredOffsets));
           }
-          case ConsumerCommand.TrackOffset cmd -> {
-            final var partition = new TopicPartition(cmd.record().topic(), cmd.record().partition());
-            if (!partitions.contains(partition)) remainingCommands.add(currentCmd);
-          }
-          case ConsumerCommand.MarkOffsetProcessed cmd -> {
-            final var partition = new TopicPartition(cmd.record().topic(), cmd.record().partition());
-            if (!partitions.contains(partition)) remainingCommands.add(currentCmd);
-          }
           default -> remainingCommands.add(currentCmd);
         }
       });

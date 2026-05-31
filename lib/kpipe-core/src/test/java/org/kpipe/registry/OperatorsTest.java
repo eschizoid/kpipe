@@ -2,6 +2,7 @@ package org.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -75,9 +76,10 @@ class OperatorsTest {
       )
       .build();
 
-    assertNull(pipeline.apply("drop-this".getBytes()));
-    final var kept = pipeline.apply("keep-this".getBytes());
-    assertEquals("keep-this", new String(kept));
+    assertInstanceOf(Result.Filtered.class, pipeline.process("drop-this".getBytes()));
+    final var keptResult = pipeline.process("keep-this".getBytes());
+    final var passed = assertInstanceOf(Result.Passed.class, keptResult);
+    assertEquals("keep-this", new String((byte[]) passed.value()));
   }
 
   @Test

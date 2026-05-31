@@ -5,11 +5,31 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.alibaba.fastjson2.JSON;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
+import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.Result;
 
 class JsonFormatPipelineTest {
 
   private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
+
+  /// Test helper: drives `bytes` through the full pipeline cycle (deserialize → process →
+  /// serialize) and returns the resulting bytes. Filtered records return null; failures
+  /// re-throw the cause. Replaces the byte-level `apply(byte[])` entry point that was removed
+  /// from `MessagePipeline` so production callers couldn't accidentally rely on its
+  /// null-for-filter / rethrow-for-failure semantics.
+  private static <T> byte[] roundTrip(final MessagePipeline<T> pipeline, final byte[] bytes) {
+    final var deserialized = pipeline.deserializeOrFail(bytes);
+    return switch (pipeline.process(deserialized)) {
+      case Result.Passed<T> p -> pipeline.serialize(p.value());
+      case Result.Filtered<T> __ -> null;
+      case Result.Failed<T> f -> {
+        if (f.cause() instanceof RuntimeException re) throw re;
+        if (f.cause() instanceof Error err) throw err;
+        throw new RuntimeException(f.cause());
+      }
+    };
+  }
 
   /// Round-trips the input through fastjson2 so the test compares canonical
   /// representations rather than raw byte-equality (which would break on whitespace).
@@ -32,7 +52,7 @@ class JsonFormatPipelineTest {
 
     // Act
     final var pipeline = REGISTRY.pipeline(JsonFormat.INSTANCE).build();
-    final var result = pipeline.apply(json.getBytes(StandardCharsets.UTF_8));
+    final var result = roundTrip(pipeline, json.getBytes(StandardCharsets.UTF_8));
 
     // Assert
     assertEquals(normalizeJson(json), normalizeJson(new String(result, StandardCharsets.UTF_8)));
@@ -47,7 +67,7 @@ class JsonFormatPipelineTest {
     final var pipeline = REGISTRY.pipeline(JsonFormat.INSTANCE).build();
 
     // Assert — per MessagePipeline contract, malformed input throws.
-    assertThrows(RuntimeException.class, () -> pipeline.apply(invalidJson.getBytes(StandardCharsets.UTF_8)));
+    assertThrows(RuntimeException.class, () -> roundTrip(pipeline, invalidJson.getBytes(StandardCharsets.UTF_8)));
   }
 
   @Test
@@ -57,7 +77,7 @@ class JsonFormatPipelineTest {
 
     // Act
     final var pipeline = REGISTRY.pipeline(JsonFormat.INSTANCE).build();
-    final var result = pipeline.apply(emptyJson.getBytes(StandardCharsets.UTF_8));
+    final var result = roundTrip(pipeline, emptyJson.getBytes(StandardCharsets.UTF_8));
 
     // Assert
     assertEquals(emptyJson, new String(result, StandardCharsets.UTF_8));
@@ -70,6 +90,6 @@ class JsonFormatPipelineTest {
     final var pipeline = REGISTRY.pipeline(JsonFormat.INSTANCE).build();
 
     // Assert — null input is a contract violation; throw rather than swallow.
-    assertThrows(RuntimeException.class, () -> pipeline.apply(null));
+    assertThrows(RuntimeException.class, () -> roundTrip(pipeline, null));
   }
 }

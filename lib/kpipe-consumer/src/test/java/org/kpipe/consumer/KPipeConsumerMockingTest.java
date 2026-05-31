@@ -533,9 +533,9 @@ class KPipeConsumerMockingTest {
 
   @Test
   void shouldHandleNullValueInRecord() throws Exception {
-    // Null record value is a contract violation: pipeline deserialize() returns null,
-    // MessagePipeline.processToSink throws IllegalStateException, the consumer counts it as
-    // an error, invokes the error handler, and marks the offset as processed.
+    // Null record value is a contract violation: pipeline.deserializeOrFail() throws
+    // IllegalStateException, the consumer counts it as an error, invokes the error handler,
+    // and marks the offset as processed.
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     final var functionalConsumer = new TestableKPipeConsumer<>(
@@ -991,56 +991,6 @@ class KPipeConsumerMockingTest {
   }
 
   @Test
-  void shouldIntegrateWithOffsetManager() {
-    // Setup - create a consumer with offset manager
-    when(offsetManager.createRebalanceListener()).thenReturn(mock(ConsumerRebalanceListener.class));
-
-    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    properties.put("enable.auto.commit", "false");
-
-    final var functionalConsumer = new TestableKPipeConsumer<>(
-      properties,
-      TOPIC,
-      b -> new String(b).toUpperCase().getBytes(),
-      mockConsumer,
-      0,
-      Duration.ofMillis(10),
-      errorHandler,
-      commandQueue,
-      offsetManager
-    );
-
-    // Start consumer
-    functionalConsumer.start();
-
-    try {
-      // Verify offset manager is started
-      verify(offsetManager).start();
-
-      // Simulate a command to track offset
-      var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value".getBytes());
-      commandQueue.offer(new ConsumerCommand.TrackOffset(record));
-
-      // Process commands
-      functionalConsumer.processCommands();
-
-      // Verify offset is tracked
-      verify(offsetManager).trackOffset(record);
-
-      // Simulate processing completion
-      commandQueue.offer(new ConsumerCommand.MarkOffsetProcessed(record));
-
-      // Process commands
-      functionalConsumer.processCommands();
-
-      // Verify offset is marked as processed
-      verify(offsetManager, timeout(500)).markOffsetProcessed(record);
-    } finally {
-      functionalConsumer.close();
-    }
-  }
-
-  @Test
   void shouldCommitOffsetsViaCommandQueue() {
     // Setup - create consumer with offset manager
     when(offsetManager.createRebalanceListener()).thenReturn(mock(ConsumerRebalanceListener.class));
@@ -1217,12 +1167,8 @@ class KPipeConsumerMockingTest {
     } while (System.currentTimeMillis() < deadline);
     assertEquals(0L, inFlight, "in-flight must drain to 0 even when handler throws");
 
-    // The MarkOffsetProcessed commands are enqueued by handleProcessingError running on virtual
-    // threads, AFTER executeProcessRecords' synchronous processCommands() has already returned.
-    // Drain the queue once more to forward the marks to the (mocked) offset manager.
-    consumer.drainCommands();
-
-    // Both failed records must be marked as processed before the handler runs.
+    // handleProcessingError calls offsetManager.markOffsetProcessed directly from the worker
+    // virtual thread (no queue hop). Once in-flight has drained to 0, the marks have all landed.
     verify(offsetManager, times(2)).markOffsetProcessed(any(ConsumerRecord.class));
   }
 
@@ -1258,13 +1204,6 @@ class KPipeConsumerMockingTest {
 
     private void executeProcessRecords(final ConsumerRecords<K, byte[]> records) {
       processRecords(records);
-      processCommands();
-    }
-
-    /// Drains the command queue. Tests use this to flush commands queued by virtual threads
-    /// AFTER the synchronous `processCommands()` call inside `executeProcessRecords` — typically
-    /// `MarkOffsetProcessed` commands enqueued from inside `handleProcessingError`.
-    void drainCommands() {
       processCommands();
     }
 

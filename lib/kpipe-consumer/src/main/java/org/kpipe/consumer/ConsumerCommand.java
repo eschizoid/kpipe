@@ -1,14 +1,16 @@
 package org.kpipe.consumer;
 
 import java.util.Map;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
-/// Represents commands that can be sent to a consumer.
+/// Commands that must execute on the consumer thread because they touch the underlying
+/// `KafkaConsumer` (`pause`/`resume`/`commitSync`) or signal a state transition (`close`).
 ///
-/// These commands control the consumer's operational behavior through its lifecycle.
-/// Each command is an immutable record, making them safe for concurrent use across virtual threads.
+/// Offset tracking + per-record marking deliberately do NOT go through this queue — they call
+/// `OffsetManager` directly from whichever thread finishes processing, since that manager's state
+/// is already concurrent-map-backed and thread-safe. Routing them through here would just add a
+/// queue hop and risk unbounded growth under PARALLEL load.
 public sealed interface ConsumerCommand {
   /// Pause the consumer from processing messages.
   record Pause() implements ConsumerCommand {}
@@ -18,16 +20,6 @@ public sealed interface ConsumerCommand {
 
   /// Close the consumer and release resources.
   record Close() implements ConsumerCommand {}
-
-  /// Track an offset in the KafkaOffsetManager.
-  ///
-  /// @param record the record whose offset should be tracked
-  record TrackOffset(ConsumerRecord<?, ?> record) implements ConsumerCommand {}
-
-  /// Mark an offset as processed in the KafkaOffsetManager.
-  ///
-  /// @param record the record whose offset has been processed
-  record MarkOffsetProcessed(ConsumerRecord<?, ?> record) implements ConsumerCommand {}
 
   /// Commit offsets to Kafka.
   ///

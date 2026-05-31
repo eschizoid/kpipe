@@ -368,11 +368,10 @@ class DispatcherIntegrationTest {
       consumer.start();
       awaitCondition(() -> processed.get() >= expected, 10_000);
 
-      // The side-effect lambda increments `processed` BEFORE markOffsetProcessed enqueues its
-      // command, so a few MarkOffsetProcessed commands may still be in flight at this point.
-      // The consumer thread drains them on subsequent poll iterations — wait for the manager
-      // state to converge before asserting. Read state BEFORE consumer.close(): close() routes
-      // through offsetManager.close() which clears pendingOffsets + highestProcessedOffsets.
+      // The side-effect lambda increments `processed` before markOffsetProcessed runs on the
+      // offset manager, so a few marks may still be racing here. Wait for the manager state to
+      // converge before asserting. Read state BEFORE consumer.close(): close() routes through
+      // offsetManager.close() which clears pendingOffsets + highestProcessedOffsets.
       final var manager = managerRef.get();
       assertNotNull(manager, "offset manager should have been captured via the provider");
       final var topicPartitions = new ArrayList<TopicPartition>();

@@ -11,13 +11,33 @@ import com.google.protobuf.Message;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.kpipe.registry.MessagePipeline;
 import org.kpipe.registry.MessageProcessorRegistry;
+import org.kpipe.registry.Result;
 
 class ProtobufFormatPipelineTest {
 
   private Descriptors.Descriptor descriptor;
   private ProtobufFormat format;
   private MessageProcessorRegistry registry;
+
+  /// Test helper: drives `bytes` through the full pipeline cycle (deserialize → process →
+  /// serialize) and returns the resulting bytes. Filtered records return null; failures
+  /// re-throw the cause. Replaces the byte-level `apply(byte[])` entry point that was removed
+  /// from `MessagePipeline` so production callers couldn't accidentally rely on its
+  /// null-for-filter / rethrow-for-failure semantics.
+  private static <T> byte[] roundTrip(final MessagePipeline<T> pipeline, final byte[] bytes) {
+    final var deserialized = pipeline.deserializeOrFail(bytes);
+    return switch (pipeline.process(deserialized)) {
+      case Result.Passed<T> p -> pipeline.serialize(p.value());
+      case Result.Filtered<T> __ -> null;
+      case Result.Failed<T> f -> {
+        if (f.cause() instanceof RuntimeException re) throw re;
+        if (f.cause() instanceof Error err) throw err;
+        throw new RuntimeException(f.cause());
+      }
+    };
+  }
 
   @BeforeEach
   void setUp() throws Exception {
@@ -52,7 +72,7 @@ class ProtobufFormatPipelineTest {
       .build();
 
     final var input = format.serialize(createTestMessage());
-    final var output = pipeline.apply(input);
+    final var output = roundTrip(pipeline, input);
     assertNotNull(output);
 
     final var result = format.deserialize(output);
@@ -65,13 +85,13 @@ class ProtobufFormatPipelineTest {
   @Test
   void shouldHandleNullInputInPipeline() {
     final var pipeline = registry.pipeline(format).build();
-    assertThrows(RuntimeException.class, () -> pipeline.apply(null));
+    assertThrows(RuntimeException.class, () -> roundTrip(pipeline, null));
   }
 
   @Test
   void shouldHandleEmptyInputInPipeline() {
     final var pipeline = registry.pipeline(format).build();
-    assertThrows(RuntimeException.class, () -> pipeline.apply(new byte[0]));
+    assertThrows(RuntimeException.class, () -> roundTrip(pipeline, new byte[0]));
   }
 
   private static Descriptors.Descriptor buildTestDescriptor() throws Descriptors.DescriptorValidationException {

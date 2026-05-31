@@ -61,17 +61,6 @@ class KPipeInterruptTest {
       .build();
   }
 
-  private static boolean hasMarkOffsetProcessed(final Queue<ConsumerCommand> commandQueue, final long offset) {
-    return commandQueue
-      .stream()
-      .anyMatch(
-        cmd ->
-          cmd instanceof ConsumerCommand.MarkOffsetProcessed(ConsumerRecord<?, ?> record) &&
-          record != null &&
-          record.offset() == offset
-      );
-  }
-
   @Test
   void interruptDuringRetryShouldNotMarkOffsetAsProcessed() throws Exception {
     final var topic = "test-topic";
@@ -102,7 +91,7 @@ class KPipeInterruptTest {
 
     verify(messageSink, never()).accept(any());
     verify(errorHandler, never()).accept(any());
-    assertFalse(hasMarkOffsetProcessed(commandQueue, 123L));
+    verify(offsetManager, never()).markOffsetProcessed(any());
   }
 
   @Test
@@ -134,7 +123,7 @@ class KPipeInterruptTest {
 
     verify(messageSink, never()).accept(any());
     verify(errorHandler, never()).accept(any());
-    assertFalse(hasMarkOffsetProcessed(commandQueue, 456L));
+    verify(offsetManager, never()).markOffsetProcessed(any());
   }
 
   @Test
@@ -151,7 +140,7 @@ class KPipeInterruptTest {
 
     verify(messageSink, never()).accept(any());
     verify(errorHandler, times(1)).accept(any());
-    assertTrue(hasMarkOffsetProcessed(commandQueue, 789L));
+    verify(offsetManager).markOffsetProcessed(record);
   }
 
   @Test
@@ -169,6 +158,6 @@ class KPipeInterruptTest {
 
     verify(messageSink, times(1)).accept(processed);
     verify(errorHandler, never()).accept(any());
-    assertTrue(hasMarkOffsetProcessed(commandQueue, 999L));
+    verify(offsetManager).markOffsetProcessed(record);
   }
 }
