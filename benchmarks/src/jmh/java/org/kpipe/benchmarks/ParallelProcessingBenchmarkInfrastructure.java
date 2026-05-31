@@ -361,6 +361,99 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
   }
 
+  /// Confluent Parallel Consumer with `ProcessingOrder.KEY` — at most one in-flight record per
+  /// record key, but different keys process concurrently up to `maxConcurrency`. The cross-library
+  /// counterpart to KPipe KEY_ORDERED for the "what does per-key ordering cost?" question. Same
+  /// 100-worker platform-thread pool as the UNORDERED arm; only the ordering changes.
+  @State(Scope.Thread)
+  public static class ConfluentKeyInvocationContext {
+
+    private AtomicInteger processedCount;
+    private KafkaConsumer<byte[], byte[]> kafkaConsumer;
+    private ParallelStreamProcessor<byte[], byte[]> processor;
+    private int workMicros;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
+      processedCount = new AtomicInteger(0);
+      workMicros = params.workMicros;
+      final var props = kafkaContext.consumerProps("confluent-key-group");
+      kafkaConsumer = new KafkaConsumer<>(props);
+      processor = ParallelStreamProcessor.createEosStreamProcessor(
+        ParallelConsumerOptions.<byte[], byte[]>builder()
+          .ordering(ParallelConsumerOptions.ProcessingOrder.KEY)
+          .maxConcurrency(CONFLUENT_MAX_CONCURRENCY)
+          .ignoreReflectiveAccessExceptionsForAutoCommitDisabledCheck(true)
+          .consumer(kafkaConsumer)
+          .build()
+      );
+      processor.subscribe(Collections.singletonList(TOPIC));
+    }
+
+    void start() {
+      processor.poll(ctx -> {
+        simulateWork(workMicros);
+        processedCount.incrementAndGet();
+      });
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      if (processor != null) processor.closeDontDrainFirst(PC_CLOSE_TIMEOUT);
+      if (kafkaConsumer != null) kafkaConsumer.close();
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
+  /// Confluent Parallel Consumer with `ProcessingOrder.PARTITION` — at most one in-flight record
+  /// per partition; parallelism is capped at the partition count (8 here). Strict per-partition
+  /// offset ordering, the strongest ordering CPC offers.
+  @State(Scope.Thread)
+  public static class ConfluentPartitionInvocationContext {
+
+    private AtomicInteger processedCount;
+    private KafkaConsumer<byte[], byte[]> kafkaConsumer;
+    private ParallelStreamProcessor<byte[], byte[]> processor;
+    private int workMicros;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
+      processedCount = new AtomicInteger(0);
+      workMicros = params.workMicros;
+      final var props = kafkaContext.consumerProps("confluent-partition-group");
+      kafkaConsumer = new KafkaConsumer<>(props);
+      processor = ParallelStreamProcessor.createEosStreamProcessor(
+        ParallelConsumerOptions.<byte[], byte[]>builder()
+          .ordering(ParallelConsumerOptions.ProcessingOrder.PARTITION)
+          .maxConcurrency(CONFLUENT_MAX_CONCURRENCY)
+          .ignoreReflectiveAccessExceptionsForAutoCommitDisabledCheck(true)
+          .consumer(kafkaConsumer)
+          .build()
+      );
+      processor.subscribe(Collections.singletonList(TOPIC));
+    }
+
+    void start() {
+      processor.poll(ctx -> {
+        simulateWork(workMicros);
+        processedCount.incrementAndGet();
+      });
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      if (processor != null) processor.closeDontDrainFirst(PC_CLOSE_TIMEOUT);
+      if (kafkaConsumer != null) kafkaConsumer.close();
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
   /// Reactor Kafka runtime. `KafkaReceiver.receive()` produces a `Flux<ReceiverRecord>`; per-record
   /// work runs on Reactor's `parallel` scheduler via `flatMap`. Concurrency is bounded by the
   /// flatMap's `Queues.SMALL_BUFFER_SIZE` plus the scheduler's worker count.
@@ -464,6 +557,70 @@ public final class ParallelProcessingBenchmarkInfrastructure {
         executor.shutdownNow();
         try {
           executor.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+      if (kafkaConsumer != null) kafkaConsumer.close();
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
+  /// Single-threaded consumer baseline. One `KafkaConsumer` polls and processes inline — no
+  /// executor, no fan-out, no framework. This is the default pattern most teams ship with out of
+  /// the box, and the floor that makes every framework's value visible: a framework that can't
+  /// beat this isn't earning its overhead. Distinct from the [RawInvocationContext] arm, which
+  /// adds virtual-thread fan-out (i.e., what you get from "I just wrote the loop myself, but with
+  /// Loom"). Commits sync after each non-empty poll for honest at-least-once.
+  @State(Scope.Thread)
+  public static class SingleThreadInvocationContext {
+
+    private AtomicInteger processedCount;
+    private KafkaConsumer<byte[], byte[]> kafkaConsumer;
+    private Thread pollLoop;
+    private final AtomicBoolean running = new AtomicBoolean(true);
+    private int workMicros;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
+      processedCount = new AtomicInteger(0);
+      workMicros = params.workMicros;
+      running.set(true);
+      final var props = kafkaContext.consumerProps("single-thread-group");
+      kafkaConsumer = new KafkaConsumer<>(props);
+      kafkaConsumer.subscribe(Collections.singletonList(TOPIC));
+    }
+
+    void start() {
+      pollLoop = Thread.ofPlatform()
+        .daemon()
+        .start(() -> {
+          while (running.get()) {
+            final var records = kafkaConsumer.poll(Duration.ofMillis(100));
+            for (final var record : records) {
+              simulateWork(workMicros);
+              processedCount.incrementAndGet();
+            }
+            if (!records.isEmpty()) {
+              try {
+                kafkaConsumer.commitSync();
+              } catch (final Exception e) {
+                // benchmark-best-effort: don't crash the run on a commit failure
+              }
+            }
+          }
+        });
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      running.set(false);
+      if (pollLoop != null) {
+        try {
+          pollLoop.join(Duration.ofSeconds(5).toMillis());
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
         }
