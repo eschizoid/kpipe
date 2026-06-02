@@ -51,7 +51,7 @@ public class JsonPipelineBenchmark {
       }
       """.getBytes(StandardCharsets.UTF_8);
 
-    final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
+    final var registry = new MessageProcessorRegistry();
     // Register some operators
     final var op1 = RegistryKey.json("op1");
     final var op2 = RegistryKey.json("op2");

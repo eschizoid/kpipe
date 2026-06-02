@@ -21,7 +21,7 @@ import org.kpipe.sink.MessageSink;
 /// Example:
 ///
 /// ```java
-/// final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
+/// final var registry = new MessageProcessorRegistry();
 ///
 /// // Operator side
 /// registry.registerOperator(RegistryKey.json("addTimestamp"),
@@ -93,28 +93,10 @@ public class MessageProcessorRegistry {
 
   private final Namespace operators = new Namespace();
   private final Namespace sinks = new Namespace();
-  private final MessageFormat<?> messageFormat;
 
-  /// Creates a new registry with the byte-passthrough format.
-  public MessageProcessorRegistry() {
-    this(MessageFormat.bytes());
-  }
-
-  /// Creates a new registry with the specified message format.
-  ///
-  /// @param messageFormat Message format to use (e.g. `JsonFormat.INSTANCE`,
-  ///                      `new AvroFormat(schema)`, `new ProtobufFormat(descriptor)`,
-  ///                      `MessageFormat.bytes()`, or a custom impl)
-  public MessageProcessorRegistry(final MessageFormat<?> messageFormat) {
-    this.messageFormat = Objects.requireNonNull(messageFormat, "Message format cannot be null");
-  }
-
-  /// Returns the [MessageFormat] this registry was constructed with.
-  ///
-  /// @return the configured message format (never null)
-  public MessageFormat<?> messageFormat() {
-    return messageFormat;
-  }
+  /// Creates a new registry. The registry is format-agnostic — supply the format per pipeline via
+  /// [#pipeline(MessageFormat)].
+  public MessageProcessorRegistry() {}
 
   /// Creates a fluent builder for typed pipelines.
   ///
@@ -195,13 +177,6 @@ public class MessageProcessorRegistry {
     return operators.keys();
   }
 
-  /// Returns a summary of registered operators.
-  ///
-  /// @return an unmodifiable view of registered operators (key → implementation simple name)
-  public Map<RegistryKey<?>, String> getAll() {
-    return operators.all();
-  }
-
   /// Gets metrics for a specific operator entry.
   ///
   /// @param key the registry key to look up
@@ -231,20 +206,6 @@ public class MessageProcessorRegistry {
     Objects.requireNonNull(key, "key cannot be null");
     Objects.requireNonNull(sink, "sink cannot be null");
     sinks.put(key, sink);
-  }
-
-  /// Registers every constant of an `Enum` that implements `MessageSink<T>`.
-  ///
-  /// @param type      the runtime class for the pipeline value type
-  /// @param enumClass the enum class whose constants are sinks
-  /// @param <T>       the pipeline value type
-  /// @param <E>       the enum type implementing `MessageSink<T>`
-  public <T, E extends Enum<E> & MessageSink<T>> void registerSinkEnum(final Class<T> type, final Class<E> enumClass) {
-    Objects.requireNonNull(type, "type cannot be null");
-    Objects.requireNonNull(enumClass, "enumClass cannot be null");
-    for (final var constant : enumClass.getEnumConstants()) {
-      registerSink(RegistryKey.of(constant.name(), type), constant);
-    }
   }
 
   /// Retrieves a typed sink. Unlike operators, a missing sink does NOT pass through — it logs at

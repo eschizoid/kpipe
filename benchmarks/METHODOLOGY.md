@@ -23,17 +23,17 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 
 ## What the parallel runtimes look like
 
-| Runtime                                          | Concurrency primitive                                                                 | Ordering          | Configured concurrency                                                                |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
-| **Single-threaded `KafkaConsumer`**              | One platform thread, `poll()` + inline processing, no fan-out                         | **per-partition** | 1 thread (the floor; the default most teams ship with)                                |
-| **KPipe (PARALLEL)**                             | Virtual thread per record (Loom)                                                      | none              | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
-| **KPipe (KEY_ORDERED)**                          | Per-key serial queues, each drained by a virtual thread                               | **per-key**       | Unbounded across keys; serial within a key                                            |
-| **Kafka Share Consumer (KIP-932)**               | One `KafkaShareConsumer` + `newVirtualThreadPerTaskExecutor`, per-poll-batch barrier  | none              | Unbounded virtual threads; barrier bounds it to one in-flight batch                   |
-| **Confluent Parallel Consumer (UNORDERED)**      | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | none              | `maxConcurrency=100`                                                                  |
-| **Confluent Parallel Consumer (KEY)**            | Same pool, `ProcessingOrder.KEY`                                                      | **per-key**       | `maxConcurrency=100`; at most one in-flight per key                                   |
-| **Confluent Parallel Consumer (PARTITION)**      | Same pool, `ProcessingOrder.PARTITION`                                                | **per-partition** | `maxConcurrency=100`; capped at partition count (8)                                   |
-| **Reactor Kafka**                                | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | none              | `parallel(100)` to match Confluent's pool size                                        |
-| **Raw `KafkaConsumer` + virtual threads**        | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | none              | Unbounded virtual threads                                                             |
+| Runtime                                     | Concurrency primitive                                                                 | Ordering          | Configured concurrency                                                                |
+| ------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| **Single-threaded `KafkaConsumer`**         | One platform thread, `poll()` + inline processing, no fan-out                         | **per-partition** | 1 thread (the floor; the default most teams ship with)                                |
+| **KPipe (PARALLEL)**                        | Virtual thread per record (Loom)                                                      | none              | Unbounded (virtual-thread-per-record); the consumer's in-flight watermark caps memory |
+| **KPipe (KEY_ORDERED)**                     | Per-key serial queues, each drained by a virtual thread                               | **per-key**       | Unbounded across keys; serial within a key                                            |
+| **Kafka Share Consumer (KIP-932)**          | One `KafkaShareConsumer` + `newVirtualThreadPerTaskExecutor`, per-poll-batch barrier  | none              | Unbounded virtual threads; barrier bounds it to one in-flight batch                   |
+| **Confluent Parallel Consumer (UNORDERED)** | Platform-thread worker pool, `ProcessingOrder.UNORDERED`                              | none              | `maxConcurrency=100`                                                                  |
+| **Confluent Parallel Consumer (KEY)**       | Same pool, `ProcessingOrder.KEY`                                                      | **per-key**       | `maxConcurrency=100`; at most one in-flight per key                                   |
+| **Confluent Parallel Consumer (PARTITION)** | Same pool, `ProcessingOrder.PARTITION`                                                | **per-partition** | `maxConcurrency=100`; capped at partition count (8)                                   |
+| **Reactor Kafka**                           | Reactor `parallel` scheduler via `Flux.parallel(N)`                                   | none              | `parallel(100)` to match Confluent's pool size                                        |
+| **Raw `KafkaConsumer` + virtual threads**   | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop | none              | Unbounded virtual threads                                                             |
 
 > **Confluent Parallel Consumer dependency note.** As of 2026-05, `confluentinc/parallel-consumer` is officially no
 > longer maintained ("Update README with maintenance notice", commit on `master` 2026-05-21) and points to
@@ -43,12 +43,12 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 > returns zero results on Maven Central. The benchmarks therefore still depend on the deprecated
 > `io.confluent.parallelconsumer:parallel-consumer-core:0.5.3.0`. Swap when Stubbs publishes a release.
 
-Two axes worth attention. **Threading model**: Loom-based (KPipe PARALLEL/KEY_ORDERED, share, raw) vs
-platform-threaded (single-threaded, Confluent's three modes, Reactor) — Loom absorbs blocking work; platform pools
-don't. **Ordering coordination**: light (UNORDERED, KEY across many keys) vs heavy (CPC PARTITION's per-partition
-locks); the gap between CPC KEY and CPC PARTITION makes this visible even though both have the same 100-worker pool.
-At `workMicros=0` the suite measures framework overhead; at `workMicros=1000` it measures blocking-work scheduling.
-Those two questions often have different winners.
+Two axes worth attention. **Threading model**: Loom-based (KPipe PARALLEL/KEY_ORDERED, share, raw) vs platform-threaded
+(single-threaded, Confluent's three modes, Reactor) — Loom absorbs blocking work; platform pools don't. **Ordering
+coordination**: light (UNORDERED, KEY across many keys) vs heavy (CPC PARTITION's per-partition locks); the gap between
+CPC KEY and CPC PARTITION makes this visible even though both have the same 100-worker pool. At `workMicros=0` the suite
+measures framework overhead; at `workMicros=1000` it measures blocking-work scheduling. Those two questions often have
+different winners.
 
 ### Apples-to-apples — read these comparisons honestly
 
@@ -61,9 +61,9 @@ throughput metric, work fanned to virtual threads everywhere) and you read each 
   offset commit vs the share-acquire + per-record acknowledgement path. The share arm's per-poll-batch barrier (process
   the batch, then poll again, which implicitly ACCEPTs it) is the honest cost of processing a share batch concurrently
   while staying at-least-once, not a handicap.
-- **KPipe KEY_ORDERED vs Confluent PC KEY** is the cleanest cross-library "what does per-key ordering cost?"
-  comparison: same guarantee (per-key FIFO), different implementations (KPipe's per-key VT-per-queue vs CPC's
-  platform-thread pool with key gating). Read the gap as an implementation cost, not a guarantee difference.
+- **KPipe KEY_ORDERED vs Confluent PC KEY** is the cleanest cross-library "what does per-key ordering cost?" comparison:
+  same guarantee (per-key FIFO), different implementations (KPipe's per-key VT-per-queue vs CPC's platform-thread pool
+  with key gating). Read the gap as an implementation cost, not a guarantee difference.
 - **KEY_ORDERED is the ordering tax, not a rival.** It is the only arm that guarantees per-key order; no other runtime
   here (share included) can provide ordering at all. Read its gap below the unordered arms as "what ordering costs,"
   never as "X beats KEY_ORDERED."
@@ -120,9 +120,9 @@ and GC count per benchmark — required input to the "throughput vs allocation-c
 
 One iteration, one warmup, one fork, only the KPipe arm. Useful for verifying the harness didn't break after changes;
 meaningless as a measurement. Note: `-Pjmh.includes` is a regex matched against the benchmark FQN — `@Param` values
-(like `workMicros`) are **not** part of the FQN and can't be filtered through this property, so the smoke run
-exercises all three `workMicros` cells of the included arm. Swap `kpipe` for any other arm name (`share`,
-`kpipeKeyOrdered`, `singleThread`, `confluentKey`, etc.) to spot-check that one.
+(like `workMicros`) are **not** part of the FQN and can't be filtered through this property, so the smoke run exercises
+all three `workMicros` cells of the included arm. Swap `kpipe` for any other arm name (`share`, `kpipeKeyOrdered`,
+`singleThread`, `confluentKey`, etc.) to spot-check that one.
 
 ## What to write down with every published number
 
@@ -187,11 +187,11 @@ A few things to keep in mind whenever you quote a number from this suite:
   time the bench out). A smoke run confirmed the group forms, assigns all 8 partitions, and consumes the seeded records.
   If a future run regresses and the `share` cell times out, check those two things first: broker share coordinator logs,
   and whether `share.auto.offset.reset` took.
-- **The `share` arm looks protocol-bound, not work-bound.** In the publishing runs (see
-  `results/2026-05-29.md` and `results/2026-05-30.md`) its throughput is roughly flat across `workMicros` — the
-  share-acquire/ack path (and `__share_group_state` writes per ack batch) dominates, not the per-record work. Tune poll
-  batch size / ack batching and re-measure before quoting share numbers, and never read the share ↔ KEY_ORDERED gap as
-  an ordering verdict — they are not rivals.
+- **The `share` arm looks protocol-bound, not work-bound.** In the publishing runs (see `results/2026-05-29.md` and
+  `results/2026-05-30.md`) its throughput is roughly flat across `workMicros` — the share-acquire/ack path (and
+  `__share_group_state` writes per ack batch) dominates, not the per-record work. Tune poll batch size / ack batching
+  and re-measure before quoting share numbers, and never read the share ↔ KEY_ORDERED gap as an ordering verdict — they
+  are not rivals.
 
 ## When the numbers should change
 

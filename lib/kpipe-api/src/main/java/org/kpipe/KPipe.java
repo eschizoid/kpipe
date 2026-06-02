@@ -158,21 +158,24 @@ public final class KPipe {
 
   /// Stream backed by a user-supplied [MessageFormat]. The default `toConsole()` for custom
   /// streams logs values via `String.valueOf(value)` — pass `toCustom(...)` for richer formatting.
+  /// Use this entry point when your payload has its own SerDe (e.g. a hand-rolled binary protocol,
+  /// MessagePack, Cap'n Proto) that isn't covered by [#json], [#avro], [#protobuf], or [#bytes].
   ///
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
-  /// @param format the message format
+  /// @param format the message format (must not be null)
   /// @param <T> the deserialized message type
   /// @return a fluent [Stream] for the supplied format
   public static <T> Stream<T> custom(final String topic, final Properties kafkaProps, final MessageFormat<T> format) {
     return new DefaultStream<>(topic, kafkaProps, format, KPipe::loggingSink);
   }
 
-  /// Custom-format stream consuming from multiple homogeneous topics.
+  /// Custom-format stream consuming from multiple homogeneous topics through a single shared
+  /// pipeline. See [#custom(String, Properties, MessageFormat)] for the per-topic shape.
   ///
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
-  /// @param format the message format
+  /// @param format the message format (must not be null)
   /// @param <T> the deserialized message type
   /// @return a fluent [Stream] for the supplied format
   public static <T> Stream<T> custom(
@@ -219,6 +222,9 @@ public final class KPipe {
     };
   }
 
+  /// Default `toConsole()` sink for [#custom(String, Properties, MessageFormat)] streams. Logs
+  /// each value via `String.valueOf(value)` at INFO. Users who want richer formatting should
+  /// use `toCustom(...)` with their own [MessageSink] instead.
   private static <T> MessageSink<T> loggingSink() {
     return value -> LOGGER.log(Level.INFO, "{0}", value);
   }

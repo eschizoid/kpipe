@@ -1,9 +1,11 @@
-# <img src="img/kpipe_1.png" width="200" height="200">
+<p align="center">
+  <img src="img/kpipe.png" alt="kpipe — a Kafka consumer library for Java 25" width="320" />
+</p>
 
-# KPipe
+# kpipe
 
 A Kafka consumer library for Java 25. Built around virtual threads, a functional pipeline API, and at-least-once
-delivery — small enough to read end-to-end in an afternoon.
+delivery.
 
 [![JVM 25+](https://img.shields.io/badge/JVM-25%2B-brightgreen.svg?&logo=openjdk)](https://openjdk.org/projects/jdk/25/)
 [![Build](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
@@ -180,9 +182,12 @@ try (var handle = KPipe.json("orders", kafkaProps)
 ```
 
 `Handle` is `AutoCloseable` and `close()` calls `shutdownGracefully(Duration.ofSeconds(5))` by default. The DLQ wires a
-`KafkaProducer` from the same properties; provide your own via `.withDeadLetterBundle(...)` if you need a different
-configuration. See [`docs/escape-hatches.md`](docs/escape-hatches.md) for the full set of explicit-only options (custom
-`OffsetManager`, rebalance listeners, multi-topic heterogeneous dispatch).
+`KafkaProducer` from the same Kafka properties; to share a pre-built producer instead, drop down to the explicit
+`KPipeConsumer.Builder` and call `.withDeadLetterQueue(topic, kpipeProducer)`. The second argument is a
+`KPipeProducer<K, byte[]>` (not a raw `KafkaProducer`) — wrap your producer with
+`KPipeProducer.<K, byte[]>builder().withProducer(rawProducer).build()` if you only have the raw Kafka client. The atomic
+form keeps the topic and producer from drifting out of sync. See [`docs/escape-hatches.md`](docs/escape-hatches.md) for
+the full set of explicit-only options (custom `OffsetManager`, multi-topic heterogeneous dispatch).
 
 ### 3. The full fluent surface
 
@@ -228,7 +233,9 @@ KPipe.json(Set.of("events-us", "events-eu", "events-ap"), kafkaProps)
     .start();
 ```
 
-The `Collection<String>` overload exists on every entry point — `KPipe.json/avro/protobuf/bytes/custom`.
+The `Collection<String>` overload exists on every entry point — `KPipe.json/avro/protobuf/bytes/custom`. Use
+`KPipe.custom(topic, props, format)` (or its `Collection<String>` overload) when you have a user-supplied
+`MessageFormat<T>` and want the same fluent surface as the bundled formats.
 
 Heterogeneous — many topics, each with its own payload type and its own pipeline, all dispatched through one consumer /
 one consumer-group / one offset manager:
@@ -262,8 +269,8 @@ KPipe.json("events", kafkaProps)
 ```
 
 The full operator vocabulary: `filter`, `drop`, `peek`, `map`, `compose`, `safe`, `requireField`, `rename`,
-`removeFields`, `addField`, `transformField`. All return `UnaryOperator<T>` (or `UnaryOperator<Map<String, Object>>` for
-the `Map`-typed ones).
+`removeFields`, `addField`. All return `UnaryOperator<T>` (or `UnaryOperator<Map<String, Object>>` for the `Map`-typed
+ones).
 
 ---
 
@@ -669,8 +676,8 @@ KPipeConsumer.<byte[]>builder()
 Pipelines deserialize once, transform many times, serialize once. Operators are `UnaryOperator<T>` where `T` is the
 format's typed payload — `Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf. The generic
 helpers in [`Operators`](lib/kpipe-core/src/main/java/org/kpipe/registry/Operators.java) (`filter`, `drop`, `peek`,
-`map`, `compose`, `safe`, plus the map-specific `addField`, `removeFields`, `transformField`, `requireField`, `rename`)
-cover the common cases. For anything else, inline lambdas using the format's native API.
+`map`, `compose`, `safe`, plus the map-specific `addField`, `removeFields`, `requireField`, `rename`) cover the common
+cases. For anything else, inline lambdas using the format's native API.
 
 ### JSON
 
@@ -683,7 +690,7 @@ import org.kpipe.format.json.JsonFormat;
 import org.kpipe.registry.MessageProcessorRegistry;
 import org.kpipe.registry.RegistryKey;
 
-final var registry = new MessageProcessorRegistry("myApp");
+final var registry = new MessageProcessorRegistry();
 
 final var stampKey = RegistryKey.json("addTimestamp");
 registry.registerOperator(stampKey, addField("processedAt", System.currentTimeMillis()));
@@ -692,7 +699,15 @@ final var sanitizeKey = RegistryKey.json("sanitize");
 registry.registerOperator(sanitizeKey, removeFields("password", "ssn"));
 
 final var lowerEmailKey = RegistryKey.json("lowerEmail");
-registry.registerOperator(lowerEmailKey, transformField("email", v -> ((String) v).toLowerCase()));
+registry.registerOperator(lowerEmailKey, msg -> {
+  // Returning null from an operator filters the record: the pipeline yields Result.filtered()
+  // and downstream sinks are skipped, but the offset is still marked processed. Same convention
+  // as the bundled Operators.* helpers (filter, drop, removeFields, ...).
+  if (msg == null) return null;
+  final var email = msg.get("email");
+  if (email instanceof String s) msg.put("email", s.toLowerCase());
+  return msg;
+});
 
 // Single deserialization → many transformations → single serialization
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
@@ -711,8 +726,6 @@ import org.kpipe.format.avro.AvroFormat;
 import org.kpipe.format.avro.AvroRegistryKey;
 import org.kpipe.registry.MessageProcessorRegistry;
 
-final var registry = new MessageProcessorRegistry("myApp");
-
 // Build an AvroFormat bound to a single schema. Use new AvroFormat(schema) when you already have a
 // parsed Schema, or AvroFormat.of(schemaJson) for inline JSON. For multiple schemas keyed by name
 // use AvroSchemaCatalog and pass catalog.get("user") into AvroFormat.
@@ -721,8 +734,10 @@ final var format = AvroFormat.of("""
     {"name":"id","type":"string"},{"name":"name","type":"string"}
   ]}""");
 
+final var registry = new MessageProcessorRegistry();
+
 // Avro records are schema-bound: use inline lambdas with the native Avro API for value transforms.
-// `Operators.filter`, `tap`, `compose` etc. work for any payload type, including GenericRecord.
+// `Operators.filter`, `peek`, `compose` etc. work for any payload type, including GenericRecord.
 final var lowerNameKey = AvroRegistryKey.of("lowerName");
 registry.registerOperator(lowerNameKey, record -> {
   if (record.get("name") != null) record.put("name", record.get("name").toString().toLowerCase());
@@ -811,7 +826,7 @@ import org.kpipe.registry.MessageProcessorRegistry;
 // Build a ProtobufFormat bound to a single descriptor. Use ProtobufDescriptorCatalog for keyed
 // lookup of multiple descriptors.
 final var format = new ProtobufFormat(CustomerProto.Customer.getDescriptor());
-final var registry = new MessageProcessorRegistry("myApp", format);
+final var registry = new MessageProcessorRegistry();
 
 final var clearEmailKey = ProtobufRegistryKey.of("clearEmail");
 registry.registerOperator(clearEmailKey, msg -> {
@@ -856,12 +871,13 @@ final var avroConsoleSink = new AvroConsoleSink<GenericRecord>(schema);
 final var protobufConsoleSink = new ProtobufConsoleSink<Message>();
 
 // Register and use via the pipeline builder
-registry.registerSink(JsonFormat.JSON_LOGGING, jsonConsoleSink);
+final var consoleSinkKey = RegistryKey.json("jsonConsole");
+registry.registerSink(consoleSinkKey, jsonConsoleSink);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
   .add(RegistryKey.json("sanitize"))
-  .toSink(JsonFormat.JSON_LOGGING)
+  .toSink(consoleSinkKey)
   .build();
 ```
 
@@ -1092,8 +1108,9 @@ public class KPipeApp implements AutoCloseable {
   }
 
   public KPipeApp(final AppConfig config) {
-    final var processorRegistry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
-    processorRegistry.register(JsonFormat.JSON_LOGGING, new JsonConsoleSink<>());
+    final var processorRegistry = new MessageProcessorRegistry();
+    final var consoleSinkKey = RegistryKey.json("jsonConsole");
+    processorRegistry.registerSink(consoleSinkKey, new JsonConsoleSink<>());
 
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
@@ -1105,7 +1122,7 @@ public class KPipeApp implements AutoCloseable {
         processorRegistry
           .pipeline(JsonFormat.INSTANCE)
           .add(RegistryKey.json("addSource"), RegistryKey.json("markProcessed"), RegistryKey.json("addTimestamp"))
-          .toSink(JsonFormat.JSON_LOGGING)
+          .toSink(consoleSinkKey)
           .build()
       )
       .withCommandQueue(commandQueue)

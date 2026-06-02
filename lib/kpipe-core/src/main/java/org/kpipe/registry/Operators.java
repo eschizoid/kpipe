@@ -221,30 +221,4 @@ public final class Operators {
       return msg;
     };
   }
-
-  /// Returns an operator that transforms the value of a single field on a [Map] message.
-  ///
-  /// Mutates the input map in-place. Returns `null` when the input is `null`. If `fieldName` is
-  /// absent, the message is passed through unchanged (no error).
-  ///
-  /// Example:
-  /// ```java
-  /// .add(transformField("email", v -> ((String) v).toLowerCase()))
-  /// .add(transformField("user_id", v -> hash((String) v)))
-  /// ```
-  ///
-  /// @param fieldName the field whose value should be transformed
-  /// @param transformer function applied to the existing value
-  /// @return an operator that transforms the field in-place, or returns `null` when the input is
-  // null
-  public static UnaryOperator<Map<String, Object>> transformField(
-    final String fieldName,
-    final Function<Object, Object> transformer
-  ) {
-    return msg -> {
-      if (msg == null) return null;
-      if (msg.containsKey(fieldName)) msg.put(fieldName, transformer.apply(msg.get(fieldName)));
-      return msg;
-    };
-  }
 }

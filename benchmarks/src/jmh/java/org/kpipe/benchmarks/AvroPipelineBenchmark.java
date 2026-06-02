@@ -87,7 +87,7 @@ public class AvroPipelineBenchmark {
     System.arraycopy(avroBytes, 0, avroWithMagicBytes, 5, avroBytes.length);
 
     format = AvroFormat.of(schemaJson);
-    final var registry = new MessageProcessorRegistry(format);
+    final var registry = new MessageProcessorRegistry();
 
     // Register operators inline using the native Avro API (operator helpers were removed in
     // 1.11.x).

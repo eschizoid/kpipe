@@ -143,7 +143,7 @@ public class BatchSinkLatencyBenchmark {
 
       // The pipeline is identical across cells: deserialize JSON once, no operators. Construction
       // happens in setup so it doesn't pollute measured time.
-      final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
+      final var registry = new MessageProcessorRegistry();
       final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
 
       final var props = baseProps();

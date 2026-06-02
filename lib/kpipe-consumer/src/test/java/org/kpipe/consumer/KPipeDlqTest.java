@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
@@ -14,6 +15,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.kpipe.producer.KPipeProducer;
 import org.kpipe.registry.MessagePipeline;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,7 +35,7 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToDlqAfterMaxRetries() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
@@ -58,7 +60,7 @@ class KPipeDlqTest {
         argThat(r -> {
           assertEquals(DLQ_TOPIC, r.topic());
           assertEquals("key", r.key());
-          assertEquals("value", new String(r.value()));
+          assertEquals("value", new String(r.value(), StandardCharsets.UTF_8));
           return true;
         })
       );
@@ -67,7 +69,7 @@ class KPipeDlqTest {
 
   @Test
   void shouldNotSendToDlqIfProcessingSucceedsAfterRetry() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
     final var attempts = new AtomicInteger(0);
 
     try (
@@ -95,7 +97,13 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToDlqWhenPipelineReturnsNull() {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 200L, "key".getBytes(), "value".getBytes());
+    final var record = new ConsumerRecord<>(
+      TOPIC,
+      0,
+      200L,
+      "key".getBytes(StandardCharsets.UTF_8),
+      "value".getBytes(StandardCharsets.UTF_8)
+    );
     when(mockByteProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
@@ -128,8 +136,8 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void dlqSendIsSynchronousAndBlocksShutdownPath() throws Exception {
-    final var record1 = new ConsumerRecord<>(TOPIC, 0, 100L, "k1", "v1".getBytes());
-    final var record2 = new ConsumerRecord<>(TOPIC, 0, 101L, "k2", "v2".getBytes());
+    final var record1 = new ConsumerRecord<>(TOPIC, 0, 100L, "k1", "v1".getBytes(StandardCharsets.UTF_8));
+    final var record2 = new ConsumerRecord<>(TOPIC, 0, 101L, "k2", "v2".getBytes(StandardCharsets.UTF_8));
 
     // First send (record1's DLQ) throws; second send (record2's DLQ) succeeds. We exercise both
     // failure modes within the same consumer, ensuring no deadlock between them.
@@ -164,6 +172,63 @@ class KPipeDlqTest {
     }
   }
 
+  /// Exercises the atomic [Builder#withDeadLetterQueue(String, KPipeProducer)] setter: a single
+  /// call pairs the DLQ topic with a pre-built [KPipeProducer], and the consumer routes failures
+  /// through that producer to that topic. The two-call alternative (`withDeadLetterTopic` +
+  /// `withKafkaProducer`) is covered by the tests above; this one specifically pins the bundled
+  /// shape so the convenience setter can't silently regress.
+  @Test
+  @SuppressWarnings("unchecked")
+  void shouldSendToDlqViaBundledWithDeadLetterQueueSetter() throws Exception {
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
+
+    // Wrap the mock raw Producer in a KPipeProducer so we can hand it to the bundled setter.
+    // try-with-resources because KPipeProducer implements AutoCloseable — keeps the test honest
+    // even though the mock doesn't own real resources today.
+    try (
+      final var kpipeProducer = KPipeProducer.<String, byte[]>builder().withProducer(mockProducer).build();
+      final var consumer = KPipeConsumer.<String>builder()
+        .withProperties(byteProperties())
+        .withTopic(TOPIC)
+        .withPipeline(
+          TestPipelines.sideEffect(v -> {
+            throw new RuntimeException("fail");
+          })
+        )
+        .withRetry(0, Duration.ofMillis(1))
+        .withDeadLetterQueue(DLQ_TOPIC, kpipeProducer)
+        .build()
+    ) {
+      consumer.processRecord(record);
+
+      // Same DLQ contract as the two-call form: topic + key + value preserved verbatim.
+      // Compare bytes directly rather than decoding — the value is already in `record.value()`
+      // and decoding through `new String(byte[])` would use the platform default charset.
+      verify(mockProducer).send(
+        argThat(r -> {
+          assertEquals(DLQ_TOPIC, r.topic());
+          assertEquals("key", r.key());
+          assertArrayEquals(record.value(), r.value());
+          return true;
+        })
+      );
+    }
+  }
+
+  /// Negative test for the atomic setter: null topic must be rejected up front (not silently
+  /// accepted and then explode at first failure).
+  @Test
+  void withDeadLetterQueueRejectsNullArgs() {
+    try (final var kpipeProducer = KPipeProducer.<String, byte[]>builder().withProducer(mockProducer).build()) {
+      final var builder = KPipeConsumer.<String>builder().withProperties(byteProperties()).withTopic(TOPIC);
+      assertThrows(NullPointerException.class, () -> builder.withDeadLetterQueue(null, kpipeProducer));
+      assertThrows(NullPointerException.class, () -> builder.withDeadLetterQueue(DLQ_TOPIC, null));
+    }
+  }
+
   private static MessagePipeline<String> nullDeserializePipeline() {
     return new MessagePipeline<>() {
       @Override
@@ -173,7 +238,7 @@ class KPipeDlqTest {
 
       @Override
       public byte[] serialize(final String data) {
-        return data.getBytes();
+        return data.getBytes(StandardCharsets.UTF_8);
       }
 
       @Override
