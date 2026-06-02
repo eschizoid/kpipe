@@ -43,7 +43,7 @@ class ProtobufFormatPipelineTest {
   void setUp() throws Exception {
     descriptor = buildTestDescriptor();
     format = new ProtobufFormat(descriptor);
-    registry = new MessageProcessorRegistry(format);
+    registry = new MessageProcessorRegistry();
   }
 
   private DynamicMessage createTestMessage() {

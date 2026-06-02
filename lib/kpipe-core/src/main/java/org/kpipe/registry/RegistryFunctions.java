@@ -102,27 +102,6 @@ public final class RegistryFunctions {
     };
   }
 
-  /// Creates a bi-consumer wrapper that suppresses exceptions thrown by the wrapped consumer,
-  /// logging them instead of propagating.
-  ///
-  /// @param <T> the type of the first input to the consumer
-  /// @param <U> the type of the second input to the consumer
-  /// @param operation the consumer to wrap with error handling
-  /// @param logger the logger instance to use for logging exceptions
-  /// @return a consumer that executes the operation but suppresses and logs any exceptions
-  public static <T, U> BiConsumer<T, U> withBiConsumerErrorHandling(
-    final BiConsumer<T, U> operation,
-    final Logger logger
-  ) {
-    return (input1, input2) -> {
-      try {
-        operation.accept(input1, input2);
-      } catch (final Exception e) {
-        logger.log(Level.WARNING, "Error in operation", e);
-      }
-    };
-  }
-
   /// Creates an unmodifiable view of a registry where values are transformed using the provided
   /// mapper function.
   ///

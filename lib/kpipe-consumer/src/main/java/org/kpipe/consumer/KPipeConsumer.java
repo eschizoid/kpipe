@@ -55,9 +55,12 @@ import org.kpipe.sink.BatchSink;
 /// Example usage:
 ///
 /// ```java
+/// final var registry = new MessageProcessorRegistry();
+/// final var consoleSinkKey = RegistryKey.json("jsonConsole");
+/// registry.registerSink(consoleSinkKey, new JsonConsoleSink<>());
+///
 /// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
-///     .add(sanitizeKey)
-///     .toSink(JsonFormat.JSON_LOGGING)
+///     .toSink(consoleSinkKey)
 ///     .build();
 ///
 /// final var consumer = KPipeConsumer.<String>builder()
@@ -411,16 +414,6 @@ public class KPipeConsumer<K> implements AutoCloseable {
       return this;
     }
 
-    /// Sets the timeout for the virtual-thread executor to drain in-flight processing tasks during
-    /// shutdown. After this timeout, `executor.shutdownNow()` is invoked to cancel remaining tasks.
-    ///
-    /// @param timeout Maximum time to wait for the executor to drain
-    /// @return This builder instance for method chaining
-    public Builder<K> withExecutorTerminationTimeout(final Duration timeout) {
-      this.executorTerminationTimeout = Objects.requireNonNull(timeout);
-      return this;
-    }
-
     /// Sets a function to create a custom OffsetManager once the consumer is available. This
     /// automatically disables auto-commit.
     ///
@@ -515,10 +508,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Sets the Dead Letter Queue (DLQ) topic to send failed records after all retries.
     ///
-    /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] which sets the topic and producer
-    /// atomically. When only the topic is set (no producer), the consumer auto-builds a producer
-    /// from the configured Kafka properties at construction time — fine for simple cases, but
-    /// `withDeadLetterQueue(...)` is preferred when you have an existing producer to share.
+    /// When only the topic is set, the consumer auto-builds a producer from the configured Kafka
+    /// properties at construction time. To share an existing producer instead, prefer
+    /// [#withDeadLetterQueue(String, KPipeProducer)] — it sets both atomically so the topic and
+    /// producer cannot drift out of sync.
     ///
     /// @param topic The name of the DLQ topic
     /// @return This builder instance for method chaining
@@ -530,8 +523,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// Sets the Kafka producer to use for DLQ and Kafka sinks. If not provided but a DLQ topic is
     /// set, a new producer will be created using the consumer's configuration.
     ///
-    /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] when configuring a DLQ — it sets the
-    /// topic and producer atomically.
+    /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] when configuring a DLQ — it pairs the
+    /// topic and the producer in a single call.
     ///
     /// @param producer The Kafka producer to use
     /// @return This builder instance for method chaining
@@ -542,8 +535,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Sets the KPipe producer wrapper to use for DLQ and Kafka sinks.
     ///
-    /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] when configuring a DLQ — it sets the
-    /// topic and producer atomically.
+    /// Prefer [#withDeadLetterQueue(String, KPipeProducer)] when configuring a DLQ — it pairs the
+    /// topic and the producer in a single call.
     ///
     /// @param producer The KPipe producer wrapper to use
     /// @return This builder instance for method chaining
@@ -552,15 +545,16 @@ public class KPipeConsumer<K> implements AutoCloseable {
       return this;
     }
 
-    /// Configures the Dead Letter Queue (DLQ) by setting both the topic and the producer
-    /// atomically. Failed records will be sent to `topic` via `producer` after all retries are
+    /// Configures the Dead Letter Queue by setting the DLQ topic and the producer that delivers
+    /// to it atomically. Failed records are forwarded to `topic` via `producer` after retries are
     /// exhausted.
     ///
-    /// Prefer this method over calling [#withDeadLetterTopic] and [#withKafkaProducer]
-    /// separately — it ensures the two settings cannot drift out of sync.
+    /// Prefer this over calling [#withDeadLetterTopic] and [#withKafkaProducer] separately — the
+    /// atomic form makes the intent explicit (the producer is for the DLQ, not a generic
+    /// Kafka sink) and prevents the two settings from drifting out of sync.
     ///
     /// @param topic The name of the DLQ topic (non-null)
-    /// @param producer The KPipe producer wrapper to use for DLQ sends (non-null)
+    /// @param producer The KPipe producer wrapper used for DLQ sends (non-null)
     /// @return This builder instance for method chaining
     public Builder<K> withDeadLetterQueue(final String topic, final KPipeProducer<K, byte[]> producer) {
       this.deadLetterTopic = Objects.requireNonNull(topic, "DLQ topic cannot be null");

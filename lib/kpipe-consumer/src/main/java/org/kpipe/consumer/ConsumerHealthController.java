@@ -2,7 +2,6 @@ package org.kpipe.consumer;
 
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.time.Duration;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
@@ -190,7 +189,10 @@ final class ConsumerHealthController {
         if (requestPause(Source.BACKPRESSURE)) hook.onPause();
       }
       case RESUME -> {
-        final long duration = Math.max(1, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos));
+        final long duration = Math.max(
+          1,
+          TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos)
+        );
         hook.onBackpressureTimeMs(duration);
         if (releasePause(Source.BACKPRESSURE)) {
           LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
@@ -204,12 +206,9 @@ final class ConsumerHealthController {
           );
         }
       }
-      case NONE -> {}
+      case NONE -> {
+      }
     }
-  }
-
-  long backpressureMetric(final Consumer<?, ?> kafkaConsumer) {
-    return backpressure != null ? backpressure.getMetric(kafkaConsumer) : 0L;
   }
 
   String backpressureMetricName() {
@@ -255,10 +254,6 @@ final class ConsumerHealthController {
 
   CircuitBreakerState circuitBreakerState() {
     return cbState.get();
-  }
-
-  boolean circuitBreakerEnabled() {
-    return cbController != null;
   }
 
   /// Cancels the in-flight probe timer if any. Called from KPipeConsumer.close() so a pending

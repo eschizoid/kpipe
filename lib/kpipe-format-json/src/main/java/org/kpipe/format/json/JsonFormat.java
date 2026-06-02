@@ -5,8 +5,6 @@ import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONFactory;
 import java.util.Map;
 import org.kpipe.registry.MessageFormat;
-import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.RegistryKey;
 
 /// JSON implementation of [MessageFormat] for KPipe.
 ///
@@ -25,10 +23,6 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   /// Shared singleton instance — JsonFormat is stateless, so there is no isolation concern.
   public static final JsonFormat INSTANCE = new JsonFormat();
 
-  /// Pre-defined registry key for the bundled `JsonConsoleSink` (the default sink wired up by
-  /// [#newRegistry()]).
-  public static final RegistryKey<Map<String, Object>> JSON_LOGGING = RegistryKey.json("jsonLogging");
-
   static {
     // Explicit lockdown: disable autoType globally so a malicious payload cannot
     // instantiate arbitrary classes via the `@type` discriminator. fastjson2's default is
@@ -39,16 +33,6 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   /// Constructs a new JsonFormat instance.
   public JsonFormat() {
     // Default constructor
-  }
-
-  /// Creates a new [MessageProcessorRegistry] pre-wired with [JsonFormat#INSTANCE] and a
-  /// [JsonConsoleSink] registered under [JsonFormat#JSON_LOGGING].
-  ///
-  /// @return a new pre-configured registry
-  public static MessageProcessorRegistry newRegistry() {
-    final var registry = new MessageProcessorRegistry(INSTANCE);
-    registry.registerSink(JSON_LOGGING, new JsonConsoleSink<>());
-    return registry;
   }
 
   /// Creates a new [JsonConsoleSink] for `Map<String, Object>` payloads.

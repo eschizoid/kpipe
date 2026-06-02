@@ -43,7 +43,7 @@ record DefaultBatchSink<T>(
   /// Builds the typed pipeline (deserialize → operators → return value) used by the consumer to
   /// turn each `byte[]` into a `T` before enqueueing into the batch buffer.
   MessagePipeline<T> buildPipeline() {
-    final var registry = new MessageProcessorRegistry(stream.format());
+    final var registry = new MessageProcessorRegistry();
     final var pipelineBuilder = registry.pipeline(stream.format()).skipBytes(stream.skipBytes());
     for (final var op : stream.operators()) pipelineBuilder.add(op);
     return pipelineBuilder.build();

@@ -40,8 +40,7 @@ class MultiBuilderBatchIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION))
-                   .asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   ).withStartupAttempts(3);
 
   @Test
@@ -129,7 +128,7 @@ class MultiBuilderBatchIntegrationTest {
   /// route. The builder must reject the combo at `build()` rather than dispatching ambiguously.
   @Test
   void builderRejectsTopicConfiguredAsBothRegularAndBatch() {
-    final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
+    final var registry = new MessageProcessorRegistry();
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
     final BatchSink<Map<String, Object>> sink = BatchSink.ofVoid(b -> {});
 
@@ -151,7 +150,7 @@ class MultiBuilderBatchIntegrationTest {
   /// on different topics.
   @Test
   void builderAcceptsTwoBatchRoutesOnDifferentTopics() {
-    final var registry = new MessageProcessorRegistry(JsonFormat.INSTANCE);
+    final var registry = new MessageProcessorRegistry();
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
     final BatchSink<Map<String, Object>> wholeBatch = BatchSink.ofVoid(b -> {});
     final BatchSink<Map<String, Object>> perRecordBatch = b -> BatchResult.allSucceeded(b.size());

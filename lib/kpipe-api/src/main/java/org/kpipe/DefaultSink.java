@@ -51,7 +51,7 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
   /// [MultiBuilder] when assembling a per-topic pipeline map. Wraps the built pipeline with
   /// observer dispatch when any of `onFiltered` / `onFailed` / `peekResult` is configured.
   MessagePipeline<?> buildPipeline() {
-    final var registry = new MessageProcessorRegistry(stream.format());
+    final var registry = new MessageProcessorRegistry();
     final var pipelineBuilder = registry.pipeline(stream.format()).skipBytes(stream.skipBytes());
     for (final var op : stream.operators()) pipelineBuilder.add(op);
     final var base = pipelineBuilder.toSink(terminalSink).build();

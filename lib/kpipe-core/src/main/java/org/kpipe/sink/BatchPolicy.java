@@ -28,13 +28,4 @@ public record BatchPolicy(int maxSize, Duration maxAge) {
   public static BatchPolicy ofSize(final int maxSize) {
     return new BatchPolicy(maxSize, Duration.ofMinutes(1));
   }
-
-  /// Convenience factory for age-driven batches with a generous 10,000-record size cap. Useful
-  /// when steady-state traffic is bursty and you want predictable flush latency.
-  ///
-  /// @param maxAge maximum buffered-record age
-  /// @return a policy with the given age and a 10,000-record size cap
-  public static BatchPolicy ofAge(final Duration maxAge) {
-    return new BatchPolicy(10_000, maxAge);
-  }
 }
