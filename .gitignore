@@ -234,8 +234,11 @@ gradle-app.setting
 ### Junie ###
 .junie
 
+### Claude ###
+.claude
+
+### Toke Savior ###
+.token-savior-cache.json
+
 ### Jenv ###
 .java-version
-/.token-savior-cache.json
-.claude/worktrees/
-scheduled_tasks.lock

@@ -1,0 +1,16 @@
+/// Format-agnostic pipeline machinery.
+///
+/// Defines the core SPI contracts that the rest of KPipe builds on:
+///
+/// - [MessageFormat] / [BytesFormat] — codecs that turn raw Kafka bytes into typed records and back.
+/// - [MessagePipeline] / [TypedPipelineBuilder] — the processing-chain abstraction.
+/// - [MessageProcessorRegistry], [RegistryEntry], [RegistryFunctions], [RegistryKey] —
+///   registry of named, composable processors.
+/// - [Operators] — common transformation building blocks.
+/// - [SchemaResolver] — pluggable schema lookup (inline, classpath, file, Confluent SR, ...).
+/// - [Result] — sealed success/failure container returned by processors.
+/// - [PipelineDiagnostics] — runtime introspection for built pipelines.
+///
+/// This package depends on no other KPipe module; consumer, producer, and format modules
+/// all build on top of these types.
+package org.kpipe.registry;

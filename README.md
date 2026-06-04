@@ -16,7 +16,7 @@ delivery.
 
 What it does:
 
-- Virtual-thread-per-record processing (no thread pool to tune)
+- Client-side parallelism — virtual thread per record, no thread pool to tune, no scaling by consumer count
 - Composable `UnaryOperator<T>` pipelines that deserialize once and serialize once
 - At-least-once delivery via lowest-pending-offset commits, even with parallel processing
 - In-flight or lag-based backpressure with hysteresis
