@@ -149,8 +149,8 @@ libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.15.0"
 ### 2. Hello, KPipe — five lines
 
 ```java
-import org.kpipe.KPipe;
-import static org.kpipe.registry.Operators.removeFields;
+import io.github.eschizoid.kpipe.KPipe;
+import static io.github.eschizoid.kpipe.registry.Operators.removeFields;
 
 KPipe.json("events", kafkaProps)
     .pipe(msg -> { msg.put("ts", System.currentTimeMillis()); return msg; })
@@ -253,10 +253,10 @@ Each route gets its own typed `Stream<T>`. Records arriving for topics not regis
 
 ### 5. Common operator patterns
 
-`org.kpipe.registry.Operators` exposes pure-function helpers ready to drop into `.pipe(...)`:
+`io.github.eschizoid.kpipe.registry.Operators` exposes pure-function helpers ready to drop into `.pipe(...)`:
 
 ```java
-import static org.kpipe.registry.Operators.*;
+import static io.github.eschizoid.kpipe.registry.Operators.*;
 
 KPipe.json("events", kafkaProps)
     .filter(msg -> "active".equals(msg.get("status")))            // drop inactive
@@ -381,7 +381,8 @@ kpipe-bom                                          (Maven BOM — pins versions)
   classpath.
 - **kpipe-metrics-otel**: OpenTelemetry implementation (`OtelConsumerMetrics`, `OtelProducerMetrics`). Add this only if
   you want OTel-backed metrics.
-- **kpipe-producer**: Kafka producer wrapper, `KafkaMessageSink` (in `org.kpipe.producer.sink`), `Tracer` SPI.
+- **kpipe-producer**: Kafka producer wrapper, `KafkaMessageSink` (in `io.github.eschizoid.kpipe.producer.sink`),
+  `Tracer` SPI.
 - **kpipe-consumer**: `KPipeConsumer` (hosts lifecycle: `start` / `close` / `awaitShutdown` / `shutdownGracefully` /
   `waitForInFlightDrain` + optional metrics-reporter thread and JVM shutdown hook), `BackpressureController`,
   `CircuitBreakerController`, `ConsumerHealthController`, `KafkaOffsetManager`, `HttpHealthServer`, `consumer.metrics`
@@ -397,9 +398,9 @@ Use KPipe in a modular project:
 
 ```java
 module my.application {
-  requires org.kpipe.consumer; // includes core + producer + metrics transitively
-  requires org.kpipe.format.json; // add only the formats you use
-  requires org.kpipe.metrics.otel; // optional — enables OTel-backed metrics
+  requires io.github.eschizoid.kpipe.consumer; // includes core + producer + metrics transitively
+  requires io.github.eschizoid.kpipe.format.json; // add only the formats you use
+  requires io.github.eschizoid.kpipe.metrics.otel; // optional — enables OTel-backed metrics
 }
 ```
 
@@ -579,7 +580,7 @@ rate crosses a threshold, then probes recovery with a single record after a cool
 
 ```java
 import java.time.Duration;
-import org.kpipe.KPipe;
+import io.github.eschizoid.kpipe.KPipe;
 
 KPipe.json("events", kafkaProps)
     .pipe(enrich)
@@ -628,8 +629,8 @@ Wire it on the stream:
 
 ```java
 import io.opentelemetry.api.OpenTelemetry;
-import org.kpipe.KPipe;
-import org.kpipe.tracing.otel.OtelTracer;
+import io.github.eschizoid.kpipe.KPipe;
+import io.github.eschizoid.kpipe.tracing.otel.OtelTracer;
 
 final OpenTelemetry otel = /* GlobalOpenTelemetry.get() or your SDK */;
 
@@ -675,20 +676,20 @@ KPipeConsumer.<byte[]>builder()
 
 Pipelines deserialize once, transform many times, serialize once. Operators are `UnaryOperator<T>` where `T` is the
 format's typed payload — `Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf. The generic
-helpers in [`Operators`](lib/kpipe-core/src/main/java/org/kpipe/registry/Operators.java) (`filter`, `drop`, `peek`,
-`map`, `compose`, `safe`, plus the map-specific `addField`, `removeFields`, `requireField`, `rename`) cover the common
-cases. For anything else, inline lambdas using the format's native API.
+helpers in [`Operators`](lib/kpipe-core/src/main/java/io/github/eschizoid/kpipe/registry/Operators.java) (`filter`,
+`drop`, `peek`, `map`, `compose`, `safe`, plus the map-specific `addField`, `removeFields`, `requireField`, `rename`)
+cover the common cases. For anything else, inline lambdas using the format's native API.
 
 ### JSON
 
 Add `kpipe-format-json`. Operators are `UnaryOperator<Map<String, Object>>`:
 
 ```java
-import static org.kpipe.registry.Operators.*;
+import static io.github.eschizoid.kpipe.registry.Operators.*;
 
-import org.kpipe.format.json.JsonFormat;
-import org.kpipe.registry.MessageProcessorRegistry;
-import org.kpipe.registry.RegistryKey;
+import io.github.eschizoid.kpipe.format.json.JsonFormat;
+import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.RegistryKey;
 
 final var registry = new MessageProcessorRegistry();
 
@@ -722,9 +723,9 @@ final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
 Add `kpipe-format-avro`. Operators are `UnaryOperator<GenericRecord>`:
 
 ```java
-import org.kpipe.format.avro.AvroFormat;
-import org.kpipe.format.avro.AvroRegistryKey;
-import org.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.format.avro.AvroFormat;
+import io.github.eschizoid.kpipe.format.avro.AvroRegistryKey;
+import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 
 // Build an AvroFormat bound to a single schema. Use new AvroFormat(schema) when you already have a
 // parsed Schema, or AvroFormat.of(schemaJson) for inline JSON. For multiple schemas keyed by name
@@ -769,9 +770,9 @@ Wire the fluent facade with the SR-shorthand factory:
 
 ```java
 import java.time.Duration;
-import org.kpipe.KPipe;
-import org.kpipe.schemaregistry.confluent.CachedSchemaResolver;
-import org.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
+import io.github.eschizoid.kpipe.KPipe;
+import io.github.eschizoid.kpipe.schemaregistry.confluent.CachedSchemaResolver;
+import io.github.eschizoid.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 
 // One resolver for the process; CachedSchemaResolver caches by ID with no TTL (Confluent SR IDs
 // are immutable, so cache-by-ID is trivially correct).
@@ -819,9 +820,9 @@ Add `kpipe-format-protobuf`. Operators are `UnaryOperator<Message>`. Protobuf me
 builds a new message via `toBuilder().setField(...).build()`.
 
 ```java
-import org.kpipe.format.protobuf.ProtobufFormat;
-import org.kpipe.format.protobuf.ProtobufRegistryKey;
-import org.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
+import io.github.eschizoid.kpipe.format.protobuf.ProtobufRegistryKey;
+import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 
 // Build a ProtobufFormat bound to a single descriptor. Use ProtobufDescriptorCatalog for keyed
 // lookup of multiple descriptors.
@@ -836,7 +837,7 @@ registry.registerOperator(clearEmailKey, msg -> {
 
 // Register the protobuf console sink yourself (defaults are no longer auto-registered)
 final var protoLoggingKey = ProtobufRegistryKey.of("protobufLogging");
-registry.registerSink(protoLoggingKey, new org.kpipe.format.protobuf.ProtobufConsoleSink<>());
+registry.registerSink(protoLoggingKey, new io.github.eschizoid.kpipe.format.protobuf.ProtobufConsoleSink<>());
 
 final var pipeline = registry
   .pipeline(format)
@@ -861,9 +862,9 @@ public interface MessageSink<T> extends Consumer<T> {}
 Console sinks live in their format modules. The registry doesn't auto-register them — register the ones you want:
 
 ```java
-import org.kpipe.format.json.JsonConsoleSink;
-import org.kpipe.format.avro.AvroConsoleSink;
-import org.kpipe.format.protobuf.ProtobufConsoleSink;
+import io.github.eschizoid.kpipe.format.json.JsonConsoleSink;
+import io.github.eschizoid.kpipe.format.avro.AvroConsoleSink;
+import io.github.eschizoid.kpipe.format.protobuf.ProtobufConsoleSink;
 
 // Direct instantiation
 final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
@@ -919,11 +920,12 @@ registry.registerSink(RegistryKey.json("safeDatabase"), safeSink);
 
 ### Kafka producer sink
 
-To produce processed messages back to a Kafka topic, use `KafkaMessageSink` (in `org.kpipe.producer.sink`):
+To produce processed messages back to a Kafka topic, use `KafkaMessageSink` (in
+`io.github.eschizoid.kpipe.producer.sink`):
 
 ```java
-import org.kpipe.producer.KPipeProducer;
-import org.kpipe.producer.sink.KafkaMessageSink;
+import io.github.eschizoid.kpipe.producer.KPipeProducer;
+import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
 
 final var producer = KPipeProducer.<byte[], byte[]>builder().withProperties(kafkaProps).build();
 
@@ -936,11 +938,11 @@ final var pipeline = registry
 
 ### Composite sink (fanout)
 
-`CompositeMessageSink` (in `org.kpipe.sink`, part of `kpipe-core`) broadcasts to multiple sinks. A failure in one sink
-doesn't stop the others from receiving the message:
+`CompositeMessageSink` (in `io.github.eschizoid.kpipe.sink`, part of `kpipe-core`) broadcasts to multiple sinks. A
+failure in one sink doesn't stop the others from receiving the message:
 
 ```java
-import org.kpipe.sink.CompositeMessageSink;
+import io.github.eschizoid.kpipe.sink.CompositeMessageSink;
 
 final var compositeSink = new CompositeMessageSink<>(List.of(postgresSink, consoleSink));
 
@@ -955,9 +957,9 @@ configurable size or age:
 
 ```java
 import java.time.Duration;
-import org.kpipe.KPipe;
-import org.kpipe.sink.BatchPolicy;
-import org.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.KPipe;
+import io.github.eschizoid.kpipe.sink.BatchPolicy;
+import io.github.eschizoid.kpipe.sink.BatchSink;
 
 KPipe.json("events", kafkaProps)
     .pipe(addTimestamp)
@@ -1007,7 +1009,7 @@ OTel is opt-in via the `kpipe-metrics-otel` module. `kpipe-metrics` ships interf
 telemetry:
 
 ```java
-import org.kpipe.metrics.otel.OtelConsumerMetrics;
+import io.github.eschizoid.kpipe.metrics.otel.OtelConsumerMetrics;
 
 final var consumer = KPipeConsumer.<byte[]>builder()
   .withProperties(kafkaProps)
@@ -1364,8 +1366,8 @@ Two OTel pieces ship in `kpipe-metrics-otel`:
 
 ```java
 import io.opentelemetry.api.GlobalOpenTelemetry;
-import org.kpipe.metrics.otel.OtelConsumerMetrics;
-import org.kpipe.metrics.otel.PipelineMetricsObserver;
+import io.github.eschizoid.kpipe.metrics.otel.OtelConsumerMetrics;
+import io.github.eschizoid.kpipe.metrics.otel.PipelineMetricsObserver;
 
 final var otel = GlobalOpenTelemetry.get();
 final var consumerMetrics = new OtelConsumerMetrics(otel, "orders-consumer");

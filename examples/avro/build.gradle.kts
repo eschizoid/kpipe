@@ -4,7 +4,7 @@ tasks.named<ShadowJar>("shadowJar") {
   archiveClassifier.set("all")
   manifest {
     attributes(
-      "Main-Class" to "org.kpipe.App",
+      "Main-Class" to "io.github.eschizoid.kpipe.App",
     )
   }
 }
