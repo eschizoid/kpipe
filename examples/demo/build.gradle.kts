@@ -3,7 +3,7 @@ import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 tasks.named<ShadowJar>("shadowJar") {
   manifest {
     attributes(
-      "Main-Class" to "org.kpipe.demo.DemoApp",
+      "Main-Class" to "io.github.eschizoid.kpipe.demo.DemoApp",
     )
   }
 }

@@ -14,9 +14,9 @@
 /// final var schemaJson = resolver.lookupBySubjectVersion("com.kpipe.customer", "latest");
 /// final var format = AvroFormat.of(schemaJson);
 /// ```
-module org.kpipe.schemaregistry.confluent {
-  requires org.kpipe.core;
+module io.github.eschizoid.kpipe.schemaregistry.confluent {
+  requires io.github.eschizoid.kpipe.core;
   requires java.net.http;
 
-  exports org.kpipe.schemaregistry.confluent;
+  exports io.github.eschizoid.kpipe.schemaregistry.confluent;
 }
