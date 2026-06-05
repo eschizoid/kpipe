@@ -25,7 +25,7 @@ import org.apache.kafka.common.TopicPartition;
 /// </ul>
 ///
 /// The listener coordinates with the KafkaOffsetManager to maintain accurate offset tracking
-// during
+/// during
 /// consumer group rebalancing operations, preventing duplicate message processing or data loss when
 /// partitions are reassigned between consumer instances.
 ///

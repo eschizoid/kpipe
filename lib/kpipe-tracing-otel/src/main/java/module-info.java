@@ -1,5 +1,5 @@
 /// KPipe Tracing OTel module — OpenTelemetry-backed implementation of the
-// [io.github.eschizoid.kpipe.producer.tracing.Tracer] SPI.
+/// [io.github.eschizoid.kpipe.producer.tracing.Tracer] SPI.
 ///
 /// Add this module only when you want W3C `traceparent` propagation across the Kafka boundary.
 /// The library code in `kpipe-consumer` / `kpipe-producer` ships the SPI only and has no

@@ -11,7 +11,7 @@ import org.apache.kafka.common.header.Headers;
 ///      span** that represents the work of processing the record.
 ///   2. **Inject** the active span's context into outbound [Headers] so downstream consumers (DLQ
 ///      subscribers, services that read records produced by
-// [io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink])
+/// [io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink])
 ///      see the same trace.
 ///
 /// This module ships no concrete implementation. The default [#noop()] is a zero-cost stub used
@@ -22,9 +22,9 @@ import org.apache.kafka.common.header.Headers;
 /// **Why this lives in `kpipe-producer`:** the SPI references Kafka's `Headers` and
 /// `ConsumerRecord` types, so it must live in a module that already requires `kafka.clients`.
 /// `kpipe-metrics` is interfaces-only and dep-free; widening it would regress that.
-// `kpipe-consumer`
+/// `kpipe-consumer`
 /// already `requires transitive io.github.eschizoid.kpipe.producer`, so the SPI is reachable from
-// both injection
+/// both injection
 /// callsites (`KPipeProducer.sendToDlq`, `KafkaMessageSink`) and the span-start callsite
 /// (`KPipeConsumer.processRecord`) without introducing new module edges.
 ///
@@ -45,7 +45,7 @@ public interface Tracer {
 
   /// Injects the currently-active span context into `headers` so a downstream consumer can pick
   /// up the same trace. Called by [io.github.eschizoid.kpipe.producer.KPipeProducer#sendToDlq] and
-  // the Kafka sink
+  /// the Kafka sink
   /// before each outbound `send`.
   ///
   /// @param headers the outbound record's headers

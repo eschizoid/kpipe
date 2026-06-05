@@ -185,7 +185,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
     /// Internal record bundling the per-topic batch configuration handed in via
     /// [#withBatchPipeline]. The [BatchSink] returns a [io.github.eschizoid.kpipe.sink.BatchResult]
-    // naming
+    /// naming
     /// per-record outcomes; void-style consumers can use [BatchSink#ofVoid] to opt into
     /// whole-batch success/failure semantics.
     record BatchSpec<T>(String topic, MessagePipeline<T> pipeline, BatchSink<T> sink, BatchPolicy policy) {}
@@ -566,7 +566,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// Sets the OpenTelemetry metrics instruments for this consumer.
     ///
     /// Use [io.github.eschizoid.kpipe.metrics.ConsumerMetrics] to create an instrumented instance,
-    // or
+    /// or
     /// [ConsumerMetrics#noop()] for a no-op default.
     ///
     /// @param metrics the consumer metrics instruments

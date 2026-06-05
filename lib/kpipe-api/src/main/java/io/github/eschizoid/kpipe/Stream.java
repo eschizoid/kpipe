@@ -311,13 +311,13 @@ public interface Stream<T> {
   /// Terminates the stream with a buffering [BatchSink], flushing in chunks of `policy.maxSize()`
   /// or whenever `policy.maxAge()` elapses since the oldest buffered record. The sink returns a
   /// [io.github.eschizoid.kpipe.sink.BatchResult] naming per-record outcomes: succeeded records
-  // have their
+  /// have their
   /// offsets marked processed; failed records are routed to the configured DLQ. For void-style
   /// consumers that report whole-batch success or failure (e.g. a transactional commit), wrap
   /// with [BatchSink#ofVoid] — exceptions translate to `BatchResult.allFailed`.
   ///
   /// **Coverage contract.** The returned [io.github.eschizoid.kpipe.sink.BatchResult] must account
-  // for every
+  /// for every
   /// position in the input batch. Indexes that are not named in either the success list or the
   /// failure map are treated as failures (with a synthetic [IllegalStateException] as the
   /// cause) — silently marking them processed would mask sink bugs and risk data loss. If the
@@ -339,7 +339,7 @@ public interface Stream<T> {
   /// Terminates the stream by fanning out to multiple sinks. Each delivered message is dispatched
   /// to every sink; an exception in one sink is **logged at ERROR but suppressed** so the
   /// remaining sinks still receive the message (see
-  // [io.github.eschizoid.kpipe.sink.CompositeMessageSink]).
+  /// [io.github.eschizoid.kpipe.sink.CompositeMessageSink]).
   ///
   /// **Best-effort delivery, NOT at-least-once-per-sink.** Because exceptions are suppressed,
   /// a sink that consistently fails will silently drop messages while the consumer continues to
@@ -348,7 +348,7 @@ public interface Stream<T> {
   ///
   /// If you need guaranteed delivery to every sink, do not use `toMulti`. Wire each sink as its
   /// own pipeline through the explicit
-  // [io.github.eschizoid.kpipe.registry.MessageProcessorRegistry] API and
+  /// [io.github.eschizoid.kpipe.registry.MessageProcessorRegistry] API and
   /// drive failure handling through the consumer's `errorHandler` / DLQ configuration.
   ///
   /// @param sinks the sinks to broadcast to (must contain at least one element)

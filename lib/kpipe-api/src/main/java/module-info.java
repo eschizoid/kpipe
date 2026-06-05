@@ -1,7 +1,7 @@
 /// KPipe API module — the user-facing entry point. Provides the fluent
-// [io.github.eschizoid.kpipe.KPipe] factory
+/// [io.github.eschizoid.kpipe.KPipe] factory
 /// and the [io.github.eschizoid.kpipe.Stream] / [io.github.eschizoid.kpipe.Sink] /
-// [io.github.eschizoid.kpipe.Handle] types.
+/// [io.github.eschizoid.kpipe.Handle] types.
 ///
 /// Depends transitively on `kpipe-core`, `kpipe-consumer`, `kpipe-producer`, and the JSON / Avro /
 /// Protobuf format modules so a single dependency on `kpipe-api` is enough to write the

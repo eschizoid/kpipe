@@ -1,7 +1,7 @@
 /// Avro codec for KPipe.
 ///
 /// Provides `AvroFormat` — a [io.github.eschizoid.kpipe.registry.MessageFormat] implementation
-// built on
+/// built on
 /// `org.apache.avro` that decodes / encodes records against a supplied schema — and
 /// `AvroConsoleSink`, which renders records as Avro JSON for debugging. Schemas can be
 /// supplied inline, loaded from classpath / file, or resolved at runtime via

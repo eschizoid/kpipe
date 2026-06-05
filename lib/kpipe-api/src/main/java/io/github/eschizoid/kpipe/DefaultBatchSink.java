@@ -8,7 +8,7 @@ import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.util.Objects;
 
 /// Package-private [Sink] impl for batch terminals. Builds a sink-less
-// [io.github.eschizoid.kpipe.registry.MessagePipeline]
+/// [io.github.eschizoid.kpipe.registry.MessagePipeline]
 /// from the stream's operator chain (deserialize → operators → return value) and wires it into
 /// [KPipeConsumer.Builder#withBatchPipeline] together with the configured [BatchSink] and
 /// [BatchPolicy]. Honors whatever processing mode the underlying [DefaultStream] carries

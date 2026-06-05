@@ -6,12 +6,12 @@ package io.github.eschizoid.kpipe.registry;
 /// actually use:
 ///
 /// - `io.github.eschizoid.kpipe.format.json.JsonFormat.INSTANCE` — JSON via fastjson2
-// (`kpipe-format-json`)
+/// (`kpipe-format-json`)
 /// - `io.github.eschizoid.kpipe.format.avro.AvroFormat` — Avro (`kpipe-format-avro`); construct
-// with
+/// with
 ///   `new AvroFormat(schema)` or `AvroFormat.of(schemaJson)`.
 /// - `io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat` — Protobuf
-// (`kpipe-format-protobuf`); construct
+/// (`kpipe-format-protobuf`); construct
 ///   with `new ProtobufFormat(descriptor)`.
 /// - [#bytes] — identity passthrough for byte[] payloads (`kpipe-core`)
 ///

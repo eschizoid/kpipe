@@ -5,7 +5,7 @@
 /// the SPI plus a handful of format-agnostic helpers:
 ///
 /// - [BatchSink] / [BatchPolicy] / [BatchResult] — batching support with size / time / byte
-// triggers.
+/// triggers.
 /// - [CompositeMessageSink] — fan-out to multiple sinks while preserving back-pressure semantics.
 /// - [ConsoleSinkSupport] — shared scaffolding for the per-format `*ConsoleSink` implementations.
 ///

@@ -3,7 +3,7 @@
 /// Defines the core SPI contracts that the rest of KPipe builds on:
 ///
 /// - [MessageFormat] / [BytesFormat] — codecs that turn raw Kafka bytes into typed records and
-// back.
+/// back.
 /// - [MessagePipeline] / [TypedPipelineBuilder] — the processing-chain abstraction.
 /// - [MessageProcessorRegistry], [RegistryEntry], [RegistryFunctions], [RegistryKey] —
 ///   registry of named, composable processors.

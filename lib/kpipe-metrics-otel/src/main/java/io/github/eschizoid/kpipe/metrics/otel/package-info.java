@@ -1,10 +1,10 @@
 /// OpenTelemetry-backed implementation of the [io.github.eschizoid.kpipe.metrics] SPI.
 ///
 /// - [OtelConsumerMetrics] — [io.github.eschizoid.kpipe.metrics.ConsumerMetrics] adapter that emits
-// via the
+/// via the
 ///   OpenTelemetry `Meter` API.
 /// - [OtelProducerMetrics] — [io.github.eschizoid.kpipe.metrics.ProducerMetrics] adapter for the
-// producer side.
+/// producer side.
 /// - [PipelineMetricsObserver] — pipeline-level observer that records per-stage timings and
 ///   throughput.
 ///

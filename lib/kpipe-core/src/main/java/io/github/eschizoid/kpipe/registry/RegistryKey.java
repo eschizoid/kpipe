@@ -11,9 +11,9 @@ import java.util.Map;
 /// Format-specific convenience factories live in their respective modules:
 ///
 /// - `io.github.eschizoid.kpipe.format.avro.AvroRegistryKey.of(name)` —
-// `RegistryKey<GenericRecord>`
+/// `RegistryKey<GenericRecord>`
 /// - `io.github.eschizoid.kpipe.format.protobuf.ProtobufRegistryKey.of(name)` —
-// `RegistryKey<Message>`
+/// `RegistryKey<Message>`
 ///
 /// JSON keys are provided here directly because `Map<String, Object>` is a JDK type with no
 /// format runtime dependency.

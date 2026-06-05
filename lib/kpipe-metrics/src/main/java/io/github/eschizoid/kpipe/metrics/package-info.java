@@ -4,7 +4,7 @@
 /// counters, gauges, and timers:
 ///
 /// - [ConsumerMetrics] / [ConsumerMetricsReporter] — consumer-side counters (records, lag, errors,
-// ...).
+/// ...).
 /// - [ProducerMetrics] — producer-side counters (sends, bytes, errors, ...).
 /// - [KPipeMetricsReporter] — root reporter type used by the pipeline.
 /// - [NoopConsumerMetrics] / [NoopProducerMetrics] — zero-overhead defaults used when no
