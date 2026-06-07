@@ -225,10 +225,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   public static class WorkloadParams {
 
     /// Per-record simulated work (`LockSupport.parkNanos`). The first three values are the
-    /// original framework-overhead → 1ms sweep; the higher values were added per #148 to cover
-    /// the 10-100ms regime where most real Kafka consumers actually live (HTTP/DB hops). 100ms
-    /// is also where the lag-based-backpressure pitch becomes load-bearing — so it's the column
-    /// the numbers most need to be honest about.
+    /// original framework-overhead → 1ms sweep; the higher values cover the 10-100ms regime
+    /// where most real Kafka consumers actually live (HTTP/DB hops). 100ms is also where the
+    /// lag-based-backpressure pitch becomes load-bearing — so it's the column the numbers most
+    /// need to be honest about.
     @Param({ "0", "100", "1000", "10000", "35000", "50000", "100000" })
     public int workMicros;
   }

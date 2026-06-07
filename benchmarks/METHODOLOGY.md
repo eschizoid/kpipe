@@ -91,11 +91,10 @@ Per-benchmark overrides:
 - `ParallelProcessingLatencyBenchmark` sets `Mode.SampleTime + Mode.AverageTime` and `OutputTimeUnit.MILLISECONDS` to
   publish percentile histograms.
 - `BatchSinkLatencyBenchmark` parameterises over `batchSize × sinkLatencyMicros`.
-- `ParallelProcessingBenchmark` parameterises over `workMicros`
-  (`0 / 100 / 1000 / 10000 / 35000 / 50000 / 100000`). The bottom three values isolate
-  framework overhead through 1ms blocking work; the upper four cover the 10-100ms regime that
-  most real Kafka consumers actually live in (HTTP/DB hops) and the regime where lag-based
-  backpressure becomes load-bearing. See #148 for the rationale.
+- `ParallelProcessingBenchmark` parameterises over `workMicros` (`0 / 100 / 1000 / 10000 / 35000 / 50000 / 100000`). The
+  bottom three values isolate framework overhead through 1ms blocking work; the upper four cover the 10-100ms regime
+  that most real Kafka consumers actually live in (HTTP/DB hops) and the regime where lag-based backpressure becomes
+  load-bearing.
 
 ### Recommended publishing run
 
