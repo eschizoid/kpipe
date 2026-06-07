@@ -74,7 +74,8 @@ class KPipeReporterThreadTest {
     }
 
     // After close() returns, stopMetricsReporterThread() has interrupted + joined the thread.
-    // Sleep one full interval so any racing fire would land, then assert the count is stable.
+    // Sleep three intervals (150ms at the configured 50ms cadence) so any racing fire would
+    // land comfortably, then assert the count is stable.
     final var firesAfterClose = fires.get();
     Thread.sleep(150);
     assertEquals(firesAfterClose, fires.get(), "reporter must not fire after close() returns");
@@ -88,8 +89,11 @@ class KPipeReporterThreadTest {
     assertThrows(NullPointerException.class, () -> builder.withMetricsReporters(null));
   }
 
-  /// Pins the positive-duration guard on the bundled setter. Zero or negative intervals would
-  /// busy-spin the reporter thread, so the Builder rejects them at config time.
+  /// Pins the positive-duration guard on the bundled setter. The runtime defensively no-ops
+  /// when `interval.toMillis() <= 0` (see `KPipeConsumer.startMetricsReporterThread`), so an
+  /// invalid interval would silently disable the reporters that were just configured. The
+  /// Builder rejects up front so the misconfig surfaces at `build()` time instead of at
+  /// `start()` as a no-show feature.
   @Test
   void withMetricsIntervalRejectsZeroOrNegative() {
     final var builder = KPipeConsumer.<String>builder().withProperties(properties).withTopic(TOPIC);
