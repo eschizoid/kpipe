@@ -1,0 +1,404 @@
+[
+  {
+    "benchmark": "confluent",
+    "workMicros": 0,
+    "score": 103495.48,
+    "scoreError": 13938.486,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluent",
+    "workMicros": 100,
+    "score": 106462.715,
+    "scoreError": 16372.198,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluent",
+    "workMicros": 1000,
+    "score": 64043.965,
+    "scoreError": 4082.967,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluent",
+    "workMicros": 10000,
+    "score": 8745.369,
+    "scoreError": 98.919,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluent",
+    "workMicros": 35000,
+    "score": 2614.745,
+    "scoreError": 22.027,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluent",
+    "workMicros": 50000,
+    "score": 1877.153,
+    "scoreError": 6.686,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluent",
+    "workMicros": 100000,
+    "score": 960.315,
+    "scoreError": 32.611,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentKey",
+    "workMicros": 0,
+    "score": 86839.816,
+    "scoreError": 17797.342,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentKey",
+    "workMicros": 100,
+    "score": 100102.465,
+    "scoreError": 4980.761,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentKey",
+    "workMicros": 1000,
+    "score": 48579.796,
+    "scoreError": 8492.203,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentKey",
+    "workMicros": 10000,
+    "score": 8707.883,
+    "scoreError": 61.925,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentKey",
+    "workMicros": 35000,
+    "score": 2628.973,
+    "scoreError": 24.514,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentKey",
+    "workMicros": 50000,
+    "score": 1878.855,
+    "scoreError": 4.167,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentKey",
+    "workMicros": 100000,
+    "score": 968.036,
+    "scoreError": 2.868,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentPartition",
+    "workMicros": 0,
+    "score": 1251.101,
+    "scoreError": 700.464,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentPartition",
+    "workMicros": 100,
+    "score": 1397.416,
+    "scoreError": 638.024,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentPartition",
+    "workMicros": 1000,
+    "score": 1047.414,
+    "scoreError": 443.496,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "confluentPartition",
+    "workMicros": 10000,
+    "score": null,
+    "scoreError": null,
+    "status": "DNF",
+    "processedBeforeTimeout": 12486,
+    "source": "rerun-2026-06-07"
+  },
+  {
+    "benchmark": "confluentPartition",
+    "workMicros": 35000,
+    "score": null,
+    "scoreError": null,
+    "status": "DNF",
+    "processedBeforeTimeout": 3506,
+    "source": "rerun-2026-06-07"
+  },
+  {
+    "benchmark": "confluentPartition",
+    "workMicros": 50000,
+    "score": null,
+    "scoreError": null,
+    "status": "DNF",
+    "processedBeforeTimeout": 2253,
+    "source": "rerun-2026-06-07"
+  },
+  {
+    "benchmark": "confluentPartition",
+    "workMicros": 100000,
+    "score": null,
+    "scoreError": null,
+    "status": "DNF",
+    "processedBeforeTimeout": 1158,
+    "source": "rerun-2026-06-07"
+  },
+  {
+    "benchmark": "kpipe",
+    "workMicros": 0,
+    "score": 372431.266,
+    "scoreError": 113984.244,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipe",
+    "workMicros": 100,
+    "score": 480784.562,
+    "scoreError": 129980.277,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipe",
+    "workMicros": 1000,
+    "score": 388960.359,
+    "scoreError": 149723.754,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipe",
+    "workMicros": 10000,
+    "score": 90498.726,
+    "scoreError": 5873.676,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipe",
+    "workMicros": 35000,
+    "score": 68893.478,
+    "scoreError": 1084.245,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipe",
+    "workMicros": 50000,
+    "score": 62054.177,
+    "scoreError": 443.521,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipe",
+    "workMicros": 100000,
+    "score": 45173.968,
+    "scoreError": 322.657,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipeKeyOrdered",
+    "workMicros": 0,
+    "score": 285641.91,
+    "scoreError": 21768.587,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipeKeyOrdered",
+    "workMicros": 100,
+    "score": 255422.12,
+    "scoreError": 23363.769,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipeKeyOrdered",
+    "workMicros": 1000,
+    "score": 90128.781,
+    "scoreError": 2566.697,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipeKeyOrdered",
+    "workMicros": 10000,
+    "score": 38067.142,
+    "scoreError": 327.265,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipeKeyOrdered",
+    "workMicros": 35000,
+    "score": 13090.559,
+    "scoreError": 105.926,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipeKeyOrdered",
+    "workMicros": 50000,
+    "score": 9759.308,
+    "scoreError": 46.578,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "kpipeKeyOrdered",
+    "workMicros": 100000,
+    "score": 5209.566,
+    "scoreError": 65.684,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "raw",
+    "workMicros": 0,
+    "score": 561358.939,
+    "scoreError": 51448.966,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "raw",
+    "workMicros": 100,
+    "score": 508656.003,
+    "scoreError": 49155.118,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "raw",
+    "workMicros": 1000,
+    "score": 515584.212,
+    "scoreError": 45640.858,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "raw",
+    "workMicros": 10000,
+    "score": 425246.23,
+    "scoreError": 48480.955,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "raw",
+    "workMicros": 35000,
+    "score": 283907.384,
+    "scoreError": 40227.113,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "raw",
+    "workMicros": 50000,
+    "score": 232645.109,
+    "scoreError": 40943.543,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "raw",
+    "workMicros": 100000,
+    "score": 166552.999,
+    "scoreError": 5691.355,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "reactor",
+    "workMicros": 0,
+    "score": 221251.576,
+    "scoreError": 49714.862,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "reactor",
+    "workMicros": 100,
+    "score": 78342.539,
+    "scoreError": 1360.849,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "reactor",
+    "workMicros": 1000,
+    "score": 9012.421,
+    "scoreError": 156.36,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "reactor",
+    "workMicros": 10000,
+    "score": 991.8500434366972,
+    "scoreError": 3.0990034437000573,
+    "source": "rerun-2026-06-07"
+  },
+  {
+    "benchmark": "reactor",
+    "workMicros": 35000,
+    "score": 292.6457349282433,
+    "scoreError": 1.1042966029219585,
+    "source": "rerun-2026-06-07"
+  },
+  {
+    "benchmark": "reactor",
+    "workMicros": 50000,
+    "score": 209.4616817199432,
+    "scoreError": 0.5790393964060707,
+    "source": "rerun-2026-06-07"
+  },
+  {
+    "benchmark": "reactor",
+    "workMicros": 100000,
+    "score": null,
+    "scoreError": null,
+    "status": "DNF",
+    "processedBeforeTimeout": 13947,
+    "source": "rerun-2026-06-07"
+  },
+  {
+    "benchmark": "share",
+    "workMicros": 0,
+    "score": 4765.246,
+    "scoreError": 42.559,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "share",
+    "workMicros": 100,
+    "score": 4751.708,
+    "scoreError": 43.128,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "share",
+    "workMicros": 1000,
+    "score": 4670.22,
+    "scoreError": 248.618,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "share",
+    "workMicros": 10000,
+    "score": 4482.901,
+    "scoreError": 28.73,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "share",
+    "workMicros": 35000,
+    "score": 3836.318,
+    "scoreError": 227.18,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "share",
+    "workMicros": 50000,
+    "score": 3301.801,
+    "scoreError": 381.702,
+    "source": "primary-run"
+  },
+  {
+    "benchmark": "share",
+    "workMicros": 100000,
+    "score": 2595.489,
+    "scoreError": 148.982,
+    "source": "primary-run"
+  }
+]
