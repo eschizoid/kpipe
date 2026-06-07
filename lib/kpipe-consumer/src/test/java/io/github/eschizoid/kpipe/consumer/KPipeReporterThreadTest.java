@@ -21,11 +21,12 @@ import org.junit.jupiter.api.Test;
 /// [KPipeConsumer.Builder#withMetricsReporters(Collection)] +
 /// [KPipeConsumer.Builder#withMetricsInterval(Duration)].
 ///
-/// The repo itself has no callers of these setters — they exist purely for downstream users
-/// (documented in §17 of `CLAUDE.md` and the `docs/escape-hatches.md` capability table). The
-/// deletion gate for documented public API requires both "no callers in repo" and "not in §17
-/// / escape-hatches.md"; this subsystem fails the second half. The test names below explicitly
-/// reference the Builder method so a future symbol-based dead-code audit trips over them.
+/// The repo itself has no callers of these setters — they exist purely for downstream users.
+/// Both setters are documented in `docs/escape-hatches.md` (the "Periodic metrics reporting"
+/// row), and the deletion gate for any documented public API requires both "no callers in
+/// repo" and "not documented as an escape hatch"; this subsystem fails the second half. The
+/// test names below explicitly reference the Builder method so a future symbol-based dead-code
+/// audit trips over them.
 class KPipeReporterThreadTest {
 
   private static final String TOPIC = "test-topic";

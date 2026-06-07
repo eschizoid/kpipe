@@ -2,10 +2,11 @@ package io.github.eschizoid.kpipe.registry;
 
 /// Builds diagnostic messages for deserialization failures at the byte boundary.
 ///
-/// The §12 burn (protobuf seed messages failing decode because `skipBytes(5)` was wrong for the
-/// proto wire envelope) cost real debugging hours. The signal was indirect — `messagesProcessed`
-/// rising while `sinkInvocationCount` stayed at 0 — because the exception message gave no hint
-/// that the bytes looked like a Confluent envelope. This helper closes that gap: on a failing
+/// Motivated by a real burn: protobuf seed messages were failing decode because `skipBytes(5)`
+/// (Avro's envelope size) was set on a topic that actually carries the protobuf envelope
+/// (`skipBytes(6)`). The signal was indirect — `messagesProcessed` rising while
+/// `sinkInvocationCount` stayed at 0 — because the exception message gave no hint that the
+/// bytes looked like a Confluent envelope. This helper closes that gap: on a failing
 /// deserialize it hex-dumps the leading bytes and, when the payload looks like a Confluent
 /// magic-byte envelope and the caller forgot to set `skipBytes(...)`, suggests the right count
 /// for the configured format.

@@ -207,9 +207,11 @@ public interface Stream<T> {
   /// observer throws, the exception is logged at WARNING and swallowed. Calling this method more
   /// than once replaces the previous observer.
   ///
-  /// **Use this for the §12 visibility burn.** When `messagesProcessed` rises but the sink stays
-  /// at 0, attach `onFailed(cause -> log.warn("pipeline failed", cause))` to surface what's
-  /// actually being lost.
+  /// **Use this when "processed" counters look healthy but the sink is starved.** If
+  /// `messagesProcessed` keeps rising while `sinkInvocationCount` stays at 0, the pipeline is
+  /// silently routing records into `Failed` (or `Filtered`). Attach
+  /// `onFailed(cause -> log.warn("pipeline failed", cause))` to surface what's actually being
+  /// lost.
   ///
   /// @param observer a side-effect invoked with the failure cause (must not be null)
   /// @return a new stream with the observer attached

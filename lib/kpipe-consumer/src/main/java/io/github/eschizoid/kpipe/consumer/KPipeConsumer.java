@@ -118,7 +118,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
   private final Tracer tracer;
   /// Owns the per-mode dispatch strategy and the in-flight counter for non-sequential modes.
   /// Constructed once in the consumer constructor from [#processingMode]; closed in `close()`
-  /// before `offsetManager.close()` per the §18 drain order.
+  /// before `offsetManager.close()` so any in-flight records get their offsets marked before
+  /// the manager flushes its final commit.
   private final Dispatcher<K> dispatcher;
   /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. The
   /// underlying decision modules ([BackpressureController], [CircuitBreakerController]) remain
