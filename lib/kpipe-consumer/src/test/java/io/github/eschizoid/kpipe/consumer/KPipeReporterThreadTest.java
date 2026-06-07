@@ -31,6 +31,12 @@ class KPipeReporterThreadTest {
   private static final String TOPIC = "test-topic";
   private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
 
+  /// Short reporter cadence so the test runs in well under a second while still giving the
+  /// thread room to fire three times. The post-close safety sleep is derived from this so the
+  /// two values can't drift apart in future edits.
+  private static final Duration REPORTER_INTERVAL = Duration.ofMillis(50);
+  private static final long POST_CLOSE_SAFETY_MS = REPORTER_INTERVAL.multipliedBy(3).toMillis();
+
   private Properties properties;
 
   @BeforeEach
@@ -45,8 +51,8 @@ class KPipeReporterThreadTest {
 
   /// Drives a real consumer through the bundled setter and asserts: (1) the reporter fires at
   /// least three times while `start()`ed, (2) it stops firing after `close()` returns. The
-  /// short 50ms interval keeps the test under a second; the 3-second latch timeout is the
-  /// generous CI safety margin, not the expected runtime.
+  /// short [#REPORTER_INTERVAL] keeps the test under a second; the 3-second latch timeout is
+  /// the generous CI safety margin, not the expected runtime.
   @Test
   void shouldRunReportersPeriodicallyViaBundledWithMetricsReportersSetter() throws Exception {
     final var fires = new AtomicInteger();
@@ -63,7 +69,7 @@ class KPipeReporterThreadTest {
       .withPipeline(TestPipelines.identity())
       .withConsumer(() -> mockConsumer)
       .withMetricsReporters(List.of(reporter))
-      .withMetricsInterval(Duration.ofMillis(50))
+      .withMetricsInterval(REPORTER_INTERVAL)
       .build();
 
     consumer.start();
@@ -74,10 +80,10 @@ class KPipeReporterThreadTest {
     }
 
     // After close() returns, stopMetricsReporterThread() has interrupted + joined the thread.
-    // Sleep three intervals (150ms at the configured 50ms cadence) so any racing fire would
-    // land comfortably, then assert the count is stable.
+    // Sleep three intervals so any racing fire would land comfortably, then assert the count
+    // is stable.
     final var firesAfterClose = fires.get();
-    Thread.sleep(150);
+    Thread.sleep(POST_CLOSE_SAFETY_MS);
     assertEquals(firesAfterClose, fires.get(), "reporter must not fire after close() returns");
   }
 
