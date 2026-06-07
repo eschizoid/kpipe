@@ -1,11 +1,13 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
+import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.RegistryKey;
+import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -32,7 +34,7 @@ public class JsonPipelineBenchmark {
   private static final long BENCHMARK_TIMESTAMP = 1_700_000_000_000L;
 
   private byte[] jsonBytes;
-  private Function<byte[], byte[]> kpipePipeline;
+  private MessagePipeline<Map<String, Object>> kpipePipeline;
 
   @Setup
   public void setup() {
@@ -75,7 +77,12 @@ public class JsonPipelineBenchmark {
 
   @Benchmark
   public void kpipeJsonPipeline(final Blackhole bh) {
-    bh.consume(kpipePipeline.apply(jsonBytes));
+    final var value = kpipePipeline.deserializeOrFail(jsonBytes);
+    final var result = kpipePipeline.process(value);
+    if (!(result instanceof Result.Passed<Map<String, Object>> passed)) {
+      throw new AssertionError("benchmark input should always pass: " + result);
+    }
+    bh.consume(kpipePipeline.serialize(passed.value()));
   }
 
   @Benchmark
