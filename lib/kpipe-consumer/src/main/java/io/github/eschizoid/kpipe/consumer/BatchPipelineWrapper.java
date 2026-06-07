@@ -155,9 +155,9 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   }
 
   /// All the dispatch lives in one place: call the sink, classify the [BatchResult], log any
-  /// out-of-range indexes, build a synthetic failure for uncovered positions (§12 "no silent
-  /// failures"), then walk the snapshot exactly once. Sink-throw and null-result both fall back
-  /// to whole-batch failure with a clear log line.
+  /// out-of-range indexes, build a synthetic failure for uncovered positions so a misreported
+  /// batch result can't silently mark records processed, then walk the snapshot exactly once.
+  /// Sink-throw and null-result both fall back to whole-batch failure with a clear log line.
   private void flush(final List<Entry<K, T>> snapshot, final List<T> values) {
     final var size = snapshot.size();
 
