@@ -91,7 +91,11 @@ Per-benchmark overrides:
 - `ParallelProcessingLatencyBenchmark` sets `Mode.SampleTime + Mode.AverageTime` and `OutputTimeUnit.MILLISECONDS` to
   publish percentile histograms.
 - `BatchSinkLatencyBenchmark` parameterises over `batchSize × sinkLatencyMicros`.
-- `ParallelProcessingBenchmark` parameterises over `workMicros` (`0 / 100 / 1000`).
+- `ParallelProcessingBenchmark` parameterises over `workMicros`
+  (`0 / 100 / 1000 / 10000 / 35000 / 50000 / 100000`). The bottom three values isolate
+  framework overhead through 1ms blocking work; the upper four cover the 10-100ms regime that
+  most real Kafka consumers actually live in (HTTP/DB hops) and the regime where lag-based
+  backpressure becomes load-bearing. See #148 for the rationale.
 
 ### Recommended publishing run
 
@@ -121,7 +125,7 @@ and GC count per benchmark — required input to the "throughput vs allocation-c
 One iteration, one warmup, one fork, only the KPipe arm. Useful for verifying the harness didn't break after changes;
 meaningless as a measurement. Note: `-Pjmh.includes` is a regex matched against the benchmark FQN — `@Param` values
 (like `workMicros`) are **not** part of the FQN and can't be filtered through this property, so the smoke run exercises
-all three `workMicros` cells of the included arm. Swap `kpipe` for any other arm name (`share`, `kpipeKeyOrdered`,
+all configured `workMicros` cells of the included arm. Swap `kpipe` for any other arm name (`share`, `kpipeKeyOrdered`,
 `singleThread`, `confluentKey`, etc.) to spot-check that one.
 
 ## What to write down with every published number
