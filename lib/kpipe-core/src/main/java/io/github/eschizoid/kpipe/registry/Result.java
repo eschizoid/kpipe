@@ -15,11 +15,12 @@ import java.util.Objects;
 /// }
 /// ```
 ///
-/// **Why this exists.** §12 of CLAUDE.md settled "null = filter, throw = fail" as a doctrine — a
-/// convention enforced by discipline. The protobuf `skipBytes(5)` burn that motivated §12 was
-/// caused by a caller accidentally treating a deserialization failure as an intentional filter.
+/// **Why this exists.** Earlier pipelines used "null = filter, throw = fail" as a convention
+/// enforced by discipline. A protobuf decode bug (a wrong `skipBytes(5)`) silently turned
+/// deserialization failures into intentional filters, masked by an inflated processed counter.
 /// `Result<T>` upgrades the convention to a compile-time guarantee: `Passed`, `Filtered`, and
-/// `Failed` are distinct types, and pattern-matching is exhaustive.
+/// `Failed` are distinct types, and pattern-matching is exhaustive — the compiler refuses to
+/// let a caller confuse "intentional drop" with "swallowed error."
 ///
 /// **Allocation note.** `Passed` and `Failed` allocate one record per call (on the hot path that's
 /// one per record per pipeline stage). `Filtered` returns a shared singleton via [#filtered()] to
