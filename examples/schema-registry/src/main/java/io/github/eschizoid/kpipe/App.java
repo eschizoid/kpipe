@@ -16,7 +16,8 @@ import java.time.Duration;
 ///
 /// Environment variables (in addition to the standard `AppConfig`):
 ///
-/// - `SCHEMA_REGISTRY_URL` — base URL of the Schema Registry (e.g. `http://schema-registry:8081`).
+/// - `SCHEMA_REGISTRY_URL` — base URL of the Schema Registry (e.g.
+// `<http://schema-registry:8081>`).
 ///
 /// Do NOT add `.skipBytes(5)` here — `withSchemaRegistry(...)` consumes the envelope itself.
 public final class App {
