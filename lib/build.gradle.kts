@@ -90,6 +90,21 @@ tasks.register("publishAllLibModules") {
   dependsOn(subprojects.map { "${it.path}:publish" })
 }
 
+// Aggregator that runs jacocoTestReport on every :lib subproject that applies the jacoco
+// plugin. kpipe-bom doesn't (it's a POM-only BOM with no Java sources), so the
+// `pluginManager.withPlugin("jacoco")` filter skips it automatically. Replaces the
+// hand-listed Jacoco step in .github/workflows/ci.yaml so new lib modules participate in
+// coverage uploads without a parallel list edit.
+tasks.register("jacocoAllLibModules") {
+  group = "verification"
+  description = "Runs jacocoTestReport on every :lib:* module that applies the jacoco plugin."
+  subprojects.forEach { sub ->
+    sub.pluginManager.withPlugin("jacoco") {
+      dependsOn("${sub.path}:jacocoTestReport")
+    }
+  }
+}
+
 jreleaser {
 
   gitRootSearch.set(true)
