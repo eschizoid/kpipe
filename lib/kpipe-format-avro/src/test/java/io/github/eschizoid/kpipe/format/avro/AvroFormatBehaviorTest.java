@@ -25,7 +25,7 @@ class AvroFormatBehaviorTest {
 
   @Test
   void constructorRejectsNullSchema() {
-    assertThrows(NullPointerException.class, () -> new AvroFormat((Schema) null));
+    assertThrows(NullPointerException.class, () -> new AvroFormat(null));
   }
 
   @Test

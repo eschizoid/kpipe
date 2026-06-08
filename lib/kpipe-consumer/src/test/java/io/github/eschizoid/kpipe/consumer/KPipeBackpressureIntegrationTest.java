@@ -124,7 +124,7 @@ class KPipeBackpressureIntegrationTest {
 
       // backpressureTimeMs must be > 0
       assertTrue(
-        (long) consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS) > 0,
+        consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS) > 0,
         "backpressureTimeMs should be positive after a backpressure pause"
       );
 
@@ -228,7 +228,7 @@ class KPipeBackpressureIntegrationTest {
       awaitCondition(() -> mc.paused().isEmpty(), 3000);
 
       // Now it should poll the remaining records
-      awaitCondition(() -> (long) consumer.getMetrics().get("messagesReceived") == 10, 3000);
+      awaitCondition(() -> consumer.getMetrics().get("messagesReceived") == 10, 3000);
       assertEquals(10L, consumer.getMetrics().get("messagesReceived"));
 
       consumer.close();
@@ -263,7 +263,7 @@ class KPipeBackpressureIntegrationTest {
       consumer.start();
 
       // Wait for first 5 to be polled
-      awaitCondition(() -> (long) consumer.getMetrics().get("messagesReceived") == 5, 2000);
+      awaitCondition(() -> consumer.getMetrics().get("messagesReceived") == 5, 2000);
 
       // Pause manually
       consumer.pause();
@@ -284,7 +284,7 @@ class KPipeBackpressureIntegrationTest {
       consumer.resume();
 
       // Wait for the rest to be polled
-      awaitCondition(() -> (long) consumer.getMetrics().get("messagesReceived") == 10, 3000);
+      awaitCondition(() -> consumer.getMetrics().get("messagesReceived") == 10, 3000);
       assertEquals(10L, consumer.getMetrics().get("messagesReceived"));
 
       consumer.close();
@@ -341,7 +341,7 @@ class KPipeBackpressureIntegrationTest {
 
       // Assert: consumer is paused
       assertTrue(mockConsumer.paused().contains(PARTITION), "Consumer should be paused due to high lag");
-      assertTrue((long) consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT) >= 1);
+      assertTrue(consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT) >= 1);
 
       consumer.close();
     }

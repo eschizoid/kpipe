@@ -50,7 +50,6 @@ public sealed interface Result<T> permits Result.Passed, Result.Filtered, Result
   ///
   /// @param <T> the pipeline value type
   record Filtered<T>() implements Result<T> {
-    @SuppressWarnings({ "rawtypes", "unchecked" })
     private static final Filtered SHARED = new Filtered();
 
     /// Returns the shared `Filtered` sentinel. Avoids per-record allocation on filter-heavy

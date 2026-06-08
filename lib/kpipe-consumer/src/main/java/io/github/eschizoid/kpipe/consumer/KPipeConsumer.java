@@ -1687,7 +1687,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
           // is committed to the user sink.
           return false;
         }
-        case Result.Filtered<T> __ -> {
+        case Result.Filtered<T> _ -> {
           // Intentional filter — mark processed immediately; nothing to buffer.
           markOffsetProcessed(record);
           return true;
@@ -1714,7 +1714,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
         final var sink = pipeline.getSink();
         if (sink != null) sink.accept(p.value());
       }
-      case Result.Filtered<T> __ -> {
+      case Result.Filtered<T> _ -> {
         /* intentional filter — no sink invocation */
       }
       case Result.Failed<T> f -> throw rethrowResultCause(f.cause());

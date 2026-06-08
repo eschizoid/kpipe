@@ -22,7 +22,7 @@ class JsonFormatPipelineTest {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
       case Result.Passed<T> p -> pipeline.serialize(p.value());
-      case Result.Filtered<T> __ -> null;
+      case Result.Filtered<T> _ -> null;
       case Result.Failed<T> f -> {
         if (f.cause() instanceof RuntimeException re) throw re;
         if (f.cause() instanceof Error err) throw err;

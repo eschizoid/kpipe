@@ -89,9 +89,9 @@ public final class PipelineMetricsObserver implements Consumer<Result<?>> {
   public void accept(final Result<?> result) {
     if (result == null) return;
     switch (result) {
-      case Result.Passed<?> __ -> passed.add(1, baseAttributes);
-      case Result.Filtered<?> __ -> filtered.add(1, baseAttributes);
-      case Result.Failed<?> __ -> failed.add(1, baseAttributes);
+      case Result.Passed<?> _ -> passed.add(1, baseAttributes);
+      case Result.Filtered<?> _ -> filtered.add(1, baseAttributes);
+      case Result.Failed<?> _ -> failed.add(1, baseAttributes);
     }
   }
 

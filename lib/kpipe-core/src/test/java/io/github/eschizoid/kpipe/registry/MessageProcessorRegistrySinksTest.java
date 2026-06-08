@@ -169,7 +169,7 @@ class MessageProcessorRegistrySinksTest {
   @Test
   void shouldRejectNullSink() {
     assertThrows(NullPointerException.class, () ->
-      registry.registerSink(RegistryKey.<Object>of("test", Object.class), (MessageSink<Object>) null)
+      registry.registerSink(RegistryKey.<Object>of("test", Object.class), null)
     );
   }
 
@@ -189,7 +189,7 @@ class MessageProcessorRegistrySinksTest {
   @Test
   void shouldThrowOnTypeMismatch() {
     final var key = RegistryKey.<String>of("typedSink", String.class);
-    registry.registerSink(key, (MessageSink<String>) msg -> {});
+    registry.registerSink(key, msg -> {});
 
     assertThrows(ClassCastException.class, () -> {
       @SuppressWarnings("unchecked")

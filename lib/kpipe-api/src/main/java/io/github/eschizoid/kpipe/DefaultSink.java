@@ -79,9 +79,9 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
         final var result = base.process(data);
         if (peek != null) safeAccept(peek, result, "peekResult");
         switch (result) {
-          case Result.Passed<T> __ -> {
+          case Result.Passed<T> _ -> {
           }
-          case Result.Filtered<T> __ -> {
+          case Result.Filtered<T> _ -> {
             if (onFiltered != null) safeRun(onFiltered);
           }
           case Result.Failed<T> failed -> {

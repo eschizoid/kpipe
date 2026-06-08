@@ -11,9 +11,9 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 
 /// Unit tests for [ParallelDispatcher]. Focused on the executor lifecycle: the executor is
-/// created in the field initializer (at construction), so it must be shut down by [#close()]
-/// even if the dispatcher never dispatched anything — otherwise a consumer built-but-never-
-/// started leaks it.
+/// created in the field initializer (at construction), so it must be shut down by
+/// [ParallelDispatcher#close()] even if the dispatcher never dispatched anything — otherwise a
+/// consumer built-but-never-started leaks it.
 class ParallelDispatcherTest {
 
   private static ConsumerRecord<String, byte[]> record(final long offset) {
