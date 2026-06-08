@@ -300,6 +300,19 @@ record DefaultStream<T>(
     });
   }
 
+  /// Applies the consumer-level config that both [DefaultSink] and [DefaultBatchSink] share onto
+  /// `builder`: retry, backpressure, metrics, error handler, dead-letter topic, poll timeout.
+  /// Tracer and circuit-breaker are NOT applied here — they're only wired by [DefaultSink];
+  /// `DefaultBatchSink` historically does not expose them (would change behavior to add).
+  void applyCommonConsumerConfig(final KPipeConsumer.Builder<byte[]> builder) {
+    if (maxRetries > 0) builder.withRetry(maxRetries, retryBackoff);
+    if (backpressureHigh != null) builder.withBackpressure(backpressureHigh, backpressureLow);
+    if (consumerMetrics != null) builder.withMetrics(consumerMetrics);
+    if (errorHandler != null) builder.withErrorHandler(errorHandler::accept);
+    if (deadLetterTopic != null) builder.withDeadLetterTopic(deadLetterTopic);
+    if (pollTimeout != null) builder.withPollTimeout(pollTimeout);
+  }
+
   /// Single funnel for every wither: snapshot this record into a [Mut], let the caller change
   /// what they need, rebuild a new record. Replaces 13 hand-rolled 15-arg constructor calls with
   /// one. New fields slot in at one site (the Mut declaration + its `from`/`build`).

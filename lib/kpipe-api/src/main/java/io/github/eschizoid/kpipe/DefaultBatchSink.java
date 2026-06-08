@@ -57,15 +57,7 @@ record DefaultBatchSink<T>(
       .withKeyOrderedMaxKeys(stream.keyOrderedMaxKeys())
       .withBatchPipeline(topic(), buildPipeline(), batchSink, batchPolicy);
 
-    if (stream.maxRetries() > 0) consumerBuilder.withRetry(stream.maxRetries(), stream.retryBackoff());
-    if (stream.backpressureHigh() != null) consumerBuilder.withBackpressure(
-      stream.backpressureHigh(),
-      stream.backpressureLow()
-    );
-    if (stream.consumerMetrics() != null) consumerBuilder.withMetrics(stream.consumerMetrics());
-    if (stream.errorHandler() != null) consumerBuilder.withErrorHandler(stream.errorHandler()::accept);
-    if (stream.deadLetterTopic() != null) consumerBuilder.withDeadLetterTopic(stream.deadLetterTopic());
-    if (stream.pollTimeout() != null) consumerBuilder.withPollTimeout(stream.pollTimeout());
+    stream.applyCommonConsumerConfig(consumerBuilder);
 
     return DefaultHandle.startAndWrap(consumerBuilder.build());
   }
