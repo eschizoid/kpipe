@@ -3,21 +3,6 @@ plugins {
   alias(libs.plugins.jmh)
 }
 
-// JsonPipelineBenchmark / AvroPipelineBenchmark are stale: they assume the old
-// `MessagePipeline.apply(byte[])` byte-level entry point that was removed when `process()`
-// returning `Result<T>` became the only pipeline output shape. They've been compile-broken on
-// `main` since then, blocking every other benchmark from being built. Excluding them here so
-// `ParallelProcessingBenchmark` and friends compile; rewriting the pipeline benchmarks against
-// the current API is a separate follow-up.
-sourceSets {
-  named("jmh") {
-    java {
-      exclude("**/JsonPipelineBenchmark.java")
-      exclude("**/AvroPipelineBenchmark.java")
-    }
-  }
-}
-
 dependencies {
   // Benchmarks consume public API from :lib
   implementation(project(":lib:kpipe-consumer"))

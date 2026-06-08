@@ -84,7 +84,6 @@ class StreamToMultiTest {
   }
 
   @Test
-  @SuppressWarnings("unchecked")
   void toMultiWithNullVarargsThrows() {
     final var stream = KPipe.json("topic", props());
     assertThrows(NullPointerException.class, () -> stream.toMulti((MessageSink<Map<String, Object>>[]) null));

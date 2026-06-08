@@ -398,12 +398,12 @@ class DispatcherIntegrationTest {
           () -> "mode " + mode + " left pending offsets on " + tp + ": " + state
         );
         assertEquals(
-          (long) (recordsPerPartition - 1),
+          (recordsPerPartition - 1),
           ((Number) state.get("highestProcessedOffset")).longValue(),
           () -> "mode " + mode + " did not mark all offsets processed on " + tp + ": " + state
         );
         assertEquals(
-          (long) recordsPerPartition,
+          recordsPerPartition,
           ((Number) state.get("nextOffsetToCommit")).longValue(),
           () -> "mode " + mode + " did not advance commit offset on " + tp + ": " + state
         );

@@ -204,7 +204,7 @@ class KPipeCircuitBreakerIntegrationTest {
       .build();
 
     consumer.start();
-    awaitCondition(() -> (long) consumer.getMetrics().get("processingErrors") >= 5, 5000);
+    awaitCondition(() -> consumer.getMetrics().get("processingErrors") >= 5, 5000);
 
     assertEquals(0L, consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS));
     assertTrue(mc.paused().isEmpty(), "no breaker configured → never pauses despite all failures");

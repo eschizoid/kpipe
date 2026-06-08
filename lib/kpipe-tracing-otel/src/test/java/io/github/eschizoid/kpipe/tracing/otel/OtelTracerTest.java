@@ -138,7 +138,7 @@ class OtelTracerTest {
   void noopTracerInjectionAndExtractionAreSilentNoops() {
     // Sanity — the noop default doesn't allocate, doesn't throw, and produces no span.
     final var noop = io.github.eschizoid.kpipe.producer.tracing.Tracer.noop();
-    final var record = new ConsumerRecord<>("t", 0, 0L, (Object) null, new byte[0]);
+    final var record = new ConsumerRecord<>("t", 0, 0L, null, new byte[0]);
     try (final var scope = noop.startConsumerSpan(record)) {
       noop.injectContextInto(new RecordHeaders());
       scope.recordException(new RuntimeException("ignored"));

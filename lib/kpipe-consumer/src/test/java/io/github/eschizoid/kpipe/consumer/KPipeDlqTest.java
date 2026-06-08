@@ -172,11 +172,11 @@ class KPipeDlqTest {
     }
   }
 
-  /// Exercises the atomic [Builder#withDeadLetterQueue(String, KPipeProducer)] setter: a single
-  /// call pairs the DLQ topic with a pre-built [KPipeProducer], and the consumer routes failures
-  /// through that producer to that topic. The two-call alternative (`withDeadLetterTopic` +
-  /// `withKafkaProducer`) is covered by the tests above; this one specifically pins the bundled
-  /// shape so the convenience setter can't silently regress.
+  /// Exercises the atomic [KPipeConsumer.Builder#withDeadLetterQueue(String, KPipeProducer)]
+  /// setter: a single call pairs the DLQ topic with a pre-built [KPipeProducer], and the consumer
+  /// routes failures through that producer to that topic. The two-call alternative
+  /// (`withDeadLetterTopic` + `withKafkaProducer`) is covered by the tests above; this one
+  /// specifically pins the bundled shape so the convenience setter can't silently regress.
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToDlqViaBundledWithDeadLetterQueueSetter() throws Exception {

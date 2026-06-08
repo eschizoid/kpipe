@@ -90,7 +90,46 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
   private static final Duration PC_CLOSE_TIMEOUT = Duration.ofSeconds(5);
 
+  /// How long teardown waits for the poll loop thread and the worker executor to drain. Five
+  /// seconds is generous; iterations that need longer are paying a measurement cost outside the
+  /// steady-state regime the bench is supposed to capture.
+  private static final long TEARDOWN_TIMEOUT_SECONDS = 5;
+
   private ParallelProcessingBenchmarkInfrastructure() {}
+
+  /// Shared teardown helper used by every invocation-context inner class that owns a poll loop +
+  /// worker executor pair. Lowers the `running` flag, joins the poll loop, then shuts down the
+  /// executor and waits for it to terminate. Restores the interrupt flag on `InterruptedException`
+  /// per the cooperative-cancellation rule; logs at WARNING when `awaitTermination` returns false
+  /// so a slow executor doesn't disappear from the report.
+  static void stopPollLoopAndExecutor(
+    final AtomicBoolean running,
+    final Thread pollLoop,
+    final ExecutorService executor
+  ) {
+    running.set(false);
+    if (pollLoop != null) {
+      try {
+        pollLoop.join(Duration.ofSeconds(TEARDOWN_TIMEOUT_SECONDS).toMillis());
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+    if (executor != null) {
+      executor.shutdownNow();
+      try {
+        if (!executor.awaitTermination(TEARDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+          System.err.println(
+            "[bench teardown] executor did not terminate within " +
+              TEARDOWN_TIMEOUT_SECONDS +
+              "s; benchmark measurements may include teardown overhead"
+          );
+        }
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
 
   /// Simulates per-record work. `LockSupport.parkNanos` is the right primitive for "this thread
   /// is blocked for N µs" — it lets the JVM schedule something else on the carrier thread and is
@@ -550,22 +589,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
     @TearDown(Level.Invocation)
     public void tearDown() {
-      running.set(false);
-      if (pollLoop != null) {
-        try {
-          pollLoop.join(Duration.ofSeconds(5).toMillis());
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      }
-      if (executor != null) {
-        executor.shutdownNow();
-        try {
-          executor.awaitTermination(5, TimeUnit.SECONDS);
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      }
+      stopPollLoopAndExecutor(running, pollLoop, executor);
       if (kafkaConsumer != null) kafkaConsumer.close();
     }
 
@@ -735,22 +759,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
     @TearDown(Level.Invocation)
     public void tearDown() {
-      running.set(false);
-      if (pollLoop != null) {
-        try {
-          pollLoop.join(Duration.ofSeconds(5).toMillis());
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      }
-      if (executor != null) {
-        executor.shutdownNow();
-        try {
-          executor.awaitTermination(5, TimeUnit.SECONDS);
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      }
+      stopPollLoopAndExecutor(running, pollLoop, executor);
       // Safe to close from this thread: the poll loop has joined, so nothing else touches it.
       if (shareConsumer != null) shareConsumer.close();
     }

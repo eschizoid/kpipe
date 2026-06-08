@@ -550,7 +550,6 @@ class KPipeConsumerTest {
     Thread.sleep(100);
 
     // Assert
-    @SuppressWarnings({ "unchecked", "rawtypes" })
     final var errorCaptor = ArgumentCaptor.forClass(KPipeConsumer.ProcessingError.class);
     verify(errorHandler).accept(errorCaptor.capture());
     final var error = errorCaptor.getValue();

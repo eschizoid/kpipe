@@ -37,7 +37,7 @@ class StreamResultObserversTest {
         final var sink = pipeline.getSink();
         if (sink != null) sink.accept(p.value());
       }
-      case Result.Filtered<T> __ -> {
+      case Result.Filtered<T> _ -> {
         /* intentional drop */
       }
       case Result.Failed<T> f -> {
@@ -51,7 +51,6 @@ class StreamResultObserversTest {
   @Test
   void onFilteredFiresWhenAnOperatorReturnsNull() {
     final var fired = new AtomicInteger();
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .filter(m -> false)
       .onFiltered(fired::incrementAndGet)
@@ -67,7 +66,6 @@ class StreamResultObserversTest {
   @Test
   void onFilteredDoesNotFireForPassedRecords() {
     final var fired = new AtomicInteger();
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .onFiltered(fired::incrementAndGet)
       .toCustom(m -> {});
@@ -83,7 +81,6 @@ class StreamResultObserversTest {
   void onFailedReceivesTheCauseAndPipelineStillThrows() {
     final var capturedCause = new AtomicReference<Throwable>();
     final var boom = new RuntimeException("boom");
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .pipe(m -> {
         throw boom;
@@ -104,7 +101,6 @@ class StreamResultObserversTest {
     final var passed = new AtomicInteger();
     final var filtered = new AtomicInteger();
     final var failed = new AtomicInteger();
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .filter(m -> m.containsKey("keep"))
       .pipe(m -> {
@@ -113,9 +109,9 @@ class StreamResultObserversTest {
       })
       .peekResult(result -> {
         switch (result) {
-          case Result.Passed<Map<String, Object>> __ -> passed.incrementAndGet();
-          case Result.Filtered<Map<String, Object>> __ -> filtered.incrementAndGet();
-          case Result.Failed<Map<String, Object>> __ -> failed.incrementAndGet();
+          case Result.Passed<Map<String, Object>> _ -> passed.incrementAndGet();
+          case Result.Filtered<Map<String, Object>> _ -> filtered.incrementAndGet();
+          case Result.Failed<Map<String, Object>> _ -> failed.incrementAndGet();
         }
       })
       .toCustom(m -> {});
@@ -133,7 +129,6 @@ class StreamResultObserversTest {
 
   @Test
   void observerExceptionsAreSwallowedSoPipelineStaysAlive() {
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .filter(m -> false)
       .onFiltered(() -> {
@@ -148,7 +143,6 @@ class StreamResultObserversTest {
 
   @Test
   void noObserverConfiguredMeansNoWrapper() {
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .pipe(m -> {
         m.put("x", 1);
@@ -165,7 +159,6 @@ class StreamResultObserversTest {
   @Test
   void observersDoNotAffectFilterReturnValue() {
     final var seenAtSink = new AtomicReference<Map<String, Object>>();
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .filter(m -> false)
       .onFiltered(() -> {
@@ -192,7 +185,6 @@ class StreamResultObserversTest {
   void lastWriteWinsForRepeatedObserverCalls() {
     final var first = new AtomicInteger();
     final var second = new AtomicInteger();
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .filter(m -> false)
       .onFiltered(first::incrementAndGet)
@@ -210,7 +202,6 @@ class StreamResultObserversTest {
   @Test
   void onFailedDoesNotFireOnFilteredOrPassed() {
     final var failedFired = new AtomicInteger();
-    @SuppressWarnings("unchecked")
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .filter(m -> m.containsKey("keep"))
       .onFailed(_ -> failedFired.incrementAndGet())

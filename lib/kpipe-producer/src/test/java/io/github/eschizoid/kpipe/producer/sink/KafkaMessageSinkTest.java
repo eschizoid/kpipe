@@ -20,7 +20,6 @@ class KafkaMessageSinkTest {
   private Producer<byte[], byte[]> mockProducer;
 
   @Test
-  @SuppressWarnings("unchecked")
   void shouldSendToKafka() {
     final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
 
@@ -38,7 +37,6 @@ class KafkaMessageSinkTest {
   }
 
   @Test
-  @SuppressWarnings("unchecked")
   void shouldSendWithKey() {
     final KafkaMessageSink<String> sink = new KafkaMessageSink<>(
       mockProducer,

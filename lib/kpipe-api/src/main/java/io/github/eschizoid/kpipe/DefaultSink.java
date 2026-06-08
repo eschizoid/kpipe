@@ -32,15 +32,7 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
       .withProcessingMode(stream.processingMode())
       .withKeyOrderedMaxKeys(stream.keyOrderedMaxKeys());
 
-    if (stream.maxRetries() > 0) consumerBuilder.withRetry(stream.maxRetries(), stream.retryBackoff());
-    if (stream.backpressureHigh() != null) consumerBuilder.withBackpressure(
-      stream.backpressureHigh(),
-      stream.backpressureLow()
-    );
-    if (stream.consumerMetrics() != null) consumerBuilder.withMetrics(stream.consumerMetrics());
-    if (stream.errorHandler() != null) consumerBuilder.withErrorHandler(stream.errorHandler()::accept);
-    if (stream.deadLetterTopic() != null) consumerBuilder.withDeadLetterTopic(stream.deadLetterTopic());
-    if (stream.pollTimeout() != null) consumerBuilder.withPollTimeout(stream.pollTimeout());
+    stream.applyCommonConsumerConfig(consumerBuilder);
     if (stream.tracer() != null) consumerBuilder.withTracer(stream.tracer());
     if (stream.circuitBreaker() != null) consumerBuilder.withCircuitBreaker(stream.circuitBreaker());
 
@@ -79,9 +71,9 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
         final var result = base.process(data);
         if (peek != null) safeAccept(peek, result, "peekResult");
         switch (result) {
-          case Result.Passed<T> __ -> {
+          case Result.Passed<T> _ -> {
           }
-          case Result.Filtered<T> __ -> {
+          case Result.Filtered<T> _ -> {
             if (onFiltered != null) safeRun(onFiltered);
           }
           case Result.Failed<T> failed -> {

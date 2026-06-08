@@ -112,7 +112,7 @@ class AvroSchemaCatalogTest {
   @Test
   void addRejectsNullSchemaJson() {
     final var catalog = new AvroSchemaCatalog();
-    assertThrows(NullPointerException.class, () -> catalog.add("user", (String) null));
+    assertThrows(NullPointerException.class, () -> catalog.add("user", null));
   }
 
   @Test
