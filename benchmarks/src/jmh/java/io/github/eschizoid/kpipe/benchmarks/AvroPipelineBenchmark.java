@@ -2,12 +2,13 @@ package io.github.eschizoid.kpipe.benchmarks;
 
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.avro.AvroRegistryKey;
+import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.Result;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -40,8 +41,8 @@ public class AvroPipelineBenchmark {
   private AvroFormat format;
   private byte[] avroBytes;
   private byte[] avroWithMagicBytes;
-  private Function<byte[], byte[]> kpipePipeline;
-  private Function<byte[], byte[]> kpipeMagicPipeline;
+  private MessagePipeline<GenericRecord> kpipePipeline;
+  private MessagePipeline<GenericRecord> kpipeMagicPipeline;
 
   @Setup
   public void setup() throws IOException {
@@ -112,13 +113,23 @@ public class AvroPipelineBenchmark {
 
   @Benchmark
   public void kpipeAvroPipeline(final Blackhole bh) {
-    bh.consume(kpipePipeline.apply(avroBytes));
+    final var value = kpipePipeline.deserializeOrFail(avroBytes);
+    final var result = kpipePipeline.process(value);
+    if (!(result instanceof Result.Passed<GenericRecord> passed)) {
+      throw new AssertionError("benchmark input should always pass: " + result);
+    }
+    bh.consume(kpipePipeline.serialize(passed.value()));
   }
 
   @Benchmark
   public void kpipeAvroMagicPipeline(final Blackhole bh) {
-    // This tests the zero-copy offset handling
-    bh.consume(kpipeMagicPipeline.apply(avroWithMagicBytes));
+    // This tests the zero-copy offset handling: deserialize starts at byte 5, no copy
+    final var value = kpipeMagicPipeline.deserializeOrFail(avroWithMagicBytes);
+    final var result = kpipeMagicPipeline.process(value);
+    if (!(result instanceof Result.Passed<GenericRecord> passed)) {
+      throw new AssertionError("benchmark input should always pass: " + result);
+    }
+    bh.consume(kpipeMagicPipeline.serialize(passed.value()));
   }
 
   @Benchmark
