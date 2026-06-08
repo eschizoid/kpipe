@@ -107,66 +107,19 @@ jreleaser {
         create("sonatype") {
           active.set(ALWAYS)
           url.set("https://central.sonatype.com/api/v1/publisher")
-          stagingRepository(
-            project(":lib:kpipe-bom").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-core").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-metrics").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-metrics-otel").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-producer").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-consumer").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-format-json").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-format-avro").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-format-protobuf").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
-          stagingRepository(
-            project(":lib:kpipe-api").layout.buildDirectory
-              .dir("staging-deploy")
-              .get()
-              .asFile.absolutePath,
-          )
+          // Iterate every `:lib` subproject (which all apply maven-publish in `subprojects {}`
+          // above) so adding a new lib module automatically participates in the release. The
+          // previous hand-maintained list silently dropped kpipe-tracing-otel and
+          // kpipe-schema-registry-confluent through v1.16.0; sourcing the list from the actual
+          // project graph removes that failure mode entirely.
+          subprojects.forEach { sub ->
+            stagingRepository(
+              sub.layout.buildDirectory
+                .dir("staging-deploy")
+                .get()
+                .asFile.absolutePath,
+            )
+          }
           enabled.set(true)
           sign.set(false)
           maxRetries.set(60)
