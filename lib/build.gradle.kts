@@ -79,6 +79,17 @@ subprojects {
   }
 }
 
+// Aggregator that publishes every :lib subproject (each applies maven-publish in the
+// `subprojects {}` block above) to its local staging-deploy directory in one call. Sourcing
+// the dependency set from the project graph keeps it in lockstep with the JReleaser deploy
+// list below, so the release workflow can publish all lib modules without hand-maintaining
+// a parallel module list in release.yaml.
+tasks.register("publishAllLibModules") {
+  group = "publishing"
+  description = "Publishes every :lib:* module to its local staging-deploy directory."
+  dependsOn(subprojects.map { "${it.path}:publish" })
+}
+
 jreleaser {
 
   gitRootSearch.set(true)
