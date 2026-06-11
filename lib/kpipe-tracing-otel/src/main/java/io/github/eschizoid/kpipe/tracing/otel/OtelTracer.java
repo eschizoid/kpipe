@@ -125,7 +125,7 @@ public final class OtelTracer implements Tracer {
 
     private final Span span;
     private final Scope scope;
-    private boolean closed = false;
+    private volatile boolean closed = false;
 
     OtelSpanScope(final Span span, final Scope scope) {
       this.span = span;

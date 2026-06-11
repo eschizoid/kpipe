@@ -29,6 +29,12 @@ dependencies {
 
   testImplementation(libs.mockitoCore)
   testImplementation(libs.mockitoJunitJupiter)
+
+  // Real SDK + InMemoryMetricReader for assertions that the OTel impls actually emit metrics
+  // with the right name, value, and attributes — the previous noop-only smoke tests would let
+  // emission regressions land silently.
+  testImplementation(libs.opentelemetrySdk)
+  testImplementation(libs.opentelemetrySdkTesting)
 }
 
 tasks.test {
