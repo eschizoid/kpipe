@@ -1,5 +1,5 @@
 [versions]
-kafka = "4.2.0"
+kafka = "4.3.0"
 otel = "1.44.1"
 avro = "1.12.1"
 protobuf = "4.29.3"

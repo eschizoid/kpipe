@@ -23,7 +23,7 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 ///     matching concurrency limit. Re-enabled after Reactor Kafka 1.3.25 (Nov 2025), the first
 ///     release to drop the deprecated `ConsumerRecord` ctor that was removed in
 ///     `kafka-clients:4.x`. The dependency's POM still pins `kafka-clients:3.9.1` but the new
-///     binary works when Gradle conflict-resolves to our 4.2.0.
+///     binary works when Gradle conflict-resolves to our 4.3.0.
 ///   * **Raw `KafkaConsumer` + virtual threads** — hand-rolled loop with VT fan-out. The
 ///     Loom-only floor; what you get without a framework but with Loom.
 ///

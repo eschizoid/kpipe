@@ -46,7 +46,7 @@ import org.testcontainers.utility.DockerImageName;
 class AppIntegrationTest {
 
   private static final String CONFLUENT_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
-  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
   private static final String SUBJECT = "user-value";
   private static final String SCHEMA_JSON = """
     {"type":"record","name":"User","fields":[{"name":"id","type":"long"},{"name":"name","type":"string"}]}""";

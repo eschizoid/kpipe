@@ -21,7 +21,7 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 class KPipeProducerIntegrationTest {
 
-  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(

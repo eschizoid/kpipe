@@ -15,14 +15,14 @@ dependencies {
   // Reactor Kafka 1.3.25 (Nov 2025) was the first release that avoids the deprecated
   // ConsumerRecord ctor that was removed in kafka-clients 4.x. Its POM still pins
   // kafka-clients:3.9.1 but the new binary works when Gradle conflict-resolves the classpath
-  // to our 4.2.0. No `exclude` needed; conflict resolution picks the higher version.
+  // to our 4.3.0. No `exclude` needed; conflict resolution picks the higher version.
   implementation(libs.reactorKafka)
   implementation(libs.avro)
 
   // Logging for JMH forks
   implementation(libs.slf4jSimple)
 
-  // Broker for the bench. Testcontainers boots a real Kafka 4.2.0 container in Docker, so the
+  // Broker for the bench. Testcontainers boots a real Kafka 4.3.0 container in Docker, so the
   // broker runs in its own JVM on its own cores instead of competing with the consumer under
   // test for CPU. The old in-process `kafka-test-common-runtime` harness collapsed under load
   // (consumer + KRaft controller + group coordinator on the same cores).

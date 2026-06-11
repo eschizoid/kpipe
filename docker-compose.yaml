@@ -3,7 +3,7 @@ include:
 
 services:
   kafka:
-    image: soldevelo/kafka:4.2.0
+    image: soldevelo/kafka:4.3.0
     ports:
       - "9092:9092"
     environment:
@@ -31,7 +31,7 @@ services:
     restart: on-failure
 
   kafka-init:
-    image: soldevelo/kafka:4.2.0
+    image: soldevelo/kafka:4.3.0
     depends_on:
       kafka:
         condition: service_healthy
@@ -114,7 +114,7 @@ services:
     restart: unless-stopped
 
   seed-json:
-    image: soldevelo/kafka:4.2.0
+    image: soldevelo/kafka:4.3.0
     depends_on:
       app:
         condition: service_started
