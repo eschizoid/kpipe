@@ -10,8 +10,10 @@ class ConsumerMetricsTest {
 
   @Test
   void shouldReturnNoopSingleton() {
-    assertNotNull(ConsumerMetrics.noop());
-    assertSame(ConsumerMetrics.noop(), ConsumerMetrics.noop(), "noop() should return a singleton");
+    final var first = ConsumerMetrics.noop();
+    final var second = ConsumerMetrics.noop();
+    assertNotNull(first);
+    assertSame(first, second, "noop() should return a singleton");
   }
 
   @Test

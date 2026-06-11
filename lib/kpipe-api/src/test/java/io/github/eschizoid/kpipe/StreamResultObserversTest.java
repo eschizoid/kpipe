@@ -164,7 +164,7 @@ class StreamResultObserversTest {
       .onFiltered(() -> {
         // observer is a side-effect — must not suppress the filter
       })
-      .toCustom((Map<String, Object> v) -> seenAtSink.set(v));
+      .toCustom(seenAtSink::set);
 
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();

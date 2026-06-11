@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /// `PipelineMetricsObserver.bindSchemaRegistryCache(...)`).
 ///
 /// ```java
-/// final var raw = new ConfluentSchemaResolver("http://schema-registry:8081");
+/// final var raw = new ConfluentSchemaResolver("<http://schema-registry:8081>");
 /// final var cached = new CachedSchemaResolver(raw);
 /// final var format = AvroFormat.withRegistry(cached);  // per-record auto-lookup
 /// ```

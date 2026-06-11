@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -142,7 +143,7 @@ class MessagePipelineContractTest {
 
     // Composed sink runs the first then the second when both are present.
     final var composedSink = composed.getSink();
-    assertTrue(composedSink != null, "composed sink should be non-null when both pipelines have sinks");
+    assertNotNull(composedSink, "composed sink should be non-null when both pipelines have sinks");
     composedSink.accept("v");
     assertTrue(firstCalled.get(), "first sink must run");
     assertTrue(secondCalled.get(), "second sink must run");

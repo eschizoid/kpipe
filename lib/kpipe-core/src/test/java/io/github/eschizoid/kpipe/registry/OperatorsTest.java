@@ -46,7 +46,7 @@ class OperatorsTest {
   @Test
   void peekShouldRunSideEffectAndPassThrough() {
     final var captured = new AtomicReference<String>();
-    final var op = Operators.peek((String s) -> captured.set(s));
+    final var op = Operators.<String>peek(captured::set);
 
     final var result = op.apply("original");
 

@@ -40,7 +40,7 @@ public final class ConfluentSchemaResolver implements SchemaResolver, AutoClosea
   private final HttpClient httpClient;
   private final Duration requestTimeout;
 
-  /// Creates a resolver pointing at `baseUrl` (e.g. `http://schema-registry:8081`) with the
+  /// Creates a resolver pointing at `baseUrl` (e.g. <http://schema-registry:8081>) with the
   /// default 10-second request timeout.
   ///
   /// @param baseUrl the SR base URL (must be non-blank; no trailing slash required)

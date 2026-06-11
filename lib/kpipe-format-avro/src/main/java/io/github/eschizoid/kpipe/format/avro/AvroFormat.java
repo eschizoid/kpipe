@@ -42,7 +42,7 @@ import org.apache.avro.io.EncoderFactory;
 ///
 /// // Schema-Registry — per-record auto-lookup.
 /// try (var resolver = new CachedSchemaResolver(
-///     new ConfluentSchemaResolver("http://schema-registry:8081"))) {
+///     new ConfluentSchemaResolver(<http://schema-registry:8081>))) {
 ///   final var fmt = AvroFormat.withRegistry(resolver);
 ///   // fmt.deserialize(record.value()) reads the envelope, fetches the schema, decodes.
 /// }

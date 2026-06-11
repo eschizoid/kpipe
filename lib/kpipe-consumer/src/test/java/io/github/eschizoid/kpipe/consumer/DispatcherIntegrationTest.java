@@ -358,7 +358,7 @@ class DispatcherIntegrationTest {
 
     final var managerRef = new AtomicReference<KafkaOffsetManager<String>>();
     builder.withOffsetManagerProvider(c -> {
-      final var mgr = KafkaOffsetManager.<String>builder(c).withCommandQueue(builder.getCommandQueue()).build();
+      final var mgr = KafkaOffsetManager.builder(c).withCommandQueue(builder.getCommandQueue()).build();
       managerRef.set(mgr);
       return mgr;
     });

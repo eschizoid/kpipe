@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,7 +36,7 @@ class PipelineDiagnosticsTest {
 
     assertTrue(wrapped.getMessage().contains("Deserialization failed"));
     assertTrue(wrapped.getMessage().contains("Leading bytes"));
-    assertTrue(!wrapped.getMessage().contains("Confluent Schema Registry envelope"));
+    assertFalse(wrapped.getMessage().contains("Confluent Schema Registry envelope"));
   }
 
   @Test
@@ -43,7 +44,7 @@ class PipelineDiagnosticsTest {
     final var data = new byte[] { 0x7b, 0x22, 0x66, 0x6f }; // {"fo
     final var wrapped = PipelineDiagnostics.wrap(data, 0, "JsonFormat", new RuntimeException("not json"));
 
-    assertTrue(!wrapped.getMessage().contains("Confluent Schema Registry envelope"));
+    assertFalse(wrapped.getMessage().contains("Confluent Schema Registry envelope"));
     assertTrue(wrapped.getMessage().contains("Leading bytes: [7b 22 66 6f]"));
   }
 
@@ -52,7 +53,7 @@ class PipelineDiagnosticsTest {
     final var data = new byte[] { 0x00, 0x01, 0x02 };
     final var wrapped = PipelineDiagnostics.wrap(data, 0, "CustomFormat", new RuntimeException("x"));
 
-    assertTrue(!wrapped.getMessage().contains("skipBytes"));
+    assertFalse(wrapped.getMessage().contains("skipBytes"));
   }
 
   @Test
