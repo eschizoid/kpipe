@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -186,7 +187,7 @@ class BackpressureControllerTest {
       when(consumer.endOffsets(assignment, Duration.ofSeconds(2))).thenThrow(new RuntimeException("broker down"));
 
       assertEquals(0L, BackpressureController.calculateTotalLag(consumer));
-      assertEquals(false, Thread.interrupted(), "Generic RuntimeException must NOT set interrupt flag");
+      assertFalse(Thread.interrupted(), "Generic RuntimeException must NOT set interrupt flag");
     }
 
     @Test

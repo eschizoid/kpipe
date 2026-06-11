@@ -124,7 +124,7 @@ class KPipeFacadeIntegrationTest {
       assertAll(
         "Filtered captures",
         () -> assertEquals(3, captured.size(), "Should have captured exactly 3 odd-id messages"),
-        () -> captured.forEach(m -> assertTrue(((Number) m.get("id")).intValue() % 2 == 1, "Captured id must be odd"))
+        () -> captured.forEach(m -> assertEquals(1, ((Number) m.get("id")).intValue() % 2, "Captured id must be odd"))
       );
     } finally {
       handle.shutdownGracefully(Duration.ofSeconds(5));

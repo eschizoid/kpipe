@@ -30,7 +30,7 @@ class BatchSinkTest {
   @Test
   void ofVoidThrownExceptionMapsToAllFailedWithSameCause() {
     final var boom = new RuntimeException("DB unavailable");
-    final BatchSink<String> sink = BatchSink.ofVoid(batch -> {
+    final BatchSink<String> sink = BatchSink.ofVoid(_ -> {
       throw boom;
     });
 
@@ -46,7 +46,7 @@ class BatchSinkTest {
   void ofVoidEmptyBatchStillRoundTrips() {
     // An empty batch must not error out — the wrapper may call the sink with an empty list during
     // edge-of-window flushes (rare but legal).
-    final BatchSink<String> sink = BatchSink.ofVoid(batch -> {});
+    final BatchSink<String> sink = BatchSink.ofVoid(_ -> {});
 
     final var result = sink.apply(List.of());
 

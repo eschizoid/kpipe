@@ -55,7 +55,7 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
     final var onFailed = stream.onFailedObserver();
     final var peek = stream.peekResultObserver();
     if (onFiltered == null && onFailed == null && peek == null) return base;
-    return new MessagePipeline<T>() {
+    return new MessagePipeline<>() {
       @Override
       public T deserialize(final byte[] data) {
         return base.deserialize(data);

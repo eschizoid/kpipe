@@ -10,8 +10,10 @@ class ProducerMetricsTest {
 
   @Test
   void shouldReturnNoopSingleton() {
-    assertNotNull(ProducerMetrics.noop());
-    assertSame(ProducerMetrics.noop(), ProducerMetrics.noop(), "noop() should return a singleton");
+    final var first = ProducerMetrics.noop();
+    final var second = ProducerMetrics.noop();
+    assertNotNull(first);
+    assertSame(first, second, "noop() should return a singleton");
   }
 
   @Test

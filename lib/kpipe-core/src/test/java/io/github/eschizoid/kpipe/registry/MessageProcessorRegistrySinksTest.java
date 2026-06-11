@@ -39,7 +39,7 @@ class MessageProcessorRegistrySinksTest {
   @Test
   void shouldUnregisterSink() {
     final var testSink = mock(MessageSink.class);
-    final var key = RegistryKey.<Object>of("sinkToRemove", Object.class);
+    final var key = RegistryKey.of("sinkToRemove", Object.class);
     registry.registerSink(key, testSink);
 
     assertTrue(registry.getAllSinks().containsKey(key));
@@ -108,7 +108,7 @@ class MessageProcessorRegistrySinksTest {
   @Test
   void shouldTrackMetricsForSink() {
     final var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
-    final MessageSink<Object> countingSink = value -> callCount.incrementAndGet();
+    final MessageSink<Object> countingSink = _ -> callCount.incrementAndGet();
 
     final var key = RegistryKey.of("countingSink", Object.class);
     registry.registerSink(key, countingSink);
@@ -124,7 +124,7 @@ class MessageProcessorRegistrySinksTest {
 
   @Test
   void shouldTrackErrorMetricsForFailingSink() {
-    final MessageSink<Object> failingSink = value -> {
+    final MessageSink<Object> failingSink = _ -> {
       throw new RuntimeException("Test failure");
     };
 
@@ -145,7 +145,7 @@ class MessageProcessorRegistrySinksTest {
 
   @Test
   void shouldWrapSinkWithErrorHandling() {
-    final MessageSink<Object> failingSink = value -> {
+    final MessageSink<Object> failingSink = _ -> {
       throw new RuntimeException("Test failure");
     };
 
@@ -168,14 +168,12 @@ class MessageProcessorRegistrySinksTest {
 
   @Test
   void shouldRejectNullSink() {
-    assertThrows(NullPointerException.class, () ->
-      registry.registerSink(RegistryKey.<Object>of("test", Object.class), null)
-    );
+    assertThrows(NullPointerException.class, () -> registry.registerSink(RegistryKey.of("test", Object.class), null));
   }
 
   @Test
   void shouldRegisterAndRetrieveTypedSink() {
-    final var key = RegistryKey.<String>of("typedSink", String.class);
+    final var key = RegistryKey.of("typedSink", String.class);
     @SuppressWarnings("unchecked")
     final MessageSink<String> testSink = mock(MessageSink.class);
     registry.registerSink(key, testSink);
@@ -188,8 +186,8 @@ class MessageProcessorRegistrySinksTest {
 
   @Test
   void shouldThrowOnTypeMismatch() {
-    final var key = RegistryKey.<String>of("typedSink", String.class);
-    registry.registerSink(key, msg -> {});
+    final var key = RegistryKey.of("typedSink", String.class);
+    registry.registerSink(key, _ -> {});
 
     assertThrows(ClassCastException.class, () -> {
       @SuppressWarnings("unchecked")

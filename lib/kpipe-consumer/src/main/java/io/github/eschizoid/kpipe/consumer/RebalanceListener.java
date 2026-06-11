@@ -107,7 +107,7 @@ public record RebalanceListener(
     final var remainingCommands = new ArrayList<ConsumerCommand>();
 
     IntStream.iterate(commandQueue.size(), size -> size > 0, size -> size - 1)
-      .mapToObj(x -> commandQueue.poll())
+      .mapToObj(_ -> commandQueue.poll())
       .takeWhile(Objects::nonNull)
       .forEachOrdered(currentCmd -> {
         switch (currentCmd) {

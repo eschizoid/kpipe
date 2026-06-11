@@ -97,7 +97,7 @@ class KPipeConsumerMockingTest {
     final var latch = new CountDownLatch(1);
 
     // Combine both counting down the latch and returning a value
-    doAnswer(invocation -> {
+    doAnswer(_ -> {
       latch.countDown();
       return "processed-value".getBytes();
     })
@@ -119,7 +119,7 @@ class KPipeConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to throw exception and count down latch
-    doAnswer(invocation -> {
+    doAnswer(_ -> {
       latch.countDown();
       throw new RuntimeException("Test exception");
     })
@@ -185,7 +185,7 @@ class KPipeConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to always fail and count down latch
-    doAnswer(inv -> {
+    doAnswer(_ -> {
       latch.countDown();
       throw new RuntimeException("Test exception");
     })
@@ -235,7 +235,7 @@ class KPipeConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to fail and count down latch
-    doAnswer(inv -> {
+    doAnswer(_ -> {
       latch.countDown();
       throw new RuntimeException("Test exception");
     })
@@ -378,7 +378,7 @@ class KPipeConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to return success and count down latch
-    doAnswer(inv -> {
+    doAnswer(_ -> {
       latch.countDown();
       return "processed-value".getBytes();
     })
@@ -425,7 +425,7 @@ class KPipeConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure mock to throw exception and count down latch
-    doAnswer(inv -> {
+    doAnswer(_ -> {
       latch.countDown();
       throw new RuntimeException("Test exception");
     })
@@ -467,7 +467,7 @@ class KPipeConsumerMockingTest {
   void builderShouldRespectAllOptions() {
     // Setup
     final var pollTimeout = Duration.ofMillis(200);
-    final KPipeConsumer.ErrorHandler<String> errorHandler = error -> {};
+    final KPipeConsumer.ErrorHandler<String> errorHandler = _ -> {};
     final var maxRetries = 3;
     final var retryBackoff = Duration.ofMillis(100);
 
@@ -946,7 +946,7 @@ class KPipeConsumerMockingTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
     // Configure the processor to always fail
-    doAnswer(inv -> {
+    doAnswer(_ -> {
       latch.countDown();
       throw new RuntimeException("Expected test exception");
     })
@@ -1133,7 +1133,7 @@ class KPipeConsumerMockingTest {
     doThrow(new RuntimeException("processor boom")).when(processor).apply(any(byte[].class));
 
     final var handlerLatch = new CountDownLatch(2);
-    final KPipeConsumer.ErrorHandler<String> throwingHandler = e -> {
+    final KPipeConsumer.ErrorHandler<String> throwingHandler = _ -> {
       handlerLatch.countDown();
       throw new RuntimeException("handler kaboom");
     };

@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.format.avro;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.apache.avro.Schema;
@@ -78,14 +79,14 @@ class AvroFormatBehaviorTest {
   @Test
   void deserializeReturnsNullForNullOrEmptyBytes() {
     final var format = AvroFormat.of(USER_SCHEMA_JSON);
-    assertEquals(null, format.deserialize(null));
-    assertEquals(null, format.deserialize(new byte[0]));
+    assertNull(format.deserialize(null));
+    assertNull(format.deserialize(new byte[0]));
   }
 
   @Test
   void serializeReturnsNullForNullData() {
     final var format = AvroFormat.of(USER_SCHEMA_JSON);
-    assertEquals(null, format.serialize(null));
+    assertNull(format.serialize(null));
   }
 
   @Test

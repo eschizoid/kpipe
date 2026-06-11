@@ -89,7 +89,7 @@ public class DemoApp implements AutoCloseable {
   }
 
   /// Initialises an OTLP/gRPC OpenTelemetry SDK pointed at the demo's collector. Reads
-  /// `OTEL_EXPORTER_OTLP_ENDPOINT` (default `<http://otel-collector:4317>`).
+  /// `OTEL_EXPORTER_OTLP_ENDPOINT` (default <http://otel-collector:4317>).
   private static OpenTelemetry initOpenTelemetry() {
     final var endpoint = System.getenv().getOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317");
     final var exporter = OtlpGrpcMetricExporter.builder().setEndpoint(endpoint).build();

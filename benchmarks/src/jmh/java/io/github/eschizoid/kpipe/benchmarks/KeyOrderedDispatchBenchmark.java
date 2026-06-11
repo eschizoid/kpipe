@@ -125,7 +125,7 @@ public class KeyOrderedDispatchBenchmark {
       final var registry = new MessageProcessorRegistry();
       final var pipeline = registry
         .pipeline(MessageFormat.bytes())
-        .toSink((final byte[] v) -> processedLatch.countDown())
+        .toSink((final byte[] _) -> processedLatch.countDown())
         .build();
 
       consumer = KPipeConsumer.<String>builder()

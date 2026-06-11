@@ -142,7 +142,7 @@ class CachedSchemaResolverTest {
 
   @Test
   void closeIsNoopForNonCloseableDelegate() {
-    final var cached = new CachedSchemaResolver(id -> "{}");
+    final var cached = new CachedSchemaResolver(_ -> "{}");
     cached.close(); // must not throw
   }
 }

@@ -35,9 +35,7 @@ class KPipeProducerIntegrationTest {
     final var props = getProperties();
 
     // 1. Produce message to input topic
-    try (
-      var producer = new KafkaProducer<byte[], byte[]>(props, new ByteArraySerializer(), new ByteArraySerializer())
-    ) {
+    try (var producer = new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer())) {
       producer.send(new ProducerRecord<>(topic, "key1".getBytes(), "bad-value".getBytes())).get();
     }
 
@@ -73,16 +71,10 @@ class KPipeProducerIntegrationTest {
     final var topic = "input-" + System.nanoTime();
     final var dlqTopic = "dlq-" + System.nanoTime();
     final var props = getProperties();
-    final var externalProducer = new KafkaProducer<byte[], byte[]>(
-      props,
-      new ByteArraySerializer(),
-      new ByteArraySerializer()
-    );
+    final var externalProducer = new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer());
 
     // 1. Produce message to input topic
-    try (
-      var producer = new KafkaProducer<byte[], byte[]>(props, new ByteArraySerializer(), new ByteArraySerializer())
-    ) {
+    try (var producer = new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer())) {
       producer.send(new ProducerRecord<>(topic, "key3".getBytes(), "bad-external".getBytes())).get();
     }
 
@@ -122,9 +114,7 @@ class KPipeProducerIntegrationTest {
     final var props = getProperties();
 
     // 1. Produce message to input topic
-    try (
-      var producer = new KafkaProducer<byte[], byte[]>(props, new ByteArraySerializer(), new ByteArraySerializer())
-    ) {
+    try (var producer = new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer())) {
       producer.send(new ProducerRecord<>(topic, "key2".getBytes(), "good-value".getBytes())).get();
     }
 
@@ -171,9 +161,7 @@ class KPipeProducerIntegrationTest {
   }
 
   private byte[] consumeOne(Properties props, String topic, Duration timeout) {
-    try (
-      var consumer = new KafkaConsumer<byte[], byte[]>(props, new ByteArrayDeserializer(), new ByteArrayDeserializer())
-    ) {
+    try (var consumer = new KafkaConsumer<>(props, new ByteArrayDeserializer(), new ByteArrayDeserializer())) {
       consumer.subscribe(Collections.singletonList(topic));
       final var start = System.currentTimeMillis();
       while (System.currentTimeMillis() - start < timeout.toMillis()) {

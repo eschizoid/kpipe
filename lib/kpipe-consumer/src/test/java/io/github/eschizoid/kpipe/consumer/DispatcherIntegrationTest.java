@@ -314,7 +314,7 @@ class DispatcherIntegrationTest {
     final var recordsPerPartition = 10;
     // Every record gets a null key — should all serialize through the same sentinel queue
     // in offset order, never concurrent.
-    final BiFunction<Integer, Long, String> allNull = (p, off) -> null;
+    final BiFunction<Integer, Long, String> allNull = (_, _) -> null;
     final var mock = seededConsumer(partitions, recordsPerPartition, allNull);
 
     final var observations = runUntilProcessed(ProcessingMode.KEY_ORDERED, mock, recordsPerPartition, 20, allNull);
@@ -358,7 +358,7 @@ class DispatcherIntegrationTest {
 
     final var managerRef = new AtomicReference<KafkaOffsetManager<String>>();
     builder.withOffsetManagerProvider(c -> {
-      final var mgr = KafkaOffsetManager.<String>builder(c).withCommandQueue(builder.getCommandQueue()).build();
+      final var mgr = KafkaOffsetManager.builder(c).withCommandQueue(builder.getCommandQueue()).build();
       managerRef.set(mgr);
       return mgr;
     });
@@ -503,7 +503,7 @@ class DispatcherIntegrationTest {
     final var partitions = 1;
     final var recordsPerPartition = 10;
     // Constant key across all records — forces all into a single per-key queue.
-    final BiFunction<Integer, Long, String> constantKey = (p, off) -> "single";
+    final BiFunction<Integer, Long, String> constantKey = (_, _) -> "single";
     final var mock = seededConsumer(partitions, recordsPerPartition, constantKey);
 
     final var observations = runUntilProcessed(ProcessingMode.KEY_ORDERED, mock, recordsPerPartition, 20, constantKey);
@@ -525,7 +525,7 @@ class DispatcherIntegrationTest {
   void keyOrderedSameKeyAcrossPartitionsStillSerializes() throws InterruptedException {
     final var partitions = 2;
     final var recordsPerPartition = 5;
-    final BiFunction<Integer, Long, String> sharedKey = (p, off) -> "shared";
+    final BiFunction<Integer, Long, String> sharedKey = (_, _) -> "shared";
     final var mock = seededConsumer(partitions, recordsPerPartition, sharedKey);
 
     final var observations = runUntilProcessed(
@@ -555,7 +555,7 @@ class DispatcherIntegrationTest {
     final var partitions = 1;
     final var recordsPerPartition = 10;
     final var failingOffset = 5L;
-    final BiFunction<Integer, Long, String> singleKey = (p, off) -> "key-A";
+    final BiFunction<Integer, Long, String> singleKey = (_, _) -> "key-A";
     final var mock = seededConsumer(partitions, recordsPerPartition, singleKey);
 
     final var processedSuccessfully = new CopyOnWriteArrayList<Long>();
@@ -628,7 +628,7 @@ class DispatcherIntegrationTest {
     final var recordsPerPartition = 5;
     final var retryingOffset = 2L;
     final var retryBackoff = Duration.ofMillis(50);
-    final BiFunction<Integer, Long, String> singleKey = (p, off) -> "key-A";
+    final BiFunction<Integer, Long, String> singleKey = (_, _) -> "key-A";
     final var mock = seededConsumer(partitions, recordsPerPartition, singleKey);
 
     final var attemptsPerOffset = new ConcurrentHashMap<Long, AtomicInteger>();
@@ -646,7 +646,7 @@ class DispatcherIntegrationTest {
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           final var off = Long.parseLong(new String(v).split("-", -1)[2]);
-          final var attempt = attemptsPerOffset.computeIfAbsent(off, k -> new AtomicInteger(0)).incrementAndGet();
+          final var attempt = attemptsPerOffset.computeIfAbsent(off, _ -> new AtomicInteger(0)).incrementAndGet();
           final var attemptStartNs = System.nanoTime();
           firstAttemptStartNs.putIfAbsent(off, attemptStartNs);
           try {

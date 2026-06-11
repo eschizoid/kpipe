@@ -117,7 +117,7 @@ class AvroSchemaCatalogTest {
 
   @Test
   void customReaderIsInvoked() {
-    final var catalog = new AvroSchemaCatalog(loc -> USER_SCHEMA_JSON);
+    final var catalog = new AvroSchemaCatalog(_ -> USER_SCHEMA_JSON);
     catalog.add("user", "com.example.User", "any-location");
     assertEquals("com.example.User", catalog.get("user").getFullName());
   }

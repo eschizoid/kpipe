@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,7 +26,7 @@ class MessagePipelineContractTest {
 
   @Test
   void shouldPropagateExceptionFromDeserialize() {
-    final var pipeline = pipelineWithDeserialize(bytes -> {
+    final var pipeline = pipelineWithDeserialize(_ -> {
       throw new IllegalArgumentException("malformed");
     });
     final var ex = assertThrows(IllegalArgumentException.class, () -> pipeline.deserialize(INPUT));
@@ -70,7 +71,7 @@ class MessagePipelineContractTest {
   @Test
   void shouldRoundTripSuccessfully() {
     final byte[] output = new byte[] { 9, 9, 9 };
-    final var pipeline = new TestPipeline<String>(_ -> "v", Result::passed, s -> output, null);
+    final var pipeline = new TestPipeline<String>(_ -> "v", Result::passed, _ -> output, null);
 
     final var deserialized = pipeline.deserializeOrFail(INPUT);
     final var result = pipeline.process(deserialized);
@@ -142,7 +143,7 @@ class MessagePipelineContractTest {
 
     // Composed sink runs the first then the second when both are present.
     final var composedSink = composed.getSink();
-    assertTrue(composedSink != null, "composed sink should be non-null when both pipelines have sinks");
+    assertNotNull(composedSink, "composed sink should be non-null when both pipelines have sinks");
     composedSink.accept("v");
     assertTrue(firstCalled.get(), "first sink must run");
     assertTrue(secondCalled.get(), "second sink must run");
@@ -161,11 +162,11 @@ class MessagePipelineContractTest {
   }
 
   private static MessagePipeline<String> pipelineWithDeserialize(final DeserializeFn<String> fn) {
-    return new TestPipeline<>(fn, Result::passed, s -> INPUT, null);
+    return new TestPipeline<>(fn, Result::passed, _ -> INPUT, null);
   }
 
   private static MessagePipeline<String> pipelineWithProcess(final ProcessFn<String> fn) {
-    return new TestPipeline<>(bytes -> "v", fn, s -> INPUT, null);
+    return new TestPipeline<>(_ -> "v", fn, _ -> INPUT, null);
   }
 
   /// Minimal record-style pipeline used to drive the contract tests. `process` returns

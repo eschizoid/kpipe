@@ -2,6 +2,8 @@ package io.github.eschizoid.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -392,8 +394,8 @@ class KeyOrderedDispatcherTest {
     Thread.ofVirtual().start(() -> dispatcher.dispatch(recordWithKey("c", 0), thirdCompleted::countDown, () -> {}));
 
     // The third dispatch must NOT complete while both workers are still blocked.
-    assertTrue(
-      !thirdCompleted.await(200, TimeUnit.MILLISECONDS),
+    assertFalse(
+      thirdCompleted.await(200, TimeUnit.MILLISECONDS),
       "third dispatch must stall while all queues at cap are non-empty"
     );
 
@@ -693,8 +695,8 @@ class KeyOrderedDispatcherTest {
     });
 
     // Confirm it's actually stuck (workers still blocked, no queues drained).
-    assertTrue(
-      !thirdCompleted.await(200, TimeUnit.MILLISECONDS),
+    assertFalse(
+      thirdCompleted.await(200, TimeUnit.MILLISECONDS),
       "third dispatch must stall while all queues at cap are non-empty"
     );
 
@@ -739,15 +741,18 @@ class KeyOrderedDispatcherTest {
 
     final var snapshot = dispatcher.topKeyQueueDepths(1);
     assertEquals(1, snapshot.size());
-    final var key = snapshot.get(0).getKey();
-    assertTrue(key instanceof byte[], () -> "byte[] keys must be returned as byte[], got " + key.getClass());
-    final var keyBytes = (byte[]) key;
+    final var key = snapshot.getFirst().getKey();
+    final var keyBytes = assertInstanceOf(
+      byte[].class,
+      key,
+      () -> "byte[] keys must be returned as byte[], got " + key.getClass()
+    );
     assertArrayEquals(originalKey, keyBytes, "snapshot must reflect the original key bytes");
 
     // Mutate the returned array — the dispatcher's internal map key must be unaffected.
     Arrays.fill(keyBytes, (byte) 0);
     final var snapshot2 = dispatcher.topKeyQueueDepths(1);
-    final var keyBytes2 = (byte[]) snapshot2.get(0).getKey();
+    final var keyBytes2 = (byte[]) snapshot2.getFirst().getKey();
     assertArrayEquals(originalKey, keyBytes2, "internal map key must survive caller mutation of the previous snapshot");
 
     allowFinish.countDown();

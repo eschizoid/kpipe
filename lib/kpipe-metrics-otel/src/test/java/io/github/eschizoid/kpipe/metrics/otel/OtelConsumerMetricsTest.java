@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
+import io.opentelemetry.sdk.metrics.data.LongPointData;
 import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader;
 import java.util.Collection;
@@ -161,20 +162,17 @@ class OtelConsumerMetricsTest {
     // Three increments expected, but they split across two distinct attribute sets (OPEN ×2,
     // HALF_OPEN ×1). Sum across the points must be 3 and each attribute set must match.
     final var points = counter.getLongSumData().getPoints();
-    final var total = points
-      .stream()
-      .mapToLong(p -> p.getValue())
-      .sum();
+    final var total = points.stream().mapToLong(LongPointData::getValue).sum();
     assertEquals(3L, total, "all three state changes accounted for");
     final var openCount = points
       .stream()
       .filter(p -> "OPEN".equals(p.getAttributes().get(CB_STATE_KEY)))
-      .mapToLong(p -> p.getValue())
+      .mapToLong(LongPointData::getValue)
       .sum();
     final var halfOpenCount = points
       .stream()
       .filter(p -> "HALF_OPEN".equals(p.getAttributes().get(CB_STATE_KEY)))
-      .mapToLong(p -> p.getValue())
+      .mapToLong(LongPointData::getValue)
       .sum();
     assertEquals(2L, openCount, "two transitions into OPEN");
     assertEquals(1L, halfOpenCount, "one transition into HALF_OPEN");

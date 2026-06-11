@@ -63,7 +63,7 @@ class RegistryFunctionsTest {
   @Test
   void shouldReturnDefaultValueOnFunctionError() {
     // Arrange
-    final Function<String, Integer> operation = s -> {
+    final Function<String, Integer> operation = _ -> {
       throw new RuntimeException("Test exception");
     };
     final var defaultValue = -1;
@@ -82,7 +82,7 @@ class RegistryFunctionsTest {
   void shouldExecuteConsumerSuccessfully() {
     // Arrange
     final var counter = new AtomicLong(0);
-    final Consumer<String> operation = s -> counter.incrementAndGet();
+    final Consumer<String> operation = _ -> counter.incrementAndGet();
     final var logger = mock(System.Logger.class);
 
     // Act
@@ -98,7 +98,7 @@ class RegistryFunctionsTest {
   @Test
   void shouldSuppressAndLogConsumerExceptions() {
     // Arrange
-    final Consumer<String> operation = s -> {
+    final Consumer<String> operation = _ -> {
       throw new IllegalArgumentException("Test consumer exception");
     };
     final var logger = mock(System.Logger.class);

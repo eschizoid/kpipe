@@ -58,7 +58,7 @@ class KPipeCircuitBreakerIntegrationTest {
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
-        TestPipelines.sideEffect(v -> {
+        TestPipelines.sideEffect(_ -> {
           throw new RuntimeException("simulated downstream failure");
         })
       )
@@ -91,7 +91,7 @@ class KPipeCircuitBreakerIntegrationTest {
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
-        TestPipelines.sideEffect(v -> {
+        TestPipelines.sideEffect(_ -> {
           throw new RuntimeException("downstream down");
         })
       )
@@ -196,7 +196,7 @@ class KPipeCircuitBreakerIntegrationTest {
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
-        TestPipelines.sideEffect(v -> {
+        TestPipelines.sideEffect(_ -> {
           throw new RuntimeException("every record fails");
         })
       )

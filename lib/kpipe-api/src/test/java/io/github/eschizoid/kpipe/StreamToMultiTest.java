@@ -1,9 +1,9 @@
 package io.github.eschizoid.kpipe;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.sink.CompositeMessageSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
@@ -38,7 +38,7 @@ class StreamToMultiTest {
     final MessageSink<Map<String, Object>> c = captured3::add;
 
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props()).toMulti(a, b, c);
-    assertTrue(sink.terminalSink() instanceof CompositeMessageSink<?>);
+    assertInstanceOf(CompositeMessageSink.class, sink.terminalSink());
 
     final var payload = new HashMap<String, Object>();
     payload.put("k", "v");
@@ -63,7 +63,7 @@ class StreamToMultiTest {
     final MessageSink<Map<String, Object>> b = captured2::add;
 
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props()).toMulti(throwing, a, b);
-    assertTrue(sink.terminalSink() instanceof CompositeMessageSink<?>);
+    assertInstanceOf(CompositeMessageSink.class, sink.terminalSink());
 
     final var payload = new HashMap<String, Object>();
     payload.put("event", "ok");

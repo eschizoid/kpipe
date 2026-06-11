@@ -110,7 +110,7 @@ public final class TypedPipelineBuilder<T> {
     final var pipelineSink = this.sink;
     final var bytesToSkip = this.skipBytes;
 
-    return new MessagePipeline<T>() {
+    return new MessagePipeline<>() {
       @Override
       public MessageSink<T> getSink() {
         return pipelineSink;

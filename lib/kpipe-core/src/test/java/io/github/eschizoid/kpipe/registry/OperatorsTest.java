@@ -46,7 +46,7 @@ class OperatorsTest {
   @Test
   void peekShouldRunSideEffectAndPassThrough() {
     final var captured = new AtomicReference<String>();
-    final var op = Operators.peek((String s) -> captured.set(s));
+    final var op = Operators.<String>peek(captured::set);
 
     final var result = op.apply("original");
 
@@ -84,7 +84,7 @@ class OperatorsTest {
 
   @Test
   void safeShouldReturnInputOnException() {
-    final UnaryOperator<String> throwing = s -> {
+    final UnaryOperator<String> throwing = _ -> {
       throw new RuntimeException("boom");
     };
     final var op = Operators.safe(throwing);
@@ -150,7 +150,7 @@ class OperatorsTest {
     final var downstreamCalled = new AtomicBoolean(false);
 
     final UnaryOperator<String> first = s -> s + "a";
-    final UnaryOperator<String> filter = s -> null;
+    final UnaryOperator<String> filter = _ -> null;
     final UnaryOperator<String> downstream = s -> {
       downstreamCalled.set(true);
       return s + "b";

@@ -181,7 +181,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     if (state.get() == OffsetState.STOPPED) return;
     final var partition = new TopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
-    pendingOffsets.computeIfAbsent(partition, k -> new ConcurrentSkipListSet<>()).add(offset);
+    pendingOffsets.computeIfAbsent(partition, _ -> new ConcurrentSkipListSet<>()).add(offset);
   }
 
   /// Marks an offset as successfully processed using a ConsumerRecord.
@@ -199,9 +199,9 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     final var partition = new TopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
 
-    highestProcessedOffsets.compute(partition, (k, v) -> v == null ? offset : Math.max(v, offset));
+    highestProcessedOffsets.compute(partition, (_, v) -> v == null ? offset : Math.max(v, offset));
 
-    pendingOffsets.computeIfPresent(partition, (k, set) -> {
+    pendingOffsets.computeIfPresent(partition, (_, set) -> {
       set.remove(offset);
       return set.isEmpty() ? null : set;
     });

@@ -388,7 +388,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
 
     void start() {
-      processor.poll(ctx -> {
+      processor.poll(_ -> {
         simulateWork(workMicros);
         processedCount.incrementAndGet();
       });
@@ -435,7 +435,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
 
     void start() {
-      processor.poll(ctx -> {
+      processor.poll(_ -> {
         simulateWork(workMicros);
         processedCount.incrementAndGet();
       });
@@ -481,7 +481,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
 
     void start() {
-      processor.poll(ctx -> {
+      processor.poll(_ -> {
         simulateWork(workMicros);
         processedCount.incrementAndGet();
       });

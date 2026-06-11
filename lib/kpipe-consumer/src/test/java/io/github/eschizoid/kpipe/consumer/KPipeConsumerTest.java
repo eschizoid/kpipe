@@ -531,7 +531,7 @@ class KPipeConsumerTest {
   @Test
   void processorWithMaxRetriesExceededShouldCallErrorHandler() throws InterruptedException {
     // Arrange
-    final UnaryOperator<byte[]> failingProcessor = value -> {
+    final UnaryOperator<byte[]> failingProcessor = _ -> {
       throw new RuntimeException("Always failing");
     };
     @SuppressWarnings("unchecked")
@@ -867,7 +867,7 @@ class KPipeConsumerTest {
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .build();
 
-    final var records = new ConsumerRecords<String, byte[]>(
+    final var records = new ConsumerRecords<>(
       Map.of(
         new TopicPartition(TOPIC, 0),
         List.of(createRecord(0, "k1", "v1"), createRecord(1, "k2", "v2"), createRecord(2, "k3", "v3"))
@@ -907,7 +907,7 @@ class KPipeConsumerTest {
       .withProcessingMode(ProcessingMode.KEY_ORDERED)
       .build();
 
-    final var records = new ConsumerRecords<String, byte[]>(
+    final var records = new ConsumerRecords<>(
       Map.of(
         new TopicPartition(TOPIC, 0),
         List.of(
