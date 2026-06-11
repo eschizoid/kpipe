@@ -130,7 +130,7 @@ class MultiBuilderBatchIntegrationTest {
   void builderRejectsTopicConfiguredAsBothRegularAndBatch() {
     final var registry = new MessageProcessorRegistry();
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
-    final BatchSink<Map<String, Object>> sink = BatchSink.ofVoid(b -> {});
+    final BatchSink<Map<String, Object>> sink = BatchSink.ofVoid(_ -> {});
 
     final var ex = assertThrows(IllegalArgumentException.class, () ->
       KPipeConsumer.<byte[]>builder()
@@ -152,7 +152,7 @@ class MultiBuilderBatchIntegrationTest {
   void builderAcceptsTwoBatchRoutesOnDifferentTopics() {
     final var registry = new MessageProcessorRegistry();
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
-    final BatchSink<Map<String, Object>> wholeBatch = BatchSink.ofVoid(b -> {});
+    final BatchSink<Map<String, Object>> wholeBatch = BatchSink.ofVoid(_ -> {});
     final BatchSink<Map<String, Object>> perRecordBatch = b -> BatchResult.allSucceeded(b.size());
 
     // No exception: two batch routes on different topics build cleanly.

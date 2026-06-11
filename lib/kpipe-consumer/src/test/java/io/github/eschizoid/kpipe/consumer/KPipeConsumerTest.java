@@ -531,7 +531,7 @@ class KPipeConsumerTest {
   @Test
   void processorWithMaxRetriesExceededShouldCallErrorHandler() throws InterruptedException {
     // Arrange
-    final UnaryOperator<byte[]> failingProcessor = value -> {
+    final UnaryOperator<byte[]> failingProcessor = _ -> {
       throw new RuntimeException("Always failing");
     };
     @SuppressWarnings("unchecked")

@@ -160,7 +160,7 @@ public class BatchSinkLatencyBenchmark {
         // difference is the terminal sink.
         final var perRecordPipeline = registry
           .pipeline(JsonFormat.INSTANCE)
-          .toSink((final Map<String, Object> v) -> {
+          .toSink((final Map<String, Object> _) -> {
             LockSupport.parkNanos(nanos);
             processedLatch.countDown();
           })

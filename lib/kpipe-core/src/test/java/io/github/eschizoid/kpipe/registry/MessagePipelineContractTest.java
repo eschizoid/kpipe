@@ -26,7 +26,7 @@ class MessagePipelineContractTest {
 
   @Test
   void shouldPropagateExceptionFromDeserialize() {
-    final var pipeline = pipelineWithDeserialize(bytes -> {
+    final var pipeline = pipelineWithDeserialize(_ -> {
       throw new IllegalArgumentException("malformed");
     });
     final var ex = assertThrows(IllegalArgumentException.class, () -> pipeline.deserialize(INPUT));
@@ -71,7 +71,7 @@ class MessagePipelineContractTest {
   @Test
   void shouldRoundTripSuccessfully() {
     final byte[] output = new byte[] { 9, 9, 9 };
-    final var pipeline = new TestPipeline<String>(_ -> "v", Result::passed, s -> output, null);
+    final var pipeline = new TestPipeline<String>(_ -> "v", Result::passed, _ -> output, null);
 
     final var deserialized = pipeline.deserializeOrFail(INPUT);
     final var result = pipeline.process(deserialized);
@@ -162,11 +162,11 @@ class MessagePipelineContractTest {
   }
 
   private static MessagePipeline<String> pipelineWithDeserialize(final DeserializeFn<String> fn) {
-    return new TestPipeline<>(fn, Result::passed, s -> INPUT, null);
+    return new TestPipeline<>(fn, Result::passed, _ -> INPUT, null);
   }
 
   private static MessagePipeline<String> pipelineWithProcess(final ProcessFn<String> fn) {
-    return new TestPipeline<>(bytes -> "v", fn, s -> INPUT, null);
+    return new TestPipeline<>(_ -> "v", fn, _ -> INPUT, null);
   }
 
   /// Minimal record-style pipeline used to drive the contract tests. `process` returns

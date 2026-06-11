@@ -37,7 +37,7 @@ class AppIntegrationTest {
     final var processed = new AtomicInteger(0);
     final var FAIL_UNTIL = 10;
 
-    final MessageSink<Map<String, Object>> flakySink = msg -> {
+    final MessageSink<Map<String, Object>> flakySink = _ -> {
       final var n = processed.incrementAndGet();
       if (n <= FAIL_UNTIL) throw new RuntimeException("simulated failure #" + n);
     };

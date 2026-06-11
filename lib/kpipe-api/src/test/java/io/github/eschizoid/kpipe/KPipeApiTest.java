@@ -80,7 +80,7 @@ class KPipeApiTest {
     };
 
     final Stream<String> single = KPipe.custom("orders", props, upperFormat).pipe(s -> s + "!");
-    final Sink<String> singleSink = single.toCustom(v -> {});
+    final Sink<String> singleSink = single.toCustom(_ -> {});
     assertNotNull(singleSink);
 
     final var ds = (DefaultStream<String>) single;

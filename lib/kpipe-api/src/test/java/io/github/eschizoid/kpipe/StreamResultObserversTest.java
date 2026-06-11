@@ -52,9 +52,9 @@ class StreamResultObserversTest {
   void onFilteredFiresWhenAnOperatorReturnsNull() {
     final var fired = new AtomicInteger();
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
-      .filter(m -> false)
+      .filter(_ -> false)
       .onFiltered(fired::incrementAndGet)
-      .toCustom(m -> {});
+      .toCustom(_ -> {});
 
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
@@ -68,7 +68,7 @@ class StreamResultObserversTest {
     final var fired = new AtomicInteger();
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .onFiltered(fired::incrementAndGet)
-      .toCustom(m -> {});
+      .toCustom(_ -> {});
 
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
@@ -82,11 +82,11 @@ class StreamResultObserversTest {
     final var capturedCause = new AtomicReference<Throwable>();
     final var boom = new RuntimeException("boom");
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
-      .pipe(m -> {
+      .pipe(_ -> {
         throw boom;
       })
       .onFailed(capturedCause::set)
-      .toCustom(m -> {});
+      .toCustom(_ -> {});
 
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
@@ -114,7 +114,7 @@ class StreamResultObserversTest {
           case Result.Failed<Map<String, Object>> _ -> failed.incrementAndGet();
         }
       })
-      .toCustom(m -> {});
+      .toCustom(_ -> {});
 
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
@@ -130,11 +130,11 @@ class StreamResultObserversTest {
   @Test
   void observerExceptionsAreSwallowedSoPipelineStaysAlive() {
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
-      .filter(m -> false)
+      .filter(_ -> false)
       .onFiltered(() -> {
         throw new RuntimeException("observer bug");
       })
-      .toCustom(m -> {});
+      .toCustom(_ -> {});
 
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
@@ -148,7 +148,7 @@ class StreamResultObserversTest {
         m.put("x", 1);
         return m;
       })
-      .toCustom(m -> {});
+      .toCustom(_ -> {});
 
     // We can't easily assert "is not the wrapper class" because the wrapper is anonymous, but
     // we can confirm the pipeline still works without observers configured.
@@ -160,7 +160,7 @@ class StreamResultObserversTest {
   void observersDoNotAffectFilterReturnValue() {
     final var seenAtSink = new AtomicReference<Map<String, Object>>();
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
-      .filter(m -> false)
+      .filter(_ -> false)
       .onFiltered(() -> {
         // observer is a side-effect — must not suppress the filter
       })
@@ -186,10 +186,10 @@ class StreamResultObserversTest {
     final var first = new AtomicInteger();
     final var second = new AtomicInteger();
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
-      .filter(m -> false)
+      .filter(_ -> false)
       .onFiltered(first::incrementAndGet)
       .onFiltered(second::incrementAndGet)
-      .toCustom(m -> {});
+      .toCustom(_ -> {});
 
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();
@@ -205,7 +205,7 @@ class StreamResultObserversTest {
     final var sink = (DefaultSink<Map<String, Object>>) KPipe.json("topic", props())
       .filter(m -> m.containsKey("keep"))
       .onFailed(_ -> failedFired.incrementAndGet())
-      .toCustom(m -> {});
+      .toCustom(_ -> {});
 
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<Map<String, Object>>) sink.buildPipeline();

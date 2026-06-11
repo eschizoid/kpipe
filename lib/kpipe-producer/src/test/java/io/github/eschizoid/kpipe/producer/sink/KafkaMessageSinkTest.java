@@ -41,7 +41,7 @@ class KafkaMessageSinkTest {
     final KafkaMessageSink<String> sink = new KafkaMessageSink<>(
       mockProducer,
       TOPIC,
-      s -> "key".getBytes(),
+      _ -> "key".getBytes(),
       String::getBytes,
       null
     );

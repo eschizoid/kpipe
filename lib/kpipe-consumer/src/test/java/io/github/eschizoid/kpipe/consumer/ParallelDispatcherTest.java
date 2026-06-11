@@ -28,7 +28,7 @@ class ParallelDispatcherTest {
     final AtomicInteger rejectCount,
     final Duration terminationTimeout
   ) {
-    return new ParallelDispatcher<>((rec, ex) -> rejectCount.incrementAndGet(), terminationTimeout);
+    return new ParallelDispatcher<>((_, _) -> rejectCount.incrementAndGet(), terminationTimeout);
   }
 
   @Test

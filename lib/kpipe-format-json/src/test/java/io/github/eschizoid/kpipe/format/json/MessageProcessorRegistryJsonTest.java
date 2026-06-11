@@ -101,7 +101,7 @@ class MessageProcessorRegistryJsonTest {
 
   @Test
   void shouldPropagateExceptionsFromOperators() {
-    final UnaryOperator<Map<String, Object>> operator = message -> {
+    final UnaryOperator<Map<String, Object>> operator = _ -> {
       throw new RuntimeException("Test exception");
     };
 
@@ -113,7 +113,7 @@ class MessageProcessorRegistryJsonTest {
 
   @Test
   void shouldWrapOperatorWithErrorHandling() {
-    final UnaryOperator<Map<String, Object>> operator = message -> {
+    final UnaryOperator<Map<String, Object>> operator = _ -> {
       throw new RuntimeException("Test exception");
     };
     final var safeOperator = MessageProcessorRegistry.withOperatorErrorHandling(operator);
@@ -126,7 +126,7 @@ class MessageProcessorRegistryJsonTest {
 
   @Test
   void shouldWrapSinkWithErrorHandling() {
-    final MessageSink<Map<String, Object>> sink = message -> {
+    final MessageSink<Map<String, Object>> sink = _ -> {
       throw new RuntimeException("Test exception");
     };
     final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(sink);

@@ -227,7 +227,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @param record the record to send
   /// @return a future that will contain the record metadata
   public Future<RecordMetadata> sendAsync(final ProducerRecord<K, V> record) {
-    return producer.send(record, (metadata, exception) -> {
+    return producer.send(record, (_, exception) -> {
       if (exception == null) otelMetrics.recordMessageSent();
       else otelMetrics.recordMessageFailed();
     });

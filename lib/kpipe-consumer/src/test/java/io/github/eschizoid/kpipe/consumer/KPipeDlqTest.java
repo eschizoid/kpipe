@@ -45,7 +45,7 @@ class KPipeDlqTest {
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
-          TestPipelines.sideEffect(v -> {
+          TestPipelines.sideEffect(_ -> {
             throw new RuntimeException("fail");
           })
         )
@@ -150,7 +150,7 @@ class KPipeDlqTest {
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
-          TestPipelines.sideEffect(v -> {
+          TestPipelines.sideEffect(_ -> {
             throw new RuntimeException("processor always fails");
           })
         )
@@ -194,7 +194,7 @@ class KPipeDlqTest {
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
-          TestPipelines.sideEffect(v -> {
+          TestPipelines.sideEffect(_ -> {
             throw new RuntimeException("fail");
           })
         )
