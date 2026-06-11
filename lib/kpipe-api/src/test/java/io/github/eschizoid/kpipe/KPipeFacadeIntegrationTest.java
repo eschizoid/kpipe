@@ -41,7 +41,7 @@ import org.testcontainers.utility.DockerImageName;
 class KPipeFacadeIntegrationTest {
 
   private static final Logger LOG = System.getLogger(KPipeFacadeIntegrationTest.class.getName());
-  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(

@@ -171,7 +171,7 @@ profile differences across forks) doesn't get exposed. For published numbers run
 
 A few things to keep in mind whenever you quote a number from this suite:
 
-- **Broker runs in Docker (Testcontainers Kafka 4.2.0), not in-process.** That's the right call for a competitive bench
+- **Broker runs in Docker (Testcontainers Kafka 4.3.0), not in-process.** That's the right call for a competitive bench
   — the broker isn't fighting consumers for cores — but it also means network IO is real (loopback to a container) and
   absolute numbers are still **lower than a production setup with a network broker on dedicated hardware**. The headline
   _ordering_ between runtimes is what's meaningful; absolute records-per-second is a function of how much of the host's
@@ -184,7 +184,7 @@ A few things to keep in mind whenever you quote a number from this suite:
   ack) needs a separate harness.
 - **Docker overhead is real.** The first iteration of every trial pays the container-startup cost. JMH's warmup phase
   absorbs most of that; if you're spot-checking with `-wi 0`, expect the first measurement iteration to look slow.
-- **Share-group setup is validated end-to-end (Docker, Kafka 4.2.0).** The share arm needs broker-side KIP-932 support
+- **Share-group setup is validated end-to-end (Docker, Kafka 4.3.0).** The share arm needs broker-side KIP-932 support
   (the `share` rebalance protocol + the `__share_group_state` topic, set via container env) and the share group's start
   offset reset to `earliest` (a group config set via Admin — the default `latest` would skip every seeded record and
   time the bench out). A smoke run confirmed the group forms, assigns all 8 partitions, and consumes the seeded records.

@@ -36,7 +36,7 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers(disabledWithoutDocker = true)
 class AppIntegrationTest {
 
-  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
 
   // Known parent: traceparent format is `version-traceId-parentSpanId-flags` (W3C §3.2).
   private static final String INBOUND_TRACE_ID = "0af7651916cd43dd8448eb211c80319c";

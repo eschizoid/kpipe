@@ -683,7 +683,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// default `latest`), NOT the consumer's `auto.offset.reset`. Left at `latest`, the group would
   /// skip every pre-seeded record and the bench would time out. We set it to `earliest` per group
   /// via `incrementalAlterConfigs` before subscribing. If the broker rejects that key, the
-  /// fallback is a broker-level default for share groups — check the 4.2.0 docs for the exact
+  /// fallback is a broker-level default for share groups — check the 4.3.0 docs for the exact
   /// name.
   @State(Scope.Thread)
   public static class ShareConsumerInvocationContext {
@@ -776,12 +776,12 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// container puts it on its own JVM with its own cores, so the consumer is the bottleneck the
   /// bench is actually trying to measure.
   ///
-  /// Pinned to the `apache/kafka:4.2.0` image to match the `kafka-clients` version on the
+  /// Pinned to the `apache/kafka:4.3.0` image to match the `kafka-clients` version on the
   /// classpath. Auto-create topics is on so the seed step doesn't have to fight a race with
   /// topic-metadata propagation.
   private static final class EmbeddedKafkaBackend implements AutoCloseable {
 
-    private static final DockerImageName KAFKA_IMAGE = DockerImageName.parse("apache/kafka:4.2.0");
+    private static final DockerImageName KAFKA_IMAGE = DockerImageName.parse("apache/kafka:4.3.0");
 
     private KafkaContainer container;
 
@@ -795,7 +795,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
         // Share-group (KIP-932) support for the share arm. The group coordinator
         // must offer the "share" rebalance protocol, and __share_group_state needs
         // single-broker replication. VERIFY ON FIRST RUN: if a share group never
-        // forms, check these env names vs the 4.2.0 broker configs + broker log.
+        // forms, check these env names vs the 4.3.0 broker configs + broker log.
         .withEnv("KAFKA_GROUP_COORDINATOR_REBALANCE_PROTOCOLS", "classic,consumer,share")
         .withEnv("KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR", "1")
         .withEnv("KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR", "1");

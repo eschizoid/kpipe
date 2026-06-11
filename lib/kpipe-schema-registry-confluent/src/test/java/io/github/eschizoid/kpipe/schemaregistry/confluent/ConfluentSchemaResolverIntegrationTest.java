@@ -32,7 +32,7 @@ import org.testcontainers.utility.DockerImageName;
 class ConfluentSchemaResolverIntegrationTest {
 
   private static final String CONFLUENT_VERSION = System.getProperty("confluentPlatformVersion", "8.2.0");
-  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
   private static final String SUBJECT = "kpipe-test-schema";
   private static final String SCHEMA_JSON = """
     {"type":"record","name":"KPipeTest","fields":[{"name":"id","type":"long"}]}""";
