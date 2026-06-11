@@ -11,7 +11,7 @@ Copy this file when publishing a fresh benchmark run. Fill in every section. If 
 | Hardware                    | e.g., `Apple Silicon M2 Pro, 10 cores, 16 GB`  |
 | OS / Kernel                 | e.g., `macOS 14.5 (Darwin 24.6.0)`             |
 | JDK                         | `java -version` output                         |
-| Kafka                       | `4.2.0` (in-process via Apache Kafka test-kit) |
+| Kafka                       | `4.3.0` (in-process via Apache Kafka test-kit) |
 | KPipe                       | `git rev-parse HEAD`                           |
 | Confluent Parallel Consumer | from `gradle/libs.versions.toml`               |
 | Reactor Kafka               | from `gradle/libs.versions.toml`               |

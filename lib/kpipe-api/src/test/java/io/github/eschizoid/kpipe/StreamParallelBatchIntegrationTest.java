@@ -40,7 +40,7 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers(disabledWithoutDocker = true)
 class StreamParallelBatchIntegrationTest {
 
-  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.2.0");
+  private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
   private static final int PARTITIONS = 4;
   private static final int RECORD_COUNT = 200;
 
