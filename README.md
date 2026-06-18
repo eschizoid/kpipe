@@ -1142,7 +1142,9 @@ shape. The explicit `KPipeConsumer.Builder` route is still available when you ne
 facade (custom `OffsetManager`, custom Kafka consumer factory, custom DLQ producer); the facade reaches into the
 builder for everything else.
 
-**Environment variables** (read by `AppConfig.fromEnv()`):
+**Environment variables** used by this sketch (`AppConfig.fromEnv()` reads additional vars — `APP_NAME`,
+`KAFKA_POLL_TIMEOUT_MS`, `SHUTDOWN_TIMEOUT_SEC`, `METRICS_INTERVAL_SEC`, `PROCESSOR_PIPELINE` — that feed the explicit
+Builder paths):
 
 ```bash
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
