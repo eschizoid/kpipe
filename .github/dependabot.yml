@@ -11,6 +11,13 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # The release toolchain (jgit + axion-release + jreleaser) is pinned by hand —
+    # getting them to cooperate took real effort, so we hold bumps until they're
+    # validated together. Bump manually when needed.
+    ignore:
+      - dependency-name: "org.jreleaser*"
+      - dependency-name: "pl.allegro.tech.build.axion-release*"
+      - dependency-name: "org.eclipse.jgit*"
     labels:
       - "dependencies"
       - "gradle"
