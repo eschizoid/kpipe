@@ -5,6 +5,7 @@ import io.github.eschizoid.kpipe.consumer.config.KafkaConsumerConfig;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.util.HexFormat;
 
 /// Minimal raw-bytes consumer demonstrating the KPipe facade. Useful for proxying, raw archival,
 /// or pre-format inspection where you want `byte[]` end-to-end with no SerDe inside the pipeline.
@@ -34,12 +35,7 @@ public final class App {
 
   private static String hexPreview(final byte[] payload) {
     final var limit = Math.min(payload.length, PREVIEW_BYTES);
-    final var sb = new StringBuilder(limit * 3);
-    for (var i = 0; i < limit; i++) {
-      if (i > 0) sb.append(' ');
-      sb.append(String.format("%02x", payload[i]));
-    }
-    if (payload.length > limit) sb.append(" ...");
-    return sb.toString();
+    final var hex = HexFormat.ofDelimiter(" ").formatHex(payload, 0, limit);
+    return payload.length > limit ? hex + " ..." : hex;
   }
 }

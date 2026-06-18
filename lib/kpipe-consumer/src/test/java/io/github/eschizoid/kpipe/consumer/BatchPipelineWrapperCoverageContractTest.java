@@ -354,7 +354,6 @@ class BatchPipelineWrapperCoverageContractTest {
         final var ev = callbacks.events.get(i);
         processedOffsets.put(Long.parseLong(ev.substring("markProcessed:".length())), true);
       }
-      assertNull(processedOffsets.get(-1L), "spot-check: missing-key lookup should be null");
       for (long off = 0; off < 3; off++) {
         assertTrue(processedOffsets.containsKey(off), "offset " + off + " must be marked processed before close");
       }

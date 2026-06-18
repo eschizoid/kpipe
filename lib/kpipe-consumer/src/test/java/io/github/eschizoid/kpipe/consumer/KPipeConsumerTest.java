@@ -454,6 +454,31 @@ class KPipeConsumerTest {
   }
 
   @Test
+  void mixingRegularAndBatchRoutesForSameTopicMustThrow() {
+    // A single topic must appear in exactly one route — regular pipeline OR batch — never both.
+    // The check fires in Builder.build() so a misconfig trips at startup rather than producing
+    // silent ambiguity at runtime ("which route processes the record?"). Without this guard,
+    // dispatch evaluation order would silently determine the outcome.
+    final var ex = assertThrows(IllegalArgumentException.class, () ->
+      KPipeConsumer.<String>builder()
+        .withProperties(properties)
+        .withTopic(TOPIC)
+        .withPipeline(TestPipelines.identity())
+        .withBatchPipeline(
+          TOPIC,
+          TestPipelines.identity(),
+          BatchSink.ofVoid(batch -> {}),
+          BatchPolicy.ofSize(10)
+        )
+        .build()
+    );
+    assertTrue(
+      ex.getMessage().contains(TOPIC) && ex.getMessage().contains("both"),
+      "rejection message must name the conflicting topic and call out the regular/batch overlap, got: " + ex.getMessage()
+    );
+  }
+
+  @Test
   void isRunningShouldReturnFalseAfterConstruction() {
     // Arrange
     final var consumer = createConsumerWithMockProcessor();

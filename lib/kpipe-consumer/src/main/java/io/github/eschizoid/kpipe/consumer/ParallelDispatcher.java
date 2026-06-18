@@ -45,6 +45,11 @@ final class ParallelDispatcher<K> implements Dispatcher<K> {
     this.terminationTimeout = terminationTimeout;
   }
 
+  /// `processTask` must handle its own exceptions — `executor.submit(Runnable)` returns a `Future`
+  /// that the dispatcher discards, so any throwable escaping `processTask.run()` is silently
+  /// swallowed by the VT executor. The finally block still decrements `inFlight` and fires
+  /// `onComplete` so accounting and backpressure remain honest, but the failure itself only
+  /// surfaces if `processTask` routed it (e.g. through the consumer's error handler / DLQ).
   @Override
   public void dispatch(final ConsumerRecord<K, byte[]> record, final Runnable processTask, final Runnable onComplete) {
     inFlight.incrementAndGet();
