@@ -256,6 +256,91 @@ class KafkaOffsetManagerTest {
         fail("Exception during rebalance test: " + e.getMessage());
       }
     }
+
+    /// Revoking only some of this consumer's partitions must clear state for the revoked ones
+    /// only and leave the others untouched — otherwise a partial rebalance would corrupt the
+    /// surviving partitions' offset bookkeeping.
+    @Test
+    void shouldHandlePartialRevocation() {
+      final var partition2 = new TopicPartition(TOPIC, 2);
+      final var recordOnP0 = new ConsumerRecord<>(TOPIC, 0, 110L, "k", "v".getBytes());
+      final var recordOnP2 = new ConsumerRecord<>(TOPIC, 2, 310L, "k", "v".getBytes());
+      offsetManager.trackOffset(recordOnP0);
+      offsetManager.trackOffset(recordOnP2);
+
+      final var listener = offsetManager.createRebalanceListener();
+      listener.onPartitionsRevoked(List.of(PARTITION));
+
+      // Revoked partition's state is gone
+      assertEquals(-1L, offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"));
+      // Non-revoked partition is preserved
+      assertEquals(310L, offsetManager.getPartitionState(partition2).get("nextOffsetToCommit"));
+    }
+
+    /// Pre-existing commit commands targeting a revoked partition would commit against the
+    /// wrong owner once the partition is reassigned. The listener prunes them at revoke time.
+    @Test
+    void shouldDrainCommandQueueForRevokedPartitions() {
+      final var partition1 = new TopicPartition(TOPIC, 1);
+      final var offsets = Map.of(
+        PARTITION,
+        new OffsetAndMetadata(100L),
+        partition1,
+        new OffsetAndMetadata(200L)
+      );
+      commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, "commit-1"));
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      // Command stays, but the revoked-partition entry is filtered out
+      assertEquals(1, commandQueue.size());
+      final var remaining = assertInstanceOf(ConsumerCommand.CommitOffsets.class, commandQueue.peek());
+      assertFalse(remaining.offsets().containsKey(PARTITION), "revoked partition entry must be stripped");
+      assertEquals(200L, remaining.offsets().get(partition1).offset(), "surviving partition entry preserved");
+    }
+
+    /// Non-commit commands (Pause, Resume, Close, …) don't reference partitions, so they pass
+    /// through the drain untouched.
+    @Test
+    void shouldPreserveNonCommitCommandsDuringRevoke() {
+      commandQueue.offer(new ConsumerCommand.Pause());
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      assertEquals(1, commandQueue.size());
+      assertInstanceOf(ConsumerCommand.Pause.class, commandQueue.peek());
+    }
+
+    /// If a commit command's offsets are all on revoked partitions, the entire command is
+    /// dropped — committing it would target zero partitions, which is a no-op at best and a
+    /// brokerwide error at worst depending on the broker version.
+    @Test
+    void shouldRemoveCommitCommandsThatOnlyTargetRevokedPartitions() {
+      commandQueue.offer(new ConsumerCommand.CommitOffsets(Map.of(PARTITION, new OffsetAndMetadata(100L)), "commit-1"));
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      assertTrue(commandQueue.isEmpty(), "command with only revoked-partition entries must be removed entirely");
+    }
+
+    /// After stop(), the listener is a no-op — it must not commit, must not clear state, must
+    /// not drain the command queue. Otherwise a late rebalance callback racing with shutdown
+    /// would corrupt the post-stop state.
+    @Test
+    void shouldBeNoOpAfterStop() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k", "v".getBytes());
+      offsetManager.trackOffset(record);
+      commandQueue.offer(new ConsumerCommand.Pause());
+
+      final var listener = offsetManager.createRebalanceListener();
+      offsetManager.stop();
+
+      listener.onPartitionsRevoked(List.of(PARTITION));
+      listener.onPartitionsAssigned(List.of(PARTITION));
+
+      verify(mockConsumer, never()).commitSync(anyMap());
+      assertEquals(1, commandQueue.size(), "command queue must be left alone after stop");
+    }
   }
 
   @Nested

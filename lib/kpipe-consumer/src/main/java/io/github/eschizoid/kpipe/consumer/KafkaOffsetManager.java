@@ -427,12 +427,92 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     }
   }
 
-  /// Creates a rebalance listener for the Kafka consumer.
-  ///
-  /// @return A ConsumerRebalanceListener instance
+  /// Creates a rebalance listener that commits per-partition offsets on revoke, clears partition
+  /// state on assign/revoke, and prunes the command queue so commands targeting revoked
+  /// partitions don't fire against a stale assignment. The listener is an inline anonymous class
+  /// that closes over the manager's own state — no separate type, no parallel constructor.
   @Override
   public ConsumerRebalanceListener createRebalanceListener() {
-    return new RebalanceListener(state, pendingOffsets, highestProcessedOffsets, kafkaConsumer, commandQueue);
+    return new ConsumerRebalanceListener() {
+      @Override
+      public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
+        if (state.get() == OffsetState.STOPPED) return;
+        LOGGER.log(Level.INFO, "Partitions revoked: %s".formatted(partitions));
+
+        drainCommandQueueForRevokedPartitions(partitions);
+
+        final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
+        partitions.forEach(partition -> {
+          final var pending = pendingOffsets.get(partition);
+          final var lowestPending = pending != null ? safeFirst(pending) : null;
+          if (lowestPending != null) {
+            offsetsToCommit.put(partition, new OffsetAndMetadata(lowestPending));
+          } else {
+            final var highestProcessed = highestProcessedOffsets.get(partition);
+            if (highestProcessed != null) offsetsToCommit.put(partition, new OffsetAndMetadata(highestProcessed + 1));
+          }
+          pendingOffsets.remove(partition);
+          highestProcessedOffsets.remove(partition);
+        });
+
+        if (!offsetsToCommit.isEmpty()) {
+          try {
+            kafkaConsumer.commitSync(offsetsToCommit);
+            LOGGER.log(Level.INFO, "Committed offsets for revoked partitions: %s".formatted(offsetsToCommit));
+          } catch (final Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to commit offsets during partition revocation", e);
+          }
+        }
+      }
+
+      @Override
+      public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
+        if (state.get() == OffsetState.STOPPED) return;
+        LOGGER.log(Level.INFO, "Partitions assigned: %s".formatted(partitions));
+        partitions.forEach(partition -> {
+          pendingOffsets.remove(partition);
+          highestProcessedOffsets.remove(partition);
+        });
+      }
+
+      @Override
+      public void onPartitionsLost(final Collection<TopicPartition> partitions) {
+        onPartitionsRevoked(partitions);
+      }
+    };
+  }
+
+  /// Filters offset-commit commands so any references to revoked partitions are dropped before
+  /// the partitions reappear under a new owner. Non-commit commands pass through untouched.
+  /// Iterates by polling — drains the queue, transforms each command, and re-enqueues whatever
+  /// remains, in order. Package-private so the rebalance listener anonymous class can call it
+  /// even after the partition-revoke path captures `partitions`.
+  private void drainCommandQueueForRevokedPartitions(final Collection<TopicPartition> partitions) {
+    if (commandQueue == null || commandQueue.isEmpty()) return;
+
+    LOGGER.log(Level.INFO, "Draining command queue for revoked partitions");
+
+    final var remainingCommands = new ArrayList<ConsumerCommand>();
+    java.util.stream.IntStream.iterate(commandQueue.size(), size -> size > 0, size -> size - 1)
+      .mapToObj(_ -> commandQueue.poll())
+      .takeWhile(Objects::nonNull)
+      .forEachOrdered(currentCmd -> {
+        switch (currentCmd) {
+          case ConsumerCommand.CommitOffsets commitCmd when !commitCmd.offsets().isEmpty() -> {
+            final var filteredOffsets = commitCmd
+              .offsets()
+              .entrySet()
+              .stream()
+              .filter(entry -> !partitions.contains(entry.getKey()))
+              .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            if (!filteredOffsets.isEmpty()) remainingCommands.add(commitCmd.withOffsets(filteredOffsets));
+          }
+          default -> remainingCommands.add(currentCmd);
+        }
+      });
+
+    commandQueue.addAll(remainingCommands);
+    LOGGER.log(Level.INFO, "Command queue drained, %s commands remaining".formatted(remainingCommands.size()));
   }
 
   /// Cleans up resources.
