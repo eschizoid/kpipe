@@ -37,6 +37,17 @@ jobs:
           git config --global user.email "mariano.gonzalez.mx@gmail.com"
           git config --global user.name "Mariano Gonzalez"
 
+      # actions/checkout v5+ stores GITHUB_TOKEN in `git config http.extraheader`
+      # instead of embedding it in the origin URL. Native `git` honors extraheader;
+      # the jgit version pinned via `force(libs.jgit)` in build.gradle.kts does not.
+      # Axion-release pushes the release tag through jgit, so it falls back to
+      # anonymous and GitHub rejects the push as "not authorized". Embedding the
+      # token directly in the remote URL restores the v4-era behavior for the
+      # jgit-driven push without bumping the release-toolchain trio.
+      - name: Configure git remote auth for jgit
+        run: |
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+
       - name: Setup GPG
         uses: crazy-max/ghaction-import-gpg@v7
         with:
