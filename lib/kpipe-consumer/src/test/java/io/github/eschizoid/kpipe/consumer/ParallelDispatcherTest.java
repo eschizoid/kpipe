@@ -94,6 +94,33 @@ class ParallelDispatcherTest {
   }
 
   @Test
+  void pendingCountDrainsWhenTaskThrowsError() throws InterruptedException {
+    // Companion to pendingCountDecrementedWhenTaskThrows but with an Error instead of an
+    // Exception. The production code uses bare `try { processTask.run(); } finally { ... }` —
+    // no `catch (Exception)` — so the finally must still unwind for Throwables that bypass
+    // exception catches (AssertionError, OutOfMemoryError, StackOverflowError). A future
+    // refactor that narrows to `catch (Exception) { ... } finally { ... }` would silently
+    // strand pendingCount on any Error; this test catches that regression.
+    final var rejectCount = new AtomicInteger(0);
+    final var dispatcher = newDispatcher(rejectCount);
+    final var completed = new CountDownLatch(1);
+
+    dispatcher.dispatch(
+      record(0),
+      () -> {
+        throw new AssertionError("simulated invariant violation");
+      },
+      completed::countDown
+    );
+
+    assertTrue(completed.await(2, TimeUnit.SECONDS), "onComplete must fire even when task throws an Error");
+    final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+    while (dispatcher.pendingCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+    assertEquals(0, dispatcher.pendingCount(), "Error-throwing task's finally must still decrement in-flight");
+    dispatcher.close();
+  }
+
+  @Test
   void onCompleteFiresExactlyOnceWhenTaskThrows() throws InterruptedException {
     // Pair test for pendingCountDecrementedWhenTaskThrows: the consumer's afterRecordComplete()
     // unparks the consumer thread when backpressure is held (§11 LockSupport park/unpark). If
