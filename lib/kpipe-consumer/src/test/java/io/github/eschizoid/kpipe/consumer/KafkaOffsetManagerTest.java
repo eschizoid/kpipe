@@ -340,6 +340,41 @@ class KafkaOffsetManagerTest {
 
       verify(mockConsumer, never()).commitSync(anyMap());
       assertEquals(1, commandQueue.size(), "command queue must be left alone after stop");
+      assertEquals(
+        100L,
+        offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+        "partition state must survive a post-stop revoke (regression: would be -1 if revoke ran the clear loop)"
+      );
+    }
+
+    /// The primary contract of the listener: when partitions are revoked, the highest-processed
+    /// offsets (or lowest-pending, if any are still in flight) must be flushed to Kafka via
+    /// `commitSync` before the partitions move to the new owner. Without this commit, work the
+    /// previous owner already finished would be re-delivered after the rebalance.
+    @Test
+    void shouldCommitOffsetsWhenPartitionsRevoked() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k", "v".getBytes());
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      verify(mockConsumer).commitSync(offsetCaptor.capture());
+      assertEquals(
+        101L,
+        offsetCaptor.getValue().get(PARTITION).offset(),
+        "revoke must flush highestProcessed+1 to commitSync"
+      );
+    }
+
+    /// If a partition is revoked before any record was tracked or processed, there is nothing to
+    /// commit. Calling `commitSync(emptyMap())` is wasted broker traffic at best and a broker
+    /// error at worst, so the listener must skip it entirely.
+    @Test
+    void shouldNotCommitWhenNoOffsetsToCommit() {
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      verify(mockConsumer, never()).commitSync(anyMap());
     }
   }
 

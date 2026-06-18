@@ -484,32 +484,28 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
 
   /// Filters offset-commit commands so any references to revoked partitions are dropped before
   /// the partitions reappear under a new owner. Non-commit commands pass through untouched.
-  /// Iterates by polling — drains the queue, transforms each command, and re-enqueues whatever
-  /// remains, in order. Package-private so the rebalance listener anonymous class can call it
-  /// even after the partition-revoke path captures `partitions`.
+  /// Drains the queue by polling, transforms each command, and re-enqueues whatever remains in
+  /// order.
   private void drainCommandQueueForRevokedPartitions(final Collection<TopicPartition> partitions) {
     if (commandQueue == null || commandQueue.isEmpty()) return;
 
     LOGGER.log(Level.INFO, "Draining command queue for revoked partitions");
 
     final var remainingCommands = new ArrayList<ConsumerCommand>();
-    java.util.stream.IntStream.iterate(commandQueue.size(), size -> size > 0, size -> size - 1)
-      .mapToObj(_ -> commandQueue.poll())
-      .takeWhile(Objects::nonNull)
-      .forEachOrdered(currentCmd -> {
-        switch (currentCmd) {
-          case ConsumerCommand.CommitOffsets commitCmd when !commitCmd.offsets().isEmpty() -> {
-            final var filteredOffsets = commitCmd
-              .offsets()
-              .entrySet()
-              .stream()
-              .filter(entry -> !partitions.contains(entry.getKey()))
-              .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-            if (!filteredOffsets.isEmpty()) remainingCommands.add(commitCmd.withOffsets(filteredOffsets));
-          }
-          default -> remainingCommands.add(currentCmd);
+    for (var cmd = commandQueue.poll(); cmd != null; cmd = commandQueue.poll()) {
+      switch (cmd) {
+        case ConsumerCommand.CommitOffsets commitCmd when !commitCmd.offsets().isEmpty() -> {
+          final var filteredOffsets = commitCmd
+            .offsets()
+            .entrySet()
+            .stream()
+            .filter(entry -> !partitions.contains(entry.getKey()))
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+          if (!filteredOffsets.isEmpty()) remainingCommands.add(commitCmd.withOffsets(filteredOffsets));
         }
-      });
+        default -> remainingCommands.add(cmd);
+      }
+    }
 
     commandQueue.addAll(remainingCommands);
     LOGGER.log(Level.INFO, "Command queue drained, %s commands remaining".formatted(remainingCommands.size()));
