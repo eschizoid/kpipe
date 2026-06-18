@@ -15,7 +15,7 @@ spotless = "8.7.0"
 axion = "1.18.7"
 shadow = "9.4.2"
 jmh = "0.7.3"
-jreleaser = "1.24.0"
+jreleaser = "1.19.0"
 jgit = "6.10.0.202406032230-r"
 
 [libraries]
