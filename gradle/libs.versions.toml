@@ -16,7 +16,7 @@ axion = "1.18.7"
 shadow = "8.3.5"
 jmh = "0.7.3"
 jreleaser = "1.19.0"
-jgit = "6.10.0.202406032230-r"
+jgit = "7.7.0.202606012155-r"
 
 [libraries]
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
