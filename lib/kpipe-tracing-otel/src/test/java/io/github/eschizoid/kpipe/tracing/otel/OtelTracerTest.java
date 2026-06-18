@@ -3,8 +3,10 @@ package io.github.eschizoid.kpipe.tracing.otel;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -137,12 +139,22 @@ class OtelTracerTest {
   @Test
   void noopTracerInjectionAndExtractionAreSilentNoops() {
     // Sanity — the noop default doesn't allocate, doesn't throw, and produces no span.
-    final var noop = io.github.eschizoid.kpipe.producer.tracing.Tracer.noop();
+    final var noop = Tracer.noop();
     final var record = new ConsumerRecord<>("t", 0, 0L, null, new byte[0]);
     try (final var scope = noop.startConsumerSpan(record)) {
       noop.injectContextInto(new RecordHeaders());
       scope.recordException(new RuntimeException("ignored"));
     }
     assertEquals(0, spanExporter.getFinishedSpanItems().size());
+
+    // Singleton-identity pins: Tracer.noop() / SpanScope.noop() must return the enum INSTANCE,
+    // not a fresh allocation. KPipeConsumer invokes both per record on the hot path; a
+    // regression that returned `new Noop()` would silently allocate on every poll.
+    assertSame(Tracer.noop(), Tracer.noop(), "Tracer.noop() must return the shared singleton, not a fresh allocation");
+    assertSame(
+      Tracer.SpanScope.noop(),
+      Tracer.SpanScope.noop(),
+      "SpanScope.noop() must return the shared singleton, not a fresh allocation"
+    );
   }
 }

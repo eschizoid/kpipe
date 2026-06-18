@@ -892,6 +892,13 @@ class KeyOrderedDispatcherTest {
         saturationWarnings.size(),
         () -> "exactly one saturation WARN per dispatcher; got " + saturationWarnings.size()
       );
+      // Pin the message content so a future reword that drops the saturation signal entirely
+      // (e.g. generic "dispatch stalled") still fails this test. Loose `contains` survives
+      // benign wording tweaks like "saturated" / "saturation" / "queues saturating".
+      assertTrue(
+        saturationWarnings.getFirst().getMessage().toLowerCase().contains("saturat"),
+        () -> "saturation WARN must mention the saturation condition; got: " + saturationWarnings.getFirst().getMessage()
+      );
     } finally {
       julLogger.removeHandler(handler);
       julLogger.setLevel(originalLevel);
