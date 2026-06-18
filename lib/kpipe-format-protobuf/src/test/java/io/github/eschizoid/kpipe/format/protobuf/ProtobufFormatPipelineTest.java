@@ -10,6 +10,7 @@ import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.RegistryKey;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,13 +63,13 @@ class ProtobufFormatPipelineTest {
     final UnaryOperator<Message> deactivate = msg ->
       msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("active"), false).build();
 
-    registry.registerOperator(ProtobufRegistryKey.of("setName"), setName);
-    registry.registerOperator(ProtobufRegistryKey.of("deactivate"), deactivate);
+    registry.registerOperator(RegistryKey.of("setName", Message.class), setName);
+    registry.registerOperator(RegistryKey.of("deactivate", Message.class), deactivate);
 
     final var pipeline = registry
       .pipeline(format)
-      .add(ProtobufRegistryKey.of("setName"))
-      .add(ProtobufRegistryKey.of("deactivate"))
+      .add(RegistryKey.of("setName", Message.class))
+      .add(RegistryKey.of("deactivate", Message.class))
       .build();
 
     final var input = format.serialize(createTestMessage());

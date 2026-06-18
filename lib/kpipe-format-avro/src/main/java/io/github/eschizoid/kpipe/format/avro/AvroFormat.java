@@ -35,11 +35,6 @@ import org.apache.avro.io.EncoderFactory;
 /// // Static — inline JSON.
 /// final var fmt = AvroFormat.of(userSchemaJson);
 ///
-/// // Static — catalog-mediated.
-/// final var catalog = new AvroSchemaCatalog();
-/// catalog.add("user", userSchemaJson);
-/// final var fmt = new AvroFormat(catalog.get("user"));
-///
 /// // Schema-Registry — per-record auto-lookup.
 /// try (var resolver = new CachedSchemaResolver(
 ///     new ConfluentSchemaResolver(<http://schema-registry:8081>))) {

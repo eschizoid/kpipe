@@ -8,15 +8,10 @@ import java.util.Map;
 /// sinks, etc.). It ensures type safety and clarity when retrieving or registering components in
 /// the pipeline system.
 ///
-/// Format-specific convenience factories live in their respective modules:
-///
-/// - `io.github.eschizoid.kpipe.format.avro.AvroRegistryKey.of(name)` —
-/// `RegistryKey<GenericRecord>`
-/// - `io.github.eschizoid.kpipe.format.protobuf.ProtobufRegistryKey.of(name)` —
-/// `RegistryKey<Message>`
-///
-/// JSON keys are provided here directly because `Map<String, Object>` is a JDK type with no
-/// format runtime dependency.
+/// For format-specific types (Avro `GenericRecord`, Protobuf `Message`), call
+/// `RegistryKey.of(name, GenericRecord.class)` or `RegistryKey.of(name, Message.class)` directly.
+/// JSON keys are provided here as a typed shortcut because `Map<String, Object>` is a JDK type
+/// with no format runtime dependency.
 ///
 /// Example:
 /// ```java

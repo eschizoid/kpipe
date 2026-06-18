@@ -23,9 +23,13 @@ import java.util.function.Supplier;
 /// // Report operator metrics
 /// EntryMetricsReporter.forProcessors(registry).reportMetrics();
 ///
-/// // Report sink metrics, with a subset of keys and a Prometheus consumer
-/// EntryMetricsReporter.forSinks(registry, Set.of(dbSinkKey))
-///   .toConsumer(metric -> prometheus.push("sink_stats", metric))
+/// // Report sink metrics, with a subset of keys and a Prometheus consumer via the canonical
+/// // constructor.
+/// new EntryMetricsReporter(
+///   "Sink",
+///   () -> Set.of(dbSinkKey),
+///   registry::getSinkMetrics,
+///   metric -> prometheus.push("sink_stats", metric))
 ///   .reportMetrics();
 /// ```
 ///
@@ -34,8 +38,8 @@ import java.util.function.Supplier;
 /// @param namesSupplier     supplier of the set of [RegistryKey]s to report on
 /// @param metricsFetcher    function from a key to its metric snapshot
 /// @param reporter          consumer for each formatted report line. Must be non-null — use
-///                          [#LOGGING] for the default log-based behaviour, or supply your own
-///                          via [#toConsumer(Consumer)]
+///                          [#LOGGING] for the default log-based behaviour, or pass your own to
+///                          the canonical constructor
 public record EntryMetricsReporter(
   String entryKind,
   Supplier<Set<RegistryKey<?>>> namesSupplier,
@@ -121,14 +125,5 @@ public record EntryMetricsReporter(
     Objects.requireNonNull(registry, "registry cannot be null");
     Objects.requireNonNull(keys, "keys cannot be null");
     return new EntryMetricsReporter("Sink", () -> keys, registry::getSinkMetrics, LOGGING);
-  }
-
-  /// Returns a new reporter with the specified output consumer. The other fields are preserved.
-  ///
-  /// @param reporter the consumer to receive each formatted report line
-  /// @return a new reporter routing output through `reporter`
-  public EntryMetricsReporter toConsumer(final Consumer<String> reporter) {
-    Objects.requireNonNull(reporter, "reporter cannot be null");
-    return new EntryMetricsReporter(this.entryKind, this.namesSupplier, this.metricsFetcher, reporter);
   }
 }
