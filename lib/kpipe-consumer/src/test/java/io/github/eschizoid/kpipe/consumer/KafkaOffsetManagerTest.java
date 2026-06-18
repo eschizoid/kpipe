@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -416,6 +417,61 @@ class KafkaOffsetManagerTest {
         offsetCaptor.getValue().get(PARTITION).offset(),
         "onPartitionsLost must flush the offsets the previous owner finished"
       );
+    }
+  }
+
+  /// Guards the single-writer invariant documented on `KafkaOffsetManager.commandQueue`: every
+  /// rebalance callback must run on the same thread the listener was first bound to (the Kafka
+  /// consumer thread in production). Without this, the poll-then-readd drain in
+  /// `drainCommandQueueForRevokedPartitions` becomes racy against concurrent `CommitOffsets`
+  /// writers and revoked-partition entries can slip back into the queue.
+  ///
+  /// Tests in this nested class rely on JVM assertions being enabled (`-ea`). Gradle's `Test`
+  /// task enables them by default, so `./gradlew :lib:kpipe-consumer:test` exercises the check.
+  @Nested
+  class SingleWriterInvariantTests {
+
+    /// Calls the listener from one thread to bind the invariant, then from a different thread
+    /// — the second call must trip the `assert` in `assertOnConsumerThread`.
+    @Test
+    void rebalanceCallbackFromDifferentThreadTripsAssertion() throws Exception {
+      final var listener = offsetManager.createRebalanceListener();
+
+      // First call from the JUnit thread captures it as the bound consumer thread.
+      listener.onPartitionsRevoked(List.of(PARTITION));
+
+      // Second call from a different thread must trigger the AssertionError.
+      final var thrown = new AtomicReference<Throwable>();
+      final var off = new Thread(() -> {
+        try {
+          listener.onPartitionsRevoked(List.of(PARTITION));
+        } catch (final Throwable t) {
+          thrown.set(t);
+        }
+      }, "off-thread-rebalancer");
+      off.start();
+      off.join(2_000);
+
+      final var actual = thrown.get();
+      assertNotNull(actual, "off-thread rebalance must throw — assertions disabled?");
+      assertInstanceOf(AssertionError.class, actual, "expected AssertionError, got: " + actual);
+      assertTrue(
+        actual.getMessage().contains("single-writer invariant violated"),
+        "assertion message should call out the invariant: " + actual.getMessage()
+      );
+    }
+
+    /// Repeated callbacks on the same thread must pass — the bound-thread check only fires on a
+    /// mismatch.
+    @Test
+    void repeatedCallbacksOnSameThreadDoNotTrip() {
+      final var listener = offsetManager.createRebalanceListener();
+      assertDoesNotThrow(() -> {
+        listener.onPartitionsRevoked(List.of(PARTITION));
+        listener.onPartitionsAssigned(List.of(PARTITION));
+        listener.onPartitionsRevoked(List.of(PARTITION));
+        listener.onPartitionsLost(List.of(PARTITION));
+      });
     }
   }
 
