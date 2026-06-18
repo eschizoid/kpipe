@@ -14,6 +14,7 @@ import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.header.Headers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -115,6 +116,46 @@ class KPipeProducerTest {
         assertEquals(TOPIC, new String(headers.lastHeader("x-dlq-source-topic").value()));
         assertEquals("2", new String(headers.lastHeader("x-dlq-source-partition").value()));
         assertEquals("42", new String(headers.lastHeader("x-dlq-source-offset").value()));
+        return true;
+      })
+    );
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void dlqRecordCarriesTracerInjectedHeaders() {
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
+
+    // Tiny stub Tracer that stamps a known header during injection. Using an anonymous impl (not
+    // Mockito) keeps the contract under test honest: if a future refactor drops the
+    // tracer.injectContextInto(...) call, this test breaks.
+    final var stampingTracer = new Tracer() {
+      @Override
+      public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
+        return SpanScope.noop();
+      }
+
+      @Override
+      public void injectContextInto(final Headers headers) {
+        headers.add("x-tracer-stamp", "yes".getBytes());
+      }
+    };
+
+    final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
+    new KPipeProducer<>(mockProducer, false, null, stampingTracer).sendToDlq(
+      DLQ_TOPIC,
+      record,
+      TOPIC,
+      new RuntimeException("boom")
+    );
+
+    verify(mockProducer).send(
+      argThat(r -> {
+        final var stamp = r.headers().lastHeader("x-tracer-stamp");
+        assertNotNull(stamp, "Tracer.injectContextInto must run against the outbound DLQ record's headers");
+        assertEquals("yes", new String(stamp.value()));
         return true;
       })
     );
