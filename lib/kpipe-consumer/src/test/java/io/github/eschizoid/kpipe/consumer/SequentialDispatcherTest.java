@@ -80,4 +80,34 @@ class SequentialDispatcherTest {
     assertEquals(0L, dispatcher.pendingCount(), "pendingCount must drop to 0 even when task throws");
     dispatcher.close();
   }
+
+  @Test
+  void closeIsIdempotent() {
+    // SequentialDispatcher has no resources to release, but the Dispatcher contract permits
+    // close() to be invoked more than once (e.g. KPipeConsumer's CAS-guarded teardown can
+    // race a direct user close()). Repeated calls must never throw.
+    final var dispatcher = new SequentialDispatcher<String>();
+    dispatcher.close();
+    dispatcher.close();
+    dispatcher.close();
+  }
+
+  @Test
+  void dispatchAfterCloseStillRunsInlineWithAccurateInFlight() {
+    // SequentialDispatcher.close() releases no resources, so dispatch-after-close pins to the
+    // same inline-run behavior as dispatch-before-close. Locking this in keeps a future
+    // "throw on use after close" change from sneaking through without a deliberate API
+    // decision — ParallelDispatcher rejects post-close dispatches, KeyOrdered abandons
+    // saturation-stalled dispatches, this one runs them.
+    final var dispatcher = new SequentialDispatcher<String>();
+    dispatcher.close();
+
+    final var ran = new AtomicLong(0);
+    final var completed = new AtomicLong(0);
+    dispatcher.dispatch(record(0), ran::incrementAndGet, completed::incrementAndGet);
+
+    assertEquals(1L, ran.get(), "processTask must still run inline after close()");
+    assertEquals(1L, completed.get(), "onComplete must still fire after close()");
+    assertEquals(0L, dispatcher.pendingCount(), "in-flight must drain to 0 after the inline run");
+  }
 }
