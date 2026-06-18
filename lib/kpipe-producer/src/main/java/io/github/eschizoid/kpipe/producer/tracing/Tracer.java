@@ -55,7 +55,23 @@ public interface Tracer {
   ///
   /// @return a shared no-op `Tracer`
   static Tracer noop() {
-    return NoopTracer.INSTANCE;
+    return Noop.INSTANCE;
+  }
+
+  /// Zero-cost default [Tracer] used when tracing is not configured. Reached only through
+  /// [#noop()].
+  enum Noop implements Tracer {
+    INSTANCE;
+
+    @Override
+    public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
+      return SpanScope.noop();
+    }
+
+    @Override
+    public void injectContextInto(final Headers headers) {
+      // no-op
+    }
   }
 
   /// Scope handle returned by [#startConsumerSpan]. Closing the scope ends the span and detaches
@@ -77,7 +93,22 @@ public interface Tracer {
     ///
     /// @return a shared no-op `SpanScope`
     static SpanScope noop() {
-      return NoopSpanScope.INSTANCE;
+      return Noop.INSTANCE;
+    }
+
+    /// Zero-cost default [SpanScope] returned by [Tracer.Noop]. Reached only through [#noop()].
+    enum Noop implements SpanScope {
+      INSTANCE;
+
+      @Override
+      public void recordException(final Throwable t) {
+        // no-op
+      }
+
+      @Override
+      public void close() {
+        // no-op
+      }
     }
   }
 }

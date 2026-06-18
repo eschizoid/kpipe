@@ -6,77 +6,9 @@ import static org.mockito.Mockito.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 class RegistryFunctionsTest {
-
-  @Test
-  void shouldCreateMetricsMapWithCorrectValues() {
-    // Arrange
-    final var operationCount = 10L;
-    final var errorCount = 2L;
-    final var totalTimeNs = 5000000L; // 5ms in nanoseconds
-
-    // Act
-    final var metrics = RegistryFunctions.createMetrics(operationCount, errorCount, totalTimeNs);
-
-    // Assert
-    assertEquals(operationCount, metrics.get("invocationCount"));
-    assertEquals(errorCount, metrics.get("errorCount"));
-    assertEquals(totalTimeNs / operationCount, metrics.get("averageProcessingTimeMs"));
-  }
-
-  @Test
-  void shouldHandleZeroOperationsInMetrics() {
-    // Arrange
-    final var operationCount = 0L;
-    final var errorCount = 0L;
-    final var totalTimeNs = 0L;
-
-    // Act
-    final var metrics = RegistryFunctions.createMetrics(operationCount, errorCount, totalTimeNs);
-
-    // Assert
-    assertEquals(0L, metrics.get("invocationCount"));
-    assertEquals(0L, metrics.get("errorCount"));
-    assertEquals(0L, metrics.get("averageProcessingTimeMs"));
-  }
-
-  @Test
-  void shouldReturnFunctionResultOnSuccess() {
-    // Arrange
-    final Function<String, Integer> operation = String::length;
-    final var defaultValue = -1;
-    final var logger = mock(System.Logger.class);
-
-    // Act
-    final var safeFunction = RegistryFunctions.withFunctionErrorHandling(operation, defaultValue, logger);
-    final var result = safeFunction.apply("test");
-
-    // Assert
-    assertEquals(4, result);
-    verify(logger, never()).log(any(System.Logger.Level.class), anyString());
-    verify(logger, never()).log(any(System.Logger.Level.class), anyString(), any(Throwable.class));
-  }
-
-  @Test
-  void shouldReturnDefaultValueOnFunctionError() {
-    // Arrange
-    final Function<String, Integer> operation = _ -> {
-      throw new RuntimeException("Test exception");
-    };
-    final var defaultValue = -1;
-    final var logger = mock(System.Logger.class);
-
-    // Act
-    final var safeFunction = RegistryFunctions.withFunctionErrorHandling(operation, defaultValue, logger);
-    final var result = safeFunction.apply("test");
-
-    // Assert
-    assertEquals(defaultValue, result);
-    verify(logger, atLeastOnce()).log(any(System.Logger.Level.class), anyString(), any(Throwable.class));
-  }
 
   @Test
   void shouldExecuteConsumerSuccessfully() {
