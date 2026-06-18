@@ -15,14 +15,16 @@ import java.util.Objects;
 /// is to hand-roll here; if KPipe later grows rate-limit / bulkhead / slow-call detection /
 /// jittered retries, revisit and migrate at once.
 ///
-/// **State machine** (driven by [KPipeConsumer], not by this controller):
+/// **State machine** (driven by [KPipeConsumer] and `ConsumerHealthController`, not by this
+/// controller):
 ///
 ///   * `CLOSED` — outcomes feed a rolling window; on every failure the consumer asks
 ///     [#shouldTrip] whether to flip to `OPEN`. The check returns true when both the failure
 ///     rate has crossed `failureThreshold` and the window has at least `windowSize` samples
 ///     (no tripping on a single failure with an empty window).
-///   * `OPEN` — consumer is paused. A timer asks [#shouldProbe] on each tick; once
-///     `openDuration` has elapsed the consumer flips to `HALF_OPEN` and resumes Kafka polling.
+///   * `OPEN` — consumer is paused. When the breaker trips, a one-shot task is scheduled to
+///     fire after `openDuration`; the task flips the state to `HALF_OPEN` and resumes Kafka
+///     polling. No periodic tick — `openDuration` is encoded in the scheduled delay itself.
 ///   * `HALF_OPEN` — the next record's outcome decides: success → `CLOSED` (window reset),
 ///     failure → `OPEN` (timer restarted).
 ///
@@ -55,16 +57,4 @@ public record CircuitBreakerController(double failureThreshold, int windowSize, 
     return failureRate >= failureThreshold;
   }
 
-  /// In `OPEN` state, returns `true` iff `openDuration` has elapsed since the breaker tripped.
-  /// `openedAtNanos` is `System.nanoTime()` from the trip; a `0L` sentinel (never tripped) always
-  /// returns `false`.
-  ///
-  /// @param openedAtNanos `System.nanoTime()` captured at the trip, or `0L` if never tripped
-  /// @param nowNanos      the current `System.nanoTime()`
-  /// @return `true` if `openDuration` has elapsed and the consumer should transition
-  ///     OPEN → HALF_OPEN
-  public boolean shouldProbe(final long openedAtNanos, final long nowNanos) {
-    if (openedAtNanos == 0L) return false;
-    return (nowNanos - openedAtNanos) >= openDuration.toNanos();
-  }
 }
