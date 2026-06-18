@@ -23,5 +23,6 @@ include("examples:demo")
 include("examples:circuit-breaker")
 include("examples:tracing")
 include("examples:schema-registry")
+include("examples:custom-format")
 
 include("benchmarks")
