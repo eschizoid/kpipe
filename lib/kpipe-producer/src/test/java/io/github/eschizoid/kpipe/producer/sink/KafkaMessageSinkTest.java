@@ -69,15 +69,14 @@ class KafkaMessageSinkTest {
     verifyNoInteractions(mockProducer);
   }
 
-  /// Pins the §12 no-silent-failures contract for the synchronous `send(...)` exception path.
-  ///
   /// When the underlying Kafka `Producer.send` throws a `KafkaException` synchronously (e.g.
   /// serialization failure, authorization failure, buffer exhaustion with `max.block.ms=0`), the
-  /// sink must propagate that exception rather than catch-and-log. The async-callback failure path
-  /// is the only "log and swallow" path the sink documents — synchronous `send` throws are surfaced
-  /// so upstream pipeline error handling (`withSinkErrorHandling`) can see them.
+  /// sink must propagate the exception unwrapped rather than catch-and-log. The async-callback
+  /// failure path is the only "log and swallow" path the sink documents — synchronous `send`
+  /// throws are surfaced so upstream pipeline error handling (`withSinkErrorHandling`) can see
+  /// them.
   @Test
-  void acceptPropagatesProducerExceptionAsRuntime() {
+  void acceptPropagatesProducerExceptionUnwrapped() {
     final var failure = new KafkaException("synchronous send failure");
     when(mockProducer.send(any(), any(Callback.class))).thenThrow(failure);
 
@@ -92,7 +91,7 @@ class KafkaMessageSinkTest {
   ///
   /// The sink does not pre-check producer state — it relies on Kafka's own exception. The
   /// invariant being pinned here is that the sink does NOT swallow this exception; it propagates so
-  /// the pipeline's error handler can route or fail loudly (§12).
+  /// the pipeline's error handler can route or fail loudly.
   @Test
   void acceptOnClosedProducerThrows() {
     final var closed = new IllegalStateException("Cannot perform operation after producer has been closed");
