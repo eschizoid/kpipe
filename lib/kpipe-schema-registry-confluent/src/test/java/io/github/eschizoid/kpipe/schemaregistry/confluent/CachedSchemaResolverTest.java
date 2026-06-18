@@ -130,8 +130,8 @@ class CachedSchemaResolverTest {
     /// If the cache poisoned itself with a sentinel on failure, the second call would either
     /// throw again (sentinel re-raised) or skip the delegate entirely (sentinel served as a
     /// silent success). Either way the topic would be pinned into a permanent decode-error
-    /// state, violating the §19 "cache forever in-process" invariant which only applies AFTER a
-    /// successful lookup.
+    /// state. Confluent SR schema IDs are immutable, so the "cache forever" rule only applies
+    /// AFTER a successful lookup — failures must propagate without leaving residue.
     final var calls = new AtomicInteger();
     final var shouldFail = new AtomicReference<>(Boolean.TRUE);
     final SchemaResolver flaky = id -> {
@@ -163,9 +163,9 @@ class CachedSchemaResolverTest {
   @Test
   void concurrentMissOnSameIdCollapsesToOneDelegateCall() throws InterruptedException {
     /// Two virtual threads race a miss on the same id; the delegate is slow enough that the
-    /// second thread blocks inside `computeIfAbsent` waiting for the first. The §19 contract is
-    /// that `computeIfAbsent` collapses concurrent misses to a single delegate call — anything
-    /// else would amplify HTTP load to the registry under deserializer fan-in.
+    /// second thread blocks inside `computeIfAbsent` waiting for the first. `computeIfAbsent`
+    /// must collapse concurrent misses to a single delegate call — anything else would amplify
+    /// HTTP load to the registry under deserializer fan-in.
     final var delegateCalls = new AtomicInteger();
     final var inDelegate = new CountDownLatch(1);
     final var releaseDelegate = new CountDownLatch(1);
