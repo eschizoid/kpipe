@@ -397,11 +397,13 @@ class KafkaOffsetManagerTest {
       );
     }
 
-    /// `onPartitionsLost` delegates to `onPartitionsRevoked` so the lost-path inherits the
-    /// commit + clear + drain semantics. A refactor that inlines a divergent body (e.g. skip the
-    /// commit because we lost ownership) would slip through silently without this pin.
+    /// `onPartitionsLost` must still attempt a commit — even though we technically no longer own
+    /// the partitions, the commit is the best-effort handoff to the new owner. Pinning that a
+    /// commit happens on the lost-path prevents a future "we lost it, skip the commit" refactor
+    /// from silently dropping work. (Doesn't pin *delegation* specifically — a copy-pasted commit
+    /// body would also pass — and that's fine; the contract is that a commit fires, not how.)
     @Test
-    void shouldDelegateLostToRevoked() {
+    void shouldCommitOnPartitionsLost() {
       final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k", "v".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
@@ -412,7 +414,7 @@ class KafkaOffsetManagerTest {
       assertEquals(
         101L,
         offsetCaptor.getValue().get(PARTITION).offset(),
-        "onPartitionsLost must delegate to onPartitionsRevoked and flush the offsets"
+        "onPartitionsLost must flush the offsets the previous owner finished"
       );
     }
   }
