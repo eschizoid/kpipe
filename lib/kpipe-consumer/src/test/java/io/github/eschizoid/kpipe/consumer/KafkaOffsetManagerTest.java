@@ -256,6 +256,167 @@ class KafkaOffsetManagerTest {
         fail("Exception during rebalance test: " + e.getMessage());
       }
     }
+
+    /// Revoking only some of this consumer's partitions must clear state for the revoked ones
+    /// only and leave the others untouched — otherwise a partial rebalance would corrupt the
+    /// surviving partitions' offset bookkeeping.
+    @Test
+    void shouldHandlePartialRevocation() {
+      final var partition2 = new TopicPartition(TOPIC, 2);
+      final var recordOnP0 = new ConsumerRecord<>(TOPIC, 0, 110L, "k", "v".getBytes());
+      final var recordOnP2 = new ConsumerRecord<>(TOPIC, 2, 310L, "k", "v".getBytes());
+      offsetManager.trackOffset(recordOnP0);
+      offsetManager.trackOffset(recordOnP2);
+
+      final var listener = offsetManager.createRebalanceListener();
+      listener.onPartitionsRevoked(List.of(PARTITION));
+
+      // Revoked partition's state is gone
+      assertEquals(-1L, offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"));
+      // Non-revoked partition is preserved
+      assertEquals(310L, offsetManager.getPartitionState(partition2).get("nextOffsetToCommit"));
+    }
+
+    /// Pre-existing commit commands targeting a revoked partition would commit against the
+    /// wrong owner once the partition is reassigned. The listener prunes them at revoke time.
+    @Test
+    void shouldDrainCommandQueueForRevokedPartitions() {
+      final var partition1 = new TopicPartition(TOPIC, 1);
+      final var offsets = Map.of(
+        PARTITION,
+        new OffsetAndMetadata(100L),
+        partition1,
+        new OffsetAndMetadata(200L)
+      );
+      commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, "commit-1"));
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      // Command stays, but the revoked-partition entry is filtered out
+      assertEquals(1, commandQueue.size());
+      final var remaining = assertInstanceOf(ConsumerCommand.CommitOffsets.class, commandQueue.peek());
+      assertFalse(remaining.offsets().containsKey(PARTITION), "revoked partition entry must be stripped");
+      assertEquals(200L, remaining.offsets().get(partition1).offset(), "surviving partition entry preserved");
+    }
+
+    /// Non-commit commands (Pause, Resume, Close, …) don't reference partitions, so they pass
+    /// through the drain untouched.
+    @Test
+    void shouldPreserveNonCommitCommandsDuringRevoke() {
+      commandQueue.offer(new ConsumerCommand.Pause());
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      assertEquals(1, commandQueue.size());
+      assertInstanceOf(ConsumerCommand.Pause.class, commandQueue.peek());
+    }
+
+    /// If a commit command's offsets are all on revoked partitions, the entire command is
+    /// dropped — committing it would target zero partitions, which is a no-op at best and a
+    /// brokerwide error at worst depending on the broker version.
+    @Test
+    void shouldRemoveCommitCommandsThatOnlyTargetRevokedPartitions() {
+      commandQueue.offer(new ConsumerCommand.CommitOffsets(Map.of(PARTITION, new OffsetAndMetadata(100L)), "commit-1"));
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      assertTrue(commandQueue.isEmpty(), "command with only revoked-partition entries must be removed entirely");
+    }
+
+    /// After stop(), the listener is a no-op — it must not commit, must not clear state, must
+    /// not drain the command queue. Otherwise a late rebalance callback racing with shutdown
+    /// would corrupt the post-stop state.
+    @Test
+    void shouldBeNoOpAfterStop() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k", "v".getBytes());
+      offsetManager.trackOffset(record);
+      commandQueue.offer(new ConsumerCommand.Pause());
+
+      final var listener = offsetManager.createRebalanceListener();
+      offsetManager.stop();
+
+      listener.onPartitionsRevoked(List.of(PARTITION));
+      listener.onPartitionsAssigned(List.of(PARTITION));
+
+      verify(mockConsumer, never()).commitSync(anyMap());
+      assertEquals(1, commandQueue.size(), "command queue must be left alone after stop");
+      assertEquals(
+        100L,
+        offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+        "partition state must survive a post-stop revoke (regression: would be -1 if revoke ran the clear loop)"
+      );
+    }
+
+    /// The primary contract of the listener: when partitions are revoked, the highest-processed
+    /// offsets (or lowest-pending, if any are still in flight) must be flushed to Kafka via
+    /// `commitSync` before the partitions move to the new owner. Without this commit, work the
+    /// previous owner already finished would be re-delivered after the rebalance.
+    @Test
+    void shouldCommitOffsetsWhenPartitionsRevoked() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k", "v".getBytes());
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      verify(mockConsumer).commitSync(offsetCaptor.capture());
+      assertEquals(
+        101L,
+        offsetCaptor.getValue().get(PARTITION).offset(),
+        "revoke must flush highestProcessed+1 to commitSync"
+      );
+    }
+
+    /// If a partition is revoked before any record was tracked or processed, there is nothing to
+    /// commit. Calling `commitSync(emptyMap())` is wasted broker traffic at best and a broker
+    /// error at worst, so the listener must skip it entirely.
+    @Test
+    void shouldNotCommitWhenNoOffsetsToCommit() {
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      verify(mockConsumer, never()).commitSync(anyMap());
+    }
+
+    /// The in-flight-at-revoke branch of the revoke flow: when a record was tracked but not yet
+    /// marked processed, the listener must commit the lowest-pending offset as the resume point —
+    /// not highestProcessed+1. Without this, the partition's new owner would skip the in-flight
+    /// record entirely and we'd silently drop work.
+    @Test
+    void shouldCommitLowestPendingOnRevoke() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 105L, "k", "v".getBytes());
+      offsetManager.trackOffset(record);
+      // intentionally NOT calling markOffsetProcessed — the record is in flight
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      verify(mockConsumer).commitSync(offsetCaptor.capture());
+      assertEquals(
+        105L,
+        offsetCaptor.getValue().get(PARTITION).offset(),
+        "revoke with an in-flight record must commit the lowest-pending offset as the resume point"
+      );
+    }
+
+    /// `onPartitionsLost` must still attempt a commit — even though we technically no longer own
+    /// the partitions, the commit is the best-effort handoff to the new owner. Pinning that a
+    /// commit happens on the lost-path prevents a future "we lost it, skip the commit" refactor
+    /// from silently dropping work. (Doesn't pin *delegation* specifically — a copy-pasted commit
+    /// body would also pass — and that's fine; the contract is that a commit fires, not how.)
+    @Test
+    void shouldCommitOnPartitionsLost() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k", "v".getBytes());
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
+
+      offsetManager.createRebalanceListener().onPartitionsLost(List.of(PARTITION));
+
+      verify(mockConsumer).commitSync(offsetCaptor.capture());
+      assertEquals(
+        101L,
+        offsetCaptor.getValue().get(PARTITION).offset(),
+        "onPartitionsLost must flush the offsets the previous owner finished"
+      );
+    }
   }
 
   @Nested
