@@ -50,7 +50,6 @@ final class ParallelDispatcher<K> implements Dispatcher<K> {
   /// swallowed by the VT executor. The finally block still decrements `inFlight` and fires
   /// `onComplete` so accounting and backpressure remain honest, but the failure itself only
   /// surfaces if `processTask` routed it (e.g. through the consumer's error handler / DLQ).
-  /// `KPipeConsumer.processRecord` satisfies this contract; any other caller must too.
   @Override
   public void dispatch(final ConsumerRecord<K, byte[]> record, final Runnable processTask, final Runnable onComplete) {
     inFlight.incrementAndGet();

@@ -95,12 +95,10 @@ class ParallelDispatcherTest {
 
   @Test
   void pendingCountDrainsWhenTaskThrowsError() throws InterruptedException {
-    // Companion to pendingCountDecrementedWhenTaskThrows but with an Error instead of an
-    // Exception. The production code uses bare `try { processTask.run(); } finally { ... }` —
-    // no `catch (Exception)` — so the finally must still unwind for Throwables that bypass
-    // exception catches (AssertionError, OutOfMemoryError, StackOverflowError). A future
-    // refactor that narrows to `catch (Exception) { ... } finally { ... }` would silently
-    // strand pendingCount on any Error; this test catches that regression.
+    // Sibling of pendingCountDecrementedWhenTaskThrows for `Error` (e.g. `AssertionError`),
+    // which is a Throwable-not-Exception and would bypass any future narrowing of the production
+    // try/finally to `catch (Exception) { ... } finally { ... }` — pendingCount would silently
+    // strand on every Error escape.
     final var rejectCount = new AtomicInteger(0);
     final var dispatcher = newDispatcher(rejectCount);
     final var completed = new CountDownLatch(1);
