@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,6 +20,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 
@@ -756,6 +761,194 @@ class KeyOrderedDispatcherTest {
     assertArrayEquals(originalKey, keyBytes2, "internal map key must survive caller mutation of the previous snapshot");
 
     allowFinish.countDown();
+    dispatcher.close();
+  }
+
+  @Test
+  void saturationLogsWarningExactlyOnceAcrossRepeatedStalls() throws InterruptedException {
+    // The AtomicBoolean.compareAndSet guard in allocateNewQueue must let exactly one WARN
+    // fire per dispatcher instance, even under sustained or repeated saturation. Without
+    // this, a stuck producer could flood logs at the rate of the consumer's poll loop.
+    // We capture System.Logger output via the JUL handler the System.Logger bridges to.
+    final var dispatcher = new KeyOrderedDispatcher<String>(2);
+    final var julLogger = Logger.getLogger(KeyOrderedDispatcher.class.getName());
+    final var captured = new CopyOnWriteArrayList<LogRecord>();
+    final var handler = new Handler() {
+      @Override
+      public void publish(final LogRecord record) {
+        if (record.getLevel().intValue() >= Level.WARNING.intValue()) captured.add(record);
+      }
+
+      @Override
+      public void flush() {}
+
+      @Override
+      public void close() {}
+    };
+    final var originalLevel = julLogger.getLevel();
+    final var originalUseParent = julLogger.getUseParentHandlers();
+    julLogger.addHandler(handler);
+    julLogger.setLevel(Level.ALL);
+    julLogger.setUseParentHandlers(false);
+
+    try {
+      // Saturation round 1: two blocked workers fill the cap, third dispatch stalls.
+      final var workerA1 = new CountDownLatch(1);
+      final var workerB1 = new CountDownLatch(1);
+      final var startedA1 = new CountDownLatch(1);
+      final var startedB1 = new CountDownLatch(1);
+      dispatcher.dispatch(
+        recordWithKey("a", 0),
+        () -> {
+          startedA1.countDown();
+          try {
+            workerA1.await();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        },
+        () -> {}
+      );
+      dispatcher.dispatch(
+        recordWithKey("b", 0),
+        () -> {
+          startedB1.countDown();
+          try {
+            workerB1.await();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        },
+        () -> {}
+      );
+      assertTrue(startedA1.await(2, TimeUnit.SECONDS));
+      assertTrue(startedB1.await(2, TimeUnit.SECONDS));
+
+      final var stalledThird1 = new CountDownLatch(1);
+      Thread.ofVirtual().start(() -> dispatcher.dispatch(recordWithKey("c", 0), stalledThird1::countDown, () -> {}));
+      // Confirm the dispatch actually stalled — it can't complete while both queues are full.
+      assertFalse(
+        stalledThird1.await(150, TimeUnit.MILLISECONDS),
+        "third dispatch must stall to trigger the WARN guard"
+      );
+      // Drain to let the stall resolve and the third record finish.
+      workerA1.countDown();
+      assertTrue(stalledThird1.await(2, TimeUnit.SECONDS));
+      workerB1.countDown();
+
+      // Wait for everything to drain so the second saturation round has empty queues to fill.
+      final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+      while (dispatcher.pendingCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+
+      // Saturation round 2: same scenario, fresh blocked workers.
+      final var workerA2 = new CountDownLatch(1);
+      final var workerB2 = new CountDownLatch(1);
+      final var startedA2 = new CountDownLatch(1);
+      final var startedB2 = new CountDownLatch(1);
+      dispatcher.dispatch(
+        recordWithKey("a", 1),
+        () -> {
+          startedA2.countDown();
+          try {
+            workerA2.await();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        },
+        () -> {}
+      );
+      dispatcher.dispatch(
+        recordWithKey("b", 1),
+        () -> {
+          startedB2.countDown();
+          try {
+            workerB2.await();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        },
+        () -> {}
+      );
+      assertTrue(startedA2.await(2, TimeUnit.SECONDS));
+      assertTrue(startedB2.await(2, TimeUnit.SECONDS));
+
+      final var stalledThird2 = new CountDownLatch(1);
+      Thread.ofVirtual().start(() -> dispatcher.dispatch(recordWithKey("d", 0), stalledThird2::countDown, () -> {}));
+      assertFalse(
+        stalledThird2.await(150, TimeUnit.MILLISECONDS),
+        "second-round dispatch must also stall (still saturated)"
+      );
+      workerA2.countDown();
+      assertTrue(stalledThird2.await(2, TimeUnit.SECONDS));
+      workerB2.countDown();
+
+      // Two distinct saturation episodes → still exactly one WARN.
+      final var saturationWarnings = captured
+        .stream()
+        .filter(r -> r.getMessage() != null && r.getMessage().contains("KEY_ORDERED dispatch stalled"))
+        .toList();
+      assertEquals(
+        1,
+        saturationWarnings.size(),
+        () -> "exactly one saturation WARN per dispatcher; got " + saturationWarnings.size()
+      );
+    } finally {
+      julLogger.removeHandler(handler);
+      julLogger.setLevel(originalLevel);
+      julLogger.setUseParentHandlers(originalUseParent);
+      dispatcher.close();
+    }
+  }
+
+  @Test
+  void workerExitsWhenQueueEmptiesAndNewRecordSpawnsFreshWorker() throws InterruptedException {
+    // The drain loop, on finding an empty queue, clears `workerActive=false` and exits. A
+    // subsequent dispatch for the same key must observe `workerActive=false` and spawn a NEW
+    // virtual thread to drain it — not silently enqueue against the now-dead worker (which
+    // would leak the record forever). We verify the handshake by recording the worker thread
+    // identity for each record and asserting the second batch ran on a different thread.
+    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var firstThread = new CopyOnWriteArrayList<Thread>();
+    final var secondThread = new CopyOnWriteArrayList<Thread>();
+    final var firstDone = new CountDownLatch(1);
+    final var secondDone = new CountDownLatch(1);
+
+    dispatcher.dispatch(
+      recordWithKey("k", 0),
+      () -> {
+        firstThread.add(Thread.currentThread());
+        firstDone.countDown();
+      },
+      () -> {}
+    );
+    assertTrue(firstDone.await(2, TimeUnit.SECONDS), "first record must run");
+
+    // Wait for the first worker to actually exit. The drain loop is fast but not instant —
+    // we need workerActive=false and the worker thread terminated before round 2.
+    final var firstWorker = firstThread.getFirst();
+    final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+    while (firstWorker.isAlive() && System.nanoTime() < deadline) Thread.sleep(5);
+    assertFalse(firstWorker.isAlive(), "first worker VT must exit after queue drains");
+    assertEquals(0, dispatcher.pendingCount(), "pending must be 0 between batches");
+
+    // Second dispatch on the same key — must spawn a fresh worker, not reuse the dead one.
+    dispatcher.dispatch(
+      recordWithKey("k", 1),
+      () -> {
+        secondThread.add(Thread.currentThread());
+        secondDone.countDown();
+      },
+      () -> {}
+    );
+    assertTrue(secondDone.await(2, TimeUnit.SECONDS), "second record must run on a freshly-spawned worker");
+
+    assertEquals(1, secondThread.size());
+    assertNotEquals(
+      firstWorker,
+      secondThread.getFirst(),
+      "fresh dispatch after drain must spawn a NEW worker thread (proves handshake, not reuse)"
+    );
+
     dispatcher.close();
   }
 }
