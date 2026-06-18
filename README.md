@@ -1144,7 +1144,7 @@ builder for everything else.
 
 **Environment variables** used by this sketch (`AppConfig.fromEnv()` reads additional vars — `APP_NAME`,
 `KAFKA_POLL_TIMEOUT_MS`, `SHUTDOWN_TIMEOUT_SEC`, `METRICS_INTERVAL_SEC`, `PROCESSOR_PIPELINE` — that feed the explicit
-Builder paths):
+Builder and metrics paths):
 
 ```bash
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
