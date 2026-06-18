@@ -60,13 +60,37 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
 
   private final Consumer<K, byte[]> kafkaConsumer;
   private final AtomicReference<OffsetState> state = new AtomicReference<>(OffsetState.CREATED);
+
+  /// Shared command queue between `KPipeConsumer` and this manager.
+  ///
+  /// **Single-writer invariant.** All writes to this queue happen from the Kafka consumer thread
+  /// — `KPipeConsumer.consumerLoop` enqueues `Pause` / `Resume` / `Close` commands, and
+  /// `performCommit` enqueues `CommitOffsets`. The rebalance callback `onPartitionsRevoked`
+  /// (which calls `drainCommandQueueForRevokedPartitions`) is invoked by `Consumer.poll(...)`
+  /// on that same consumer thread, so the poll-then-readd drain in
+  /// `drainCommandQueueForRevokedPartitions` is atomic with respect to any writer.
+  ///
+  /// If a future change introduces an off-thread `CommitOffsets` writer (async commit hook, an
+  /// ad-hoc commit from another module, etc.), the drain becomes racy: a new command landing
+  /// between the last `poll()` returning `null` and `addAll(remaining)` completing would jump
+  /// the queue and bypass revoked-partition filtering — the consumer thread would then commit
+  /// against the new owner of a revoked partition. To enforce the invariant we capture the
+  /// consumer thread on the first listener callback and assert subsequent callbacks run on the
+  /// same thread (see `assertOnConsumerThread`).
   private final Queue<ConsumerCommand> commandQueue;
+
   private final Map<String, CompletableFuture<Boolean>> commitFutures = new ConcurrentHashMap<>();
   private final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets = new ConcurrentHashMap<>();
   private final Map<TopicPartition, Long> highestProcessedOffsets = new ConcurrentHashMap<>();
   private final Duration commitInterval;
   private volatile ScheduledExecutorService scheduler;
   private volatile ScheduledFuture<?> scheduledCommitTask;
+
+  /// Captured on the first rebalance callback to enforce the single-writer invariant documented
+  /// on `commandQueue`. `volatile` for visibility across the consumer thread and any test
+  /// thread that violates the invariant. Only ever written once: from `null` to the first
+  /// thread that runs `onPartitionsRevoked` / `onPartitionsAssigned`.
+  private volatile Thread consumerThread;
 
   /// Creates a new KafkaOffsetManager instance.
   ///
@@ -436,6 +460,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     return new ConsumerRebalanceListener() {
       @Override
       public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
+        assertOnConsumerThread();
         if (state.get() == OffsetState.STOPPED) return;
         LOGGER.log(Level.INFO, "Partitions revoked: %s".formatted(partitions));
 
@@ -467,6 +492,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
 
       @Override
       public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
+        assertOnConsumerThread();
         if (state.get() == OffsetState.STOPPED) return;
         LOGGER.log(Level.INFO, "Partitions assigned: %s".formatted(partitions));
         partitions.forEach(partition -> {
@@ -482,10 +508,40 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     };
   }
 
+  /// Captures the consumer thread on the first invocation and asserts subsequent invocations
+  /// run on the same thread. Enforces the single-writer invariant on `commandQueue` for
+  /// `drainCommandQueueForRevokedPartitions` — see the field Javadoc. `assert` so the check
+  /// costs nothing in production (no `-ea`); tests run with assertions enabled and will fail
+  /// loudly if a future change starts firing the listener off-thread.
+  ///
+  /// The first-touch capture is intentional: there is no clean seam for `KPipeConsumer` to
+  /// hand us its thread before `Consumer.poll(...)` first dispatches the listener, so we treat
+  /// "whoever ran first" as the source of truth and pin every subsequent caller to that thread.
+  private void assertOnConsumerThread() {
+    final var captured = consumerThread;
+    if (captured == null) {
+      consumerThread = Thread.currentThread();
+      return;
+    }
+    assert captured == Thread.currentThread()
+      : "rebalance callback ran on %s but was previously bound to %s — commandQueue single-writer invariant violated".formatted(
+          Thread.currentThread(),
+          captured
+        );
+  }
+
   /// Filters offset-commit commands so any references to revoked partitions are dropped before
   /// the partitions reappear under a new owner. Non-commit commands pass through untouched.
   /// Drains the queue by polling, transforms each command, and re-enqueues whatever remains in
   /// order.
+  ///
+  /// **Single-writer invariant required.** The poll-then-readd sequence is *not* atomic with
+  /// respect to a concurrent `commandQueue.offer(...)`. It is safe today because every writer
+  /// is the Kafka consumer thread, and `Consumer.poll(...)` dispatches `onPartitionsRevoked`
+  /// on that same thread — see the `commandQueue` field Javadoc. Introducing an off-thread
+  /// `CommitOffsets` writer would let a new command land between the loop's last `poll()`
+  /// returning `null` and `addAll(remaining)` completing, bypassing revoked-partition
+  /// filtering. The runtime check sits in `assertOnConsumerThread`.
   private void drainCommandQueueForRevokedPartitions(final Collection<TopicPartition> partitions) {
     if (commandQueue == null || commandQueue.isEmpty()) return;
 
