@@ -1097,12 +1097,13 @@ The [`examples/`](examples/) directory has complete working apps. Below is a con
 public class KPipeApp implements AutoCloseable {
 
   private static final System.Logger LOGGER = System.getLogger(KPipeApp.class.getName());
-  private final KPipeConsumer<byte[]> consumer;
+
+  private final Handle handle;
 
   static void main() {
     final var config = AppConfig.fromEnv();
     try (final var app = new KPipeApp(config)) {
-      app.start();
+      LOGGER.log(Level.INFO, "JSON consumer started for topic {0}", config.topic());
       app.awaitShutdown();
     } catch (final Exception e) {
       LOGGER.log(Level.ERROR, "Fatal error in application", e);
@@ -1111,55 +1112,42 @@ public class KPipeApp implements AutoCloseable {
   }
 
   public KPipeApp(final AppConfig config) {
-    final var processorRegistry = new MessageProcessorRegistry();
-    final var consoleSinkKey = RegistryKey.json("jsonConsole");
-    processorRegistry.registerSink(consoleSinkKey, new JsonConsoleSink<>());
+    final var props = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
 
-    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-
-    consumer = KPipeConsumer.<byte[]>builder()
-      .withProperties(KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup()))
-      .withTopic(config.topic())
+    handle = KPipe.json(config.topic(), props)
       .withDeadLetterTopic(config.topic() + ".dlq")
-      .withPipeline(
-        processorRegistry
-          .pipeline(JsonFormat.INSTANCE)
-          .add(RegistryKey.json("addSource"), RegistryKey.json("markProcessed"), RegistryKey.json("addTimestamp"))
-          .toSink(consoleSinkKey)
-          .build()
-      )
-      .withCommandQueue(commandQueue)
-      .withOffsetManagerProvider((c) ->
-        KafkaOffsetManager.builder(c).withCommandQueue(commandQueue).withCommitInterval(Duration.ofSeconds(30)).build()
-      )
-      .withMetricsInterval(config.metricsInterval())
-      .withShutdownHook(true)
-      .build();
-  }
-
-  public void start() {
-    consumer.start();
+      .pipe(Operators.addField("source", "kpipe-app"))
+      .pipe(Operators.addField("status", "processed"))
+      .pipe(Operators.addField("processedAt", System.currentTimeMillis()))
+      .toCustom(new JsonConsoleSink<>())
+      .start();
   }
 
   public boolean awaitShutdown() {
-    return consumer.awaitShutdown();
+    return handle.awaitShutdown();
   }
 
+  @Override
   public void close() {
-    consumer.close();
+    handle.close();
   }
 }
 ```
 
-**Environment variables:**
+`Handle` is `AutoCloseable` (graceful shutdown with a 5s drain budget by default) and exposes
+`isHealthy() / metrics() / awaitShutdown() / shutdownGracefully(Duration) / close()`. For a multi-format consumer
+(JSON + Avro + Protobuf on one consumer-group, dispatched per topic), swap `KPipe.json(...)` for
+`KPipe.multi(props).json(...).avro(...).protobuf(...).start()` — see [`examples/demo`](examples/demo/) for the full
+shape. The explicit `KPipeConsumer.Builder` route is still available when you need an escape-hatch capability not on the
+facade (custom `OffsetManager`, custom Kafka consumer factory, custom DLQ producer); the facade reaches into the
+builder for everything else.
+
+**Environment variables** (read by `AppConfig.fromEnv()`):
 
 ```bash
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 export KAFKA_CONSUMER_GROUP=my-group
 export KAFKA_TOPIC=json-events
-export PROCESSOR_PIPELINE=addSource,markProcessed,addTimestamp
-export METRICS_INTERVAL_SEC=30
-export SHUTDOWN_TIMEOUT_SEC=5
 ```
 
 </details>
