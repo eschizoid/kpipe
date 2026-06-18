@@ -8,9 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
-/// Contract tests for [CircuitBreakerController]. Verifies the validation invariants and the two
-/// pure-function predicates (`shouldTrip`, `shouldProbe`) that drive [KPipeConsumer]'s state
-/// transitions.
+/// Contract tests for [CircuitBreakerController]. Verifies the validation invariants and the
+/// `shouldTrip` predicate that drives the CLOSED → OPEN transition. The OPEN → HALF_OPEN
+/// transition is driven by a one-shot scheduled task (no predicate) and is exercised end-to-end
+/// in `KPipeCircuitBreakerIntegrationTest`.
 class CircuitBreakerControllerTest {
 
   @Test
@@ -61,22 +62,4 @@ class CircuitBreakerControllerTest {
     assertFalse(controller.shouldTrip(10, 0.4), "40% failure rate should not trip a 50% threshold");
   }
 
-  @Test
-  void shouldProbeFalseUntilDurationElapsed() {
-    final var controller = new CircuitBreakerController(0.5, 100, Duration.ofMillis(500));
-    final var openedAt = System.nanoTime();
-
-    assertFalse(controller.shouldProbe(openedAt, openedAt + 1_000_000L), "1ms after open shouldn't probe");
-    assertTrue(
-      controller.shouldProbe(openedAt, openedAt + Duration.ofMillis(500).toNanos()),
-      "exactly at duration should probe"
-    );
-    assertTrue(controller.shouldProbe(openedAt, openedAt + Duration.ofSeconds(1).toNanos()), "after duration: probe");
-  }
-
-  @Test
-  void shouldProbeFalseForSentinelOpenedAt() {
-    final var controller = new CircuitBreakerController(0.5, 100, Duration.ofSeconds(1));
-    assertFalse(controller.shouldProbe(0L, System.nanoTime()), "never-tripped sentinel must return false");
-  }
 }
