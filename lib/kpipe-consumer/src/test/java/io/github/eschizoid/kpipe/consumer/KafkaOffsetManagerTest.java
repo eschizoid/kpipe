@@ -376,6 +376,45 @@ class KafkaOffsetManagerTest {
 
       verify(mockConsumer, never()).commitSync(anyMap());
     }
+
+    /// The in-flight-at-revoke branch of the revoke flow: when a record was tracked but not yet
+    /// marked processed, the listener must commit the lowest-pending offset as the resume point —
+    /// not highestProcessed+1. Without this, the partition's new owner would skip the in-flight
+    /// record entirely and we'd silently drop work.
+    @Test
+    void shouldCommitLowestPendingOnRevoke() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 105L, "k", "v".getBytes());
+      offsetManager.trackOffset(record);
+      // intentionally NOT calling markOffsetProcessed — the record is in flight
+
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      verify(mockConsumer).commitSync(offsetCaptor.capture());
+      assertEquals(
+        105L,
+        offsetCaptor.getValue().get(PARTITION).offset(),
+        "revoke with an in-flight record must commit the lowest-pending offset as the resume point"
+      );
+    }
+
+    /// `onPartitionsLost` delegates to `onPartitionsRevoked` so the lost-path inherits the
+    /// commit + clear + drain semantics. A refactor that inlines a divergent body (e.g. skip the
+    /// commit because we lost ownership) would slip through silently without this pin.
+    @Test
+    void shouldDelegateLostToRevoked() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k", "v".getBytes());
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
+
+      offsetManager.createRebalanceListener().onPartitionsLost(List.of(PARTITION));
+
+      verify(mockConsumer).commitSync(offsetCaptor.capture());
+      assertEquals(
+        101L,
+        offsetCaptor.getValue().get(PARTITION).offset(),
+        "onPartitionsLost must delegate to onPartitionsRevoked and flush the offsets"
+      );
+    }
   }
 
   @Nested

@@ -460,7 +460,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
             kafkaConsumer.commitSync(offsetsToCommit);
             LOGGER.log(Level.INFO, "Committed offsets for revoked partitions: %s".formatted(offsetsToCommit));
           } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to commit offsets during partition revocation", e);
+            LOGGER.log(Level.WARNING, "Failed to commit offsets during rebalance", e);
           }
         }
       }
