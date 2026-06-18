@@ -461,6 +461,37 @@ class KafkaOffsetManagerTest {
       );
     }
 
+    /// Mirror of [#rebalanceCallbackFromDifferentThreadTripsAssertion] for the
+    /// `onPartitionsAssigned` half of the listener. The first same-thread call binds the consumer
+    /// thread; the second call from a different thread must trip the invariant.
+    @Test
+    void partitionsAssignedFromDifferentThreadTripsAssertion() throws Exception {
+      final var listener = offsetManager.createRebalanceListener();
+
+      // First call from the JUnit thread captures it as the bound consumer thread.
+      listener.onPartitionsAssigned(List.of(PARTITION));
+
+      // Second call from a different thread must trigger the AssertionError.
+      final var thrown = new AtomicReference<Throwable>();
+      final var off = new Thread(() -> {
+        try {
+          listener.onPartitionsAssigned(List.of(PARTITION));
+        } catch (final Throwable t) {
+          thrown.set(t);
+        }
+      }, "off-thread-rebalancer");
+      off.start();
+      off.join(2_000);
+
+      final var actual = thrown.get();
+      assertNotNull(actual, "off-thread rebalance must throw — assertions disabled?");
+      assertInstanceOf(AssertionError.class, actual, "expected AssertionError, got: " + actual);
+      assertTrue(
+        actual.getMessage().contains("single-writer invariant violated"),
+        "assertion message should call out the invariant: " + actual.getMessage()
+      );
+    }
+
     /// Repeated callbacks on the same thread must pass — the bound-thread check only fires on a
     /// mismatch.
     @Test
