@@ -725,12 +725,12 @@ Add `kpipe-format-avro`. Operators are `UnaryOperator<GenericRecord>`:
 
 ```java
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
-import io.github.eschizoid.kpipe.format.avro.AvroRegistryKey;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.RegistryKey;
+import org.apache.avro.generic.GenericRecord;
 
 // Build an AvroFormat bound to a single schema. Use new AvroFormat(schema) when you already have a
-// parsed Schema, or AvroFormat.of(schemaJson) for inline JSON. For multiple schemas keyed by name
-// use AvroSchemaCatalog and pass catalog.get("user") into AvroFormat.
+// parsed Schema, or AvroFormat.of(schemaJson) for inline JSON.
 final var format = AvroFormat.of("""
   {"type":"record","name":"User","namespace":"com.kpipe","fields":[
     {"name":"id","type":"string"},{"name":"name","type":"string"}
@@ -740,7 +740,7 @@ final var registry = new MessageProcessorRegistry();
 
 // Avro records are schema-bound: use inline lambdas with the native Avro API for value transforms.
 // `Operators.filter`, `peek`, `compose` etc. work for any payload type, including GenericRecord.
-final var lowerNameKey = AvroRegistryKey.of("lowerName");
+final var lowerNameKey = RegistryKey.of("lowerName", GenericRecord.class);
 registry.registerOperator(lowerNameKey, record -> {
   if (record.get("name") != null) record.put("name", record.get("name").toString().toLowerCase());
   return record;
@@ -821,23 +821,23 @@ Add `kpipe-format-protobuf`. Operators are `UnaryOperator<Message>`. Protobuf me
 builds a new message via `toBuilder().setField(...).build()`.
 
 ```java
+import com.google.protobuf.Message;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.format.protobuf.ProtobufRegistryKey;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.RegistryKey;
 
-// Build a ProtobufFormat bound to a single descriptor. Use ProtobufDescriptorCatalog for keyed
-// lookup of multiple descriptors.
+// Build a ProtobufFormat bound to a single descriptor.
 final var format = new ProtobufFormat(CustomerProto.Customer.getDescriptor());
 final var registry = new MessageProcessorRegistry();
 
-final var clearEmailKey = ProtobufRegistryKey.of("clearEmail");
+final var clearEmailKey = RegistryKey.of("clearEmail", Message.class);
 registry.registerOperator(clearEmailKey, msg -> {
   final var emailField = msg.getDescriptorForType().findFieldByName("email");
   return msg.toBuilder().clearField(emailField).build();
 });
 
 // Register the protobuf console sink yourself (defaults are no longer auto-registered)
-final var protoLoggingKey = ProtobufRegistryKey.of("protobufLogging");
+final var protoLoggingKey = RegistryKey.of("protobufLogging", Message.class);
 registry.registerSink(protoLoggingKey, new io.github.eschizoid.kpipe.format.protobuf.ProtobufConsoleSink<>());
 
 final var pipeline = registry

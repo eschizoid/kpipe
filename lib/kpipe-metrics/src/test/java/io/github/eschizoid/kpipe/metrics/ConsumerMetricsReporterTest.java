@@ -12,9 +12,11 @@ class ConsumerMetricsReporterTest {
   @Test
   void shouldReportMetricsToCustomConsumer() {
     final List<String> output = new ArrayList<>();
-    final var reporter = ConsumerMetricsReporter.forConsumer(() ->
-      Map.of("messagesReceived", 10L, "messagesProcessed", 8L, "processingErrors", 2L)
-    ).toConsumer(output::add);
+    final var reporter = new ConsumerMetricsReporter(
+      () -> Map.of("messagesReceived", 10L, "messagesProcessed", 8L, "processingErrors", 2L),
+      () -> 0L,
+      output::add
+    );
 
     reporter.reportMetrics();
 
@@ -27,20 +29,23 @@ class ConsumerMetricsReporterTest {
   @Test
   void shouldIncludeBackpressureMetricsWhenPresent() {
     final List<String> output = new ArrayList<>();
-    final var reporter = ConsumerMetricsReporter.forConsumer(() ->
-      Map.of(
-        "messagesReceived",
-        5L,
-        "messagesProcessed",
-        5L,
-        "processingErrors",
-        0L,
-        "backpressurePauseCount",
-        3L,
-        "backpressureTimeMs",
-        150L
-      )
-    ).toConsumer(output::add);
+    final var reporter = new ConsumerMetricsReporter(
+      () ->
+        Map.of(
+          "messagesReceived",
+          5L,
+          "messagesProcessed",
+          5L,
+          "processingErrors",
+          0L,
+          "backpressurePauseCount",
+          3L,
+          "backpressureTimeMs",
+          150L
+        ),
+      () -> 0L,
+      output::add
+    );
 
     reporter.reportMetrics();
 
@@ -51,7 +56,7 @@ class ConsumerMetricsReporterTest {
   @Test
   void shouldNotReportWhenMetricsAreEmpty() {
     final List<String> output = new ArrayList<>();
-    final var reporter = ConsumerMetricsReporter.forConsumer(Map::of).toConsumer(output::add);
+    final var reporter = new ConsumerMetricsReporter(Map::of, () -> 0L, output::add);
 
     reporter.reportMetrics();
 
@@ -83,10 +88,11 @@ class ConsumerMetricsReporterTest {
   @Test
   void shouldUseCustomUptimeSupplier() {
     final List<String> output = new ArrayList<>();
-    final var reporter = ConsumerMetricsReporter.forConsumer(
+    final var reporter = new ConsumerMetricsReporter(
       () -> Map.of("messagesReceived", 1L, "messagesProcessed", 1L, "processingErrors", 0L),
-      () -> 9999L
-    ).toConsumer(output::add);
+      () -> 9999L,
+      output::add
+    );
 
     reporter.reportMetrics();
 

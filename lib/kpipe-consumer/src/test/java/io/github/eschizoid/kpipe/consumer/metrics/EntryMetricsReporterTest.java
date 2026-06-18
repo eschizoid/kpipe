@@ -55,7 +55,7 @@ class EntryMetricsReporterTest {
     doReturn(keys).when(registry).getKeys();
     doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
 
-    EntryMetricsReporter.forProcessors(registry).toConsumer(reporter).reportMetrics();
+    new EntryMetricsReporter("Processor", registry::getKeys, registry::getMetrics, reporter).reportMetrics();
 
     verify(reporter, times(keys.size())).accept(reportCaptor.capture());
     for (final var line : reportCaptor.getAllValues()) {
@@ -70,7 +70,7 @@ class EntryMetricsReporterTest {
     final Set<RegistryKey<?>> selected = Collections.singleton(selectedKey);
     doReturn(testMetrics).when(registry).getMetrics(selectedKey);
 
-    EntryMetricsReporter.forProcessors(registry, selected).toConsumer(reporter).reportMetrics();
+    new EntryMetricsReporter("Processor", () -> selected, registry::getMetrics, reporter).reportMetrics();
 
     verify(reporter, times(1)).accept(contains("selected"));
     verify(registry, never()).getKeys();
@@ -100,7 +100,7 @@ class EntryMetricsReporterTest {
     doReturn(keys).when(registry).getSinkKeys();
     doReturn(testMetrics).when(registry).getSinkMetrics(any(RegistryKey.class));
 
-    EntryMetricsReporter.forSinks(registry).toConsumer(reporter).reportMetrics();
+    new EntryMetricsReporter("Sink", registry::getSinkKeys, registry::getSinkMetrics, reporter).reportMetrics();
 
     verify(reporter, times(keys.size())).accept(reportCaptor.capture());
     for (final var line : reportCaptor.getAllValues()) {
@@ -115,7 +115,7 @@ class EntryMetricsReporterTest {
     final Set<RegistryKey<?>> selected = Collections.singleton(selectedKey);
     doReturn(testMetrics).when(registry).getSinkMetrics(selectedKey);
 
-    EntryMetricsReporter.forSinks(registry, selected).toConsumer(reporter).reportMetrics();
+    new EntryMetricsReporter("Sink", () -> selected, registry::getSinkMetrics, reporter).reportMetrics();
 
     verify(reporter, times(1)).accept(contains("selectedSink"));
     verify(registry, never()).getSinkKeys();
@@ -157,19 +157,5 @@ class EntryMetricsReporterTest {
 
     assertDoesNotThrow(rep::reportMetrics);
     verify(reporter, times(1)).accept(anyString());
-  }
-
-  @Test
-  void toConsumer_swapsOutputWithoutMutatingOriginal() {
-    doReturn(keys).when(registry).getKeys();
-    doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
-
-    final var original = EntryMetricsReporter.forProcessors(registry);
-    final var withCustom = original.toConsumer(reporter);
-
-    withCustom.reportMetrics();
-    verify(reporter, times(keys.size())).accept(anyString());
-    // original is independent — using its own (logger) consumer
-    assertNotSame(original.reporter(), withCustom.reporter());
   }
 }

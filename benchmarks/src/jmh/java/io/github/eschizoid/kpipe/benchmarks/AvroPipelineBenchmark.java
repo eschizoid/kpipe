@@ -1,9 +1,9 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
-import io.github.eschizoid.kpipe.format.avro.AvroRegistryKey;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.RegistryKey;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -92,8 +92,8 @@ public class AvroPipelineBenchmark {
 
     // Register operators inline using the native Avro API (operator helpers were removed in
     // 1.11.x).
-    final var op1 = AvroRegistryKey.of("op1");
-    final var op2 = AvroRegistryKey.of("op2");
+    final var op1 = RegistryKey.of("op1", GenericRecord.class);
+    final var op2 = RegistryKey.of("op2", GenericRecord.class);
 
     final UnaryOperator<GenericRecord> setProcessed = r -> {
       r.put("processed", true);

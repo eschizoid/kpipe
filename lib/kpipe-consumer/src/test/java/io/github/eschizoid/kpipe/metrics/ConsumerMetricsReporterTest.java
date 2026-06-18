@@ -47,7 +47,7 @@ class ConsumerMetricsReporterTest {
     // Arrange
     when(metricsSupplier.get()).thenReturn(testMetrics);
     when(uptimeSupplier.get()).thenReturn(60000L);
-    metricsReporter = ConsumerMetricsReporter.forConsumer(metricsSupplier, uptimeSupplier).toConsumer(reporter);
+    metricsReporter = new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, reporter);
 
     // Act
     metricsReporter.reportMetrics();
@@ -78,7 +78,7 @@ class ConsumerMetricsReporterTest {
   void shouldHandleNoMetricsGracefully() {
     // Arrange
     when(metricsSupplier.get()).thenReturn(Collections.emptyMap());
-    metricsReporter = ConsumerMetricsReporter.forConsumer(metricsSupplier, uptimeSupplier).toConsumer(reporter);
+    metricsReporter = new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, reporter);
 
     // Act
     metricsReporter.reportMetrics();
@@ -92,7 +92,7 @@ class ConsumerMetricsReporterTest {
     // Arrange
     when(metricsSupplier.get()).thenReturn(null);
 
-    metricsReporter = ConsumerMetricsReporter.forConsumer(metricsSupplier, uptimeSupplier).toConsumer(reporter);
+    metricsReporter = new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, reporter);
 
     // Act
     metricsReporter.reportMetrics();
@@ -108,7 +108,7 @@ class ConsumerMetricsReporterTest {
     testMetrics.put("backpressureTimeMs", 1500L);
     when(metricsSupplier.get()).thenReturn(testMetrics);
     when(uptimeSupplier.get()).thenReturn(60000L);
-    metricsReporter = ConsumerMetricsReporter.forConsumer(metricsSupplier, uptimeSupplier).toConsumer(reporter);
+    metricsReporter = new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, reporter);
 
     // Act
     metricsReporter.reportMetrics();
@@ -125,7 +125,7 @@ class ConsumerMetricsReporterTest {
     // Arrange: testMetrics has no backpressure keys
     when(metricsSupplier.get()).thenReturn(testMetrics);
     when(uptimeSupplier.get()).thenReturn(60000L);
-    metricsReporter = ConsumerMetricsReporter.forConsumer(metricsSupplier, uptimeSupplier).toConsumer(reporter);
+    metricsReporter = new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, reporter);
 
     // Act
     metricsReporter.reportMetrics();
@@ -142,36 +142,10 @@ class ConsumerMetricsReporterTest {
     when(metricsSupplier.get()).thenThrow(new RuntimeException("Test exception"));
 
     // Act
-    metricsReporter = ConsumerMetricsReporter.forConsumer(metricsSupplier, uptimeSupplier).toConsumer(reporter);
+    metricsReporter = new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, reporter);
 
     // Assert
     assertDoesNotThrow(() -> metricsReporter.reportMetrics());
     verifyNoInteractions(reporter);
-  }
-
-  @Test
-  void shouldWorkWithFluentApi() {
-    // Arrange
-    when(metricsSupplier.get()).thenReturn(testMetrics);
-    when(uptimeSupplier.get()).thenReturn(60000L);
-
-    // Act
-    ConsumerMetricsReporter.forConsumer(metricsSupplier, uptimeSupplier).toConsumer(reporter).reportMetrics();
-
-    // Assert
-    verify(reporter).accept(anyString());
-  }
-
-  @Test
-  void shouldWorkWithSimplifiedFluentApi() {
-    // Arrange
-    when(metricsSupplier.get()).thenReturn(testMetrics);
-
-    // Act
-    ConsumerMetricsReporter.forConsumer(metricsSupplier).toConsumer(reporter).reportMetrics();
-
-    // Assert
-    verify(reporter).accept(reportCaptor.capture());
-    assertTrue(reportCaptor.getValue().contains("uptime:"));
   }
 }

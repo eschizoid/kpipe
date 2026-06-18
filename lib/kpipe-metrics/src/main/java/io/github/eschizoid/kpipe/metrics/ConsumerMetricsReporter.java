@@ -16,20 +16,14 @@ import java.util.function.Supplier;
 /// reporter.reportMetrics(); // Will log to System logger
 /// ```
 ///
-/// **Example 2:** Custom metrics reporting:
+/// **Example 2:** Custom metrics reporting via the canonical constructor:
 ///
 /// ```java
 /// // Report metrics to Prometheus
-/// final var reporter = ConsumerMetricsReporter.forConsumer(consumer::getMetrics)
-///     .toConsumer(metric -> PrometheusClient.pushGauge("consumer_metrics", parseValues(metric)));
-/// ```
-///
-/// **Example 3:** Fluent usage with custom reporter:
-///
-/// ```java
-/// final var reporter = ConsumerMetricsReporter.forConsumer(consumer::getMetrics)
-///     .toConsumer(System.out::println);
-/// reporter.reportMetrics();
+/// final var reporter = new ConsumerMetricsReporter(
+///     consumer::getMetrics,
+///     () -> System.currentTimeMillis() - APP_START,
+///     metric -> PrometheusClient.pushGauge("consumer_metrics", parseValues(metric)));
 /// ```
 ///
 /// @param metricsSupplier supplier of consumer metrics
@@ -123,13 +117,5 @@ public record ConsumerMetricsReporter(
     final Supplier<Long> uptimeSupplier
   ) {
     return new ConsumerMetricsReporter(metricsSupplier, uptimeSupplier, null);
-  }
-
-  /// Creates a new reporter with the specified output consumer.
-  ///
-  /// @param reporter the consumer for reporting metrics
-  /// @return a new ConsumerMetricsReporter instance
-  public ConsumerMetricsReporter toConsumer(final Consumer<String> reporter) {
-    return new ConsumerMetricsReporter(this.metricsSupplier, this.uptimeSupplier, reporter);
   }
 }

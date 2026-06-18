@@ -8,17 +8,10 @@ import io.github.eschizoid.kpipe.registry.MessageFormat;
 import java.util.Objects;
 
 /// Protobuf codec for KPipe — stateless `MessageFormat<Message>` bound to a single
-/// [Descriptor]. One descriptor per instance, no mutable state. For multiple descriptors keyed
-/// by name, use [ProtobufDescriptorCatalog] and pass the resolved descriptor here.
+/// [Descriptor]. One descriptor per instance, no mutable state.
 ///
 /// ```java
-/// // Direct: you have a Descriptor in hand.
 /// final var format = new ProtobufFormat(UserProto.getDescriptor());
-///
-/// // Catalog-mediated: multiple descriptors keyed by name.
-/// final var catalog = new ProtobufDescriptorCatalog();
-/// catalog.add("user", UserProto.getDescriptor());
-/// final var format = new ProtobufFormat(catalog.get("user"));
 /// ```
 public final class ProtobufFormat implements MessageFormat<Message> {
 
