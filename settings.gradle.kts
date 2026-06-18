@@ -15,6 +15,7 @@ include("lib:kpipe-format-protobuf")
 include("lib:kpipe-api")
 
 include("examples")
+include("examples:bytes")
 include("examples:json")
 include("examples:avro")
 include("examples:protobuf")
