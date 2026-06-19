@@ -7,7 +7,7 @@ import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.BitSet;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -136,21 +136,26 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     }
   }
 
-  /// Caller must hold `lock`. Snapshots the buffer, clears it, invokes the user sink, then
-  /// dispatches per-record outcomes. `bufferedCount` is decremented in `finally` by the snapshot
-  /// size so it tracks records still owned by the wrapper even if dispatch throws.
+  /// Caller must hold `lock`. Snapshots the buffer's values into a single pre-sized list, clears
+  /// the buffer, then drives the sink + dispatches per-record outcomes off the same snapshot.
+  /// `bufferedCount` is decremented in `finally` by the snapshot size so it tracks records still
+  /// owned by the wrapper even if dispatch throws.
+  ///
+  /// The buffer itself is reused — `ArrayList.clear()` keeps the backing array, so steady-state
+  /// flushes don't reallocate the buffer. Only the per-flush snapshot list (used to walk records
+  /// after `flush` has finished iterating values) is allocated fresh per cycle.
   private void flushLocked() {
-    if (buffer.isEmpty()) return;
-    final var snapshot = List.copyOf(buffer);
-    buffer.clear();
-
-    final var values = new ArrayList<T>(snapshot.size());
+    final var size = buffer.size();
+    if (size == 0) return;
+    final var snapshot = new ArrayList<>(buffer);
+    final var values = new ArrayList<T>(size);
     for (final var entry : snapshot) values.add(entry.value());
+    buffer.clear();
 
     try {
       flush(snapshot, values);
     } finally {
-      bufferedCount.addAndGet(-snapshot.size());
+      bufferedCount.addAndGet(-size);
     }
   }
 
@@ -178,9 +183,12 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
       return;
     }
 
-    final var succeeded = new HashSet<Integer>(size * 2);
+    // BitSet is constant-time `set` / `get` on primitive int indexes — no boxing on the hot path,
+    // unlike `HashSet<Integer>`. Sized exactly to the batch so all sets land in word 0 for small
+    // batches.
+    final var succeeded = new BitSet(size);
     for (final var i : result.succeededIndexes()) {
-      if (i != null && i >= 0 && i < size) succeeded.add(i);
+      if (i != null && i >= 0 && i < size) succeeded.set(i);
       else logOutOfRange("succeeded", i, size);
     }
     for (final var i : result.failedByIndex().keySet()) {
@@ -188,11 +196,17 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     }
 
     IllegalStateException coverageViolation = null;
-    final var missing = new ArrayList<Integer>();
+    // First pass: count missing indexes without allocating a list. Build the list only on the
+    // contract-violation path (rare); the common success path stays allocation-free.
+    var missingCount = 0;
     for (int i = 0; i < size; i++) {
-      if (!succeeded.contains(i) && !result.failedByIndex().containsKey(i)) missing.add(i);
+      if (!succeeded.get(i) && !result.failedByIndex().containsKey(i)) missingCount++;
     }
-    if (!missing.isEmpty()) {
+    if (missingCount > 0) {
+      final var missing = new ArrayList<Integer>(missingCount);
+      for (int i = 0; i < size; i++) {
+        if (!succeeded.get(i) && !result.failedByIndex().containsKey(i)) missing.add(i);
+      }
       coverageViolation = new IllegalStateException(
         "BatchSink for topic " +
           topic +
@@ -207,7 +221,7 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
 
     for (int i = 0; i < size; i++) {
       final var record = snapshot.get(i).record();
-      if (succeeded.contains(i)) {
+      if (succeeded.get(i)) {
         callbacks.markProcessed(record);
         continue;
       }

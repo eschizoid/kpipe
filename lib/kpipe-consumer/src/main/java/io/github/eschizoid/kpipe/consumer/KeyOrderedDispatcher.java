@@ -114,18 +114,10 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
     final var key = normalizeKey(record.key());
     pending.incrementAndGet();
 
-    final Runnable wrappedTask = () -> {
-      try {
-        processTask.run();
-      } finally {
-        pending.decrementAndGet();
-        try {
-          onComplete.run();
-        } catch (final RuntimeException e) {
-          LOGGER.log(Level.WARNING, "onComplete callback threw", e);
-        }
-      }
-    };
+    // Hold `(processTask, onComplete)` together as a single small record rather than wrapping
+    // them in a closure that also captures `pending` and `key`. `drain()` runs each half
+    // directly with its own try/finally, eliminating the per-record wrapper Runnable allocation.
+    final var queued = new QueuedTask(processTask, onComplete);
 
     lock.lock();
     try {
@@ -139,7 +131,7 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
           return;
         }
       }
-      queue.tasks.addLast(wrappedTask);
+      queue.tasks.addLast(queued);
       if (!queue.workerActive) {
         queue.workerActive = true;
         try {
@@ -245,9 +237,11 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
   }
 
   /// Inner drain loop for [#startWorker]. Pulls tasks under the lock; runs them outside.
+  /// `pending.decrement` and `onComplete` were previously folded into a wrapper [Runnable]
+  /// allocated per-dispatch; they now happen here, removing that allocation from the hot path.
   private void drain(final KeyQueue queue) {
     while (true) {
-      Runnable task;
+      QueuedTask task;
       lock.lock();
       try {
         task = queue.tasks.pollFirst();
@@ -258,11 +252,20 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
       } finally {
         lock.unlock();
       }
-      // Run OUTSIDE the lock. `wrappedTask` (set in dispatch) handles pending.decrement
-      // and onComplete in its own try/finally; we add an outer guard so a Throwable from
-      // the wrapper doesn't break the drain loop.
+      // Run OUTSIDE the lock. Outer try/finally guarantees pending is decremented and
+      // onComplete is invoked even if processTask throws; the outer catch keeps the drain
+      // loop alive on any Throwable, mirroring the previous wrapper's safety net.
       try {
-        task.run();
+        try {
+          task.processTask.run();
+        } finally {
+          pending.decrementAndGet();
+          try {
+            task.onComplete.run();
+          } catch (final RuntimeException e) {
+            LOGGER.log(Level.WARNING, "onComplete callback threw", e);
+          }
+        }
       } catch (final Throwable t) {
         LOGGER.log(Level.ERROR, "Per-key worker task threw; continuing drain", t);
       }
@@ -382,7 +385,11 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
   /// [KeyOrderedDispatcher#lock].
   private static final class KeyQueue {
 
-    final ArrayDeque<Runnable> tasks = new ArrayDeque<>();
+    final ArrayDeque<QueuedTask> tasks = new ArrayDeque<>();
     boolean workerActive = false;
   }
+
+  /// Pairs the per-record `processTask` with its `onComplete` callback. Replaces the
+  /// per-dispatch wrapper [Runnable] that previously captured both plus `pending` and `key`.
+  private record QueuedTask(Runnable processTask, Runnable onComplete) {}
 }
