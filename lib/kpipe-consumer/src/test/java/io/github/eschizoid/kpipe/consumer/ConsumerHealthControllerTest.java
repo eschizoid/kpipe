@@ -143,8 +143,9 @@ class ConsumerHealthControllerTest {
     health.recordOutcome(false);
     assertEquals(CircuitBreakerState.OPEN, health.circuitBreakerState());
 
-    // Probe scheduled 150ms out; wait generously.
-    Thread.sleep(400);
+    // Probe is scheduled 150ms out; wait for it to fire by latching on the resume hook signal.
+    // A bare sleep budget can be exceeded under loaded CI by GC pauses or scheduling jitter.
+    assertTrue(hook.awaitResumeCall(Duration.ofSeconds(5)), "probe should have fired and called onResume");
     assertEquals(CircuitBreakerState.HALF_OPEN, health.circuitBreakerState(), "probe should have fired");
     assertEquals(1, hook.resumeCalls, "probe fires onResume exactly once");
   }
@@ -156,7 +157,7 @@ class ConsumerHealthControllerTest {
 
     health.recordOutcome(false);
     health.recordOutcome(false);
-    Thread.sleep(300);
+    assertTrue(hook.awaitResumeCall(Duration.ofSeconds(5)), "probe should have fired and called onResume");
     assertEquals(CircuitBreakerState.HALF_OPEN, health.circuitBreakerState());
 
     health.recordOutcome(true);
@@ -170,7 +171,7 @@ class ConsumerHealthControllerTest {
 
     health.recordOutcome(false);
     health.recordOutcome(false);
-    Thread.sleep(300);
+    assertTrue(hook.awaitResumeCall(Duration.ofSeconds(5)), "probe should have fired and called onResume");
     assertEquals(CircuitBreakerState.HALF_OPEN, health.circuitBreakerState());
 
     health.recordOutcome(false);
@@ -274,6 +275,18 @@ class ConsumerHealthControllerTest {
     int resumeCalls;
     int backpressurePauses;
     int trips;
+    private final CountDownLatch resumeLatch = new CountDownLatch(1);
+
+    /// Blocks until `onResume` has been invoked at least once, or `timeout` elapses. Used by
+    /// circuit-breaker probe tests to fence on the probe actually firing rather than guessing a
+    /// sleep budget — the latter flakes on a loaded CI runner when GC or VT-scheduling jitter
+    /// pushes the probe past a fixed sleep.
+    ///
+    /// @param timeout maximum time to block
+    /// @return true if `onResume` was observed within the timeout
+    boolean awaitResumeCall(final Duration timeout) throws InterruptedException {
+      return resumeLatch.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    }
 
     @Override
     public void onPause() {
@@ -283,6 +296,7 @@ class ConsumerHealthControllerTest {
     @Override
     public void onResume() {
       resumeCalls++;
+      resumeLatch.countDown();
     }
 
     @Override
