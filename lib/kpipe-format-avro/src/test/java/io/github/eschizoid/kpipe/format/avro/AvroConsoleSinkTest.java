@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -104,5 +106,31 @@ class AvroConsoleSinkTest {
     writer.write(avroRecord, encoder);
     encoder.flush();
     return out.toByteArray();
+  }
+
+  /// JUL [Handler] that appends each [LogRecord]'s raw message to an in-memory buffer.
+  /// No formatting, no parameter substitution, no separator — assertions just look for
+  /// substrings in the concatenated output.
+  private static final class CapturingHandler extends Handler {
+
+    private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+
+    @Override
+    public void publish(final LogRecord record) {
+      if (record.getMessage() != null) {
+        buffer.writeBytes(record.getMessage().getBytes(StandardCharsets.UTF_8));
+      }
+    }
+
+    @Override
+    public void flush() {}
+
+    @Override
+    public void close() {}
+
+    @Override
+    public String toString() {
+      return buffer.toString(StandardCharsets.UTF_8);
+    }
   }
 }
