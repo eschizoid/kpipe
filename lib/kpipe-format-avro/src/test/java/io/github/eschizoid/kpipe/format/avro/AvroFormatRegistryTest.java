@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.format.avro;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -170,14 +169,6 @@ class AvroFormatRegistryTest {
   @Test
   void registryBackedSchemaIsNull() {
     assertNull(AvroFormat.withRegistry(new FakeResolver()).schema());
-  }
-
-  @Test
-  void isRegistryBackedReflectsMode() {
-    final var staticFormat = AvroFormat.of(USER_V1);
-    final var registryFormat = AvroFormat.withRegistry(new FakeResolver());
-    assertFalse(staticFormat.isRegistryBacked());
-    assertTrue(registryFormat.isRegistryBacked());
   }
 
   @Test

@@ -93,13 +93,6 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     return new AvroFormat(resolver);
   }
 
-  /// Returns true if this format reads the Confluent wire envelope per record.
-  ///
-  /// @return true in Schema-Registry mode, false in static mode
-  public boolean isRegistryBacked() {
-    return resolver != null;
-  }
-
   /// Returns the schema this codec is bound to in static mode.
   ///
   /// @return the bound schema in static mode; null in Schema-Registry mode
