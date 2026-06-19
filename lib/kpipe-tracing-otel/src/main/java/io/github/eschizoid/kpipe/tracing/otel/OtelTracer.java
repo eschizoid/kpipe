@@ -8,11 +8,16 @@ import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.context.propagation.TextMapGetter;
 import io.opentelemetry.context.propagation.TextMapPropagator;
+import io.opentelemetry.context.propagation.TextMapSetter;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Objects;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
 
 /// OpenTelemetry-backed [Tracer] — W3C `traceparent` propagation across the Kafka boundary.
@@ -74,7 +79,7 @@ public final class OtelTracer implements Tracer {
     // Extract any upstream context from the record's headers (W3C `traceparent` + tracestate).
     final Context parent;
     try {
-      parent = propagator.extract(Context.current(), record.headers(), HeadersTextMapGetter.INSTANCE);
+      parent = propagator.extract(Context.current(), record.headers(), HeadersGetter.INSTANCE);
     } catch (final Exception e) {
       LOGGER.log(Level.WARNING, "Failed to extract trace context from headers: {0}", e.getMessage());
       return SpanScope.noop();
@@ -113,7 +118,7 @@ public final class OtelTracer implements Tracer {
   public void injectContextInto(final Headers headers) {
     if (headers == null) return;
     try {
-      propagator.inject(Context.current(), headers, HeadersTextMapSetter.INSTANCE);
+      propagator.inject(Context.current(), headers, HeadersSetter.INSTANCE);
     } catch (final Exception e) {
       LOGGER.log(Level.WARNING, "Failed to inject trace context into headers: {0}", e.getMessage());
     }
@@ -159,6 +164,50 @@ public final class OtelTracer implements Tracer {
       } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Failed to end span: {0}", e.getMessage());
       }
+    }
+  }
+
+  /// [TextMapGetter] adapter that reads UTF-8 string values from Kafka [Headers]. Used by
+  /// [#startConsumerSpan] to extract `traceparent` / `tracestate` from inbound records.
+  private static final class HeadersGetter implements TextMapGetter<Headers> {
+
+    static final HeadersGetter INSTANCE = new HeadersGetter();
+
+    private HeadersGetter() {}
+
+    @Override
+    public Iterable<String> keys(final Headers carrier) {
+      final var keys = new ArrayList<String>();
+      for (final Header h : carrier) keys.add(h.key());
+      return keys;
+    }
+
+    @Override
+    public String get(final Headers carrier, final String key) {
+      if (carrier == null) return null;
+      final var header = carrier.lastHeader(key);
+      if (header == null || header.value() == null) return null;
+      return new String(header.value(), StandardCharsets.UTF_8);
+    }
+  }
+
+  /// [TextMapSetter] adapter that writes UTF-8 string values into Kafka [Headers]. Used by
+  /// [#injectContextInto] to add `traceparent` / `tracestate` to outbound DLQ records and
+  /// sink-produced records.
+  ///
+  /// Replaces existing headers with the same key so re-injection on a retried record yields a
+  /// single up-to-date `traceparent`.
+  private static final class HeadersSetter implements TextMapSetter<Headers> {
+
+    static final HeadersSetter INSTANCE = new HeadersSetter();
+
+    private HeadersSetter() {}
+
+    @Override
+    public void set(final Headers carrier, final String key, final String value) {
+      if (carrier == null) return;
+      carrier.remove(key);
+      carrier.add(key, value.getBytes(StandardCharsets.UTF_8));
     }
   }
 }
