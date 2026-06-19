@@ -30,9 +30,9 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
     JSONFactory.getDefaultObjectReaderProvider().setAutoTypeBeforeHandler(null);
   }
 
-  /// Constructs a new JsonFormat instance.
-  public JsonFormat() {
-    // Default constructor
+  /// Private constructor — use [JsonFormat#INSTANCE] to obtain the shared singleton.
+  private JsonFormat() {
+    // Singleton — JsonFormat is stateless; construction is reserved for the INSTANCE field.
   }
 
   /// Creates a new [JsonConsoleSink] for `Map<String, Object>` payloads.
