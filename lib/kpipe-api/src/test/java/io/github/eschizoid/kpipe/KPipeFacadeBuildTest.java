@@ -2,8 +2,12 @@ package io.github.eschizoid.kpipe;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
+import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
+import io.github.eschizoid.kpipe.producer.tracing.Tracer;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
@@ -151,6 +155,129 @@ class KPipeFacadeBuildTest {
       KPipe.multi(props())
         .withProcessingMode(ProcessingMode.KEY_ORDERED)
         .withKeyOrderedMaxKeys(5_000)
+        .json("topic-a", s -> s.toCustom(_ -> {}))
+        .json("topic-b", s -> s.toCustom(_ -> {}))
+    );
+  }
+
+  // --- per-route consumer-wide-setting rejection ---
+  // Every public consumer-wide setting reachable from the per-route Stream is silently dropped
+  // by the original MultiBuilder.start() — it only invokes ds.buildPipeline() / addBatchRoute()
+  // and never replays the route's consumer-level config onto the underlying single
+  // KPipeConsumer.Builder. The tests below pin each setting to fail loud rather than disappear.
+
+  @Test
+  void multiBuilderRejectsPerRouteWithRetry() {
+    final var multi = KPipe.multi(props()).json("topic-a", s ->
+      s.withRetry(3, Duration.ofSeconds(1)).toCustom(_ -> {})
+    );
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(ex.getMessage().contains("withRetry"), () -> "message should name withRetry: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("'topic-a'"),
+      () -> "message should name the offending route: " + ex.getMessage()
+    );
+    assertTrue(
+      ex.getMessage().contains("KPipeConsumer.Builder"),
+      () -> "message should point users at the explicit-builder escape hatch: " + ex.getMessage()
+    );
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteWithBackpressure() {
+    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withBackpressure(5_000, 1_000).toCustom(_ -> {}));
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(
+      ex.getMessage().contains("withBackpressure"),
+      () -> "message should name withBackpressure: " + ex.getMessage()
+    );
+    assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteWithDeadLetterTopic() {
+    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withDeadLetterTopic("dlq").toCustom(_ -> {}));
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(
+      ex.getMessage().contains("withDeadLetterTopic"),
+      () -> "message should name withDeadLetterTopic: " + ex.getMessage()
+    );
+    assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteWithErrorHandler() {
+    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withErrorHandler(_ -> {}).toCustom(_ -> {}));
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(
+      ex.getMessage().contains("withErrorHandler"),
+      () -> "message should name withErrorHandler: " + ex.getMessage()
+    );
+    assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteWithPollTimeout() {
+    final var multi = KPipe.multi(props()).json("topic-a", s ->
+      s.withPollTimeout(Duration.ofMillis(250)).toCustom(_ -> {})
+    );
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(
+      ex.getMessage().contains("withPollTimeout"),
+      () -> "message should name withPollTimeout: " + ex.getMessage()
+    );
+    assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteWithMetrics() {
+    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withMetrics(ConsumerMetrics.noop()).toCustom(_ -> {}));
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(ex.getMessage().contains("withMetrics"), () -> "message should name withMetrics: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withMetrics"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
+    assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteWithTracer() {
+    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withTracer(Tracer.noop()).toCustom(_ -> {}));
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(ex.getMessage().contains("withTracer"), () -> "message should name withTracer: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withTracer"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
+    assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+  }
+
+  @Test
+  void multiBuilderRejectsPerRouteWithCircuitBreaker() {
+    final var breaker = new CircuitBreakerController(0.5, 100, Duration.ofSeconds(1));
+    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withCircuitBreaker(breaker).toCustom(_ -> {}));
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(
+      ex.getMessage().contains("withCircuitBreaker"),
+      () -> "message should name withCircuitBreaker: " + ex.getMessage()
+    );
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withCircuitBreaker"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
+    assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+  }
+
+  @Test
+  void multiBuilderAcceptsConsumerWideMetricsTracerAndCircuitBreaker() {
+    // Smoke: the consumer-wide MultiBuilder setters still work and don't trip the per-route guard.
+    final var breaker = new CircuitBreakerController(0.5, 100, Duration.ofSeconds(1));
+    assertDoesNotThrow(() ->
+      KPipe.multi(props())
+        .withMetrics(ConsumerMetrics.noop())
+        .withTracer(Tracer.noop())
+        .withCircuitBreaker(breaker)
         .json("topic-a", s -> s.toCustom(_ -> {}))
         .json("topic-b", s -> s.toCustom(_ -> {}))
     );

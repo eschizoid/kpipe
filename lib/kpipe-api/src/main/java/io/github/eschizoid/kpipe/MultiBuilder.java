@@ -242,13 +242,14 @@ public final class MultiBuilder {
     return DefaultHandle.startAndWrap(consumerBuilder.build());
   }
 
-  /// Processing mode and the KEY_ORDERED LRU cap are consumer-wide settings — one
-  /// [KPipeConsumer] runs in exactly one mode with one cap. If a route configurator sets a
-  /// non-default value (`s -> s.withProcessingMode(...)` or
-  /// `s -> s.withKeyOrderedMaxKeys(...)`), the per-route setting would be silently dropped
-  /// because [#start()] builds a single consumer. Detect that here and fail loudly so the
-  /// user moves the call up to `MultiBuilder.withProcessingMode(...)` /
-  /// `MultiBuilder.withKeyOrderedMaxKeys(...)`.
+  /// Consumer-wide settings live on one [KPipeConsumer] (one consumer-group, one offset
+  /// manager, one poll loop), so a per-route configurator can only ever set them for itself —
+  /// [#start()] then drops them on the floor when it folds N routes into a single consumer.
+  /// Detect every such case here and fail loud so the misconfig surfaces at construction time
+  /// instead of as a silent missing-retry / missing-DLQ at runtime.
+  ///
+  /// Routes are expected to be terminal sinks built via `toCustom(...)` / `toBatch(...)` /
+  /// `toConsole()` etc.; unknown sink shapes are passed through (no false-positives).
   private static void rejectPerRouteConsumerWideSettings(final String topic, final Sink<?> sink) {
     final DefaultStream<?> stream;
     if (sink instanceof DefaultSink<?> ds) stream = ds.stream();
@@ -267,6 +268,48 @@ public final class MultiBuilder {
           stream.keyOrderedMaxKeys()
         ) +
         "Move the call to MultiBuilder.withKeyOrderedMaxKeys(...) instead."
+    );
+    if (stream.consumerMetrics() != null) throw new IllegalArgumentException(
+      perRouteRejection(topic, "withMetrics", "MultiBuilder.withMetrics(...)")
+    );
+    if (stream.tracer() != null) throw new IllegalArgumentException(
+      perRouteRejection(topic, "withTracer", "MultiBuilder.withTracer(...)")
+    );
+    if (stream.circuitBreaker() != null) throw new IllegalArgumentException(
+      perRouteRejection(topic, "withCircuitBreaker", "MultiBuilder.withCircuitBreaker(...)")
+    );
+    if (stream.maxRetries() > 0) throw new IllegalArgumentException(perRouteRejectionDeferred(topic, "withRetry"));
+    if (stream.backpressureHigh() != null) throw new IllegalArgumentException(
+      perRouteRejectionDeferred(topic, "withBackpressure")
+    );
+    if (stream.deadLetterTopic() != null) throw new IllegalArgumentException(
+      perRouteRejectionDeferred(topic, "withDeadLetterTopic")
+    );
+    if (stream.errorHandler() != null) throw new IllegalArgumentException(
+      perRouteRejectionDeferred(topic, "withErrorHandler")
+    );
+    if (stream.pollTimeout() != null) throw new IllegalArgumentException(
+      perRouteRejectionDeferred(topic, "withPollTimeout")
+    );
+  }
+
+  /// Builds the rejection message for a per-route setting that already has a symmetric
+  /// `MultiBuilder.with*` setter — point the user at it.
+  private static String perRouteRejection(final String topic, final String setting, final String mirror) {
+    return (
+      "Route '%s' sets %s on its Stream, but %s is a consumer-wide setting; ".formatted(topic, setting, setting) +
+      "set it on %s instead.".formatted(mirror)
+    );
+  }
+
+  /// Builds the rejection message for a per-route setting that does NOT yet have a symmetric
+  /// `MultiBuilder.with*` mirror. Point the user at the explicit `KPipeConsumer.Builder` escape
+  /// hatch and note the open follow-up.
+  private static String perRouteRejectionDeferred(final String topic, final String setting) {
+    return (
+      "Route '%s' sets %s on its Stream, but %s is a consumer-wide setting; ".formatted(topic, setting, setting) +
+      "configure via the explicit KPipeConsumer.Builder for the homogeneous case, " +
+      "or wait for the multi-builder mirror (open issue)."
     );
   }
 
