@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe;
 
+import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
@@ -91,9 +92,10 @@ public interface Stream<T> {
   /// @throws NullPointerException if `backoff` is null
   Stream<T> withRetry(final int maxRetries, final Duration backoff);
 
-  /// Returns a new stream with backpressure enabled using default watermarks (pause at 10,000
-  /// in-flight messages, resume at 7,000). The strategy is in-flight in parallel mode and
-  /// consumer-lag in sequential mode.
+  /// Returns a new stream with backpressure enabled using default watermarks
+  /// ([BackpressureController#DEFAULT_HIGH_WATERMARK] for pause,
+  /// [BackpressureController#DEFAULT_LOW_WATERMARK] for resume). The strategy is in-flight in
+  /// parallel mode and consumer-lag in sequential mode.
   ///
   /// Backpressure is enabled by default; calling this method is only required when you want
   /// to override the watermarks via [#withBackpressure(long, long)].

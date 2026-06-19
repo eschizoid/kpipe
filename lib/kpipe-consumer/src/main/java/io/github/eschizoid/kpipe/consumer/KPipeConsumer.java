@@ -232,7 +232,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param props The Kafka consumer properties
     /// @return This builder instance for method chaining
     public Builder<K> withProperties(final Properties props) {
-      this.kafkaProps = props;
+      this.kafkaProps = Objects.requireNonNull(props, "props cannot be null");
       return this;
     }
 
@@ -278,7 +278,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param pipeline The pipeline to apply to message values
     /// @return This builder instance for method chaining
     public Builder<K> withPipeline(final MessagePipeline<?> pipeline) {
-      this.pipeline = pipeline;
+      this.pipeline = Objects.requireNonNull(pipeline, "pipeline cannot be null");
       return this;
     }
 
@@ -342,7 +342,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param timeout The maximum time to wait for messages in each poll
     /// @return This builder instance for method chaining
     public Builder<K> withPollTimeout(final Duration timeout) {
-      this.pollTimeout = timeout;
+      this.pollTimeout = Objects.requireNonNull(timeout, "timeout cannot be null");
       return this;
     }
 
@@ -351,7 +351,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param handler The consumer function that handles processing errors
     /// @return This builder instance for method chaining
     public Builder<K> withErrorHandler(final ErrorHandler<K> handler) {
-      this.errorHandler = handler;
+      this.errorHandler = Objects.requireNonNull(handler, "handler cannot be null");
       return this;
     }
 
@@ -422,6 +422,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param provider A function that creates an OffsetManager given the consumer instance
     /// @return This builder instance for method chaining
     public Builder<K> withOffsetManagerProvider(final Function<Consumer<K, byte[]>, OffsetManager<K>> provider) {
+      Objects.requireNonNull(provider, "provider cannot be null");
       this.offsetManagerProvider = consumer -> {
         final var offsetManager = Objects.requireNonNull(provider.apply(consumer), "OffsetManager cannot be null");
         this.rebalanceListener = offsetManager.createRebalanceListener();
@@ -475,7 +476,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     ///     messages
     /// @return This builder instance for method chaining
     public Builder<K> withConsumer(final Supplier<Consumer<K, byte[]>> provider) {
-      this.consumerProvider = provider;
+      this.consumerProvider = Objects.requireNonNull(provider, "provider cannot be null");
       return this;
     }
 
@@ -518,6 +519,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param topic The name of the DLQ topic
     /// @return This builder instance for method chaining
     public Builder<K> withDeadLetterTopic(final String topic) {
+      Objects.requireNonNull(topic, "topic cannot be null");
+      if (topic.isBlank()) throw new IllegalArgumentException("topic cannot be blank");
       this.deadLetterTopic = topic;
       return this;
     }
@@ -531,6 +534,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param producer The Kafka producer to use
     /// @return This builder instance for method chaining
     public Builder<K> withKafkaProducer(final Producer<K, byte[]> producer) {
+      Objects.requireNonNull(producer, "producer cannot be null");
       this.kpipeProducer = KPipeProducer.<K, byte[]>builder().withProducer(producer).build();
       return this;
     }
@@ -573,7 +577,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param metrics the consumer metrics instruments
     /// @return This builder instance for method chaining
     public Builder<K> withMetrics(final ConsumerMetrics metrics) {
-      this.consumerMetrics = metrics;
+      this.consumerMetrics = Objects.requireNonNull(metrics, "metrics cannot be null");
       return this;
     }
 
@@ -591,7 +595,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @param tracer the tracer; pass `Tracer.noop()` to disable explicitly
     /// @return This builder instance for method chaining
     public Builder<K> withTracer(final Tracer tracer) {
-      this.tracer = tracer;
+      this.tracer = Objects.requireNonNull(tracer, "tracer cannot be null");
       return this;
     }
 

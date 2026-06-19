@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe;
 
+import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
@@ -151,7 +152,7 @@ record DefaultStream<T>(
 
   @Override
   public Stream<T> withBackpressure() {
-    return withBackpressure(10_000L, 7_000L);
+    return withBackpressure(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK);
   }
 
   @Override
