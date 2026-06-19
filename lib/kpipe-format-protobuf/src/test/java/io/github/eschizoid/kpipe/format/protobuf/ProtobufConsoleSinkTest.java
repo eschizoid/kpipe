@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -125,5 +129,31 @@ class ProtobufConsoleSinkTest {
     return Descriptors.FileDescriptor.buildFrom(fileProto, new Descriptors.FileDescriptor[0]).findMessageTypeByName(
       "TestMessage"
     );
+  }
+
+  /// JUL [Handler] that appends each [LogRecord]'s raw message to an in-memory buffer.
+  /// No formatting, no parameter substitution, no separator — assertions just look for
+  /// substrings in the concatenated output.
+  private static final class CapturingHandler extends Handler {
+
+    private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+
+    @Override
+    public void publish(final LogRecord record) {
+      if (record.getMessage() != null) {
+        buffer.writeBytes(record.getMessage().getBytes(StandardCharsets.UTF_8));
+      }
+    }
+
+    @Override
+    public void flush() {}
+
+    @Override
+    public void close() {}
+
+    @Override
+    public String toString() {
+      return buffer.toString(StandardCharsets.UTF_8);
+    }
   }
 }
