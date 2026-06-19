@@ -1252,7 +1252,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// * `messagesReceived` — records received from Kafka
   /// * `messagesProcessed` — records successfully processed
   /// * `processingErrors` — records that failed processing after all retries
-  /// * `processingDurationTotalMs` — total wall-clock time spent inside `processToSink`
+  /// * `processingDurationTotalMs` — total wall-clock time spent inside the pipeline
+  ///   (deserialize → operators → sink)
   /// * `retries` — retry attempts made for failed records
   /// * `backpressurePauseCount` / `backpressureTimeMs` — backpressure pause count and total ms held
   /// * `circuitBreakerTrips` / `circuitBreakerTimeOpenMs` — CB trip count and total ms in OPEN

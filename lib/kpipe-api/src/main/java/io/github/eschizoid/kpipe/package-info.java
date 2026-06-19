@@ -7,9 +7,9 @@
 ///
 /// Typical usage:
 /// ```java
-/// KPipe.stream("topic", JsonFormat.of())
-///      .process(...)
-///      .to(Sink.console())
+/// KPipe.json("orders", kafkaProps)
+///      .pipe(enrich)
+///      .toConsole()
 ///      .start();
 /// ```
 package io.github.eschizoid.kpipe;

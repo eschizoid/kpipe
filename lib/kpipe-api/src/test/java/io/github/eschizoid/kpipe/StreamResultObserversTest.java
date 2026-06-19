@@ -28,8 +28,7 @@ class StreamResultObserversTest {
 
   /// Drive a pipeline from raw bytes the way `KPipeConsumer` would: deserialize,
   /// `switch (process(...))`, invoke the sink on `Passed`, no-op on `Filtered`,
-  /// re-throw the cause on `Failed`. Mirrors what the old `MessagePipeline.processToSink`
-  /// did before the byte-level entry points were removed.
+  /// re-throw the cause on `Failed`.
   private static <T> void drive(final MessagePipeline<T> pipeline, final byte[] data) {
     final var value = pipeline.deserializeOrFail(data);
     switch (pipeline.process(value)) {
