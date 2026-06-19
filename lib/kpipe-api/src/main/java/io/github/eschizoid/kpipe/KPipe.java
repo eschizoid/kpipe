@@ -60,25 +60,25 @@ public final class KPipe {
   /// `format` is used for both deserialization and the default `toConsole()` sink. Construct
   /// the format explicitly: `new AvroFormat(schema)` or `AvroFormat.of(schemaJson)`.
   ///
-  /// @param format the Avro codec (must be non-null)
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
+  /// @param format the Avro codec (must be non-null)
   /// @return a fluent [Stream] configured for Avro
-  public static Stream<GenericRecord> avro(final AvroFormat format, final String topic, final Properties kafkaProps) {
+  public static Stream<GenericRecord> avro(final String topic, final Properties kafkaProps, final AvroFormat format) {
     return new DefaultStream<>(topic, kafkaProps, format, format::consoleSink);
   }
 
   /// Avro-typed stream consuming from multiple homogeneous topics. See
-  /// [#avro(AvroFormat, String, Properties)].
+  /// [#avro(String, Properties, AvroFormat)].
   ///
-  /// @param format the Avro codec (must be non-null)
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
+  /// @param format the Avro codec (must be non-null)
   /// @return a fluent [Stream] configured for Avro
   public static Stream<GenericRecord> avro(
-    final AvroFormat format,
     final Collection<String> topics,
-    final Properties kafkaProps
+    final Properties kafkaProps,
+    final AvroFormat format
   ) {
     return new DefaultStream<>(topics, kafkaProps, format, format::consoleSink);
   }
@@ -86,7 +86,7 @@ public final class KPipe {
   /// Avro-typed stream wired for per-record Confluent Schema Registry lookup. The wire envelope
   /// is consumed by the format itself; do NOT pair this overload with `.skipBytes(5)`.
   ///
-  /// Equivalent to `avro(AvroFormat.withRegistry(resolver), topic, kafkaProps)`. Provided so the
+  /// Equivalent to `avro(topic, kafkaProps, AvroFormat.withRegistry(resolver))`. Provided so the
   /// "Confluent Avro topic in one line" pitch is genuinely one line. Wrap the underlying SR
   /// resolver with `CachedSchemaResolver` for the cache; that bookkeeping is your responsibility
   /// since the resolver typically outlives a single stream.
@@ -108,31 +108,31 @@ public final class KPipe {
     throw new IllegalStateException(
       "toConsole() requires a fixed schema; an AvroFormat in Schema-Registry mode has none. " +
         "Use .toCustom(...) with your own sink, or construct the stream via " +
-        "KPipe.avro(new AvroFormat(schema), topic, props) to keep the console-sink path."
+        "KPipe.avro(topic, props, new AvroFormat(schema)) to keep the console-sink path."
     );
   }
 
   /// Protobuf-typed stream consuming from `topic` using `format` for SerDe. Construct the format
   /// explicitly: `new ProtobufFormat(descriptor)`.
   ///
-  /// @param format the Protobuf codec (must be non-null)
   /// @param topic the Kafka topic to consume
   /// @param kafkaProps the Kafka consumer properties
+  /// @param format the Protobuf codec (must be non-null)
   /// @return a fluent [Stream] configured for Protobuf
-  public static Stream<Message> protobuf(final ProtobufFormat format, final String topic, final Properties kafkaProps) {
+  public static Stream<Message> protobuf(final String topic, final Properties kafkaProps, final ProtobufFormat format) {
     return new DefaultStream<>(topic, kafkaProps, format, format::consoleSink);
   }
 
   /// Protobuf-typed stream consuming from multiple homogeneous topics.
   ///
-  /// @param format the Protobuf codec (must be non-null)
   /// @param topics the Kafka topics to consume (must be non-empty)
   /// @param kafkaProps the Kafka consumer properties
+  /// @param format the Protobuf codec (must be non-null)
   /// @return a fluent [Stream] configured for Protobuf
   public static Stream<Message> protobuf(
-    final ProtobufFormat format,
     final Collection<String> topics,
-    final Properties kafkaProps
+    final Properties kafkaProps,
+    final ProtobufFormat format
   ) {
     return new DefaultStream<>(topics, kafkaProps, format, format::consoleSink);
   }

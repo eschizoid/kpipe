@@ -32,8 +32,8 @@ import org.apache.avro.generic.GenericRecord;
 /// ```java
 /// KPipe.multi(props)
 ///     .json("events-json", s -> s.pipe(addTimestamp).toCustom(jsonSink))
-///     .avro(avroFormat, "events-avro", s -> s.filter(active).toCustom(avroSink))
-///     .protobuf(protoFormat, "events-proto", s -> s.toConsole())
+///     .avro("events-avro", avroFormat, s -> s.filter(active).toCustom(avroSink))
+///     .protobuf("events-proto", protoFormat, s -> s.toConsole())
 ///     .start();
 /// ```
 ///
@@ -130,13 +130,13 @@ public final class MultiBuilder {
   /// is used for both deserialization and the default `toConsole()` sink. Construct the format
   /// explicitly: `new AvroFormat(schema)` or `AvroFormat.of(schemaJson)`.
   ///
-  /// @param format the Avro codec (must be non-null)
   /// @param topic the Kafka topic
+  /// @param format the Avro codec (must be non-null)
   /// @param configurator builds the operator chain and chooses a terminal sink
   /// @return this builder
   public MultiBuilder avro(
-    final AvroFormat format,
     final String topic,
+    final AvroFormat format,
     final Function<Stream<GenericRecord>, Sink<GenericRecord>> configurator
   ) {
     return route(topic, format, format::consoleSink, configurator);
@@ -145,13 +145,13 @@ public final class MultiBuilder {
   /// Registers a Protobuf route for `topic` using `format` for SerDe. Construct the format
   /// explicitly: `new ProtobufFormat(descriptor)`.
   ///
-  /// @param format the Protobuf codec (must be non-null)
   /// @param topic the Kafka topic
+  /// @param format the Protobuf codec (must be non-null)
   /// @param configurator builds the operator chain and chooses a terminal sink
   /// @return this builder
   public MultiBuilder protobuf(
-    final ProtobufFormat format,
     final String topic,
+    final ProtobufFormat format,
     final Function<Stream<Message>, Sink<Message>> configurator
   ) {
     return route(topic, format, format::consoleSink, configurator);

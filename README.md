@@ -787,7 +787,7 @@ try (final var resolver = new CachedSchemaResolver(
 }
 ```
 
-The factory above is equivalent to `KPipe.avro(AvroFormat.withRegistry(resolver), "orders", props)`. The format reads
+The factory above is equivalent to `KPipe.avro("orders", props, AvroFormat.withRegistry(resolver))`. The format reads
 the envelope per record. Do **not** combine `withSchemaRegistry(...)` with `skipBytes(5)` — the format already consumes
 the envelope. The static-mode path is still supported for shops with strict append-only evolution who fetch the schema
 once at startup:
