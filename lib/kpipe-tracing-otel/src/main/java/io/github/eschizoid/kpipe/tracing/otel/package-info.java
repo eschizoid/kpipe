@@ -2,9 +2,8 @@
 /// SPI.
 ///
 /// - [OtelTracer] — wraps an OpenTelemetry `Tracer` and produces span scopes around producer
-///   sends and consumer record processing.
-/// - [HeadersTextMapSetter] / [HeadersTextMapGetter] — propagators that inject / extract
-///   W3C `traceparent` (and `tracestate`) on Kafka record headers.
+///   sends and consumer record processing. Injects / extracts W3C `traceparent` (and
+///   `tracestate`) on Kafka record headers via private nested adapters.
 ///
 /// Wire-up is opt-in:
 /// ```java
