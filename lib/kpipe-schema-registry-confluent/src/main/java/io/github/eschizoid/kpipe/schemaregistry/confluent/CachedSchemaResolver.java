@@ -81,13 +81,6 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
     return cache.size();
   }
 
-  /// Drops every cached entry. Provided for disaster-recovery scenarios (SR migration where
-  /// previously-stable IDs map to different schemas). Not part of normal operation — schema IDs
-  /// are immutable in routine SR use.
-  public void invalidateAll() {
-    cache.clear();
-  }
-
   @Override
   public void close() {
     if (delegate instanceof AutoCloseable closeable) {

@@ -105,21 +105,6 @@ class CachedSchemaResolverTest {
   }
 
   @Test
-  void invalidateAllDropsEverything() {
-    final var counter = new CountingResolver();
-    final var cached = new CachedSchemaResolver(counter);
-    cached.lookupById(1);
-    cached.lookupById(2);
-    assertEquals(2, cached.size());
-
-    cached.invalidateAll();
-
-    assertEquals(0, cached.size());
-    cached.lookupById(1);
-    assertEquals(3, counter.calls.get(), "invalidateAll forces a re-fetch");
-  }
-
-  @Test
   void rejectsNullDelegate() {
     assertThrows(NullPointerException.class, () -> new CachedSchemaResolver(null));
   }
