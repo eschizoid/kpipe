@@ -51,8 +51,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 ///
 /// The dispatch path mocks the broker via [MockConsumer] but drives the genuine
 /// `KPipeConsumer.processRecords` → `Dispatcher.dispatch` → `processRecord` →
-/// `pipeline.processToSink` chain. The mode-specific assertions are what distinguish whether
-/// the corresponding dispatcher is correctly preserving the property the mode promises.
+/// `pipeline.process` → sink-invocation chain. The mode-specific assertions are what distinguish
+/// whether the corresponding dispatcher is correctly preserving the property the mode promises.
 class DispatcherIntegrationTest {
 
   private static final String TOPIC = "test-topic";
