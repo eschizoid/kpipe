@@ -35,6 +35,10 @@ on:
         description: "JMH profilers (comma-separated, e.g. 'gc'). Empty = none."
         required: false
         default: ""
+      workMicros:
+        description: "Override ParallelProcessing workMicros @Param (CSV). Empty = full sweep (overnight; will overflow CI). Use '0,100,1000' for a CI-sized competitive capture."
+        required: false
+        default: ""
   schedule:
     # Mondays 06:00 UTC — weekly bench-rot smoke of the Docker-free benches.
     - cron: "0 6 * * 1"
@@ -47,9 +51,12 @@ concurrency:
 jobs:
   jmh:
     runs-on: ubuntu-latest
-    # Generous ceiling: a full workflow_dispatch run with the Testcontainers benches + high
-    # iteration counts can take a while. The smoke schedule finishes well under this.
-    timeout-minutes: 120
+    # Generous ceiling: a competitive ParallelProcessing capture (fork=2, gc profiler, the
+    # publishable workMicros=0,100,1000 subset, Testcontainers Kafka boot per arm) runs ~30-50 min.
+    # The Docker-free smoke schedule finishes well under this. A FULL workMicros sweep does NOT fit
+    # here — the single-threaded arm at 100ms/record is ~5.6h for one cell — pass a workMicros
+    # subset for any ParallelProcessing run in CI.
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v7
@@ -81,6 +88,7 @@ jobs:
             echo "warmup=${{ inputs.warmup }}" >> "$GITHUB_OUTPUT"
             echo "fork=${{ inputs.fork }}" >> "$GITHUB_OUTPUT"
             echo "profilers=${{ inputs.profilers }}" >> "$GITHUB_OUTPUT"
+            echo "workMicros=${{ inputs.workMicros }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run JMH benchmarks
@@ -94,6 +102,9 @@ jobs:
           fi
           if [ -n "${{ steps.params.outputs.profilers }}" ]; then
             ARGS="$ARGS -Pjmh.profilers=${{ steps.params.outputs.profilers }}"
+          fi
+          if [ -n "${{ steps.params.outputs.workMicros }}" ]; then
+            ARGS="$ARGS -Pjmh.workMicros=${{ steps.params.outputs.workMicros }}"
           fi
           echo "Gradle args: $ARGS"
           ./gradlew :benchmarks:jmh $ARGS --no-daemon --stacktrace
