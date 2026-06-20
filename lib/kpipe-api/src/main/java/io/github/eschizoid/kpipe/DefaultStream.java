@@ -157,7 +157,7 @@ record DefaultStream<T>(
   @Override
   public Stream<T> withBackpressure(final long high, final long low) {
     if (low < 0 || low >= high) throw new IllegalArgumentException(
-      "Invalid watermarks: high must be positive and > low (got high=%d, low=%d)".formatted(high, low)
+      "withBackpressure requires high > low > 0 (got high=%d, low=%d)".formatted(high, low)
     );
     return mutate(m -> {
       m.backpressureHigh = high;

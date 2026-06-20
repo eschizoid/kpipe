@@ -697,9 +697,9 @@ public class KPipeConsumer<K> implements AutoCloseable {
       union.addAll(regularTopics);
       union.addAll(batchSpecs.keySet());
       this.topics = union;
-      if (maxRetries < 0) throw new IllegalArgumentException("Max retries cannot be negative");
+      if (maxRetries < 0) throw new IllegalArgumentException("Max retries cannot be negative, got " + maxRetries);
       if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
-        "Poll timeout must be positive"
+        "Poll timeout must be positive, got " + pollTimeout
       );
       if (offsetManager != null || offsetManagerProvider != null) kafkaProps.setProperty("enable.auto.commit", "false");
       if (backpressureController != null && processingMode == ProcessingMode.SEQUENTIAL) {
