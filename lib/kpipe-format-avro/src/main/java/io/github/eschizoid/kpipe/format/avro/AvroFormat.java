@@ -156,6 +156,11 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     try {
       return reader.read(null, decoder);
     } catch (final IOException | RuntimeException e) {
+      // RuntimeException is caught alongside IOException because malformed bytes surface as Avro's
+      // own AvroRuntimeException (e.g. "Malformed data. Length is negative"), not IOException — so
+      // the common bad-payload case would otherwise escape with a bare, context-free message. The
+      // original cause is always attached, so a genuine programming error (NPE, IllegalState) is
+      // still visible in the cause chain rather than swallowed.
       throw new RuntimeException(
         "AvroFormat.deserialize failed in static mode on " + data.length + " bytes against schema " +
           staticSchema.getFullName(),

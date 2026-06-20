@@ -58,10 +58,11 @@ import org.openjdk.jmh.annotations.Warmup;
 /// ```
 ///
 /// The `gc.alloc.rate.norm` column (bytes allocated per op) is the primary signal — the cache
-/// should remove one `TopicPartition` instance worth of bytes per record (16 bytes object header
-/// + topic ref + partition int + alignment ~= 24 bytes on a 64-bit JVM with compressed oops).
-/// Throughput improvement is secondary; the JIT may already optimize the constructor away in
-/// the baseline, in which case the alloc-rate delta is the only signal.
+/// should remove one `TopicPartition` instance worth of allocation per record. Read the actual
+/// per-op byte delta from the profiler rather than estimating the header size, which varies by
+/// JVM version and compressed-oops mode. Throughput improvement is secondary; the JIT may already
+/// optimize the constructor away in the baseline, in which case the alloc-rate delta is the only
+/// signal.
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)

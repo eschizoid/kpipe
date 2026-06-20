@@ -928,6 +928,11 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// ownership rules of `releaseConstructedResources` / the consumer-thread teardown: the Kafka
   /// consumer and the DLQ producer are closed regardless of whether they were supplied or built
   /// internally, because once handed to the consumer they are consumer-owned.
+  ///
+  /// Reading the `final` fields here is legal precisely because this runs in a *separate method*,
+  /// not inline in the constructor — definite-assignment analysis only guards in-constructor reads,
+  /// so a blank-final that the constructor never reached simply reads its default `null`. Don't
+  /// "fix" the apparent unassigned-final read by dropping `final`; the null-guard is the contract.
   private void closePartiallyConstructed(final Throwable original) {
     if (shutdownHookThread != null) {
       try {

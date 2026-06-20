@@ -101,6 +101,11 @@ public class MessageProcessorRegistry {
   /// [RegistryKey], whose cardinality is the (finite) set of keys a pipeline ever looks up. Kept
   /// separate per namespace so an unrouted key warned on the operator side still warns once on the
   /// sink side (the two lookups are independent).
+  ///
+  /// The one unbounded case is a caller that generates fresh `RegistryKey` instances dynamically
+  /// (e.g. a key derived from per-record data) and routes none of them — each distinct miss adds
+  /// a set entry. That's a pathological misuse (the registry is meant for a fixed, declared key
+  /// set), but if it ever becomes a real concern, cap the set or switch to a bounded LRU.
   private final Set<RegistryKey<?>> warnedMissingOperatorKeys = ConcurrentHashMap.newKeySet();
 
   private final Set<RegistryKey<?>> warnedMissingSinkKeys = ConcurrentHashMap.newKeySet();
