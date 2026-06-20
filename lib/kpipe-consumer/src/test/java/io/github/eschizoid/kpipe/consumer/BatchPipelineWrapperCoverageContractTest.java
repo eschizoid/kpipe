@@ -139,6 +139,72 @@ class BatchPipelineWrapperCoverageContractTest {
     }
   }
 
+  /// **Coverage-violation WARN carries the throwable.** The coverage-violation WARNING must
+  /// attach the synthetic [IllegalStateException] as the [LogRecord]'s `thrown`, so an operator
+  /// gets the stack trace — not just the bare message. Pins the throwable-attach fix: a regression
+  /// that drops the cause (e.g. passing only `getMessage()`) leaves `getThrown()` null.
+  @Test
+  void coverageViolationWarnCarriesThrowable() {
+    final var topic = "coverage-thrown";
+    final var policy = new BatchPolicy(5, Duration.ofMinutes(1));
+    final var callbacks = new RecordingCallbacks();
+
+    final BatchSink<byte[]> sink = batch -> {
+      final var succeeded = new ArrayList<Integer>();
+      for (int i = 0; i < batch.size() - 1; i++) succeeded.add(i);
+      return new BatchResult(succeeded, Map.of());
+    };
+
+    final var julLogger = Logger.getLogger(BatchPipelineWrapper.class.getName());
+    final var captured = new CopyOnWriteArrayList<LogRecord>();
+    final var handler = new Handler() {
+      @Override
+      public void publish(final LogRecord record) {
+        if (record.getLevel().intValue() >= Level.WARNING.intValue()) captured.add(record);
+      }
+
+      @Override
+      public void flush() {}
+
+      @Override
+      public void close() {}
+    };
+    final var originalLevel = julLogger.getLevel();
+    final var originalUseParent = julLogger.getUseParentHandlers();
+    julLogger.addHandler(handler);
+    julLogger.setLevel(Level.ALL);
+    julLogger.setUseParentHandlers(false);
+
+    final var wrapper = new BatchPipelineWrapper<>(topic, TestPipelines.identity(), sink, policy, scheduler, callbacks);
+    wrapper.start();
+    try {
+      for (int i = 0; i < 5; i++) {
+        final var rec = record(topic, i);
+        wrapper.enqueue(rec, rec.value());
+      }
+
+      final var coverageWarn = captured
+        .stream()
+        .filter(r -> r.getMessage() != null && r.getMessage().contains("did not account for"))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("expected a coverage-violation WARNING; captured=" + captured.size()));
+      assertNotNull(
+        coverageWarn.getThrown(),
+        "coverage-violation WARN must attach the synthetic cause so the stack trace is logged"
+      );
+      assertInstanceOf(
+        IllegalStateException.class,
+        coverageWarn.getThrown(),
+        "attached throwable must be the synthetic IllegalStateException"
+      );
+    } finally {
+      julLogger.removeHandler(handler);
+      julLogger.setLevel(originalLevel);
+      julLogger.setUseParentHandlers(originalUseParent);
+      wrapper.close();
+    }
+  }
+
   /// **Out-of-range index guard.** Feeds N=3 records to a wrapper whose sink returns a
   /// [BatchResult] naming index 99 (way out of range). The wrapper must (a) log a WARNING about
   /// the out-of-range succeeded index, (b) treat the real indexes 0..2 as unaccounted-for and

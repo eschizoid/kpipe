@@ -102,7 +102,7 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
     try {
       observer.accept(arg);
     } catch (final RuntimeException e) {
-      LOGGER.log(Level.WARNING, name + " observer threw; swallowing to keep the pipeline running", e);
+      LOGGER.log(Level.WARNING, () -> name + " observer threw; swallowing to keep the pipeline running", e);
     }
   }
 

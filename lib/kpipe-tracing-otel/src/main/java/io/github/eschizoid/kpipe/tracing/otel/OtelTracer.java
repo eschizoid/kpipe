@@ -81,7 +81,7 @@ public final class OtelTracer implements Tracer {
     try {
       parent = propagator.extract(Context.current(), record.headers(), HeadersGetter.INSTANCE);
     } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to extract trace context from headers: {0}", e.getMessage());
+      LOGGER.log(Level.WARNING, "Failed to extract trace context from headers", e);
       return SpanScope.noop();
     }
 
@@ -98,7 +98,7 @@ public final class OtelTracer implements Tracer {
         .setAttribute(KAFKA_OFFSET_KEY, record.offset())
         .startSpan();
     } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to start span: {0}", e.getMessage());
+      LOGGER.log(Level.WARNING, "Failed to start span", e);
       return SpanScope.noop();
     }
 
@@ -106,7 +106,7 @@ public final class OtelTracer implements Tracer {
     try {
       scope = span.makeCurrent();
     } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to make span current: {0}", e.getMessage());
+      LOGGER.log(Level.WARNING, "Failed to make span current", e);
       span.end();
       return SpanScope.noop();
     }
@@ -120,7 +120,7 @@ public final class OtelTracer implements Tracer {
     try {
       propagator.inject(Context.current(), headers, HeadersSetter.INSTANCE);
     } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to inject trace context into headers: {0}", e.getMessage());
+      LOGGER.log(Level.WARNING, "Failed to inject trace context into headers", e);
     }
   }
 
@@ -144,7 +144,7 @@ public final class OtelTracer implements Tracer {
         span.recordException(t);
         span.setStatus(StatusCode.ERROR, t.getClass().getSimpleName());
       } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Failed to record exception on span: {0}", e.getMessage());
+        LOGGER.log(Level.WARNING, "Failed to record exception on span", e);
       }
     }
 
@@ -157,12 +157,12 @@ public final class OtelTracer implements Tracer {
       try {
         scope.close();
       } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Failed to close scope: {0}", e.getMessage());
+        LOGGER.log(Level.WARNING, "Failed to close scope", e);
       }
       try {
         span.end();
       } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Failed to end span: {0}", e.getMessage());
+        LOGGER.log(Level.WARNING, "Failed to end span", e);
       }
     }
   }

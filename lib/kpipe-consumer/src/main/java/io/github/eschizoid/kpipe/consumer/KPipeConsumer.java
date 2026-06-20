@@ -921,7 +921,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       public void onBatchFailure(final ConsumerRecord<K, byte[]> record, final Exception cause) {
         metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
         otelMetrics.recordProcessingError(record.topic());
-        LOGGER.log(Level.WARNING, "Batch failure for record at offset {0}: {1}", record.offset(), cause.getMessage());
+        LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
         if (deadLetterTopic != null && kpipeProducer != null) {
           final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause);
           if (sent) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
@@ -1545,7 +1545,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     } catch (final Exception ex) {
       LOGGER.log(
         Level.ERROR,
-        "Error handler threw while handling rejected task at offset %d: %s".formatted(record.offset(), ex.getMessage()),
+        () -> "Error handler threw while handling rejected task at offset " + record.offset(),
         ex
       );
     }
@@ -1585,7 +1585,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     try {
       span = tracer.startConsumerSpan(record);
     } catch (final Exception traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.startConsumerSpan threw: {0}", traceEx.getMessage());
+      LOGGER.log(Level.WARNING, "Tracer.startConsumerSpan threw", traceEx);
       span = Tracer.SpanScope.noop();
     }
 
@@ -1603,7 +1603,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       try {
         span.close();
       } catch (final Exception traceEx) {
-        LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw: {0}", traceEx.getMessage());
+        LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw", traceEx);
       }
       // In-flight count + backpressure-unpark handled by the dispatcher's `onComplete`
       // callback (`afterRecordComplete`). See `processRecords`.
@@ -1628,7 +1628,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       if (attempt > 0) {
         metrics.get(METRIC_RETRIES).incrementAndGet();
         LOGGER.log(
-          Level.INFO,
+          Level.DEBUG,
           "Retrying message at offset {0} (attempt {1} of {2})",
           record.offset(),
           attempt,
@@ -1749,14 +1749,12 @@ public class KPipeConsumer<K> implements AutoCloseable {
     try {
       span.recordException(e);
     } catch (final Exception traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.recordException threw: {0}", traceEx.getMessage());
+      LOGGER.log(Level.WARNING, "Tracer.SpanScope.recordException threw", traceEx);
     }
     LOGGER.log(
       Level.WARNING,
-      "Failed to process message at offset {0} after {1} attempt(s): {2}",
-      record.offset(),
-      retryCount + 1,
-      e.getMessage()
+      () -> "Failed to process message at offset " + record.offset() + " after " + (retryCount + 1) + " attempt(s)",
+      e
     );
     if (deadLetterTopic != null && kpipeProducer != null) {
       final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e);

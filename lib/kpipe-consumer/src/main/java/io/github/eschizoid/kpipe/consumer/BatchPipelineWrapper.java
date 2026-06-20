@@ -216,7 +216,7 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
           size +
           " — treating as failures to avoid silent data loss"
       );
-      LOGGER.log(Level.WARNING, coverageViolation.getMessage());
+      LOGGER.log(Level.WARNING, coverageViolation.getMessage(), coverageViolation);
     }
 
     for (int i = 0; i < size; i++) {

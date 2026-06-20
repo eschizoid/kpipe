@@ -182,16 +182,16 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     try {
       tracer.injectContextInto(producerRecord.headers());
     } catch (final Exception traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.injectContextInto threw during DLQ send: {0}", traceEx.getMessage());
+      LOGGER.log(Level.WARNING, "Tracer.injectContextInto threw during DLQ send", traceEx);
     }
 
     try {
       send(producerRecord);
       otelMetrics.recordDlqSent();
-      LOGGER.log(Level.INFO, "Sent record to DLQ topic {0}", dlqTopic);
+      LOGGER.log(Level.DEBUG, "Sent record to DLQ topic {0}", dlqTopic);
       return true;
     } catch (final Exception ex) {
-      LOGGER.log(Level.ERROR, "Failed to send record to DLQ topic " + dlqTopic, ex);
+      LOGGER.log(Level.ERROR, () -> "Failed to send record to DLQ topic " + dlqTopic, ex);
       return false;
     }
   }
