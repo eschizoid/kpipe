@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
@@ -36,6 +37,17 @@ class StreamCompositionTest {
       if (v == null) return null;
     }
     return v;
+  }
+
+  @Test
+  void withBackpressureRejectsInvalidWatermarksWithOffendingValues() {
+    final var stream = KPipe.json("topic", props());
+    final var thrown = assertThrows(
+      IllegalArgumentException.class, () -> stream.withBackpressure(5, 10));
+    assertTrue(
+      thrown.getMessage().contains("got high=5, low=10"), () -> "msg was: " + thrown.getMessage());
+    assertTrue(
+      thrown.getMessage().contains("withBackpressure"), () -> "msg was: " + thrown.getMessage());
   }
 
   @Test

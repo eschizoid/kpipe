@@ -143,7 +143,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     public Builder<K> withCommitInterval(final Duration interval) {
       this.commitInterval = Objects.requireNonNull(interval, "Commit interval cannot be null");
       if (interval.isNegative() || interval.isZero()) throw new IllegalArgumentException(
-        "Commit interval must be positive"
+        "Commit interval must be positive, got " + interval
       );
       return this;
     }
@@ -152,7 +152,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     ///
     /// @return A new KafkaOffsetManager instance
     public KafkaOffsetManager<K> build() {
-      if (commandQueue == null) throw new IllegalStateException("Command queue must be provided");
+      if (commandQueue == null) throw new IllegalStateException("withCommandQueue(...) must be called before build()");
       return new KafkaOffsetManager<>(this);
     }
   }

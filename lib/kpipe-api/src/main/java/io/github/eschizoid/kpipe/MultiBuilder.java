@@ -217,7 +217,9 @@ public final class MultiBuilder {
   /// @return a [Handle] for lifecycle management
   /// @throws IllegalStateException if no routes have been registered
   public Handle start() {
-    if (routes.isEmpty()) throw new IllegalStateException("at least one route is required");
+    if (routes.isEmpty()) throw new IllegalStateException(
+      "MultiBuilder.start() requires at least one route — call .json(...) / .avro(...) / .protobuf(...) / .bytes(...) / .custom(...) before start()."
+    );
 
     final var nonBatchPipelines = new LinkedHashMap<String, MessagePipeline<?>>();
     final var consumerBuilder = KPipeConsumer.<byte[]>builder().withProperties(kafkaProps);

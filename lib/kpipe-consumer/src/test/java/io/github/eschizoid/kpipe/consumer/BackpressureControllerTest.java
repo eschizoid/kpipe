@@ -45,6 +45,18 @@ class BackpressureControllerTest {
     assertThrows(IllegalArgumentException.class, () -> new BackpressureController(500, 1000, DUMMY_STRATEGY));
   }
 
+  @Test
+  void shouldIncludeOffendingValueInWatermarkMessages() {
+    final var highThrown = assertThrows(
+      IllegalArgumentException.class, () -> new BackpressureController(-7, 0, DUMMY_STRATEGY));
+    assertTrue(
+      highThrown.getMessage().contains("got -7"), () -> "msg was: " + highThrown.getMessage());
+
+    final var lowThrown = assertThrows(
+      IllegalArgumentException.class, () -> new BackpressureController(1000, -3, DUMMY_STRATEGY));
+    assertTrue(lowThrown.getMessage().contains("got -3"), () -> "msg was: " + lowThrown.getMessage());
+  }
+
   @ParameterizedTest(name = "value={0}, paused={1} → {2}")
   @CsvSource(
     {

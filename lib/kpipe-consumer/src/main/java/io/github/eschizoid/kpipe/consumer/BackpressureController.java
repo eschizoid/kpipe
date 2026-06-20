@@ -109,8 +109,8 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   /// @param lowWatermark the metric value at or below which the consumer should resume
   /// @param strategy the strategy to use for calculating the metric
   public BackpressureController {
-    if (highWatermark <= 0) throw new IllegalArgumentException("highWatermark must be positive");
-    if (lowWatermark < 0) throw new IllegalArgumentException("lowWatermark cannot be negative");
+    if (highWatermark <= 0) throw new IllegalArgumentException("highWatermark must be positive, got " + highWatermark);
+    if (lowWatermark < 0) throw new IllegalArgumentException("lowWatermark cannot be negative, got " + lowWatermark);
     if (lowWatermark >= highWatermark) throw new IllegalArgumentException(
       "lowWatermark (%d) must be less than highWatermark (%d)".formatted(lowWatermark, highWatermark)
     );
