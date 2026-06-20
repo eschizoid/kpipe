@@ -93,8 +93,8 @@ public interface Stream<T> {
   Stream<T> withRetry(final int maxRetries, final Duration backoff);
 
   /// Returns a new stream with backpressure enabled using default watermarks
-  /// ([BackpressureController#DEFAULT_HIGH_WATERMARK] for pause,
-  /// [BackpressureController#DEFAULT_LOW_WATERMARK] for resume). The strategy is in-flight in
+  /// (`BackpressureController.DEFAULT_HIGH_WATERMARK` for pause,
+  /// `BackpressureController.DEFAULT_LOW_WATERMARK` for resume). The strategy is in-flight in
   /// parallel mode and consumer-lag in sequential mode.
   ///
   /// Backpressure is enabled by default; calling this method is only required when you want
