@@ -78,6 +78,13 @@ class KPipeConsumerBuilderValidationTest {
   }
 
   @Test
+  void withRetryRejectsNullBackoff() {
+    // Without this check, the NPE would surface on the worker virtual thread during retry
+    // execution — exactly the deferred-failure mode the hygiene PR exists to close.
+    assertNpeWithMessage("backoff", () -> builder().withRetry(3, null));
+  }
+
+  @Test
   void withMetricsRejectsNull() {
     assertNpeWithMessage("metrics", () -> builder().withMetrics(null));
   }

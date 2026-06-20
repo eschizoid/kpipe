@@ -362,7 +362,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
     /// @return This builder instance for method chaining
     public Builder<K> withRetry(final int maxRetries, final Duration backoff) {
       this.maxRetries = maxRetries;
-      this.retryBackoff = backoff;
+      this.retryBackoff = Objects.requireNonNull(backoff, "backoff cannot be null");
       return this;
     }
 
