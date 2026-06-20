@@ -122,7 +122,7 @@ class KPipeFacadeBuildTest {
     final var multi = KPipe.multi(props()).json("topic-a", s ->
       s.withProcessingMode(ProcessingMode.KEY_ORDERED).toCustom(_ -> {})
     );
-    final var ex = assertThrows(IllegalStateException.class, multi::start);
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
     assertTrue(
       ex.getMessage().contains("KEY_ORDERED"),
       () -> "message should name the offending mode: " + ex.getMessage()
@@ -138,7 +138,7 @@ class KPipeFacadeBuildTest {
     // Same footgun as withProcessingMode — withKeyOrderedMaxKeys on a route would be silently
     // dropped because the LRU cap is a consumer-wide setting. Fail loud at start().
     final var multi = KPipe.multi(props()).json("topic-a", s -> s.withKeyOrderedMaxKeys(50_000).toCustom(_ -> {}));
-    final var ex = assertThrows(IllegalStateException.class, multi::start);
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
     assertTrue(ex.getMessage().contains("50000"), () -> "message should name the offending value: " + ex.getMessage());
     assertTrue(
       ex.getMessage().contains("MultiBuilder.withKeyOrderedMaxKeys"),

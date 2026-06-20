@@ -255,14 +255,14 @@ public final class MultiBuilder {
     if (sink instanceof DefaultSink<?> ds) stream = ds.stream();
     else if (sink instanceof DefaultBatchSink<?> dbs) stream = dbs.stream();
     else return;
-    if (stream.processingMode() != ProcessingMode.PARALLEL) throw new IllegalStateException(
+    if (stream.processingMode() != ProcessingMode.PARALLEL) throw new IllegalArgumentException(
       "Route '%s' sets withProcessingMode(%s) on its Stream, but processing mode is a consumer-wide setting. ".formatted(
           topic,
           stream.processingMode()
         ) +
         "Move the call to MultiBuilder.withProcessingMode(...) instead."
     );
-    if (stream.keyOrderedMaxKeys() != ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS) throw new IllegalStateException(
+    if (stream.keyOrderedMaxKeys() != ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS) throw new IllegalArgumentException(
       "Route '%s' sets withKeyOrderedMaxKeys(%d) on its Stream, but the LRU cap is a consumer-wide setting. ".formatted(
           topic,
           stream.keyOrderedMaxKeys()
