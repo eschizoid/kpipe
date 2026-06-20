@@ -13,9 +13,8 @@ module io.github.eschizoid.kpipe {
   requires transitive io.github.eschizoid.kpipe.format.json;
   requires transitive io.github.eschizoid.kpipe.format.avro;
   requires transitive io.github.eschizoid.kpipe.format.protobuf;
-  requires kafka.clients;
-  requires org.apache.avro;
-  requires com.google.protobuf;
+  requires transitive org.apache.avro;
+  requires transitive com.google.protobuf;
 
   exports io.github.eschizoid.kpipe;
 }

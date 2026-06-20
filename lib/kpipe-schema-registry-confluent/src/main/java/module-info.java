@@ -15,7 +15,7 @@
 /// final var format = AvroFormat.of(schemaJson);
 /// ```
 module io.github.eschizoid.kpipe.schemaregistry.confluent {
-  requires io.github.eschizoid.kpipe.core;
+  requires transitive io.github.eschizoid.kpipe.core;
   requires java.net.http;
 
   exports io.github.eschizoid.kpipe.schemaregistry.confluent;

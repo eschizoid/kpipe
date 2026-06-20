@@ -13,7 +13,7 @@
 /// Bring your own SDK (`io.opentelemetry:opentelemetry-sdk` + an exporter); this module only
 /// requires `opentelemetry-api`.
 module io.github.eschizoid.kpipe.metrics.otel {
-  requires io.github.eschizoid.kpipe.metrics;
+  requires transitive io.github.eschizoid.kpipe.metrics;
   requires transitive io.github.eschizoid.kpipe.core;
   requires io.opentelemetry.api;
 
