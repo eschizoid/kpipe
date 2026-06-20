@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
@@ -61,6 +62,11 @@ class KPipeFacadeBuildTest {
   @Test
   void defaultBackpressureUsesStandardWatermarks() {
     final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props()).withBackpressure();
+    // Stream.withBackpressure() must produce the same defaults as the BackpressureController
+    // constants. Hardcoded literals here would drift if the constants change; assert against the
+    // single source of truth and pin the literal values as a separate smoke check.
+    assertEquals(BackpressureController.DEFAULT_HIGH_WATERMARK, stream.backpressureHigh());
+    assertEquals(BackpressureController.DEFAULT_LOW_WATERMARK, stream.backpressureLow());
     assertEquals(10_000L, stream.backpressureHigh());
     assertEquals(7_000L, stream.backpressureLow());
   }
