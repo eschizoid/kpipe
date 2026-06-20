@@ -96,6 +96,7 @@ final class ParallelDispatcher<K> implements Dispatcher<K> {
       }
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
+      LOGGER.log(Level.WARNING, "Interrupted while awaiting executor termination", e);
       executor.shutdownNow();
     }
   }

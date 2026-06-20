@@ -24,7 +24,9 @@ public record CompositeMessageSink<T>(List<MessageSink<T>> sinks) implements Mes
       try {
         sink.accept(processedValue);
       } catch (final Exception e) {
-        LOGGER.log(Level.ERROR, "Sink %s failed to process value".formatted(sink.getClass().getSimpleName()), e);
+        // Best-effort fanout: one sink failing must not stop the others, so log and continue.
+        // WARNING (not ERROR) — a sustained downstream outage would otherwise flood at ERROR.
+        LOGGER.log(Level.WARNING, () -> "Sink " + sink.getClass().getSimpleName() + " failed to process value", e);
       }
     }
   }

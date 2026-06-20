@@ -94,6 +94,17 @@ public class MessageProcessorRegistry {
   private final Namespace operators = new Namespace();
   private final Namespace sinks = new Namespace();
 
+  /// Tracks which unrouted keys have already been warned about, so the per-record WARNING for a
+  /// missing operator/sink fires once per distinct key instead of once per record. The WARNING
+  /// signal is load-bearing — operators need to know a key is unrouted — but repeating it per
+  /// record floods logs during a sustained misconfiguration. Bounded in practice: keyed by
+  /// [RegistryKey], whose cardinality is the (finite) set of keys a pipeline ever looks up. Kept
+  /// separate per namespace so an unrouted key warned on the operator side still warns once on the
+  /// sink side (the two lookups are independent).
+  private final Set<RegistryKey<?>> warnedMissingOperatorKeys = ConcurrentHashMap.newKeySet();
+
+  private final Set<RegistryKey<?>> warnedMissingSinkKeys = ConcurrentHashMap.newKeySet();
+
   /// Creates a new registry. The registry is format-agnostic — supply the format per pipeline via
   /// [#pipeline(MessageFormat)].
   public MessageProcessorRegistry() {}
@@ -146,10 +157,15 @@ public class MessageProcessorRegistry {
     return input -> {
       final RegistryEntry<UnaryOperator<T>> entry = operators.getAs(key);
       if (entry == null) {
-        LOGGER.log(
-          Level.WARNING,
-          "No operator registered under key %s — passing input through unchanged".formatted(key)
-        );
+        // Warn once per distinct key — repeats are suppressed so a sustained misconfig
+        // doesn't flood logs while still surfacing the unrouted key the first time.
+        if (warnedMissingOperatorKeys.add(key)) {
+          LOGGER.log(
+            Level.WARNING,
+            "No operator registered under key {0} — passing input through unchanged",
+            key
+          );
+        }
         return input;
       }
       return entry.apply(input);
@@ -218,7 +234,11 @@ public class MessageProcessorRegistry {
     return value -> {
       final RegistryEntry<MessageSink<T>> entry = sinks.getAs(key);
       if (entry == null) {
-        LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
+        // Warn once per distinct key — repeats are suppressed so a sustained misconfig
+        // doesn't flood logs while still surfacing the unrouted key the first time.
+        if (warnedMissingSinkKeys.add(key)) {
+          LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
+        }
         return;
       }
       entry.accept(value);

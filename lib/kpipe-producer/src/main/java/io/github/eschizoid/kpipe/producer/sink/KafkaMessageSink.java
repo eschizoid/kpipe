@@ -61,10 +61,12 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
     try {
       tracer.injectContextInto(record.headers());
     } catch (final Exception traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.injectContextInto threw: {0}", traceEx.getMessage());
+      LOGGER.log(Level.WARNING, "Tracer.injectContextInto threw", traceEx);
     }
     producer.send(record, (_, exception) -> {
-      if (exception != null) LOGGER.log(Level.WARNING, "Failed to send record to topic %s".formatted(topic), exception);
+      if (exception != null) {
+        LOGGER.log(Level.WARNING, () -> "Failed to send record to topic " + topic, exception);
+      }
     });
   }
 
