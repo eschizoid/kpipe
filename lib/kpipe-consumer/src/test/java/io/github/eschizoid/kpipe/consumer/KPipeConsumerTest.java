@@ -542,7 +542,11 @@ class KPipeConsumerTest {
 
     // Act
     consumer.processRecord(record);
-    Thread.sleep(200);
+    TestAwaits.pollUntil(
+      () -> consumer.getMetrics().get("messagesProcessed") == 1L,
+      Duration.ofSeconds(2),
+      "messagesProcessed reaches 1 after retry"
+    );
 
     // Assert
     final var metrics = consumer.getMetrics();
@@ -572,7 +576,11 @@ class KPipeConsumerTest {
 
     // Act
     consumer.processRecord(record);
-    Thread.sleep(100);
+    TestAwaits.pollUntil(
+      () -> consumer.getMetrics().get("processingErrors") == 1L,
+      Duration.ofSeconds(2),
+      "processingErrors reaches 1 after exhausting retries"
+    );
 
     // Assert
     final var errorCaptor = ArgumentCaptor.forClass(KPipeConsumer.ProcessingError.class);
@@ -609,7 +617,11 @@ class KPipeConsumerTest {
       final var record = createRecord(i, "key" + i, "value" + i);
       consumer.processRecord(record);
     }
-    Thread.sleep(200);
+    TestAwaits.pollUntil(
+      () -> consumer.getMetrics().get("messagesProcessed") == 3L,
+      Duration.ofSeconds(2),
+      "messagesProcessed reaches 3 after intermittent retries"
+    );
 
     // Assert
     final var metrics = consumer.getMetrics();
@@ -729,13 +741,16 @@ class KPipeConsumerTest {
   void withBackpressureShouldPauseConsumerWhenInFlightExceedsHighWatermark() throws InterruptedException {
     // Arrange: slow sink to keep messages in-flight; high watermark of 2
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+    final var sinkStarted = new CountDownLatch(3);
+    final var sinkRelease = new CountDownLatch(1);
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(
         TestPipelines.sideEffect(value -> {
+          sinkStarted.countDown();
           try {
-            Thread.sleep(500);
+            sinkRelease.await(5, TimeUnit.SECONDS);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
@@ -751,26 +766,31 @@ class KPipeConsumerTest {
     consumer.processRecord(createRecord(1, "k1", "v1"));
     consumer.processRecord(createRecord(2, "k2", "v2"));
 
-    // Wait briefly for virtual threads to start (messages are received but not yet processed)
-    Thread.sleep(50);
+    // Wait for all 3 sink invocations to begin — proves the dispatcher started the work, so
+    // messagesReceived has been counted and in-flight is at 3.
+    assertTrue(sinkStarted.await(3, TimeUnit.SECONDS), "All 3 records should be in-flight at the sink");
 
     // In-flight = 3 received - 0 processed = 3 >= highWatermark(2)
     final var metrics = consumer.getMetrics();
     assertTrue(metrics.get("messagesReceived") >= 3);
 
+    sinkRelease.countDown();
     consumer.close();
   }
 
   @Test
   void withBackpressureShouldIncrementPauseCountWhenHighWatermarkExceeded() throws InterruptedException {
     // Arrange: high watermark of 2, low watermark of 1
+    final var sinkStarted = new CountDownLatch(3);
+    final var sinkRelease = new CountDownLatch(1);
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(
         TestPipelines.sideEffect(value -> {
+          sinkStarted.countDown();
           try {
-            Thread.sleep(500);
+            sinkRelease.await(5, TimeUnit.SECONDS);
           } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
           }
@@ -784,13 +804,14 @@ class KPipeConsumerTest {
     consumer.processRecord(createRecord(0, "k0", "v0"));
     consumer.processRecord(createRecord(1, "k1", "v1"));
     consumer.processRecord(createRecord(2, "k2", "v2"));
-    Thread.sleep(50);
+    assertTrue(sinkStarted.await(3, TimeUnit.SECONDS), "All 3 records should be in-flight at the sink");
 
     consumer.pause();
     final var metrics = consumer.getMetrics();
     assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
     assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS));
 
+    sinkRelease.countDown();
     consumer.close();
   }
 

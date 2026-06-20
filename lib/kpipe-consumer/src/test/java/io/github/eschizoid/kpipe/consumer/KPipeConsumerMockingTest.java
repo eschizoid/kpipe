@@ -407,8 +407,12 @@ class KPipeConsumerMockingTest {
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
-    // Give virtual threads time to complete processing
-    Thread.sleep(500);
+    // Wait for the worker virtual thread to mark messagesProcessed.
+    TestAwaits.pollUntil(
+      () -> functionalConsumer.getMetrics().get("messagesProcessed") == 1L,
+      Duration.ofSeconds(2),
+      "messagesProcessed reaches 1"
+    );
 
     // Verify metrics
     final var metrics = functionalConsumer.getMetrics();
@@ -556,12 +560,9 @@ class KPipeConsumerMockingTest {
 
     functionalConsumer.executeProcessRecords(records);
 
-    // Wait briefly for async processing to settle.
-    Thread.sleep(200);
-
     // The processor was never called; the error handler caught the contract violation.
     verifyNoInteractions(processor);
-    verify(errorHandler).accept(any(KPipeConsumer.ProcessingError.class));
+    verify(errorHandler, timeout(2000)).accept(any(KPipeConsumer.ProcessingError.class));
   }
 
   @Test
@@ -840,8 +841,12 @@ class KPipeConsumerMockingTest {
     // Allow processing to complete
     completeLatch.countDown();
 
-    // Wait for processing to complete
-    Thread.sleep(300);
+    // Wait for the dispatcher to drain.
+    TestAwaits.pollUntil(
+      () -> functionalConsumer.getProcessingCount() == 0,
+      Duration.ofSeconds(2),
+      "in-flight processing count drains to 0"
+    );
 
     // Verify count returns to 0
     assertEquals(0, functionalConsumer.getProcessingCount(), "Should have no in-flight messages after completion");
@@ -906,7 +911,7 @@ class KPipeConsumerMockingTest {
     executor.submit(functionalConsumer::start);
 
     // Wait for consumer to start
-    Thread.sleep(100);
+    TestAwaits.pollUntil(functionalConsumer::isRunning, Duration.ofSeconds(2), "consumer reaches RUNNING after start");
 
     // Check the running state
     assertTrue(functionalConsumer.isRunning(), "Should be running after start");
@@ -914,7 +919,7 @@ class KPipeConsumerMockingTest {
 
     // Pause consumer
     functionalConsumer.pause();
-    Thread.sleep(50);
+    TestAwaits.pollUntil(functionalConsumer::isPaused, Duration.ofSeconds(2), "consumer reaches PAUSED after pause()");
 
     // Check paused state
     assertTrue(functionalConsumer.isRunning(), "Should still be running when paused");
@@ -922,7 +927,11 @@ class KPipeConsumerMockingTest {
 
     // Resume consumer
     functionalConsumer.resume();
-    Thread.sleep(50);
+    TestAwaits.pollUntil(
+      () -> !functionalConsumer.isPaused(),
+      Duration.ofSeconds(2),
+      "consumer leaves PAUSED after resume()"
+    );
 
     // Check resumed state
     assertTrue(functionalConsumer.isRunning(), "Should be running after resume");
@@ -930,7 +939,11 @@ class KPipeConsumerMockingTest {
 
     // Close consumer
     functionalConsumer.close();
-    Thread.sleep(50);
+    TestAwaits.pollUntil(
+      () -> !functionalConsumer.isRunning(),
+      Duration.ofSeconds(2),
+      "consumer leaves RUNNING after close()"
+    );
 
     // Check closed state
     assertFalse(functionalConsumer.isRunning(), "Should not be running after close");
@@ -976,7 +989,9 @@ class KPipeConsumerMockingTest {
     // Wait for processing to complete
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
-    Thread.sleep(200);
+    // Wait for the worker to invoke the offset manager — markOffsetProcessed is called from the
+    // record-processing finally, AFTER the latch counts down inside the throwing answer.
+    verify(offsetManager, timeout(2000).times(1)).markOffsetProcessed(record);
 
     // Process the commands in the queue
     functionalConsumer.processCommands();
