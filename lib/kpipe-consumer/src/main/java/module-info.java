@@ -5,9 +5,8 @@
 module io.github.eschizoid.kpipe.consumer {
   requires transitive io.github.eschizoid.kpipe.core;
   requires transitive io.github.eschizoid.kpipe.producer;
-  requires java.net.http;
   requires jdk.httpserver;
-  requires kafka.clients;
+  requires transitive kafka.clients;
 
   exports io.github.eschizoid.kpipe.consumer;
   exports io.github.eschizoid.kpipe.consumer.config;

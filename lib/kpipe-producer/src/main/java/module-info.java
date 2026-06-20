@@ -2,7 +2,7 @@
 module io.github.eschizoid.kpipe.producer {
   requires transitive io.github.eschizoid.kpipe.core;
   requires transitive io.github.eschizoid.kpipe.metrics;
-  requires kafka.clients;
+  requires transitive kafka.clients;
 
   exports io.github.eschizoid.kpipe.producer;
   exports io.github.eschizoid.kpipe.producer.config;

@@ -14,7 +14,7 @@
 /// requires `opentelemetry-api`. Propagation is W3C-only in v1 (no B3, Datadog, or custom
 /// propagators).
 module io.github.eschizoid.kpipe.tracing.otel {
-  requires io.github.eschizoid.kpipe.producer;
+  requires transitive io.github.eschizoid.kpipe.producer;
   requires io.opentelemetry.api;
   requires kafka.clients;
   requires io.opentelemetry.context;
