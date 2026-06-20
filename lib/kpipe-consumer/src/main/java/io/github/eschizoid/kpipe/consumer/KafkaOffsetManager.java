@@ -82,6 +82,19 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   private final Map<String, CompletableFuture<Boolean>> commitFutures = new ConcurrentHashMap<>();
   private final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets = new ConcurrentHashMap<>();
   private final Map<TopicPartition, Long> highestProcessedOffsets = new ConcurrentHashMap<>();
+
+  /// Per-partition `TopicPartition` cache used by `trackOffset` and `markOffsetProcessed`. Each
+  /// `ConsumerRecord` carries `topic()` (a `String`) + `partition()` (an `int`) — constructing a
+  /// fresh `TopicPartition` per call on every record allocates twice per record on the hot path
+  /// (track from the consumer thread, mark from the worker), which at 100k rec/s is ~200k
+  /// disposable instances/sec from this manager alone.
+  ///
+  /// The cache is keyed by topic name (outer map) then partition number (inner map) so the
+  /// outer-map miss path (one-time per topic) is small and the per-record fast path is two
+  /// `ConcurrentHashMap` lookups returning a stable, interned instance. Entries are evicted in
+  /// `onPartitionsRevoked` so a rebalance that hands a partition off doesn't leak the cached
+  /// instance — `onPartitionsAssigned` will repopulate on first record.
+  private final Map<String, Map<Integer, TopicPartition>> topicPartitionCache = new ConcurrentHashMap<>();
   private final Duration commitInterval;
   private volatile ScheduledExecutorService scheduler;
   private volatile ScheduledFuture<?> scheduledCommitTask;
@@ -203,7 +216,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   @Override
   public void trackOffset(final ConsumerRecord<K, byte[]> record) {
     if (state.get() == OffsetState.STOPPED) return;
-    final var partition = new TopicPartition(record.topic(), record.partition());
+    final var partition = cachedTopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
     pendingOffsets.computeIfAbsent(partition, _ -> new ConcurrentSkipListSet<>()).add(offset);
   }
@@ -220,7 +233,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   @Override
   public void markOffsetProcessed(final ConsumerRecord<K, byte[]> record) {
     if (state.get() == OffsetState.STOPPED) return;
-    final var partition = new TopicPartition(record.topic(), record.partition());
+    final var partition = cachedTopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
 
     highestProcessedOffsets.compute(partition, (_, v) -> v == null ? offset : Math.max(v, offset));
@@ -228,6 +241,35 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     pendingOffsets.computeIfPresent(partition, (_, set) -> {
       set.remove(offset);
       return set.isEmpty() ? null : set;
+    });
+  }
+
+  /// Returns a cached `TopicPartition` for the given `(topic, partition)` pair, allocating one
+  /// on first observation and reusing the same instance for every subsequent call. The fast
+  /// path is two `ConcurrentHashMap` lookups returning a stable instance, replacing two `new
+  /// TopicPartition(...)` allocations per record on the hot path.
+  ///
+  /// `computeIfAbsent` on the outer map atomicizes the inner-map creation; the inner-map
+  /// lambda closes over `topic` from the local rather than the `BiFunction`'s `t` argument, so
+  /// the `TopicPartition(topic, partition)` constructor sees the exact `String` reference the
+  /// caller passed (`String#intern` is not assumed — `TopicPartition.equals/hashCode` use
+  /// value equality and pooled inner-map entries don't depend on string identity).
+  private TopicPartition cachedTopicPartition(final String topic, final int partition) {
+    return topicPartitionCache
+      .computeIfAbsent(topic, _ -> new ConcurrentHashMap<>())
+      .computeIfAbsent(partition, p -> new TopicPartition(topic, p));
+  }
+
+  /// Evicts the cached `TopicPartition` for a revoked partition. Uses `computeIfPresent` on the
+  /// inner map so the inner-map removal and the outer-map cleanup are bucket-locked together —
+  /// a concurrent `cachedTopicPartition` call for a different partition under the same topic
+  /// cannot see a transient empty inner map and double-allocate. If the inner map becomes empty
+  /// after removal (last partition for a topic), the outer entry is dropped so the cache doesn't
+  /// retain stale topic keys across rebalances.
+  private void evictCachedTopicPartition(final TopicPartition partition) {
+    topicPartitionCache.computeIfPresent(partition.topic(), (_, inner) -> {
+      inner.remove(partition.partition());
+      return inner.isEmpty() ? null : inner;
     });
   }
 
@@ -478,6 +520,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
           }
           pendingOffsets.remove(partition);
           highestProcessedOffsets.remove(partition);
+          evictCachedTopicPartition(partition);
         });
 
         if (!offsetsToCommit.isEmpty()) {
@@ -571,5 +614,6 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   private void cleanup() {
     pendingOffsets.clear();
     highestProcessedOffsets.clear();
+    topicPartitionCache.clear();
   }
 }
