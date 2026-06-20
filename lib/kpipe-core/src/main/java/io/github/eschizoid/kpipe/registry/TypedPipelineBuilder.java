@@ -109,6 +109,10 @@ public final class TypedPipelineBuilder<T> {
     final var pipelineOperators = List.copyOf(operators);
     final var pipelineSink = this.sink;
     final var bytesToSkip = this.skipBytes;
+    /// Hoisted once at build-time — `getClass().getSimpleName()` walks the class hierarchy and
+    /// is only used inside the `catch` arm of `deserialize`. Computing it per-record put the cost
+    /// on every successful deserialize as well.
+    final var formatName = format.getClass().getSimpleName();
 
     return new MessagePipeline<>() {
       @Override
@@ -119,7 +123,6 @@ public final class TypedPipelineBuilder<T> {
       @Override
       public T deserialize(byte[] data) {
         if (data == null) return null;
-        final var formatName = format.getClass().getSimpleName();
         if (bytesToSkip > 0) {
           if (data.length <= bytesToSkip) return null;
           final var actualData = new byte[data.length - bytesToSkip];
