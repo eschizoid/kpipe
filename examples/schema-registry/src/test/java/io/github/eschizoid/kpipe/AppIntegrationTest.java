@@ -94,7 +94,7 @@ class AppIntegrationTest {
     final MessageSink<GenericRecord> capturingSink = captured::add;
 
     try (
-      final var handle = KPipe.avro(format, topic, consumerProps())
+      final var handle = KPipe.avro(topic, consumerProps(), format)
         .withProcessingMode(ProcessingMode.SEQUENTIAL) // preserve send-order in captured list
         .skipBytes(5)
         .toCustom(capturingSink)

@@ -78,8 +78,8 @@ public class DemoApp implements AutoCloseable {
           .pipe(Operators.removeFields("password", "ssn"))
           .toCustom(new JsonConsoleSink<>())
       )
-      .avro(avroFormat, config.avroTopic(), s -> s.skipBytes(5).toConsole())
-      .protobuf(protoFormat, config.protoTopic(), s -> s.skipBytes(6).toConsole())
+      .avro(config.avroTopic(), avroFormat, s -> s.skipBytes(5).toConsole())
+      .protobuf(config.protoTopic(), protoFormat, s -> s.skipBytes(6).toConsole())
       .start();
   }
 

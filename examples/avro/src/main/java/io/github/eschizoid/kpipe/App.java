@@ -29,7 +29,7 @@ public final class App {
 
     final var props = KafkaConsumerConfig.createConsumerConfig(config.bootstrapServers(), config.consumerGroup());
 
-    try (final var handle = KPipe.avro(format, config.topic(), props).skipBytes(5).toConsole().start()) {
+    try (final var handle = KPipe.avro(config.topic(), props, format).skipBytes(5).toConsole().start()) {
       LOGGER.log(Level.INFO, "Avro consumer started for topic {0}", config.topic());
       handle.awaitShutdown();
     } catch (final Exception e) {

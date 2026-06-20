@@ -62,7 +62,7 @@ class AppIntegrationTest {
     final var captured = new CopyOnWriteArrayList<GenericRecord>();
     final MessageSink<GenericRecord> capturingSink = captured::add;
 
-    try (final var handle = KPipe.avro(format, topic, consumerProps()).skipBytes(5).toCustom(capturingSink).start()) {
+    try (final var handle = KPipe.avro(topic, consumerProps(), format).skipBytes(5).toCustom(capturingSink).start()) {
       assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
 
       produceUntilConsumed(topic, createConfluentWirePayload(), captured, Duration.ofSeconds(15));

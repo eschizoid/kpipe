@@ -53,7 +53,7 @@ class AppIntegrationTest {
     final var descriptor = format.descriptor();
 
     try (
-      final var handle = KPipe.protobuf(format, topic, consumerProps())
+      final var handle = KPipe.protobuf(topic, consumerProps(), format)
         .pipe(msg ->
           msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("name"), "processed-by-kpipe").build()
         )

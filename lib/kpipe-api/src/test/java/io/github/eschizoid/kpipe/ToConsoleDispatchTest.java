@@ -41,7 +41,7 @@ class ToConsoleDispatchTest {
       SchemaBuilder.record("Test").namespace("io.github.eschizoid.kpipe.test").fields().requiredString("id").endRecord()
     );
 
-    final var sink = (DefaultSink<?>) KPipe.avro(format, "t", props()).toConsole();
+    final var sink = (DefaultSink<?>) KPipe.avro("t", props(), format).toConsole();
     assertInstanceOf(AvroConsoleSink.class, sink.terminalSink());
   }
 
@@ -49,7 +49,7 @@ class ToConsoleDispatchTest {
   void protobufToConsoleDispatchesToProtobufConsoleSink() {
     final var format = new ProtobufFormat(buildTestDescriptor());
 
-    final var sink = (DefaultSink<?>) KPipe.protobuf(format, "t", props()).toConsole();
+    final var sink = (DefaultSink<?>) KPipe.protobuf("t", props(), format).toConsole();
     assertInstanceOf(ProtobufConsoleSink.class, sink.terminalSink());
   }
 
