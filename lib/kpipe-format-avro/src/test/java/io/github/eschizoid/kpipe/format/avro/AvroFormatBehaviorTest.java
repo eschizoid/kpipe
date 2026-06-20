@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaParseException;
@@ -93,5 +94,16 @@ class AvroFormatBehaviorTest {
   void deserializeThrowsForGarbageBytes() {
     final var format = AvroFormat.of(USER_SCHEMA_JSON);
     assertThrows(RuntimeException.class, () -> format.deserialize(new byte[] { 0x7f, 0x7f, 0x7f }));
+  }
+
+  @Test
+  void deserializeErrorMessageCarriesFormatNameAndByteLength() {
+    final var format = AvroFormat.of(USER_SCHEMA_JSON);
+    final var garbage = new byte[] { 0x7f, 0x7f, 0x7f };
+    final var thrown = assertThrows(RuntimeException.class, () -> format.deserialize(garbage));
+    final var message = thrown.getMessage();
+    assertTrue(message.contains("AvroFormat"), () -> "message should name the format: " + message);
+    assertTrue(message.contains(garbage.length + " bytes"), () -> "message should report the byte length: " + message);
+    assertTrue(message.contains("com.example.User"), () -> "message should name the schema: " + message);
   }
 }

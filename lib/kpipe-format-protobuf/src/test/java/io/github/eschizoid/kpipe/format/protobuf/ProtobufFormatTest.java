@@ -78,6 +78,16 @@ class ProtobufFormatTest {
     assertThrows(RuntimeException.class, () -> format.deserialize(new byte[] { (byte) 0xFF, (byte) 0xFF }));
   }
 
+  @Test
+  void deserializeErrorMessageCarriesFormatNameAndByteLength() {
+    final var garbage = new byte[] { (byte) 0xFF, (byte) 0xFF };
+    final var thrown = assertThrows(RuntimeException.class, () -> format.deserialize(garbage));
+    final var message = thrown.getMessage();
+    assertTrue(message.contains("ProtobufFormat"), () -> "message should name the format: " + message);
+    assertTrue(message.contains(garbage.length + " bytes"), () -> "message should report the byte length: " + message);
+    assertTrue(message.contains(descriptor.getFullName()), () -> "message should name the descriptor: " + message);
+  }
+
   private static Descriptors.Descriptor buildTestDescriptor() throws Descriptors.DescriptorValidationException {
     final var msg = DescriptorProtos.DescriptorProto.newBuilder()
       .setName("TestMessage")
