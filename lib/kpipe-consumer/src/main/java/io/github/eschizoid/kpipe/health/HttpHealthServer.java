@@ -53,7 +53,14 @@ public final class HttpHealthServer implements AutoCloseable {
     this.path = normalizePath(path);
     this.appName = appName != null ? appName : "kpipe-app";
     this.server = HttpServer.create(new InetSocketAddress(host, port), 0);
-    this.server.createContext(this.path, this::handleHealth);
+    // HttpServer.create already bound the socket. If createContext throws, the socket would leak,
+    // so close the server before propagating.
+    try {
+      this.server.createContext(this.path, this::handleHealth);
+    } catch (final RuntimeException e) {
+      this.server.stop(0);
+      throw e;
+    }
   }
 
   /// Create an {@link HttpHealthServer} using environment variables when enabled.
@@ -78,9 +85,17 @@ public final class HttpHealthServer implements AutoCloseable {
     final var port = HealthConfig.getPort();
 
     try {
-      return Optional.of(
-        new HttpHealthServer(host, port, path, healthSupplier, inFlightSupplier, pausedSupplier, appName)
+      final var server = new HttpHealthServer(
+        host,
+        port,
+        path,
+        healthSupplier,
+        inFlightSupplier,
+        pausedSupplier,
+        appName
       );
+      server.start();
+      return Optional.of(server);
     } catch (final IOException e) {
       LOGGER.log(Level.ERROR, "Failed to start health HTTP server", e);
       return Optional.empty();
