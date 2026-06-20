@@ -138,7 +138,10 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
       encoder.flush();
       return output.toByteArray();
     } catch (final IOException e) {
-      throw new RuntimeException("Failed to serialize Avro record", e);
+      throw new RuntimeException(
+        "AvroFormat.serialize failed for record with schema " + data.getSchema().getFullName(),
+        e
+      );
     }
   }
 
@@ -159,8 +162,12 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     final var decoder = DecoderFactory.get().binaryDecoder(data, null);
     try {
       return reader.read(null, decoder);
-    } catch (final IOException e) {
-      throw new RuntimeException("Failed to deserialize Avro record", e);
+    } catch (final IOException | RuntimeException e) {
+      throw new RuntimeException(
+        "AvroFormat.deserialize failed in static mode on " + data.length + " bytes against schema " +
+          staticSchema.getFullName(),
+        e
+      );
     }
   }
 
