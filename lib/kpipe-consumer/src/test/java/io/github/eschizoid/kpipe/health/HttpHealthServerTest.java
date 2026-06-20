@@ -88,6 +88,31 @@ class HttpHealthServerTest {
     }
   }
 
+  @Test
+  void shouldReturnStartedServerFromEnv() throws Exception {
+    // fromEnv documents that the returned server is started; this proves the contract by hitting
+    // the endpoint without calling start() ourselves.
+    try (final var mocked = Mockito.mockStatic(AppConfig.class)) {
+      mocked.when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_ENABLED, "true")).thenReturn("true");
+      mocked
+        .when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_HOST, HealthConfig.DEFAULT_HOST))
+        .thenReturn("127.0.0.1");
+      mocked.when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_PORT, "8080")).thenReturn("0");
+      mocked
+        .when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_PATH, HealthConfig.DEFAULT_PATH))
+        .thenReturn("/health");
+
+      final var maybeServer = HttpHealthServer.fromEnv(() -> true, () -> 7L, () -> false, "test-app");
+      assertTrue(maybeServer.isPresent());
+
+      try (final var server = maybeServer.get()) {
+        final var response = sendRequest(server, "GET");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"inFlight\": 7"));
+      }
+    }
+  }
+
   private static HttpHealthServer newServer(final BooleanSupplier supplier) throws Exception {
     return new HttpHealthServer("127.0.0.1", 0, "/health", supplier, () -> 0L, () -> false, "test-app");
   }

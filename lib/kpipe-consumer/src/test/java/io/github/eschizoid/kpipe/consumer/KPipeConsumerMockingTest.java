@@ -493,6 +493,30 @@ class KPipeConsumerMockingTest {
   }
 
   @Test
+  void constructorClosesKafkaConsumerWhenLaterInitStepThrows() {
+    // The constructor opens the Kafka consumer first, then the dispatcher, then runs the
+    // offset-manager provider. A provider that throws lands after both are already open — the
+    // constructor must close what it opened (here: the Kafka consumer) instead of leaking it.
+    final var mockConsumer = new MockConsumer<String, byte[]>("earliest");
+    final var boom = new IllegalStateException("offset-manager provider blew up");
+
+    final var thrown = assertThrows(IllegalStateException.class, () ->
+      KPipeConsumer.<String>builder()
+        .withProperties(properties)
+        .withTopic(TOPIC)
+        .withPipeline(TestPipelines.identity())
+        .withConsumer(() -> mockConsumer)
+        .withOffsetManagerProvider(c -> {
+          throw boom;
+        })
+        .build()
+    );
+
+    assertSame(boom, thrown);
+    assertTrue(mockConsumer.closed(), "Kafka consumer opened by the constructor must be closed when init fails");
+  }
+
+  @Test
   void builderShouldThrowNullPointerExceptionWhenMissingRequiredFields() {
     final var builder = KPipeConsumer.<String>builder();
 

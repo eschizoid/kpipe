@@ -729,183 +729,254 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///
   /// @param builder the builder containing the consumer configuration
   public KPipeConsumer(final Builder<K> builder) {
-    this.kafkaConsumer =
-      builder.consumerProvider != null
-        ? builder.consumerProvider.get()
-        : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
-    this.topics = Set.copyOf(Objects.requireNonNull(builder.topics, "Topics must be set"));
-    // `build()` sets `topics` to the UNION of regular + batch routes for Kafka subscription, so
-    // the homogeneous branch must filter out batch-route topics to avoid replicating the regular
-    // pipeline onto a topic that's owned by a batch wrapper.
-    if (builder.pipelinesPerTopic != null) {
-      this.pipelines = builder.pipelinesPerTopic;
-    } else if (builder.pipeline != null) {
-      final var map = new LinkedHashMap<String, MessagePipeline<?>>(builder.topics.size());
-      for (final var t : builder.topics) if (!builder.batchSpecs.containsKey(t)) map.put(t, builder.pipeline);
-      this.pipelines = Map.copyOf(map);
-    } else {
-      this.pipelines = Map.of();
-    }
-    this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
-    this.errorHandler = builder.errorHandler;
-    this.maxRetries = builder.maxRetries;
-    this.retryBackoff = builder.retryBackoff;
-    this.processingMode = builder.processingMode;
-    this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
-    this.threadTerminationTimeout = builder.threadTerminationTimeout;
-    this.executorTerminationTimeout = builder.executorTerminationTimeout;
-    this.dispatcher = switch (this.processingMode) {
-      case SEQUENTIAL -> new SequentialDispatcher<>();
-      case PARALLEL -> new ParallelDispatcher<>(this::handleParallelRejection, this.executorTerminationTimeout);
-      case KEY_ORDERED -> new KeyOrderedDispatcher<>(builder.keyOrderedMaxKeys);
-    };
-    this.offsetManager =
-      builder.offsetManager != null
-        ? builder.offsetManager
-        : builder.offsetManagerProvider != null
-          ? builder.offsetManagerProvider.apply(this.kafkaConsumer)
-          : null;
-    this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
-    this.rebalanceListener =
-      builder.rebalanceListener != null
-        ? builder.rebalanceListener
-        : (this.offsetManager != null ? this.offsetManager.createRebalanceListener() : null);
-
-    final var bp = (
-      builder.backpressureController != null
-        ? builder.backpressureController
-        : new BackpressureController(
-            BackpressureController.DEFAULT_HIGH_WATERMARK,
-            BackpressureController.DEFAULT_LOW_WATERMARK,
-            null
-          )
-    ).withStrategy(
-      this.processingMode == ProcessingMode.SEQUENTIAL
-        ? BackpressureController.lagStrategy()
-        : BackpressureController.inFlightStrategy(this::totalInFlight)
-    );
-
-    this.tracer = builder.tracer != null ? builder.tracer : Tracer.noop();
-
-    this.deadLetterTopic = builder.deadLetterTopic;
-    this.kpipeProducer =
-      builder.kpipeProducer != null
-        ? builder.kpipeProducer
-        : this.deadLetterTopic != null
-          ? KPipeProducer.<K, byte[]>builder().withProperties(builder.kafkaProps).withTracer(this.tracer).build()
-          : null;
-
-    final var needScheduler = !builder.batchSpecs.isEmpty() || builder.circuitBreakerController != null;
-    if (needScheduler) {
-      this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        final var t = Thread.ofVirtual().unstarted(r);
-        t.setName("kpipe-scheduler");
-        return t;
-      });
-    } else {
-      this.scheduler = null;
-    }
-
-    if (!builder.batchSpecs.isEmpty()) {
-      final var wrappers = new LinkedHashMap<String, BatchPipelineWrapper<K, ?>>(builder.batchSpecs.size());
-      for (final var entry : builder.batchSpecs.entrySet()) {
-        wrappers.put(entry.getKey(), createBatchWrapper(entry.getValue()));
+    // The constructor opens resources in sequence: the Kafka consumer, the dispatcher (PARALLEL
+    // owns a virtual-thread executor), an optional built-in DLQ producer, an optional scheduler,
+    // the batch wrappers, and a JVM shutdown hook. If any step after the first open throws — e.g.
+    // addShutdownHook while the JVM is already shutting down, or a user-supplied
+    // metrics/tracer/circuit-breaker whose construction work throws — everything already opened
+    // would leak for the JVM lifetime. Wrap construction so any throwable triggers reverse-order
+    // cleanup of whatever was opened, then rethrow with cleanup failures suppressed onto it.
+    try {
+      this.kafkaConsumer =
+        builder.consumerProvider != null
+          ? builder.consumerProvider.get()
+          : new KafkaConsumer<>(Objects.requireNonNull(builder.kafkaProps));
+      this.topics = Set.copyOf(Objects.requireNonNull(builder.topics, "Topics must be set"));
+      // `build()` sets `topics` to the UNION of regular + batch routes for Kafka subscription, so
+      // the homogeneous branch must filter out batch-route topics to avoid replicating the regular
+      // pipeline onto a topic that's owned by a batch wrapper.
+      if (builder.pipelinesPerTopic != null) {
+        this.pipelines = builder.pipelinesPerTopic;
+      } else if (builder.pipeline != null) {
+        final var map = new LinkedHashMap<String, MessagePipeline<?>>(builder.topics.size());
+        for (final var t : builder.topics) if (!builder.batchSpecs.containsKey(t)) map.put(t, builder.pipeline);
+        this.pipelines = Map.copyOf(map);
+      } else {
+        this.pipelines = Map.of();
       }
-      this.batchWrappers = Map.copyOf(wrappers);
-    } else {
-      this.batchWrappers = Map.of();
-    }
+      this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
+      this.errorHandler = builder.errorHandler;
+      this.maxRetries = builder.maxRetries;
+      this.retryBackoff = builder.retryBackoff;
+      this.processingMode = builder.processingMode;
+      this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
+      this.threadTerminationTimeout = builder.threadTerminationTimeout;
+      this.executorTerminationTimeout = builder.executorTerminationTimeout;
+      this.dispatcher = switch (this.processingMode) {
+        case SEQUENTIAL -> new SequentialDispatcher<>();
+        case PARALLEL -> new ParallelDispatcher<>(this::handleParallelRejection, this.executorTerminationTimeout);
+        case KEY_ORDERED -> new KeyOrderedDispatcher<>(builder.keyOrderedMaxKeys);
+      };
+      this.offsetManager =
+        builder.offsetManager != null
+          ? builder.offsetManager
+          : builder.offsetManagerProvider != null
+            ? builder.offsetManagerProvider.apply(this.kafkaConsumer)
+            : null;
+      this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
+      this.rebalanceListener =
+        builder.rebalanceListener != null
+          ? builder.rebalanceListener
+          : (this.offsetManager != null ? this.offsetManager.createRebalanceListener() : null);
 
-    this.metricsReporters = List.copyOf(builder.metricsReporters);
-    this.metricsReporterInterval = builder.metricsReporterInterval;
-    this.useShutdownHook = builder.useShutdownHook;
-    if (this.useShutdownHook) {
-      this.shutdownHookThread = new Thread(this::close, "kpipe-shutdown-hook");
-      Runtime.getRuntime().addShutdownHook(this.shutdownHookThread);
-    }
-
-    if (builder.backpressureController == null) {
-      LOGGER.log(
-        Level.INFO,
-        "No backpressure configured, using default {0} strategy (high={1}, low={2})",
-        bp.getMetricName(),
-        bp.highWatermark(),
-        bp.lowWatermark()
+      final var bp = (
+        builder.backpressureController != null
+          ? builder.backpressureController
+          : new BackpressureController(
+              BackpressureController.DEFAULT_HIGH_WATERMARK,
+              BackpressureController.DEFAULT_LOW_WATERMARK,
+              null
+            )
+      ).withStrategy(
+        this.processingMode == ProcessingMode.SEQUENTIAL
+          ? BackpressureController.lagStrategy()
+          : BackpressureController.inFlightStrategy(this::totalInFlight)
       );
+
+      this.tracer = builder.tracer != null ? builder.tracer : Tracer.noop();
+
+      this.deadLetterTopic = builder.deadLetterTopic;
+      this.kpipeProducer =
+        builder.kpipeProducer != null
+          ? builder.kpipeProducer
+          : this.deadLetterTopic != null
+            ? KPipeProducer.<K, byte[]>builder().withProperties(builder.kafkaProps).withTracer(this.tracer).build()
+            : null;
+
+      final var needScheduler = !builder.batchSpecs.isEmpty() || builder.circuitBreakerController != null;
+      if (needScheduler) {
+        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+          final var t = Thread.ofVirtual().unstarted(r);
+          t.setName("kpipe-scheduler");
+          return t;
+        });
+      } else {
+        this.scheduler = null;
+      }
+
+      if (!builder.batchSpecs.isEmpty()) {
+        final var wrappers = new LinkedHashMap<String, BatchPipelineWrapper<K, ?>>(builder.batchSpecs.size());
+        for (final var entry : builder.batchSpecs.entrySet()) {
+          wrappers.put(entry.getKey(), createBatchWrapper(entry.getValue()));
+        }
+        this.batchWrappers = Map.copyOf(wrappers);
+      } else {
+        this.batchWrappers = Map.of();
+      }
+
+      this.metricsReporters = List.copyOf(builder.metricsReporters);
+      this.metricsReporterInterval = builder.metricsReporterInterval;
+      this.useShutdownHook = builder.useShutdownHook;
+      if (this.useShutdownHook) {
+        this.shutdownHookThread = new Thread(this::close, "kpipe-shutdown-hook");
+        Runtime.getRuntime().addShutdownHook(this.shutdownHookThread);
+      }
+
+      if (builder.backpressureController == null) {
+        LOGGER.log(
+          Level.INFO,
+          "No backpressure configured, using default {0} strategy (high={1}, low={2})",
+          bp.getMetricName(),
+          bp.highWatermark(),
+          bp.lowWatermark()
+        );
+      }
+
+      metrics.putAll(
+        Map.of(
+          METRIC_MESSAGES_RECEIVED,
+          new AtomicLong(0),
+          METRIC_MESSAGES_PROCESSED,
+          new AtomicLong(0),
+          METRIC_PROCESSING_ERRORS,
+          new AtomicLong(0),
+          METRIC_PROCESSING_DURATION_TOTAL_MS,
+          new AtomicLong(0),
+          METRIC_RETRIES,
+          new AtomicLong(0),
+          METRIC_BACKPRESSURE_PAUSE_COUNT,
+          new AtomicLong(0),
+          METRIC_BACKPRESSURE_TIME_MS,
+          new AtomicLong(0),
+          METRIC_CIRCUIT_BREAKER_TRIPS,
+          new AtomicLong(0),
+          METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS,
+          new AtomicLong(0),
+          METRIC_DLQ_SENT,
+          new AtomicLong(0)
+        )
+      );
+
+      this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
+
+      this.health = new ConsumerHealthController(
+        bp,
+        builder.circuitBreakerController,
+        this.scheduler,
+        new ConsumerHealthController.Hook() {
+          @Override
+          public void onPause() {
+            internalPause();
+          }
+
+          @Override
+          public void onResume() {
+            internalResume();
+          }
+
+          @Override
+          public void onBackpressurePause() {
+            metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
+            otelMetrics.recordBackpressurePause();
+          }
+
+          @Override
+          public void onBackpressureTimeMs(final long ms) {
+            metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(ms);
+            otelMetrics.recordBackpressureTime(ms);
+          }
+
+          @Override
+          public void onCircuitBreakerTrip() {
+            metrics.get(METRIC_CIRCUIT_BREAKER_TRIPS).incrementAndGet();
+            otelMetrics.recordCircuitBreakerTrip();
+          }
+
+          @Override
+          public void onCircuitBreakerStateChange(final CircuitBreakerState state) {
+            otelMetrics.recordCircuitBreakerStateChange(state);
+          }
+
+          @Override
+          public void onCircuitBreakerTimeOpenMs(final long ms) {
+            metrics.get(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS).addAndGet(ms);
+            otelMetrics.recordCircuitBreakerTimeOpen(ms);
+          }
+        }
+      );
+    } catch (final Throwable t) {
+      closePartiallyConstructed(t);
+      throw t;
     }
+  }
 
-    metrics.putAll(
-      Map.of(
-        METRIC_MESSAGES_RECEIVED,
-        new AtomicLong(0),
-        METRIC_MESSAGES_PROCESSED,
-        new AtomicLong(0),
-        METRIC_PROCESSING_ERRORS,
-        new AtomicLong(0),
-        METRIC_PROCESSING_DURATION_TOTAL_MS,
-        new AtomicLong(0),
-        METRIC_RETRIES,
-        new AtomicLong(0),
-        METRIC_BACKPRESSURE_PAUSE_COUNT,
-        new AtomicLong(0),
-        METRIC_BACKPRESSURE_TIME_MS,
-        new AtomicLong(0),
-        METRIC_CIRCUIT_BREAKER_TRIPS,
-        new AtomicLong(0),
-        METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS,
-        new AtomicLong(0),
-        METRIC_DLQ_SENT,
-        new AtomicLong(0)
-      )
-    );
-
-    this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
-
-    this.health = new ConsumerHealthController(
-      bp,
-      builder.circuitBreakerController,
-      this.scheduler,
-      new ConsumerHealthController.Hook() {
-        @Override
-        public void onPause() {
-          internalPause();
-        }
-
-        @Override
-        public void onResume() {
-          internalResume();
-        }
-
-        @Override
-        public void onBackpressurePause() {
-          metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
-          otelMetrics.recordBackpressurePause();
-        }
-
-        @Override
-        public void onBackpressureTimeMs(final long ms) {
-          metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(ms);
-          otelMetrics.recordBackpressureTime(ms);
-        }
-
-        @Override
-        public void onCircuitBreakerTrip() {
-          metrics.get(METRIC_CIRCUIT_BREAKER_TRIPS).incrementAndGet();
-          otelMetrics.recordCircuitBreakerTrip();
-        }
-
-        @Override
-        public void onCircuitBreakerStateChange(final CircuitBreakerState state) {
-          otelMetrics.recordCircuitBreakerStateChange(state);
-        }
-
-        @Override
-        public void onCircuitBreakerTimeOpenMs(final long ms) {
-          metrics.get(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS).addAndGet(ms);
-          otelMetrics.recordCircuitBreakerTimeOpen(ms);
+  /// Closes whatever the constructor managed to open before a later init step threw, in reverse
+  /// of the open order — shutdown hook, scheduler, producer, batch wrappers, dispatcher, Kafka
+  /// consumer. Each field is read off `this` (a partially-constructed instance leaves the
+  /// not-yet-assigned ones at their default `null`), so every step is null-guarded. Cleanup
+  /// failures are suppressed onto the original throwable rather than masking it. Mirrors the
+  /// ownership rules of `releaseConstructedResources` / the consumer-thread teardown: the Kafka
+  /// consumer and the DLQ producer are closed regardless of whether they were supplied or built
+  /// internally, because once handed to the consumer they are consumer-owned.
+  private void closePartiallyConstructed(final Throwable original) {
+    if (shutdownHookThread != null) {
+      try {
+        Runtime.getRuntime().removeShutdownHook(shutdownHookThread);
+      } catch (final IllegalStateException e) {
+        // JVM already shutting down — nothing to remove. Ignore.
+      } catch (final RuntimeException e) {
+        original.addSuppressed(e);
+      } finally {
+        shutdownHookThread = null;
+      }
+    }
+    if (scheduler != null) {
+      try {
+        scheduler.shutdownNow();
+      } catch (final RuntimeException e) {
+        original.addSuppressed(e);
+      }
+    }
+    if (kpipeProducer != null) {
+      try {
+        kpipeProducer.close();
+      } catch (final Exception e) {
+        original.addSuppressed(e);
+      }
+    }
+    if (batchWrappers != null) {
+      for (final var wrapper : batchWrappers.values()) {
+        try {
+          wrapper.close();
+        } catch (final Exception e) {
+          original.addSuppressed(e);
         }
       }
-    );
+    }
+    if (dispatcher != null) {
+      try {
+        dispatcher.close();
+      } catch (final Exception e) {
+        original.addSuppressed(e);
+      }
+    }
+    if (kafkaConsumer != null) {
+      try {
+        kafkaConsumer.close();
+      } catch (final Exception e) {
+        original.addSuppressed(e);
+      }
+    }
   }
 
   private <T> BatchPipelineWrapper<K, T> createBatchWrapper(final Builder.BatchSpec<T> spec) {
