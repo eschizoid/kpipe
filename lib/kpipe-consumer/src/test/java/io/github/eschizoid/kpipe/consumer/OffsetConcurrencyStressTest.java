@@ -93,12 +93,11 @@ class OffsetConcurrencyStressTest {
           final var next = (long) s.get("nextOffsetToCommit");
           final var lowestPending = s.get("lowestPendingOffset");
           if (lowestPending != null) {
-            // Commit point can never exceed the lowest pending offset — it cannot jump the gap.
+            // Commit point can never exceed the lowest pending offset — it cannot jump
+            // the gap.
             if (next > (long) lowestPending) {
               errors.add(
-                new AssertionError(
-                  "commit point %d passed pending gap at %d".formatted(next, (long) lowestPending)
-                )
+                new AssertionError("commit point %d passed pending gap at %d".formatted(next, (long) lowestPending))
               );
             }
           }
@@ -118,7 +117,8 @@ class OffsetConcurrencyStressTest {
             final var base = threadId * offsetsPerThread;
             // Track the whole slice first so gaps genuinely exist across the partition.
             for (int i = 0; i < offsetsPerThread; i++) manager.trackOffset(record(0, base + i));
-            // Mark in a thread-specific rotated order — interleaves out-of-order completion.
+            // Mark in a thread-specific rotated order — interleaves out-of-order
+            // completion.
             final int rotate = (threadId * 37) % offsetsPerThread;
             for (int j = 0; j < offsetsPerThread; j++) {
               final int i = (j + rotate) % offsetsPerThread;
@@ -228,7 +228,8 @@ class OffsetConcurrencyStressTest {
   /// listener from another thread.
   ///
   /// Assertions: no exception escapes any thread; a revoke followed by no further marks leaves a
-  /// cleared partition (commit point `-1`); and at no point does the partition report a commit point
+  /// cleared partition (commit point `-1`); and at no point does the partition report a commit
+  // point
   /// that skips a still-pending offset (revive-after-revoke must still obey lowest-pending).
   @Test
   void i5_revokeDuringProcessingIsCleanAndNeverCorrupts() throws Exception {
@@ -260,7 +261,8 @@ class OffsetConcurrencyStressTest {
           // Revoke partition 0 — commits commit point, clears state.
           listener.onPartitionsRevoked(revokedList);
           revokeCount.incrementAndGet();
-          // Immediately probe: any pending offset must still pin the commit point at or below it.
+          // Immediately probe: any pending offset must still pin the commit point at or
+          // below it.
           final var s = manager.getPartitionState(partition);
           final var next = (long) s.get("nextOffsetToCommit");
           final var lowestPending = s.get("lowestPendingOffset");
@@ -271,7 +273,8 @@ class OffsetConcurrencyStressTest {
           }
           Thread.yield();
         }
-        // Final revoke after all marks stopped, still on this same thread → state fully cleared.
+        // Final revoke after all marks stopped, still on this same thread → state fully
+        // cleared.
         listener.onPartitionsRevoked(revokedList);
       } catch (final Throwable e) {
         errors.add(e);
@@ -289,7 +292,8 @@ class OffsetConcurrencyStressTest {
             for (int i = 0; i < 2000; i++) {
               final var off = offsetSeq.getAndIncrement();
               final var rec = record(0, off);
-              // mark-for-revoked-partition is the I5 case — must be a clean no-op, never throw.
+              // mark-for-revoked-partition is the I5 case — must be a clean no-op, never
+              // throw.
               manager.trackOffset(rec);
               manager.markOffsetProcessed(rec);
             }
@@ -316,7 +320,8 @@ class OffsetConcurrencyStressTest {
     assertEquals(-1L, (long) cleared.get("nextOffsetToCommit"), "revoked partition reports cleared commit point");
     assertEquals(0, (int) cleared.get("pendingCount"), "revoked partition has no pending offsets");
 
-    // I5 explicit: a mark for the already-revoked/cleared partition is a clean no-op (no throw), and
+    // I5 explicit: a mark for the already-revoked/cleared partition is a clean no-op (no throw),
+    // and
     // the lazily re-created entry still obeys lowest-pending. trackOffset / markOffsetProcessed are
     // not thread-pinned, so running them from the test thread is legitimate.
     final var lateTrack = record(0, 5L);

@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,26 +19,33 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /// Deterministic state-machine transition tests for the circuit breaker, driven directly through
-/// [ConsumerHealthController] with a recording [ConsumerHealthController.Hook] and a hand-controlled
+/// [ConsumerHealthController] with a recording [ConsumerHealthController.Hook] and a
+// hand-controlled
 /// scheduler. No Kafka, no `MockConsumer`, no timing-based `awaitCondition` — every transition is
 /// driven by an explicit `recordOutcome(...)` call or by firing the captured probe task by hand, so
 /// these assertions are race-free.
 ///
-/// `CircuitBreakerControllerTest` pins the pure `shouldTrip` predicate; `KPipeCircuitBreakerIntegrationTest`
-/// drives the happy-path CLOSED → OPEN → HALF_OPEN → CLOSED cycle end-to-end through a live consumer.
+/// `CircuitBreakerControllerTest` pins the pure `shouldTrip` predicate;
+// `KPipeCircuitBreakerIntegrationTest`
+/// drives the happy-path CLOSED → OPEN → HALF_OPEN → CLOSED cycle end-to-end through a live
+// consumer.
 /// This file fills the edges neither pins deterministically:
 ///
 ///   * HALF_OPEN → OPEN on a failed probe (window restarts, a fresh probe is scheduled).
-///   * HALF_OPEN → CLOSED on a successful probe (the window is genuinely reset, not merely re-read).
+///   * HALF_OPEN → CLOSED on a successful probe (the window is genuinely reset, not merely
+// re-read).
 ///   * the trip-rate boundary at the state-machine level (exactly at vs just below threshold).
 ///   * window-not-full: no trip before `windowSize` samples regardless of failure rate.
 ///   * the one-shot OPEN → HALF_OPEN probe is a single scheduled task, fired exactly once.
 class CircuitBreakerTransitionTest {
 
-  /// Records every Hook callback so a test can assert on the exact transition sequence. The CB-relevant
-  /// counters are the ones the state machine drives; pause/resume bookkeeping is recorded too because a
+  /// Records every Hook callback so a test can assert on the exact transition sequence. The
+  // CB-relevant
+  /// counters are the ones the state machine drives; pause/resume bookkeeping is recorded too
+  // because a
   /// trip must pause and a successful probe must resume.
   private static final class RecordingHook implements ConsumerHealthController.Hook {
+
     final AtomicInteger pauses = new AtomicInteger();
     final AtomicInteger resumes = new AtomicInteger();
     final AtomicInteger trips = new AtomicInteger();
@@ -78,9 +84,12 @@ class CircuitBreakerTransitionTest {
     }
   }
 
-  /// A scheduler that does NOT run anything on its own. It captures each submitted task plus the delay
-  /// so a test can assert how many probe timers were armed and fire them by hand, deterministically.
+  /// A scheduler that does NOT run anything on its own. It captures each submitted task plus the
+  // delay
+  /// so a test can assert how many probe timers were armed and fire them by hand,
+  // deterministically.
   private static final class CapturingScheduler implements ScheduledExecutorService {
+
     final List<Runnable> scheduled = new ArrayList<>();
     final List<Long> delaysMs = new ArrayList<>();
     int cancelCount = 0;
@@ -98,6 +107,7 @@ class CircuitBreakerTransitionTest {
     }
 
     private final class NoopFuture implements ScheduledFuture<Object> {
+
       @Override
       public long getDelay(final TimeUnit unit) {
         return 0;
@@ -219,7 +229,8 @@ class CircuitBreakerTransitionTest {
     }
   }
 
-  /// Builds a controller wired to the supplied hook + scheduler. windowSize=4, threshold=0.5 keeps the
+  /// Builds a controller wired to the supplied hook + scheduler. windowSize=4, threshold=0.5 keeps
+  // the
   /// arithmetic obvious: a full window of 4 needs 2 failures to hit exactly 50%.
   private static ConsumerHealthController newController(final RecordingHook hook, final CapturingScheduler scheduler) {
     final var cb = new CircuitBreakerController(0.5, 4, Duration.ofMillis(300));
@@ -268,8 +279,10 @@ class CircuitBreakerTransitionTest {
     hc.recordOutcome(true);
     assertSame(CircuitBreakerState.CLOSED, hc.circuitBreakerState(), "successful probe must close the breaker");
 
-    // Prove the window was genuinely reset, not merely re-read: a single fresh failure must NOT re-trip
-    // even though the pre-reset window was saturated with failures. Three failures fill only 3 of the
+    // Prove the window was genuinely reset, not merely re-read: a single fresh failure must NOT
+    // re-trip
+    // even though the pre-reset window was saturated with failures. Three failures fill only 3 of
+    // the
     // 4 reset slots, so shouldTrip's full-window guard holds and no second trip fires.
     hc.recordOutcome(false);
     hc.recordOutcome(false);
@@ -300,7 +313,8 @@ class CircuitBreakerTransitionTest {
     final var scheduler = new CapturingScheduler();
     final var hc = newController(hook, scheduler);
 
-    // Window of 4: 3 successes, 1 failure → 0.25 failure rate, below the 0.5 threshold. Even with the
+    // Window of 4: 3 successes, 1 failure → 0.25 failure rate, below the 0.5 threshold. Even with
+    // the
     // window full, the breaker must stay CLOSED.
     hc.recordOutcome(true);
     hc.recordOutcome(true);
@@ -392,7 +406,8 @@ class CircuitBreakerTransitionTest {
       hook.stateChanges,
       "the recovery cycle must emit OPEN, HALF_OPEN, CLOSED in order"
     );
-    // shutdown() cancels the probe future; after a successful close the future was nulled, so shutdown
+    // shutdown() cancels the probe future; after a successful close the future was nulled, so
+    // shutdown
     // is a clean no-op rather than cancelling a stale handle.
     final var cancelsBefore = scheduler.cancelCount;
     hc.shutdown();

@@ -128,7 +128,10 @@ class WatermarkHysteresisTest {
     void drainingThroughBandWithoutReachingLowNeverResumes() {
       final var inFlight = new AtomicLong(HIGH);
       final var controller = new BackpressureController(
-        HIGH, LOW, BackpressureController.inFlightStrategy(inFlight::get));
+        HIGH,
+        LOW,
+        BackpressureController.inFlightStrategy(inFlight::get)
+      );
 
       // Enter the paused state at the high watermark.
       assertEquals(Action.PAUSE, controller.check(null, false));
@@ -136,10 +139,9 @@ class WatermarkHysteresisTest {
       // Drain down to one above the low watermark; paused stays held the whole time.
       for (var value = HIGH; value > LOW; value--) {
         inFlight.set(value);
-        assertEquals(
-          Action.NONE,
-          controller.check(null, true),
-          () -> "Expected hold while paused at value above low watermark");
+        assertEquals(Action.NONE, controller.check(null, true), () ->
+          "Expected hold while paused at value above low watermark"
+        );
       }
 
       // Only when it finally touches the low watermark does RESUME fire.
@@ -153,14 +155,16 @@ class WatermarkHysteresisTest {
     void climbingThroughBandWithoutReachingHighNeverPauses() {
       final var inFlight = new AtomicLong(LOW);
       final var controller = new BackpressureController(
-        HIGH, LOW, BackpressureController.inFlightStrategy(inFlight::get));
+        HIGH,
+        LOW,
+        BackpressureController.inFlightStrategy(inFlight::get)
+      );
 
       for (var value = LOW; value < HIGH; value++) {
         inFlight.set(value);
-        assertEquals(
-          Action.NONE,
-          controller.check(null, false),
-          () -> "Expected hold while running at value below high watermark");
+        assertEquals(Action.NONE, controller.check(null, false), () ->
+          "Expected hold while running at value below high watermark"
+        );
       }
 
       inFlight.set(HIGH);
@@ -175,7 +179,10 @@ class WatermarkHysteresisTest {
     void oscillationInsideBandProducesNoStateChanges() {
       final var inFlight = new AtomicLong(HIGH); // start saturated → first check pauses
       final var controller = new BackpressureController(
-        HIGH, LOW, BackpressureController.inFlightStrategy(inFlight::get));
+        HIGH,
+        LOW,
+        BackpressureController.inFlightStrategy(inFlight::get)
+      );
 
       var paused = false;
       var pauseCount = 0;
@@ -191,13 +198,14 @@ class WatermarkHysteresisTest {
           paused = false;
           resumeCount++;
         }
-        case NONE -> {}
+        case NONE -> {
+        }
       }
       assertEquals(1, pauseCount, "First saturated check must pause exactly once");
 
       // Now bounce the metric strictly inside the band for many cycles. Apply each decision to
       // the running paused flag, just like the consumer loop would.
-      final long[] bandWalk = {LOW + 1, HIGH - 1, (HIGH + LOW) / 2, HIGH - 1, LOW + 1, LOW + 2};
+      final long[] bandWalk = { LOW + 1, HIGH - 1, (HIGH + LOW) / 2, HIGH - 1, LOW + 1, LOW + 2 };
       for (var cycle = 0; cycle < 100; cycle++) {
         inFlight.set(bandWalk[cycle % bandWalk.length]);
         switch (controller.check(null, paused)) {
@@ -209,7 +217,8 @@ class WatermarkHysteresisTest {
             paused = false;
             resumeCount++;
           }
-          case NONE -> {}
+          case NONE -> {
+          }
         }
       }
 
@@ -228,7 +237,10 @@ class WatermarkHysteresisTest {
     void inFlightStrategyDecidesAtEdges() {
       final var inFlight = new AtomicLong(HIGH);
       final var controller = new BackpressureController(
-        HIGH, LOW, BackpressureController.inFlightStrategy(inFlight::get));
+        HIGH,
+        LOW,
+        BackpressureController.inFlightStrategy(inFlight::get)
+      );
 
       assertEquals(Action.PAUSE, controller.check(null, false));
 
@@ -271,8 +283,7 @@ class WatermarkHysteresisTest {
       final var assignment = Set.of(tp);
       final long position = 1_000L;
       when(consumer.assignment()).thenReturn(assignment);
-      when(consumer.endOffsets(Mockito.eq(assignment), Mockito.any()))
-        .thenReturn(Map.of(tp, position + targetLag));
+      when(consumer.endOffsets(Mockito.eq(assignment), Mockito.any())).thenReturn(Map.of(tp, position + targetLag));
       when(consumer.position(tp)).thenReturn(position);
       return consumer;
     }
@@ -292,14 +303,18 @@ class WatermarkHysteresisTest {
       final var bufferedBatch = new AtomicLong(0);
       // Mirrors KPipeConsumer.totalInFlight(): pending workers + buffered batch records.
       final var controller = new BackpressureController(
-        HIGH, LOW, BackpressureController.inFlightStrategy(() -> dispatcherPending.get() + bufferedBatch.get()));
+        HIGH,
+        LOW,
+        BackpressureController.inFlightStrategy(() -> dispatcherPending.get() + bufferedBatch.get())
+      );
 
       // No workers active, but the batch buffer is saturated at the high watermark → PAUSE.
       bufferedBatch.set(HIGH);
       assertEquals(
         Action.PAUSE,
         controller.check(null, false),
-        "Buffered batch records alone must be able to trip the pause watermark");
+        "Buffered batch records alone must be able to trip the pause watermark"
+      );
 
       // The dispatcher fully drains, yet buffered records still sit above the low watermark →
       // stay paused. If totalInFlight ignored the buffer this would wrongly resume.
@@ -308,7 +323,8 @@ class WatermarkHysteresisTest {
       assertEquals(
         Action.NONE,
         controller.check(null, true),
-        "Buffered records above low watermark must keep the consumer paused");
+        "Buffered records above low watermark must keep the consumer paused"
+      );
 
       // Buffer drains to the low watermark → resume.
       bufferedBatch.set(LOW);
@@ -323,7 +339,10 @@ class WatermarkHysteresisTest {
       final var dispatcherPending = new AtomicLong(HIGH - 1); // just under high on its own
       final var bufferedBatch = new AtomicLong(0);
       final var controller = new BackpressureController(
-        HIGH, LOW, BackpressureController.inFlightStrategy(() -> dispatcherPending.get() + bufferedBatch.get()));
+        HIGH,
+        LOW,
+        BackpressureController.inFlightStrategy(() -> dispatcherPending.get() + bufferedBatch.get())
+      );
 
       // Each dimension below high; sum below high → hold.
       assertEquals(Action.NONE, controller.check(null, false));
@@ -346,7 +365,10 @@ class WatermarkHysteresisTest {
     void controllerReadsCurrentCountAsParallelWorkersComplete() throws InterruptedException {
       final var inFlight = new AtomicLong(HIGH + 5); // start saturated
       final var controller = new BackpressureController(
-        HIGH, LOW, BackpressureController.inFlightStrategy(inFlight::get));
+        HIGH,
+        LOW,
+        BackpressureController.inFlightStrategy(inFlight::get)
+      );
 
       assertEquals(Action.PAUSE, controller.check(null, false));
 
@@ -375,14 +397,16 @@ class WatermarkHysteresisTest {
       assertEquals(
         Action.RESUME,
         snapshot.getLast(),
-        "Final completion drops below low watermark → controller must read it and resume");
+        "Final completion drops below low watermark → controller must read it and resume"
+      );
       // No premature resume while the counter was still inside the band.
       final var firstResumeIndex = snapshot.indexOf(Action.RESUME);
       for (var i = 0; i < firstResumeIndex; i++) {
         assertEquals(
           Action.NONE,
           snapshot.get(i),
-          "No resume may fire while the live in-flight count is still above the low watermark");
+          "No resume may fire while the live in-flight count is still above the low watermark"
+        );
       }
     }
   }

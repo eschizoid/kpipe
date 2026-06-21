@@ -89,7 +89,10 @@ class OffsetOrderingPropertyTest {
         for (var i = 0; i < size; i++) all.add((long) i);
         final var rnd = new Random(seed);
         // Pick a random subset to mark (each offset independently kept), then shuffle it.
-        final var subset = all.stream().filter(o -> rnd.nextBoolean()).collect(Collectors.toCollection(ArrayList::new));
+        final var subset = all
+          .stream()
+          .filter(o -> rnd.nextBoolean())
+          .collect(Collectors.toCollection(ArrayList::new));
         Collections.shuffle(subset, rnd);
         return new GapScenario(size, subset);
       });
@@ -124,9 +127,9 @@ class OffsetOrderingPropertyTest {
           expected,
           commitPoint(manager, tp),
           "after marking %d (order %s) commit point must be lowest unmarked / highestMarked+1".formatted(
-              offset,
-              scenario.markOrder()
-            )
+            offset,
+            scenario.markOrder()
+          )
         );
 
         // I1 restated as an inequality: the commit point can never pass any still-pending offset.
@@ -213,9 +216,9 @@ class OffsetOrderingPropertyTest {
     final var partitions = Arbitraries.integers().between(0, 3);
     final var offsets = Arbitraries.longs().between(0L, 15L);
     final var kinds = Arbitraries.of(true, false);
-    final Arbitrary<MultiOp> ops = Combinators
-      .combine(partitions, kinds, offsets)
-      .as((p, track, off) -> new MultiOp(p, track, off));
+    final Arbitrary<MultiOp> ops = Combinators.combine(partitions, kinds, offsets).as((p, track, off) ->
+      new MultiOp(p, track, off)
+    );
     return ops.list().ofMinSize(1).ofMaxSize(80);
   }
 
@@ -225,9 +228,7 @@ class OffsetOrderingPropertyTest {
   /// commit points don't bleed between partitions and that an offset is never committable
   /// (counted toward the commit point) before its record is marked terminal.
   @Property(tries = 300)
-  void perPartitionCommitPointsAreIndependentAndNeverAhead(
-    @ForAll("multiPartitionSequences") final List<MultiOp> ops
-  ) {
+  void perPartitionCommitPointsAreIndependentAndNeverAhead(@ForAll("multiPartitionSequences") final List<MultiOp> ops) {
     final var manager = newManager();
     try {
       // Per-partition model state.
@@ -268,10 +269,10 @@ class OffsetOrderingPropertyTest {
             assertTrue(
               commitPoint(manager, tp) <= lowest,
               "partition %d commit point %d skipped unprocessed offset %d".formatted(
-                  p,
-                  commitPoint(manager, tp),
-                  lowest
-                )
+                p,
+                commitPoint(manager, tp),
+                lowest
+              )
             );
           }
         }
@@ -292,10 +293,7 @@ class OffsetOrderingPropertyTest {
   /// treated as committed — `highestProcessed + 1` becomes the commit point only when nothing is
   /// pending.
   @Property(tries = 300)
-  void unmarkedOffsetIsNeverCounted(
-    @ForAll @IntRange(min = 1, max = 30) final int size,
-    @ForAll final long seed
-  ) {
+  void unmarkedOffsetIsNeverCounted(@ForAll @IntRange(min = 1, max = 30) final int size, @ForAll final long seed) {
     final var manager = newManager();
     final var tp = new TopicPartition(TOPIC, 0);
     try {

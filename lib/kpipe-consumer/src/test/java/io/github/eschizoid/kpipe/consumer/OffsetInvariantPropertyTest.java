@@ -77,11 +77,7 @@ class OffsetInvariantPropertyTest {
           );
         } else if (highestMarked >= 0) {
           // Pending set empty and something was marked: commit point is highest-marked + 1.
-          assertEquals(
-            highestMarked + 1,
-            commitPoint,
-            "commit point with empty pending set must be highestMarked + 1"
-          );
+          assertEquals(highestMarked + 1, commitPoint, "commit point with empty pending set must be highestMarked + 1");
         }
       }
     } finally {
