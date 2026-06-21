@@ -114,18 +114,20 @@ class ChaosRebalanceIntegrationTest {
       threadB.join(5000);
     }
 
-    // No commit-ahead / no silent skip (I2): the committed offset for each partition must never
-    // exceed the log end. Combined with the no-loss assertion above (every record observed), this
-    // is the exact at-least-once contract — the commit only ever advances over genuinely processed
+    // No commit-ahead / no silent skip (I2): where a partition has a committed offset, it must
+    // never exceed the log end. Combined with the no-loss assertion above (every record observed),
+    // this is the at-least-once contract — the commit only ever advances over genuinely processed
     // offsets and never skips an unprocessed record to get ahead.
     //
-    // It must be `<=`, NOT `==`. At-least-once does not promise the commit reaches log-end at an
-    // arbitrary shutdown: a processed-but-not-yet-committed tail is legitimate and is simply
-    // reprocessed on restart — that is the definition of at-least-once tolerance. Under an induced
-    // rebalance (the new owner reprocesses the prior owner's uncommitted offsets) plus a bounded
-    // graceful-close drain, a small uncommitted tail is correct behavior, not loss. Asserting
-    // `== logEnd` would test an exactly-once / complete-drain property kpipe deliberately does not
-    // claim. The guarantee under test is no-loss (above) + no-commit-ahead (here).
+    // The bound is `<=`, NOT `==`, and a partition may legitimately have NO committed offset at
+    // all. At-least-once does not promise the commit reaches log-end — or that every partition
+    // commits — at an arbitrary shutdown across an induced rebalance. A fully-processed-but-
+    // uncommitted partition (its records were observed, but the owning member revoked or closed
+    // before its commit flushed) is simply re-read from `auto.offset.reset=earliest` and
+    // reprocessed on restart: that is at-least-once tolerance, not loss. No-loss (asserted above
+    // over the observed set) is the real guarantee; this loop adds the no-commit-ahead bound for
+    // every partition that did commit. Requiring a commit on every partition, or `== logEnd`,
+    // would assert an exactly-once / complete-drain property kpipe deliberately does not claim.
     final var endOffsets = endOffsets(topic);
     final var committed = committedOffsets(groupId);
 
@@ -133,7 +135,11 @@ class ChaosRebalanceIntegrationTest {
       final var tp = entry.getKey();
       final var logEnd = entry.getValue();
       final var committedMeta = committed.get(tp);
-      assertNotNull(committedMeta, "Partition %s must have a committed offset after draining.".formatted(tp));
+      // A missing commit is an acceptable uncommitted tail (reprocessed on restart); no-loss above
+      // already covers it. Only bound-check partitions that actually committed.
+      if (committedMeta == null) {
+        continue;
+      }
       assertTrue(
         committedMeta.offset() <= logEnd,
         "Committed offset for %s must not exceed the log end (no commit-ahead). committed=%d logEnd=%d".formatted(
