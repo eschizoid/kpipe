@@ -50,7 +50,11 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     /// Mark a record's offset as successfully processed (after a successful batch flush).
     void markProcessed(ConsumerRecord<K, byte[]> record);
 
-    /// Handle a record that was part of a failed batch — DLQ + error handler + mark processed.
+    /// Handle a record that was part of a failed batch: increment error metrics, route to the DLQ
+    /// if one is configured, and invoke the error handler. The offset is marked processed only if
+    /// the record reaches a durable terminal state — successfully parked in the DLQ, or no DLQ is
+    /// configured (log-and-advance). A failed DLQ send leaves the offset pending so the record is
+    /// reprocessed on restart rather than silently dropped.
     void onBatchFailure(ConsumerRecord<K, byte[]> record, Exception cause);
   }
 

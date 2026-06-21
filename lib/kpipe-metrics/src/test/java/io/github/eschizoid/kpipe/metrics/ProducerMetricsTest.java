@@ -35,6 +35,12 @@ class ProducerMetricsTest {
   }
 
   @Test
+  void shouldRecordDlqFailedWithoutThrowing() {
+    final var metrics = ProducerMetrics.noop();
+    assertDoesNotThrow(metrics::recordDlqFailed);
+  }
+
+  @Test
   void shouldSupportConcurrentRecordingFromVirtualThreads() throws InterruptedException {
     final var metrics = ProducerMetrics.noop();
     final var threads = new Thread[50];

@@ -22,6 +22,7 @@ public final class OtelProducerMetrics implements ProducerMetrics {
   private final LongCounter messagesSent;
   private final LongCounter messagesFailed;
   private final LongCounter dlqSent;
+  private final LongCounter dlqFailed;
 
   /// Creates a fully-instrumented instance.
   ///
@@ -43,6 +44,11 @@ public final class OtelProducerMetrics implements ProducerMetrics {
       .setDescription("Number of messages sent to the dead-letter queue")
       .setUnit("{message}")
       .build();
+    dlqFailed = meter
+      .counterBuilder("kpipe.producer.dlq.failed")
+      .setDescription("Number of dead-letter sends that failed (consumer holds the offset for reprocessing)")
+      .setUnit("{message}")
+      .build();
   }
 
   @Override
@@ -58,5 +64,10 @@ public final class OtelProducerMetrics implements ProducerMetrics {
   @Override
   public void recordDlqSent() {
     dlqSent.add(1);
+  }
+
+  @Override
+  public void recordDlqFailed() {
+    dlqFailed.add(1);
   }
 }

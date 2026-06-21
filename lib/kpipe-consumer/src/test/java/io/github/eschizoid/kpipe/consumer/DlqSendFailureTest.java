@@ -33,8 +33,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 /// processing AND the dead-letter send itself fails (broker down, producer closed, serializer
 /// blowup), the record is in neither place, so its offset must NOT advance. `handleProcessingError`
 /// therefore marks the offset only on a successful DLQ send. A failed send leaves the offset
-/// pending (commit point holds), so the record is reprocessed — and the DLQ retried — on the
-/// next poll/restart. A down DLQ applies backpressure, it never silently drops.
+/// pending (commit point holds), so the record is reprocessed — and the DLQ retried — on a
+/// restart or partition reassignment. A down DLQ applies backpressure, it never silently drops.
 ///
 /// These tests use a recording [OffsetManager] double so the marked/tracked offsets can be
 /// inspected directly without a live Kafka broker. The processor always throws, and the injected

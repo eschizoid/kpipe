@@ -40,4 +40,8 @@ public interface ProducerMetrics {
 
   /// Records that a message was sent to the dead-letter queue.
   void recordDlqSent();
+
+  /// Records that a dead-letter send failed. The consumer holds the record's offset on this
+  /// outcome (the record is reprocessed on restart), so this counter signals a stalling DLQ.
+  void recordDlqFailed();
 }

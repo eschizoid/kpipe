@@ -15,4 +15,7 @@ final class NoopProducerMetrics implements ProducerMetrics {
 
   @Override
   public void recordDlqSent() {}
+
+  @Override
+  public void recordDlqFailed() {}
 }

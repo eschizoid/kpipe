@@ -1007,7 +1007,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
               () ->
                 "DLQ delivery failed for batch record at offset " +
                 record.offset() +
-                "; offset NOT committed, record will be reprocessed"
+                "; offset NOT committed, record will be reprocessed on restart/rebalance"
             );
           }
         } else if (offsetManager != null) {
@@ -1344,6 +1344,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// * `backpressurePauseCount` / `backpressureTimeMs` — backpressure pause count and total ms held
   /// * `circuitBreakerTrips` / `circuitBreakerTimeOpenMs` — CB trip count and total ms in OPEN
   /// * `dlqSent` — records sent to the configured DLQ topic
+  /// * `dlqFailed` — records whose DLQ send failed; the offset is held (reprocessed on
+  ///   restart/rebalance), so a rising count signals a stalling DLQ
   /// * `inFlight` — current number of messages held by the consumer (live counter, not a counter
   /// delta).
   ///   Sums the dispatcher's pending count (records currently being processed or queued per-key)
@@ -1846,8 +1848,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
       // The offset advances only once the record reaches a durable terminal state: either the sink
       // processed it (handled elsewhere) or it is safely parked in the DLQ. If the DLQ send fails
       // the record is in neither place, so leave the offset pending — the commit point holds and
-      // the record is reprocessed (and the DLQ retried) on the next poll/restart. A down DLQ
-      // applies backpressure rather than silently dropping data.
+      // the record is re-fetched (and the DLQ retried) on the next restart or partition
+      // reassignment. A down DLQ applies backpressure rather than silently dropping data.
       if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e)) {
         metrics.get(METRIC_DLQ_SENT).incrementAndGet();
         markOffsetProcessed(record);
@@ -1858,7 +1860,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
           () ->
             "DLQ delivery failed for record at offset " +
             record.offset() +
-            "; offset NOT committed, record will be reprocessed"
+            "; offset NOT committed, record will be reprocessed on restart/rebalance"
         );
       }
     } else {
