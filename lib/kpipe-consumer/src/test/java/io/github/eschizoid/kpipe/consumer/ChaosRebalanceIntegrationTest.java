@@ -43,8 +43,8 @@ import org.testcontainers.utility.DockerImageName;
 ///     exceeds the log end. This is `<=`, not `==`: at-least-once permits a processed-but-not-yet-
 ///     committed tail at a bounded graceful-close shutdown (reprocessed on restart), so requiring
 ///     the commit to reach exactly the log end would assert a complete-drain / exactly-once
-///     property kpipe does not claim. No-loss (above) plus this bound is the at-least-once
-// contract.
+///     property kpipe does not claim. No-loss (above) plus this bound is the
+///     at-least-once contract.
 ///
 /// Revocation commit-and-clear (I4) is *exercised* here (the second consumer's join forces a
 /// revoke from the first) but is asserted directly at the unit level in
