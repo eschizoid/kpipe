@@ -62,6 +62,15 @@ jmh {
   csvProp("jmh.includes")?.let { includes = it }
   csvProp("jmh.profilers")?.let { profilers = it }
 
+  // Override the hardcoded `workMicros` @Param at runtime. The full sweep
+  // (0/100/1000/10000/35000/50000/100000) is an overnight run because the single-threaded arm is
+  // serial — 25k records × 100ms = ~42 min per iteration — which overflows CI's job cap. Pass
+  // `-Pjmh.workMicros=0,100,1000` to run only the publishable cells (the TEMPLATE reports exactly
+  // those three) so a capture fits in CI. Empty = the benchmark's own @Param default (full sweep).
+  csvProp("jmh.workMicros")?.let { values ->
+    benchmarkParameters.put("workMicros", objects.listProperty<String>().value(values))
+  }
+
   val jmhResultFormat = stringProp("jmh.resultFormat", "TEXT")
   val jmhTmpDir =
     layout.buildDirectory
