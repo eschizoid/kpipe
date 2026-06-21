@@ -221,10 +221,7 @@ class MultiTopicUnroutedPolicyTest {
     consumer.start();
     try {
       // Both records must drain: routed → processed, unrouted → marked-and-dropped.
-      awaitCondition(
-        () -> routedProcessed.get() >= 1 && markCounts.containsKey(UNROUTED_TOPIC + "-0-0"),
-        10_000
-      );
+      awaitCondition(() -> routedProcessed.get() >= 1 && markCounts.containsKey(UNROUTED_TOPIC + "-0-0"), 10_000);
 
       // The consumer thread survived the unrouted record (no crash) and is still running.
       assertTrue(consumer.isRunning(), "consumer must remain running after dropping an unrouted record");
@@ -250,10 +247,7 @@ class MultiTopicUnroutedPolicyTest {
         })
         .findFirst()
         .orElse(null);
-      assertTrue(
-        dropWarn != null,
-        "expected a WARNING naming the unrouted topic; captured=" + captured.size()
-      );
+      assertTrue(dropWarn != null, "expected a WARNING naming the unrouted topic; captured=" + captured.size());
     } finally {
       julLogger.removeHandler(handler);
       julLogger.setLevel(originalLevel);

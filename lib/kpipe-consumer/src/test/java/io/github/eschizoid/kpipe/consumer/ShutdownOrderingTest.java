@@ -263,7 +263,8 @@ class ShutdownOrderingTest {
       .withPipeline(
         TestPipelines.sideEffect(v -> {
           entered.countDown();
-          // Still in flight when close() fires, forcing the drain to wait on this record.
+          // Still in flight when close() fires, forcing the drain to wait on this
+          // record.
           try {
             Thread.sleep(150);
           } catch (final InterruptedException e) {
@@ -285,7 +286,10 @@ class ShutdownOrderingTest {
     consumer.close();
     assertTrue(consumer.awaitShutdown(Duration.ofSeconds(5)), "consumer must reach CLOSED");
 
-    assertTrue(manager.marks.get() >= 1, "the in-flight record's offset must be marked during the drain, not abandoned");
+    assertTrue(
+      manager.marks.get() >= 1,
+      "the in-flight record's offset must be marked during the drain, not abandoned"
+    );
     assertFalse(
       manager.markedAfterClose.get(),
       "the in-flight offset must be marked BEFORE the offset manager is closed (else it is silently lost)"
