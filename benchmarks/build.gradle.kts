@@ -83,8 +83,11 @@ jmh {
       .get()
       .asFile
 
-  benchmarkMode = listOf("thrpt")
-  timeUnit = "s"
+  // Benchmark mode + time unit are NOT set globally on purpose: every benchmark class declares its
+  // own `@BenchmarkMode` / `@OutputTimeUnit` (throughput benches → Throughput/SECONDS, the latency
+  // bench → SampleTime+AverageTime/MILLISECONDS). A global `benchmarkMode = listOf("thrpt")` here
+  // overrides those annotations — which silently forced ParallelProcessingLatencyBenchmark to run
+  // in throughput mode and emit no percentiles. Let the annotations be the source of truth.
   failOnError = true
   forceGC = true
   resultFormat = jmhResultFormat

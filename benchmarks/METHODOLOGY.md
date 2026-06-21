@@ -127,6 +127,54 @@ meaningless as a measurement. Note: `-Pjmh.includes` is a regex matched against 
 all configured `workMicros` cells of the included arm. Swap `kpipe` for any other arm name (`share`, `kpipeKeyOrdered`,
 `singleThread`, `confluentKey`, etc.) to spot-check that one.
 
+### Running in GitHub CI (what fits, what doesn't)
+
+The Benchmarks workflow runs on a shared 4-vCPU runner — read the **ordering**, never the absolutes (see
+[`results/2026-06-20.md`](results/2026-06-20.md) for the first CI capture). Two things bound what's runnable:
+
+1. **`workMicros` is now overridable** via `-Pjmh.workMicros=<csv>` (wired to JMH `benchmarkParameters`). Empty = the
+   benchmark's full `@Param` sweep (an overnight run); pass a subset for CI.
+2. **The serial arms don't fit a high-`workMicros` run.** `singleThread` is serial (25k records × 100ms ≈ 42 min /
+   iteration at `workMicros=100000`) and `confluentPartition` is capped at the partition count (8-way), so both blow
+   past GitHub's 6-hour job cap in the `10ms–100ms` regime. Exclude them and the parallel arms fit.
+
+**Low regime (the publishable cells — fits CI easily):**
+
+```bash
+./gradlew :benchmarks:jmh \
+  -Pjmh.includes='ParallelProcessing' \
+  -Pjmh.fork=2 -Pjmh.profilers='gc' -Pjmh.resultFormat=JSON \
+  -Pjmh.workMicros='0,100,1000'
+```
+
+**High regime (`10ms–100ms`, the I/O-hop range — fits CI only with the serial arms excluded):**
+
+```bash
+# Exclude singleThread + confluentPartition; the `$` anchors keep `confluent` from also matching
+# `confluentPartition` (JMH includes are substring regexes over the FQN, method name last).
+./gradlew :benchmarks:jmh \
+  -Pjmh.includes='ParallelProcessingBenchmark\.(kpipe$|kpipeKeyOrdered$|confluent$|confluentKey$|reactor$|raw$|share$)' \
+  -Pjmh.fork=2 -Pjmh.profilers='gc' -Pjmh.resultFormat=JSON \
+  -Pjmh.workMicros='10000,35000,50000,100000'
+```
+
+The complete picture — every arm including `singleThread` across the full sweep — stays a **local overnight run** on a
+quiesced box. CI gives the competitive ordering for the cells that fit; it does not replace the reference local run.
+
+### Latency percentiles
+
+`ParallelProcessingLatencyBenchmark` declares `@BenchmarkMode({SampleTime, AverageTime})`. The Gradle config does
+**not** set a global `benchmarkMode` (doing so would override that annotation and force throughput mode — which silently
+happened in the first CI capture, producing no percentiles). To capture p50/p95/p99, just run the latency bench; its
+annotation drives the mode:
+
+```bash
+./gradlew :benchmarks:jmh \
+  -Pjmh.includes='ParallelProcessingLatencyBenchmark' \
+  -Pjmh.fork=2 -Pjmh.resultFormat=JSON \
+  -Pjmh.workMicros='100'
+```
+
 ## What to write down with every published number
 
 A bench number without context is unverifiable. Each entry in `results/` should record:
