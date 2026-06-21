@@ -986,6 +986,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
       public void markProcessed(final ConsumerRecord<K, byte[]> record) {
         metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
         otelMetrics.recordMessageProcessed(record.topic());
+        // Feed the circuit breaker / health window so batch outcomes count toward the failure
+        // rate, exactly like the per-record path. Both branches must report, or the rolling
+        // window would see only failures and trip spuriously.
+        health.recordOutcome(true);
         if (offsetManager != null) offsetManager.markOffsetProcessed(record);
       }
 
@@ -993,6 +997,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
       public void onBatchFailure(final ConsumerRecord<K, byte[]> record, final Exception cause) {
         metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
         otelMetrics.recordProcessingError(record.topic());
+        health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
         // Mirror the per-record path: mark the offset only after a successful DLQ send.
         // A failed send leaves it pending so the record is reprocessed, never dropped.
