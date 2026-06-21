@@ -242,3 +242,6 @@ gradle-app.setting
 
 ### Jenv ###
 .java-version
+
+# jqwik property-test failure database
+.jqwik-database

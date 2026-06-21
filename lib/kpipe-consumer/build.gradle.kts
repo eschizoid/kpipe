@@ -31,6 +31,8 @@ dependencies {
   testImplementation(libs.mockitoCore)
   testImplementation(libs.mockitoJunitJupiter)
 
+  testImplementation(libs.jqwik)
+
   testImplementation(libs.slf4jSimple)
 
   testImplementation(libs.testcontainers)
