@@ -52,6 +52,12 @@ but unmarked offset is never treated as committed.
 commit point for its partition is `<= N`. Equivalently: `highestProcessedOffset + 1` can become the commit point only
 when the pending set is empty (no unmarked offset is holding the line lower).
 
+**Shutdown-tail tolerance.** This is a `<=` invariant, not `==`. At a bounded graceful-close shutdown the commit point
+may legitimately trail the log end by a processed-but-not-yet-committed tail — those records are simply reprocessed on
+restart, which is the definition of at-least-once tolerance. Requiring the commit to reach exactly the log end at
+shutdown would be an exactly-once / complete-drain property kpipe does not claim. End-to-end tests therefore assert
+no-loss (every record observed) plus this `<=` bound, never `committed == logEnd`.
+
 ## I3 — no loss (commit advances only over contiguous completed offsets)
 
 Every tracked offset eventually reaches a terminal state (it is either still pending or has been marked), and the commit
@@ -84,5 +90,5 @@ exception, and it does not resurrect cleared partition state in a way that produ
 **Assertable property.** Given a partition whose state was cleared by `onPartitionsRevoked`, a subsequent
 `markOffsetProcessed` for that partition completes without throwing. (Note: because the manager keys state by
 `TopicPartition` and re-creates entries lazily, a post-revoke mark may re-create a `highestProcessedOffset` entry; the
-invariant the harness checks is the *no-exception, no-corruption* property — a re-created entry still obeys I1–I3 for
+invariant the harness checks is the _no-exception, no-corruption_ property — a re-created entry still obeys I1–I3 for
 whatever is tracked after the revoke. It must never produce a commit point that skips a still-pending offset.)

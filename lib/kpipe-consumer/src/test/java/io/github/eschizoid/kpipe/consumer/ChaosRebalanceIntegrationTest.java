@@ -32,19 +32,23 @@ import org.testcontainers.utility.DockerImageName;
 /// against a real broker.
 ///
 /// This exercises the offset-lifecycle invariants from a black-box, end-to-end angle (the
-/// jqwik property test covers them at the unit level on `KafkaOffsetManager` directly):
+/// jqwik property + concurrency-stress tests cover them at the unit level on `KafkaOffsetManager`
+/// directly). What this test actually ASSERTS:
 ///
-///   * **No loss (I3).** Every produced record is observed by the sink at least once. A
-///     rebalance mid-stream must never let the committed offset advance past a record that
-///     was tracked but never marked terminal, so on reassignment the unprocessed tail is
-///     re-fetched rather than silently skipped.
-///   * **No commit-ahead (I2).** The committed offset for each partition never exceeds the
-///     highest contiguous processed offset. After the run drains, the committed position
-///     equals the end of the log (everything processed), with no gap-skipping.
-///   * **Revocation commit-and-clear (I4).** When the second consumer joins and partitions
-///     are revoked from the first, the revoked partitions' lowest-pending / highest-contiguous
-///     offset is committed before reassignment, so the second consumer resumes from the right
-///     spot instead of replaying from the log start under the wrong assumption.
+///   * **No loss (I3) — the primary guarantee.** Every produced record is observed by the sink
+///     at least once across the rebalance (exact set coverage). A rebalance mid-stream must never
+///     let the committed offset advance past a record that was tracked but never marked terminal,
+///     so on reassignment the unprocessed tail is re-fetched rather than silently skipped.
+///   * **No commit-ahead (I2) — a sanity bound.** The committed offset for each partition never
+///     exceeds the log end. This is `<=`, not `==`: at-least-once permits a processed-but-not-yet-
+///     committed tail at a bounded graceful-close shutdown (reprocessed on restart), so requiring
+///     the commit to reach exactly the log end would assert a complete-drain / exactly-once
+///     property kpipe does not claim. No-loss (above) plus this bound is the at-least-once
+// contract.
+///
+/// Revocation commit-and-clear (I4) is *exercised* here (the second consumer's join forces a
+/// revoke from the first) but is asserted directly at the unit level in
+/// `OffsetConcurrencyStressTest`; this test does not assert the mid-rebalance commit distinctly.
 ///
 /// The rebalance is induced by starting a second `KPipeConsumer` in the same consumer group
 /// mid-stream, which forces Kafka to reassign partitions across the two members. A
@@ -96,8 +100,11 @@ class ChaosRebalanceIntegrationTest {
       final var allObserved = awaitObservedAtLeast(observed, producedValues.size(), Duration.ofSeconds(60));
       assertTrue(
         allObserved,
-        "Every produced record must be observed at least once after the rebalance; saw %d of %d (total deliveries %d)"
-          .formatted(observed.size(), producedValues.size(), observedTotal.get())
+        "Every produced record must be observed at least once after the rebalance; saw %d of %d (total deliveries %d)".formatted(
+          observed.size(),
+          producedValues.size(),
+          observedTotal.get()
+        )
       );
       assertEquals(producedValues, observed, "Observed set must exactly cover the produced set (no loss).");
     } finally {
@@ -129,8 +136,11 @@ class ChaosRebalanceIntegrationTest {
       assertNotNull(committedMeta, "Partition %s must have a committed offset after draining.".formatted(tp));
       assertTrue(
         committedMeta.offset() <= logEnd,
-        "Committed offset for %s must not exceed the log end (no commit-ahead). committed=%d logEnd=%d"
-          .formatted(tp, committedMeta.offset(), logEnd)
+        "Committed offset for %s must not exceed the log end (no commit-ahead). committed=%d logEnd=%d".formatted(
+          tp,
+          committedMeta.offset(),
+          logEnd
+        )
       );
     }
   }
@@ -215,10 +225,7 @@ class ChaosRebalanceIntegrationTest {
 
   private Map<TopicPartition, OffsetAndMetadata> committedOffsets(final String groupId) throws Exception {
     try (final var admin = Admin.create(adminProperties())) {
-      return admin
-        .listConsumerGroupOffsets(groupId)
-        .partitionsToOffsetAndMetadata()
-        .get(15, TimeUnit.SECONDS);
+      return admin.listConsumerGroupOffsets(groupId).partitionsToOffsetAndMetadata().get(15, TimeUnit.SECONDS);
     }
   }
 
