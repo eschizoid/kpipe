@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import io.github.eschizoid.kpipe.sink.BatchPolicy;
+import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collection;
@@ -14,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -25,11 +28,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 /// Pins the DLQ-send-failure offset behavior on the per-record error path.
 ///
-/// Question under test: when a record fails processing AND the dead-letter send itself fails
-/// (broker down, producer closed, serializer blowup), is the record's offset marked processed?
-/// The at-least-once contract says a record that is neither successfully processed nor safely
-/// parked in the DLQ must NOT have its offset advanced — otherwise it is silently lost (never
-/// reprocessed because the commit point moved past it, never landed in the DLQ).
+/// The at-least-once contract: the offset advances only once the record reaches a durable terminal
+/// state — either the sink processed it, or it is safely parked in the DLQ. When a record fails
+/// processing AND the dead-letter send itself fails (broker down, producer closed, serializer
+/// blowup), the record is in neither place, so its offset must NOT advance. `handleProcessingError`
+/// therefore marks the offset only on a successful DLQ send. A failed send leaves the offset
+/// pending (commit point holds), so the record is reprocessed — and the DLQ retried — on the
+/// next poll/restart. A down DLQ applies backpressure, it never silently drops.
 ///
 /// These tests use a recording [OffsetManager] double so the marked/tracked offsets can be
 /// inspected directly without a live Kafka broker. The processor always throws, and the injected
@@ -43,27 +48,12 @@ class DlqSendFailureTest {
   @Mock
   private Producer<String, byte[]> mockProducer;
 
-  /// A failing-DLQ-send record on the single-record error path. Asserts the offset-lifecycle
-  /// outcome: the record was tracked, the DLQ send was attempted and failed, and we observe
-  /// whether the offset was marked processed despite that failure.
-  ///
-  /// CORRECTNESS FINDING (silent loss). `handleProcessingError` calls `sendToDlq` and then calls
-  /// `markOffsetProcessed` UNCONDITIONALLY -- it ignores the boolean `sendToDlq` returns.
-  /// `KPipeProducer.sendToDlq` swallows any send failure (logs at ERROR) and returns false, so a
-  /// record whose DLQ send fails (broker down, producer closed, serializer blowup) still has its
-  /// offset marked processed. The commit point advances past it: the record is neither durably in
-  /// the DLQ nor eligible for reprocessing on restart. It is silently lost. The only signal is one
-  /// ERROR log line and `kpipe.consumer.dlq.sent` failing to increment.
-  ///
-  /// At-least-once correctness requires that a failed DLQ send NOT mark the offset (so the record
-  /// is reprocessed) or surface the failure loudly (throw / route somewhere durable). This test
-  /// PINS THE CURRENT (buggy) BEHAVIOR so the regression is documented and any future fix flips this
-  /// assertion deliberately. The same shape exists on the batch failure path
-  /// (`BatchCallbacks.onBatchFailure`). Do not "fix" by making this green silently -- it is a
-  /// design decision for review.
+  /// A failing-DLQ-send record on the single-record error path. The record is tracked, the DLQ
+  /// send is attempted and fails, so the offset must NOT be marked. It stays pending and is
+  /// reprocessed on restart; the failure surfaces via the `dlqFailed` counter and an ERROR log.
   @Test
   @SuppressWarnings("unchecked")
-  void failedDlqSendStillMarksOffset_documentedSilentLoss() throws Exception {
+  void failedDlqSendDoesNotMarkOffset() throws Exception {
     final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
 
     // The DLQ producer's send throws synchronously -> sendToDlq catches it and returns false.
@@ -96,12 +86,16 @@ class DlqSendFailureTest {
       verify(mockProducer, times(1)).send(any(ProducerRecord.class));
       assertTrue(recorder.tracked.contains(100L), "record should have been tracked");
 
-      // The record is NOT in the DLQ (the send failed), yet the offset IS marked processed. The
-      // correct at-least-once behavior would be the opposite -- this assertion encodes the bug.
-      assertTrue(
+      // Core at-least-once invariant: a record that is neither processed nor durably in the DLQ
+      // must NOT have its offset advanced, so it is reprocessed on restart rather than lost.
+      assertFalse(
         recorder.marked.contains(100L),
-        "documents current silent-loss behavior: offset marked despite failed DLQ send"
+        "offset must NOT be marked when the DLQ send failed (record is neither processed nor parked)"
       );
+
+      // The failure is observable, not swallowed.
+      assertEquals(1L, consumer.getMetrics().get("dlqFailed"), "failed DLQ send must increment the dlqFailed counter");
+      assertEquals(0L, consumer.getMetrics().get("dlqSent"), "no successful DLQ send occurred");
     }
   }
 
@@ -139,6 +133,68 @@ class DlqSendFailureTest {
 
       verify(mockProducer, times(1)).send(any(ProducerRecord.class));
       assertTrue(recorder.marked.contains(100L), "offset should be marked after a successful DLQ send");
+      assertEquals(1L, consumer.getMetrics().get("dlqSent"), "successful DLQ send must increment dlqSent");
+      assertEquals(0L, consumer.getMetrics().get("dlqFailed"), "no DLQ failure occurred");
+    }
+  }
+
+  /// The batch error path (`BatchCallbacks.onBatchFailure`) must obey the same durable-terminal
+  /// rule as the per-record path: a failed DLQ send leaves the offset pending so the record is
+  /// reprocessed, never silently dropped. A `BatchPolicy.ofSize(1)` flushes inline on enqueue, so
+  /// the single record's whole-batch failure (the sink throws) reaches `onBatchFailure`
+  /// synchronously; we then await the observable `dlqFailed` counter and assert the offset stayed
+  /// unmarked.
+  @Test
+  @SuppressWarnings("unchecked")
+  void failedDlqSendOnBatchPathDoesNotMarkOffset() throws Exception {
+    when(mockProducer.send(any(ProducerRecord.class))).thenThrow(new RuntimeException("dlq broker down"));
+
+    final var recorder = new RecordingOffsetManager<String>();
+    final var mock = new MockConsumer<String, byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    final var tp = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(tp));
+    mock.updateBeginningOffsets(Map.of(tp, 0L));
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 5L, "key", "value".getBytes(StandardCharsets.UTF_8)));
+
+    try (
+      final var consumer = KPipeConsumer.<String>builder()
+        .withProperties(byteProperties())
+        .withConsumer(() -> mock)
+        .withOffsetManager(recorder)
+        .withBatchPipeline(
+          TOPIC,
+          TestPipelines.sideEffect(v -> v),
+          BatchSink.ofVoid(_ -> {
+            throw new RuntimeException("batch sink always fails");
+          }),
+          BatchPolicy.ofSize(1)
+        )
+        .withDeadLetterTopic(DLQ_TOPIC)
+        .withKafkaProducer(mockProducer)
+        .withPollTimeout(Duration.ofMillis(10))
+        .build()
+    ) {
+      consumer.start();
+
+      // Await the synchronous flush → failed DLQ send. The dlqFailed counter is the observable
+      // signal that onBatchFailure ran the failure branch.
+      final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+      while (consumer.getMetrics().getOrDefault("dlqFailed", 0L) < 1 && System.nanoTime() < deadline) {
+        Thread.sleep(10);
+      }
+
+      assertEquals(1L, consumer.getMetrics().get("dlqFailed"), "batch DLQ send failure must increment dlqFailed");
+      assertEquals(0L, consumer.getMetrics().get("dlqSent"), "no successful DLQ send occurred");
+      assertFalse(
+        recorder.marked.contains(5L),
+        "batch path: offset must NOT be marked when the DLQ send failed (record stays eligible for reprocessing)"
+      );
     }
   }
 
