@@ -68,6 +68,18 @@ point advances only over a contiguous run of completed offsets — it never skip
 has been marked), the commit point is `max(M) + 1`. There is no interleaving that commits an offset whose record was
 tracked but not marked.
 
+**Durable-terminal-state rule (DLQ failure).** A record is marked (offset eligible to advance) only once it reaches a
+durable terminal state: either the sink processed it, or it was safely parked in the dead-letter topic. When a record
+fails processing AND the DLQ send itself fails (broker down, producer closed, oversized/serialization error), it is in
+neither place, so the offset is NOT marked — it stays pending and is re-fetched (and the DLQ retried) on the next
+restart or partition reassignment. (The commit point holds, but the live fetch position has already advanced, so the
+record is not re-delivered within the running session — only after the partition seeks back to the committed offset on
+restart/rebalance.) A down DLQ therefore applies backpressure rather than silently dropping data. The failure is
+observable through the `dlqFailed` counter and an ERROR log. This holds on both the per-record path
+(`handleProcessingError`) and the batch path (`BatchCallbacks.onBatchFailure`). The exception is a consumer with no DLQ
+configured: there the caller has explicitly opted into log-and-advance, so a processing failure marks the offset and
+moves on.
+
 ## I4 — revocation (commit-and-clear on revoke)
 
 On `onPartitionsRevoked`, for each revoked partition the manager commits the current commit point (lowest pending, else
