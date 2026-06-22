@@ -31,14 +31,25 @@ import org.openjdk.jcstress.infra.results.ZZL_Result;
 /// then evaluates the arbiter once both have finished. r1/r2 carry each actor's CAS result and r3
 /// carries the final state.
 @JCStressTest
-@Outcome(id = "true, false, CLOSING", expect = Expect.ACCEPTABLE, desc = "First actor won the transition; state is CLOSING.")
-@Outcome(id = "false, true, CLOSING", expect = Expect.ACCEPTABLE, desc = "Second actor won the transition; state is CLOSING.")
-@Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "Both actors won, neither won, or the final state is not CLOSING.")
+@Outcome(
+  id = "true, false, CLOSING",
+  expect = Expect.ACCEPTABLE,
+  desc = "First actor won the transition; state is CLOSING."
+)
+@Outcome(
+  id = "false, true, CLOSING",
+  expect = Expect.ACCEPTABLE,
+  desc = "Second actor won the transition; state is CLOSING."
+)
+@Outcome(
+  id = ".*",
+  expect = Expect.FORBIDDEN,
+  desc = "Both actors won, neither won, or the final state is not CLOSING."
+)
 @State
 public class StateTransitionCasJCStressTest {
 
-  private final AtomicReference<ConsumerState> state =
-      new AtomicReference<>(ConsumerState.RUNNING);
+  private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.RUNNING);
 
   /// Single-read CAS toward CLOSING, mirroring the consumer's transition helper: read the current
   /// state once, only proceed from an active state, then CAS against the captured value.

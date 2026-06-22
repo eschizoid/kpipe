@@ -60,7 +60,8 @@ class OffsetConcurrencyStressTest {
 
   /// No commit past a gap under parallel marking: N virtual threads each own a disjoint contiguous
   /// slice of offsets on the SAME partition. Each thread tracks its whole slice, then marks them in
-  /// a deterministic but per-thread-shuffled order, so at every instant there are gaps spread across
+  /// a deterministic but per-thread-shuffled order, so at every instant there are gaps spread
+  // across
   /// the partition.
   ///
   /// The load-bearing assertion is the concurrent probe: a separate thread continuously reads the

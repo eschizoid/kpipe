@@ -32,14 +32,8 @@ import org.openjdk.jcstress.infra.results.J_Result;
 /// single result. The only acceptable outcome is 100; any higher value would mean the commit
 /// point advanced past an offset whose record had not reached a terminal state.
 @JCStressTest
-@Outcome(
-    id = "100",
-    expect = Expect.ACCEPTABLE,
-    desc = "Commit point pinned at the still-pending gap offset 100.")
-@Outcome(
-    id = ".*",
-    expect = Expect.FORBIDDEN,
-    desc = "Commit point advanced past the still-pending offset 100.")
+@Outcome(id = "100", expect = Expect.ACCEPTABLE, desc = "Commit point pinned at the still-pending gap offset 100.")
+@Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "Commit point advanced past the still-pending offset 100.")
 @State
 public class OffsetManagerGapHoldJCStressTest {
 
