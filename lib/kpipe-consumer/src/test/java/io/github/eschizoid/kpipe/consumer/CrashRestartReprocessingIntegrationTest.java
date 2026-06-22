@@ -288,11 +288,10 @@ class CrashRestartReprocessingIntegrationTest {
     return Set.copyOf(values);
   }
 
-  /// Builds a SEQUENTIAL consumer with a manual-commit `KafkaOffsetManager` on a 1s commit
-  // interval,
-  /// captured into `offsetManagerRef` so the test can stop it to simulate a crash. Processing one
-  /// record at a time with a small per-record delay keeps the commit point lagging the observed
-  /// frontier, so a processed-but-uncommitted tail reliably exists between commit ticks.
+  /// Builds a SEQUENTIAL consumer (manual-commit `KafkaOffsetManager`, 1s commit interval) captured
+  /// into `offsetManagerRef` so the test can stop it to simulate a crash. Processing one record at
+  /// a time with a small per-record delay keeps the commit point lagging the observed frontier, so
+  /// a processed-but-uncommitted tail reliably exists between commit ticks.
   private KPipeConsumer<byte[]> buildConsumerWithManagedOffsets(
     final String topic,
     final String groupId,
