@@ -73,7 +73,13 @@ class CrashRestartReprocessingIntegrationTest {
 
   private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
 
-  private static final int PARTITIONS = 4;
+  // A single partition makes the A→B handoff deterministic: there is no rebalance-split ambiguity
+  // about which member ends up reading the partition that holds the uncommitted tail. B inherits
+  // the one partition and resumes from the frozen commit, so the re-delivery overlap is guaranteed
+  // (multi-partition rebalance timing made the overlap flaky). No-loss/no-commit-ahead don't depend
+  // on the partition count; the rebalance-handoff angle is covered by
+  // ChaosRebalanceIntegrationTest.
+  private static final int PARTITIONS = 1;
   private static final int RECORD_COUNT = 400;
 
   /// Records A must observe AFTER commits are frozen, forming the guaranteed uncommitted tail that
