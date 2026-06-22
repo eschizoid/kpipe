@@ -24,7 +24,8 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
 
-/// Property-based coverage for the offset-lifecycle ordering invariants in `OFFSET-INVARIANTS.md`.
+/// Property-based coverage for the offset-lifecycle ordering invariants — lowest-pending commits,
+/// no commit-ahead, and no-loss across interleaved track/mark sequences.
 ///
 /// Where `OffsetInvariantPropertyTest` is the single-partition smoke proving the toolchain, this
 /// suite exercises the combinatorial ordering space that property testing is built for: random

@@ -50,7 +50,12 @@ import org.openjdk.jcstress.infra.results.II_Result;
 @Outcome(
   id = "0, 7",
   expect = Expect.ACCEPTABLE,
-  desc = "Reader saw the empty handle but a later payload read caught the write — benign ordering."
+  // Legal and benign: the reader never observed the publication (empty handle, r1=0), so the
+  // publication contract makes no promise about the payload here. Its plain read simply raced
+  // ahead and saw the payload write without the handle store. This is NOT a publication failure
+  // — that signature is the r1=1 case, guarded as FORBIDDEN below. Reachable on weakly-ordered
+  // CPUs (where the payload write can become visible before the handle store), legal on all.
+  desc = "Reader did not observe the publication (empty handle); its plain payload read raced ahead."
 )
 @Outcome(
   id = "1, 0",

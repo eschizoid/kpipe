@@ -80,10 +80,10 @@ class CrashRestartReprocessingIntegrationTest {
 
   // A single partition makes the A→B handoff deterministic: there is no rebalance-split ambiguity
   // about which member ends up reading the partition that holds the uncommitted tail. B inherits
-  // the one partition and resumes from the frozen commit, so the re-delivery overlap is guaranteed
-  // (multi-partition rebalance timing made the overlap flaky). No-loss/no-commit-ahead don't depend
-  // on the partition count; the rebalance-handoff angle is covered by
-  // ChaosRebalanceIntegrationTest.
+  // the one partition and resumes from the frozen commit, so the re-delivery overlap is as
+  // reproducible as a single-broker container allows (multi-partition rebalance timing made it even
+  // flakier). No-loss/no-commit-ahead don't depend on the partition count; the rebalance-handoff
+  // angle is covered by ChaosRebalanceIntegrationTest.
   private static final int PARTITIONS = 1;
   // Enough records that sequential processing (5ms/record) is still mid-stream when we crash A,
   // so a genuine processed-but-uncommitted tail exists rather than A having drained everything.
@@ -108,7 +108,7 @@ class CrashRestartReprocessingIntegrationTest {
 
     // Per-consumer observed sets. A record may be observed by both A and B (at-least-once allows
     // duplicates after a crash replays an uncommitted tail). The no-loss assertion checks the
-    // union; the re-delivery assertion checks the intersection is non-empty.
+    // union; the re-delivery overlap (the intersection) is logged for diagnostics, not asserted.
     final var observedA = ConcurrentHashMap.<String>newKeySet();
     final var observedB = ConcurrentHashMap.<String>newKeySet();
     final var observedTotalA = new AtomicInteger(0);
@@ -288,10 +288,11 @@ class CrashRestartReprocessingIntegrationTest {
     return Set.copyOf(values);
   }
 
-  /// Builds a PARALLEL consumer with a manual-commit `KafkaOffsetManager` on a 1s commit interval,
-  /// captured into `offsetManagerRef` so the test can stop it to simulate a crash. A small
-  /// per-record delay keeps processing slower than the fetch so a processed-but-uncommitted tail
-  /// reliably exists between commit ticks.
+  /// Builds a SEQUENTIAL consumer with a manual-commit `KafkaOffsetManager` on a 1s commit
+  // interval,
+  /// captured into `offsetManagerRef` so the test can stop it to simulate a crash. Processing one
+  /// record at a time with a small per-record delay keeps the commit point lagging the observed
+  /// frontier, so a processed-but-uncommitted tail reliably exists between commit ticks.
   private KPipeConsumer<byte[]> buildConsumerWithManagedOffsets(
     final String topic,
     final String groupId,

@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.openjdk.jcstress.annotations.Actor;
@@ -30,10 +32,12 @@ import org.openjdk.jcstress.infra.results.I_Result;
 /// same task picked up twice).
 ///
 /// Scenario. Both actors dispatch a record for the same key. Each dispatched task increments
-/// a shared counter once. The arbiter waits for the dispatcher's pending count to fall to
-/// zero (both workers drained) and reports the counter. The only acceptable outcome is 2:
-/// both tasks ran exactly once. Zero or one means a lost enqueue; three or more means a
-/// task ran more than once.
+/// a shared counter once; the dispatcher's per-task `onComplete` then counts down a latch the
+/// arbiter awaits. Awaiting the latch establishes a happens-before edge that BOTH tasks have
+/// fully run before the counter is read — closing the early-exit window a `pendingCount()` spin
+/// had (the count can momentarily read zero between an enqueue and the task body executing). The
+/// only acceptable outcome is 2: both tasks ran exactly once. A lost enqueue means a task never
+/// runs, the latch never reaches zero, the await times out, and the run reports the forbidden -1.
 @JCStressTest
 @Outcome(id = "2", expect = Expect.ACCEPTABLE, desc = "Both same-key tasks ran exactly once.")
 @Outcome(id = "-1", expect = Expect.FORBIDDEN, desc = "Drain did not complete within the arbiter deadline.")
@@ -48,30 +52,33 @@ public class KeyOrderedLruJCStressTest {
     KeyOrderedDispatcher.DEFAULT_MAX_KEYS
   );
   private final AtomicInteger tasksRun = new AtomicInteger(0);
+  private final CountDownLatch done = new CountDownLatch(2);
 
   @Actor
   public void dispatcherA() {
-    dispatcher.dispatch(record(0L), tasksRun::incrementAndGet, () -> {});
+    dispatcher.dispatch(record(0L), tasksRun::incrementAndGet, done::countDown);
   }
 
   @Actor
   public void dispatcherB() {
-    dispatcher.dispatch(record(1L), tasksRun::incrementAndGet, () -> {});
+    dispatcher.dispatch(record(1L), tasksRun::incrementAndGet, done::countDown);
   }
 
   @Arbiter
   public void observe(final I_Result r) {
-    // Workers run tasks on virtual threads outside the dispatch lock, so the count may still
-    // be settling when the arbiter starts. Spin on the pending count with a bounded deadline;
-    // report -1 if the drain never completes so a hang surfaces as a forbidden outcome rather
-    // than a wedged run.
-    final var deadline = System.nanoTime() + 5_000_000_000L;
-    while (dispatcher.pendingCount() > 0) {
-      if (System.nanoTime() > deadline) {
+    // Await both tasks' onComplete (fired per task by the dispatcher after task.run()). The await
+    // is the happens-before edge guaranteeing both task bodies fully ran before tasksRun is read,
+    // so a momentary pendingCount==0 between enqueue and execution can't make the read fire early.
+    // A lost enqueue leaves the latch above zero; the await times out and the run reports -1.
+    try {
+      if (!done.await(5, TimeUnit.SECONDS)) {
         r.r1 = -1;
         return;
       }
-      Thread.onSpinWait();
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      r.r1 = -1;
+      return;
     }
     r.r1 = tasksRun.get();
   }

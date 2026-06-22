@@ -17,7 +17,8 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
 
-/// Property-based smoke test for the offset-lifecycle invariants in `OFFSET-INVARIANTS.md`.
+/// Property-based smoke test for the offset-lifecycle invariants — the commit point only ever
+/// advances over contiguous completed offsets, never past a still-pending gap.
 ///
 /// This is a SETUP/SMOKE test proving the jqwik toolchain runs against `KafkaOffsetManager`. It is
 /// deliberately scoped to a single partition and asserts the lowest-pending invariant: the

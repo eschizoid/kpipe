@@ -7,10 +7,13 @@ phrased as a property a test can assert.
 
 - **jqwik** (Java-native property testing) is wired and green. `OffsetInvariantPropertyTest` generates randomized
   track/mark sequences and asserts I1 on a single partition. This is the active sequence-property layer.
-- **jcstress** (OpenJDK concurrency-stress harness) is wired and green on JDK 25 via a dedicated `jcstress` source set.
-  `OffsetManagerI1JCStressTest` exercises real track/mark interleavings (hundreds of observations per fork) and is the
-  active concurrency-interleaving layer — the verification the property layer cannot reach. This is what fills the role
-  Lincheck would have, until Lincheck supports JDK 25 (below).
+- **jcstress** (OpenJDK concurrency-stress harness) is wired and green on JDK 25 via a dedicated `jcstress` source set,
+  and runs in CI (capped at `-iters 1 -time 50 -f 1` per run — a few minutes that still hits hundreds of thousands of
+  interleavings and fails on any forbidden outcome; deeper campaigns are run on demand by raising the caps locally). The
+  `OffsetManagerLowestPendingJCStressTest`, `OffsetManagerGapHoldJCStressTest`, `OffsetManagerRevokeRaceJCStressTest`,
+  `RemoveIfEmptyJCStressTest`, and `SafeFirstJCStressTest` suites exercise real track/mark/revoke interleavings — the
+  concurrency-interleaving layer the single-threaded property tests cannot reach. This fills the role Lincheck would
+  have, until Lincheck supports JDK 25 (below).
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass
   throws `Unsupported class file major version 69` while retransforming classpath classes, which crashes the test JVM.
