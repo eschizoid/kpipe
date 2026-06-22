@@ -47,8 +47,9 @@ import org.testcontainers.utility.DockerImageName;
 ///     at-least-once contract.
 ///
 /// Revocation commit-and-clear (I4) is *exercised* here (the second consumer's join forces a
-/// revoke from the first) but is asserted directly at the unit level in
-/// `OffsetConcurrencyStressTest`; this test does not assert the mid-rebalance commit distinctly.
+/// revoke from the first) but is asserted directly at the unit level in `KafkaOffsetManagerTest`
+/// (the onPartitionsRevoked + commitSync path); this test does not assert the mid-rebalance
+/// commit distinctly.
 ///
 /// The rebalance is induced by starting a second `KPipeConsumer` in the same consumer group
 /// mid-stream, which forces Kafka to reassign partitions across the two members. A

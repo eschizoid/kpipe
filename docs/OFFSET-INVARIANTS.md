@@ -7,6 +7,10 @@ phrased as a property a test can assert.
 
 - **jqwik** (Java-native property testing) is wired and green. `OffsetInvariantPropertyTest` generates randomized
   track/mark sequences and asserts I1 on a single partition. This is the active sequence-property layer.
+- **jcstress** (OpenJDK concurrency-stress harness) is wired and green on JDK 25 via a dedicated `jcstress` source set.
+  `OffsetManagerI1JCStressTest` exercises real track/mark interleavings (hundreds of observations per fork) and is the
+  active concurrency-interleaving layer — the verification the property layer cannot reach. This is what fills the role
+  Lincheck would have, until Lincheck supports JDK 25 (below).
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass
   throws `Unsupported class file major version 69` while retransforming classpath classes, which crashes the test JVM.
@@ -74,10 +78,11 @@ fails processing AND the DLQ send itself fails (broker down, producer closed, ov
 neither place, so the offset is NOT marked — it stays pending and is re-fetched (and the DLQ retried) on the next
 restart or partition reassignment. (The commit point holds, but the live fetch position has already advanced, so the
 record is not re-delivered within the running session — only after the partition seeks back to the committed offset on
-restart/rebalance.) A down DLQ therefore applies backpressure rather than silently dropping data. The failure is
-observable through the `dlqFailed` counter and an ERROR log. This holds on both the per-record path
-(`handleProcessingError`) and the batch path (`BatchCallbacks.onBatchFailure`). The exception is a consumer with no DLQ
-configured: there the caller has explicitly opted into log-and-advance, so a processing failure marks the offset and
+restart/rebalance.) A down DLQ therefore stalls the commit point rather than silently dropping data — a commit stall,
+not backpressure: the consumer is not paused and the fetch position keeps advancing in-memory; only the committed offset
+is pinned. The failure is observable through the `dlqFailed` counter and an ERROR log. This holds on both the per-record
+path (`handleProcessingError`) and the batch path (`BatchCallbacks.onBatchFailure`). The exception is a consumer with no
+DLQ configured: there the caller has explicitly opted into log-and-advance, so a processing failure marks the offset and
 moves on.
 
 ## I4 — revocation (commit-and-clear on revoke)

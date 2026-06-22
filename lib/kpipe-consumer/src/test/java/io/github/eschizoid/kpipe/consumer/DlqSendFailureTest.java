@@ -34,7 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 /// blowup), the record is in neither place, so its offset must NOT advance. `handleProcessingError`
 /// therefore marks the offset only on a successful DLQ send. A failed send leaves the offset
 /// pending (commit point holds), so the record is reprocessed — and the DLQ retried — on a
-/// restart or partition reassignment. A down DLQ applies backpressure, it never silently drops.
+/// restart or partition reassignment. A down DLQ stalls the commit point, it never silently drops.
 ///
 /// These tests use a recording [OffsetManager] double so the marked/tracked offsets can be
 /// inspected directly without a live Kafka broker. The processor always throws, and the injected
@@ -191,6 +191,9 @@ class DlqSendFailureTest {
 
       assertEquals(1L, consumer.getMetrics().get("dlqFailed"), "batch DLQ send failure must increment dlqFailed");
       assertEquals(0L, consumer.getMetrics().get("dlqSent"), "no successful DLQ send occurred");
+      // Positive control: the record WAS tracked (so 'not marked' below means held-pending, not
+      // never-seen — guards against a broken trackOffset masquerading as correct behavior).
+      assertTrue(recorder.tracked.contains(5L), "batch record should have been tracked before dispatch");
       assertFalse(
         recorder.marked.contains(5L),
         "batch path: offset must NOT be marked when the DLQ send failed (record stays eligible for reprocessing)"

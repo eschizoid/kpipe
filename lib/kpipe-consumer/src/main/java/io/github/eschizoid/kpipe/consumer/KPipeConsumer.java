@@ -1854,7 +1854,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
       // processed it (handled elsewhere) or it is safely parked in the DLQ. If the DLQ send fails
       // the record is in neither place, so leave the offset pending — the commit point holds and
       // the record is re-fetched (and the DLQ retried) on the next restart or partition
-      // reassignment. A down DLQ applies backpressure rather than silently dropping data.
+      // reassignment. A down DLQ stalls the commit point rather than silently dropping data
+      // (the fetch position races ahead in-memory; this is a commit stall, not a pause).
       if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e)) {
         metrics.get(METRIC_DLQ_SENT).incrementAndGet();
         markOffsetProcessed(record);

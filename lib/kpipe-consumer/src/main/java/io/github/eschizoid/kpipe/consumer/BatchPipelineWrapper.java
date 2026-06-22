@@ -20,8 +20,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// size or on age (whichever fires first), or on shutdown drain. The user [BatchSink] returns a
 /// [BatchResult] naming per-record outcomes; succeeded records have their offsets marked
 /// processed, failed records are routed through the caller-supplied [BatchCallbacks#onBatchFailure]
-/// hook (DLQ + error handler) and still marked processed so the consumer does not loop on a
-/// poison batch.
+/// hook (DLQ + error handler). A failed record's offset is marked only once it is durably parked in
+/// the DLQ (or no DLQ is configured); a failed DLQ send leaves it pending for reprocessing.
 ///
 /// **Thread-safety.** A single [ReentrantLock] guards the buffer. `enqueue` may be called from
 /// many virtual-thread workers concurrently (parallel mode) or serialized on the consumer thread
