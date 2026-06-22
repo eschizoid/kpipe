@@ -48,24 +48,23 @@ import org.testcontainers.utility.DockerImageName;
 ///     committed offset advance past a record that A tracked but never marked terminal, so on
 ///     restart B re-fetches the unprocessed (and processed-but-uncommitted) tail rather than
 ///     silently skipping it.
-///   * **Re-delivery of the uncommitted tail (logged, best-effort).** The overlap between what A
-///     saw before the crash and what B reprocessed is logged, not asserted: in a single-broker
-///     container it is timing-dependent (A may commit its whole processed set just before the
-///     crash, so B resumes past it — still no loss). The deterministic proof that an uncommitted
-///     offset is reprocessed lives in the offset jcstress/property/stress suites and the DLQ test.
+///   * **Re-delivery of the uncommitted tail (asserted).** B must reprocess at least one record A
+///     observed past the committed prefix. The manual-commit harness (below) makes this
+///     deterministic — everything A processes after the single prefix commit is uncommitted, so B
+///     is guaranteed to re-fetch it — rather than depending on commit-timing luck.
 ///   * **No commit-ahead — a sanity bound.** The final committed offset for each partition never
 ///     exceeds the log end. This is `<=`, NOT `==`: at-least-once permits a processed-but-not-yet-
 ///     committed tail (reprocessed on restart), so requiring the commit to reach exactly the log
 ///     end would assert a complete-drain / exactly-once property kpipe does not claim.
 ///
 /// Crash simulation: consumer A runs in SEQUENTIAL mode with a manual-commit `KafkaOffsetManager`
-/// on a short (1s) commit interval, so it commits a prefix while running. Processing one record at
-/// a time with a small per-record delay keeps the commit point lagging the observed frontier,
-/// guaranteeing a processed-but-not-yet-committed tail exists at crash time (PARALLEL would drain
-/// and commit the whole topic almost at once, leaving no sustained tail to crash into).
-/// The crash is then induced WITHOUT a graceful drain: the offset manager is stopped (halting
-/// further commits and turning `markOffsetProcessed` into a no-op so no final commit fires) and
-/// A's consumer thread is interrupted and abandoned —
+/// on a deliberately long auto-commit interval, so the ONLY commit is a single manual one the test
+/// drives after A has processed a small prefix. Everything A processes after that commit therefore
+/// stays uncommitted — a deterministic processed-but-uncommitted tail, with no dependence on
+/// commit-timing (a short auto-commit interval would race the crash and commit the whole stream,
+/// leaving no tail). The crash is then induced WITHOUT a graceful drain: the offset manager is
+/// stopped (halting further commits and turning `markOffsetProcessed` into a no-op so no final
+/// commit fires) and A's consumer thread is interrupted and abandoned —
 /// `shutdownGracefully` / `close` are never called on A. This mirrors a hard process kill where
 /// the JVM dies between a periodic commit and the next one, leaving an uncommitted processed tail.
 ///
@@ -73,8 +72,6 @@ import org.testcontainers.utility.DockerImageName;
 /// broker). It compiles locally but cannot run where Docker is unavailable; it runs in CI.
 @Testcontainers
 class CrashRestartReprocessingIntegrationTest {
-
-  private static final System.Logger LOGGER = System.getLogger(CrashRestartReprocessingIntegrationTest.class.getName());
 
   private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
 
@@ -89,9 +86,13 @@ class CrashRestartReprocessingIntegrationTest {
   // so a genuine processed-but-uncommitted tail exists rather than A having drained everything.
   private static final int RECORD_COUNT = 1000;
 
-  /// Records A must observe AFTER commits are frozen, forming the guaranteed uncommitted tail that
-  /// B re-delivers. Small enough to build quickly under the slow sink, large enough to be robust.
-  private static final int TAIL_MARGIN = 20;
+  /// Records A processes before the single manual prefix commit. Kept small so the bulk of the
+  /// stream lands in the uncommitted tail.
+  private static final int COMMIT_PREFIX = 50;
+
+  /// Records A must process BEYOND the committed prefix, forming the guaranteed uncommitted tail
+  /// that B re-delivers. Large enough to be robust, small enough to build quickly.
+  private static final int TAIL_MARGIN = 50;
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
@@ -107,48 +108,42 @@ class CrashRestartReprocessingIntegrationTest {
     final var producedValues = produceRecords(topic);
 
     // Per-consumer observed sets. A record may be observed by both A and B (at-least-once allows
-    // duplicates after a crash replays an uncommitted tail). The no-loss assertion checks the
-    // union; the re-delivery overlap (the intersection) is logged for diagnostics, not asserted.
+    // duplicates after a crash replays an uncommitted tail). No-loss checks the union; re-delivery
+    // checks the intersection — both hard assertions below.
     final var observedA = ConcurrentHashMap.<String>newKeySet();
     final var observedB = ConcurrentHashMap.<String>newKeySet();
     final var observedTotalA = new AtomicInteger(0);
 
-    // Hold A's offset manager so the crash can stop it (halt commits) without a graceful close.
+    // Hold A's offset manager so the test can commit a prefix manually and stop it at crash time.
     final var offsetManagerA = new AtomicReference<KafkaOffsetManager<byte[]>>();
 
     final var consumerA = buildConsumerWithManagedOffsets(topic, groupId, observedA, observedTotalA, offsetManagerA);
     final var threadA = Thread.ofVirtual().name("crash-consumer-A").start(consumerA::start);
 
-    // Let A claim partitions, process a slice, and commit at least one prefix (the 1s interval
-    // fires while A is still draining the slow stream).
-    final var committedBeforeCrash = awaitCommittedPrefixWithProcessedTail(groupId, observedA, Duration.ofSeconds(40));
-    assertFalse(
-      committedBeforeCrash.isEmpty(),
-      "Consumer A must commit a prefix before the crash; saw no committed offsets."
+    // Deterministically build a processed-but-uncommitted tail. A's manager uses a very long
+    // auto-commit interval, so the ONLY commit is the single manual one here — everything A
+    // processes afterward stays uncommitted. (The earlier 1s auto-commit kept committing the whole
+    // stream, leaving no tail for B and making the re-delivery overlap flaky.)
+    awaitObservedGrowth(observedA, COMMIT_PREFIX, Duration.ofSeconds(40));
+    assertTrue(
+      offsetManagerA.get().commitSyncAndWait(Duration.ofSeconds(10)),
+      "Consumer A's manual prefix commit must succeed before the crash."
     );
+    final var committedAtCrash = committedOffsets(groupId);
+    final var committedSum = committedAtCrash.values().stream().mapToLong(OffsetAndMetadata::offset).sum();
+    assertTrue(committedSum > 0, "A must have committed a prefix before the crash; committed nothing.");
 
-    // FREEZE the commit point FIRST: stop the offset manager so no further commit can fire and
-    // markOffsetProcessed becomes a no-op. Doing this before capturing the tail closes the race
-    // where the next periodic (1s) commit would otherwise flush the very tail we want B to
-    // re-deliver — which would leave B nothing to reprocess and make the test flaky.
-    offsetManagerA.get().stop();
-
-    // Build a guaranteed uncommitted tail: A's thread is still running and keeps observing records
-    // past the now-frozen commit point. Those records can never be committed (the manager is
-    // stopped), so they are exactly what B must re-deliver from the frozen offset on restart.
-    final var observedAtFreeze = observedA.size();
-    awaitObservedGrowth(observedA, observedAtFreeze + TAIL_MARGIN, Duration.ofSeconds(20));
+    // A keeps processing past the committed prefix with no further commit firing — that growth is
+    // the guaranteed uncommitted tail B must re-deliver.
+    awaitObservedGrowth(observedA, (int) committedSum + TAIL_MARGIN, Duration.ofSeconds(40));
     final var observedByABeforeCrash = Set.copyOf(observedA);
 
-    // CRASH: abandon A's consumer thread without a graceful drain — no
-    // close()/shutdownGracefully().
-    // A's Kafka consumer is never closed, so the broker evicts A after session.timeout.ms and B
-    // inherits its partitions.
+    // CRASH: stop the manager (no further commit; markOffsetProcessed becomes a no-op) and abandon
+    // A's consumer thread without a graceful drain — no close()/shutdownGracefully(). A's Kafka
+    // consumer is never closed, so the broker evicts A after session.timeout.ms and B inherits the
+    // partition, resuming from the manually-committed prefix.
+    offsetManagerA.get().stop();
     threadA.interrupt();
-
-    // The committed offset is frozen at the last periodic commit — the tail A processed after it
-    // is uncommitted and must be re-delivered to B.
-    final var committedAtCrash = committedOffsets(groupId);
 
     // Consumer B: fresh instance, SAME group, resumes from the committed offset.
     final var observedTotalB = new AtomicInteger(0);
@@ -181,27 +176,21 @@ class CrashRestartReprocessingIntegrationTest {
         "Union of A and B observations must exactly cover the produced set (no loss)."
       );
 
-      // Re-delivery of the uncommitted tail — a best-effort observation, NOT a hard gate. The
-      // at-least-once guarantees are no-loss (above) and no-commit-ahead (below); both hold
-      // deterministically. Whether B re-observes a record A also saw depends on the exact crash
-      // moment relative to A's 1s commit cadence in a single-broker container: if A happens to
-      // commit its full processed set just before the crash, B legitimately resumes past it and the
-      // overlap is empty — still no loss. That timing is too fragile to assert as a CI gate. The
-      // "uncommitted offset is reprocessed on restart" property is proven deterministically by
-      // RemoveIfEmptyJCStressTest, the offset property/stress suites, and DlqSendFailureTest; this
-      // test's job is the end-to-end no-loss across a hard restart, asserted above.
+      // Re-delivery of the uncommitted tail (hard assertion). B resumes from the manually-committed
+      // prefix and must reprocess at least one record A observed past it. The manual-commit harness
+      // makes this deterministic: everything A processed after the single prefix commit is
+      // uncommitted (the long auto-commit interval never fires), so B is guaranteed to re-fetch it.
+      // An empty overlap would mean A committed past what it observed (impossible here) or B
+      // skipped
+      // the tail (loss) — both are real failures, not timing noise.
       final var redelivered = new HashSet<>(observedByABeforeCrash);
       redelivered.retainAll(observedB);
-      LOGGER.log(
-        System.Logger.Level.INFO,
-        () ->
-          "crash-restart re-delivery overlap: " +
-          redelivered.size() +
-          " of A=" +
-          observedByABeforeCrash.size() +
-          " (B observed " +
-          observedB.size() +
-          ")"
+      assertFalse(
+        redelivered.isEmpty(),
+        "B must re-deliver at least one record A processed past the committed prefix (the uncommitted tail); A observed %d before crash, B observed %d, overlap was empty.".formatted(
+          observedByABeforeCrash.size(),
+          observedB.size()
+        )
       );
     } finally {
       consumerB.close();
@@ -327,37 +316,16 @@ class CrashRestartReprocessingIntegrationTest {
     builder.withOffsetManagerProvider(consumer -> {
       final var manager = KafkaOffsetManager.<byte[]>builder(consumer)
         .withCommandQueue(builder.getCommandQueue())
-        .withCommitInterval(Duration.ofSeconds(1))
+        // Very long auto-commit interval: the test drives the single commit manually so
+        // the commit
+        // point is deterministic and everything processed after it is a guaranteed
+        // uncommitted tail.
+        .withCommitInterval(Duration.ofHours(1))
         .build();
       offsetManagerRef.set(manager);
       return manager;
     });
     return builder.build();
-  }
-
-  /// Polls until consumer A has committed at least one offset AND has observed more records than
-  /// the committed prefix accounts for (a genuine uncommitted tail). Returns the committed map
-  /// once both hold, or whatever was committed at the deadline.
-  private Map<TopicPartition, OffsetAndMetadata> awaitCommittedPrefixWithProcessedTail(
-    final String groupId,
-    final Set<String> observed,
-    final Duration timeout
-  ) throws Exception {
-    final var deadline = System.currentTimeMillis() + timeout.toMillis();
-    var committed = Map.<TopicPartition, OffsetAndMetadata>of();
-    while (System.currentTimeMillis() < deadline) {
-      committed = committedOffsets(groupId);
-      var committedSum = 0L;
-      for (final var meta : committed.values()) {
-        committedSum += meta.offset();
-      }
-      // A committed a prefix and has already observed strictly more than that prefix → tail exists.
-      if (committedSum > 0 && observed.size() > committedSum) {
-        return committed;
-      }
-      TimeUnit.MILLISECONDS.sleep(100);
-    }
-    return committed;
   }
 
   /// Polls until the union of A's and B's observed sets reaches `target` distinct values or the
