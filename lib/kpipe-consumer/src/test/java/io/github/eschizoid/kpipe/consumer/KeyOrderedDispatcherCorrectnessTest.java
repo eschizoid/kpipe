@@ -280,6 +280,13 @@ class KeyOrderedDispatcherCorrectnessTest {
         () -> "key " + key + " reordered under saturation hold: " + tracker.observed
       );
     }
+    // pendingCount is decremented in the worker's finally, which can run just after the per-record
+    // latch the producers awaited counts down — so poll for the drain rather than reading it the
+    // instant the latch releases (an immediate read flaked on slow CI runners).
+    final var drainDeadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+    while (dispatcher.pendingCount() != 0 && System.nanoTime() < drainDeadline) {
+      Thread.onSpinWait();
+    }
     assertEquals(0, dispatcher.pendingCount(), "no records may remain pending after saturation drains");
     dispatcher.close();
   }
