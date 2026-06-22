@@ -191,6 +191,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       LOGGER.log(Level.DEBUG, "Sent record to DLQ topic {0}", dlqTopic);
       return true;
     } catch (final Exception ex) {
+      otelMetrics.recordDlqFailed();
       LOGGER.log(Level.ERROR, () -> "Failed to send record to DLQ topic " + dlqTopic, ex);
       return false;
     }

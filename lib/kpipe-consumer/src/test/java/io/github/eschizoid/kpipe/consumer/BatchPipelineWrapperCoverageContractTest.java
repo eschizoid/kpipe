@@ -3,7 +3,6 @@ package io.github.eschizoid.kpipe.consumer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -355,6 +354,12 @@ class BatchPipelineWrapperCoverageContractTest {
         "the wrapper must invoke markProcessed for the flushed record after the sink returns"
       );
       assertEquals(1, capturedBatchSize.get(), "flushed batch should contain exactly the one buffered record");
+      // bufferedCount is decremented in flushLocked's finally, AFTER markProcessed fires, so it can
+      // still read non-zero the instant the callback latch releases — poll for it to settle.
+      final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+      while (wrapper.bufferedCount() != 0L && System.nanoTime() < deadline) {
+        TimeUnit.MILLISECONDS.sleep(20);
+      }
       assertEquals(0L, wrapper.bufferedCount(), "bufferedCount must drop to 0 after the age flush");
     } finally {
       wrapper.close();
@@ -366,7 +371,8 @@ class BatchPipelineWrapperCoverageContractTest {
   /// asserts:
   ///
   /// 1. Every buffered record is flushed and reaches the sink.
-  /// 2. Every record is then marked processed via [BatchPipelineWrapper.BatchCallbacks#markProcessed].
+  /// 2. Every record is then marked processed via
+  // [BatchPipelineWrapper.BatchCallbacks#markProcessed].
   /// 3. All three markProcessed events are observed BEFORE a subsequent simulated
   ///    `OffsetManager.close()` call — pinning the ordering invariant that batch buffers
   ///    drain into the offset manager while it's still alive.

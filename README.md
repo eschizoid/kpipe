@@ -1139,8 +1139,8 @@ public class KPipeApp implements AutoCloseable {
 (JSON + Avro + Protobuf on one consumer-group, dispatched per topic), swap `KPipe.json(...)` for
 `KPipe.multi(props).json(...).avro(...).protobuf(...).start()` — see [`examples/demo`](examples/demo/) for the full
 shape. The explicit `KPipeConsumer.Builder` route is still available when you need an escape-hatch capability not on the
-facade (custom `OffsetManager`, custom Kafka consumer factory, custom DLQ producer); the facade reaches into the
-builder for everything else.
+facade (custom `OffsetManager`, custom Kafka consumer factory, custom DLQ producer); the facade reaches into the builder
+for everything else.
 
 **Environment variables** used by this sketch (`AppConfig.fromEnv()` reads additional vars — `APP_NAME`,
 `KAFKA_POLL_TIMEOUT_MS`, `SHUTDOWN_TIMEOUT_SEC`, `METRICS_INTERVAL_SEC`, `PROCESSOR_PIPELINE` — that feed the explicit

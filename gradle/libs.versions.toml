@@ -17,6 +17,8 @@ shadow = "9.4.2"
 jmh = "0.7.3"
 jreleaser = "1.19.0"
 jgit = "6.10.0.202406032230-r"
+jqwik = "1.9.3"
+jcstress = "0.16"
 
 [libraries]
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
@@ -51,6 +53,9 @@ parallelConsumerCore = { module = "io.confluent.parallelconsumer:parallel-consum
 reactorKafka = { module = "io.projectreactor.kafka:reactor-kafka", version.ref = "reactorKafka" }
 jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
 jgitGpgBc = { module = "org.eclipse.jgit:org.eclipse.jgit.gpg.bc", version.ref = "jgit" }
+
+jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
+jcstressCore = { module = "org.openjdk.jcstress:jcstress-core", version.ref = "jcstress" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

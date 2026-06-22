@@ -70,6 +70,13 @@ class OtelProducerMetricsTest {
   }
 
   @Test
+  void recordDlqFailedEmitsCounter() {
+    final var f = fixture();
+    f.metrics().recordDlqFailed();
+    assertEquals(1L, valueOf(f.collect(), "kpipe.producer.dlq.failed"));
+  }
+
+  @Test
   void countersAreIndependent() {
     // A sent message must not accidentally tick the failed counter (or vice versa). The
     // previous noop tests couldn't catch a regression where someone wired the wrong field.
@@ -77,9 +84,11 @@ class OtelProducerMetricsTest {
     f.metrics().recordMessageSent();
     f.metrics().recordMessageFailed();
     f.metrics().recordDlqSent();
+    f.metrics().recordDlqFailed();
     final var metrics = f.collect();
     assertEquals(1L, valueOf(metrics, "kpipe.producer.messages.sent"));
     assertEquals(1L, valueOf(metrics, "kpipe.producer.messages.failed"));
     assertEquals(1L, valueOf(metrics, "kpipe.producer.dlq.sent"));
+    assertEquals(1L, valueOf(metrics, "kpipe.producer.dlq.failed"));
   }
 }

@@ -218,7 +218,16 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     if (state.get() == OffsetState.STOPPED) return;
     final var partition = cachedTopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
-    pendingOffsets.computeIfAbsent(partition, _ -> new ConcurrentSkipListSet<>()).add(offset);
+    // The add must happen INSIDE the bucket-locked compute, not as a trailing .add() on the value
+    // computeIfAbsent returns. Otherwise the add races markOffsetProcessed's remove-if-empty: that
+    // path can empty the set and atomically drop the key, leaving a trailing .add() to land on an
+    // orphaned set no longer in the map — silently losing a pending offset and letting the commit
+    // point advance past an in-flight record. compute() holds the bucket lock across the add.
+    pendingOffsets.compute(partition, (_, set) -> {
+      final var pending = set == null ? new ConcurrentSkipListSet<Long>() : set;
+      pending.add(offset);
+      return pending;
+    });
   }
 
   /// Marks an offset as successfully processed using a ConsumerRecord.
@@ -566,11 +575,11 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
       consumerThread = Thread.currentThread();
       return;
     }
-    assert captured == Thread.currentThread()
-      : "rebalance callback ran on %s but was previously bound to %s — commandQueue single-writer invariant violated".formatted(
-          Thread.currentThread(),
-          captured
-        );
+    assert captured ==
+    Thread.currentThread() : "rebalance callback ran on %s but was previously bound to %s — commandQueue single-writer invariant violated".formatted(
+      Thread.currentThread(),
+      captured
+    );
   }
 
   /// Filters offset-commit commands so any references to revoked partitions are dropped before

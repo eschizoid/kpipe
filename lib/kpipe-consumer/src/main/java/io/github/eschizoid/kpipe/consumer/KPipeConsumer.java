@@ -89,6 +89,7 @@ public class KPipeConsumer<K> implements AutoCloseable {
   static final String METRIC_CIRCUIT_BREAKER_TRIPS = "circuitBreakerTrips";
   static final String METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS = "circuitBreakerTimeOpenMs";
   private static final String METRIC_DLQ_SENT = "dlqSent";
+  private static final String METRIC_DLQ_FAILED = "dlqFailed";
 
   private final Queue<ConsumerCommand> commandQueue;
   private final Consumer<K, byte[]> kafkaConsumer;
@@ -843,27 +844,18 @@ public class KPipeConsumer<K> implements AutoCloseable {
       }
 
       metrics.putAll(
-        Map.of(
-          METRIC_MESSAGES_RECEIVED,
-          new AtomicLong(0),
-          METRIC_MESSAGES_PROCESSED,
-          new AtomicLong(0),
-          METRIC_PROCESSING_ERRORS,
-          new AtomicLong(0),
-          METRIC_PROCESSING_DURATION_TOTAL_MS,
-          new AtomicLong(0),
-          METRIC_RETRIES,
-          new AtomicLong(0),
-          METRIC_BACKPRESSURE_PAUSE_COUNT,
-          new AtomicLong(0),
-          METRIC_BACKPRESSURE_TIME_MS,
-          new AtomicLong(0),
-          METRIC_CIRCUIT_BREAKER_TRIPS,
-          new AtomicLong(0),
-          METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS,
-          new AtomicLong(0),
-          METRIC_DLQ_SENT,
-          new AtomicLong(0)
+        Map.ofEntries(
+          Map.entry(METRIC_MESSAGES_RECEIVED, new AtomicLong(0)),
+          Map.entry(METRIC_MESSAGES_PROCESSED, new AtomicLong(0)),
+          Map.entry(METRIC_PROCESSING_ERRORS, new AtomicLong(0)),
+          Map.entry(METRIC_PROCESSING_DURATION_TOTAL_MS, new AtomicLong(0)),
+          Map.entry(METRIC_RETRIES, new AtomicLong(0)),
+          Map.entry(METRIC_BACKPRESSURE_PAUSE_COUNT, new AtomicLong(0)),
+          Map.entry(METRIC_BACKPRESSURE_TIME_MS, new AtomicLong(0)),
+          Map.entry(METRIC_CIRCUIT_BREAKER_TRIPS, new AtomicLong(0)),
+          Map.entry(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS, new AtomicLong(0)),
+          Map.entry(METRIC_DLQ_SENT, new AtomicLong(0)),
+          Map.entry(METRIC_DLQ_FAILED, new AtomicLong(0))
         )
       );
 
@@ -994,6 +986,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
       public void markProcessed(final ConsumerRecord<K, byte[]> record) {
         metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
         otelMetrics.recordMessageProcessed(record.topic());
+        // Feed the circuit breaker / health window so batch outcomes count toward the failure
+        // rate, exactly like the per-record path. Both branches must report, or the rolling
+        // window would see only failures and trip spuriously.
+        health.recordOutcome(true);
         if (offsetManager != null) offsetManager.markOffsetProcessed(record);
       }
 
@@ -1001,12 +997,27 @@ public class KPipeConsumer<K> implements AutoCloseable {
       public void onBatchFailure(final ConsumerRecord<K, byte[]> record, final Exception cause) {
         metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
         otelMetrics.recordProcessingError(record.topic());
+        health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
+        // Mirror the per-record path: mark the offset only after a successful DLQ send.
+        // A failed send leaves it pending so the record is reprocessed, never dropped.
         if (deadLetterTopic != null && kpipeProducer != null) {
-          final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause);
-          if (sent) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+          if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause)) {
+            metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+            if (offsetManager != null) offsetManager.markOffsetProcessed(record);
+          } else {
+            metrics.get(METRIC_DLQ_FAILED).incrementAndGet();
+            LOGGER.log(
+              Level.ERROR,
+              () ->
+                "DLQ delivery failed for batch record at offset " +
+                record.offset() +
+                "; offset NOT committed, record will be reprocessed on restart/rebalance"
+            );
+          }
+        } else if (offsetManager != null) {
+          offsetManager.markOffsetProcessed(record);
         }
-        if (offsetManager != null) offsetManager.markOffsetProcessed(record);
         try {
           errorHandler.accept(new ProcessingError<>(record, cause, 0));
         } catch (final Exception ex) {
@@ -1338,6 +1349,8 @@ public class KPipeConsumer<K> implements AutoCloseable {
   /// * `backpressurePauseCount` / `backpressureTimeMs` — backpressure pause count and total ms held
   /// * `circuitBreakerTrips` / `circuitBreakerTimeOpenMs` — CB trip count and total ms in OPEN
   /// * `dlqSent` — records sent to the configured DLQ topic
+  /// * `dlqFailed` — records whose DLQ send failed; the offset is held (reprocessed on
+  ///   restart/rebalance), so a rising count signals a stalling DLQ
   /// * `inFlight` — current number of messages held by the consumer (live counter, not a counter
   /// delta).
   ///   Sums the dispatcher's pending count (records currently being processed or queued per-key)
@@ -1837,10 +1850,29 @@ public class KPipeConsumer<K> implements AutoCloseable {
       e
     );
     if (deadLetterTopic != null && kpipeProducer != null) {
-      final var sent = kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e);
-      if (sent) metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+      // The offset advances only once the record reaches a durable terminal state: either the sink
+      // processed it (handled elsewhere) or it is safely parked in the DLQ. If the DLQ send fails
+      // the record is in neither place, so leave the offset pending — the commit point holds and
+      // the record is re-fetched (and the DLQ retried) on the next restart or partition
+      // reassignment. A down DLQ stalls the commit point rather than silently dropping data
+      // (the fetch position races ahead in-memory; this is a commit stall, not a pause).
+      if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e)) {
+        metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+        markOffsetProcessed(record);
+      } else {
+        metrics.get(METRIC_DLQ_FAILED).incrementAndGet();
+        LOGGER.log(
+          Level.ERROR,
+          () ->
+            "DLQ delivery failed for record at offset " +
+            record.offset() +
+            "; offset NOT committed, record will be reprocessed on restart/rebalance"
+        );
+      }
+    } else {
+      // No DLQ configured: the caller opted into log-and-advance. Mark processed and move on.
+      markOffsetProcessed(record);
     }
-    markOffsetProcessed(record);
     health.recordOutcome(false);
     try {
       errorHandler.accept(new ProcessingError<>(record, e, retryCount));

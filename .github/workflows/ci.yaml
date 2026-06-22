@@ -30,6 +30,20 @@ jobs:
           ./gradlew spotlessApply
           ./gradlew build test --stacktrace --no-daemon --max-workers=2
 
+      - name: Concurrency stress (jcstress)
+        # Runs the jcstress interleaving suites in every module that has one. The tasks are capped
+        # (-iters 1 -time 50 -f 1, set per module) so each PR run is a few minutes yet still
+        # exercises hundreds of thousands of real interleavings per test and fails on any FORBIDDEN
+        # outcome — so a concurrency regression (e.g. the trackOffset add vs remove-if-empty race
+        # this suite was built to catch) breaks the build here, not just in a manual run. Deeper,
+        # longer campaigns are run on demand by raising the per-module caps locally.
+        run: |
+          ./gradlew --no-daemon --stacktrace \
+            :lib:kpipe-consumer:jcstress \
+            :lib:kpipe-core:jcstress \
+            :lib:kpipe-producer:jcstress \
+            :lib:kpipe-schema-registry-confluent:jcstress
+
       - name: Jacoco
         run: |
           # jacocoAllLibModules fans out to every :lib:* jacocoTestReport (see lib/build.gradle.kts).

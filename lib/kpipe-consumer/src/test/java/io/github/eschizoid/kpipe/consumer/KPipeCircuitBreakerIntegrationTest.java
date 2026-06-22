@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.sink.BatchPolicy;
+import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -74,6 +76,42 @@ class KPipeCircuitBreakerIntegrationTest {
       1L,
       consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS),
       "exactly one trip should have been recorded"
+    );
+
+    consumer.close();
+  }
+
+  @Test
+  void sustainedBatchFailuresTripBreaker() throws InterruptedException {
+    // The batch failure path (onBatchFailure) must feed the circuit breaker just like the
+    // per-record path — otherwise a failing batch sink could never trip the breaker. ofSize(1)
+    // flushes each record inline, so every record drives one failure outcome into the window;
+    // windowSize=5 + threshold=0.5 trips once the window fills with all-failures.
+    final var mc = buildMockConsumer(12);
+    final var controller = new CircuitBreakerController(0.5, 5, Duration.ofSeconds(30));
+
+    final var consumer = KPipeConsumer.<String>builder()
+      .withProperties(properties)
+      .withBatchPipeline(
+        TOPIC,
+        TestPipelines.sideEffect(v -> v),
+        BatchSink.ofVoid(_ -> {
+          throw new RuntimeException("batch sink always fails");
+        }),
+        BatchPolicy.ofSize(1)
+      )
+      .withCircuitBreaker(controller)
+      .withConsumer(() -> mc)
+      .build();
+
+    consumer.start();
+
+    awaitCondition(() -> !mc.paused().isEmpty(), 5000);
+    assertTrue(mc.paused().contains(PARTITION), "batch failures must trip the breaker and pause the consumer");
+    assertEquals(
+      1L,
+      consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS),
+      "exactly one trip should have been recorded from the batch failure path"
     );
 
     consumer.close();
