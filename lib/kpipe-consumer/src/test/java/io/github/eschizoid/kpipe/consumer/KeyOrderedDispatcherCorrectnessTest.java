@@ -97,16 +97,22 @@ class KeyOrderedDispatcherCorrectnessTest {
     for (int k = 0; k < keys; k++) {
       final var key = "key-" + k;
       final var tracker = trackers.get(key);
-      producers.add(Thread.ofVirtual().start(() -> {
-        awaitBarrier(barrier);
-        for (long offset = 0; offset < recordsPerKey; offset++) {
-          final var rec = recordWithKey(key, offset);
-          dispatcher.dispatch(rec, () -> {
-            runGuardedBody(tracker, rec.offset());
-            processed.countDown();
-          }, () -> {});
-        }
-      }));
+      producers.add(
+        Thread.ofVirtual().start(() -> {
+          awaitBarrier(barrier);
+          for (long offset = 0; offset < recordsPerKey; offset++) {
+            final var rec = recordWithKey(key, offset);
+            dispatcher.dispatch(
+              rec,
+              () -> {
+                runGuardedBody(tracker, rec.offset());
+                processed.countDown();
+              },
+              () -> {}
+            );
+          }
+        })
+      );
     }
 
     assertTrue(processed.await(30, TimeUnit.SECONDS), "all records must be processed within 30s");
@@ -117,8 +123,10 @@ class KeyOrderedDispatcherCorrectnessTest {
       final var tracker = entry.getValue();
       assertTrue(tracker.violations.isEmpty(), () -> "key " + key + " violations: " + tracker.violations);
       assertEquals(recordsPerKey, tracker.observed.size(), () -> "key " + key + " lost records");
-      assertEquals(expectedOrder(recordsPerKey), tracker.observed, () ->
-        "key " + key + " processed out of submission order: " + tracker.observed
+      assertEquals(
+        expectedOrder(recordsPerKey),
+        tracker.observed,
+        () -> "key " + key + " processed out of submission order: " + tracker.observed
       );
     }
     dispatcher.close();
@@ -152,20 +160,26 @@ class KeyOrderedDispatcherCorrectnessTest {
     final var producers = new ArrayList<Thread>(producerCount);
     for (int t = 0; t < producerCount; t++) {
       final var slice = t;
-      producers.add(Thread.ofVirtual().start(() -> {
-        awaitBarrier(barrier);
-        for (int k = slice; k < keys; k += producerCount) {
-          final var key = "key-" + k;
-          final var tracker = trackers.get(key);
-          for (long offset = 0; offset < recordsPerKey; offset++) {
-            final var rec = recordWithKey(key, offset);
-            dispatcher.dispatch(rec, () -> {
-              runGuardedBody(tracker, rec.offset());
-              processed.countDown();
-            }, () -> {});
+      producers.add(
+        Thread.ofVirtual().start(() -> {
+          awaitBarrier(barrier);
+          for (int k = slice; k < keys; k += producerCount) {
+            final var key = "key-" + k;
+            final var tracker = trackers.get(key);
+            for (long offset = 0; offset < recordsPerKey; offset++) {
+              final var rec = recordWithKey(key, offset);
+              dispatcher.dispatch(
+                rec,
+                () -> {
+                  runGuardedBody(tracker, rec.offset());
+                  processed.countDown();
+                },
+                () -> {}
+              );
+            }
           }
-        }
-      }));
+        })
+      );
     }
 
     assertTrue(processed.await(60, TimeUnit.SECONDS), "all records must survive eviction churn within 60s");
@@ -175,11 +189,15 @@ class KeyOrderedDispatcherCorrectnessTest {
       final var key = entry.getKey();
       final var tracker = entry.getValue();
       assertTrue(tracker.violations.isEmpty(), () -> "key " + key + " violations: " + tracker.violations);
-      assertEquals(recordsPerKey, tracker.observed.size(), () ->
-        "key " + key + " lost records under eviction churn: " + tracker.observed
+      assertEquals(
+        recordsPerKey,
+        tracker.observed.size(),
+        () -> "key " + key + " lost records under eviction churn: " + tracker.observed
       );
-      assertEquals(expectedOrder(recordsPerKey), tracker.observed, () ->
-        "key " + key + " reordered under eviction churn: " + tracker.observed
+      assertEquals(
+        expectedOrder(recordsPerKey),
+        tracker.observed,
+        () -> "key " + key + " reordered under eviction churn: " + tracker.observed
       );
     }
     dispatcher.close();
@@ -216,20 +234,26 @@ class KeyOrderedDispatcherCorrectnessTest {
       final var key = "key-" + k;
       final var tracker = trackers.get(key);
       final var gated = k < cap;
-      producers.add(Thread.ofVirtual().start(() -> {
-        for (long offset = 0; offset < recordsPerKey; offset++) {
-          final var rec = recordWithKey(key, offset);
-          final var first = offset == 0;
-          dispatcher.dispatch(rec, () -> {
-            if (gated && first) {
-              gatedStarted.countDown();
-              awaitGate(gate);
-            }
-            runGuardedBody(tracker, rec.offset());
-            processed.countDown();
-          }, () -> {});
-        }
-      }));
+      producers.add(
+        Thread.ofVirtual().start(() -> {
+          for (long offset = 0; offset < recordsPerKey; offset++) {
+            final var rec = recordWithKey(key, offset);
+            final var first = offset == 0;
+            dispatcher.dispatch(
+              rec,
+              () -> {
+                if (gated && first) {
+                  gatedStarted.countDown();
+                  awaitGate(gate);
+                }
+                runGuardedBody(tracker, rec.offset());
+                processed.countDown();
+              },
+              () -> {}
+            );
+          }
+        })
+      );
     }
 
     // Confirm the cap is genuinely saturated (all `cap` gated workers are parked) before opening.
@@ -245,11 +269,15 @@ class KeyOrderedDispatcherCorrectnessTest {
       final var key = entry.getKey();
       final var tracker = entry.getValue();
       assertTrue(tracker.violations.isEmpty(), () -> "key " + key + " violations: " + tracker.violations);
-      assertEquals(recordsPerKey, tracker.observed.size(), () ->
-        "key " + key + " lost records under saturation hold: " + tracker.observed
+      assertEquals(
+        recordsPerKey,
+        tracker.observed.size(),
+        () -> "key " + key + " lost records under saturation hold: " + tracker.observed
       );
-      assertEquals(expectedOrder(recordsPerKey), tracker.observed, () ->
-        "key " + key + " reordered under saturation hold: " + tracker.observed
+      assertEquals(
+        expectedOrder(recordsPerKey),
+        tracker.observed,
+        () -> "key " + key + " reordered under saturation hold: " + tracker.observed
       );
     }
     assertEquals(0, dispatcher.pendingCount(), "no records may remain pending after saturation drains");
@@ -277,30 +305,42 @@ class KeyOrderedDispatcherCorrectnessTest {
 
     final var producers = new ArrayList<Thread>();
     // Null-key producer.
-    producers.add(Thread.ofVirtual().start(() -> {
-      awaitBarrier(barrier);
-      for (long offset = 0; offset < recordsPerStream; offset++) {
-        final var rec = recordWithKey(null, offset);
-        dispatcher.dispatch(rec, () -> {
-          runGuardedBody(nullTracker, rec.offset());
-          processed.countDown();
-        }, () -> {});
-      }
-    }));
+    producers.add(
+      Thread.ofVirtual().start(() -> {
+        awaitBarrier(barrier);
+        for (long offset = 0; offset < recordsPerStream; offset++) {
+          final var rec = recordWithKey(null, offset);
+          dispatcher.dispatch(
+            rec,
+            () -> {
+              runGuardedBody(nullTracker, rec.offset());
+              processed.countDown();
+            },
+            () -> {}
+          );
+        }
+      })
+    );
     // Keyed producers running concurrently with the null stream.
     for (int k = 0; k < keyedKeys; k++) {
       final var key = "key-" + k;
       final var tracker = keyedTrackers.get(key);
-      producers.add(Thread.ofVirtual().start(() -> {
-        awaitBarrier(barrier);
-        for (long offset = 0; offset < recordsPerStream; offset++) {
-          final var rec = recordWithKey(key, offset);
-          dispatcher.dispatch(rec, () -> {
-            runGuardedBody(tracker, rec.offset());
-            processed.countDown();
-          }, () -> {});
-        }
-      }));
+      producers.add(
+        Thread.ofVirtual().start(() -> {
+          awaitBarrier(barrier);
+          for (long offset = 0; offset < recordsPerStream; offset++) {
+            final var rec = recordWithKey(key, offset);
+            dispatcher.dispatch(
+              rec,
+              () -> {
+                runGuardedBody(tracker, rec.offset());
+                processed.countDown();
+              },
+              () -> {}
+            );
+          }
+        })
+      );
     }
 
     assertTrue(processed.await(30, TimeUnit.SECONDS), "null + keyed traffic must all complete within 30s");
@@ -358,15 +398,17 @@ class KeyOrderedDispatcherCorrectnessTest {
     final var producers = new ArrayList<Thread>(producerCount);
     for (int t = 0; t < producerCount; t++) {
       final var slice = t;
-      producers.add(Thread.ofVirtual().start(() -> {
-        awaitBarrier(barrier);
-        for (int k = slice; k < keys; k += producerCount) {
-          final var key = "key-" + k;
-          for (long offset = 0; offset < recordsPerKey; offset++) {
-            dispatcher.dispatch(recordWithKey(key, offset), processed::countDown, () -> {});
+      producers.add(
+        Thread.ofVirtual().start(() -> {
+          awaitBarrier(barrier);
+          for (int k = slice; k < keys; k += producerCount) {
+            final var key = "key-" + k;
+            for (long offset = 0; offset < recordsPerKey; offset++) {
+              dispatcher.dispatch(recordWithKey(key, offset), processed::countDown, () -> {});
+            }
           }
-        }
-      }));
+        })
+      );
     }
 
     assertTrue(processed.await(60, TimeUnit.SECONDS), "all records processed under snapshot churn");
@@ -403,15 +445,17 @@ class KeyOrderedDispatcherCorrectnessTest {
     final var dispatched = new AtomicInteger();
     for (int t = 0; t < producerCount; t++) {
       final var slice = t;
-      producers.add(Thread.ofVirtual().start(() -> {
-        awaitBarrier(barrier);
-        for (int k = slice; k < keys; k += producerCount) {
-          final var key = "key-" + k;
-          for (long offset = 0; offset < recordsPerKey; offset++) {
-            dispatcher.dispatch(recordWithKey(key, offset), dispatched::incrementAndGet, () -> {});
+      producers.add(
+        Thread.ofVirtual().start(() -> {
+          awaitBarrier(barrier);
+          for (int k = slice; k < keys; k += producerCount) {
+            final var key = "key-" + k;
+            for (long offset = 0; offset < recordsPerKey; offset++) {
+              dispatcher.dispatch(recordWithKey(key, offset), dispatched::incrementAndGet, () -> {});
+            }
           }
-        }
-      }));
+        })
+      );
     }
 
     // Close concurrently with dispatch, slightly delayed so some records are in flight.

@@ -99,23 +99,13 @@ class CrashRestartReprocessingIntegrationTest {
     // Hold A's offset manager so the crash can stop it (halt commits) without a graceful close.
     final var offsetManagerA = new AtomicReference<KafkaOffsetManager<byte[]>>();
 
-    final var consumerA = buildConsumerWithManagedOffsets(
-      topic,
-      groupId,
-      observedA,
-      observedTotalA,
-      offsetManagerA
-    );
+    final var consumerA = buildConsumerWithManagedOffsets(topic, groupId, observedA, observedTotalA, offsetManagerA);
     final var threadA = Thread.ofVirtual().name("crash-consumer-A").start(consumerA::start);
 
     // Let A claim partitions, process a slice, and commit at least one prefix (the 1s interval
     // fires while A is still draining the slow stream). We wait until A has both committed
     // something AND processed past that commit point, so a genuine uncommitted tail exists.
-    final var committedBeforeCrash = awaitCommittedPrefixWithProcessedTail(
-      groupId,
-      observedA,
-      Duration.ofSeconds(40)
-    );
+    final var committedBeforeCrash = awaitCommittedPrefixWithProcessedTail(groupId, observedA, Duration.ofSeconds(40));
     assertFalse(
       committedBeforeCrash.isEmpty(),
       "Consumer A must commit a prefix before the crash; saw no committed offsets."
@@ -134,13 +124,7 @@ class CrashRestartReprocessingIntegrationTest {
     // Consumer B: fresh instance, SAME group, resumes from the committed offset.
     final var observedTotalB = new AtomicInteger(0);
     final var offsetManagerB = new AtomicReference<KafkaOffsetManager<byte[]>>();
-    final var consumerB = buildConsumerWithManagedOffsets(
-      topic,
-      groupId,
-      observedB,
-      observedTotalB,
-      offsetManagerB
-    );
+    final var consumerB = buildConsumerWithManagedOffsets(topic, groupId, observedB, observedTotalB, offsetManagerB);
     final var threadB = Thread.ofVirtual().name("crash-consumer-B").start(consumerB::start);
 
     try {
@@ -279,7 +263,8 @@ class CrashRestartReprocessingIntegrationTest {
       .withPipeline(
         TestPipelines.sideEffect(value -> {
           try {
-            // Slow the sink so processing trails the fetch, guaranteeing an uncommitted tail.
+            // Slow the sink so processing trails the fetch, guaranteeing an uncommitted
+            // tail.
             TimeUnit.MILLISECONDS.sleep(5);
           } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();

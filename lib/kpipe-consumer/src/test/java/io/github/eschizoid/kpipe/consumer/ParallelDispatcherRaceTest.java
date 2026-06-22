@@ -58,7 +58,8 @@ class ParallelDispatcherRaceTest {
 
     final var waiter = Thread.ofVirtual().start(() -> {
       waiterParked.countDown();
-      // Park until the throw-path onComplete unparks us, the way the consumer thread waits for
+      // Park until the throw-path onComplete unparks us, the way the consumer thread
+      // waits for
       // the in-flight count to drop. A while-loop guards against spurious wakeups.
       while (dispatcher.pendingCount() > 0) {
         LockSupport.park();
@@ -152,7 +153,11 @@ class ParallelDispatcherRaceTest {
     final var dispatcher = newDispatcher(rejectCount);
     // Consumer passes null safely here: the in-flight strategy reads the supplier, not the
     // consumer, so the broker is never queried.
-    final var controller = new BackpressureController(8, 4, BackpressureController.inFlightStrategy(dispatcher::pendingCount));
+    final var controller = new BackpressureController(
+      8,
+      4,
+      BackpressureController.inFlightStrategy(dispatcher::pendingCount)
+    );
     final var total = 32;
     final var release = new CountDownLatch(1);
     final var allParked = new CountDownLatch(total);
@@ -248,10 +253,7 @@ class ParallelDispatcherRaceTest {
     stopWatching.countDown();
     watcher.join(Duration.ofSeconds(2));
 
-    assertTrue(
-      minObserved.get() >= 0,
-      "in-flight count must never go negative; saw " + minObserved.get()
-    );
+    assertTrue(minObserved.get() >= 0, "in-flight count must never go negative; saw " + minObserved.get());
     assertEquals(0, dispatcher.pendingCount(), "in-flight must settle at exactly 0 after the throwing burst");
     dispatcher.close();
   }

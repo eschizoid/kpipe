@@ -63,10 +63,14 @@ class KeyOrderedDispatcherPropertyTest {
       for (final var ins : stream) {
         final var tracker = trackers.get(ins.key());
         final var rec = recordWithKey(ins.key(), ins.offset());
-        dispatcher.dispatch(rec, () -> {
-          guardedBody(tracker, rec.offset());
-          processed.countDown();
-        }, () -> {});
+        dispatcher.dispatch(
+          rec,
+          () -> {
+            guardedBody(tracker, rec.offset());
+            processed.countDown();
+          },
+          () -> {}
+        );
       }
 
       assertTrue(processed.await(30, TimeUnit.SECONDS), "all generated records must process within 30s");
@@ -75,8 +79,10 @@ class KeyOrderedDispatcherPropertyTest {
         final var key = entry.getKey();
         final var tracker = entry.getValue();
         assertTrue(tracker.violations.isEmpty(), () -> "key " + key + " violations: " + tracker.violations);
-        assertEquals(submittedOrder.get(key), tracker.observed, () ->
-          "key " + key + " arrival order != submission order: " + tracker.observed
+        assertEquals(
+          submittedOrder.get(key),
+          tracker.observed,
+          () -> "key " + key + " arrival order != submission order: " + tracker.observed
         );
       }
     } finally {
@@ -107,17 +113,25 @@ class KeyOrderedDispatcherPropertyTest {
         if (emitNull && nullOffset < nullCount) {
           final var off = nullOffset++;
           final var rec = recordWithKey(null, off);
-          dispatcher.dispatch(rec, () -> {
-            guardedBody(nullTracker, rec.offset());
-            processed.countDown();
-          }, () -> {});
+          dispatcher.dispatch(
+            rec,
+            () -> {
+              guardedBody(nullTracker, rec.offset());
+              processed.countDown();
+            },
+            () -> {}
+          );
         } else if (keyedOffset < keyedCount) {
           final var off = keyedOffset++;
           final var rec = recordWithKey("k", off);
-          dispatcher.dispatch(rec, () -> {
-            guardedBody(keyedTracker, rec.offset());
-            processed.countDown();
-          }, () -> {});
+          dispatcher.dispatch(
+            rec,
+            () -> {
+              guardedBody(keyedTracker, rec.offset());
+              processed.countDown();
+            },
+            () -> {}
+          );
         }
       }
 
