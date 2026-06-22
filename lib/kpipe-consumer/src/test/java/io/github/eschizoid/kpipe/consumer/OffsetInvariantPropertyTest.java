@@ -20,7 +20,7 @@ import org.apache.kafka.common.TopicPartition;
 /// Property-based smoke test for the offset-lifecycle invariants in `OFFSET-INVARIANTS.md`.
 ///
 /// This is a SETUP/SMOKE test proving the jqwik toolchain runs against `KafkaOffsetManager`. It is
-/// deliberately scoped to a single partition and asserts the lowest-pending invariant (I1): the
+/// deliberately scoped to a single partition and asserts the lowest-pending invariant: the
 /// commit point never advances past a gap. A later fleet adds exhaustive coverage.
 ///
 /// The generated input is a randomized sequence of track/mark operations over a small offset space.
@@ -70,7 +70,7 @@ class OffsetInvariantPropertyTest {
 
         if (!pending.isEmpty()) {
           final var lowestPending = pending.stream().mapToLong(Long::longValue).min().orElseThrow();
-          // I1: the commit point must never pass the lowest still-pending offset.
+          // The commit point must never pass the lowest still-pending offset.
           assertTrue(
             commitPoint <= lowestPending,
             "commit point %d must not pass lowest pending offset %d".formatted(commitPoint, lowestPending)

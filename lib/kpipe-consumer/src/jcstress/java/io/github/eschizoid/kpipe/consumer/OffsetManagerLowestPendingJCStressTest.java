@@ -13,7 +13,7 @@ import org.openjdk.jcstress.annotations.Outcome;
 import org.openjdk.jcstress.annotations.State;
 import org.openjdk.jcstress.infra.results.J_Result;
 
-/// Concurrency-stress check for the lowest-pending invariant (I1) of `KafkaOffsetManager`.
+/// Concurrency-stress check for the lowest-pending invariant of `KafkaOffsetManager`.
 ///
 /// jcstress runs the two actors below against fresh state under every interleaving its scheduler
 /// can produce, then evaluates the arbiter once both actors have finished. This is the
@@ -33,14 +33,14 @@ import org.openjdk.jcstress.infra.results.J_Result;
 @Outcome(id = "100", expect = Expect.ACCEPTABLE, desc = "Commit point pinned at the still-pending gap offset 100.")
 @Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "Commit point advanced past the still-pending offset 100.")
 @State
-public class OffsetManagerI1JCStressTest {
+public class OffsetManagerLowestPendingJCStressTest {
 
   private static final String TOPIC = "jcstress-topic";
   private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
 
   private final KafkaOffsetManager<String> manager;
 
-  public OffsetManagerI1JCStressTest() {
+  public OffsetManagerLowestPendingJCStressTest() {
     final var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();

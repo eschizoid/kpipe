@@ -18,10 +18,10 @@ import org.junit.jupiter.api.Test;
 
 /// Deterministic concurrency-stress tests for `KafkaOffsetManager`.
 ///
-/// These hammer real virtual-thread interleavings against the offset-lifecycle invariants spelled
-/// out in `OFFSET-INVARIANTS.md` (I1–I5). They are the runtime layer that exercises the same
-/// state machine a concurrency model-checker would have explored, scaled up to thousands of ops so
-/// genuine races surface rather than staying theoretical.
+/// These hammer real virtual-thread interleavings against the offset-lifecycle invariants. They
+/// are the runtime layer that exercises the same state machine a concurrency model-checker would
+/// have explored, scaled up to thousands of ops so genuine races surface rather than staying
+/// theoretical.
 ///
 /// Conventions:
 ///
@@ -58,9 +58,10 @@ class OffsetConcurrencyStressTest {
     return (long) manager.getPartitionState(partition).get("nextOffsetToCommit");
   }
 
-  /// I1 under parallel marking: N virtual threads each own a disjoint contiguous slice of offsets
-  /// on the SAME partition. Each thread tracks its whole slice, then marks them in a deterministic
-  /// but per-thread-shuffled order, so at every instant there are gaps spread across the partition.
+  /// No commit past a gap under parallel marking: N virtual threads each own a disjoint contiguous
+  /// slice of offsets on the SAME partition. Each thread tracks its whole slice, then marks them in
+  /// a deterministic but per-thread-shuffled order, so at every instant there are gaps spread across
+  /// the partition.
   ///
   /// The load-bearing assertion is the concurrent probe: a separate thread continuously reads the
   /// commit point and asserts it never sits above the lowest still-pending offset the probe can
@@ -149,7 +150,7 @@ class OffsetConcurrencyStressTest {
     manager.close();
   }
 
-  /// I1 explicit gap-hold: with a single low offset (100) deliberately left pending while many
+  /// Explicit gap-hold: with a single low offset (100) deliberately left pending while many
   /// threads track+mark a dense block ABOVE it (101..N), the commit point must stay pinned at 100
   /// throughout — it can never advance to 101+ while 100 holds the line. Once 100 is finally
   /// marked, the commit point jumps straight to the contiguous high-water mark.
@@ -215,9 +216,9 @@ class OffsetConcurrencyStressTest {
     manager.close();
   }
 
-  /// I5 revoke-during-processing: one dedicated "consumer thread" repeatedly fires the rebalance
-  /// listener's `onPartitionsRevoked` for partition 0 while many worker virtual threads keep
-  /// calling `trackOffset` / `markOffsetProcessed` for that same partition.
+  /// Rebalance-safe revoke-during-processing: one dedicated "consumer thread" repeatedly fires the
+  /// rebalance listener's `onPartitionsRevoked` for partition 0 while many worker virtual threads
+  /// keep calling `trackOffset` / `markOffsetProcessed` for that same partition.
   ///
   /// The manager pins its rebalance listener to whichever thread first invokes it and asserts every
   /// later callback runs on that same thread (the command-queue single-writer invariant). So EVERY
@@ -292,7 +293,7 @@ class OffsetConcurrencyStressTest {
             for (int i = 0; i < 2000; i++) {
               final var off = offsetSeq.getAndIncrement();
               final var rec = record(0, off);
-              // mark-for-revoked-partition is the I5 case — must be a clean no-op, never
+              // mark-for-revoked-partition must be a clean no-op (rebalance-safe), never
               // throw.
               manager.trackOffset(rec);
               manager.markOffsetProcessed(rec);
@@ -320,10 +321,9 @@ class OffsetConcurrencyStressTest {
     assertEquals(-1L, (long) cleared.get("nextOffsetToCommit"), "revoked partition reports cleared commit point");
     assertEquals(0, (int) cleared.get("pendingCount"), "revoked partition has no pending offsets");
 
-    // I5 explicit: a mark for the already-revoked/cleared partition is a clean no-op (no throw),
-    // and
-    // the lazily re-created entry still obeys lowest-pending. trackOffset / markOffsetProcessed are
-    // not thread-pinned, so running them from the test thread is legitimate.
+    // Rebalance-safe: a mark for the already-revoked/cleared partition is a clean no-op (no throw),
+    // and the lazily re-created entry still obeys lowest-pending. trackOffset / markOffsetProcessed
+    // are not thread-pinned, so running them from the test thread is legitimate.
     final var lateTrack = record(0, 5L);
     final var lateGap = record(0, 7L);
     assertDoesNotThrow(() -> manager.trackOffset(lateTrack));

@@ -72,7 +72,7 @@ class OffsetOrderingPropertyTest {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // I1 across gaps — random subset of a contiguous range marked in random order.
+  // No commit past a gap — random subset of a contiguous range marked in random order.
   // ---------------------------------------------------------------------------------------------
 
   /// A tracked offset range `[0, size)` plus the subset of those offsets that get marked, in a
@@ -99,7 +99,7 @@ class OffsetOrderingPropertyTest {
     });
   }
 
-  /// I1: track a contiguous range, then mark a random subset in random order. After every mark the
+  /// Track a contiguous range, then mark a random subset in random order. After every mark the
   /// commit point equals the lowest still-unmarked tracked offset — it never jumps across the gap
   /// left by an unmarked offset, even when higher offsets have been marked.
   @Property(tries = 300)
@@ -132,7 +132,7 @@ class OffsetOrderingPropertyTest {
           )
         );
 
-        // I1 restated as an inequality: the commit point can never pass any still-pending offset.
+        // Restated as an inequality: the commit point can never pass any still-pending offset.
         for (final var stillPending : pending) {
           assertTrue(
             commitPoint(manager, tp) <= stillPending,
@@ -204,8 +204,8 @@ class OffsetOrderingPropertyTest {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // I2 / I3 across multiple partitions — independent, correct commit points; nothing committable
-  // before it is marked.
+  // No commit-ahead and no loss across multiple partitions — independent, correct commit points;
+  // nothing committable before it is marked.
   // ---------------------------------------------------------------------------------------------
 
   /// One generated step: track-or-mark a given offset on a given partition.
@@ -222,11 +222,11 @@ class OffsetOrderingPropertyTest {
     return ops.list().ofMinSize(1).ofMaxSize(80);
   }
 
-  /// I2 + I3 across several partitions interleaved in one sequence. Each partition keeps its own
-  /// model (pending set + highest marked); after every op every touched partition's observable
-  /// commit point must equal that partition's independently-computed expected value. This proves
-  /// commit points don't bleed between partitions and that an offset is never committable
-  /// (counted toward the commit point) before its record is marked terminal.
+  /// No commit-ahead and no loss across several partitions interleaved in one sequence. Each
+  /// partition keeps its own model (pending set + highest marked); after every op every touched
+  /// partition's observable commit point must equal its independently-computed expected value.
+  /// This proves commit points don't bleed between partitions and that an offset is never
+  /// committable (counted toward the commit point) before its record is marked terminal.
   @Property(tries = 300)
   void perPartitionCommitPointsAreIndependentAndNeverAhead(@ForAll("multiPartitionSequences") final List<MultiOp> ops) {
     final var manager = newManager();
@@ -245,7 +245,7 @@ class OffsetOrderingPropertyTest {
           manager.trackOffset(record(op.partition(), op.offset()));
           pending.add(op.offset());
         } else {
-          // I2: an unmarked offset is part of pending; marking is what makes it terminal/eligible.
+          // An unmarked offset is part of pending; marking is what makes it terminal/eligible.
           manager.markOffsetProcessed(record(op.partition(), op.offset()));
           pending.remove(op.offset());
           highestMarkedByPartition.merge(op.partition(), op.offset(), Math::max);
@@ -262,7 +262,7 @@ class OffsetOrderingPropertyTest {
             "partition %d commit point diverged from independent model after op %s".formatted(p, op)
           );
 
-          // I3 restated: never commit past the lowest still-unprocessed offset on this partition.
+          // No loss: never commit past the lowest still-unprocessed offset on this partition.
           final var partitionPending = pendingByPartition.get(p);
           if (!partitionPending.isEmpty()) {
             final var lowest = partitionPending.stream().mapToLong(Long::longValue).min().orElseThrow();
@@ -283,12 +283,12 @@ class OffsetOrderingPropertyTest {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // I2 — terminal-before-eligible, sharpened: a tracked-but-unmarked offset can never be the thing
-  // that advances the commit point. Track a range, mark a strict subset, assert the commit point is
+  // Terminal-before-eligible, sharpened: a tracked-but-unmarked offset can never be the thing that
+  // advances the commit point. Track a range, mark a strict subset, assert the commit point is
   // never greater than the lowest UNmarked offset (it is held by the unmarked record).
   // ---------------------------------------------------------------------------------------------
 
-  /// I2: across a tracked range with a randomly-chosen strict subset marked, the commit point is
+  /// Across a tracked range with a randomly-chosen strict subset marked, the commit point is
   /// always held at or below the lowest tracked-but-unmarked offset. No unmarked offset is ever
   /// treated as committed — `highestProcessed + 1` becomes the commit point only when nothing is
   /// pending.

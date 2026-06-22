@@ -35,18 +35,18 @@ import org.testcontainers.utility.DockerImageName;
 /// jqwik property + concurrency-stress tests cover them at the unit level on `KafkaOffsetManager`
 /// directly). What this test actually ASSERTS:
 ///
-///   * **No loss (I3) — the primary guarantee.** Every produced record is observed by the sink
+///   * **No loss — the primary guarantee.** Every produced record is observed by the sink
 ///     at least once across the rebalance (exact set coverage). A rebalance mid-stream must never
 ///     let the committed offset advance past a record that was tracked but never marked terminal,
 ///     so on reassignment the unprocessed tail is re-fetched rather than silently skipped.
-///   * **No commit-ahead (I2) — a sanity bound.** The committed offset for each partition never
+///   * **No commit-ahead — a sanity bound.** The committed offset for each partition never
 ///     exceeds the log end. This is `<=`, not `==`: at-least-once permits a processed-but-not-yet-
 ///     committed tail at a bounded graceful-close shutdown (reprocessed on restart), so requiring
 ///     the commit to reach exactly the log end would assert a complete-drain / exactly-once
 ///     property kpipe does not claim. No-loss (above) plus this bound is the
 ///     at-least-once contract.
 ///
-/// Revocation commit-and-clear (I4) is *exercised* here (the second consumer's join forces a
+/// Revocation commit-and-clear is *exercised* here (the second consumer's join forces a
 /// revoke from the first) but is asserted directly at the unit level in `KafkaOffsetManagerTest`
 /// (the onPartitionsRevoked + commitSync path); this test does not assert the mid-rebalance
 /// commit distinctly.
@@ -91,13 +91,13 @@ class ChaosRebalanceIntegrationTest {
     awaitObservedAtLeast(observed, RECORD_COUNT / 10, Duration.ofSeconds(20));
 
     // Induce the rebalance: a second member joins the same group mid-stream. Kafka revokes a
-    // share of A's partitions and assigns them to B. This is the moment I4 (commit-and-clear
-    // on revoke) and I3 (no loss across the handoff) are under test.
+    // share of A's partitions and assigns them to B. This is the moment commit-and-clear on
+    // revoke and no loss across the handoff are under test.
     final var consumerB = buildConsumer(topic, groupId, observed, observedTotal);
     final var threadB = Thread.ofVirtual().name("chaos-consumer-B").start(consumerB::start);
 
     try {
-      // No loss (I3): every produced value reaches the sink at least once across both members.
+      // No loss: every produced value reaches the sink at least once across both members.
       final var allObserved = awaitObservedAtLeast(observed, producedValues.size(), Duration.ofSeconds(60));
       assertTrue(
         allObserved,
@@ -115,7 +115,7 @@ class ChaosRebalanceIntegrationTest {
       threadB.join(5000);
     }
 
-    // No commit-ahead / no silent skip (I2): where a partition has a committed offset, it must
+    // No commit-ahead / no silent skip: where a partition has a committed offset, it must
     // never exceed the log end. Combined with the no-loss assertion above (every record observed),
     // this is the at-least-once contract — the commit only ever advances over genuinely processed
     // offsets and never skips an unprocessed record to get ahead.
