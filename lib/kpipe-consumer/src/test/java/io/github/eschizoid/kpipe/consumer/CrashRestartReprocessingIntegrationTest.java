@@ -65,8 +65,8 @@ import org.testcontainers.utility.DockerImageName;
 /// leaving no tail). The crash is then induced WITHOUT a graceful drain: the offset manager is
 /// stopped (halting further commits and turning `markOffsetProcessed` into a no-op so no final
 /// commit fires) and A's consumer thread is interrupted and abandoned —
-/// `shutdownGracefully` / `close` are never called on A. This mirrors a hard process kill where
-/// the JVM dies between a periodic commit and the next one, leaving an uncommitted processed tail.
+/// `shutdownGracefully` / `close` are never called on A. This mirrors a hard process kill that
+/// leaves the records A processed after its last commit uncommitted.
 ///
 /// CI-RUN-REQUIRED: this is a Testcontainers test (needs a Docker daemon to start the Kafka
 /// broker). It compiles locally but cannot run where Docker is unavailable; it runs in CI.
@@ -77,10 +77,10 @@ class CrashRestartReprocessingIntegrationTest {
 
   // A single partition makes the A→B handoff deterministic: there is no rebalance-split ambiguity
   // about which member ends up reading the partition that holds the uncommitted tail. B inherits
-  // the one partition and resumes from the frozen commit, so the re-delivery overlap is as
-  // reproducible as a single-broker container allows (multi-partition rebalance timing made it even
-  // flakier). No-loss/no-commit-ahead don't depend on the partition count; the rebalance-handoff
-  // angle is covered by ChaosRebalanceIntegrationTest.
+  // the one partition and resumes from the manually-committed prefix, so the re-delivery overlap is
+  // deterministic (multi-partition rebalance timing made it flaky). No-loss/no-commit-ahead don't
+  // depend on the partition count; the rebalance-handoff angle is covered by
+  // ChaosRebalanceIntegrationTest.
   private static final int PARTITIONS = 1;
   // Enough records that sequential processing (5ms/record) is still mid-stream when we crash A,
   // so a genuine processed-but-uncommitted tail exists rather than A having drained everything.
@@ -134,14 +134,25 @@ class CrashRestartReprocessingIntegrationTest {
     assertTrue(committedSum > 0, "A must have committed a prefix before the crash; committed nothing.");
 
     // A keeps processing past the committed prefix with no further commit firing — that growth is
-    // the guaranteed uncommitted tail B must re-deliver.
-    awaitObservedGrowth(observedA, (int) committedSum + TAIL_MARGIN, Duration.ofSeconds(40));
+    // the guaranteed uncommitted tail B must re-deliver. Assert it explicitly so a failure to build
+    // the tail surfaces here with a clear message, not later as a confusing empty-overlap failure.
+    final var tailTarget = (int) committedSum + TAIL_MARGIN;
+    awaitObservedGrowth(observedA, tailTarget, Duration.ofSeconds(40));
+    assertTrue(
+      observedA.size() >= tailTarget,
+      "A must process at least %d records past the committed prefix (%d) to build the uncommitted tail; saw %d".formatted(
+        TAIL_MARGIN,
+        (int) committedSum,
+        observedA.size()
+      )
+    );
     final var observedByABeforeCrash = Set.copyOf(observedA);
 
     // CRASH: stop the manager (no further commit; markOffsetProcessed becomes a no-op) and abandon
-    // A's consumer thread without a graceful drain — no close()/shutdownGracefully(). A's Kafka
-    // consumer is never closed, so the broker evicts A after session.timeout.ms and B inherits the
-    // partition, resuming from the manually-committed prefix.
+    // A's consumer thread without a graceful drain — no shutdownGracefully(). On interrupt A's loop
+    // closes its Kafka consumer in its finally, which leaves the group promptly; B then inherits
+    // the
+    // partition and resumes from the manually-committed prefix.
     offsetManagerA.get().stop();
     threadA.interrupt();
 
@@ -239,8 +250,8 @@ class CrashRestartReprocessingIntegrationTest {
     }
   }
 
-  /// Polls until `observed` reaches `target` distinct values or the deadline passes. Used after
-  /// freezing commits to confirm A has processed a tail beyond the frozen commit point.
+  /// Polls until `observed` reaches `target` distinct values or the deadline passes. Used to reach
+  /// the prefix before the manual commit and to confirm A processes a tail beyond it.
   private void awaitObservedGrowth(final Set<String> observed, final int target, final Duration timeout)
     throws InterruptedException {
     final var deadline = System.currentTimeMillis() + timeout.toMillis();
@@ -277,10 +288,10 @@ class CrashRestartReprocessingIntegrationTest {
     return Set.copyOf(values);
   }
 
-  /// Builds a SEQUENTIAL consumer (manual-commit `KafkaOffsetManager`, 1s commit interval) captured
-  /// into `offsetManagerRef` so the test can stop it to simulate a crash. Processing one record at
-  /// a time with a small per-record delay keeps the commit point lagging the observed frontier, so
-  /// a processed-but-uncommitted tail reliably exists between commit ticks.
+  /// Builds a SEQUENTIAL consumer with a manual-commit `KafkaOffsetManager` on a long auto-commit
+  /// interval, captured into `offsetManagerRef` so the test commits a prefix manually and stops it
+  /// to simulate a crash. The only commit is the manual one; everything A processes afterward stays
+  /// uncommitted, forming the deterministic tail B re-delivers.
   private KPipeConsumer<byte[]> buildConsumerWithManagedOffsets(
     final String topic,
     final String groupId,
@@ -291,13 +302,14 @@ class CrashRestartReprocessingIntegrationTest {
     final var builder = KPipeConsumer.<byte[]>builder()
       .withProperties(consumerProperties(groupId))
       .withTopic(topic)
-      // SEQUENTIAL on purpose. In PARALLEL the consumer dispatches the whole
-      // topic into virtual threads almost at once and the 1s commit interval
-      // commits them all, so there is no sustained mid-stream uncommitted tail
-      // to crash into. One record at a time keeps the commit point lagging the
-      // observed frontier, so a hard crash always leaves a real uncommitted
-      // tail. At-least-once is mode-independent; the PARALLEL path is covered
-      // by the offset property/stress/jcstress suites.
+      // SEQUENTIAL on purpose: in-order processing means the committed prefix is a clean
+      // contiguous
+      // range, and combined with the small max.poll.records (see consumerProperties) the
+      // consumer
+      // drains the command queue between small batches so the manual commit lands as a
+      // bounded
+      // prefix. At-least-once is mode-independent; the PARALLEL path is covered by the offset
+      // property/stress/jcstress suites.
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(value -> {
@@ -399,6 +411,11 @@ class CrashRestartReprocessingIntegrationTest {
     // evicts A quickly and B deterministically inherits its partitions well within the test window.
     props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
     props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "3000");
+    // Small poll batches so SEQUENTIAL inline processing drains the command queue frequently. The
+    // manual prefix commit is enqueued mid-stream; with a large batch the consumer wouldn't drain
+    // (and thus commit) it until it finished processing the whole batch — committing the entire
+    // poll's worth and leaving no uncommitted tail. A tiny batch bounds the committed prefix.
+    props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "10");
     props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     return props;
