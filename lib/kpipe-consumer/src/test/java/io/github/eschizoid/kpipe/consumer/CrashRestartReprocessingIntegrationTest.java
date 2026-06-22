@@ -153,8 +153,7 @@ class CrashRestartReprocessingIntegrationTest {
 
     // CRASH: stop the manager (no further commit; markOffsetProcessed becomes a no-op) and abandon
     // A's consumer thread without a graceful drain — no shutdownGracefully(). On interrupt A's loop
-    // closes its Kafka consumer in its finally, which leaves the group promptly; B then inherits
-    // the
+    // closes its Kafka consumer in its finally, which leaves the group promptly; B then inherits the
     // partition and resumes from the manually-committed prefix.
     offsetManagerA.get().stop();
     threadA.interrupt();
