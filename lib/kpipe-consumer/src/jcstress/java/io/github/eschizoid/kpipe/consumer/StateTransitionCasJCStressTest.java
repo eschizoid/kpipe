@@ -20,12 +20,14 @@ import org.openjdk.jcstress.infra.results.ZZL_Result;
 /// window where both racers believe they performed the move, which would double-fire shutdown
 /// work that is meant to run exactly once.
 ///
-/// This @State reuses the real `ConsumerState` enum and replicates the exact single-read-CAS logic
-/// of the consumer's transition helper on a fresh reference initialized to `RUNNING`. The two
-/// actors run that helper concurrently. The property: exactly ONE actor observes a successful
-/// transition (one returns true, the other false), and the final state is `CLOSING`. A run where
-/// both actors return true (or both false, or the final state is anything other than `CLOSING`)
-/// means the single-read-CAS discipline failed to make the transition a single-winner operation.
+/// This @State holds a fresh `AtomicReference<ConsumerState>` initialized to `RUNNING` and drives
+/// the REAL transition logic — `KPipeConsumer.tryTransitionToClosing`, the static helper the
+/// instance method delegates to — not a copy, so the discipline is verified against the shipping
+/// code. The two actors run that helper concurrently. The property: exactly ONE actor observes a
+/// successful transition (one returns true, the other false), and the final state is `CLOSING`. A
+/// run where both actors return true (or both false, or the final state is anything other than
+/// `CLOSING`) means the single-read-CAS discipline failed to make the transition a single-winner
+/// operation.
 ///
 /// jcstress runs the actors against fresh state under every interleaving its scheduler can produce,
 /// then evaluates the arbiter once both have finished. r1/r2 carry each actor's CAS result and r3
@@ -51,22 +53,14 @@ public class StateTransitionCasJCStressTest {
 
   private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.RUNNING);
 
-  /// Single-read CAS toward CLOSING, mirroring the consumer's transition helper: read the current
-  /// state once, only proceed from an active state, then CAS against the captured value.
-  private boolean transitionToClosing() {
-    final var current = state.get();
-    if (current != ConsumerState.RUNNING && current != ConsumerState.PAUSED) return false;
-    return state.compareAndSet(current, ConsumerState.CLOSING);
-  }
-
   @Actor
   public void closer(final ZZL_Result r) {
-    r.r1 = transitionToClosing();
+    r.r1 = KPipeConsumer.tryTransitionToClosing(state);
   }
 
   @Actor
   public void selfTerminator(final ZZL_Result r) {
-    r.r2 = transitionToClosing();
+    r.r2 = KPipeConsumer.tryTransitionToClosing(state);
   }
 
   @Arbiter
