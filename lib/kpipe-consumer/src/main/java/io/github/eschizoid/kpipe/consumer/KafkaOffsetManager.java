@@ -575,11 +575,11 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
       consumerThread = Thread.currentThread();
       return;
     }
-    assert captured == Thread.currentThread()
-      : "rebalance callback ran on %s but was previously bound to %s — commandQueue single-writer invariant violated".formatted(
-          Thread.currentThread(),
-          captured
-        );
+    assert captured ==
+    Thread.currentThread() : "rebalance callback ran on %s but was previously bound to %s — commandQueue single-writer invariant violated".formatted(
+      Thread.currentThread(),
+      captured
+    );
   }
 
   /// Filters offset-commit commands so any references to revoked partitions are dropped before

@@ -68,8 +68,7 @@ public class DispatcherPendingCountJCStressTest {
 
   private static final String TOPIC = "jcstress-topic";
 
-  private final ParallelDispatcher<String> dispatcher =
-    new ParallelDispatcher<>((_, _) -> {}, Duration.ofSeconds(5));
+  private final ParallelDispatcher<String> dispatcher = new ParallelDispatcher<>((_, _) -> {}, Duration.ofSeconds(5));
   private final CountDownLatch normalDone = new CountDownLatch(1);
   private final CountDownLatch throwDone = new CountDownLatch(1);
 
