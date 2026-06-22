@@ -61,9 +61,10 @@ import org.testcontainers.utility.DockerImageName;
 /// on a short (1s) commit interval, so it commits a prefix while running. Processing one record at
 /// a time with a small per-record delay keeps the commit point lagging the observed frontier,
 /// guaranteeing a processed-but-not-yet-committed tail exists at crash time (PARALLEL would drain
-/// and commit the whole topic almost at once, leaving no sustained tail to crash into). The crash is then induced WITHOUT a graceful drain: the
-/// offset manager is stopped (halting any further commit and turning `markOffsetProcessed` into a
-/// no-op so no final commit fires) and A's consumer thread is interrupted and abandoned —
+/// and commit the whole topic almost at once, leaving no sustained tail to crash into).
+/// The crash is then induced WITHOUT a graceful drain: the offset manager is stopped (halting
+/// further commits and turning `markOffsetProcessed` into a no-op so no final commit fires) and
+/// A's consumer thread is interrupted and abandoned —
 /// `shutdownGracefully` / `close` are never called on A. This mirrors a hard process kill where
 /// the JVM dies between a periodic commit and the next one, leaving an uncommitted processed tail.
 ///
@@ -289,12 +290,13 @@ class CrashRestartReprocessingIntegrationTest {
     final var builder = KPipeConsumer.<byte[]>builder()
       .withProperties(consumerProperties(groupId))
       .withTopic(topic)
-      // SEQUENTIAL on purpose: in PARALLEL the consumer dispatches the whole topic into virtual
-      // threads near-instantly and the 1s commit interval commits them all, so there is no
-      // sustained mid-stream uncommitted tail to crash into. Processing one record at a time keeps
-      // the commit point lagging the observed frontier, so a hard crash always leaves a genuine
-      // processed-but-uncommitted tail for B to re-deliver. At-least-once does not depend on the
-      // mode; the PARALLEL angle is covered by the offset property/stress/jcstress suites.
+      // SEQUENTIAL on purpose. In PARALLEL the consumer dispatches the whole
+      // topic into virtual threads almost at once and the 1s commit interval
+      // commits them all, so there is no sustained mid-stream uncommitted tail
+      // to crash into. One record at a time keeps the commit point lagging the
+      // observed frontier, so a hard crash always leaves a real uncommitted
+      // tail. At-least-once is mode-independent; the PARALLEL path is covered
+      // by the offset property/stress/jcstress suites.
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(value -> {

@@ -65,8 +65,14 @@ public class BatchWrapperLockJCStressTest {
       // High size threshold and long age window: no enqueue trips a flush, so both records
       // remain buffered for the arbiter to count.
       final var policy = new BatchPolicy(1000, Duration.ofMinutes(1));
-      wrapper =
-        new BatchPipelineWrapper<>(TOPIC, TestPipelines.identity(), succeedingSink(), policy, null, noopCallbacks());
+      wrapper = new BatchPipelineWrapper<>(
+        TOPIC,
+        TestPipelines.identity(),
+        succeedingSink(),
+        policy,
+        null,
+        noopCallbacks()
+      );
     }
 
     @Actor
@@ -92,7 +98,11 @@ public class BatchWrapperLockJCStressTest {
   /// record buffered. The final `bufferedCount` must therefore be 1: the flush decrement must
   /// match the count it removed, with no lost or stranded record.
   @JCStressTest
-  @Outcome(id = "1", expect = Expect.ACCEPTABLE, desc = "Flush decrement matched the records it drained; one left buffered.")
+  @Outcome(
+    id = "1",
+    expect = Expect.ACCEPTABLE,
+    desc = "Flush decrement matched the records it drained; one left buffered."
+  )
   @Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "Flush lost, stranded, or double-counted a record.")
   @State
   public static class EnqueueVersusFlush {
@@ -102,8 +112,14 @@ public class BatchWrapperLockJCStressTest {
     public EnqueueVersusFlush() {
       // Size threshold 2 with one record pre-loaded: the next enqueue trips an inline flush.
       final var policy = new BatchPolicy(2, Duration.ofMinutes(1));
-      wrapper =
-        new BatchPipelineWrapper<>(TOPIC, TestPipelines.identity(), succeedingSink(), policy, null, noopCallbacks());
+      wrapper = new BatchPipelineWrapper<>(
+        TOPIC,
+        TestPipelines.identity(),
+        succeedingSink(),
+        policy,
+        null,
+        noopCallbacks()
+      );
       wrapper.enqueue(record(0L), record(0L).value());
     }
 

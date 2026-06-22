@@ -32,13 +32,15 @@ import org.openjdk.jcstress.infra.results.L_Result;
 /// concurrent misses.
 @JCStressTest
 @Outcome(
-    id = "loads=1,sameRef=true,value=ok",
-    expect = Expect.ACCEPTABLE,
-    desc = "Concurrent misses collapsed to one load; both callers got the same resolved schema.")
+  id = "loads=1,sameRef=true,value=ok",
+  expect = Expect.ACCEPTABLE,
+  desc = "Concurrent misses collapsed to one load; both callers got the same resolved schema."
+)
 @Outcome(
-    id = ".*",
-    expect = Expect.FORBIDDEN,
-    desc = "Duplicate load or divergent results — computeIfAbsent did not collapse the misses.")
+  id = ".*",
+  expect = Expect.FORBIDDEN,
+  desc = "Duplicate load or divergent results — computeIfAbsent did not collapse the misses."
+)
 @State
 public class CachedSchemaResolverJCStressTest {
 
@@ -54,11 +56,10 @@ public class CachedSchemaResolverJCStressTest {
   public CachedSchemaResolverJCStressTest() {
     // Counting fake: every underlying load bumps the counter and hands back the same instance,
     // so a duplicate load shows up as a count above one and a fresh reference comparison.
-    final SchemaResolver counting =
-        id -> {
-          loadCount.incrementAndGet();
-          return SCHEMA_JSON;
-        };
+    final SchemaResolver counting = id -> {
+      loadCount.incrementAndGet();
+      return SCHEMA_JSON;
+    };
     resolver = new CachedSchemaResolver(counting);
   }
 
@@ -76,12 +77,6 @@ public class CachedSchemaResolverJCStressTest {
   public void verdict(final L_Result r) {
     final var sameRef = result1 == result2;
     final var bothOk = SCHEMA_JSON.equals(result1) && SCHEMA_JSON.equals(result2);
-    r.r1 =
-        "loads="
-            + loadCount.get()
-            + ",sameRef="
-            + sameRef
-            + ",value="
-            + (bothOk ? "ok" : "bad");
+    r.r1 = "loads=" + loadCount.get() + ",sameRef=" + sameRef + ",value=" + (bothOk ? "ok" : "bad");
   }
 }
