@@ -1399,6 +1399,19 @@ public class KPipeConsumer<K> implements AutoCloseable {
   ///
   /// @return true if the transition succeeded, false if the state was not active
   private boolean transitionToClosing() {
+    return tryTransitionToClosing(state);
+  }
+
+  /// The single-read compare-and-set that backs [#transitionToClosing], lifted to a static method
+  /// over the supplied reference so the exact discipline (read once into a local, verify the state
+  /// is active, then CAS to CLOSING) can be exercised under jcstress without constructing a full
+  /// consumer. Two threads racing this must yield exactly one winner; the loser sees CLOSING and
+  /// returns false. Package-private for that test only.
+  ///
+  /// @param state the lifecycle state reference to transition
+  /// @return true if this call performed the transition, false if the state was not active or
+  ///         another thread won the CAS
+  static boolean tryTransitionToClosing(final AtomicReference<ConsumerState> state) {
     final var current = state.get();
     if (current != ConsumerState.RUNNING && current != ConsumerState.PAUSED) return false;
     return state.compareAndSet(current, ConsumerState.CLOSING);

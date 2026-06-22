@@ -417,6 +417,13 @@ class KeyOrderedDispatcherCorrectnessTest {
     for (final var p : producers) p.join(Duration.ofSeconds(5));
 
     assertTrue(snapshotErrors.isEmpty(), () -> "diagnostic snapshot errors under churn: " + snapshotErrors);
+    // pendingCount is decremented in the worker's finally, which can run just after the per-record
+    // latch the producers awaited counts down — so poll for the drain rather than reading it the
+    // instant the latch releases (an immediate read flaked on slow CI runners).
+    final var drainDeadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+    while (dispatcher.pendingCount() != 0 && System.nanoTime() < drainDeadline) {
+      Thread.onSpinWait();
+    }
     assertEquals(0, dispatcher.pendingCount(), "pending must drain to 0");
     dispatcher.close();
   }
