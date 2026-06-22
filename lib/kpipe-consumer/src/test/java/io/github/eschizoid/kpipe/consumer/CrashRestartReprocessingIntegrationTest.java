@@ -151,11 +151,10 @@ class CrashRestartReprocessingIntegrationTest {
     );
     final var observedByABeforeCrash = Set.copyOf(observedA);
 
-    // CRASH: stop the manager (no further commit; markOffsetProcessed becomes a no-op) and abandon
-    // A's consumer thread without a graceful drain — no shutdownGracefully(). On interrupt A's loop
-    // closes its Kafka consumer in its finally, which leaves the group promptly; B then inherits
-    // the
-    // partition and resumes from the manually-committed prefix.
+    // CRASH: stop the manager (no further commit; markOffsetProcessed becomes a no-op) and
+    // abandon A's consumer thread without a graceful drain (no shutdownGracefully()). On
+    // interrupt, A's loop closes its Kafka consumer in the finally, which leaves the group
+    // promptly; B then inherits the partition and resumes from the manually-committed prefix.
     offsetManagerA.get().stop();
     threadA.interrupt();
 
@@ -230,9 +229,9 @@ class CrashRestartReprocessingIntegrationTest {
       final var tp = entry.getKey();
       final var logEnd = entry.getValue();
       final var committedMeta = committedFinal.get(tp);
-      // A missing commit is an acceptable uncommitted tail (reprocessed on a later restart);
-      // no-loss
-      // above already covers it. Only bound-check partitions that actually committed.
+      // A missing commit is an acceptable uncommitted tail (reprocessed on a later
+      // restart); no-loss above already covers it. Only bound-check partitions that
+      // actually committed.
       if (committedMeta == null) {
         continue;
       }
@@ -312,13 +311,10 @@ class CrashRestartReprocessingIntegrationTest {
       .withProperties(consumerProperties(groupId))
       .withTopic(topic)
       // SEQUENTIAL on purpose: in-order processing means the committed prefix is a clean
-      // contiguous
-      // range, and combined with the small max.poll.records (see consumerProperties) the
-      // consumer
-      // drains the command queue between small batches so the manual commit lands as a
-      // bounded
-      // prefix. At-least-once is mode-independent; the PARALLEL path is covered by the offset
-      // property/stress/jcstress suites.
+      // contiguous range, and combined with the small max.poll.records (see
+      // consumerProperties) the consumer drains the command queue between small batches so
+      // the manual commit lands as a bounded prefix. At-least-once is mode-independent; the
+      // PARALLEL path is covered by the offset property/stress/jcstress suites.
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(value -> {
