@@ -73,7 +73,7 @@ tasks.named<JavaCompile>("compileJcstressJava") {
 // proves jcstress executes on JDK 25 without launching a multi-minute campaign.
 tasks.register<JavaExec>("jcstress") {
   group = "verification"
-  description = "Runs the jcstress concurrency harness against KafkaOffsetManager."
+  description = "Runs the jcstress concurrency harness for kpipe-consumer."
   classpath = jcstress.runtimeClasspath
   mainClass.set("org.openjdk.jcstress.Main")
   jvmArgs("-Djdk.attach.allowAttachSelf=true")
@@ -81,7 +81,8 @@ tasks.register<JavaExec>("jcstress") {
   val outDir = layout.buildDirectory.dir("jcstress").get().asFile
   doFirst { outDir.mkdirs() }
   workingDir = outDir
-  args("-t", "OffsetManager", "-iters", "1", "-time", "50", "-f", "1", "-v", "-r", "results")
+  // -t matches every jcstress test in the consumer package by its shared JCStressTest suffix.
+  args("-t", "JCStressTest", "-iters", "1", "-time", "50", "-f", "1", "-v", "-r", "results")
 }
 
 tasks.test {
