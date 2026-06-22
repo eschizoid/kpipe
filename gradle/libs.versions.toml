@@ -17,7 +17,7 @@ shadow = "9.4.2"
 jmh = "0.7.3"
 jreleaser = "1.19.0"
 jgit = "6.10.0.202406032230-r"
-jqwik = "1.9.3"
+jqwik = "1.10.1"
 jcstress = "0.16"
 
 [libraries]
