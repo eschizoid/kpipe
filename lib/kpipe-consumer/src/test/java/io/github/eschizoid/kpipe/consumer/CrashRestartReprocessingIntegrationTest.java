@@ -57,10 +57,11 @@ import org.testcontainers.utility.DockerImageName;
 ///     committed tail (reprocessed on restart), so requiring the commit to reach exactly the log
 ///     end would assert a complete-drain / exactly-once property kpipe does not claim.
 ///
-/// Crash simulation: consumer A runs in PARALLEL mode with a manual-commit `KafkaOffsetManager`
-/// on a short (1s) commit interval, so it commits a prefix while running. A deliberate small
-/// per-record delay keeps processing slower than the fetch, guaranteeing a processed-but-not-yet-
-/// committed tail exists at crash time. The crash is then induced WITHOUT a graceful drain: the
+/// Crash simulation: consumer A runs in SEQUENTIAL mode with a manual-commit `KafkaOffsetManager`
+/// on a short (1s) commit interval, so it commits a prefix while running. Processing one record at
+/// a time with a small per-record delay keeps the commit point lagging the observed frontier,
+/// guaranteeing a processed-but-not-yet-committed tail exists at crash time (PARALLEL would drain
+/// and commit the whole topic almost at once, leaving no sustained tail to crash into). The crash is then induced WITHOUT a graceful drain: the
 /// offset manager is stopped (halting any further commit and turning `markOffsetProcessed` into a
 /// no-op so no final commit fires) and A's consumer thread is interrupted and abandoned —
 /// `shutdownGracefully` / `close` are never called on A. This mirrors a hard process kill where
@@ -80,7 +81,9 @@ class CrashRestartReprocessingIntegrationTest {
   // on the partition count; the rebalance-handoff angle is covered by
   // ChaosRebalanceIntegrationTest.
   private static final int PARTITIONS = 1;
-  private static final int RECORD_COUNT = 400;
+  // Enough records that sequential processing (5ms/record) is still mid-stream when we crash A,
+  // so a genuine processed-but-uncommitted tail exists rather than A having drained everything.
+  private static final int RECORD_COUNT = 1000;
 
   /// Records A must observe AFTER commits are frozen, forming the guaranteed uncommitted tail that
   /// B re-delivers. Small enough to build quickly under the slow sink, large enough to be robust.
@@ -286,7 +289,13 @@ class CrashRestartReprocessingIntegrationTest {
     final var builder = KPipeConsumer.<byte[]>builder()
       .withProperties(consumerProperties(groupId))
       .withTopic(topic)
-      .withProcessingMode(ProcessingMode.PARALLEL)
+      // SEQUENTIAL on purpose: in PARALLEL the consumer dispatches the whole topic into virtual
+      // threads near-instantly and the 1s commit interval commits them all, so there is no
+      // sustained mid-stream uncommitted tail to crash into. Processing one record at a time keeps
+      // the commit point lagging the observed frontier, so a hard crash always leaves a genuine
+      // processed-but-uncommitted tail for B to re-deliver. At-least-once does not depend on the
+      // mode; the PARALLEL angle is covered by the offset property/stress/jcstress suites.
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(value -> {
           try {
