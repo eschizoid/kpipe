@@ -71,8 +71,13 @@ class RebalanceAtScaleIntegrationTest {
   private static final int PARTITIONS = 6;
   private static final int RECORD_COUNT = 600;
 
+  // Per-method broker (instance field, NOT static). Each of this class's three methods creates its
+  // own 6-partition topic plus consumer groups and never tears them down; sharing one static broker
+  // across all three let that state accumulate until a later method's producer could not get acks
+  // within delivery.timeout.ms and failed at the produce step during setup. A fresh broker per
+  // method keeps each test isolated. Do not make this static.
   @Container
-  static KafkaContainer kafka = new KafkaContainer(
+  final KafkaContainer kafka = new KafkaContainer(
     DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
   );
 
