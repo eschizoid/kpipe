@@ -58,7 +58,7 @@ Attribution profile in
 Not free, and not hidden.
 
 **2. The at-least-once claim is verified, not asserted.** Every CI run gates on 15
-[jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 5 modules, exercising the
+[jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 4 modules, exercising the
 offset state machine, the dispatchers, and the circuit-breaker window under real interleavings. On top of that: jqwik
 property-based suites over the offset lifecycle, and chaos-rebalance + crash-restart Testcontainers E2E tests against a
 real broker. Building this suite found and fixed three real production bugs before any user hit them — a pending-set
