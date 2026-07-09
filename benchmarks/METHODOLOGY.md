@@ -41,7 +41,7 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 > Maven Central publishing infrastructure (commit "feat(publish): Maven Central publishing", 2026-04-22) but **has not
 > yet released a stable artifact** — the source pom is `0.6.0.0-SNAPSHOT` and `io.github.astubbs.parallelconsumer`
 > returns zero results on Maven Central. The benchmarks therefore still depend on the deprecated
-> `io.confluent.parallelconsumer:parallel-consumer-core:0.5.3.0`. Swap when Stubbs publishes a release.
+> `io.confluent.parallelconsumer:parallel-consumer-core:0.5.3.3`. Swap when Stubbs publishes a release.
 
 Two axes worth attention. **Threading model**: Loom-based (KPipe PARALLEL/KEY_ORDERED, share, raw) vs platform-threaded
 (single-threaded, Confluent's three modes, Reactor) — Loom absorbs blocking work; platform pools don't. **Ordering
@@ -98,18 +98,28 @@ Per-benchmark overrides:
 
 ### Recommended publishing run
 
+This is the full publishing capture: every arm, each benchmark's full `workMicros` sweep (no override — including the
+10–100ms regime where most real consumers live), latency percentiles included, on a quiesced box (no browser, no IDE
+indexing, mains power). Plan for a weekend, not an overnight: the single-threaded arm is the long pole — 25k records ×
+100ms ≈ 42 min per iteration at the top cell, which at fork=5 is a multi-day tail (and why this run cannot fit CI's
+6-hour cap). To fit an actual overnight window, exclude the serial arm's pathological cells with the include-regex trick
+from the CI section and capture `singleThread` separately at lower fork counts.
+
 ```bash
 ./gradlew :benchmarks:jmh \
   -Pjmh.includes='ParallelProcessingBenchmark|ParallelProcessingLatencyBenchmark' \
   -Pjmh.warmupIterations=3 \
   -Pjmh.iterations=5 \
-  -Pjmh.fork=2 \
+  -Pjmh.fork=5 \
   -Pjmh.profilers='gc' \
   -Pjmh.resultFormat=JSON
 ```
 
-Two forks instead of one cuts the cross-fork noise on the latency percentiles. The `gc` profiler adds allocation rate
-and GC count per benchmark — required input to the "throughput vs allocation-cost" trade-off.
+Five forks, not two: the 2026-06-20 CI capture at fork=2 produced 25%+ error bars and two cells where JMH could not
+compute a stable cross-fork stddev at all (`NaN` score-error) — fork=2 is the floor for _running_, not for _publishing_.
+The `gc` profiler adds allocation rate and GC count per benchmark — required input to the "throughput vs
+allocation-cost" trade-off. Afterwards, copy `build/results/jmh/results.json` into `results/` alongside a dated markdown
+snapshot per [What to write down with every published number](#what-to-write-down-with-every-published-number).
 
 ### Quick smoke run (for local sanity-check)
 
@@ -175,6 +185,8 @@ annotation drives the mode:
   -Pjmh.workMicros='100'
 ```
 
+(fork=2 here is the quick spot-check; percentiles you intend to publish belong in the fork=5 publishing run above.)
+
 ## What to write down with every published number
 
 A bench number without context is unverifiable. Each entry in `results/` should record:
@@ -213,7 +225,9 @@ pattern that produces good average throughput but occasional stragglers.
 ### Within-iteration vs cross-fork variance
 
 The default `forks=1` means all iterations share the same JVM process. Cross-fork variance (JIT warmup differences, GC
-profile differences across forks) doesn't get exposed. For published numbers run with `forks=2` minimum.
+profile differences across forks) doesn't get exposed. `forks=2` is the minimum that exposes cross-fork variance at all;
+for published numbers use `forks=5` (see [Recommended publishing run](#recommended-publishing-run) — the 2026-06-20
+fork=2 capture produced 25%+ error bars and NaN score-errors).
 
 ## Caveats
 
