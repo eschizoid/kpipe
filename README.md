@@ -29,43 +29,53 @@ own consumer loop together every time.
 
 ## The numbers, up front
 
-Two claims, both backed in this repo rather than asserted.
+Two claims, both backed in this repo.
 
-**1. The fastest correct consumer runtime we measured.** The [`benchmarks/`](benchmarks/) module runs kpipe head-to-head
-against Confluent Parallel Consumer, Reactor Kafka, a raw `KafkaConsumer` + virtual-threads loop, a single-threaded
-loop, and the KIP-932 share consumer — same broker, same workload, simulated per-record work. At production-like work
-levels (≥100µs per record — any DB or HTTP hop), kpipe leads every runtime that provides at-least-once delivery through
-a maintained library:
+**1. The fastest at-least-once runtime we measured.** The [`benchmarks/`](benchmarks/) module runs KPipe head-to-head
+against Confluent Parallel Consumer, Reactor Kafka, the KIP-932 share consumer, a raw `KafkaConsumer` + virtual-threads
+loop, and a single-threaded loop — same broker, same workload, simulated per-record work. The statistically cleanest
+result: at 1ms of per-record work, **KPipe `KEY_ORDERED` does 91k rec/s (±3%) against Confluent PC `KEY`'s 62k (±2%)** —
+the same per-key-FIFO guarantee at ~1.5× the throughput, with cleanly separated error bars. Across both captured work
+levels, KPipe leads every library-provided at-least-once arm:
 
 | Runtime (delivery guarantee)                          | 100µs / record | 1ms / record |
 | ----------------------------------------------------- | -------------: | -----------: |
-| **kpipe `PARALLEL`** (at-least-once)                  |     126k rec/s |   134k rec/s |
-| **kpipe `KEY_ORDERED`** (at-least-once, per-key FIFO) |     154k rec/s |    91k rec/s |
-| Confluent PC `UNORDERED` (at-least-once)              |           104k |          68k |
-| Confluent PC `KEY` (per-key FIFO)                     |            94k |          62k |
-| Reactor Kafka                                         |            23k |         3.7k |
-| Single-threaded `KafkaConsumer` loop                  |           6.0k |         0.9k |
+| **KPipe `PARALLEL`** (at-least-once)                  |          ~126k |           —¹ |
+| **KPipe `KEY_ORDERED`** (at-least-once, per-key FIFO) |          ~154k |    91k (±3%) |
+| Confluent PC `UNORDERED` (at-least-once)              |          ~104k |          68k |
+| Confluent PC `KEY` (at-least-once, per-key FIFO)      |           ~94k |          62k |
+| Reactor Kafka (at-least-once)                         |           ~23k |         3.7k |
+| Kafka share consumer, KIP-932 (at-least-once)         |          ~4.7k |         4.7k |
+| Single-threaded loop (at-least-once, per-partition)   |          ~6.0k |         0.9k |
 
-The only faster arm is the hand-rolled `KafkaConsumer` + virtual-threads loop (641k+) — and it is unsafe: no honest
-offset commit, records lost on rebalance. kpipe is what that loop becomes once you make it at-least-once. These are
-shared-CI-runner numbers — read the ordering between runtimes, not the absolute magnitudes; full capture, error bars,
-and caveats in [`benchmarks/results/2026-06-20.md`](benchmarks/results/2026-06-20.md).
+¹ JMH could not compute a stable error for this cell in the CI capture; KPipe's 1ms lead is carried by the `KEY_ORDERED`
+row.
 
-The honest tradeoff: kpipe allocates the most per record of the field (1,628 B/op vs Confluent PC's 33). Roughly 62% of
-that is the fresh virtual thread per record — the same property that buys the throughput lead under blocking work.
-Attribution profile in
+Read the table honestly: these are provisional numbers from a shared-CI-runner capture at fork=2 — below the fork=5
+publishing bar our own [methodology](benchmarks/METHODOLOGY.md) sets — so read the ordering between libraries, not the
+absolute magnitudes, and don't read the deltas between KPipe's own two modes (those are within the error bars). The
+10–100ms regime, where consumers doing real DB/HTTP hops live, is not yet captured. Full table, error bars, and every
+caveat: [`benchmarks/results/2026-06-20.md`](benchmarks/results/2026-06-20.md).
+
+The only faster arm in the capture is the hand-rolled `KafkaConsumer` + virtual-threads loop (641k+) — and it is unsafe:
+no honest offset commit, records lost on rebalance. KPipe is what that loop becomes once you make it at-least-once. One
+more disclosure that is also part of the pitch: Confluent Parallel Consumer 0.5.3.3 is the last release before the
+project was officially retired in 2026-05, and its successor fork has not yet published an artifact.
+
+The honest tradeoff: KPipe allocates the most per record of any arm measured (1,628 B/op vs Confluent PC's 33 B/op).
+Roughly 62% of that is the fresh virtual thread per record — the same property that buys the throughput lead under
+blocking work. The attribution profile is in
 [`benchmarks/results/2026-06-21-allocation-attribution.md`](benchmarks/results/2026-06-21-allocation-attribution.md).
 Not free, and not hidden.
 
-**2. The at-least-once claim is verified, not asserted.** Every CI run gates on 15
-[jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 4 modules, exercising the
-offset state machine, the dispatchers, and the circuit-breaker window under real interleavings. On top of that: jqwik
-property-based suites over the offset lifecycle, and chaos-rebalance + crash-restart Testcontainers E2E tests against a
-real broker. Building this suite found and fixed three real production bugs before any user hit them — a pending-set
-data-loss race in offset tracking, silent record loss on DLQ send failure, and a circuit breaker blind to the batch
-path. No competing consumer library states — or tests — its delivery guarantee this way.
+**2. The at-least-once claim is verified, not asserted.** Every CI run gates on 16
+[jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 4 modules, plus jqwik
+property-based suites over the offset lifecycle and chaos-rebalance + crash-restart Testcontainers E2E tests against a
+real broker. Building that suite found and fixed three real data-loss and correctness bugs before any user hit them (an
+offset-tracking race, silent loss on DLQ send failure, a circuit breaker blind to the batch path). None of the runtimes
+we benchmark against state — or test — their delivery guarantee this way.
 
-### Two API surfaces
+## Two API surfaces
 
 There are two public entry points; pick whichever matches the shape of your problem:
 
@@ -1359,8 +1369,9 @@ shape (I/O vs CPU bound), partitioning, and message size — these are micro-lev
   magic bytes and schema IDs without `Arrays.copyOfRange`.
 - fastjson2 for JSON parsing. Faster than Jackson on the hot path with similar GC pressure, and actively maintained.
 
-The latest parallel benchmark in [`benchmarks/README.md`](benchmarks/README.md) shows KPipe ahead of Confluent Parallel
-Consumer on throughput, with a higher allocation footprint. Scenario-specific — not a blanket claim.
+The latest competitive capture ([`benchmarks/results/2026-06-20.md`](benchmarks/results/2026-06-20.md) — summarized in
+[The numbers, up front](#the-numbers-up-front)) shows KPipe ahead of Confluent Parallel Consumer on throughput, with a
+higher allocation footprint. Scenario-specific — not a blanket claim.
 
 ---
 
