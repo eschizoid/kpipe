@@ -27,6 +27,44 @@ What it does:
 The target audience is anyone running Kafka consumers that transform, enrich, or route — and would rather not glue their
 own consumer loop together every time.
 
+## The numbers, up front
+
+Two claims, both backed in this repo rather than asserted.
+
+**1. The fastest correct consumer runtime we measured.** The [`benchmarks/`](benchmarks/) module runs kpipe head-to-head
+against Confluent Parallel Consumer, Reactor Kafka, a raw `KafkaConsumer` + virtual-threads loop, a single-threaded
+loop, and the KIP-932 share consumer — same broker, same workload, simulated per-record work. At production-like work
+levels (≥100µs per record — any DB or HTTP hop), kpipe leads every runtime that provides at-least-once delivery through
+a maintained library:
+
+| Runtime (delivery guarantee)                          | 100µs / record | 1ms / record |
+| ----------------------------------------------------- | -------------: | -----------: |
+| **kpipe `PARALLEL`** (at-least-once)                  |     126k rec/s |   134k rec/s |
+| **kpipe `KEY_ORDERED`** (at-least-once, per-key FIFO) |     154k rec/s |    91k rec/s |
+| Confluent PC `UNORDERED` (at-least-once)              |           104k |          68k |
+| Confluent PC `KEY` (per-key FIFO)                     |            94k |          62k |
+| Reactor Kafka                                         |            23k |         3.7k |
+| Single-threaded `KafkaConsumer` loop                  |           6.0k |         0.9k |
+
+The only faster arm is the hand-rolled `KafkaConsumer` + virtual-threads loop (641k+) — and it is unsafe: no honest
+offset commit, records lost on rebalance. kpipe is what that loop becomes once you make it at-least-once. These are
+shared-CI-runner numbers — read the ordering between runtimes, not the absolute magnitudes; full capture, error bars,
+and caveats in [`benchmarks/results/2026-06-20.md`](benchmarks/results/2026-06-20.md).
+
+The honest tradeoff: kpipe allocates the most per record of the field (1,628 B/op vs Confluent PC's 33). Roughly 62% of
+that is the fresh virtual thread per record — the same property that buys the throughput lead under blocking work.
+Attribution profile in
+[`benchmarks/results/2026-06-21-allocation-attribution.md`](benchmarks/results/2026-06-21-allocation-attribution.md).
+Not free, and not hidden.
+
+**2. The at-least-once claim is verified, not asserted.** Every CI run gates on 15
+[jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 5 modules, exercising the
+offset state machine, the dispatchers, and the circuit-breaker window under real interleavings. On top of that: jqwik
+property-based suites over the offset lifecycle, and chaos-rebalance + crash-restart Testcontainers E2E tests against a
+real broker. Building this suite found and fixed three real production bugs before any user hit them — a pending-set
+data-loss race in offset tracking, silent record loss on DLQ send failure, and a circuit breaker blind to the batch
+path. No competing consumer library states — or tests — its delivery guarantee this way.
+
 ### Two API surfaces
 
 There are two public entry points; pick whichever matches the shape of your problem:

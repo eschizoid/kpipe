@@ -98,18 +98,26 @@ Per-benchmark overrides:
 
 ### Recommended publishing run
 
+This is the overnight capture: every arm, each benchmark's full `workMicros` sweep (no override — including the 10–100ms
+regime where most real consumers live), latency percentiles included, on a quiesced box (no browser, no IDE indexing,
+mains power). The single-threaded arm is the long pole — 25k records × 100ms ≈ 42 min per iteration at the top cell —
+which is why this run cannot fit CI's 6-hour cap.
+
 ```bash
 ./gradlew :benchmarks:jmh \
   -Pjmh.includes='ParallelProcessingBenchmark|ParallelProcessingLatencyBenchmark' \
   -Pjmh.warmupIterations=3 \
   -Pjmh.iterations=5 \
-  -Pjmh.fork=2 \
+  -Pjmh.fork=5 \
   -Pjmh.profilers='gc' \
   -Pjmh.resultFormat=JSON
 ```
 
-Two forks instead of one cuts the cross-fork noise on the latency percentiles. The `gc` profiler adds allocation rate
-and GC count per benchmark — required input to the "throughput vs allocation-cost" trade-off.
+Five forks, not two: the 2026-06-20 CI capture at fork=2 produced 25%+ error bars and two cells where JMH could not
+compute a stable cross-fork stddev at all (`NaN` score-error) — fork=2 is the floor for _running_, not for _publishing_.
+The `gc` profiler adds allocation rate and GC count per benchmark — required input to the "throughput vs
+allocation-cost" trade-off. Afterwards, copy `build/results/jmh/results.json` into `results/` alongside a dated markdown
+snapshot per [What to write down with every published number](#what-to-write-down-with-every-published-number).
 
 ### Quick smoke run (for local sanity-check)
 
