@@ -221,6 +221,8 @@ Reading the numbers:
 - **The measured quantity is intended-produce → work-complete**: producer send (`linger.ms=0`), broker hop over Docker
   loopback, consumer poll, framework dispatch, and the simulated work. Compare arms against each other; the absolute
   values are not production SLA numbers.
+- **Arms run in declaration order against one shared broker**, so OS page cache and broker-JVM warmth accumulate — the
+  last arm sees a warmer system than the first. For order-sensitivity, shuffle `-Platency.arms` across runs.
 - **Keep the rate below every arm's saturation throughput** (defaults: 2,000 rec/s at 100 µs work — far below all
   measured ceilings). Above saturation, percentiles measure backlog depth, not the framework. Sanity-check any raised
   rate/work against the throughput suite first.
