@@ -235,6 +235,25 @@ class ConsumerHealthControllerTest {
   }
 
   @Test
+  void tickBackpressureResumesWhenInFlightDrainsInsidePauseWindow() {
+    final var inflight = new AtomicInteger(15);
+    final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
+    final var health = new ConsumerHealthController(bp, null, scheduler, hook);
+    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    // Simulate every in-flight record completing between the PAUSE decision and the pause bit
+    // becoming visible: those completions all read the pause mask before the BACKPRESSURE bit
+    // was set, so none of them unparks the consumer thread. Without the post-pause re-check the
+    // tick would leave the consumer paused with zero records in flight and no future wake-up.
+    hook.backpressurePauseAction = () -> inflight.set(0);
+
+    health.tickBackpressure(consumer);
+
+    assertFalse(health.isPaused(), "tick must not leave the consumer paused with zero in-flight records");
+    assertEquals(1, hook.pauseCalls);
+    assertEquals(1, hook.resumeCalls);
+  }
+
+  @Test
   void backpressureMetricNameReflectsConfiguredStrategy() {
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(() -> 0L));
     final var health = new ConsumerHealthController(bp, null, scheduler, hook);
@@ -275,6 +294,7 @@ class ConsumerHealthControllerTest {
     int resumeCalls;
     int backpressurePauses;
     int trips;
+    Runnable backpressurePauseAction = () -> {};
     private final CountDownLatch resumeLatch = new CountDownLatch(1);
 
     /// Blocks until `onResume` has been invoked at least once, or `timeout` elapses. Used by
@@ -302,6 +322,7 @@ class ConsumerHealthControllerTest {
     @Override
     public void onBackpressurePause() {
       backpressurePauses++;
+      backpressurePauseAction.run();
     }
 
     @Override

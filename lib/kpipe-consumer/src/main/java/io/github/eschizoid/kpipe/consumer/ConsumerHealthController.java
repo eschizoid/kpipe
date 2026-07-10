@@ -187,27 +187,44 @@ final class ConsumerHealthController {
         hook.onBackpressurePause();
         backpressurePauseStartNanos = System.nanoTime();
         if (requestPause(Source.BACKPRESSURE)) hook.onPause();
-      }
-      case RESUME -> {
-        final long duration = Math.max(
-          1,
-          TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos)
-        );
-        hook.onBackpressureTimeMs(duration);
-        if (releasePause(Source.BACKPRESSURE)) {
-          LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
-          hook.onResume();
-        } else {
-          LOGGER.log(
-            Level.INFO,
-            "Backpressure resolved (paused for {0} ms), other sources still hold the pause: {1}",
-            duration,
-            currentSources()
-          );
+        // Lost-wakeup guard. The PAUSE decision above came from a metric read taken BEFORE
+        // `requestPause` published the BACKPRESSURE bit, but record completions only unpark the
+        // consumer thread when they observe that bit after decrementing the in-flight count.
+        // Every record that completed inside that window skipped the unpark — and when the
+        // count drains all the way down in there (routine for PARALLEL mode with fast records:
+        // 10k in-flight at ~100µs each finish in a few milliseconds, faster than the log + hook
+        // calls above), no completion ever arrives to wake the consumer, which then parks
+        // forever with nothing in flight. Re-checking with the bit visible closes the window:
+        // either the metric is already at/below the low watermark (release right now), or at
+        // least one record was still in flight at this read and its completion is guaranteed to
+        // see the bit and unpark. Both reads and the bit are volatile, so the total order of
+        // the flag/count accesses makes this Dekker-style handshake sound.
+        if (backpressure.check(kafkaConsumer, true) == BackpressureController.Action.RESUME) {
+          releaseBackpressure();
         }
       }
+      case RESUME -> releaseBackpressure();
       case NONE -> {
       }
+    }
+  }
+
+  /// Releases the backpressure hold: fires the paused-duration callback and — when backpressure
+  /// was the last holder — the resume callback. Shared by the regular RESUME tick and the
+  /// post-pause lost-wakeup guard above.
+  private void releaseBackpressure() {
+    final long duration = Math.max(1, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos));
+    hook.onBackpressureTimeMs(duration);
+    if (releasePause(Source.BACKPRESSURE)) {
+      LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
+      hook.onResume();
+    } else {
+      LOGGER.log(
+        Level.INFO,
+        "Backpressure resolved (paused for {0} ms), other sources still hold the pause: {1}",
+        duration,
+        currentSources()
+      );
     }
   }
 
