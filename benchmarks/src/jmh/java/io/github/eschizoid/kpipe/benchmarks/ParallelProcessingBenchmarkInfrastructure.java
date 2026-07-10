@@ -779,7 +779,10 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// Pinned to the `apache/kafka:4.3.0` image to match the `kafka-clients` version on the
   /// classpath. Auto-create topics is on so the seed step doesn't have to fight a race with
   /// topic-metadata propagation.
-  private static final class EmbeddedKafkaBackend implements AutoCloseable {
+  ///
+  /// Package-private (not class-private) so [PerRecordLatencyHarness] can reuse the same broker
+  /// setup without duplicating the container configuration.
+  static final class EmbeddedKafkaBackend implements AutoCloseable {
 
     private static final DockerImageName KAFKA_IMAGE = DockerImageName.parse("apache/kafka:4.3.0");
 

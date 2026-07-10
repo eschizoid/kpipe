@@ -11,6 +11,7 @@ a single number from a single run, read this first.
 | `AvroPipelineBenchmark`              | What does zero-copy magic-byte handling save vs `Arrays.copyOfRange`? (Design validation.)                                                                                                                  |
 | `ParallelProcessingBenchmark`        | How does **throughput** compare across KPipe (PARALLEL + KEY_ORDERED), the Kafka Share Consumer (KIP-932), Confluent Parallel Consumer, Reactor Kafka, and a hand-rolled `KafkaConsumer + virtual threads`? |
 | `ParallelProcessingLatencyBenchmark` | How do KPipe, Confluent PC, Reactor, and raw `KafkaConsumer + VT` compare on **per-batch latency** (p50, p95, p99)?                                                                                         |
+| `PerRecordLatencyHarness`            | What is the true **per-record latency distribution** (p50/p95/p99/max) across KPipe PARALLEL, KPipe KEY_ORDERED, Confluent PC UNORDERED, and raw `KafkaConsumer + VT`? (Not JMH — see below.)               |
 | `BatchSinkLatencyBenchmark`          | What does `Stream.toBatch(...)` save when the destination has nontrivial per-call cost?                                                                                                                     |
 
 The first two are KPipe-vs-straw-man. They show the design choices paid off but are not competitive claims. Use them in
@@ -187,6 +188,44 @@ annotation drives the mode:
 
 (fork=2 here is the quick spot-check; percentiles you intend to publish belong in the fork=5 publishing run above.)
 
+### Per-record latency harness (true tail latency)
+
+The JMH latency bench above divides whole-batch completion time by `@OperationsPerInvocation` — a batch-amortized
+figure, not a per-record distribution (see the methodological note in `results/2026-07-09.md`). For honest per-record
+p50/p95/p99/max, use `PerRecordLatencyHarness` — a plain `main()` harness, not JMH, because JMH cannot ingest tens of
+thousands of externally-measured timestamp pairs into its `SampleTime` histogram:
+
+```bash
+./gradlew :benchmarks:perRecordLatency \
+  -Platency.workMicros=100 \
+  -Platency.ratePerSecond=2000 \
+  -Platency.warmupRecords=5000 \
+  -Platency.measuredRecords=20000 \
+  -Platency.arms=kpipeParallel,kpipeKeyOrdered,confluentUnordered,rawVirtualThreads
+```
+
+All properties are optional (the values above are the defaults). Docker is required — the harness reuses the suite's
+Testcontainers broker. Results print as a table and land as JSON in
+`benchmarks/build/results/per-record-latency/results.json` (`-Platency.output=<path>` to override).
+
+How it works: the producer stamps each record's payload with its **intended** `System.nanoTime()` send slot (the
+schedule slot, not the actual send time — the coordinated-omission correction, so producer stalls surface as latency
+instead of being excused); the sink computes `now − stamp` after the simulated per-record work. Every sample is retained
+in a `long[]` and sorted once — exact percentiles, no histogram binning error.
+
+Reading the numbers:
+
+- **Clock caveat — producer and consumer run in one JVM by design.** `System.nanoTime()` origins are per-process, so
+  `now − stamp` is only valid because both ends share a process. Do not split the harness across processes and keep this
+  scheme, and do not compare its absolute values against distributed-tracing latencies.
+- **The measured quantity is intended-produce → work-complete**: producer send (`linger.ms=0`), broker hop over Docker
+  loopback, consumer poll, framework dispatch, and the simulated work. Compare arms against each other; the absolute
+  values are not production SLA numbers.
+- **Keep the rate below every arm's saturation throughput** (defaults: 2,000 rec/s at 100 µs work — far below all
+  measured ceilings). Above saturation, percentiles measure backlog depth, not the framework. Sanity-check any raised
+  rate/work against the throughput suite first.
+- Warmup records (group join, first poll, JIT) are excluded from the distribution via a phase marker in the payload.
+
 ## What to write down with every published number
 
 A bench number without context is unverifiable. Each entry in `results/` should record:
@@ -212,12 +251,14 @@ Don't multiply by `TARGET_MESSAGES`. The `@OperationsPerInvocation` annotation a
 ### Sample-time mode (latency percentiles)
 
 `ParallelProcessingLatencyBenchmark` reports per-op time in milliseconds. Same `@OperationsPerInvocation` so an "op" is
-one record, but the published number is "median time to process one record at this position in the run". Look at the
-histogram, not the mean:
+one record — but the sampled duration is the whole 25k-record drain, so its "percentiles" are **batch completion time
+amortized per record**, not a per-record tail (the 2026-07-09 capture documents this). Do not quote them as "p99
+latency"; for that, use the [per-record latency harness](#per-record-latency-harness-true-tail-latency). For true
+per-record distributions:
 
 - **p50** — typical record. Lower is better.
 - **p95 / p99** — tail. This is what matters when SLA-bound consumers are involved.
-- **p100** — the worst observation in the run. Highly noisy; don't quote.
+- **p100 / max** — the worst observation in the run. Highly noisy; don't quote.
 
 A runtime can win on average throughput while losing on p99 — `Flux.parallel(N)` schedules records in a fan-out / fan-in
 pattern that produces good average throughput but occasional stragglers.

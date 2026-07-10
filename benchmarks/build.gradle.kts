@@ -99,3 +99,31 @@ jmh {
 tasks.withType<JavaCompile> {
   options.release.set(25)
 }
+
+// TRUE per-record latency harness (not JMH — see PerRecordLatencyHarness Javadoc for why JMH
+// SampleTime can't produce a per-record distribution here). Lives in the jmh source set so it
+// shares the benchmark classpath and the package-private Testcontainers infrastructure.
+tasks.register<JavaExec>("perRecordLatency") {
+  group = "benchmark"
+  description = "Runs the per-record latency harness (p50/p95/p99/max per runtime arm). Needs Docker."
+  classpath = sourceSets["jmh"].runtimeClasspath
+  mainClass.set("io.github.eschizoid.kpipe.benchmarks.PerRecordLatencyHarness")
+  systemProperty(
+    "latency.output",
+    layout.buildDirectory
+      .file("results/per-record-latency/results.json")
+      .get()
+      .asFile.absolutePath,
+  )
+  // Pass-through: -Platency.foo=bar becomes -Dlatency.foo=bar for the harness.
+  listOf(
+    "latency.arms",
+    "latency.workMicros",
+    "latency.ratePerSecond",
+    "latency.warmupRecords",
+    "latency.measuredRecords",
+    "latency.output",
+  ).forEach { name ->
+    providers.gradleProperty(name).orNull?.let { systemProperty(name, it) }
+  }
+}
