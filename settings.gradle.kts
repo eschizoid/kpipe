@@ -13,6 +13,7 @@ include("lib:kpipe-format-json")
 include("lib:kpipe-format-avro")
 include("lib:kpipe-format-protobuf")
 include("lib:kpipe-api")
+include("lib:kpipe-test")
 
 include("examples")
 include("examples:bytes")
