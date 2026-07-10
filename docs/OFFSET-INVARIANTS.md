@@ -22,8 +22,9 @@ phrased as a property a test can assert.
 
 ## Vocabulary
 
-- **track**: `trackOffset(record)` — adds `record.offset()` to the per-partition pending set
-  (`ConcurrentSkipListSet<Long>`). Marks "this offset has started processing."
+- **track**: `trackOffset(record)` — adds `record.offset()` to the per-partition pending set (`PendingOffsetSet`, a
+  monitor-synchronized sorted primitive-`long` window; previously `ConcurrentSkipListSet<Long>`, replaced to eliminate
+  per-record boxing and skiplist-node churn). Marks "this offset has started processing."
 - **mark**: `markOffsetProcessed(record)` — removes `record.offset()` from the pending set and bumps the per-partition
   `highestProcessedOffset`. Marks "this offset reached a terminal state."
 - **commit point**: the offset the manager would commit to Kafka right now for a partition. In Kafka's "next offset"
