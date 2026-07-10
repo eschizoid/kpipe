@@ -35,6 +35,11 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   /// Default low watermark at which the consumer resumes (hysteresis floor).
   public static final long DEFAULT_LOW_WATERMARK = 7_000;
 
+  /// Metric name reported by [#inFlightStrategy]. Package-visible so the health controller can
+  /// gate in-flight-only behaviour (the post-pause lost-wakeup re-check) on the strategy in play
+  /// without duplicating the literal.
+  static final String IN_FLIGHT_METRIC_NAME = "in-flight";
+
   /// Creates a new BackpressureController with the same watermarks but a different strategy.
   ///
   /// @param strategy the new strategy to use
@@ -98,7 +103,7 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
 
       @Override
       public String getName() {
-        return "in-flight";
+        return IN_FLIGHT_METRIC_NAME;
       }
     };
   }

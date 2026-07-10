@@ -198,12 +198,29 @@ final class ConsumerHealthController {
         // either the metric is already at/below the low watermark (release right now), or at
         // least one record was still in flight at this read and its completion is guaranteed to
         // see the bit and unpark. Both reads and the bit are volatile, so the total order of
-        // the flag/count accesses makes this Dekker-style handshake sound.
-        if (backpressure.check(kafkaConsumer, true) == BackpressureController.Action.RESUME) {
+        // the flag/count accesses makes this Dekker-style handshake sound
+        // (BackpressureHandshakeJCStressTest exercises the pair).
+        //
+        // Gated to the in-flight strategy: the lag metric only moves when the consumer thread
+        // itself advances positions, so it cannot drop concurrently inside this window (there
+        // is no race to close), and re-checking it would issue a second `endOffsets` broker
+        // round-trip on every pause edge.
+        if (
+          BackpressureController.IN_FLIGHT_METRIC_NAME.equals(backpressure.getMetricName()) &&
+          backpressure.check(kafkaConsumer, true) == BackpressureController.Action.RESUME
+        ) {
           releaseBackpressure();
         }
       }
-      case RESUME -> releaseBackpressure();
+      case RESUME -> {
+        // Only release when backpressure actually holds the pause. `check` answers RESUME for
+        // "paused and metric at/below the low watermark" regardless of WHICH source paused the
+        // consumer — during a MANUAL or circuit-breaker pause with an idle pipeline this arm
+        // would otherwise fire on every tick, feeding a garbage duration (nanoTime origin minus
+        // a never-set pause start) into the backpressure-time counter and logging a misleading
+        // "backpressure resolved" line each time.
+        if (isHeldBy(Source.BACKPRESSURE)) releaseBackpressure();
+      }
       case NONE -> {
       }
     }
