@@ -235,6 +235,50 @@ class ConsumerHealthControllerTest {
   }
 
   @Test
+  void tickBackpressureResumesWhenInFlightDrainsInsidePauseWindow() {
+    final var inflight = new AtomicInteger(15);
+    final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
+    final var health = new ConsumerHealthController(bp, null, scheduler, hook);
+    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    // Simulate every in-flight record completing between the PAUSE decision and the pause bit
+    // becoming visible: those completions all read the pause mask before the BACKPRESSURE bit
+    // was set, so none of them unparks the consumer thread. Without the post-pause re-check the
+    // controller stays paused and the isPaused assertion below fails fast (this test asserts the
+    // guard's outcome — it does not itself park a thread); in a real consumer that state is a
+    // parked consumer thread with no remaining wake-up source.
+    hook.backpressurePauseAction = () -> inflight.set(0);
+
+    health.tickBackpressure(consumer);
+
+    assertFalse(health.isPaused(), "tick must not leave the consumer paused with zero in-flight records");
+    assertEquals(1, hook.pauseCalls);
+    assertEquals(1, hook.resumeCalls);
+    assertEquals(1, hook.backpressurePauses, "the pause edge itself must still be counted");
+    assertEquals(1, hook.backpressureTimeCalls, "the immediate release must record a paused duration");
+    assertTrue(hook.lastBackpressureTimeMs >= 1, "paused duration is clamped to >= 1 ms");
+  }
+
+  @Test
+  void tickBackpressureResumeIgnoredWhenBackpressureDoesNotHoldThePause() {
+    final var inflight = new AtomicInteger(0);
+    final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
+    final var health = new ConsumerHealthController(bp, null, scheduler, hook);
+    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    // MANUAL holds the pause; backpressure never paused, so its pause-start timestamp was never
+    // set. The metric sits at/below the low watermark, so the raw check() answer is RESUME —
+    // releasing here would feed a garbage duration (nanoTime origin) into the backpressure-time
+    // counter and log a misleading "backpressure resolved" line on every tick.
+    health.requestPause(ConsumerHealthController.Source.MANUAL);
+
+    health.tickBackpressure(consumer);
+
+    assertTrue(health.isPaused(), "manual pause must survive the tick");
+    assertTrue(health.isHeldBy(ConsumerHealthController.Source.MANUAL));
+    assertEquals(0, hook.resumeCalls, "no resume side effects when backpressure does not hold the pause");
+    assertEquals(0, hook.backpressureTimeCalls, "backpressure-time counter must stay untouched");
+  }
+
+  @Test
   void backpressureMetricNameReflectsConfiguredStrategy() {
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(() -> 0L));
     final var health = new ConsumerHealthController(bp, null, scheduler, hook);
@@ -274,7 +318,10 @@ class ConsumerHealthControllerTest {
     int pauseCalls;
     int resumeCalls;
     int backpressurePauses;
+    int backpressureTimeCalls;
+    long lastBackpressureTimeMs;
     int trips;
+    Runnable backpressurePauseAction = () -> {};
     private final CountDownLatch resumeLatch = new CountDownLatch(1);
 
     /// Blocks until `onResume` has been invoked at least once, or `timeout` elapses. Used by
@@ -302,10 +349,14 @@ class ConsumerHealthControllerTest {
     @Override
     public void onBackpressurePause() {
       backpressurePauses++;
+      backpressurePauseAction.run();
     }
 
     @Override
-    public void onBackpressureTimeMs(final long ms) {}
+    public void onBackpressureTimeMs(final long ms) {
+      backpressureTimeCalls++;
+      lastBackpressureTimeMs = ms;
+    }
 
     @Override
     public void onCircuitBreakerTrip() {

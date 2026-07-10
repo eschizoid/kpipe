@@ -187,27 +187,61 @@ final class ConsumerHealthController {
         hook.onBackpressurePause();
         backpressurePauseStartNanos = System.nanoTime();
         if (requestPause(Source.BACKPRESSURE)) hook.onPause();
+        // Lost-wakeup guard. The PAUSE decision above came from a metric read taken BEFORE
+        // `requestPause` published the BACKPRESSURE bit, but record completions only unpark the
+        // consumer thread when they observe that bit after decrementing the in-flight count.
+        // Every record that completed inside that window skipped the unpark — and when the
+        // count drains all the way down in there (routine for PARALLEL mode with fast records:
+        // 10k in-flight at ~100µs each finish in a few milliseconds, faster than the log + hook
+        // calls above), no completion ever arrives to wake the consumer, which then parks
+        // forever with nothing in flight. Re-checking with the bit visible closes the window:
+        // either the metric is already at/below the low watermark (release right now), or at
+        // least one record was still in flight at this read and its completion is guaranteed to
+        // see the bit and unpark. Both reads and the bit are volatile, so the total order of
+        // the flag/count accesses makes this Dekker-style handshake sound
+        // (BackpressureHandshakeJCStressTest exercises the pair).
+        //
+        // Gated to the in-flight strategy: the lag metric only moves when the consumer thread
+        // itself advances positions, so it cannot drop concurrently inside this window (there
+        // is no race to close), and re-checking it would issue a second `endOffsets` broker
+        // round-trip on every pause edge.
+        if (
+          BackpressureController.IN_FLIGHT_METRIC_NAME.equals(backpressure.getMetricName()) &&
+          backpressure.check(kafkaConsumer, true) == BackpressureController.Action.RESUME
+        ) {
+          releaseBackpressure();
+        }
       }
       case RESUME -> {
-        final long duration = Math.max(
-          1,
-          TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos)
-        );
-        hook.onBackpressureTimeMs(duration);
-        if (releasePause(Source.BACKPRESSURE)) {
-          LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
-          hook.onResume();
-        } else {
-          LOGGER.log(
-            Level.INFO,
-            "Backpressure resolved (paused for {0} ms), other sources still hold the pause: {1}",
-            duration,
-            currentSources()
-          );
-        }
+        // Only release when backpressure actually holds the pause. `check` answers RESUME for
+        // "paused and metric at/below the low watermark" regardless of WHICH source paused the
+        // consumer — during a MANUAL or circuit-breaker pause with an idle pipeline this arm
+        // would otherwise fire on every tick, feeding a garbage duration (nanoTime origin minus
+        // a never-set pause start) into the backpressure-time counter and logging a misleading
+        // "backpressure resolved" line each time.
+        if (isHeldBy(Source.BACKPRESSURE)) releaseBackpressure();
       }
       case NONE -> {
       }
+    }
+  }
+
+  /// Releases the backpressure hold: fires the paused-duration callback and — when backpressure
+  /// was the last holder — the resume callback. Shared by the regular RESUME tick and the
+  /// post-pause lost-wakeup guard above.
+  private void releaseBackpressure() {
+    final long duration = Math.max(1, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos));
+    hook.onBackpressureTimeMs(duration);
+    if (releasePause(Source.BACKPRESSURE)) {
+      LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
+      hook.onResume();
+    } else {
+      LOGGER.log(
+        Level.INFO,
+        "Backpressure resolved (paused for {0} ms), other sources still hold the pause: {1}",
+        duration,
+        currentSources()
+      );
     }
   }
 
