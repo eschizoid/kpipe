@@ -129,6 +129,7 @@ snippets are in the catalog below.
 | `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                             |
 | `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                                                                             |
 | `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                                                                     |
+| `kpipe-test`                      | `TestStream<T>` + `CapturingSink<T>` — Docker-free pipeline unit tests over a real consumer (`testImplementation` scope)                                    |
 
 **Gradle (Kotlin) with BOM**
 
@@ -992,6 +993,33 @@ the explicit Builder and metrics paths.
 ---
 
 ## Testing
+
+### Testing your pipeline
+
+`kpipe-test` drives your pipeline through a real `KPipeConsumer` over an in-memory `MockConsumer` — no broker, no
+Docker, milliseconds per test. `flush()` is deterministic: it returns only once every sent record has fully settled, so
+assertions never race the consumer thread. Filtered records count as processed but never reach the sink; failures land
+in `driver.errors()`.
+
+```java
+final var captured = new CapturingSink<Map<String, Object>>();
+try (
+  final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
+    .pipe(addTimestamp)
+    .filter(active)
+    .toCustom(captured)
+    .build()
+) {
+  driver.send(Map.of("id", "a", "active", true));
+  driver.flush();
+  assertEquals(1, captured.count());
+}
+```
+
+Pull it into your test scope with `testImplementation("io.github.eschizoid:kpipe-test")` — versionless via the
+`kpipe-bom` platform, or pinned to the same version as your other `kpipe-*` modules.
+
+### Integration testing against a real broker
 
 There's a `docker-compose.yaml` for spinning up Kafka (KRaft mode) and Confluent Schema Registry locally.
 
