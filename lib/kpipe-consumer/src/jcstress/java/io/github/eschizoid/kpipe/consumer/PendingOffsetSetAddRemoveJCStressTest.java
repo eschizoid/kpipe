@@ -9,19 +9,30 @@ import org.openjdk.jcstress.annotations.State;
 import org.openjdk.jcstress.infra.results.JJ_Result;
 
 /// Concurrency-stress check for `PendingOffsetSet` — the sorted primitive-`long` structure that
-/// replaced `ConcurrentSkipListSet<Long>` as the per-partition pending set — racing an `add`
-/// against the `remove` that empties the window.
+/// replaced `ConcurrentSkipListSet<Long>` as the per-partition pending set — running an `add`
+/// concurrently with the `remove` that empties the window.
 ///
-/// This is the structure-level analogue of `RemoveIfEmptyJCStressTest`: in production, `add` runs
-/// on the poll thread (`trackOffset`) while `remove` runs on worker virtual threads
-/// (`markOffsetProcessed`) for the same partition. Both mutate the shared head/tail window and its
-/// backing array. If the monitor discipline were broken — say, a torn head/tail update or a shift
-/// racing a reset-to-zero — the add could be lost, land unsorted, or corrupt the window bounds.
+/// What this proves — and what it cannot. Every `PendingOffsetSet` method is `synchronized` on
+/// the instance monitor, so the two mutator actors are fully mutually exclusive: jcstress can
+/// only realize the two SERIAL orderings (remove-then-add, add-then-remove), never an
+/// interleaving inside a window mutation. The properties this test pins are therefore:
+///
+/// * **Order-insensitive serial correctness.** Both orderings must converge on the same final
+///   state `{200}` — remove-then-add drains the window and repopulates it; add-then-remove takes
+///   the head-removal path out of `{100, 200}`.
+/// * **Monitor discipline as a regression guard.** If a future change dropped or weakened
+///   `synchronized` (plain fields, per-method locks), the actors WOULD interleave, and a lost
+///   add, torn `head`/`tail` update, or shift racing the reset-to-zero would grade as forbidden.
+///   The monitor's happens-before is also what makes both mutations visible to the arbiter.
+///
+/// The genuinely concurrent lock-set interaction in production — manager reads taking only the
+/// structure monitor while writers hold the map bucket lock plus the monitor — is exercised
+/// end-to-end by `SafeFirstJCStressTest`; the map-eviction race is `RemoveIfEmptyJCStressTest`.
 ///
 /// Scenario. The set starts holding exactly `{100}`. One actor removes 100 (draining the window,
-/// which resets `head`/`tail` to 0); the other adds 200. Whatever the interleaving, both
-/// operations must take effect: the set must end holding exactly `{200}`, so `firstOrNull` is 200
-/// and `size` is 1. Any other observation means a mutation was lost or the window corrupted.
+/// which resets `head`/`tail` to 0); the other adds 200. Under either ordering both operations
+/// must take effect: the set ends holding exactly `{200}`, so `firstOrNull` is 200 and `size`
+/// is 1.
 @JCStressTest
 @Outcome(id = "200, 1", expect = Expect.ACCEPTABLE, desc = "Added offset 200 survived the concurrent drain of 100.")
 @Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "A mutation was lost or the window was corrupted.")

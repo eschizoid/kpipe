@@ -11,15 +11,28 @@ import org.openjdk.jcstress.infra.results.JJJ_Result;
 /// Concurrency-stress check for `PendingOffsetSet` under two concurrent out-of-order `add`s —
 /// one prepending below the current lowest offset, one landing mid-window.
 ///
-/// Both insert paths shift array elements with `System.arraycopy` and adjust `head`/`tail`. If the
-/// two adds could interleave inside the window mutation (broken monitor discipline), one insert
-/// could overwrite the other's shift, duplicate an element, or leave the window unsorted — all of
-/// which would surface as a wrong size, first, or last.
+/// What this proves — and what it cannot. `add` is `synchronized` on the instance monitor, so
+/// the two actors are fully mutually exclusive: jcstress can only realize the two SERIAL
+/// orderings (prepend-then-mid-insert, mid-insert-then-prepend), never an interleaving inside
+/// the `System.arraycopy` shifts or the `head`/`tail` adjustments. The properties this test pins
+/// are therefore:
+///
+/// * **Order-insensitive serial correctness.** The two inserts exercise different shift
+///   machinery (prepend into head slack vs mid-window shift), and both orderings must converge
+///   on the same sorted final state `{50, 100, 150, 200}`.
+/// * **Monitor discipline as a regression guard.** If a future change dropped or weakened
+///   `synchronized`, the adds WOULD interleave, and one insert overwriting the other's shift, a
+///   duplicated element, or an unsorted window would grade as forbidden via a wrong first, last,
+///   or size. The monitor's happens-before is also what makes both inserts visible to the
+///   arbiter.
+///
+/// The genuinely concurrent lock-set interaction in production (monitor-only readers vs
+/// bucket-lock-plus-monitor writers) is exercised end-to-end by `SafeFirstJCStressTest`.
 ///
 /// Scenario. The set starts holding `{100, 200}`. One actor adds 50 (prepend path: below the
-/// current lowest), the other adds 150 (mid-window insert between 100 and 200). Both must
-/// survive: the set ends as `{50, 100, 150, 200}` — first 50, last 200, size 4 — under every
-/// interleaving.
+/// current lowest), the other adds 150 (mid-window insert between 100 and 200). Under either
+/// ordering both inserts must take effect: the set ends as `{50, 100, 150, 200}` — first 50,
+/// last 200, size 4.
 @JCStressTest
 @Outcome(id = "50, 200, 4", expect = Expect.ACCEPTABLE, desc = "Both concurrent inserts survived; window sorted.")
 @Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "An insert was lost, duplicated, or the window corrupted.")
