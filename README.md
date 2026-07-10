@@ -31,42 +31,44 @@ own consumer loop together every time.
 
 Two claims, both backed in this repo.
 
-**1. The fastest at-least-once runtime we measured.** The [`benchmarks/`](benchmarks/) module runs KPipe head-to-head
-against Confluent Parallel Consumer, Reactor Kafka, the KIP-932 share consumer, a raw `KafkaConsumer` + virtual-threads
-loop, and a single-threaded loop — same broker, same workload, simulated per-record work. The statistically cleanest
-result: at 1ms of per-record work, **KPipe `KEY_ORDERED` does 91k rec/s (±3%) against Confluent PC `KEY`'s 62k (±2%)** —
-the same per-key-FIFO guarantee at ~1.5× the throughput, with cleanly separated error bars. Across both captured work
-levels, KPipe leads every library-provided at-least-once arm:
+**1. The fastest at-least-once runtime we measured, and the gap widens where real work happens.** The
+[`benchmarks/`](benchmarks/) module runs KPipe head-to-head against Confluent Parallel Consumer, Reactor Kafka, the
+KIP-932 share consumer, and a raw `KafkaConsumer` + virtual-threads loop — same broker, same workload, simulated
+per-record work. The headline regime is 10–100ms per record, the range where consumers doing real DB or HTTP hops live:
 
-| Runtime (delivery guarantee)                          | 100µs / record | 1ms / record |
-| ----------------------------------------------------- | -------------: | -----------: |
-| **KPipe `PARALLEL`** (at-least-once)                  |          ~126k |           —¹ |
-| **KPipe `KEY_ORDERED`** (at-least-once, per-key FIFO) |          ~154k |    91k (±3%) |
-| Confluent PC `UNORDERED` (at-least-once)              |          ~104k |          68k |
-| Confluent PC `KEY` (at-least-once, per-key FIFO)      |           ~94k |          62k |
-| Reactor Kafka (at-least-once)                         |           ~23k |         3.7k |
-| Kafka share consumer, KIP-932 (at-least-once)         |          ~4.7k |         4.7k |
-| Single-threaded loop (at-least-once, per-partition)   |          ~6.0k |         0.9k |
+| Runtime (delivery guarantee)                          |   10ms / record | 100ms / record   |
+| ----------------------------------------------------- | --------------: | :--------------- |
+| **KPipe `PARALLEL`** (at-least-once)                  | 94.8k rec/s ±2% | 46.8k ±1%        |
+| **KPipe `KEY_ORDERED`** (at-least-once, per-key FIFO) |       41.0k ±1% | 5.4k             |
+| Confluent PC `UNORDERED` (at-least-once)              |        9.6k ±1% | 996 ±0.1%        |
+| Confluent PC `KEY` (at-least-once, per-key FIFO)      |            9.7k | 996              |
+| Kafka share consumer, KIP-932 (at-least-once)         |            4.4k | 2.8k             |
+| Reactor Kafka (at-least-once)                         |             397 | — (not captured) |
 
-¹ JMH could not compute a stable error for this cell in the CI capture; KPipe's 1ms lead is carried by the `KEY_ORDERED`
-row.
+That is **~10× Confluent PC at 10ms and ~47× at 100ms**. CPC's numbers sit exactly at its architectural ceiling: 100
+workers divided by per-record work-time predicts 10,000 rec/s at 10ms and 1,000 at 100ms; the capture measured 9,639
+and 996. Platform pools saturate; virtual-thread-per-record doesn't. That's a threading-model verdict, not a tuning gap.
 
-Read the table honestly: these are provisional numbers from a shared-CI-runner capture at fork=2 — below the fork=5
-publishing bar our own [methodology](benchmarks/METHODOLOGY.md) sets — so read the ordering between libraries, not the
-absolute magnitudes, and don't read the deltas between KPipe's own two modes (those are within the error bars). The
-10–100ms regime, where consumers doing real DB/HTTP hops live, is not yet captured. Full table, error bars, and every
-caveat: [`benchmarks/results/2026-06-20.md`](benchmarks/results/2026-06-20.md).
+The sub-millisecond regime tells the same story with smaller margins: at fork=5, KPipe `KEY_ORDERED` does 93.8k rec/s
+(±0.8%) against Confluent PC `KEY`'s 65.9k (±1%) at 1ms of per-record work — the same per-key-FIFO guarantee at 1.42×
+the throughput, with cleanly separated error bars. Full tables, error bars, and every caveat:
+[`benchmarks/results/2026-07-09.md`](benchmarks/results/2026-07-09.md), captured per the
+[methodology](benchmarks/METHODOLOGY.md).
 
-The only faster arm in the capture is the hand-rolled `KafkaConsumer` + virtual-threads loop (641k+) — and it is unsafe:
-no honest offset commit, records lost on rebalance. KPipe is what that loop becomes once you make it at-least-once. One
-more disclosure that is also part of the pitch: Confluent Parallel Consumer 0.5.3.3 is the last release before the
-project was officially retired in 2026-05, and its successor fork has not yet published an artifact.
+The only faster arm in the capture is the hand-rolled `KafkaConsumer` + virtual-threads loop (525k at 10ms) — and it is
+unsafe: no honest offset commit, records lost on rebalance. KPipe is what that loop becomes once you make it
+at-least-once. One more disclosure that is also part of the pitch: Confluent Parallel Consumer 0.5.3.3 is the last
+release before the project was officially retired in 2026-05, and its successor fork has not yet published an artifact.
 
 The honest tradeoff: KPipe allocates the most per record of any arm measured (1,628 B/op vs Confluent PC's 33 B/op).
 Roughly 62% of that is the fresh virtual thread per record — the same property that buys the throughput lead under
 blocking work. The attribution profile is in
 [`benchmarks/results/2026-06-21-allocation-attribution.md`](benchmarks/results/2026-06-21-allocation-attribution.md).
 Not free, and not hidden.
+
+Caveats that carry: everything runs on a shared GitHub-hosted CI runner, so read the orderings and the error bars, not
+the absolute magnitudes. KPipe `PARALLEL`'s sub-millisecond cells are single-sample point estimates (a harness bug,
+documented in the snapshot); its 10–100ms numbers in the table above are fully sampled.
 
 **2. The at-least-once claim is verified, not asserted.** Every CI run gates on 16
 [jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 4 modules, plus jqwik
@@ -85,7 +87,7 @@ There are two public entry points; pick whichever matches the shape of your prob
 | **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumer.Builder`. Multi-step, supports custom registries, shared pipelines, custom offset managers, periodic metrics reporting via the builder. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
 
 The facade is a thin layer on top of the explicit API, so dropping down when you outgrow it doesn't cost anything. See
-[`docs/escape-hatches.md`](docs/escape-hatches.md) for the full capability map and worked examples of the explicit-only
+[`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md) for the full capability map and worked examples of the explicit-only
 features (custom `OffsetManager`, rebalance listeners, pre-shared registries, etc.).
 
 ---
@@ -102,25 +104,11 @@ implementation("io.github.eschizoid:kpipe-api:1.15.0")
 implementation("io.github.eschizoid:kpipe-format-json:1.15.0")
 ```
 
-```xml
-<!-- Maven — JSON via the fluent API -->
-<dependency>
-  <groupId>io.github.eschizoid</groupId>
-  <artifactId>kpipe-api</artifactId>
-  <version>1.15.0</version>
-</dependency>
-<dependency>
-  <groupId>io.github.eschizoid</groupId>
-  <artifactId>kpipe-format-json</artifactId>
-  <version>1.15.0</version>
-</dependency>
-```
-
 `kpipe-api` transitively pulls `kpipe-consumer` + `kpipe-producer` + `kpipe-core`. Skip `kpipe-api` only if you want the
-explicit registry / builder API (see "Advanced API" further down) — for that case, depend on `kpipe-consumer` directly.
-
-There's also a `kpipe-bom` so you only pin one version across modules — use it via `dependencyManagement` (Maven) or
-`enforcedPlatform` (Gradle) and drop versions from the individual `kpipe-*` dependencies.
+explicit registry / builder API ([Two API surfaces](#two-api-surfaces)) — for that case, depend on `kpipe-consumer`
+directly. There's also a `kpipe-bom` so you only pin one version across modules — use it via `dependencyManagement`
+(Maven) or `enforcedPlatform` (Gradle) and drop versions from the individual `kpipe-*` dependencies. Maven and BOM
+snippets are in the catalog below.
 
 <details>
 <summary>Module catalog & other build tools</summary>
@@ -150,14 +138,6 @@ implementation("io.github.eschizoid:kpipe-format-json")
 implementation("io.github.eschizoid:kpipe-metrics-otel")
 ```
 
-**Gradle (Groovy)**
-
-```groovy
-implementation platform('io.github.eschizoid:kpipe-bom:1.15.0')
-implementation 'io.github.eschizoid:kpipe-api'
-implementation 'io.github.eschizoid:kpipe-format-json'
-```
-
 **Maven (with BOM)**
 
 ```xml
@@ -185,12 +165,7 @@ implementation 'io.github.eschizoid:kpipe-format-json'
 </dependencies>
 ```
 
-**SBT**
-
-```sbt
-libraryDependencies += "io.github.eschizoid" % "kpipe-api" % "1.15.0"
-libraryDependencies += "io.github.eschizoid" % "kpipe-format-json" % "1.15.0"
-```
+Gradle (Groovy) and SBT users: the same coordinates apply — `io.github.eschizoid:kpipe-*:1.15.0`.
 
 </details>
 
@@ -235,7 +210,7 @@ try (var handle = KPipe.json("orders", kafkaProps)
 `KPipeConsumer.Builder` and call `.withDeadLetterQueue(topic, kpipeProducer)`. The second argument is a
 `KPipeProducer<K, byte[]>` (not a raw `KafkaProducer`) — wrap your producer with
 `KPipeProducer.<K, byte[]>builder().withProducer(rawProducer).build()` if you only have the raw Kafka client. The atomic
-form keeps the topic and producer from drifting out of sync. See [`docs/escape-hatches.md`](docs/escape-hatches.md) for
+form keeps the topic and producer from drifting out of sync. See [`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md) for
 the full set of explicit-only options (custom `OffsetManager`, multi-topic heterogeneous dispatch).
 
 ### 3. The full fluent surface
@@ -250,16 +225,20 @@ shows you everything that exists:
 | `.peek(Consumer<T> sideEffect)`                                    | observe without modifying (logging, metrics)                                                 |
 | `.when(Predicate, ifTrue, ifFalse)`                                | branch the pipeline conditionally                                                            |
 | `.skipBytes(int n)`                                                | drop a leading wire-format prefix (Confluent: 5 for Avro, 6 for Proto)                       |
+| `.withSchemaRegistry(SchemaResolver r)`                            | Confluent SR per-record schema auto-lookup (Avro only; don't pair with `.skipBytes`)         |
 | `.withRetry(int max, Duration backoff)`                            | configure retry behavior                                                                     |
 | `.withBackpressure()` / `.withBackpressure(high, low)`             | enable backpressure with default or explicit watermarks                                      |
 | `.withProcessingMode(ProcessingMode)`                              | `SEQUENTIAL` (per-partition serial), `PARALLEL` (default), or `KEY_ORDERED` (per-key serial) |
 | `.withKeyOrderedMaxKeys(int)`                                      | LRU cap on distinct keys in `KEY_ORDERED` (default 10,000)                                   |
-| `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate exceeds threshold (see below)                        |
+| `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate trips (see [Circuit breaker](#9-circuit-breaker))    |
 | `.withTracer(Tracer t)`                                            | propagate W3C trace context through Kafka headers                                            |
 | `.withDeadLetterTopic(String)`                                     | route failed records to a DLQ topic after retries are exhausted                              |
 | `.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | custom failure handler (DB, alerting, anything not a Kafka topic)                            |
 | `.withMetrics(ConsumerMetrics m)`                                  | wire OTel or custom metrics (default `ConsumerMetrics.noop()`)                               |
 | `.withPollTimeout(Duration d)`                                     | override Kafka poll timeout (default 100ms)                                                  |
+| `.onFiltered(Runnable observer)`                                   | observe intentional filtering (an operator returned null) — visibility only                  |
+| `.onFailed(Consumer<Throwable> observer)`                          | observe pipeline failures — doesn't suppress retry / DLQ / error-handler flow                |
+| `.peekResult(Consumer<Result<T>> observer)`                        | observe every `Passed` / `Filtered` / `Failed` outcome; feeds `PipelineMetricsObserver`      |
 | `.toConsole()`                                                     | terminate with the format-appropriate console sink                                           |
 | `.toCustom(MessageSink<T> sink)`                                   | terminate with your own sink                                                                 |
 | `.toMulti(MessageSink<T>... sinks)`                                | fan-out to multiple sinks                                                                    |
@@ -330,13 +309,7 @@ transformation services — especially anything I/O-bound (REST calls, DB lookup
 you're already moving toward Java 25 concurrency, KPipe assumes that world by default.
 
 It's not trying to replace Kafka Streams or Flink. The scope ends at "consume, transform, route, produce" — no
-windowing, no joins, no state stores.
-
----
-
-## Why not Kafka Streams or Spring Kafka?
-
-KPipe is for code-first pipelines with minimal infrastructure overhead.
+windowing, no joins, no state stores. KPipe sits between raw `KafkaConsumer` code and full streaming frameworks:
 
 | Capability                       | Kafka Streams | Spring Kafka            | Reactor Kafka | KPipe |
 | -------------------------------- | ------------- | ----------------------- | ------------- | ----- |
@@ -348,47 +321,25 @@ KPipe is for code-first pipelines with minimal infrastructure overhead.
 | JPMS modules (no Spring context) | No            | No                      | Partial       | Yes   |
 | Native multi-topic dispatch      | Yes (DSL)     | Per `@KafkaListener`    | Manual        | Yes   |
 
-KPipe sits between raw `KafkaConsumer` code and full streaming frameworks.
-
 ### Coming from Spring Kafka?
 
-Spring Kafka covers the same niche — "I want a Kafka consumer with retries, DLQ, backpressure, and a typed payload" —
-but bundles Spring Boot, the application context, and annotation-driven wiring. KPipe targets the same workload with no
-Spring runtime, no annotation processor, no `KafkaListenerContainerFactory` to configure, and a fluent API that's
-discoverable via IDE autocomplete.
+Spring Kafka covers the same niche — "a Kafka consumer with retries, DLQ, backpressure, and a typed payload" — but
+bundles Spring Boot, the application context, and annotation-driven wiring. KPipe targets the same workload with no
+Spring runtime and a fluent API that's discoverable via IDE autocomplete. What changes:
 
-What changes:
-
-- No Spring Boot on the classpath. KPipe runs on plain `java -jar` — eight JPMS modules, no reflection, no AOP, no
-  application context to manage.
+- No Spring Boot on the classpath. KPipe runs on plain `java -jar` — JPMS modules, no reflection, no AOP, no application
+  context to manage.
 - Virtual threads by default. Spring Kafka's listener container is still thread-pool-per-partition; KPipe runs
-  thread-per-record on virtual threads, which is where I/O-bound enrichment scales without pool tuning.
-- No `@KafkaListener` indirection. Pipelines are values you build in `main` and pass around. No classpath scanning, no
-  proxied beans, no `@EnableKafka` toggle to remember.
-- Per-topic typing without a class per listener. `KPipe.multi(props).json("a", ...).avro("b", ...)` wires heterogeneous
-  routes through one consumer group and one offset manager. Spring's equivalent is one `@KafkaListener` method per
-  topic, each with its own container.
-- Errors throw instead of getting swallowed. `MessagePipeline.apply()` throws on failure; `null` means "intentionally
-  filtered" and only that. Spring Kafka's default `ErrorHandlingDeserializer` + `RetryableTopic` chain is more flexible
-  but also easier to misconfigure into silent drops.
-- Metrics are pluggable. `ProducerMetrics` and `ConsumerMetrics` are interfaces; the `kpipe-metrics-otel` adapter is
-  opt-in. No `MeterRegistry` autowiring.
+  thread-per-record, which is where I/O-bound enrichment scales without pool tuning.
+- No `@KafkaListener` indirection. Pipelines are values you build in `main` and pass around — no classpath scanning, no
+  proxied beans. `KPipe.multi(props).json("a", ...).avro("b", ...)` replaces one listener class per topic.
+- Failures are typed, not swallowed. Pipeline outcomes are a sealed `Result` (`Passed` / `Filtered` / `Failed`), so
+  filtering and failure are distinct types — harder to misconfigure into silent drops than an
+  `ErrorHandlingDeserializer` + `RetryableTopic` chain.
 
-Rough migration sketch — a Spring Kafka listener:
+A `@KafkaListener` method that stamps a timestamp and hands off to a sink becomes:
 
 ```java
-// Spring Kafka
-@KafkaListener(topics = "events", groupId = "my-app")
-public void onMessage(ConsumerRecord<String, Map<String, Object>> rec) {
-  rec.value().put("ts", System.currentTimeMillis());
-  sink.accept(rec.value());
-}
-```
-
-becomes:
-
-```java
-// KPipe
 KPipe.json("events", kafkaProps)
     .pipe(msg -> { msg.put("ts", System.currentTimeMillis()); return msg; })
     .toCustom(sink::accept)
@@ -396,22 +347,20 @@ KPipe.json("events", kafkaProps)
 ```
 
 Retry, DLQ, backpressure, and graceful shutdown are fluent calls on the same `Stream<T>`. No `RetryTemplate`, no
-`DeadLetterPublishingRecoverer`, no `ContainerProperties.AckMode` to pick.
-
-If you depend on `@KafkaListener` lifecycle integration with Spring Boot actuator, transactional Kafka producers wired
-into `@Transactional`, or the broader Spring ecosystem (security, config-server, sleuth tracing), stay where you are.
-KPipe doesn't have those.
+`DeadLetterPublishingRecoverer`, no `ContainerProperties.AckMode` to pick. If you depend on Spring Boot actuator
+lifecycle integration, transactional producers wired into `@Transactional`, or the broader Spring ecosystem, stay where
+you are — KPipe doesn't have those.
 
 ---
 
 ## Architecture and reliability
 
-KPipe is a lightweight Kafka consumer library that leans hard on Java 25 features — virtual threads, sealed types,
-records, JPMS — to keep the runtime predictable.
+KPipe leans hard on Java 25 features — virtual threads, sealed types, records, JPMS — to keep the runtime predictable.
 
-### 1. Modular Architecture (JPMS)
+### 1. Modular architecture (JPMS)
 
-KPipe ships eight focused JPMS modules with a clean dependency direction (no cycles, no sideways leaks):
+KPipe ships focused JPMS modules with a clean dependency direction (no cycles, no sideways leaks). The per-module
+breakdown is in the module catalog under [Getting started](#1-add-the-dependencies).
 
 ```
 kpipe-metrics ← kpipe-core ← kpipe-consumer
@@ -423,25 +372,6 @@ kpipe-tracing-otel              ← kpipe-producer   (opt-in OTel tracing)
 kpipe-schema-registry-confluent ← kpipe-core       (opt-in Confluent SR client)
 kpipe-bom                                          (Maven BOM — pins versions)
 ```
-
-- **kpipe-core**: format-agnostic pipeline machinery — `MessageFormat`, `MessagePipeline`, `MessageProcessorRegistry`,
-  `MessageSink`, `CompositeMessageSink`, `RegistryKey`, `RegistryFunctions`. No Kafka, no third-party runtime deps.
-- **kpipe-metrics**: pure interfaces (`ProducerMetrics`, `ConsumerMetrics`) plus log-based reporters. No OTel API on the
-  classpath.
-- **kpipe-metrics-otel**: OpenTelemetry implementation (`OtelConsumerMetrics`, `OtelProducerMetrics`). Add this only if
-  you want OTel-backed metrics.
-- **kpipe-producer**: Kafka producer wrapper, `KafkaMessageSink` (in `io.github.eschizoid.kpipe.producer.sink`),
-  `Tracer` SPI.
-- **kpipe-consumer**: `KPipeConsumer` (hosts lifecycle: `start` / `close` / `awaitShutdown` / `shutdownGracefully` /
-  `waitForInFlightDrain` + optional metrics-reporter thread and JVM shutdown hook), `BackpressureController`,
-  `CircuitBreakerController`, `ConsumerHealthController`, `KafkaOffsetManager`, `HttpHealthServer`, `consumer.metrics`
-  reporters.
-- **kpipe-tracing-otel**: W3C trace context propagation — extract on consume, inject on produce / DLQ. Opt-in module
-  (see "Distributed tracing" below).
-- **kpipe-schema-registry-confluent**: Confluent Schema Registry client (`ConfluentSchemaResolver`) for schema-by-ID and
-  by-subject-version lookup. Opt-in (see "Confluent Schema Registry" below).
-- **kpipe-format-json / -avro / -protobuf**: per-format `XFormat.INSTANCE`, processors, and console sinks. Pull only the
-  format(s) you need.
 
 Use KPipe in a modular project:
 
@@ -463,15 +393,18 @@ Most pipelines do `byte[] → Object → byte[]` at every step. KPipe doesn't:
 - Typed sinks can attach directly to the pipeline and receive the object before final serialization, skipping it
   entirely.
 
-The win is fewer allocations and less CPU spent on intermediate SerDe steps. The benchmark numbers are in
-`benchmarks/README.md`.
+The win is fewer allocations and less CPU spent on intermediate SerDe steps. Two hot-path specifics: magic-byte handling
+is zero-copy (`skipBytes` passes an offset instead of `Arrays.copyOfRange`), and JSON parsing uses
+[fastjson2](https://github.com/alibaba/fastjson2) — faster than Jackson on the hot path with similar GC pressure.
+Benchmark numbers are in [`benchmarks/README.md`](benchmarks/README.md).
 
 ### 3. Virtual threads
 
-KPipe runs on Java virtual threads (Project Loom) for concurrency.
+KPipe runs on Java virtual threads ([Project Loom](https://openjdk.org/projects/loom/)) for concurrency.
 
 - Thread-per-record. Each message gets its own virtual thread, so I/O-bound enrichment scales without explicit pool
-  sizing.
+  sizing. Side-effectful operators (DB calls, HTTP) can easily have thousands in flight — connection-pool sizing matters
+  more than thread count.
 - No `ThreadLocal` on the hot path. `ThreadLocal` doesn't compose with thread-per-record — every record would get a
   fresh map, defeating any caching intent. If a future need for thread-local-like state turns up (tenant context, span
   propagation), we'll reach for `ScopedValue`; the codebase currently has neither.
@@ -486,73 +419,44 @@ KPipe never commits past an in-flight record. The implementation:
 - On crash, the consumer resumes from the last committed offset. Some records may be reprocessed — standard
   at-least-once behavior — but nothing is skipped.
 
-### 5. Parallel vs. sequential processing
+The checkable contract the correctness harness verifies against is written down in
+[`docs/OFFSET-INVARIANTS.md`](docs/OFFSET-INVARIANTS.md).
+
+### 5. Processing modes
 
 Three modes via `.withProcessingMode(ProcessingMode)`:
 
 - `PARALLEL` (default). Stateless transformations like enrichment or masking. Virtual thread per record, no ordering.
   Offsets commit by lowest pending offset.
-- `SEQUENTIAL` (`.withProcessingMode(ProcessingMode.SEQUENTIAL)`). Stateful transformations where strict per-partition
-  order matters. One message per partition at a time. Backpressure switches to monitoring consumer lag — the gap between
-  partition end-offset and consumer position — since in-flight count is always ≤ 1.
-- `KEY_ORDERED` (`.withProcessingMode(ProcessingMode.KEY_ORDERED)`). Records sharing a key process serially on a per-key
-  virtual thread; different keys process in parallel. The production sweet spot for stateful workloads where order
-  matters per entity (per user, per order, per session) but entities are independent. LRU cap on active keys defaults to
-  10,000; override with `.withKeyOrderedMaxKeys(int)`. Records with `null` keys all serialize through a single sentinel
-  queue. When the cap saturates with every queue non-empty, dispatch stalls the consumer thread until a queue drains —
-  this acts as implicit backpressure, and a one-shot `WARNING` log fires the first time it happens to hint at raising
-  the cap. For diagnostics under high cardinality, `Handle.topKeyQueueDepths(int n)` returns a snapshot of the deepest
-  per-key queues.
+- `SEQUENTIAL`. Stateful transformations where strict per-partition order matters. One message per partition at a time.
+  Backpressure switches to monitoring consumer lag — the gap between partition end-offset and consumer position — since
+  in-flight count is always ≤ 1.
+- `KEY_ORDERED`. Records sharing a key process serially on a per-key virtual thread; different keys process in parallel.
+  The production sweet spot for stateful workloads where order matters per entity (per user, per order, per session) but
+  entities are independent. LRU cap on active keys defaults to 10,000; override with `.withKeyOrderedMaxKeys(int)`.
+  Records with `null` keys all serialize through a single sentinel queue. When the cap saturates with every queue
+  non-empty, dispatch stalls the consumer thread until a queue drains — implicit backpressure — and a one-shot `WARNING`
+  log fires the first time to hint at raising the cap. For diagnostics under high cardinality,
+  `Handle.topKeyQueueDepths(int n)` returns a snapshot of the deepest per-key queues.
+
+For per-entity ordering (Authorize before Capture, balance updates in sequence), have your producer key by the entity
+(`transaction_id`, `customer_id`, ...) so Kafka routes related events to one partition, then pick `KEY_ORDERED` for
+entity-level ordering with cross-entity parallelism, or `SEQUENTIAL` for strict per-partition serial processing.
 
 ### 6. External offset management
 
-Kafka-backed offset storage is the default. For exactly-once processing or external coordination needs, plug in your own
-`OffsetManager`.
-
-1.  **Seek on Assignment**: When partitions are assigned, fetch the last processed offset from your database and call
-    `consumer.seek(partition, offset + 1)`.
-2.  **Update on Processed**: Implement `markOffsetProcessed` to save the offset to the database.
-
-```java
-public class PostgresOffsetManager<K, V> implements OffsetManager<K, V> {
-
-  private final Consumer<K, V> consumer;
-
-  // ... DB connection ...
-
-  @Override
-  public void markOffsetProcessed(final ConsumerRecord<K, V> record) {
-    // SQL: UPDATE offsets SET offset = ? WHERE partition = ?
-  }
-
-  @Override
-  public ConsumerRebalanceListener createRebalanceListener() {
-    return new ConsumerRebalanceListener() {
-      @Override
-      public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
-        for (final var tp : partitions) {
-          long lastOffset = fetchFromDb(tp);
-          consumer.seek(tp, lastOffset + 1);
-        }
-      }
-      // ...
-    };
-  }
-  // ...
-}
-```
+Kafka-backed offset storage is the default. For external coordination — offsets in Postgres, Redis, or anywhere else —
+implement the `OffsetManager` interface: persist offsets in `markOffsetProcessed`, and seek to the stored offset in the
+rebalance listener returned by `createRebalanceListener()`. Wire it with `KPipeConsumer.Builder.withOffsetManager(...)`
+(or `withOffsetManagerProvider(...)` when the manager needs the live Kafka consumer). A worked `PostgresOffsetManager`
+example lives in [`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md).
 
 ### 7. Error handling and retries
 
 Error handling is layered:
 
 - Retries: `.withRetry(maxRetries, backoff)` for transient failures.
-- Dead-letter topic:
-  ```java
-  final var consumer = KPipeConsumer.<byte[]>builder()
-    .withDeadLetterTopic("events-dlq") // sent here after retries are exhausted
-    .build();
-  ```
+- Dead-letter topic: `.withDeadLetterTopic("events-dlq")` — records land there after retries are exhausted.
 - Custom error handler: `.withErrorHandler(...)` to route failures somewhere other than a Kafka topic — an external DB,
   alerting system, whatever.
 - Per-processor and per-sink wrapping: `MessageProcessorRegistry.withOperatorErrorHandling()` and
@@ -562,60 +466,16 @@ Error handling is layered:
 ### 8. Backpressure
 
 When a downstream sink (database, HTTP API, another Kafka topic) is slow, KPipe pauses Kafka polling instead of letting
-in-flight work or lag pile up unbounded.
+in-flight work or lag pile up unbounded. Two watermarks with hysteresis prevent oscillation: pause when the monitored
+metric crosses the high watermark, resume when it drops back to or below the low one. Defaults are 10,000 high / 7,000
+low; override with `.withBackpressure(high, low)`.
 
-It uses two watermarks with hysteresis so it doesn't oscillate:
+The monitored metric follows the processing mode:
 
-- High watermark — pause polling when the monitored metric crosses this value.
-- Low watermark — resume polling when the metric drops back to or below this value.
-
-#### Strategies
-
-KPipe picks the strategy based on processing mode:
-
-| Mode               | Strategy     | Monitored              | Why                                                |
-| :----------------- | :----------- | :--------------------- | :------------------------------------------------- |
-| Parallel (default) | In-flight    | Active virtual threads | Cap concurrent in-flight work to bound memory      |
-| Sequential         | Consumer lag | Total unread messages  | In-flight is always ≤ 1, so lag is the real signal |
-
-##### Parallel mode: in-flight count
-
-Many records run concurrently on virtual threads. The controller watches how many are currently in-flight (started but
-not finished).
-
-- High watermark default: 10,000
-- Low watermark default: 7,000
-
-##### Sequential mode: consumer lag
-
-Sequential mode processes one record per partition at a time, so in-flight is always ≤ 1. KPipe watches consumer lag
-across all assigned partitions instead:
-
-```
-lag = Σ (endOffset - position)
-```
-
-- `endOffset` — highest offset available in the partition.
-- `position` — offset of the next record this consumer will fetch.
-
-- High watermark default: 10,000
-- Low watermark default: 7,000
-
-#### Configuration
-
-```java
-final var consumer = KPipeConsumer.<byte[]>builder()
-  .withProperties(kafkaProps)
-  .withTopic("events")
-  .withPipeline(pipeline)
-  // Default watermarks: 10k high / 7k low
-  .withBackpressure()
-  // Or explicit:
-  // .withBackpressure(5_000, 3_000)
-  .build();
-```
-
-Backpressure is on by default with 10k/7k watermarks. Override with `.withBackpressure(high, low)` for your workload.
+| Mode                       | Strategy     | Monitored                  | Why                                                |
+| :------------------------- | :----------- | :------------------------- | :------------------------------------------------- |
+| `PARALLEL` / `KEY_ORDERED` | In-flight    | Active virtual threads     | Cap concurrent in-flight work to bound memory      |
+| `SEQUENTIAL`               | Consumer lag | `Σ (endOffset - position)` | In-flight is always ≤ 1, so lag is the real signal |
 
 Pauses log at WARNING, resumes at INFO. Two dedicated metrics track them: `backpressurePauseCount` and
 `backpressureTimeMs`.
@@ -628,9 +488,6 @@ is _failing_ (DB connection refused, HTTP 503). Without a circuit breaker, every
 rate crosses a threshold, then probes recovery with a single record after a cool-down window.
 
 ```java
-import java.time.Duration;
-import io.github.eschizoid.kpipe.KPipe;
-
 KPipe.json("events", kafkaProps)
     .pipe(enrich)
     .withCircuitBreaker(
@@ -650,17 +507,9 @@ The state machine is the standard CLOSED → OPEN → HALF_OPEN → CLOSED cycle
 
 CB and backpressure pause through the same `ConsumerHealthController` (bitmask of MANUAL / BACKPRESSURE /
 CIRCUIT_BREAKER sources), so they don't fight each other — releasing the backpressure source while the CB still holds
-keeps the consumer paused, and vice-versa.
-
-OTel counters (opt-in via `kpipe-metrics-otel`):
-
-| Instrument                                     | Type    | Description                                  |
-| ---------------------------------------------- | ------- | -------------------------------------------- |
-| `kpipe.consumer.circuit_breaker.trips`         | Counter | Times the breaker transitioned CLOSED → OPEN |
-| `kpipe.consumer.circuit_breaker.state_changes` | Counter | Any state transition, attribute-tagged       |
-| `kpipe.consumer.circuit_breaker.time_open`     | Counter | Total ms spent in OPEN                       |
-
-When `.withCircuitBreaker(...)` is omitted, the consumer never trips and the counters stay at zero.
+keeps the consumer paused, and vice-versa. Three OTel counters (trips, state changes, time in OPEN) ship via
+`kpipe-metrics-otel` — see the instrument table under [Observability](#observability). When `.withCircuitBreaker(...)`
+is omitted, the consumer never trips and the counters stay at zero.
 
 ### 10. Distributed tracing (W3C trace context)
 
@@ -668,13 +517,9 @@ KPipe propagates W3C trace context (`traceparent` / `tracestate` Kafka headers) 
 on produce and on DLQ writes. The implementation lives in the opt-in `kpipe-tracing-otel` module — `kpipe-core` and
 `kpipe-consumer` are dependency-free, you bring the OTel SDK at runtime.
 
-Add the dependency:
-
 ```kotlin
 implementation("io.github.eschizoid:kpipe-tracing-otel:1.15.0")
 ```
-
-Wire it on the stream:
 
 ```java
 import io.opentelemetry.api.OpenTelemetry;
@@ -690,44 +535,27 @@ KPipe.json("events", kafkaProps)
     .start();
 ```
 
-What it does on the hot path:
-
-1. On poll, extracts the upstream context from `traceparent` / `tracestate` headers using the standard W3C propagator.
-2. Starts a CONSUMER span with `messaging.kafka.{topic,partition,offset}` attributes; the upstream span is the parent.
-3. Closes the span in a nested `finally` so a throwing user callback can't leak the scope.
-4. On produce (`KafkaMessageSink.accept`) and DLQ writes (`KPipeProducer.sendToDlq`), injects the _current_ context into
-   outbound headers — downstream consumers see the same trace.
-
+On the hot path: the upstream context is extracted from headers on poll, a CONSUMER span with
+`messaging.kafka.{topic,partition,offset}` attributes wraps processing (closed in a nested `finally` so a throwing user
+callback can't leak the scope), and the current context is injected into outbound headers on produce and DLQ writes.
 Without `.withTracer(...)`, `Tracer.noop()` is used: zero allocation, no OTel API on the classpath.
 
 ### 11. Graceful shutdown and interrupts
 
-KPipe respects JVM signals without losing records:
-
-- Interrupts trigger a coordinated shutdown. They don't cause records to be skipped.
-- If a record's processing is interrupted mid-flight (during retry backoff or transformation), its offset is not marked
-  as processed. The next consumer instance picks it up — at-least-once still holds during shutdown.
-
-```java
-// Initiate graceful shutdown with 5-second timeout
-boolean allProcessed = runner.shutdownGracefully(5000);
-
-// Or register a JVM shutdown hook via the builder (default off)
-KPipeConsumer.<byte[]>builder()
-  .withShutdownHook(true)
-  // ...
-  .build();
-```
+KPipe respects JVM signals without losing records. Interrupts trigger a coordinated shutdown; they don't cause records
+to be skipped. If a record's processing is interrupted mid-flight (during retry backoff or transformation), its offset
+is not marked as processed — the next consumer instance picks it up, so at-least-once still holds during shutdown. The
+drain and shutdown-hook API is covered under [Consumer lifecycle](#consumer-lifecycle).
 
 ---
 
 ## Working with messages
 
 Pipelines deserialize once, transform many times, serialize once. Operators are `UnaryOperator<T>` where `T` is the
-format's typed payload — `Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf. The generic
-helpers in [`Operators`](lib/kpipe-core/src/main/java/io/github/eschizoid/kpipe/registry/Operators.java) (`filter`,
-`drop`, `peek`, `map`, `compose`, `safe`, plus the map-specific `addField`, `removeFields`, `requireField`, `rename`)
-cover the common cases. For anything else, inline lambdas using the format's native API.
+format's typed payload — `Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf. The
+[`Operators`](lib/kpipe-core/src/main/java/io/github/eschizoid/kpipe/registry/Operators.java) helpers listed under
+[Common operator patterns](#5-common-operator-patterns) cover the usual cases; for anything else, inline lambdas using
+the format's native API. The examples below use the explicit registry API.
 
 ### JSON
 
@@ -742,20 +570,14 @@ import io.github.eschizoid.kpipe.registry.RegistryKey;
 
 final var registry = new MessageProcessorRegistry();
 
-final var stampKey = RegistryKey.json("addTimestamp");
-registry.registerOperator(stampKey, addField("processedAt", System.currentTimeMillis()));
-
 final var sanitizeKey = RegistryKey.json("sanitize");
 registry.registerOperator(sanitizeKey, removeFields("password", "ssn"));
 
+// Inline lambdas work too. Returning null from an operator filters the record: downstream
+// sinks are skipped but the offset is still marked processed (see "Filtering messages" below).
 final var lowerEmailKey = RegistryKey.json("lowerEmail");
 registry.registerOperator(lowerEmailKey, msg -> {
-  // Returning null from an operator filters the record: the pipeline yields Result.filtered()
-  // and downstream sinks are skipped, but the offset is still marked processed. Same convention
-  // as the bundled Operators.* helpers (filter, drop, removeFields, ...).
-  if (msg == null) return null;
-  final var email = msg.get("email");
-  if (email instanceof String s) msg.put("email", s.toLowerCase());
+  if (msg.get("email") instanceof String s) msg.put("email", s.toLowerCase());
   return msg;
 });
 
@@ -763,7 +585,6 @@ registry.registerOperator(lowerEmailKey, msg -> {
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
     .add(sanitizeKey)
     .add(lowerEmailKey)
-    .add(stampKey)
     .build();
 ```
 
@@ -809,13 +630,9 @@ writer's schema, caches it by ID, and decodes the remaining bytes against it. Th
 — every record decodes against its actual writer schema, so producer evolution doesn't silently corrupt consumer output
 the way a static-fetch-at-startup pattern would.
 
-Add the dependency:
-
 ```kotlin
 implementation("io.github.eschizoid:kpipe-schema-registry-confluent:1.15.0")
 ```
-
-Wire the fluent facade with the SR-shorthand factory:
 
 ```java
 import java.time.Duration;
@@ -823,8 +640,8 @@ import io.github.eschizoid.kpipe.KPipe;
 import io.github.eschizoid.kpipe.schemaregistry.confluent.CachedSchemaResolver;
 import io.github.eschizoid.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 
-// One resolver for the process; CachedSchemaResolver caches by ID with no TTL (Confluent SR IDs
-// are immutable, so cache-by-ID is trivially correct).
+// One resolver for the process; CachedSchemaResolver caches by ID with no TTL — Confluent SR IDs
+// are immutable, so cache-by-ID is trivially correct and cardinality stays naturally bounded.
 try (final var resolver = new CachedSchemaResolver(
         new ConfluentSchemaResolver("http://schema-registry:8081", Duration.ofSeconds(10)));
      final var handle = KPipe.avro("orders", kafkaProps, resolver)   // ← one-line SR consumer
@@ -835,28 +652,15 @@ try (final var resolver = new CachedSchemaResolver(
 }
 ```
 
-The factory above is equivalent to `KPipe.avro("orders", props, AvroFormat.withRegistry(resolver))`. The format reads
-the envelope per record. Do **not** combine `withSchemaRegistry(...)` with `skipBytes(5)` — the format already consumes
-the envelope. The static-mode path is still supported for shops with strict append-only evolution who fetch the schema
-once at startup:
+The factory above is equivalent to `KPipe.avro("orders", props, AvroFormat.withRegistry(resolver))`; the fluent
+`.withSchemaRegistry(resolver)` setter does the same on an existing Avro stream. Do **not** combine either with
+`.skipBytes(5)` — the format already consumes the envelope. Only the first record carrying a new schema ID costs an HTTP
+round trip; cache hit / miss / size counters are exposed on the resolver and can be bound to OTel (see
+[Observability](#observability)).
 
-```java
-try (final var resolver = new ConfluentSchemaResolver("http://schema-registry:8081")) {
-  final var schemaJson = resolver.lookupBySubjectVersion("orders-value", "latest");
-  final var format = AvroFormat.of(schemaJson);
-  // Pass `format` to KPipe.avro(topic, props, format) and pair with .skipBytes(5).
-}
-```
-
-The explicit `lookupById(int)` and `lookupBySubjectVersion(subject, version)` calls remain available on
-`ConfluentSchemaResolver` for users who want to manage their own caching or fetch a known schema at startup.
-
-**Cache semantics.** `CachedSchemaResolver` uses a `ConcurrentHashMap` with no TTL and no LRU eviction. Confluent SR
-schema IDs are immutable — ID 42 today means the same schema tomorrow — so cache-by-ID is trivially correct and cache
-cardinality is naturally bounded (typically tens of distinct schemas across the lifetime of a topic, even with active
-evolution). The first record carrying a new schema ID costs one HTTP round trip; every subsequent record with that ID is
-a hit. Hit / miss / size counters are exposed via the resolver's accessors and can be bound to OTel via
-`PipelineMetricsObserver.bindSchemaRegistryCache(...)` (see [Observability](#observability) below).
+The static-mode path is still supported for shops with strict append-only evolution who fetch the schema once at
+startup: `resolver.lookupBySubjectVersion("orders-value", "latest")` → `AvroFormat.of(schemaJson)`, paired with
+`.skipBytes(5)`. `lookupById(int)` is also available for managing your own caching.
 
 **Scope.** Avro only for now. Protobuf SR auto-lookup needs runtime `.proto` text compilation and has not shipped — use
 `kpipe-format-protobuf` with a compiled descriptor and `skipBytes(6)` for the single-top-level-message case. No schema
@@ -899,39 +703,7 @@ final var pipeline = registry
 
 ## Message sinks
 
-Sinks are where processed messages go. `MessageSink` is just a functional `Consumer<T>`:
-
-```java
-@FunctionalInterface
-public interface MessageSink<T> extends Consumer<T> {}
-```
-
-### Built-in sinks
-
-Console sinks live in their format modules. The registry doesn't auto-register them — register the ones you want:
-
-```java
-import io.github.eschizoid.kpipe.format.json.JsonConsoleSink;
-import io.github.eschizoid.kpipe.format.avro.AvroConsoleSink;
-import io.github.eschizoid.kpipe.format.protobuf.ProtobufConsoleSink;
-
-// Direct instantiation
-final var jsonConsoleSink = new JsonConsoleSink<Map<String, Object>>();
-final var avroConsoleSink = new AvroConsoleSink<GenericRecord>(schema);
-final var protobufConsoleSink = new ProtobufConsoleSink<Message>();
-
-// Register and use via the pipeline builder
-final var consoleSinkKey = RegistryKey.json("jsonConsole");
-registry.registerSink(consoleSinkKey, jsonConsoleSink);
-
-final var pipeline = registry
-  .pipeline(JsonFormat.INSTANCE)
-  .add(RegistryKey.json("sanitize"))
-  .toSink(consoleSinkKey)
-  .build();
-```
-
-### Custom sinks
+Sinks are where processed messages go. `MessageSink` is just a functional `Consumer<T>` — any lambda works:
 
 ```java
 final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
@@ -944,27 +716,26 @@ final MessageSink<Map<String, Object>> databaseSink = (processedMap) -> {
 `MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape.
 `registerOperator(key, op)` and `registerSink(key, sink)` are the entry points; lookups use `getOperator(key)` and
 `getSink(key)`. Per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`,
-`compositeSink`) keep the surfaces separate without forcing users through a sub-object.
+`compositeSink`) keep the surfaces separate. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`, `ProtobufConsoleSink`)
+live in their format modules and are not auto-registered — register the ones you want:
 
 ```java
 final var registry = new MessageProcessorRegistry();
 
-// Register a sink under a typed key
-final var dbKey = RegistryKey.of("database", Map.class);
-registry.registerSink(dbKey, databaseSink);
+// Register sinks under typed keys
+registry.registerSink(RegistryKey.json("jsonConsole"), new JsonConsoleSink<Map<String, Object>>());
+registry.registerSink(RegistryKey.of("database", Map.class), databaseSink);
 
-// Use it in a pipeline
-final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(RegistryKey.json("enrich")).toSink(dbKey).build();
-```
+// Use one in a pipeline
+final var pipeline = registry
+  .pipeline(JsonFormat.INSTANCE)
+  .add(RegistryKey.json("sanitize"))
+  .toSink(RegistryKey.of("database", Map.class))
+  .build();
 
-### Error handling in sinks
-
-```java
 // Wrap a sink or operator with error handling (suppresses exceptions, logs errors)
 final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(riskySink);
 final var safeOperator = MessageProcessorRegistry.withOperatorErrorHandling(riskyOperator);
-
-registry.registerSink(RegistryKey.json("safeDatabase"), safeSink);
 ```
 
 ### Kafka producer sink
@@ -1036,40 +807,24 @@ the per-record control. Full numbers in [`benchmarks/README.md`](benchmarks/READ
 
 ---
 
-## Built-in metrics
+## Observability
 
 ### Programmatic access
 
 ```java
-final var metrics = consumer.getMetrics();
-log.log(Level.INFO, "Messages received: " + metrics.get("messagesReceived"));
+final var metrics = consumer.getMetrics();   // or handle.metrics() on the fluent path
 log.log(Level.INFO, "Successfully processed: " + metrics.get("messagesProcessed"));
-log.log(Level.INFO, "Processing errors: " + metrics.get("processingErrors"));
 log.log(Level.INFO, "Messages in-flight: " + metrics.get("inFlight"));
-// Backpressure metrics (present only when withBackpressure() is configured)
-log.log(Level.INFO, "Backpressure pauses: " + metrics.get("backpressurePauseCount"));
-log.log(Level.INFO, "Time spent paused (ms): " + metrics.get("backpressureTimeMs"));
+// Also: messagesReceived, processingErrors, and — when withBackpressure() is configured —
+// backpressurePauseCount and backpressureTimeMs.
 ```
 
 ### OpenTelemetry
 
 OTel is opt-in via the `kpipe-metrics-otel` module. `kpipe-metrics` ships interfaces only and doesn't pull
-`opentelemetry-api` onto your classpath. Add `kpipe-metrics-otel` (plus your OTel SDK at runtime) to wire real
-telemetry:
-
-```java
-import io.github.eschizoid.kpipe.metrics.otel.OtelConsumerMetrics;
-
-final var consumer = KPipeConsumer.<byte[]>builder()
-  .withProperties(kafkaProps)
-  .withTopic("events")
-  .withPipeline(pipeline)
-  .withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))
-  .build();
-```
-
-When `withMetrics(...)` is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` is used. Zero allocation, no
-OTel API on the classpath.
+`opentelemetry-api` onto your classpath. Add `kpipe-metrics-otel` (plus your OTel SDK at runtime) and wire
+`.withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))` on the stream or builder. When `withMetrics(...)`
+is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` is used: zero allocation, no OTel API on the classpath.
 
 | Instrument                                     | Type      | Description                                        |
 | ---------------------------------------------- | --------- | -------------------------------------------------- |
@@ -1087,41 +842,73 @@ OTel API on the classpath.
 | `kpipe.producer.messages.failed`               | Counter   | Records that failed to produce                     |
 | `kpipe.producer.dlq.sent`                      | Counter   | Records sent to DLQ                                |
 
+### Pipeline outcome counters
+
+`PipelineMetricsObserver` (also in `kpipe-metrics-otel`) implements `Consumer<Result<?>>`. Hand it to
+`Stream.peekResult(observer)` and every `Passed` / `Filtered` / `Failed` outcome increments the matching
+`kpipe.pipeline.*` counter. This is how you make the "processed counter rises but the sink stays at 0" condition (a
+silent flood of `Filtered` or `Failed` records) visible at the metrics layer instead of having to scrape logs.
+
+```java
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.github.eschizoid.kpipe.metrics.otel.OtelConsumerMetrics;
+import io.github.eschizoid.kpipe.metrics.otel.PipelineMetricsObserver;
+
+final var otel = GlobalOpenTelemetry.get();
+
+try (var handle = KPipe.json("orders", kafkaProps)
+    .pipe(enrich)
+    .withMetrics(new OtelConsumerMetrics(otel, "orders-consumer"))   // standard kpipe.consumer.* metrics
+    .peekResult(new PipelineMetricsObserver(otel, "orders"))         // per-Result-variant counters
+    .toCustom(WarehouseSink.create())
+    .start()) {
+  handle.awaitShutdown();
+}
+```
+
+If you're using Confluent SR auto-lookup, bind the cache counters too so cache hit rate is visible alongside the
+pipeline outcomes:
+
+```java
+final var observer = new PipelineMetricsObserver(otel, "orders").bindSchemaRegistryCache(
+  resolver::hitCount,
+  resolver::missCount,
+  () -> (long) resolver.size()
+);
+```
+
+The observer takes `LongSupplier`s rather than the resolver itself so `kpipe-metrics-otel` doesn't acquire a transitive
+dependency on `kpipe-schema-registry-confluent`. Wire whichever cache you actually use; the suppliers don't care.
+
+### Local dashboard
+
+A local observability stack under `infra/observability/` runs via Docker Compose: OTel Collector → Prometheus → Grafana,
+pre-provisioned with a "KPipe Overview" dashboard covering all consumer and producer metrics. Any of the example apps
+brings it up; to point your own collector at a running KPipe app set
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4318` and `OTEL_METRICS_EXPORTER=otlp`. Grafana is at
+[http://localhost:3000](http://localhost:3000) (admin/admin).
+
 ---
 
 ## Consumer lifecycle
 
-Since 1.13.0 the consumer hosts its own lifecycle — start, periodic metrics reporting, JVM shutdown hook, in-flight
-drain, graceful shutdown. The standalone `KPipeRunner` was deleted in the runner+tracker fold; everything is on
-`KPipeConsumer` directly.
-
-```java
-final var consumer = KPipeConsumer.<byte[]>builder()
-  .withProperties(kafkaProps)
-  .withTopic("events")
-  .withPipeline(pipeline)
-  .withMetricsReporters(List.of(
-    ConsumerMetricsReporter.forConsumer(c -> consumer.getMetrics()),
-    EntryMetricsReporter.forProcessors(processorRegistry)
-  ))
-  .withMetricsInterval(Duration.ofSeconds(30))
-  .withShutdownHook(true)   // installs Runtime.getRuntime().addShutdownHook(consumer::close)
-  .build();
-
-consumer.start();
-consumer.awaitShutdown();             // blocks until close() completes
-```
-
-Use try-with-resources for explicit cleanup:
+The consumer hosts its own lifecycle — start, periodic metrics reporting, JVM shutdown hook, in-flight drain, graceful
+shutdown. There is no separate runner class; everything is on `KPipeConsumer` directly.
 
 ```java
 try (final var consumer = KPipeConsumer.<byte[]>builder()
     .withProperties(kafkaProps)
     .withTopic("events")
     .withPipeline(pipeline)
+    .withMetricsReporters(List.of(
+      ConsumerMetricsReporter.forConsumer(c -> consumer.getMetrics()),
+      EntryMetricsReporter.forProcessors(processorRegistry)
+    ))
+    .withMetricsInterval(Duration.ofSeconds(30))
+    .withShutdownHook(true)   // installs Runtime.getRuntime().addShutdownHook(consumer::close)
     .build()) {
   consumer.start();
-  consumer.awaitShutdown(Duration.ofMinutes(5));   // bounded wait
+  consumer.awaitShutdown(Duration.ofMinutes(5));   // bounded wait; no-arg blocks until close()
 }
 ```
 
@@ -1182,23 +969,11 @@ public class KPipeApp implements AutoCloseable {
 }
 ```
 
-`Handle` is `AutoCloseable` (graceful shutdown with a 5s drain budget by default) and exposes
-`isHealthy() / metrics() / awaitShutdown() / shutdownGracefully(Duration) / close()`. For a multi-format consumer
-(JSON + Avro + Protobuf on one consumer-group, dispatched per topic), swap `KPipe.json(...)` for
-`KPipe.multi(props).json(...).avro(...).protobuf(...).start()` — see [`examples/demo`](examples/demo/) for the full
-shape. The explicit `KPipeConsumer.Builder` route is still available when you need an escape-hatch capability not on the
-facade (custom `OffsetManager`, custom Kafka consumer factory, custom DLQ producer); the facade reaches into the builder
-for everything else.
-
-**Environment variables** used by this sketch (`AppConfig.fromEnv()` reads additional vars — `APP_NAME`,
-`KAFKA_POLL_TIMEOUT_MS`, `SHUTDOWN_TIMEOUT_SEC`, `METRICS_INTERVAL_SEC`, `PROCESSOR_PIPELINE` — that feed the explicit
-Builder and metrics paths):
-
-```bash
-export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-export KAFKA_CONSUMER_GROUP=my-group
-export KAFKA_TOPIC=json-events
-```
+For a multi-format consumer (JSON + Avro + Protobuf on one consumer-group, dispatched per topic), swap `KPipe.json(...)`
+for `KPipe.multi(props).json(...).avro(...).protobuf(...).start()` — see [`examples/demo`](examples/demo/) for the full
+shape. `AppConfig.fromEnv()` reads `KAFKA_BOOTSTRAP_SERVERS`, `KAFKA_CONSUMER_GROUP`, `KAFKA_TOPIC`, plus optional vars
+(`APP_NAME`, `KAFKA_POLL_TIMEOUT_MS`, `SHUTDOWN_TIMEOUT_SEC`, `METRICS_INTERVAL_SEC`, `PROCESSOR_PIPELINE`) that feed
+the explicit Builder and metrics paths.
 
 </details>
 
@@ -1215,7 +990,7 @@ export KAFKA_TOPIC=json-events
 
 ## Testing
 
-There's a `docker-compose.yaml` for spinning up Kafka, Zookeeper, and Confluent Schema Registry locally.
+There's a `docker-compose.yaml` for spinning up Kafka (KRaft mode) and Confluent Schema Registry locally.
 
 ```bash
 # Format code and build all modules
@@ -1240,9 +1015,6 @@ curl -X POST \
   -H "Content-Type: application/vnd.schemaregistry.v1+json" \
   --data "{\"schema\": $(cat lib/kpipe-consumer/src/test/resources/avro/customer.avsc | jq tostring)}" \
   http://localhost:8081/subjects/com.kpipe.customer/versions
-
-# Read registered schema
-curl -s http://localhost:8081/subjects/com.kpipe.customer/versions/latest | jq -r '.schema' | jq --indent 2 '.'
 
 # Produce an Avro message using kafka-avro-console-producer
 cat <<'JSON' | docker run -i --rm --network kpipe_default \
@@ -1269,9 +1041,6 @@ curl -X POST \
   --data "{\"schemaType\": \"PROTOBUF\", \"schema\": $(cat lib/kpipe-consumer/src/test/resources/protobuf/customer.proto | jq -Rs .)}" \
   http://localhost:8081/subjects/com.kpipe.customer-protobuf/versions
 
-# Read registered schema
-curl -s http://localhost:8081/subjects/com.kpipe.customer-protobuf/versions/latest | jq '.'
-
 # Produce a Protobuf message using kafka-protobuf-console-producer
 cat <<'JSON' | docker run -i --rm --network kpipe_default \
 confluentinc/cp-schema-registry:8.2.0 \
@@ -1296,8 +1065,8 @@ For statically typed bulk registration, define operators as an enum implementing
 
 ```java
 public enum StandardProcessors implements UnaryOperator<Map<String, Object>> {
-  TIMESTAMP(JsonMessageProcessor.addTimestampOperator("ts")),
-  SOURCE(JsonMessageProcessor.addFieldOperator("src", "app"));
+  TIMESTAMP(msg -> { msg.put("ts", System.currentTimeMillis()); return msg; }),
+  SOURCE(Operators.addField("src", "app"));
 
   private final UnaryOperator<Map<String, Object>> op;
 
@@ -1349,116 +1118,6 @@ registry.registerOperator(RegistryKey.json("filter"), map -> {
 });
 ```
 
-### Thread safety and resource management
-
-- Processors should be stateless and thread-safe.
-- Don't add `ThreadLocal` of your own — under thread-per-record it gets a new map for every message and doesn't cache
-  anything. If you need thread-local-like state in a future feature (tenant context, span propagation), reach for
-  `ScopedValue` instead.
-- Side-effectful processors (DB calls, HTTP) need to be safe under high concurrency. With virtual threads you can easily
-  have thousands in flight; pool sizing on connection pools matters more than thread count.
-
----
-
-## Performance
-
-A few specifics worth calling out, since "fast" without context is meaningless. Performance always depends on workload
-shape (I/O vs CPU bound), partitioning, and message size — these are micro-level optimizations.
-
-- Zero-copy magic-byte handling. For Avro from Confluent Schema Registry, KPipe takes an `offset` parameter to skip
-  magic bytes and schema IDs without `Arrays.copyOfRange`.
-- fastjson2 for JSON parsing. Faster than Jackson on the hot path with similar GC pressure, and actively maintained.
-
-The latest competitive capture ([`benchmarks/results/2026-06-20.md`](benchmarks/results/2026-06-20.md) — summarized in
-[The numbers, up front](#the-numbers-up-front)) shows KPipe ahead of Confluent Parallel Consumer on throughput, with a
-higher allocation footprint. Scenario-specific — not a blanket claim.
-
----
-
-## Key-level ordering (payments, balances, anything sequential)
-
-If your domain requires per-entity ordering — Authorize before Capture, balance updates in sequence — Kafka already
-guarantees per-partition ordering. Use that:
-
-- Have your producer key by the entity (`transaction_id`, `customer_id`, etc). Kafka routes all messages with the same
-  key to the same partition.
-- KPipe commits per-partition lowest-pending-offset, so as long as related events share a key, they land on one
-  partition and KPipe processes them in order without skipping.
-- For strict per-partition serial processing (one record at a time), set
-  `.withProcessingMode(ProcessingMode.SEQUENTIAL)`.
-- For per-key serial processing where different keys run in parallel, set
-  `.withProcessingMode(ProcessingMode.KEY_ORDERED)`. This is the production sweet spot — entity-level ordering with
-  cross-entity parallelism.
-
----
-
-## Observability
-
-Two OTel pieces ship in `kpipe-metrics-otel`:
-
-- **`OtelConsumerMetrics`** — implements `ConsumerMetrics`. Wire on the consumer builder / `Stream.withMetrics(...)` and
-  get the standard `kpipe.consumer.*` counters and histograms (received, processed, errors, processing duration,
-  in-flight gauge, backpressure pauses, circuit-breaker state changes).
-- **`PipelineMetricsObserver`** — implements `Consumer<Result<?>>`. Hand to `Stream.peekResult(observer)` and every
-  `Passed` / `Filtered` / `Failed` outcome increments the matching `kpipe.pipeline.*` counter. This is how you make the
-  "processed counter rises but the sink stays at 0" condition (a silent flood of `Filtered` or `Failed` records) visible
-  at the metrics layer instead of having to scrape logs.
-
-```java
-import io.opentelemetry.api.GlobalOpenTelemetry;
-import io.github.eschizoid.kpipe.metrics.otel.OtelConsumerMetrics;
-import io.github.eschizoid.kpipe.metrics.otel.PipelineMetricsObserver;
-
-final var otel = GlobalOpenTelemetry.get();
-final var consumerMetrics = new OtelConsumerMetrics(otel, "orders-consumer");
-final var observer = new PipelineMetricsObserver(otel, "orders");
-
-try (var handle = KPipe.json("orders", kafkaProps)
-    .pipe(enrich)
-    .withMetrics(consumerMetrics)             // standard kpipe.consumer.* metrics
-    .peekResult(observer)                     // per-Result-variant counters
-    .toCustom(WarehouseSink.create())
-    .start()) {
-  handle.awaitShutdown();
-}
-```
-
-If you're using Confluent SR auto-lookup, bind the cache counters too so cache hit rate is visible alongside the
-pipeline outcomes:
-
-```java
-final var resolver = new CachedSchemaResolver(new ConfluentSchemaResolver("http://schema-registry:8081"));
-
-final var observer = new PipelineMetricsObserver(otel, "orders").bindSchemaRegistryCache(
-  resolver::hitCount,
-  resolver::missCount,
-  () -> (long) resolver.size()
-);
-```
-
-The observer takes `LongSupplier`s rather than the resolver itself so `kpipe-metrics-otel` doesn't acquire a transitive
-dependency on `kpipe-schema-registry-confluent`. Wire whichever cache you actually use; the suppliers don't care.
-
----
-
-## Metrics dashboard
-
-There's a local observability stack under `infra/observability/` that runs via Docker Compose:
-
-- OpenTelemetry Collector — receives OTLP metrics from KPipe, exports to Prometheus.
-- Prometheus — scrapes the collector and stores time-series data.
-- Grafana — pre-provisioned with a "KPipe Overview" dashboard covering all consumer and producer metrics.
-
-Any of the example apps brings this stack up via `docker compose`. To point your own collector at a running KPipe app,
-set the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable:
-
-```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=http://your-collector:4318
-OTEL_METRICS_EXPORTER=otlp
-```
-
-Open Grafana at [http://localhost:3000](http://localhost:3000) (admin/admin) for the KPipe Overview dashboard.
-
 ---
 
 ## Running the demo
@@ -1476,19 +1135,8 @@ docker compose up --build
 
 The script starts Kafka (KRaft mode) + Schema Registry, creates topics, registers the Avro and Protobuf schemas, brings
 up the observability stack, then builds and starts the demo app with all three pipelines and seeds JSON messages so
-there's something to process immediately.
-
-Grafana is at [http://localhost:3000](http://localhost:3000); the app health endpoint is at
-[http://localhost:8080/health](http://localhost:8080/health).
-
----
-
-## Inspiration
-
-KPipe leans on:
-
-- [Project Loom](https://openjdk.org/projects/loom/) for virtual threads.
-- [fastjson2](https://github.com/alibaba/fastjson2) for the JSON hot path.
+there's something to process immediately. Grafana is at [http://localhost:3000](http://localhost:3000); the app health
+endpoint is at [http://localhost:8080/health](http://localhost:8080/health).
 
 ---
 

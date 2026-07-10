@@ -176,13 +176,13 @@ Throughput mode (`ops/s`). Bigger is better.
   the headline number.
 - **JSON (In-Memory)**: Up to **~242,000 records/s** with the KPipe single-SerDe pipeline (3.1× the chained-SerDe
   baseline).
-- **End-to-End Parallel Processing**: **~31.1M to ~32.7M messages/s**. For this run, use `score * 10,000` because
-  `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`.
+- **End-to-End Parallel Processing**: **~3,111 to ~3,268 records/s**. `ParallelProcessingBenchmark` uses
+  `@OperationsPerInvocation(TARGET_MESSAGES)`, so JMH already reports processed records per second.
 - **Batch Sink (Slow Destination)**: At a 1ms-per-call simulated sink, batching at size 100 reaches **~66,000 batches/s
   ≈ 6.6M records/s**, vs **~788 records/s** for size 1. Batching wins big when destination cost dominates.
 
-> **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`. For this benchmark, derive message
-> rate as `ops/s * 10,000`.
+> **Note**: The `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(TARGET_MESSAGES)` where
+> `TARGET_MESSAGES = 25_000`. JMH already normalises for that, so the reported `ops/s` is the message rate.
 
 A few things worth keeping in mind when comparing runs:
 
@@ -196,8 +196,8 @@ A few things worth keeping in mind when comparing runs:
 - **Timing fairness for parallel benches**: both `kpipeParallelProcessing` and `confluentParallelProcessing` run their
   processing loops inside the benchmark method (not `@Setup`), so startup-to-completion is measured the same way for
   both.
-- **Throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(10000)`, so the reported
-  `ops/s` is per processed message, not per full invocation.
+- **Throughput normalization**: `ParallelProcessingBenchmark` uses `@OperationsPerInvocation(TARGET_MESSAGES)`, so the
+  reported `ops/s` is already per processed message, not per full invocation.
 - **Logging noise**: the KPipe parallel bench uses a no-op sink so console I/O doesn't bend the numbers.
 - **CPU counters (Linux only)**: `perfnorm` gives normalized CPI / cycles / instructions. macOS can't supply those via
   JMH, so don't quote CPI on a macOS run.
