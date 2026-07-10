@@ -283,12 +283,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldDrainCommandQueueForRevokedPartitions() {
       final var partition1 = new TopicPartition(TOPIC, 1);
-      final var offsets = Map.of(
-        PARTITION,
-        new OffsetAndMetadata(100L),
-        partition1,
-        new OffsetAndMetadata(200L)
-      );
+      final var offsets = Map.of(PARTITION, new OffsetAndMetadata(100L), partition1, new OffsetAndMetadata(200L));
       commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, "commit-1"));
 
       offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
@@ -442,13 +437,16 @@ class KafkaOffsetManagerTest {
 
       // Second call from a different thread must trigger the AssertionError.
       final var thrown = new AtomicReference<Throwable>();
-      final var off = new Thread(() -> {
-        try {
-          listener.onPartitionsRevoked(List.of(PARTITION));
-        } catch (final Throwable t) {
-          thrown.set(t);
-        }
-      }, "off-thread-rebalancer");
+      final var off = new Thread(
+        () -> {
+          try {
+            listener.onPartitionsRevoked(List.of(PARTITION));
+          } catch (final Throwable t) {
+            thrown.set(t);
+          }
+        },
+        "off-thread-rebalancer"
+      );
       off.start();
       off.join(2_000);
 
@@ -473,13 +471,16 @@ class KafkaOffsetManagerTest {
 
       // Second call from a different thread must trigger the AssertionError.
       final var thrown = new AtomicReference<Throwable>();
-      final var off = new Thread(() -> {
-        try {
-          listener.onPartitionsAssigned(List.of(PARTITION));
-        } catch (final Throwable t) {
-          thrown.set(t);
-        }
-      }, "off-thread-rebalancer");
+      final var off = new Thread(
+        () -> {
+          try {
+            listener.onPartitionsAssigned(List.of(PARTITION));
+          } catch (final Throwable t) {
+            thrown.set(t);
+          }
+        },
+        "off-thread-rebalancer"
+      );
       off.start();
       off.join(2_000);
 
@@ -1007,7 +1008,7 @@ class KafkaOffsetManagerTest {
     );
   }
 
-  /// Locks in the `computeIfPresent` + `safeFirst` race fixes from the audit pass: hammers
+  /// Locks in the `computeIfPresent` + lowest-pending-read race fixes from the audit pass: hammers
   /// `trackOffset` and `markOffsetProcessed` from many virtual threads on the same partition
   /// and asserts that no offsets are silently dropped from the commit map.
   @Nested
@@ -1088,7 +1089,7 @@ class KafkaOffsetManagerTest {
           }
         });
 
-        // Concurrent reader: hammer getPartitionState (also goes through pending.first()).
+        // Concurrent reader: hammer getPartitionState (also goes through pending.firstOrNull()).
         for (int i = 0; i < 4; i++) {
           executor.submit(() -> {
             while (!stop.get()) {
@@ -1107,7 +1108,7 @@ class KafkaOffsetManagerTest {
         stop.set(true);
       }
 
-      assertTrue(errors.isEmpty(), "pending.first() race must not throw NoSuchElementException: " + errors);
+      assertTrue(errors.isEmpty(), "pending firstOrNull race must not throw: " + errors);
       manager.close();
     }
   }
@@ -1316,7 +1317,11 @@ class KafkaOffsetManagerTest {
       offsetManager.trackOffset(record);
       final var reAllocated = innerCache(offsetManager, TOPIC).get(0);
       assertNotNull(reAllocated, "track after re-assignment must repopulate the cache");
-      assertNotSame(original, reAllocated, "re-assignment must allocate a fresh TopicPartition, not reuse the evicted one");
+      assertNotSame(
+        original,
+        reAllocated,
+        "re-assignment must allocate a fresh TopicPartition, not reuse the evicted one"
+      );
       assertEquals(original, reAllocated, "value-equality must still hold (same topic + partition number)");
     }
 

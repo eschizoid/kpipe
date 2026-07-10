@@ -414,7 +414,8 @@ KPipe runs on Java virtual threads ([Project Loom](https://openjdk.org/projects/
 KPipe never commits past an in-flight record. The implementation:
 
 - `OffsetManager` is an interface — Kafka-backed by default, but you can plug in external storage.
-- Every in-flight offset is tracked in a `ConcurrentSkipListSet` per partition (see `KafkaOffsetManager`).
+- Every in-flight offset is tracked in a sorted primitive-`long` pending set per partition (see `KafkaOffsetManager` /
+  `PendingOffsetSet` — allocation-free on the track/mark hot path).
 - Offset 102 cannot be committed until 101 finishes, even if 102 completes first. No gaps.
 - On crash, the consumer resumes from the last committed offset. Some records may be reprocessed — standard
   at-least-once behavior — but nothing is skipped.

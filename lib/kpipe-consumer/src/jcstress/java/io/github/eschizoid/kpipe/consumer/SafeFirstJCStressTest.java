@@ -15,27 +15,28 @@ import org.openjdk.jcstress.infra.results.J_Result;
 /// Concurrency-stress check for the check-then-act safety of reading the lowest pending offset of
 /// `KafkaOffsetManager` while another thread empties the per-partition pending set.
 ///
-/// The manager keeps pending offsets per partition in a `ConcurrentSkipListSet`, and computes a
-/// partition's commit point by reading the set's first element. A naive `if (!set.isEmpty())
-/// set.first()` is a check-then-act trap: a concurrent remover can drain the set between the
-/// emptiness check and the `first()` call, and `first()` then throws `NoSuchElementException` on
-/// an empty set. The manager guards this with a `safeFirst` wrapper that catches that exception
-/// and returns null, so the commit-point read degrades to "no pending offset" rather than blowing
-/// up the caller. This test races a remover against a reader to exercise exactly that window.
+/// The manager keeps pending offsets per partition in a `PendingOffsetSet` (a monitor-synchronized
+/// sorted primitive-`long` window; historically a `ConcurrentSkipListSet<Long>`), and computes a
+/// partition's commit point by reading the set's lowest element. On the skiplist a naive
+/// `if (!set.isEmpty()) set.first()` was a check-then-act trap: a concurrent remover could drain
+/// the set between the emptiness check and the `first()` call, making `first()` throw
+/// `NoSuchElementException`; a `safeFirst` wrapper caught that exception and returned null.
+/// `PendingOffsetSet.firstOrNull()` closes the window structurally — the emptiness check and the
+/// read share the instance monitor, so a drained set yields `null` ("no pending offset") and can
+/// never throw. This test races a remover against a reader to keep that no-throw guarantee pinned.
 ///
 /// Scenario. The state constructor tracks a single offset (100) on one partition, so the pending
 /// set starts holding exactly that one element — the set most likely to be observed mid-drain.
 /// The remover actor marks offset 100 processed, which removes it from the set and clears the
 /// partition entry once empty. The reader actor reads the commit point via
-/// `getPartitionState(...).get("nextOffsetToCommit")`, which routes through `safeFirst`. The two
+/// `getPartitionState(...).get("nextOffsetToCommit")`, which routes through `firstOrNull`. The two
 /// run concurrently under every interleaving the scheduler can produce.
 ///
-/// The property under test is narrow and exact: `safeFirst` must never let a
-/// `NoSuchElementException` escape, no matter how the remover drains the set relative to the
-/// reader's emptiness-check-then-first call. jcstress surfaces a thrown actor as a hard error, so a
-/// leaked exception fails the run outright — it never reaches the outcome grading below. Every
-/// graded outcome therefore already proves the catch held; the values just describe which snapshot
-/// the reader happened to see.
+/// The property under test is narrow and exact: the commit-point read must never throw, no matter
+/// how the remover drains the set relative to the reader's emptiness-check-then-first call.
+/// jcstress surfaces a thrown actor as a hard error, so a leaked exception fails the run outright
+/// — it never reaches the outcome grading below. Every graded outcome therefore already proves the
+/// guarantee held; the values just describe which snapshot the reader happened to see.
 ///
 /// The reader records the commit point it observed. 101 is the common case (set drained, commit
 /// point falls back to highest-processed + 1) and 100 is the case where the read landed before the
@@ -43,16 +44,16 @@ import org.openjdk.jcstress.infra.results.J_Result;
 /// forbidden: the reader's snapshot reads the pending set and the highest-processed map in two
 /// separate steps, and the remover updates those two maps non-atomically, so the reader can observe
 /// the set already emptied while the highest-processed write is not yet visible. That torn read is
-/// a benign staleness of the diagnostic snapshot, not a `safeFirst` failure — `safeFirst` still
-/// returned null without throwing. The only forbidden behaviour, a thrown exception, cannot appear
-/// here precisely because jcstress would have failed the run before grading.
+/// a benign staleness of the diagnostic snapshot, not a `firstOrNull` failure — it still returned
+/// null without throwing. The only forbidden behaviour, a thrown exception, cannot appear here
+/// precisely because jcstress would have failed the run before grading.
 @JCStressTest
 @Outcome(id = "100", expect = Expect.ACCEPTABLE, desc = "Reader saw offset 100 still pending.")
 @Outcome(id = "101", expect = Expect.ACCEPTABLE, desc = "Reader saw the set drained; commit point is processed + 1.")
 @Outcome(
   id = "-1",
   expect = Expect.ACCEPTABLE_INTERESTING,
-  desc = "Torn snapshot: set seen drained before the highest-processed write was visible. safeFirst still did not throw."
+  desc = "Torn snapshot: set seen drained before the highest-processed write was visible. firstOrNull still did not throw."
 )
 @Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "Unexpected commit-point value.")
 @State

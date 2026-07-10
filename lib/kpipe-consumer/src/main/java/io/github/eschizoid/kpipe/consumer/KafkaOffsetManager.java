@@ -80,7 +80,13 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   private final Queue<ConsumerCommand> commandQueue;
 
   private final Map<String, CompletableFuture<Boolean>> commitFutures = new ConcurrentHashMap<>();
-  private final Map<TopicPartition, ConcurrentSkipListSet<Long>> pendingOffsets = new ConcurrentHashMap<>();
+
+  /// Per-partition pending offsets: a sorted primitive-`long` window (`PendingOffsetSet`) rather
+  /// than a `ConcurrentSkipListSet<Long>`. The skiplist cost a `Long` box plus node/marker churn
+  /// on every track/mark; the primitive structure allocates nothing in steady state. All map
+  /// mutations keep the bucket-locked `compute` / `computeIfPresent` shapes below; the structure
+  /// itself is monitor-synchronized so commit-scheduler reads outside the bucket lock stay safe.
+  private final Map<TopicPartition, PendingOffsetSet> pendingOffsets = new ConcurrentHashMap<>();
   private final Map<TopicPartition, Long> highestProcessedOffsets = new ConcurrentHashMap<>();
 
   /// Per-partition `TopicPartition` cache used by `trackOffset` and `markOffsetProcessed`. Each
@@ -224,7 +230,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     // orphaned set no longer in the map — silently losing a pending offset and letting the commit
     // point advance past an in-flight record. compute() holds the bucket lock across the add.
     pendingOffsets.compute(partition, (_, set) -> {
-      final var pending = set == null ? new ConcurrentSkipListSet<Long>() : set;
+      final var pending = set == null ? new PendingOffsetSet() : set;
       pending.add(offset);
       return pending;
     });
@@ -355,7 +361,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
       .distinct()
       .flatMap(partition -> {
         final var pending = pendingOffsets.get(partition);
-        final var lowestPending = pending != null ? safeFirst(pending) : null;
+        final var lowestPending = pending != null ? pending.firstOrNull() : null;
         if (lowestPending != null) return Stream.of(Map.entry(partition, new OffsetAndMetadata(lowestPending)));
         final var highestProcessed = highestProcessedOffsets.get(partition);
         return highestProcessed != null
@@ -363,14 +369,6 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
           : Stream.empty();
       })
       .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-  }
-
-  static Long safeFirst(final SortedSet<Long> set) {
-    try {
-      return set.isEmpty() ? null : set.first();
-    } catch (final NoSuchElementException e) {
-      return null;
-    }
   }
 
   private boolean performCommit(final Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, final Duration timeout)
@@ -401,7 +399,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     final var state = new HashMap<String, Object>();
     final var pending = pendingOffsets.get(partition);
     final var highestProcessed = highestProcessedOffsets.get(partition);
-    final var lowestPending = pending != null ? safeFirst(pending) : null;
+    final var lowestPending = pending != null ? pending.firstOrNull() : null;
 
     if (lowestPending != null) {
       state.put("nextOffsetToCommit", lowestPending);
@@ -418,7 +416,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
       state.put("pendingCount", pending.size());
       if (lowestPending != null) {
         state.put("lowestPendingOffset", lowestPending);
-        final var highestPending = safeLast(pending);
+        final var highestPending = pending.lastOrNull();
         if (highestPending != null) state.put("highestPendingOffset", highestPending);
       }
     } else {
@@ -426,14 +424,6 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     }
 
     return state;
-  }
-
-  private static Long safeLast(final SortedSet<Long> set) {
-    try {
-      return set.isEmpty() ? null : set.last();
-    } catch (final NoSuchElementException e) {
-      return null;
-    }
   }
 
   /// Returns overall statistics about all partitions being managed.
@@ -448,7 +438,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     allPartitions.addAll(highestProcessedOffsets.keySet());
     stats.put("partitionCount", allPartitions.size());
 
-    stats.put("totalPendingOffsets", pendingOffsets.values().stream().mapToInt(SortedSet::size).sum());
+    stats.put("totalPendingOffsets", pendingOffsets.values().stream().mapToInt(PendingOffsetSet::size).sum());
     stats.put("totalProcessedPartitions", highestProcessedOffsets.size());
     stats.put("managerState", state.get().name());
 
@@ -520,7 +510,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
         final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
         partitions.forEach(partition -> {
           final var pending = pendingOffsets.get(partition);
-          final var lowestPending = pending != null ? safeFirst(pending) : null;
+          final var lowestPending = pending != null ? pending.firstOrNull() : null;
           if (lowestPending != null) {
             offsetsToCommit.put(partition, new OffsetAndMetadata(lowestPending));
           } else {
