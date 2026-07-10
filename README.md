@@ -225,16 +225,20 @@ shows you everything that exists:
 | `.peek(Consumer<T> sideEffect)`                                    | observe without modifying (logging, metrics)                                                 |
 | `.when(Predicate, ifTrue, ifFalse)`                                | branch the pipeline conditionally                                                            |
 | `.skipBytes(int n)`                                                | drop a leading wire-format prefix (Confluent: 5 for Avro, 6 for Proto)                       |
+| `.withSchemaRegistry(SchemaResolver r)`                            | Confluent SR per-record schema auto-lookup (Avro only; don't pair with `.skipBytes`)         |
 | `.withRetry(int max, Duration backoff)`                            | configure retry behavior                                                                     |
 | `.withBackpressure()` / `.withBackpressure(high, low)`             | enable backpressure with default or explicit watermarks                                      |
 | `.withProcessingMode(ProcessingMode)`                              | `SEQUENTIAL` (per-partition serial), `PARALLEL` (default), or `KEY_ORDERED` (per-key serial) |
 | `.withKeyOrderedMaxKeys(int)`                                      | LRU cap on distinct keys in `KEY_ORDERED` (default 10,000)                                   |
-| `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate exceeds threshold (see below)                        |
+| `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate trips (see [Circuit breaker](#9-circuit-breaker))    |
 | `.withTracer(Tracer t)`                                            | propagate W3C trace context through Kafka headers                                            |
 | `.withDeadLetterTopic(String)`                                     | route failed records to a DLQ topic after retries are exhausted                              |
 | `.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | custom failure handler (DB, alerting, anything not a Kafka topic)                            |
 | `.withMetrics(ConsumerMetrics m)`                                  | wire OTel or custom metrics (default `ConsumerMetrics.noop()`)                               |
 | `.withPollTimeout(Duration d)`                                     | override Kafka poll timeout (default 100ms)                                                  |
+| `.onFiltered(Runnable observer)`                                   | observe intentional filtering (an operator returned null) — visibility only                  |
+| `.onFailed(Consumer<Throwable> observer)`                          | observe pipeline failures — doesn't suppress retry / DLQ / error-handler flow                |
+| `.peekResult(Consumer<Result<T>> observer)`                        | observe every `Passed` / `Filtered` / `Failed` outcome; feeds `PipelineMetricsObserver`      |
 | `.toConsole()`                                                     | terminate with the format-appropriate console sink                                           |
 | `.toCustom(MessageSink<T> sink)`                                   | terminate with your own sink                                                                 |
 | `.toMulti(MessageSink<T>... sinks)`                                | fan-out to multiple sinks                                                                    |
@@ -351,8 +355,7 @@ you are — KPipe doesn't have those.
 
 ## Architecture and reliability
 
-KPipe is a lightweight Kafka consumer library that leans hard on Java 25 features — virtual threads, sealed types,
-records, JPMS — to keep the runtime predictable.
+KPipe leans hard on Java 25 features — virtual threads, sealed types, records, JPMS — to keep the runtime predictable.
 
 ### 1. Modular architecture (JPMS)
 
@@ -649,10 +652,11 @@ try (final var resolver = new CachedSchemaResolver(
 }
 ```
 
-The factory above is equivalent to `KPipe.avro("orders", props, AvroFormat.withRegistry(resolver))`. The format reads
-the envelope per record. Do **not** combine `withSchemaRegistry(...)` with `skipBytes(5)` — the format already consumes
-the envelope. Only the first record carrying a new schema ID costs an HTTP round trip; cache hit / miss / size counters
-are exposed on the resolver and can be bound to OTel (see [Observability](#observability)).
+The factory above is equivalent to `KPipe.avro("orders", props, AvroFormat.withRegistry(resolver))`; the fluent
+`.withSchemaRegistry(resolver)` setter does the same on an existing Avro stream. Do **not** combine either with
+`.skipBytes(5)` — the format already consumes the envelope. Only the first record carrying a new schema ID costs an HTTP
+round trip; cache hit / miss / size counters are exposed on the resolver and can be bound to OTel (see
+[Observability](#observability)).
 
 The static-mode path is still supported for shops with strict append-only evolution who fetch the schema once at
 startup: `resolver.lookupBySubjectVersion("orders-value", "latest")` → `AvroFormat.of(schemaJson)`, paired with
@@ -986,7 +990,7 @@ the explicit Builder and metrics paths.
 
 ## Testing
 
-There's a `docker-compose.yaml` for spinning up Kafka, Zookeeper, and Confluent Schema Registry locally.
+There's a `docker-compose.yaml` for spinning up Kafka (KRaft mode) and Confluent Schema Registry locally.
 
 ```bash
 # Format code and build all modules
@@ -1061,8 +1065,8 @@ For statically typed bulk registration, define operators as an enum implementing
 
 ```java
 public enum StandardProcessors implements UnaryOperator<Map<String, Object>> {
-  TIMESTAMP(JsonMessageProcessor.addTimestampOperator("ts")),
-  SOURCE(JsonMessageProcessor.addFieldOperator("src", "app"));
+  TIMESTAMP(msg -> { msg.put("ts", System.currentTimeMillis()); return msg; }),
+  SOURCE(Operators.addField("src", "app"));
 
   private final UnaryOperator<Map<String, Object>> op;
 
