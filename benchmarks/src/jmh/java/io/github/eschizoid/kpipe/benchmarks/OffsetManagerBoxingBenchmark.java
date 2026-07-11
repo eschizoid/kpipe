@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import io.github.eschizoid.kpipe.consumer.ConsumerCommand;
 import io.github.eschizoid.kpipe.consumer.KafkaOffsetManager;
 import java.util.ArrayList;
@@ -84,10 +86,10 @@ public class OffsetManagerBoxingBenchmark {
   @Param({ "8" })
   public int partitions;
 
-  private KafkaOffsetManager<String> offsetManager;
+  private KafkaOffsetManager offsetManager;
   private Queue<ConsumerCommand> commandQueue;
-  private MockConsumer<String, byte[]> mockConsumer;
-  private ConsumerRecord<String, byte[]>[] records;
+  private MockConsumer<byte[], byte[]> mockConsumer;
+  private ConsumerRecord<byte[], byte[]>[] records;
 
   @Setup(Level.Trial)
   @SuppressWarnings("unchecked")
@@ -101,21 +103,21 @@ public class OffsetManagerBoxingBenchmark {
     for (final var tp : assignment) beginningOffsets.put(tp, 0L);
     mockConsumer.updateBeginningOffsets(beginningOffsets);
 
-    offsetManager = KafkaOffsetManager.<String>builder(mockConsumer).withCommandQueue(commandQueue).build();
+    offsetManager = KafkaOffsetManager.builder(mockConsumer).withCommandQueue(commandQueue).build();
     offsetManager.start();
 
     // Pre-build the synthetic record set so the bench loop does no allocation outside the
     // manager — only the cache-hit path is on the timed path.
-    records = (ConsumerRecord<String, byte[]>[]) new ConsumerRecord<?, ?>[RECORDS_PER_INVOCATION];
+    records = (ConsumerRecord<byte[], byte[]>[]) new ConsumerRecord<?, ?>[RECORDS_PER_INVOCATION];
     for (var i = 0; i < RECORDS_PER_INVOCATION; i++) {
-      records[i] = new ConsumerRecord<>(TOPIC, i % partitions, i, "k-" + i, PAYLOAD);
+      records[i] = new ConsumerRecord<>(TOPIC, i % partitions, i, ("k-" + i).getBytes(UTF_8), PAYLOAD);
     }
 
     // Warm the cache: one track per partition populates `topicPartitionCache` so the
     // measurement loop only exercises the fast path.
     for (var p = 0; p < partitions; p++) {
-      offsetManager.trackOffset(new ConsumerRecord<>(TOPIC, p, -1L, "warmup", PAYLOAD));
-      offsetManager.markOffsetProcessed(new ConsumerRecord<>(TOPIC, p, -1L, "warmup", PAYLOAD));
+      offsetManager.trackOffset(new ConsumerRecord<>(TOPIC, p, -1L, "warmup".getBytes(UTF_8), PAYLOAD));
+      offsetManager.markOffsetProcessed(new ConsumerRecord<>(TOPIC, p, -1L, "warmup".getBytes(UTF_8), PAYLOAD));
     }
   }
 

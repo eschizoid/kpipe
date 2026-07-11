@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,19 +17,19 @@ import org.junit.jupiter.api.Test;
 /// consumer built-but-never-started leaks it.
 class ParallelDispatcherTest {
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>("test-topic", 0, offset, "k", new byte[0]);
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>("test-topic", 0, offset, "k".getBytes(UTF_8), new byte[0]);
   }
 
-  private static ParallelDispatcher<String> newDispatcher(final AtomicInteger rejectCount) {
+  private static ParallelDispatcher newDispatcher(final AtomicInteger rejectCount) {
     return newDispatcher(rejectCount, Duration.ofSeconds(1));
   }
 
-  private static ParallelDispatcher<String> newDispatcher(
+  private static ParallelDispatcher newDispatcher(
     final AtomicInteger rejectCount,
     final Duration terminationTimeout
   ) {
-    return new ParallelDispatcher<>((_, _) -> rejectCount.incrementAndGet(), terminationTimeout);
+    return new ParallelDispatcher((_, _) -> rejectCount.incrementAndGet(), terminationTimeout);
   }
 
   @Test

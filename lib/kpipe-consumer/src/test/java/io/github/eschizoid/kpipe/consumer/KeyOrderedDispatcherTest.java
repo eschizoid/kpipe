@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -31,13 +33,13 @@ import org.junit.jupiter.api.Test;
 /// records and a `processTask` that records the per-key call order; no Kafka, no consumer.
 class KeyOrderedDispatcherTest {
 
-  private static ConsumerRecord<String, byte[]> recordWithKey(final String key, final long offset) {
-    return new ConsumerRecord<>("test-topic", 0, offset, key, new byte[0]);
+  private static ConsumerRecord<byte[], byte[]> recordWithKey(final String key, final long offset) {
+    return new ConsumerRecord<>("test-topic", 0, offset, key.getBytes(UTF_8), new byte[0]);
   }
 
   @Test
   void recordsWithSameKeyProcessInOrder() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var observed = new ArrayList<Long>();
     final var latch = new CountDownLatch(5);
 
@@ -64,7 +66,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void recordsWithDifferentKeysProcessInParallel() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var startedConcurrently = new CountDownLatch(2);
     final var allowFinish = new CountDownLatch(1);
     final var finished = new CountDownLatch(2);
@@ -95,7 +97,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void nullKeysSerializeThroughSentinelQueue() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var observed = new ArrayList<Long>();
     final var latch = new CountDownLatch(3);
 
@@ -122,7 +124,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void pendingCountReflectsBufferedAndInFlight() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var allowFinish = new CountDownLatch(1);
     final var firstStarted = new CountDownLatch(1);
 
@@ -158,7 +160,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void onCompleteFiresAfterEveryRecord() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var completed = new AtomicInteger();
     final var processed = new AtomicInteger();
     final var latch = new CountDownLatch(10);
@@ -187,7 +189,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void processTaskThatThrowsDoesNotBreakWorkerLiveness() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var processedAfterThrow = new CountDownLatch(1);
 
     // First task throws; second task must still execute.
@@ -206,7 +208,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void evictionFreesLruEmptyQueueUnderCap() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(2);
+    final var dispatcher = new KeyOrderedDispatcher(2);
     final var latches = new HashMap<String, CountDownLatch>();
     for (final var k : List.of("a", "b")) {
       final var done = new CountDownLatch(1);
@@ -226,13 +228,13 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void rejectsNonPositiveMaxKeys() {
-    assertThrows(IllegalArgumentException.class, () -> new KeyOrderedDispatcher<String>(0));
-    assertThrows(IllegalArgumentException.class, () -> new KeyOrderedDispatcher<String>(-1));
+    assertThrows(IllegalArgumentException.class, () -> new KeyOrderedDispatcher(0));
+    assertThrows(IllegalArgumentException.class, () -> new KeyOrderedDispatcher(-1));
   }
 
   @Test
   void closeReturnsCleanlyWhenIdle() {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     // No work dispatched, close should be a no-op (or near-no-op).
     dispatcher.close();
     // Calling close again should also be safe.
@@ -241,7 +243,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void onCompleteExceptionsAreSwallowed() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var nextProcessed = new CountDownLatch(1);
 
     // First record's onComplete throws — must not break the worker.
@@ -260,7 +262,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void manyKeysWithDistinctOrderingPreserveTheirIndividualOrder() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var keys = 50;
     final var recordsPerKey = 20;
     // ConcurrentHashMap + CopyOnWriteArrayList because workers from many keys read+write
@@ -302,7 +304,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void topKeyQueueDepthsReturnsDeepestFirstAndCapsAtN() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var allowFinish = new CountDownLatch(1);
     final var firstStarted = new CountDownLatch(3);
 
@@ -350,7 +352,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void topKeyQueueDepthsRejectsNonPositive() {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     assertThrows(IllegalArgumentException.class, () -> dispatcher.topKeyQueueDepths(0));
     assertThrows(IllegalArgumentException.class, () -> dispatcher.topKeyQueueDepths(-1));
     dispatcher.close();
@@ -361,7 +363,7 @@ class KeyOrderedDispatcherTest {
     // Cap=2. Hold both keys' workers blocked, then attempt to dispatch a third key — that call
     // must stall in allocateNewQueue. Releasing one of the blocked workers must let the third
     // dispatch complete.
-    final var dispatcher = new KeyOrderedDispatcher<String>(2);
+    final var dispatcher = new KeyOrderedDispatcher(2);
     final var workerA = new CountDownLatch(1);
     final var workerB = new CountDownLatch(1);
     final var workerAStarted = new CountDownLatch(1);
@@ -420,7 +422,7 @@ class KeyOrderedDispatcherTest {
     // logical key arrive as different array instances. Without content-based normalization
     // (ByteBuffer.wrap), the LRU map would treat them as distinct keys and the records would
     // run concurrently — silently breaking the KEY_ORDERED contract.
-    final var dispatcher = new KeyOrderedDispatcher<byte[]>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var keyContent = "user-A".getBytes();
     final var observed = new CopyOnWriteArrayList<long[]>();
     final var latch = new CountDownLatch(4);
@@ -463,7 +465,7 @@ class KeyOrderedDispatcherTest {
 
   @Test
   void topKeyQueueDepthsReturnsNullForTheNullKeyedQueue() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var allowFinish = new CountDownLatch(1);
     final var firstStarted = new CountDownLatch(2);
 
@@ -512,7 +514,7 @@ class KeyOrderedDispatcherTest {
     // dispatch, the dispatcher's internal LRU key identity must NOT change (otherwise the
     // map entry becomes unreachable and the queue leaks). normalizeKey clones the bytes
     // before wrapping, so the wrapper holds a snapshot the caller can't alter.
-    final var dispatcher = new KeyOrderedDispatcher<byte[]>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var keyContent = "user-A".getBytes();
     final var allowFinish = new CountDownLatch(1);
     final var firstStarted = new CountDownLatch(1);
@@ -560,7 +562,7 @@ class KeyOrderedDispatcherTest {
     // normal dispatch to skip its work. Skipping would orphan the offset that
     // KPipeConsumer.processRecords already tracked on the offset manager, leaving pending
     // offsets that no worker ever marks processed.
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var processed = new CountDownLatch(1);
 
     dispatcher.signalShutdown();
@@ -579,7 +581,7 @@ class KeyOrderedDispatcherTest {
     // empty+idle queue can be evicted to make room — abandoning it would orphan its already
     // tracked offset and force avoidable reprocessing. We only give up when stalling (no
     // evictable queue) is the only option.
-    final var dispatcher = new KeyOrderedDispatcher<String>(2);
+    final var dispatcher = new KeyOrderedDispatcher(2);
     final var keyADone = new CountDownLatch(1);
     final var keyBStarted = new CountDownLatch(1);
     final var allowBFinish = new CountDownLatch(1);
@@ -622,7 +624,7 @@ class KeyOrderedDispatcherTest {
     // user code (here a long `Thread.sleep`) get interrupted when close() runs past its
     // drain timeout. The interrupt-aware sleep throws InterruptedException → the worker
     // exits without completing the sleep.
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var started = new CountDownLatch(1);
     final var wasInterrupted = new AtomicBoolean(false);
     final var taskExited = new CountDownLatch(1);
@@ -657,7 +659,7 @@ class KeyOrderedDispatcherTest {
     // thread spinning in the saturation yield-loop. This is what KPipeConsumer.close() relies
     // on to call signalShutdown() BEFORE waitForInFlightDrain (so drain doesn't wait
     // indefinitely on a stuck pending counter).
-    final var dispatcher = new KeyOrderedDispatcher<String>(2);
+    final var dispatcher = new KeyOrderedDispatcher(2);
     final var workerA = new CountDownLatch(1);
     final var workerB = new CountDownLatch(1);
     final var workerAStarted = new CountDownLatch(1);
@@ -725,7 +727,7 @@ class KeyOrderedDispatcherTest {
     // Diagnostic snapshot must return a defensive byte[] copy for byte[]-keyed queues so a
     // caller can't mutate the internal ByteBuffer (position/limit/backing array) and corrupt
     // the dispatcher's LRU.
-    final var dispatcher = new KeyOrderedDispatcher<byte[]>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var allowFinish = new CountDownLatch(1);
     final var started = new CountDownLatch(1);
     final var originalKey = "user-A".getBytes();
@@ -770,7 +772,7 @@ class KeyOrderedDispatcherTest {
     // fire per dispatcher instance, even under sustained or repeated saturation. Without
     // this, a stuck producer could flood logs at the rate of the consumer's poll loop.
     // We capture System.Logger output via the JUL handler the System.Logger bridges to.
-    final var dispatcher = new KeyOrderedDispatcher<String>(2);
+    final var dispatcher = new KeyOrderedDispatcher(2);
     final var julLogger = Logger.getLogger(KeyOrderedDispatcher.class.getName());
     final var captured = new CopyOnWriteArrayList<LogRecord>();
     final var handler = new Handler() {
@@ -914,7 +916,7 @@ class KeyOrderedDispatcherTest {
     // virtual thread to drain it — not silently enqueue against the now-dead worker (which
     // would leak the record forever). We verify the handshake by recording the worker thread
     // identity for each record and asserting the second batch ran on a different thread.
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var firstThread = new CopyOnWriteArrayList<Thread>();
     final var secondThread = new CopyOnWriteArrayList<Thread>();
     final var firstDone = new CountDownLatch(1);

@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -62,7 +64,7 @@ class MultiTopicUnroutedPolicyTest {
   /// call must not clear the partitions the test pre-assigns. Records are delivered from whatever
   /// the test `assign`s + `addRecord`s, independent of the subscribed topic set, which is exactly
   /// the rebalance-race shape: a record lands for a topic the routing map never registered.
-  private static MockConsumer<String, byte[]> newMockConsumer() {
+  private static MockConsumer<byte[], byte[]> newMockConsumer() {
     return new MockConsumer<>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
@@ -75,12 +77,12 @@ class MultiTopicUnroutedPolicyTest {
   /// Counts every `markOffsetProcessed` call per `topic-partition-offset`, delegating everything
   /// else to a real [KafkaOffsetManager] so commit semantics stay genuine. The recorded marks are
   /// the ground truth for "the unrouted record's offset advanced — it won't be re-fetched forever."
-  private static final class RecordingOffsetManager<K> implements OffsetManager<K> {
+  private static final class RecordingOffsetManager implements OffsetManager {
 
-    private final OffsetManager<K> delegate;
+    private final OffsetManager delegate;
     private final Map<String, AtomicInteger> markCounts;
 
-    private RecordingOffsetManager(final OffsetManager<K> delegate, final Map<String, AtomicInteger> markCounts) {
+    private RecordingOffsetManager(final OffsetManager delegate, final Map<String, AtomicInteger> markCounts) {
       this.delegate = delegate;
       this.markCounts = markCounts;
     }
@@ -90,24 +92,24 @@ class MultiTopicUnroutedPolicyTest {
     }
 
     @Override
-    public OffsetManager<K> start() {
+    public OffsetManager start() {
       delegate.start();
       return this;
     }
 
     @Override
-    public OffsetManager<K> stop() {
+    public OffsetManager stop() {
       delegate.stop();
       return this;
     }
 
     @Override
-    public void trackOffset(final ConsumerRecord<K, byte[]> record) {
+    public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {
       delegate.trackOffset(record);
     }
 
     @Override
-    public void markOffsetProcessed(final ConsumerRecord<K, byte[]> record) {
+    public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       markCounts.computeIfAbsent(key(record), k -> new AtomicInteger()).incrementAndGet();
       delegate.markOffsetProcessed(record);
     }
@@ -172,8 +174,8 @@ class MultiTopicUnroutedPolicyTest {
     beginning.put(unroutedTp, 0L);
     mock.updateBeginningOffsets(beginning);
 
-    mock.addRecord(new ConsumerRecord<>(ROUTED_TOPIC, 0, 0L, "k-routed", "routed-payload".getBytes()));
-    mock.addRecord(new ConsumerRecord<>(UNROUTED_TOPIC, 0, 0L, "k-unrouted", "unrouted-payload".getBytes()));
+    mock.addRecord(new ConsumerRecord<>(ROUTED_TOPIC, 0, 0L, "k-routed".getBytes(UTF_8), "routed-payload".getBytes()));
+    mock.addRecord(new ConsumerRecord<>(UNROUTED_TOPIC, 0, 0L, "k-unrouted".getBytes(UTF_8), "unrouted-payload".getBytes()));
 
     final var end = new HashMap<TopicPartition, Long>();
     end.put(routedTp, 1L);
@@ -210,7 +212,7 @@ class MultiTopicUnroutedPolicyTest {
       return v;
     });
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(consumerProps())
       .withPipelines(Map.of(ROUTED_TOPIC, routedPipeline))
       .withConsumer(() -> mock)
@@ -261,20 +263,20 @@ class MultiTopicUnroutedPolicyTest {
     assertEquals(1, routedProcessed.get(), "no double-processing after close");
   }
 
-  private static OffsetManager<String> wrapWithRecorder(
-    final Consumer<String, byte[]> consumer,
+  private static OffsetManager wrapWithRecorder(
+    final Consumer<byte[], byte[]> consumer,
     final Queue<ConsumerCommand> queue,
     final Map<String, AtomicInteger> markCounts
   ) {
-    final var real = KafkaOffsetManager.<String>builder(consumer).withCommandQueue(queue).build();
-    return new RecordingOffsetManager<>(real, markCounts);
+    final var real = KafkaOffsetManager.builder(consumer).withCommandQueue(queue).build();
+    return new RecordingOffsetManager(real, markCounts);
   }
 
   /// Mixing `withTopic` with `withPipelines` is a config error: the topic set is derived from the
   /// pipeline-map keys, so an explicit topic call is ambiguous and rejected at `build()`.
   @Test
   void mixingWithTopicAndWithPipelinesIsRejected() {
-    final var builder = KPipeConsumer.<String>builder()
+    final var builder = KPipeConsumer.builder()
       .withProperties(consumerProps())
       .withTopic(ROUTED_TOPIC)
       .withPipelines(Map.of(ROUTED_TOPIC, TestPipelines.identity()));
@@ -290,7 +292,7 @@ class MultiTopicUnroutedPolicyTest {
   /// conflict with `withPipelines`, not just the single-topic form.
   @Test
   void mixingWithTopicsAndWithPipelinesIsRejected() {
-    final var builder = KPipeConsumer.<String>builder()
+    final var builder = KPipeConsumer.builder()
       .withProperties(consumerProps())
       .withTopics(ROUTED_TOPIC, "another-topic")
       .withPipelines(Map.of(ROUTED_TOPIC, TestPipelines.identity()));

@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -64,30 +66,30 @@ class BatchPipelineWrapperCoverageContractTest {
   /// Records every callback invocation in order so tests can assert both the *set* of processed
   /// vs failed records and the *relative ordering* between callback events and any other
   /// external close-style events (see [#closeFlushesBufferedRecordsBeforeOffsetManagerClose]).
-  private static final class RecordingCallbacks implements BatchPipelineWrapper.BatchCallbacks<String> {
+  private static final class RecordingCallbacks implements BatchPipelineWrapper.BatchCallbacks {
 
-    final CopyOnWriteArrayList<ConsumerRecord<String, byte[]>> processed = new CopyOnWriteArrayList<>();
-    final CopyOnWriteArrayList<ConsumerRecord<String, byte[]>> failed = new CopyOnWriteArrayList<>();
+    final CopyOnWriteArrayList<ConsumerRecord<byte[], byte[]>> processed = new CopyOnWriteArrayList<>();
+    final CopyOnWriteArrayList<ConsumerRecord<byte[], byte[]>> failed = new CopyOnWriteArrayList<>();
     final CopyOnWriteArrayList<Exception> failureCauses = new CopyOnWriteArrayList<>();
     final CopyOnWriteArrayList<String> events = new CopyOnWriteArrayList<>();
 
     @Override
-    public void markProcessed(final ConsumerRecord<String, byte[]> record) {
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
       processed.add(record);
       events.add("markProcessed:" + record.offset());
     }
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<String, byte[]> record, final Exception cause) {
+    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
       failed.add(record);
       failureCauses.add(cause);
       events.add("onBatchFailure:" + record.offset());
     }
   }
 
-  private static ConsumerRecord<String, byte[]> record(final String topic, final long offset) {
+  private static ConsumerRecord<byte[], byte[]> record(final String topic, final long offset) {
     final var bytes = Long.toString(offset).getBytes();
-    return new ConsumerRecord<>(topic, 0, offset, "k-" + offset, bytes);
+    return new ConsumerRecord<>(topic, 0, offset, ("k-" + offset).getBytes(UTF_8), bytes);
   }
 
   /// **Coverage-contract guard.** Feeds N=5 records to a wrapper whose [BatchSink] returns a
@@ -327,14 +329,14 @@ class BatchPipelineWrapperCoverageContractTest {
     // record — the sink-side latch fires earlier (the wrapper walks the snapshot after the sink
     // returns), so waiting on the callback latch is the right pin for asserting downstream state.
     final var markProcessedLatch = new CountDownLatch(1);
-    final var callbacks = new BatchPipelineWrapper.BatchCallbacks<String>() {
+    final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
       @Override
-      public void markProcessed(final ConsumerRecord<String, byte[]> record) {
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
         markProcessedLatch.countDown();
       }
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<String, byte[]> record, final Exception cause) {
+      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
         // no-op — the clean path shouldn't reach this
       }
     };

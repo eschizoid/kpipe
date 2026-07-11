@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -46,7 +48,7 @@ class DlqSendFailureTest {
   private static final String DLQ_TOPIC = "test-dlq-topic";
 
   @Mock
-  private Producer<String, byte[]> mockProducer;
+  private Producer<byte[], byte[]> mockProducer;
 
   /// A failing-DLQ-send record on the single-record error path. The record is tracked, the DLQ
   /// send is attempted and fails, so the offset must NOT be marked. It stays pending and is
@@ -54,15 +56,15 @@ class DlqSendFailureTest {
   @Test
   @SuppressWarnings("unchecked")
   void failedDlqSendDoesNotMarkOffset() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
 
     // The DLQ producer's send throws synchronously -> sendToDlq catches it and returns false.
     when(mockProducer.send(any(ProducerRecord.class))).thenThrow(new RuntimeException("dlq broker down"));
 
-    final var recorder = new RecordingOffsetManager<String>();
+    final var recorder = new RecordingOffsetManager();
 
     try (
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
@@ -105,16 +107,16 @@ class DlqSendFailureTest {
   @Test
   @SuppressWarnings("unchecked")
   void successfulDlqSendMarksOffsetProcessed() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
 
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
 
-    final var recorder = new RecordingOffsetManager<String>();
+    final var recorder = new RecordingOffsetManager();
 
     try (
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
@@ -149,8 +151,8 @@ class DlqSendFailureTest {
   void failedDlqSendOnBatchPathDoesNotMarkOffset() throws Exception {
     when(mockProducer.send(any(ProducerRecord.class))).thenThrow(new RuntimeException("dlq broker down"));
 
-    final var recorder = new RecordingOffsetManager<String>();
-    final var mock = new MockConsumer<String, byte[]>("earliest") {
+    final var recorder = new RecordingOffsetManager();
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -160,10 +162,10 @@ class DlqSendFailureTest {
     final var tp = new TopicPartition(TOPIC, 0);
     mock.assign(List.of(tp));
     mock.updateBeginningOffsets(Map.of(tp, 0L));
-    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 5L, "key", "value".getBytes(StandardCharsets.UTF_8)));
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 5L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8)));
 
     try (
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withConsumer(() -> mock)
         .withOffsetManager(recorder)
@@ -212,28 +214,28 @@ class DlqSendFailureTest {
 
   /// Minimal [OffsetManager] test double that records which offsets were tracked and which were
   /// marked processed, so the failure path's effect on the commit point can be asserted directly.
-  private static final class RecordingOffsetManager<K> implements OffsetManager<K> {
+  private static final class RecordingOffsetManager implements OffsetManager {
 
     private final List<Long> tracked = new CopyOnWriteArrayList<>();
     private final List<Long> marked = new CopyOnWriteArrayList<>();
 
     @Override
-    public OffsetManager<K> start() {
+    public OffsetManager start() {
       return this;
     }
 
     @Override
-    public OffsetManager<K> stop() {
+    public OffsetManager stop() {
       return this;
     }
 
     @Override
-    public void trackOffset(final ConsumerRecord<K, byte[]> record) {
+    public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {
       tracked.add(record.offset());
     }
 
     @Override
-    public void markOffsetProcessed(final ConsumerRecord<K, byte[]> record) {
+    public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       marked.add(record.offset());
     }
 

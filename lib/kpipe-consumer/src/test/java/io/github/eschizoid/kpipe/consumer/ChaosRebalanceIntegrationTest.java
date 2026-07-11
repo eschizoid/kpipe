@@ -180,13 +180,13 @@ class ChaosRebalanceIntegrationTest {
     return Set.copyOf(values);
   }
 
-  private KPipeConsumer<byte[]> buildConsumer(
+  private KPipeConsumer buildConsumer(
     final String topic,
     final String groupId,
     final Set<String> observed,
     final AtomicInteger observedTotal
   ) {
-    return KPipeConsumer.<byte[]>builder()
+    return KPipeConsumer.builder()
       .withProperties(consumerProperties(groupId))
       .withTopic(topic)
       .withProcessingMode(ProcessingMode.PARALLEL)

@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
@@ -44,23 +46,23 @@ class OffsetOrderingPropertyTest {
   private static final String TOPIC = "ordering-prop-topic";
 
   /// Builds a manager wired to a `MockConsumer` with a fresh command queue, started and ready.
-  private static KafkaOffsetManager<String> newManager() {
-    final var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+  private static KafkaOffsetManager newManager() {
+    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
     manager.start();
     return manager;
   }
 
-  private static ConsumerRecord<String, byte[]> record(final int partition, final long offset) {
-    return new ConsumerRecord<>(TOPIC, partition, offset, "k", "v".getBytes());
+  private static ConsumerRecord<byte[], byte[]> record(final int partition, final long offset) {
+    return new ConsumerRecord<>(TOPIC, partition, offset, "k".getBytes(UTF_8), "v".getBytes());
   }
 
-  private static long commitPoint(final KafkaOffsetManager<String> manager, final TopicPartition tp) {
+  private static long commitPoint(final KafkaOffsetManager manager, final TopicPartition tp) {
     return (long) manager.getPartitionState(tp).get("nextOffsetToCommit");
   }
 
-  private static long highestProcessed(final KafkaOffsetManager<String> manager, final TopicPartition tp) {
+  private static long highestProcessed(final KafkaOffsetManager manager, final TopicPartition tp) {
     return (long) manager.getPartitionState(tp).get("highestProcessedOffset");
   }
 

@@ -111,7 +111,7 @@ public class BatchSinkLatencyBenchmark {
   @State(Scope.Thread)
   public static class InvocationContext {
 
-    KPipeConsumer<byte[]> consumer;
+    KPipeConsumer consumer;
     CountDownLatch processedLatch;
 
     @Setup(Level.Invocation)
@@ -136,7 +136,7 @@ public class BatchSinkLatencyBenchmark {
       mockConsumer.assign(List.of(partition));
       mockConsumer.updateBeginningOffsets(Map.of(partition, 0L));
       for (int i = 0; i < RECORDS_PER_INVOCATION; i++) {
-        mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, PARTITION, i, null, JSON_PAYLOAD));
+        mockConsumer.addRecord(new ConsumerRecord<byte[], byte[]>(TOPIC, PARTITION, i, null, JSON_PAYLOAD));
       }
 
       final var nanos = trial.sinkLatencyMicros * 1_000L;
@@ -148,7 +148,7 @@ public class BatchSinkLatencyBenchmark {
 
       final var props = baseProps();
 
-      final var builder = KPipeConsumer.<byte[]>builder()
+      final var builder = KPipeConsumer.builder()
         .withProperties(props)
         .withConsumer(() -> mockConsumer)
         .withProcessingMode(ProcessingMode.SEQUENTIAL)

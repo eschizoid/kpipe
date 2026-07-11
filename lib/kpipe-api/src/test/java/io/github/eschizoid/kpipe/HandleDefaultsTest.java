@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Duration;
@@ -68,7 +69,7 @@ class HandleDefaultsTest {
     assertTrue(result.isEmpty());
     // List.of() returns an immutable empty list; pin that so a future refactor can't substitute
     // a mutable empty list and silently let callers mutate the "no key queues" return value.
-    assertThrows(UnsupportedOperationException.class, () -> result.add(Map.entry("k", 1)));
+    assertThrows(UnsupportedOperationException.class, () -> result.add(Map.entry("k".getBytes(UTF_8), 1)));
     // Same type as List.of() — empty immutable list.
     assertEquals(List.of(), result);
   }

@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -52,11 +54,11 @@ public class OffsetManagerRevokeRaceJCStressTest {
   private static final String TOPIC = "jcstress-topic";
   private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
 
-  private final KafkaOffsetManager<String> manager;
+  private final KafkaOffsetManager manager;
   private final ConsumerRebalanceListener rebalanceListener;
 
   public OffsetManagerRevokeRaceJCStressTest() {
-    final var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
     manager.start();
@@ -83,7 +85,7 @@ public class OffsetManagerRevokeRaceJCStressTest {
     r.r2 = ((int) partitionState.get("pendingCount")) > 0;
   }
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>(TOPIC, 0, offset, "k", "v".getBytes());
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, "k".getBytes(UTF_8), "v".getBytes());
   }
 }

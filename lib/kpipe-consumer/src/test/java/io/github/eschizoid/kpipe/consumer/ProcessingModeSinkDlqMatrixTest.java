@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -82,25 +84,25 @@ class ProcessingModeSinkDlqMatrixTest {
 
   /// Records every `markOffsetProcessed` offset so we can assert the commit offset would advance
   /// past every seeded record (no re-fetch loop).
-  private static final class MarkRecordingOffsetManager implements OffsetManager<String> {
+  private static final class MarkRecordingOffsetManager implements OffsetManager {
 
     final Set<Long> markedOffsets = ConcurrentHashMap.newKeySet();
 
     @Override
-    public OffsetManager<String> start() {
+    public OffsetManager start() {
       return this;
     }
 
     @Override
-    public OffsetManager<String> stop() {
+    public OffsetManager stop() {
       return this;
     }
 
     @Override
-    public void trackOffset(final ConsumerRecord<String, byte[]> record) {}
+    public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
 
     @Override
-    public void markOffsetProcessed(final ConsumerRecord<String, byte[]> record) {
+    public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       markedOffsets.add(record.offset());
     }
 
@@ -126,8 +128,8 @@ class ProcessingModeSinkDlqMatrixTest {
     public void close() {}
   }
 
-  private static MockConsumer<String, byte[]> seeded(final int recordCount) {
-    final var mock = new MockConsumer<String, byte[]>("earliest") {
+  private static MockConsumer<byte[], byte[]> seeded(final int recordCount) {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -139,7 +141,7 @@ class ProcessingModeSinkDlqMatrixTest {
     mock.updateBeginningOffsets(Map.of(tp, 0L));
     for (int i = 0; i < recordCount; i++) {
       // Value encodes the offset so the pipeline can decide pass/fail per record.
-      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes(StandardCharsets.UTF_8)));
+      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes(StandardCharsets.UTF_8)));
     }
     mock.updateEndOffsets(Map.of(tp, (long) recordCount));
     return mock;
@@ -153,12 +155,12 @@ class ProcessingModeSinkDlqMatrixTest {
   /// A DLQ producer that records every send into a concurrent list and completes the future, so a
   /// started consumer's synchronous DLQ send succeeds and we can read back which offsets parked.
   @SuppressWarnings("unchecked")
-  private static Producer<String, byte[]> recordingDlqProducer(final List<Long> dlqOffsets) {
-    final Producer<String, byte[]> producer = Mockito.mock(Producer.class);
+  private static Producer<byte[], byte[]> recordingDlqProducer(final List<Long> dlqOffsets) {
+    final Producer<byte[], byte[]> producer = Mockito.mock(Producer.class);
     Mockito.lenient()
       .when(producer.send(Mockito.any(ProducerRecord.class)))
       .thenAnswer(inv -> {
-        final ProducerRecord<String, byte[]> rec = inv.getArgument(0);
+        final ProducerRecord<byte[], byte[]> rec = inv.getArgument(0);
         dlqOffsets.add(offsetOf(rec.value()));
         return CompletableFuture.completedFuture(Mockito.mock(RecordMetadata.class));
       });
@@ -227,7 +229,7 @@ class ProcessingModeSinkDlqMatrixTest {
     final var mock = seeded(RECORDS);
     final MessageSink<byte[]> sink = v -> sinkSaw.add(offsetOf(v));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props())
       .withTopic(TOPIC)
       .withProcessingMode(mode)
@@ -271,7 +273,7 @@ class ProcessingModeSinkDlqMatrixTest {
     final var manager = new MarkRecordingOffsetManager();
     final var mock = seeded(RECORDS);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props())
       .withTopic(TOPIC)
       .withProcessingMode(mode)
@@ -321,7 +323,7 @@ class ProcessingModeSinkDlqMatrixTest {
     final var mock = seeded(RECORDS);
     final var dlqProducer = recordingDlqProducer(dlqOffsets);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props())
       .withTopic(TOPIC)
       .withProcessingMode(mode)
@@ -395,7 +397,7 @@ class ProcessingModeSinkDlqMatrixTest {
       return new BatchResult(succeeded, failed);
     };
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props())
       .withBatchPipeline(TOPIC, TestPipelines.sideEffect(v -> v), batchSink, BatchPolicy.ofSize(5))
       .withProcessingMode(mode)
@@ -447,7 +449,7 @@ class ProcessingModeSinkDlqMatrixTest {
     final var dlqProducer = recordingDlqProducer(dlqOffsets);
     final var attempts = new ConcurrentHashMap<Long, AtomicInteger>();
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props())
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.PARALLEL)

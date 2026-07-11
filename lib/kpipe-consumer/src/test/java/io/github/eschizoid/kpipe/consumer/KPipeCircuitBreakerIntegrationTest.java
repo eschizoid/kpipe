@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,7 +57,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var mc = buildMockConsumer(12);
     final var controller = new CircuitBreakerController(0.5, 5, Duration.ofSeconds(30));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
@@ -101,7 +103,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var mc = buildMockConsumer(12);
     final var controller = new CircuitBreakerController(0.5, 5, Duration.ofSeconds(30));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withBatchPipeline(
@@ -136,7 +138,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var mc = buildMockConsumer(6);
     final var controller = new CircuitBreakerController(0.5, 5, Duration.ofMillis(300));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
@@ -173,7 +175,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var processed = new AtomicInteger(0);
     final var FAIL_UNTIL = 5; // first 5 records fail to trip, rest succeed
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
@@ -211,7 +213,7 @@ class KPipeCircuitBreakerIntegrationTest {
     final var controller = new CircuitBreakerController(0.5, 10, Duration.ofSeconds(30));
     final var processed = new AtomicInteger(0);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
@@ -241,7 +243,7 @@ class KPipeCircuitBreakerIntegrationTest {
   void breakerDisabledWhenNotConfiguredIsZeroCost() throws InterruptedException {
     // A consumer with no CB should have CB metrics that stay at zero AND should never pause.
     final var mc = buildMockConsumer(5);
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
@@ -263,8 +265,8 @@ class KPipeCircuitBreakerIntegrationTest {
     consumer.close();
   }
 
-  private MockConsumer<String, byte[]> buildMockConsumer(final int recordCount) {
-    final var mc = new MockConsumer<String, byte[]>("earliest") {
+  private MockConsumer<byte[], byte[]> buildMockConsumer(final int recordCount) {
+    final var mc = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -274,7 +276,7 @@ class KPipeCircuitBreakerIntegrationTest {
     mc.assign(List.of(PARTITION));
     mc.updateBeginningOffsets(Map.of(PARTITION, 0L));
     for (int i = 0; i < recordCount; i++) {
-      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
+      mc.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes()));
     }
     return mc;
   }

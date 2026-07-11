@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -68,7 +70,7 @@ public class DispatcherPendingCountJCStressTest {
 
   private static final String TOPIC = "jcstress-topic";
 
-  private final ParallelDispatcher<String> dispatcher = new ParallelDispatcher<>((_, _) -> {}, Duration.ofSeconds(5));
+  private final ParallelDispatcher dispatcher = new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(5));
   private final CountDownLatch normalDone = new CountDownLatch(1);
   private final CountDownLatch throwDone = new CountDownLatch(1);
 
@@ -114,7 +116,7 @@ public class DispatcherPendingCountJCStressTest {
     }
   }
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>(TOPIC, 0, offset, "k", new byte[0]);
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, "k".getBytes(UTF_8), new byte[0]);
   }
 }

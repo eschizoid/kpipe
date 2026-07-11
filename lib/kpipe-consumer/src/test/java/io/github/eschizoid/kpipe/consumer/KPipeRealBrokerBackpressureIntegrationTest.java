@@ -84,7 +84,7 @@ class KPipeRealBrokerBackpressureIntegrationTest {
     final var observed = ConcurrentHashMap.<String>newKeySet();
     final var duplicateObservations = ConcurrentHashMap.<String>newKeySet();
 
-    final var consumer = KPipeConsumer.<byte[]>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(consumerProperties(groupId))
       .withTopic(topic)
       .withProcessingMode(ProcessingMode.PARALLEL)

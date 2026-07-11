@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -21,18 +23,18 @@ class KPipeInterruptTest {
   private Function<byte[], byte[]> processor;
 
   @Mock
-  private KafkaConsumer<String, byte[]> mockConsumer;
+  private KafkaConsumer<byte[], byte[]> mockConsumer;
 
   @Mock
   private MessageSink<byte[]> messageSink;
 
   @Mock
-  private KPipeConsumer.ErrorHandler<String> errorHandler;
+  private KPipeConsumer.ErrorHandler errorHandler;
 
   @Mock
-  private KafkaOffsetManager<String> offsetManager;
+  private KafkaOffsetManager offsetManager;
 
-  private KPipeConsumer<String> createConsumer(
+  private KPipeConsumer createConsumer(
     final Queue<ConsumerCommand> commandQueue,
     final int maxRetries,
     final Duration backoff
@@ -43,7 +45,7 @@ class KPipeInterruptTest {
     props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
     props.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
 
-    return KPipeConsumer.<String>builder()
+    return KPipeConsumer.builder()
       .withProperties(props)
       .withTopic("test-topic")
       .withPipeline(
@@ -65,7 +67,7 @@ class KPipeInterruptTest {
   void interruptDuringRetryShouldNotMarkOffsetAsProcessed() throws Exception {
     final var topic = "test-topic";
     final var value = "value".getBytes();
-    final var record = new ConsumerRecord<>(topic, 0, 123L, "key", value);
+    final var record = new ConsumerRecord<>(topic, 0, 123L, "key".getBytes(UTF_8), value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
 
     final var consumer = createConsumer(commandQueue, 1, Duration.ofMillis(1000));
@@ -98,7 +100,7 @@ class KPipeInterruptTest {
   void interruptionRelatedExceptionShouldNotMarkOffsetAsProcessed() throws Exception {
     final var topic = "test-topic";
     final var value = "value".getBytes();
-    final var record = new ConsumerRecord<>(topic, 0, 456L, "key", value);
+    final var record = new ConsumerRecord<>(topic, 0, 456L, "key".getBytes(UTF_8), value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 
@@ -130,7 +132,7 @@ class KPipeInterruptTest {
   void terminalNonInterruptFailureShouldReportAndMarkOffset() {
     final var topic = "test-topic";
     final var value = "value".getBytes();
-    final var record = new ConsumerRecord<>(topic, 0, 789L, "key", value);
+    final var record = new ConsumerRecord<>(topic, 0, 789L, "key".getBytes(UTF_8), value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 
@@ -148,7 +150,7 @@ class KPipeInterruptTest {
     final var topic = "test-topic";
     final var value = "value".getBytes();
     final var processed = "processed".getBytes();
-    final var record = new ConsumerRecord<>(topic, 0, 999L, "key", value);
+    final var record = new ConsumerRecord<>(topic, 0, 999L, "key".getBytes(UTF_8), value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
 

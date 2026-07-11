@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.LinkedHashSet;
@@ -45,7 +47,7 @@ class OffsetInvariantPropertyTest {
 
   @Property(tries = 200)
   void commitPointNeverPassesAGap(@ForAll("operationSequences") final List<Op> ops) {
-    final var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
     manager.start();
@@ -56,7 +58,7 @@ class OffsetInvariantPropertyTest {
       var highestMarked = -1L;
 
       for (final var op : ops) {
-        final var record = new ConsumerRecord<>(TOPIC, 0, op.offset(), "k", "v".getBytes());
+        final var record = new ConsumerRecord<>(TOPIC, 0, op.offset(), "k".getBytes(UTF_8), "v".getBytes());
 
         if (op.track()) {
           manager.trackOffset(record);

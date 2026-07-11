@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -14,20 +15,20 @@ import org.junit.jupiter.api.Test;
 /// both would always read 0 in SEQUENTIAL mode even while a record is actively processing.
 class SequentialDispatcherTest {
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>("test-topic", 0, offset, "k", new byte[0]);
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>("test-topic", 0, offset, "k".getBytes(UTF_8), new byte[0]);
   }
 
   @Test
   void pendingCountIsZeroWhenIdle() {
-    final var dispatcher = new SequentialDispatcher<String>();
+    final var dispatcher = new SequentialDispatcher();
     assertEquals(0L, dispatcher.pendingCount());
     dispatcher.close();
   }
 
   @Test
   void pendingCountReadsOneWhileProcessingThenZero() throws InterruptedException {
-    final var dispatcher = new SequentialDispatcher<String>();
+    final var dispatcher = new SequentialDispatcher();
     final var insideTask = new CountDownLatch(1);
     final var allowFinish = new CountDownLatch(1);
     final var observed = new AtomicLong(-1);
@@ -61,7 +62,7 @@ class SequentialDispatcherTest {
 
   @Test
   void onCompleteRunsAfterTaskRegardlessOfThrow() {
-    final var dispatcher = new SequentialDispatcher<String>();
+    final var dispatcher = new SequentialDispatcher();
     final var completed = new AtomicLong(0);
 
     try {
@@ -86,7 +87,7 @@ class SequentialDispatcherTest {
     // SequentialDispatcher has no resources to release, but the Dispatcher contract permits
     // close() to be invoked more than once (e.g. KPipeConsumer's CAS-guarded teardown can
     // race a direct user close()). Repeated calls must never throw.
-    final var dispatcher = new SequentialDispatcher<String>();
+    final var dispatcher = new SequentialDispatcher();
     dispatcher.close();
     dispatcher.close();
     dispatcher.close();
@@ -99,7 +100,7 @@ class SequentialDispatcherTest {
     // "throw on use after close" change from sneaking through without a deliberate API
     // decision — ParallelDispatcher rejects post-close dispatches, KeyOrdered abandons
     // saturation-stalled dispatches, this one runs them.
-    final var dispatcher = new SequentialDispatcher<String>();
+    final var dispatcher = new SequentialDispatcher();
     dispatcher.close();
 
     final var ran = new AtomicLong(0);

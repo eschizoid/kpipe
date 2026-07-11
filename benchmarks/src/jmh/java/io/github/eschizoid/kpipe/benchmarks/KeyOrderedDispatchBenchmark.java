@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
@@ -98,7 +100,7 @@ public class KeyOrderedDispatchBenchmark {
   @State(Scope.Thread)
   public static class InvocationContext {
 
-    KPipeConsumer<String> consumer;
+    KPipeConsumer consumer;
     CountDownLatch processedLatch;
 
     @Setup(Level.Invocation)
@@ -106,7 +108,7 @@ public class KeyOrderedDispatchBenchmark {
       processedLatch = new CountDownLatch(RECORDS_PER_INVOCATION);
 
       final var partition = new TopicPartition(TOPIC, PARTITION);
-      final var mockConsumer = new MockConsumer<String, byte[]>("earliest") {
+      final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
         @Override
         public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -116,7 +118,7 @@ public class KeyOrderedDispatchBenchmark {
       mockConsumer.assign(List.of(partition));
       mockConsumer.updateBeginningOffsets(Map.of(partition, 0L));
       for (int i = 0; i < RECORDS_PER_INVOCATION; i++) {
-        final var key = "k-" + (i % trial.distinctKeys);
+        final var key = ("k-" + (i % trial.distinctKeys)).getBytes(UTF_8);
         mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, PARTITION, i, key, PAYLOAD));
       }
 
@@ -128,7 +130,7 @@ public class KeyOrderedDispatchBenchmark {
         .toSink((final byte[] _) -> processedLatch.countDown())
         .build();
 
-      consumer = KPipeConsumer.<String>builder()
+      consumer = KPipeConsumer.builder()
         .withProperties(baseProps())
         .withConsumer(() -> mockConsumer)
         .withProcessingMode(trial.mode)
@@ -153,7 +155,7 @@ public class KeyOrderedDispatchBenchmark {
       props.put(ConsumerConfig.GROUP_ID_CONFIG, "kpipe-keyordered-bench");
       props.put(
         ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
-        "org.apache.kafka.common.serialization.StringDeserializer"
+        "org.apache.kafka.common.serialization.ByteArrayDeserializer"
       );
       props.put(
         ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,

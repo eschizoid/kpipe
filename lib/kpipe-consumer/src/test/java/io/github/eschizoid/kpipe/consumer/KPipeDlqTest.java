@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -27,7 +29,7 @@ class KPipeDlqTest {
   private static final String DLQ_TOPIC = "test-dlq-topic";
 
   @Mock
-  private Producer<String, byte[]> mockProducer;
+  private Producer<byte[], byte[]> mockProducer;
 
   @Mock
   private Producer<byte[], byte[]> mockByteProducer;
@@ -35,13 +37,13 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToDlqAfterMaxRetries() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
 
     try (
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
@@ -69,11 +71,11 @@ class KPipeDlqTest {
 
   @Test
   void shouldNotSendToDlqIfProcessingSucceedsAfterRetry() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
     final var attempts = new AtomicInteger(0);
 
     try (
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
@@ -109,7 +111,7 @@ class KPipeDlqTest {
     );
 
     try (
-      final var consumer = KPipeConsumer.<byte[]>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(nullDeserializePipeline())
@@ -136,8 +138,8 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void dlqSendIsSynchronousAndBlocksShutdownPath() throws Exception {
-    final var record1 = new ConsumerRecord<>(TOPIC, 0, 100L, "k1", "v1".getBytes(StandardCharsets.UTF_8));
-    final var record2 = new ConsumerRecord<>(TOPIC, 0, 101L, "k2", "v2".getBytes(StandardCharsets.UTF_8));
+    final var record1 = new ConsumerRecord<>(TOPIC, 0, 100L, "k1".getBytes(UTF_8), "v1".getBytes(StandardCharsets.UTF_8));
+    final var record2 = new ConsumerRecord<>(TOPIC, 0, 101L, "k2".getBytes(UTF_8), "v2".getBytes(StandardCharsets.UTF_8));
 
     // First send (record1's DLQ) throws; second send (record2's DLQ) succeeds. We exercise both
     // failure modes within the same consumer, ensuring no deadlock between them.
@@ -146,7 +148,7 @@ class KPipeDlqTest {
       .thenReturn(CompletableFuture.completedFuture(mock(RecordMetadata.class)));
 
     try (
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
@@ -180,7 +182,7 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToDlqViaBundledWithDeadLetterQueueSetter() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key", "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
@@ -189,8 +191,8 @@ class KPipeDlqTest {
     // try-with-resources because KPipeProducer implements AutoCloseable — keeps the test honest
     // even though the mock doesn't own real resources today.
     try (
-      final var kpipeProducer = KPipeProducer.<String, byte[]>builder().withProducer(mockProducer).build();
-      final var consumer = KPipeConsumer.<String>builder()
+      final var kpipeProducer = KPipeProducer.<byte[], byte[]>builder().withProducer(mockProducer).build();
+      final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
@@ -222,8 +224,8 @@ class KPipeDlqTest {
   /// accepted and then explode at first failure).
   @Test
   void withDeadLetterQueueRejectsNullArgs() {
-    try (final var kpipeProducer = KPipeProducer.<String, byte[]>builder().withProducer(mockProducer).build()) {
-      final var builder = KPipeConsumer.<String>builder().withProperties(byteProperties()).withTopic(TOPIC);
+    try (final var kpipeProducer = KPipeProducer.<byte[], byte[]>builder().withProducer(mockProducer).build()) {
+      final var builder = KPipeConsumer.builder().withProperties(byteProperties()).withTopic(TOPIC);
       assertThrows(NullPointerException.class, () -> builder.withDeadLetterQueue(null, kpipeProducer));
       assertThrows(NullPointerException.class, () -> builder.withDeadLetterQueue(DLQ_TOPIC, null));
     }

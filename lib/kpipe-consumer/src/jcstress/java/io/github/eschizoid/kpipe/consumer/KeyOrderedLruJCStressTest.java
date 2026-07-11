@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,7 +50,7 @@ public class KeyOrderedLruJCStressTest {
   private static final String TOPIC = "jcstress-topic";
   private static final String KEY = "shared-key";
 
-  private final KeyOrderedDispatcher<String> dispatcher = new KeyOrderedDispatcher<>(
+  private final KeyOrderedDispatcher dispatcher = new KeyOrderedDispatcher(
     KeyOrderedDispatcher.DEFAULT_MAX_KEYS
   );
   private final AtomicInteger tasksRun = new AtomicInteger(0);
@@ -83,7 +85,7 @@ public class KeyOrderedLruJCStressTest {
     r.r1 = tasksRun.get();
   }
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>(TOPIC, 0, offset, KEY, "v".getBytes());
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, KEY.getBytes(UTF_8), "v".getBytes());
   }
 }

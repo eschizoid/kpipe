@@ -28,7 +28,7 @@ import org.junit.jupiter.api.function.Executable;
 /// then rejects per record, with no obvious source of the misconfig.
 class KPipeConsumerBuilderValidationTest {
 
-  private static KPipeConsumer.Builder<String> builder() {
+  private static KPipeConsumer.Builder builder() {
     return KPipeConsumer.builder();
   }
 
@@ -74,7 +74,7 @@ class KPipeConsumerBuilderValidationTest {
 
   @Test
   void withKafkaProducerRawRejectsNull() {
-    assertNpeWithMessage("producer", () -> builder().withKafkaProducer((Producer<String, byte[]>) null));
+    assertNpeWithMessage("producer", () -> builder().withKafkaProducer((Producer<byte[], byte[]>) null));
   }
 
   @Test
@@ -131,9 +131,9 @@ class KPipeConsumerBuilderValidationTest {
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<String>) mock(MessagePipeline.class);
     @SuppressWarnings("unchecked")
-    final var producer = (Producer<String, byte[]>) mock(Producer.class);
+    final var producer = (Producer<byte[], byte[]>) mock(Producer.class);
     @SuppressWarnings("unchecked")
-    final var kpipeProducer = (KPipeProducer<String, byte[]>) mock(KPipeProducer.class);
+    final var kpipeProducer = (KPipeProducer<byte[], byte[]>) mock(KPipeProducer.class);
 
     final var props = new Properties();
     props.setProperty("bootstrap.servers", "localhost:9092");

@@ -118,7 +118,7 @@ class CrashRestartReprocessingIntegrationTest {
     final var observedTotalA = new AtomicInteger(0);
 
     // Hold A's offset manager so the test can commit a prefix manually and stop it at crash time.
-    final var offsetManagerA = new AtomicReference<KafkaOffsetManager<byte[]>>();
+    final var offsetManagerA = new AtomicReference<KafkaOffsetManager>();
 
     final var consumerA = buildConsumerWithManagedOffsets(topic, groupId, observedA, observedTotalA, offsetManagerA);
     final var threadA = Thread.ofVirtual().name("crash-consumer-A").start(consumerA::start);
@@ -160,7 +160,7 @@ class CrashRestartReprocessingIntegrationTest {
 
     // Consumer B: fresh instance, SAME group, resumes from the committed offset.
     final var observedTotalB = new AtomicInteger(0);
-    final var offsetManagerB = new AtomicReference<KafkaOffsetManager<byte[]>>();
+    final var offsetManagerB = new AtomicReference<KafkaOffsetManager>();
     final var consumerB = buildConsumerWithManagedOffsets(topic, groupId, observedB, observedTotalB, offsetManagerB);
     final var threadB = Thread.ofVirtual().name("crash-consumer-B").start(consumerB::start);
 
@@ -300,14 +300,14 @@ class CrashRestartReprocessingIntegrationTest {
   /// interval, captured into `offsetManagerRef` so the test commits a prefix manually and stops it
   /// to simulate a crash. The only commit is the manual one; everything A processes afterward stays
   /// uncommitted, forming the deterministic tail B re-delivers.
-  private KPipeConsumer<byte[]> buildConsumerWithManagedOffsets(
+  private KPipeConsumer buildConsumerWithManagedOffsets(
     final String topic,
     final String groupId,
     final Set<String> observed,
     final AtomicInteger observedTotal,
-    final AtomicReference<KafkaOffsetManager<byte[]>> offsetManagerRef
+    final AtomicReference<KafkaOffsetManager> offsetManagerRef
   ) {
-    final var builder = KPipeConsumer.<byte[]>builder()
+    final var builder = KPipeConsumer.builder()
       .withProperties(consumerProperties(groupId))
       .withTopic(topic)
       // SEQUENTIAL on purpose: in-order processing means the committed prefix is a clean
@@ -331,7 +331,7 @@ class CrashRestartReprocessingIntegrationTest {
         })
       );
     builder.withOffsetManagerProvider(consumer -> {
-      final var manager = KafkaOffsetManager.<byte[]>builder(consumer)
+      final var manager = KafkaOffsetManager.builder(consumer)
         .withCommandQueue(builder.getCommandQueue())
         // Very long auto-commit interval: the test drives the single commit manually so
         // the commit

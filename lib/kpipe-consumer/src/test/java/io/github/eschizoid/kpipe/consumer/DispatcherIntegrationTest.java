@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -76,7 +78,7 @@ class DispatcherIntegrationTest {
 
   /// Wraps a MockConsumer with no-op subscribe so KPipeConsumer's `subscribe(topic, listener)`
   /// path doesn't blow up when the test driver doesn't pre-assign partitions itself.
-  private static MockConsumer<String, byte[]> newMockConsumer() {
+  private static MockConsumer<byte[], byte[]> newMockConsumer() {
     return new MockConsumer<>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
@@ -89,7 +91,7 @@ class DispatcherIntegrationTest {
   /// Seeds `recordsPerPartition * partitions` records into MockConsumer. Each record's key is
   /// `keyFor(partition, offset)`, value is `"v-<partition>-<offset>"`. Returns the configured
   /// consumer with finite end offsets so polling settles.
-  private static MockConsumer<String, byte[]> seededConsumer(
+  private static MockConsumer<byte[], byte[]> seededConsumer(
     final int partitions,
     final int recordsPerPartition,
     final BiFunction<Integer, Long, String> keyFor
@@ -110,7 +112,7 @@ class DispatcherIntegrationTest {
       for (long offset = 0; offset < recordsPerPartition; offset++) {
         final var key = keyFor.apply(p, offset);
         final var value = ("v-" + p + "-" + offset).getBytes();
-        mc.addRecord(new ConsumerRecord<>(TOPIC, p, offset, key, value));
+        mc.addRecord(new ConsumerRecord<>(TOPIC, p, offset, key.getBytes(UTF_8), value));
       }
     }
     mc.updateEndOffsets(end);
@@ -123,7 +125,7 @@ class DispatcherIntegrationTest {
   /// callers never see a partial dataset.
   private static List<Observation> runUntilProcessed(
     final ProcessingMode mode,
-    final MockConsumer<String, byte[]> mock,
+    final MockConsumer<byte[], byte[]> mock,
     final int expectedCount,
     final long perRecordSleepMs,
     final BiFunction<Integer, Long, String> keyFor
@@ -131,7 +133,7 @@ class DispatcherIntegrationTest {
     final var observations = new CopyOnWriteArrayList<Observation>();
     final var processed = new AtomicInteger(0);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(consumerProps())
       .withTopic(TOPIC)
       .withPipeline(
@@ -344,7 +346,7 @@ class DispatcherIntegrationTest {
     final var mock = seededConsumer(partitions, recordsPerPartition, DispatcherIntegrationTest::keyAt);
     final var processed = new AtomicInteger(0);
 
-    final var builder = KPipeConsumer.<String>builder()
+    final var builder = KPipeConsumer.builder()
       .withProperties(consumerProps())
       .withTopic(TOPIC)
       .withPipeline(
@@ -356,7 +358,7 @@ class DispatcherIntegrationTest {
       .withProcessingMode(mode)
       .withConsumer(() -> mock);
 
-    final var managerRef = new AtomicReference<KafkaOffsetManager<String>>();
+    final var managerRef = new AtomicReference<KafkaOffsetManager>();
     builder.withOffsetManagerProvider(c -> {
       final var mgr = KafkaOffsetManager.builder(c).withCommandQueue(builder.getCommandQueue()).build();
       managerRef.set(mgr);
@@ -435,13 +437,13 @@ class DispatcherIntegrationTest {
     mock.updateBeginningOffsets(Map.of(partition, 0L));
     // Slow record first at offset 0 so its dispatch can't be "won" by a fast record getting
     // there first.
-    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "slow", "v-0-0".getBytes()));
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "slow".getBytes(UTF_8), "v-0-0".getBytes()));
     for (long offset = 1; offset <= fastCount; offset++) {
-      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, offset, "fast-" + offset, ("v-0-" + offset).getBytes()));
+      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, offset, ("fast-" + offset).getBytes(UTF_8), ("v-0-" + offset).getBytes()));
     }
     mock.updateEndOffsets(Map.of(partition, (long) totalRecords));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(consumerProps())
       .withTopic(TOPIC)
       .withPipeline(
@@ -562,7 +564,7 @@ class DispatcherIntegrationTest {
     final var errored = new CopyOnWriteArrayList<Long>();
     final var totalCompleted = new AtomicInteger(0);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(consumerProps())
       .withTopic(TOPIC)
       .withPipeline(
@@ -640,7 +642,7 @@ class DispatcherIntegrationTest {
     // of just nanoTime monotonicity.
     final var workMillis = 5L;
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(consumerProps())
       .withTopic(TOPIC)
       .withPipeline(

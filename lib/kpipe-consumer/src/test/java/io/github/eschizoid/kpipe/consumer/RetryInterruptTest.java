@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Duration;
@@ -41,14 +43,14 @@ class RetryInterruptTest {
 
   @Test
   void interruptDuringRetryBackoffLeavesOffsetPendingForReprocessing() throws Exception {
-    final var mockConsumer = new MockConsumer<String, byte[]>("earliest");
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest");
     final var commandQueue = new LinkedList<ConsumerCommand>();
 
     // First attempt throws -> consumer enters the retry-backoff sleep on the next loop iteration.
     final var sinkInvocations = new AtomicInteger(0);
-    final var managerHolder = new AtomicReference<KafkaOffsetManager<String>>();
+    final var managerHolder = new AtomicReference<KafkaOffsetManager>();
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(consumerProperties())
       .withTopic(TOPIC)
       .withPipeline(
@@ -61,14 +63,14 @@ class RetryInterruptTest {
       .withConsumer(() -> mockConsumer)
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(c -> {
-        final var manager = KafkaOffsetManager.<String>builder(c).withCommandQueue(commandQueue).build();
+        final var manager = KafkaOffsetManager.builder(c).withCommandQueue(commandQueue).build();
         managerHolder.set(manager);
         return manager;
       })
       .build();
 
     final var offsetManager = managerHolder.get();
-    final var record = new ConsumerRecord<>(TOPIC, PARTITION, OFFSET, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, OFFSET, "key".getBytes(UTF_8), "value".getBytes());
 
     // The consumer thread tracks the offset before dispatch; mirror that here so the partition
     // state reflects an in-flight record, exactly as the real poll loop would have set it up.

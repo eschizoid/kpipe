@@ -17,7 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class DefaultHandleStartAndWrapTest {
 
   @Mock
-  private KPipeConsumer<byte[]> consumer;
+  private KPipeConsumer consumer;
 
   @Test
   void happyPathStartsAndWrapsTheConsumer() {

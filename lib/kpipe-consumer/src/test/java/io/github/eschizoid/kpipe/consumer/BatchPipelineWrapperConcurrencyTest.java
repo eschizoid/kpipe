@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,18 +49,18 @@ class BatchPipelineWrapperConcurrencyTest {
   /// Records every record that the wrapper hands to the sink so the test can assert exact
   /// coverage. Uses a [CopyOnWriteArrayList] of immutable batch snapshots — copying on write is
   /// cheap relative to the test's record count and keeps later assertion code straightforward.
-  private static final class RecordingCallbacks implements BatchPipelineWrapper.BatchCallbacks<String> {
+  private static final class RecordingCallbacks implements BatchPipelineWrapper.BatchCallbacks {
 
-    final CopyOnWriteArrayList<ConsumerRecord<String, byte[]>> processed = new CopyOnWriteArrayList<>();
-    final CopyOnWriteArrayList<ConsumerRecord<String, byte[]>> failed = new CopyOnWriteArrayList<>();
+    final CopyOnWriteArrayList<ConsumerRecord<byte[], byte[]>> processed = new CopyOnWriteArrayList<>();
+    final CopyOnWriteArrayList<ConsumerRecord<byte[], byte[]>> failed = new CopyOnWriteArrayList<>();
 
     @Override
-    public void markProcessed(final ConsumerRecord<String, byte[]> record) {
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
       processed.add(record);
     }
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<String, byte[]> record, final Exception cause) {
+    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
       failed.add(record);
     }
   }
@@ -105,7 +107,7 @@ class BatchPipelineWrapperConcurrencyTest {
           for (int i = 0; i < perWorker; i++) {
             final var id = globalIdSeq.getAndIncrement();
             final var bytes = Integer.toString(id).getBytes();
-            final var record = new ConsumerRecord<>(topic, 0, id, "id-" + id, bytes);
+            final var record = new ConsumerRecord<>(topic, 0, id, ("id-" + id).getBytes(UTF_8), bytes);
             wrapper.enqueue(record, bytes);
           }
           doneGate.countDown();

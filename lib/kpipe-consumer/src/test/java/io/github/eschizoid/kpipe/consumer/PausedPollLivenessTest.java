@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Duration;
@@ -57,7 +59,7 @@ class PausedPollLivenessTest {
     final var mockConsumer = pausableMockConsumer();
     mockConsumer.updateEndOffsets(Map.of(PARTITION, 100L)); // lag = 100 - 0 >= high(5) -> PAUSE
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -83,7 +85,7 @@ class PausedPollLivenessTest {
       TestAwaits.pollUntil(() -> !consumer.isPaused(), AWAIT, "consumer state returns to RUNNING");
 
       // Full liveness: a record produced after the resume must flow end to end.
-      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k0", "v0".getBytes()));
+      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k0".getBytes(UTF_8), "v0".getBytes()));
       mockConsumer.updateEndOffsets(Map.of(PARTITION, 1L));
       TestAwaits.pollUntil(
         () -> consumer.getMetrics().get("messagesProcessed") == 1L,
@@ -103,7 +105,7 @@ class PausedPollLivenessTest {
   @Test
   void lagPausedConsumerKeepsPollingWithoutFetching() throws InterruptedException {
     final var polls = new AtomicLong();
-    final var mockConsumer = new MockConsumer<String, byte[]>("earliest") {
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -111,7 +113,7 @@ class PausedPollLivenessTest {
       public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
 
       @Override
-      public synchronized ConsumerRecords<String, byte[]> poll(final Duration timeout) {
+      public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
         polls.incrementAndGet();
         return super.poll(timeout);
       }
@@ -121,11 +123,11 @@ class PausedPollLivenessTest {
     // Records are present, but the pause decision runs before the first poll, so none of them
     // may ever be fetched while the pause holds.
     for (int i = 0; i < 3; i++) {
-      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
+      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes()));
     }
     mockConsumer.updateEndOffsets(Map.of(PARTITION, 100L)); // lag = 100 >= high(5) -> PAUSE
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -160,7 +162,7 @@ class PausedPollLivenessTest {
   @Test
   void manuallyPausedConsumerKeepsPolling() throws InterruptedException {
     final var polls = new AtomicLong();
-    final var mockConsumer = new MockConsumer<String, byte[]>("earliest") {
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -168,7 +170,7 @@ class PausedPollLivenessTest {
       public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
 
       @Override
-      public synchronized ConsumerRecords<String, byte[]> poll(final Duration timeout) {
+      public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
         polls.incrementAndGet();
         return super.poll(timeout);
       }
@@ -177,7 +179,7 @@ class PausedPollLivenessTest {
     mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
     mockConsumer.updateEndOffsets(Map.of(PARTITION, 0L));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -208,8 +210,8 @@ class PausedPollLivenessTest {
 
   /// MockConsumer with subscribe() stubbed to a no-op so the manual `assign` survives — the
   /// same pattern as the other backpressure tests in this package.
-  private MockConsumer<String, byte[]> pausableMockConsumer() {
-    final var mc = new MockConsumer<String, byte[]>("earliest") {
+  private MockConsumer<byte[], byte[]> pausableMockConsumer() {
+    final var mc = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
