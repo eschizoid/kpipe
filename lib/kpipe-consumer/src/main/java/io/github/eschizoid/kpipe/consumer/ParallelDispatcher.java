@@ -49,7 +49,11 @@ final class ParallelDispatcher implements Dispatcher {
   /// `onComplete` so accounting and backpressure remain honest, but the failure itself only
   /// surfaces if `processTask` routed it (e.g. through the consumer's error handler / DLQ).
   @Override
-  public void dispatch(final ConsumerRecord<byte[], byte[]> record, final Runnable processTask, final Runnable onComplete) {
+  public void dispatch(
+    final ConsumerRecord<byte[], byte[]> record,
+    final Runnable processTask,
+    final Runnable onComplete
+  ) {
     inFlight.incrementAndGet();
     try {
       executor.submit(() -> {

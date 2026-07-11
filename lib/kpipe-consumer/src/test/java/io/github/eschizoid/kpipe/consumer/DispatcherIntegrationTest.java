@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -439,7 +438,9 @@ class DispatcherIntegrationTest {
     // there first.
     mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "slow".getBytes(UTF_8), "v-0-0".getBytes()));
     for (long offset = 1; offset <= fastCount; offset++) {
-      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, offset, ("fast-" + offset).getBytes(UTF_8), ("v-0-" + offset).getBytes()));
+      mock.addRecord(
+        new ConsumerRecord<>(TOPIC, 0, offset, ("fast-" + offset).getBytes(UTF_8), ("v-0-" + offset).getBytes())
+      );
     }
     mock.updateEndOffsets(Map.of(partition, (long) totalRecords));
 

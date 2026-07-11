@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -175,7 +174,9 @@ class MultiTopicUnroutedPolicyTest {
     mock.updateBeginningOffsets(beginning);
 
     mock.addRecord(new ConsumerRecord<>(ROUTED_TOPIC, 0, 0L, "k-routed".getBytes(UTF_8), "routed-payload".getBytes()));
-    mock.addRecord(new ConsumerRecord<>(UNROUTED_TOPIC, 0, 0L, "k-unrouted".getBytes(UTF_8), "unrouted-payload".getBytes()));
+    mock.addRecord(
+      new ConsumerRecord<>(UNROUTED_TOPIC, 0, 0L, "k-unrouted".getBytes(UTF_8), "unrouted-payload".getBytes())
+    );
 
     final var end = new HashMap<TopicPartition, Long>();
     end.put(routedTp, 1L);

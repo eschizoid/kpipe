@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -37,7 +36,13 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToDlqAfterMaxRetries() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(
+      TOPIC,
+      0,
+      100L,
+      "key".getBytes(UTF_8),
+      "value".getBytes(StandardCharsets.UTF_8)
+    );
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
@@ -71,7 +76,13 @@ class KPipeDlqTest {
 
   @Test
   void shouldNotSendToDlqIfProcessingSucceedsAfterRetry() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(
+      TOPIC,
+      0,
+      100L,
+      "key".getBytes(UTF_8),
+      "value".getBytes(StandardCharsets.UTF_8)
+    );
     final var attempts = new AtomicInteger(0);
 
     try (
@@ -138,8 +149,20 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void dlqSendIsSynchronousAndBlocksShutdownPath() throws Exception {
-    final var record1 = new ConsumerRecord<>(TOPIC, 0, 100L, "k1".getBytes(UTF_8), "v1".getBytes(StandardCharsets.UTF_8));
-    final var record2 = new ConsumerRecord<>(TOPIC, 0, 101L, "k2".getBytes(UTF_8), "v2".getBytes(StandardCharsets.UTF_8));
+    final var record1 = new ConsumerRecord<>(
+      TOPIC,
+      0,
+      100L,
+      "k1".getBytes(UTF_8),
+      "v1".getBytes(StandardCharsets.UTF_8)
+    );
+    final var record2 = new ConsumerRecord<>(
+      TOPIC,
+      0,
+      101L,
+      "k2".getBytes(UTF_8),
+      "v2".getBytes(StandardCharsets.UTF_8)
+    );
 
     // First send (record1's DLQ) throws; second send (record2's DLQ) succeeds. We exercise both
     // failure modes within the same consumer, ensuring no deadlock between them.
@@ -182,7 +205,13 @@ class KPipeDlqTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldSendToDlqViaBundledWithDeadLetterQueueSetter() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(
+      TOPIC,
+      0,
+      100L,
+      "key".getBytes(UTF_8),
+      "value".getBytes(StandardCharsets.UTF_8)
+    );
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );

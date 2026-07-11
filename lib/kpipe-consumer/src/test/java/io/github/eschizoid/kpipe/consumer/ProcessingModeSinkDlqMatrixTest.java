@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -141,7 +140,9 @@ class ProcessingModeSinkDlqMatrixTest {
     mock.updateBeginningOffsets(Map.of(tp, 0L));
     for (int i = 0; i < recordCount; i++) {
       // Value encodes the offset so the pipeline can decide pass/fail per record.
-      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes(StandardCharsets.UTF_8)));
+      mock.addRecord(
+        new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes(StandardCharsets.UTF_8))
+      );
     }
     mock.updateEndOffsets(Map.of(tp, (long) recordCount));
     return mock;

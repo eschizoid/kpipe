@@ -212,9 +212,10 @@ try (var handle = KPipe.json("orders", kafkaProps)
 `KafkaProducer` from the same Kafka properties; to share a pre-built producer instead, drop down to the explicit
 `KPipeConsumer.Builder` and call `.withDeadLetterQueue(topic, kpipeProducer)`. The second argument is a
 `KPipeProducer<byte[], byte[]>` (not a raw `KafkaProducer`) — wrap your producer with
-`KPipeProducer.<byte[], byte[]>builder().withProducer(rawProducer).build()` if you only have the raw Kafka client. The atomic
-form keeps the topic and producer from drifting out of sync. See [`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md) for
-the full set of explicit-only options (custom `OffsetManager`, multi-topic heterogeneous dispatch).
+`KPipeProducer.<byte[], byte[]>builder().withProducer(rawProducer).build()` if you only have the raw Kafka client. The
+atomic form keeps the topic and producer from drifting out of sync. See
+[`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md) for the full set of explicit-only options (custom `OffsetManager`,
+multi-topic heterogeneous dispatch).
 
 ### 3. The full fluent surface
 
@@ -236,7 +237,7 @@ shows you everything that exists:
 | `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate trips (see [Circuit breaker](#9-circuit-breaker))    |
 | `.withTracer(Tracer t)`                                            | propagate W3C trace context through Kafka headers                                            |
 | `.withDeadLetterTopic(String)`                                     | route failed records to a DLQ topic after retries are exhausted                              |
-| `.withErrorHandler(Consumer<ProcessingError>)`             | custom failure handler (DB, alerting, anything not a Kafka topic)                            |
+| `.withErrorHandler(Consumer<ProcessingError>)`                     | custom failure handler (DB, alerting, anything not a Kafka topic)                            |
 | `.withMetrics(ConsumerMetrics m)`                                  | wire OTel or custom metrics (default `ConsumerMetrics.noop()`)                               |
 | `.withPollTimeout(Duration d)`                                     | override Kafka poll timeout (default 100ms)                                                  |
 | `.onFiltered(Runnable observer)`                                   | observe intentional filtering (an operator returned null) — visibility only                  |

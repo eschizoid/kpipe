@@ -103,7 +103,11 @@ final class KeyOrderedDispatcher implements Dispatcher {
   }
 
   @Override
-  public void dispatch(final ConsumerRecord<byte[], byte[]> record, final Runnable processTask, final Runnable onComplete) {
+  public void dispatch(
+    final ConsumerRecord<byte[], byte[]> record,
+    final Runnable processTask,
+    final Runnable onComplete
+  ) {
     // No `if (closed) return` early-exit here — that would orphan records mid-batch
     // (TrackOffset already enqueued in KPipeConsumer.processRecords, but no
     // MarkOffsetProcessed since we skipped). The `closed` flag is checked ONLY inside the

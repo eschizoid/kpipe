@@ -152,7 +152,10 @@ record DefaultStream<T>(
 
   @Override
   public Stream<T> withBackpressure() {
-    return withBackpressure(BackpressureController.DEFAULT_HIGH_WATERMARK, BackpressureController.DEFAULT_LOW_WATERMARK);
+    return withBackpressure(
+      BackpressureController.DEFAULT_HIGH_WATERMARK,
+      BackpressureController.DEFAULT_LOW_WATERMARK
+    );
   }
 
   @Override

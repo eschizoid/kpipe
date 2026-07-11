@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -437,18 +436,10 @@ class KPipeConsumerTest {
     // Arrange & Act & Assert
     assertThrows(NullPointerException.class, () -> KPipeConsumer.builder().build());
     assertThrows(NullPointerException.class, () ->
-      KPipeConsumer.builder()
-        .withProperties(null)
-        .withTopic(TOPIC)
-        .withPipeline(TestPipelines.identity())
-        .build()
+      KPipeConsumer.builder().withProperties(null).withTopic(TOPIC).withPipeline(TestPipelines.identity()).build()
     );
     assertThrows(NullPointerException.class, () ->
-      KPipeConsumer.builder()
-        .withProperties(properties)
-        .withTopic(null)
-        .withPipeline(TestPipelines.identity())
-        .build()
+      KPipeConsumer.builder().withProperties(properties).withTopic(null).withPipeline(TestPipelines.identity()).build()
     );
     assertThrows(NullPointerException.class, () ->
       KPipeConsumer.builder().withProperties(properties).withTopic(TOPIC).withPipeline(null).build()
@@ -466,17 +457,13 @@ class KPipeConsumerTest {
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
-        .withBatchPipeline(
-          TOPIC,
-          TestPipelines.identity(),
-          BatchSink.ofVoid(batch -> {}),
-          BatchPolicy.ofSize(10)
-        )
+        .withBatchPipeline(TOPIC, TestPipelines.identity(), BatchSink.ofVoid(batch -> {}), BatchPolicy.ofSize(10))
         .build()
     );
     assertTrue(
       ex.getMessage().contains(TOPIC) && ex.getMessage().contains("both"),
-      "rejection message must name the conflicting topic and call out the regular/batch overlap, got: " + ex.getMessage()
+      "rejection message must name the conflicting topic and call out the regular/batch overlap, got: " +
+        ex.getMessage()
     );
   }
 

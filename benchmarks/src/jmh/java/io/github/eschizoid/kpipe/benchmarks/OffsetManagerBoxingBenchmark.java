@@ -142,5 +142,4 @@ public class OffsetManagerBoxingBenchmark {
       mgr.markOffsetProcessed(r);
     }
   }
-
 }

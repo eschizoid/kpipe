@@ -35,8 +35,11 @@ class KPipeConsumerBuilderValidationTest {
   private static void assertNpeWithMessage(final String expectedSubstring, final Executable action) {
     final var ex = assertThrows(NullPointerException.class, action);
     final var actual = ex.getMessage();
-    assertEquals(true, actual != null && actual.contains(expectedSubstring),
-      () -> "expected NPE message containing '" + expectedSubstring + "' but got: " + actual);
+    assertEquals(
+      true,
+      actual != null && actual.contains(expectedSubstring),
+      () -> "expected NPE message containing '" + expectedSubstring + "' but got: " + actual
+    );
   }
 
   @Test

@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -56,7 +55,13 @@ class DlqSendFailureTest {
   @Test
   @SuppressWarnings("unchecked")
   void failedDlqSendDoesNotMarkOffset() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(
+      TOPIC,
+      0,
+      100L,
+      "key".getBytes(UTF_8),
+      "value".getBytes(StandardCharsets.UTF_8)
+    );
 
     // The DLQ producer's send throws synchronously -> sendToDlq catches it and returns false.
     when(mockProducer.send(any(ProducerRecord.class))).thenThrow(new RuntimeException("dlq broker down"));
@@ -107,7 +112,13 @@ class DlqSendFailureTest {
   @Test
   @SuppressWarnings("unchecked")
   void successfulDlqSendMarksOffsetProcessed() throws Exception {
-    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    final var record = new ConsumerRecord<>(
+      TOPIC,
+      0,
+      100L,
+      "key".getBytes(UTF_8),
+      "value".getBytes(StandardCharsets.UTF_8)
+    );
 
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))

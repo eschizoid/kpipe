@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -81,7 +80,9 @@ class KPipeConsumerMockingTest {
     // Create mock records
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key".getBytes(UTF_8), "test-value".getBytes()));
+    final var recordsList = List.of(
+      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key".getBytes(UTF_8), "test-value".getBytes())
+    );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
     final var functionalConsumer = new TestableKPipeConsumer(
       properties,
@@ -130,7 +131,9 @@ class KPipeConsumerMockingTest {
 
     // Create mock records
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key".getBytes(UTF_8), "test-value".getBytes()));
+    final var recordsList = List.of(
+      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key".getBytes(UTF_8), "test-value".getBytes())
+    );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
     final var functionalConsumer = new TestableKPipeConsumer(
       properties,
@@ -440,7 +443,9 @@ class KPipeConsumerMockingTest {
 
     // Create mock records
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), "value".getBytes()));
+    final var recordsList = List.of(
+      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), "value".getBytes())
+    );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
     final var functionalConsumer = new TestableKPipeConsumer(
       properties,
@@ -581,7 +586,9 @@ class KPipeConsumerMockingTest {
     );
 
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var recordsList = List.of(new ConsumerRecord<byte[], byte[]>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), null));
+    final var recordsList = List.of(
+      new ConsumerRecord<byte[], byte[]>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), null)
+    );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
     functionalConsumer.executeProcessRecords(records);

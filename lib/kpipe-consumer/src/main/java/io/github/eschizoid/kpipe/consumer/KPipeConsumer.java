@@ -25,8 +25,8 @@ import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.errors.InterruptException;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
 /// A functional-style Kafka consumer that processes records using a provided function.
 ///
@@ -1682,7 +1682,10 @@ public class KPipeConsumer implements AutoCloseable {
 
   /// Surfaces a rejection from `ParallelDispatcher`'s executor (typically during shutdown)
   /// back to the consumer's error path. Mirrors the prior inline behavior in `processRecords`.
-  private void handleParallelRejection(final ConsumerRecord<byte[], byte[]> record, final RejectedExecutionException e) {
+  private void handleParallelRejection(
+    final ConsumerRecord<byte[], byte[]> record,
+    final RejectedExecutionException e
+  ) {
     if (!isRunning()) return;
     LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
     metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();

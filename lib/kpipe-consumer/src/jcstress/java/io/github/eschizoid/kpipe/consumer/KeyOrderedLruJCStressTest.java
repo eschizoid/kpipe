@@ -50,9 +50,7 @@ public class KeyOrderedLruJCStressTest {
   private static final String TOPIC = "jcstress-topic";
   private static final String KEY = "shared-key";
 
-  private final KeyOrderedDispatcher dispatcher = new KeyOrderedDispatcher(
-    KeyOrderedDispatcher.DEFAULT_MAX_KEYS
-  );
+  private final KeyOrderedDispatcher dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
   private final AtomicInteger tasksRun = new AtomicInteger(0);
   private final CountDownLatch done = new CountDownLatch(2);
 

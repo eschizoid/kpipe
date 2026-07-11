@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -899,7 +898,8 @@ class KeyOrderedDispatcherTest {
       // benign wording tweaks like "saturated" / "saturation" / "queues saturating".
       assertTrue(
         saturationWarnings.getFirst().getMessage().toLowerCase().contains("saturat"),
-        () -> "saturation WARN must mention the saturation condition; got: " + saturationWarnings.getFirst().getMessage()
+        () ->
+          "saturation WARN must mention the saturation condition; got: " + saturationWarnings.getFirst().getMessage()
       );
     } finally {
       julLogger.removeHandler(handler);
