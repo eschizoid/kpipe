@@ -127,6 +127,46 @@ class KPipeConsumerBuilderValidationTest {
     assertNpeWithMessage("provider", () -> builder().withConsumer(null));
   }
 
+  // --- key.deserializer pinning ------------------------------------------------------------------
+
+  /// Builds a consumer against a mock Kafka client and returns the properties `build()` mutated.
+  /// Keys are always `byte[]` since 1.17.0, so `build()` must pin the key deserializer no matter
+  /// what the caller configured — the old key-type-witness/deserializer mismatch surfaced as a
+  /// `ClassCastException` deep inside record processing.
+  private static Properties buildWithProps(final Properties props) {
+    @SuppressWarnings("unchecked")
+    final var pipeline = (MessagePipeline<String>) mock(MessagePipeline.class);
+    try (
+      final var consumer = builder()
+        .withProperties(props)
+        .withTopic("t")
+        .withPipeline(pipeline)
+        .withConsumer(() -> mock(Consumer.class))
+        .build()
+    ) {
+      assertEquals(false, consumer == null);
+    }
+    return props;
+  }
+
+  @Test
+  void buildPinsKeyDeserializerOverConflictingUserValue() {
+    final var props = new Properties();
+    props.setProperty("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+    assertEquals(
+      "org.apache.kafka.common.serialization.ByteArrayDeserializer",
+      buildWithProps(props).get("key.deserializer")
+    );
+  }
+
+  @Test
+  void buildPinsKeyDeserializerWhenUnset() {
+    assertEquals(
+      "org.apache.kafka.common.serialization.ByteArrayDeserializer",
+      buildWithProps(new Properties()).get("key.deserializer")
+    );
+  }
+
   // --- happy path: each setter accepts a non-null value without throwing ------------------------
 
   @Test
