@@ -15,5 +15,6 @@ dependencies {
     api(project(":lib:kpipe-format-avro"))
     api(project(":lib:kpipe-format-protobuf"))
     api(project(":lib:kpipe-api"))
+    api(project(":lib:kpipe-test"))
   }
 }
