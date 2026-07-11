@@ -20,15 +20,13 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 ///
 /// Owns its `ExecutorService` and shuts it down in [#close()] using the same `shutdown +
 /// awaitTermination + shutdownNow` pattern KPipeConsumer used previously.
-///
-/// @param <K> the Kafka record key type
-final class ParallelDispatcher<K> implements Dispatcher<K> {
+final class ParallelDispatcher implements Dispatcher {
 
   private static final Logger LOGGER = System.getLogger(ParallelDispatcher.class.getName());
 
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
   private final AtomicLong inFlight = new AtomicLong(0);
-  private final BiConsumer<ConsumerRecord<K, byte[]>, RejectedExecutionException> rejectHandler;
+  private final BiConsumer<ConsumerRecord<byte[], byte[]>, RejectedExecutionException> rejectHandler;
   private final Duration terminationTimeout;
 
   /// @param rejectHandler  invoked when the executor rejects a task (typically after
@@ -38,7 +36,7 @@ final class ParallelDispatcher<K> implements Dispatcher<K> {
   /// @param terminationTimeout maximum time `close()` waits for in-flight tasks to finish
   ///                           before calling `shutdownNow()`
   ParallelDispatcher(
-    final BiConsumer<ConsumerRecord<K, byte[]>, RejectedExecutionException> rejectHandler,
+    final BiConsumer<ConsumerRecord<byte[], byte[]>, RejectedExecutionException> rejectHandler,
     final Duration terminationTimeout
   ) {
     this.rejectHandler = rejectHandler;
@@ -51,7 +49,7 @@ final class ParallelDispatcher<K> implements Dispatcher<K> {
   /// `onComplete` so accounting and backpressure remain honest, but the failure itself only
   /// surfaces if `processTask` routed it (e.g. through the consumer's error handler / DLQ).
   @Override
-  public void dispatch(final ConsumerRecord<K, byte[]> record, final Runnable processTask, final Runnable onComplete) {
+  public void dispatch(final ConsumerRecord<byte[], byte[]> record, final Runnable processTask, final Runnable onComplete) {
     inFlight.incrementAndGet();
     try {
       executor.submit(() -> {

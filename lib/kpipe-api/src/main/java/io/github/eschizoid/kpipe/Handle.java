@@ -51,7 +51,7 @@ public interface Handle extends AutoCloseable {
   ///
   /// @param n maximum number of entries to return (must be positive)
   /// @return ordered list of `(key, queueDepth)` entries; never null, may be empty
-  default List<Map.Entry<Object, Integer>> topKeyQueueDepths(final int n) {
+  default List<Map.Entry<byte[], Integer>> topKeyQueueDepths(final int n) {
     if (n <= 0) throw new IllegalArgumentException("n must be positive, got " + n);
     return List.of();
   }

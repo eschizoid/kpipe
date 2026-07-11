@@ -240,7 +240,7 @@ public interface Stream<T> {
   /// @param handler the error handler (must not be null)
   /// @return a new stream with the error handler attached
   /// @throws NullPointerException if `handler` is null
-  Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError<byte[]>> handler);
+  Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler);
 
   /// Returns a new stream with a dead-letter topic configured. Records that fail processing after
   /// retries are exhausted are forwarded to `dlqTopic` (using a `KPipeProducer` derived from the

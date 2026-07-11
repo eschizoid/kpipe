@@ -9,8 +9,8 @@ import java.util.Objects;
 /// Package-private [Handle] impl wrapping a started [KPipeConsumer]. Since the 1.13 fold of
 /// `KPipeRunner` into `KPipeConsumer`, every lifecycle concern lives on the consumer directly —
 /// no intermediate runner.
-record DefaultHandle(KPipeConsumer<byte[]> consumer) implements Handle {
-  DefaultHandle(final KPipeConsumer<byte[]> consumer) {
+record DefaultHandle(KPipeConsumer consumer) implements Handle {
+  DefaultHandle(final KPipeConsumer consumer) {
     this.consumer = Objects.requireNonNull(consumer, "consumer cannot be null");
   }
 
@@ -42,7 +42,7 @@ record DefaultHandle(KPipeConsumer<byte[]> consumer) implements Handle {
   }
 
   @Override
-  public List<Map.Entry<Object, Integer>> topKeyQueueDepths(final int n) {
+  public List<Map.Entry<byte[], Integer>> topKeyQueueDepths(final int n) {
     return consumer.topKeyQueueDepths(n);
   }
 
@@ -53,7 +53,7 @@ record DefaultHandle(KPipeConsumer<byte[]> consumer) implements Handle {
   /// Shared by [DefaultSink#start()], [DefaultBatchSink#start()], and
   /// [MultiBuilder#start()] — the only three facade-level start sites — so the
   /// start-and-wrap dance lives in one place.
-  static Handle startAndWrap(final KPipeConsumer<byte[]> consumer) {
+  static Handle startAndWrap(final KPipeConsumer consumer) {
     Objects.requireNonNull(consumer, "consumer cannot be null");
     try {
       consumer.start();

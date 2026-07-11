@@ -10,24 +10,22 @@ import org.apache.kafka.common.TopicPartition;
 ///
 /// This allows for different offset management strategies, such as committing to Kafka
 /// or using external storage.
-///
-/// @param <K> The type of the record key
-public interface OffsetManager<K> extends AutoCloseable {
+public interface OffsetManager extends AutoCloseable {
   /// Starts the offset manager.
   /// @return The started OffsetManager instance
-  OffsetManager<K> start();
+  OffsetManager start();
 
   /// Stops the offset manager.
   /// @return The stopped OffsetManager instance
-  OffsetManager<K> stop();
+  OffsetManager stop();
 
   /// Tracks an offset that is about to be processed.
   /// @param record The consumer record whose offset is being tracked
-  void trackOffset(final ConsumerRecord<K, byte[]> record);
+  void trackOffset(final ConsumerRecord<byte[], byte[]> record);
 
   /// Marks an offset as successfully processed.
   /// @param record The consumer record whose offset is marked as processed
-  void markOffsetProcessed(final ConsumerRecord<K, byte[]> record);
+  void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record);
 
   /// Notifies the offset manager that a commit operation has completed.
   /// @param commitId The ID of the commit operation

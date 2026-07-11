@@ -8,6 +8,7 @@ import io.github.eschizoid.kpipe.registry.Operators;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -76,18 +77,18 @@ public final class TestStream<T> implements AutoCloseable {
 
   private final String topic;
   private final MessageFormat<T> format;
-  private final KPipeConsumer<String> consumer;
-  private final MockConsumer<String, byte[]> mockConsumer;
+  private final KPipeConsumer consumer;
+  private final MockConsumer<byte[], byte[]> mockConsumer;
   private final AtomicLong nextOffset = new AtomicLong(0);
   private final AtomicBoolean closed = new AtomicBoolean(false);
-  private final CopyOnWriteArrayList<KPipeConsumer.ProcessingError<String>> errors;
+  private final CopyOnWriteArrayList<KPipeConsumer.ProcessingError> errors;
 
   private TestStream(
     final String topic,
     final MessageFormat<T> format,
-    final KPipeConsumer<String> consumer,
-    final MockConsumer<String, byte[]> mockConsumer,
-    final CopyOnWriteArrayList<KPipeConsumer.ProcessingError<String>> errors
+    final KPipeConsumer consumer,
+    final MockConsumer<byte[], byte[]> mockConsumer,
+    final CopyOnWriteArrayList<KPipeConsumer.ProcessingError> errors
   ) {
     this.topic = topic;
     this.format = format;
@@ -114,7 +115,9 @@ public final class TestStream<T> implements AutoCloseable {
     return send(null, value);
   }
 
-  /// Serializes `value` through the stream's format and appends it to the mock partition.
+  /// Serializes `value` through the stream's format and appends it to the mock partition. The
+  /// key is encoded as UTF-8 bytes — the consumer always sees `byte[]` keys, matching
+  /// production.
   ///
   /// @param key the record key (nullable)
   /// @param value the typed record value (must not be null)
@@ -142,7 +145,8 @@ public final class TestStream<T> implements AutoCloseable {
   public TestStream<T> sendRaw(final String key, final byte[] rawValue) {
     ensureOpen();
     final var offset = nextOffset.getAndIncrement();
-    mockConsumer.addRecord(new ConsumerRecord<>(topic, 0, offset, key, rawValue));
+    final var keyBytes = key == null ? null : key.getBytes(StandardCharsets.UTF_8);
+    mockConsumer.addRecord(new ConsumerRecord<>(topic, 0, offset, keyBytes, rawValue));
     return this;
   }
 
@@ -193,7 +197,7 @@ public final class TestStream<T> implements AutoCloseable {
   /// terminal-error channel production error handlers observe.
   ///
   /// @return an immutable snapshot of the reported errors
-  public List<KPipeConsumer.ProcessingError<String>> errors() {
+  public List<KPipeConsumer.ProcessingError> errors() {
     return List.copyOf(errors);
   }
 
@@ -244,7 +248,7 @@ public final class TestStream<T> implements AutoCloseable {
     private BatchSink<T> batchSink;
     private int batchMaxSize;
     private ProcessingMode processingMode = ProcessingMode.SEQUENTIAL;
-    private Consumer<KPipeConsumer.ProcessingError<String>> errorHandler;
+    private Consumer<KPipeConsumer.ProcessingError> errorHandler;
 
     private Builder(final MessageFormat<T> format) {
       this.format = Objects.requireNonNull(format, "format cannot be null");
@@ -332,7 +336,7 @@ public final class TestStream<T> implements AutoCloseable {
     ///
     /// @param handler the error observer
     /// @return this builder
-    public Builder<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError<String>> handler) {
+    public Builder<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler) {
       this.errorHandler = Objects.requireNonNull(handler, "handler cannot be null");
       return this;
     }
@@ -352,7 +356,7 @@ public final class TestStream<T> implements AutoCloseable {
       if (sink != null) pipelineBuilder.toSink(sink);
       final var pipeline = pipelineBuilder.build();
 
-      final var mock = new MockConsumer<String, byte[]>("earliest") {
+      final var mock = new MockConsumer<byte[], byte[]>("earliest") {
         @Override
         public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -363,14 +367,14 @@ public final class TestStream<T> implements AutoCloseable {
       mock.assign(List.of(tp));
       mock.updateBeginningOffsets(Map.of(tp, 0L));
 
-      final var errors = new CopyOnWriteArrayList<KPipeConsumer.ProcessingError<String>>();
+      final var errors = new CopyOnWriteArrayList<KPipeConsumer.ProcessingError>();
       final var userHandler = errorHandler;
-      final KPipeConsumer.ErrorHandler<String> recordingHandler = error -> {
+      final KPipeConsumer.ErrorHandler recordingHandler = error -> {
         errors.add(error);
         if (userHandler != null) userHandler.accept(error);
       };
 
-      final var consumerBuilder = KPipeConsumer.<String>builder()
+      final var consumerBuilder = KPipeConsumer.builder()
         .withProperties(props())
         .withProcessingMode(processingMode)
         .withErrorHandler(recordingHandler)
@@ -393,7 +397,7 @@ public final class TestStream<T> implements AutoCloseable {
       final var p = new Properties();
       p.put("bootstrap.servers", "localhost:9092");
       p.put("group.id", "kpipe-test");
-      p.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+      p.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
       p.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
       p.put("enable.auto.commit", "false");
       return p;

@@ -36,26 +36,23 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// `bufferedCount` increments on each [#enqueue] call and decrements after every flush by the
 /// snapshot size.
 ///
-/// @param <K> Kafka record key type
 /// @param <T> deserialized value type
-final class BatchPipelineWrapper<K, T> implements AutoCloseable {
+final class BatchPipelineWrapper<T> implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(BatchPipelineWrapper.class.getName());
 
   /// Hooks back into the owning consumer for offset bookkeeping and failure handling. Decouples
   /// the wrapper from `KPipeConsumer`'s package-private state for testability.
-  ///
-  /// @param <K> Kafka record key type
-  interface BatchCallbacks<K> {
+  interface BatchCallbacks {
     /// Mark a record's offset as successfully processed (after a successful batch flush).
-    void markProcessed(ConsumerRecord<K, byte[]> record);
+    void markProcessed(ConsumerRecord<byte[], byte[]> record);
 
     /// Handle a record that was part of a failed batch: increment error metrics, route to the DLQ
     /// if one is configured, and invoke the error handler. The offset is marked processed only if
     /// the record reaches a durable terminal state — successfully parked in the DLQ, or no DLQ is
     /// configured (log-and-advance). A failed DLQ send leaves the offset pending so the record is
     /// reprocessed on restart rather than silently dropped.
-    void onBatchFailure(ConsumerRecord<K, byte[]> record, Exception cause);
+    void onBatchFailure(ConsumerRecord<byte[], byte[]> record, Exception cause);
   }
 
   private final String topic;
@@ -63,10 +60,10 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   private final BatchSink<T> sink;
   private final BatchPolicy policy;
   private final ScheduledExecutorService scheduler;
-  private final BatchCallbacks<K> callbacks;
+  private final BatchCallbacks callbacks;
 
   private final ReentrantLock lock = new ReentrantLock();
-  private final List<Entry<K, T>> buffer = new ArrayList<>();
+  private final List<Entry<T>> buffer = new ArrayList<>();
   private final AtomicLong bufferedCount = new AtomicLong(0);
   private long oldestEnqueueNanos;
   private ScheduledFuture<?> tickFuture;
@@ -77,7 +74,7 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     final BatchSink<T> sink,
     final BatchPolicy policy,
     final ScheduledExecutorService scheduler,
-    final BatchCallbacks<K> callbacks
+    final BatchCallbacks callbacks
   ) {
     this.topic = topic;
     this.pipeline = pipeline;
@@ -105,7 +102,7 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   /// `bufferedCount` is incremented before the lock is released so the in-flight backpressure
   /// strategy observes the new buffered record on its next check. The matching decrement happens
   /// in [#flushLocked] after the user sink returns.
-  void enqueue(final ConsumerRecord<K, byte[]> record, final T value) {
+  void enqueue(final ConsumerRecord<byte[], byte[]> record, final T value) {
     lock.lock();
     try {
       if (buffer.isEmpty()) oldestEnqueueNanos = System.nanoTime();
@@ -167,7 +164,7 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
   /// out-of-range indexes, build a synthetic failure for uncovered positions so a misreported
   /// batch result can't silently mark records processed, then walk the snapshot exactly once.
   /// Sink-throw and null-result both fall back to whole-batch failure with a clear log line.
-  private void flush(final List<Entry<K, T>> snapshot, final List<T> values) {
+  private void flush(final List<Entry<T>> snapshot, final List<T> values) {
     final var size = snapshot.size();
 
     final BatchResult result;
@@ -241,7 +238,7 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     }
   }
 
-  private void failAll(final List<Entry<K, T>> snapshot, final Exception cause) {
+  private void failAll(final List<Entry<T>> snapshot, final Exception cause) {
     for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), cause);
   }
 
@@ -278,5 +275,5 @@ final class BatchPipelineWrapper<K, T> implements AutoCloseable {
     }
   }
 
-  record Entry<K, T>(ConsumerRecord<K, byte[]> record, T value) {}
+  record Entry<T>(ConsumerRecord<byte[], byte[]> record, T value) {}
 }

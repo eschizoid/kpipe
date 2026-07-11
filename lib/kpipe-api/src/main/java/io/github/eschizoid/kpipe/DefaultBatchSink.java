@@ -51,7 +51,7 @@ record DefaultBatchSink<T>(
 
   @Override
   public Handle start() {
-    final var consumerBuilder = KPipeConsumer.<byte[]>builder()
+    final var consumerBuilder = KPipeConsumer.builder()
       .withProperties(stream.kafkaProps())
       .withProcessingMode(stream.processingMode())
       .withKeyOrderedMaxKeys(stream.keyOrderedMaxKeys())

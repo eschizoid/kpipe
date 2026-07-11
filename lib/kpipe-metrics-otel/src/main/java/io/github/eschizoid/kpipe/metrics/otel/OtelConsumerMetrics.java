@@ -15,7 +15,7 @@ import java.util.function.LongSupplier;
 /// Wire via the consumer builder:
 ///
 /// ```java
-/// KPipeConsumer.<byte[]>builder()
+/// KPipeConsumer.builder()
 ///   .withProperties(props)
 ///   .withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))
 ///   .build();

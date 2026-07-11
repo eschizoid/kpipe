@@ -52,7 +52,7 @@ record DefaultStream<T>(
   int keyOrderedMaxKeys,
   int skipBytes,
   ConsumerMetrics consumerMetrics,
-  Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler,
+  Consumer<KPipeConsumer.ProcessingError> errorHandler,
   String deadLetterTopic,
   Duration pollTimeout,
   Tracer tracer,
@@ -211,7 +211,7 @@ record DefaultStream<T>(
   }
 
   @Override
-  public Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError<byte[]>> handler) {
+  public Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler) {
     Objects.requireNonNull(handler, "handler cannot be null");
     return mutate(m -> m.errorHandler = handler);
   }
@@ -305,7 +305,7 @@ record DefaultStream<T>(
   /// `builder`: retry, backpressure, metrics, error handler, dead-letter topic, poll timeout.
   /// Tracer and circuit-breaker are NOT applied here — they're only wired by [DefaultSink];
   /// `DefaultBatchSink` historically does not expose them (would change behavior to add).
-  void applyCommonConsumerConfig(final KPipeConsumer.Builder<byte[]> builder) {
+  void applyCommonConsumerConfig(final KPipeConsumer.Builder builder) {
     if (maxRetries > 0) builder.withRetry(maxRetries, retryBackoff);
     if (backpressureHigh != null) builder.withBackpressure(backpressureHigh, backpressureLow);
     if (consumerMetrics != null) builder.withMetrics(consumerMetrics);
@@ -341,7 +341,7 @@ record DefaultStream<T>(
     int keyOrderedMaxKeys;
     int skipBytes;
     ConsumerMetrics consumerMetrics;
-    Consumer<KPipeConsumer.ProcessingError<byte[]>> errorHandler;
+    Consumer<KPipeConsumer.ProcessingError> errorHandler;
     String deadLetterTopic;
     Duration pollTimeout;
     Tracer tracer;

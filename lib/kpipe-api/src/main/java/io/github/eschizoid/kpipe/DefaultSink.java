@@ -25,7 +25,7 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
 
   @Override
   public Handle start() {
-    final var consumerBuilder = KPipeConsumer.<byte[]>builder()
+    final var consumerBuilder = KPipeConsumer.builder()
       .withProperties(stream.kafkaProps())
       .withTopics(stream.topics())
       .withPipeline(buildPipeline())

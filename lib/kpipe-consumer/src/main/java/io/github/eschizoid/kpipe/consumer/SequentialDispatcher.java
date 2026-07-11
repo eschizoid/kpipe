@@ -22,14 +22,12 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// consumer thread — the join waits for any in-flight `processTask.run()` to return regardless
 /// of `pendingCount()`. PARALLEL and KEY_ORDERED dispatch onto distinct virtual threads, so
 /// they need a real counter to participate in `waitForInFlightDrain` too.
-///
-/// @param <K> the Kafka record key type
-final class SequentialDispatcher<K> implements Dispatcher<K> {
+final class SequentialDispatcher implements Dispatcher {
 
   private final AtomicLong inFlight = new AtomicLong(0);
 
   @Override
-  public void dispatch(final ConsumerRecord<K, byte[]> record, final Runnable processTask, final Runnable onComplete) {
+  public void dispatch(final ConsumerRecord<byte[], byte[]> record, final Runnable processTask, final Runnable onComplete) {
     inFlight.incrementAndGet();
     try {
       processTask.run();

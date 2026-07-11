@@ -25,9 +25,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// retry + DLQ logic). `onComplete` runs after `processTask`, regardless of throws, on
 /// whichever thread executed the task — it's used to unpark the consumer thread when
 /// backpressure is held.
-///
-/// @param <K> the Kafka record key type
-sealed interface Dispatcher<K>
+sealed interface Dispatcher
   extends AutoCloseable
   permits SequentialDispatcher, ParallelDispatcher, KeyOrderedDispatcher
 {
@@ -38,7 +36,7 @@ sealed interface Dispatcher<K>
   /// @param processTask  the per-record pipeline call (typically `() -> processRecord(record)`)
   /// @param onComplete   bookkeeping the consumer wants run after every record completes
   ///                     (typically an unpark of the consumer thread if backpressure-held)
-  void dispatch(ConsumerRecord<K, byte[]> record, Runnable processTask, Runnable onComplete);
+  void dispatch(ConsumerRecord<byte[], byte[]> record, Runnable processTask, Runnable onComplete);
 
   /// Returns the number of records currently dispatched but not yet finished. Fed into
   /// `KPipeConsumer.totalInFlight()` so the in-flight backpressure strategy sees the
@@ -61,7 +59,7 @@ sealed interface Dispatcher<K>
   ///
   /// @param n maximum number of entries to return (must be positive)
   /// @return ordered list of `(key, queueDepth)` entries; never null, may be empty
-  default List<Map.Entry<Object, Integer>> topKeyQueueDepths(final int n) {
+  default List<Map.Entry<byte[], Integer>> topKeyQueueDepths(final int n) {
     if (n <= 0) throw new IllegalArgumentException("n must be positive, got " + n);
     return List.of();
   }
