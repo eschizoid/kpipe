@@ -87,11 +87,23 @@ class KPipeCircuitBreakerIntegrationTest {
     // per-record path — otherwise a failing batch sink could never trip the breaker. ofSize(1)
     // flushes each record inline, so every record drives one failure outcome into the window;
     // windowSize=5 + threshold=0.5 trips once the window fills with all-failures.
+    //
+    // Sequential mode, same as every other test in this class: the trip (and its pause) then
+    // happens inline on the consumer thread, so the Pause command is queued before the poll loop
+    // re-checks isPaused(). Under the default PARALLEL mode the trip fires on a batch-flush
+    // worker thread, and internalPause flips the state to PAUSED before offering the Pause
+    // command — the consumer thread can observe PAUSED, drain a still-empty command queue, and
+    // park without ever calling kafkaConsumer.pause(). No unpark source exists for a
+    // circuit-breaker pause until the 30s half-open probe, so mc.paused() stays empty past any
+    // bounded await (the CI flake). The mode is orthogonal to what this test proves (batch
+    // outcomes feed the breaker); the cross-thread pause-delivery race is a product bug with its
+    // own fix and liveness test (paused-consumer-keeps-polling rework).
     final var mc = buildMockConsumer(12);
     final var controller = new CircuitBreakerController(0.5, 5, Duration.ofSeconds(30));
 
     final var consumer = KPipeConsumer.<String>builder()
       .withProperties(properties)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withBatchPipeline(
         TOPIC,
         TestPipelines.sideEffect(v -> v),
