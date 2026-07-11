@@ -193,8 +193,9 @@ final class ConsumerHealthController {
         // Every record that completed inside that window skipped the unpark — and when the
         // count drains all the way down in there (routine for PARALLEL mode with fast records:
         // 10k in-flight at ~100µs each finish in a few milliseconds, faster than the log + hook
-        // calls above), no completion ever arrives to wake the consumer, which then parks
-        // forever with nothing in flight. Re-checking with the bit visible closes the window:
+        // calls above), no completion ever arrives to nudge the consumer, which then sits paused
+        // with nothing in flight until its next poll-cadence re-check (and, before the paused
+        // loop kept polling, parked forever). Re-checking with the bit visible closes the window:
         // either the metric is already at/below the low watermark (release right now), or at
         // least one record was still in flight at this read and its completion is guaranteed to
         // see the bit and unpark. Both reads and the bit are volatile, so the total order of

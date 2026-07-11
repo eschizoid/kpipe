@@ -1209,12 +1209,29 @@ public class KPipeConsumer<K> implements AutoCloseable {
             health.tickBackpressure(kafkaConsumer);
             if (!isRunning()) break;
             if (isPaused()) {
+              // Flush the Pause command queued by the transition above so
+              // `kafkaConsumer.pause()` executes before the poll below, then defensively
+              // re-pause the full assignment: pause state is per-partition and does not
+              // survive a revoke/assign cycle, so a rebalance inside an earlier poll can
+              // hand this consumer new, un-paused partitions.
               processCommands();
-              LockSupport.park();
-              if (Thread.interrupted()) break;
-              continue;
+              if (!isRunning() || Thread.interrupted()) break;
+              kafkaConsumer.pause(kafkaConsumer.assignment());
             }
 
+            // Paused or not, keep calling poll(). With every partition paused the fetch
+            // returns nothing, but the call keeps the group membership alive — a consumer
+            // that stops polling is evicted after max.poll.interval.ms, triggering a
+            // silent rebalance — and bounds each iteration to `pollTimeout`, so the
+            // `tickBackpressure` above re-evaluates the pause condition on a fixed
+            // cadence. An indefinite LockSupport.park() here wedged the lag strategy
+            // forever: a parked consumer's positions are frozen while the broker's end
+            // offsets only grow, so lag can only drop through external events (partition
+            // reassignment, retention truncation, manual offset reset) — none of which
+            // produce an unpark. Records can still arrive while paused when a mid-poll
+            // rebalance assigns new partitions after the re-pause above ran; the fetch
+            // has already advanced the positions past them, so dropping them would lose
+            // data — process them normally.
             final var records = pollRecords();
             if (records != null && !records.isEmpty()) processRecords(records);
           }
@@ -1247,6 +1264,10 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Pauses consumption from the topic. Any in-flight messages will continue processing, but no new
   /// messages will be consumed until {@link #resume()} is called.
+  ///
+  /// While paused the consumer thread keeps calling `poll()` with every partition paused: the
+  /// polls fetch nothing but retain the group membership, so a long pause does not trigger a
+  /// `max.poll.interval.ms` eviction and the resulting rebalance.
   ///
   /// This method is idempotent - calling it multiple times has no additional effect.
   public void pause() {
@@ -1659,9 +1680,13 @@ public class KPipeConsumer<K> implements AutoCloseable {
 
   /// Runs after every record finishes (on whichever thread executed it). Unparks the consumer
   /// thread when backpressure is currently holding it — a record completion may have dropped
-  /// the in-flight count below the low watermark, so the consumer thread needs to re-evaluate
-  /// on its next iteration. Previously inlined into `processRecord`'s finally block; moved
-  /// here so the dispatcher owns the post-record callback uniformly across modes.
+  /// the in-flight count below the low watermark. This is a best-effort latency nudge, not a
+  /// liveness requirement: the paused loop no longer parks indefinitely (it keeps polling paused
+  /// partitions on a `pollTimeout` cadence and re-evaluates backpressure at the top of every
+  /// iteration), so the unpark only shortens the bounded `parkNanos` waits on the teardown drain
+  /// path and is a no-op while the consumer thread is blocked inside `poll()`. Previously inlined
+  /// into `processRecord`'s finally block; moved here so the dispatcher owns the post-record
+  /// callback uniformly across modes.
   private void afterRecordComplete() {
     if (health.isHeldBy(ConsumerHealthController.Source.BACKPRESSURE)) {
       final var thread = consumerThread.get();
