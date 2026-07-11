@@ -110,8 +110,9 @@ class DispatcherIntegrationTest {
     for (int p = 0; p < partitions; p++) {
       for (long offset = 0; offset < recordsPerPartition; offset++) {
         final var key = keyFor.apply(p, offset);
+        final var keyBytes = key == null ? null : key.getBytes(UTF_8);
         final var value = ("v-" + p + "-" + offset).getBytes();
-        mc.addRecord(new ConsumerRecord<>(TOPIC, p, offset, key.getBytes(UTF_8), value));
+        mc.addRecord(new ConsumerRecord<byte[], byte[]>(TOPIC, p, offset, keyBytes, value));
       }
     }
     mc.updateEndOffsets(end);

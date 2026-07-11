@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 class KeyOrderedDispatcherTest {
 
   private static ConsumerRecord<byte[], byte[]> recordWithKey(final String key, final long offset) {
-    return new ConsumerRecord<>("test-topic", 0, offset, key.getBytes(UTF_8), new byte[0]);
+    return new ConsumerRecord<byte[], byte[]>("test-topic", 0, offset, key == null ? null : key.getBytes(UTF_8), new byte[0]);
   }
 
   @Test
