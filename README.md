@@ -49,9 +49,10 @@ That is **~10× Confluent PC at 10ms and ~47× at 100ms**. CPC's numbers sit exa
 workers divided by per-record work-time predicts 10,000 rec/s at 10ms and 1,000 at 100ms; the capture measured 9,639
 and 996. Platform pools saturate; virtual-thread-per-record doesn't. That's a threading-model verdict, not a tuning gap.
 
-The sub-millisecond regime tells the same story with smaller margins: at fork=5, KPipe `KEY_ORDERED` does 93.8k rec/s
-(±0.8%) against Confluent PC `KEY`'s 65.9k (±1%) at 1ms of per-record work — the same per-key-FIFO guarantee at 1.42×
-the throughput, with cleanly separated error bars. Full tables, error bars, and every caveat:
+The sub-millisecond regime tells the same story with smaller margins: at fork=5, KPipe `PARALLEL` does 145.4k rec/s
+(±7%) against Confluent PC `UNORDERED`'s 73.8k (±1%) at 1ms of per-record work (~2×), and KPipe `KEY_ORDERED` does 93.8k
+rec/s (±0.8%) against Confluent PC `KEY`'s 65.9k (±1%) — the same per-key-FIFO guarantee at 1.42× the throughput, with
+cleanly separated error bars. Full tables, error bars, and every caveat:
 [`benchmarks/results/2026-07-09.md`](benchmarks/results/2026-07-09.md), captured per the
 [methodology](benchmarks/METHODOLOGY.md).
 
@@ -67,8 +68,9 @@ blocking work. The attribution profile is in
 Not free, and not hidden.
 
 Caveats that carry: everything runs on a shared GitHub-hosted CI runner, so read the orderings and the error bars, not
-the absolute magnitudes. KPipe `PARALLEL`'s sub-millisecond cells are single-sample point estimates (a harness bug,
-documented in the snapshot); its 10–100ms numbers in the table above are fully sampled.
+the absolute magnitudes. (An earlier capture reported KPipe `PARALLEL`'s sub-millisecond cells as single-sample point
+estimates; that turned out to be a real pause/resume liveness bug the benchmark exposed — fixed in #228 and re-captured
+at full fork depth, 25/25 samples. Details in the snapshot's addendum.)
 
 **2. The at-least-once claim is verified, not asserted.** Every CI run gates on 16
 [jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 4 modules, plus jqwik
