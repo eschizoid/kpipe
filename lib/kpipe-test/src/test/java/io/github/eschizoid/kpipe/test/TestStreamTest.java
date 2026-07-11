@@ -43,6 +43,20 @@ class TestStreamTest {
     return m;
   }
 
+  private static List<Object> ids(final CapturingSink<Map<String, Object>> captured) {
+    return captured
+      .captured()
+      .stream()
+      .map(m -> m.get("id"))
+      .toList();
+  }
+
+  private static Set<String> decodedSet(final CapturingSink<byte[]> captured) {
+    final var seen = new HashSet<String>();
+    for (final var b : captured.captured()) seen.add(new String(b, StandardCharsets.UTF_8));
+    return seen;
+  }
+
   // ────────────────────────────────────────────────────────────────────────────────
   // The PLAN "target ergonomics" sketch, verbatim
   // ────────────────────────────────────────────────────────────────────────────────
@@ -152,15 +166,7 @@ class TestStreamTest {
       driver.send(record("keep-2", true));
       driver.flush();
 
-      assertEquals(
-        List.of("keep-1", "keep-2"),
-        captured
-          .captured()
-          .stream()
-          .map(m -> m.get("id"))
-          .toList(),
-        "only records passing the filter reach the sink"
-      );
+      assertEquals(List.of("keep-1", "keep-2"), ids(captured), "only records passing the filter reach the sink");
       assertEquals(4L, driver.metrics().get("messagesProcessed"), "filtered records still count as processed");
       assertEquals(0L, driver.metrics().get("processingErrors"), "intentional filtering is not an error");
       assertEquals(List.of(), driver.errors(), "intentional filtering must not report ProcessingErrors");
@@ -209,11 +215,7 @@ class TestStreamTest {
 
       assertEquals(
         List.of("ok", "also-ok"),
-        captured
-          .captured()
-          .stream()
-          .map(m -> m.get("id"))
-          .toList(),
+        ids(captured),
         "the failing record must not reach the sink, later records still flow"
       );
       assertEquals(2L, driver.metrics().get("messagesProcessed"));
@@ -235,15 +237,7 @@ class TestStreamTest {
       driver.send(record("valid", true));
       driver.flush();
 
-      assertEquals(
-        List.of("valid"),
-        captured
-          .captured()
-          .stream()
-          .map(m -> m.get("id"))
-          .toList(),
-        "the malformed record must not poison subsequent valid records"
-      );
+      assertEquals(List.of("valid"), ids(captured), "the malformed record must not poison subsequent valid records");
       assertEquals(1L, driver.metrics().get("processingErrors"));
       assertEquals(1, driver.errors().size());
       assertNotNull(driver.errors().getFirst().exception());
@@ -326,9 +320,7 @@ class TestStreamTest {
       }
       driver.flush();
 
-      final Set<String> seen = new HashSet<>();
-      for (final var b : captured.captured()) seen.add(new String(b, StandardCharsets.UTF_8));
-      assertEquals(expected, seen, "parallel mode must deliver every record exactly once");
+      assertEquals(expected, decodedSet(captured), "parallel mode must deliver every record exactly once");
     }
   }
 
@@ -348,9 +340,7 @@ class TestStreamTest {
       }
       driver.flush();
 
-      final Set<String> seen = new HashSet<>();
-      for (final var b : captured.captured()) seen.add(new String(b, StandardCharsets.UTF_8));
-      assertEquals(expected, seen);
+      assertEquals(expected, decodedSet(captured));
     }
   }
 
