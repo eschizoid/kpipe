@@ -337,9 +337,9 @@ class KeyOrderedDispatcherTest {
     // So expected depths are a=4, b=1, c=7.
     final var top2 = dispatcher.topKeyQueueDepths(2);
     assertEquals(2, top2.size(), "top-2 must contain exactly 2 entries");
-    assertEquals("c", top2.get(0).getKey(), "deepest queue first");
+    assertArrayEquals("c".getBytes(UTF_8), top2.get(0).getKey(), "deepest queue first");
     assertEquals(7, top2.get(0).getValue());
-    assertEquals("a", top2.get(1).getKey(), "second-deepest queue second");
+    assertArrayEquals("a".getBytes(UTF_8), top2.get(1).getKey(), "second-deepest queue second");
     assertEquals(4, top2.get(1).getValue());
 
     final var topAll = dispatcher.topKeyQueueDepths(100);
@@ -758,7 +758,7 @@ class KeyOrderedDispatcherTest {
     // Mutate the returned array — the dispatcher's internal map key must be unaffected.
     Arrays.fill(keyBytes, (byte) 0);
     final var snapshot2 = dispatcher.topKeyQueueDepths(1);
-    final var keyBytes2 = (byte[]) snapshot2.getFirst().getKey();
+    final var keyBytes2 = snapshot2.getFirst().getKey();
     assertArrayEquals(originalKey, keyBytes2, "internal map key must survive caller mutation of the previous snapshot");
 
     allowFinish.countDown();

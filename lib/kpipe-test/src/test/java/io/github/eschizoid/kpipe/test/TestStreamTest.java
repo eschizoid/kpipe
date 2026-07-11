@@ -1,5 +1,8 @@
 package io.github.eschizoid.kpipe.test;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -223,7 +226,7 @@ class TestStreamTest {
 
       assertEquals(1, driver.errors().size());
       final var error = driver.errors().getFirst();
-      assertEquals("k2", error.record().key(), "the error carries the original Kafka record");
+      assertArrayEquals("k2".getBytes(UTF_8), error.record().key(), "the error carries the original Kafka record");
       assertInstanceOf(IllegalArgumentException.class, error.exception());
       assertEquals("deliberate failure", error.exception().getMessage());
     }

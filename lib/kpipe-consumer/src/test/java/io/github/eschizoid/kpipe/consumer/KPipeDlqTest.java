@@ -66,7 +66,7 @@ class KPipeDlqTest {
       verify(mockProducer).send(
         argThat(r -> {
           assertEquals(DLQ_TOPIC, r.topic());
-          assertEquals("key", r.key());
+          assertArrayEquals("key".getBytes(UTF_8), r.key());
           assertEquals("value", new String(r.value(), StandardCharsets.UTF_8));
           return true;
         })
@@ -241,7 +241,7 @@ class KPipeDlqTest {
       verify(mockProducer).send(
         argThat(r -> {
           assertEquals(DLQ_TOPIC, r.topic());
-          assertEquals("key", r.key());
+          assertArrayEquals("key".getBytes(UTF_8), r.key());
           assertArrayEquals(record.value(), r.value());
           return true;
         })
