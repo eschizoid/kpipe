@@ -43,13 +43,13 @@ Rows in **bold** are deliberately escape-hatch-only (no fluent equivalent planne
 | Processing mode                                     | `Stream.withProcessingMode(ProcessingMode)`                              | `Builder.withProcessingMode(ProcessingMode)`                                                                                | `SEQUENTIAL` (per-partition serial, lag-based backpressure), `PARALLEL` (default, virtual-thread-per-record), `KEY_ORDERED` (per-key serial, see next row).                                                          |
 | Key-ordered LRU cap                                 | `Stream.withKeyOrderedMaxKeys(int)`                                      | `Builder.withKeyOrderedMaxKeys(int)`                                                                                        | Default 10,000 distinct keys held in memory. Only meaningful for `KEY_ORDERED`. Records with `null` keys share a single sentinel queue.                                                                              |
 | OTel/custom metrics                                 | `Stream.withMetrics(ConsumerMetrics)` / `MultiBuilder.withMetrics(...)`  | `Builder.withMetrics(ConsumerMetrics)`                                                                                      | Single-format and multi-topic both supported.                                                                                                                                                                        |
-| Custom error handler                                | `Stream.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | `Builder.withErrorHandler(ErrorHandler<K>)`                                                                                 | Default logs at WARNING.                                                                                                                                                                                             |
+| Custom error handler                                | `Stream.withErrorHandler(Consumer<ProcessingError>)`             | `Builder.withErrorHandler(ErrorHandler)`                                                                                 | Default logs at WARNING.                                                                                                                                                                                             |
 | Dead-letter topic                                   | `Stream.withDeadLetterTopic(String)`                                     | `Builder.withDeadLetterTopic(String)` / `Builder.withDeadLetterQueue(String, KPipeProducer)`                                | The two-arg form pairs the topic and a pre-built producer atomically — preferred when sharing a producer because it stops the topic + producer settings from drifting out of sync.                                   |
 | Poll timeout                                        | `Stream.withPollTimeout(Duration)`                                       | `Builder.withPollTimeout(Duration)`                                                                                         | Default 100ms.                                                                                                                                                                                                       |
 | Lifecycle handle                                    | `Handle.isHealthy / metrics / awaitShutdown / close`                     | `KPipeConsumer.start / awaitShutdown / shutdownGracefully / waitForInFlightDrain`                                           | `Handle` is `AutoCloseable` (5s graceful default). Since 1.13: consumer hosts the lifecycle directly — no separate `KPipeRunner`.                                                                                    |
-| **Custom `OffsetManager`**                          | — (escape hatch only)                                                    | `Builder.withOffsetManager(OffsetManager<K>)` / `withOffsetManagerProvider(Function<Consumer<K,byte[]>, OffsetManager<K>>)` | E.g. Postgres/Redis-backed manager. The `Provider` form receives the live Kafka consumer for wiring commit callbacks.                                                                                                |
-| **Custom Kafka `Consumer` factory**                 | —                                                                        | `Builder.withConsumer(Supplier<Consumer<K,byte[]>>)`                                                                        | Test seam / SSL configurators.                                                                                                                                                                                       |
-| **Custom DLQ `KafkaProducer`**                      | —                                                                        | `Builder.withKafkaProducer(Producer<K,byte[]>)` / `withKafkaProducer(KPipeProducer<K,byte[]>)`                              | Override default producer for the DLQ. The `KPipeProducer` overload shares an already-wrapped instance (e.g. one with custom metrics attached).                                                                      |
+| **Custom `OffsetManager`**                          | — (escape hatch only)                                                    | `Builder.withOffsetManager(OffsetManager)` / `withOffsetManagerProvider(Function<Consumer<byte[],byte[]>, OffsetManager>)` | E.g. Postgres/Redis-backed manager. The `Provider` form receives the live Kafka consumer for wiring commit callbacks.                                                                                                |
+| **Custom Kafka `Consumer` factory**                 | —                                                                        | `Builder.withConsumer(Supplier<Consumer<byte[],byte[]>>)`                                                                        | Test seam / SSL configurators.                                                                                                                                                                                       |
+| **Custom DLQ `KafkaProducer`**                      | —                                                                        | `Builder.withKafkaProducer(Producer<byte[],byte[]>)` / `withKafkaProducer(KPipeProducer<byte[],byte[]>)`                              | Override default producer for the DLQ. The `KPipeProducer` overload shares an already-wrapped instance (e.g. one with custom metrics attached).                                                                      |
 | **Rebalance listener**                              | —                                                                        | Owned by the registered `OffsetManager` — override `OffsetManager.createRebalanceListener()`                                | No standalone `withRebalanceListener` builder; the consumer wires the listener from whatever manager you register.                                                                                                   |
 | **Custom command queue**                            | —                                                                        | `Builder.withCommandQueue(Queue<ConsumerCommand>)`                                                                          | Test seam (rarely needed).                                                                                                                                                                                           |
 | **Thread/executor termination tuning**              | —                                                                        | `Builder.withThreadTerminationTimeout / withWaitForMessagesTimeout`                                                         | Shutdown tuning. The executor-drain timeout is non-tunable from the Builder — it stays at `AppConfig.DEFAULT_EXECUTOR_TERMINATION`.                                                                                  |
@@ -68,7 +68,7 @@ side-effect.
 ```java
 final var offsetManager = new PostgresOffsetManager(dataSource);
 
-final var consumer = KPipeConsumer.<byte[]>builder()
+final var consumer = KPipeConsumer.builder()
   .withProperties(kafkaProps)
   .withTopic("orders")
   .withPipeline(pipeline)
@@ -83,16 +83,16 @@ call into it concurrently; implementations must be thread-safe.
 
 Use case: flush an external buffer before partitions are revoked. There is no standalone `withRebalanceListener` on the
 Builder — the rebalance listener is owned by whatever `OffsetManager` you register. The usual approach is to wrap the
-default `KafkaOffsetManager` (its constructor is private; you can't extend it) with a delegating `OffsetManager<K>`
+default `KafkaOffsetManager` (its constructor is private; you can't extend it) with a delegating `OffsetManager`
 implementation that forwards every method to the delegate except `createRebalanceListener()`:
 
 ```java
-final class FlushingOffsetManager<K> implements OffsetManager<K> {
+final class FlushingOffsetManager implements OffsetManager {
 
-  private final KafkaOffsetManager<K> delegate;
+  private final KafkaOffsetManager delegate;
   private final ExternalBuffer externalBuffer;
 
-  FlushingOffsetManager(final KafkaOffsetManager<K> delegate, final ExternalBuffer externalBuffer) {
+  FlushingOffsetManager(final KafkaOffsetManager delegate, final ExternalBuffer externalBuffer) {
     this.delegate = delegate;
     this.externalBuffer = externalBuffer;
   }
@@ -123,14 +123,14 @@ final class FlushingOffsetManager<K> implements OffsetManager<K> {
 // consumer needs to drain the same queue to actually run the commits the manager enqueues.
 final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-final var consumer = KPipeConsumer.<byte[]>builder()
+final var consumer = KPipeConsumer.builder()
   .withProperties(kafkaProps)
   .withTopic("orders")
   .withPipeline(pipeline)
   .withCommandQueue(commandQueue)
   .withOffsetManagerProvider((kafkaConsumer) ->
-    new FlushingOffsetManager<>(
-      KafkaOffsetManager.<byte[]>builder(kafkaConsumer).withCommandQueue(commandQueue).build(),
+    new FlushingOffsetManager(
+      KafkaOffsetManager.builder(kafkaConsumer).withCommandQueue(commandQueue).build(),
       externalBuffer
     )
   )
@@ -155,13 +155,13 @@ final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
     .toSink(RegistryKey.<Map<String, Object>>json("warehouse"))
     .build();
 
-final var groupA = KPipeConsumer.<byte[]>builder()
+final var groupA = KPipeConsumer.builder()
     .withProperties(propsForGroup("group-a"))
     .withTopic("orders")
     .withPipeline(pipeline)
     .build();
 
-final var groupB = KPipeConsumer.<byte[]>builder()
+final var groupB = KPipeConsumer.builder()
     .withProperties(propsForGroup("group-b"))
     .withTopic("orders")
     .withPipeline(pipeline)
