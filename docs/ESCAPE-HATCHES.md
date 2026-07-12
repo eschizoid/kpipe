@@ -76,8 +76,10 @@ final var consumer = KPipeConsumer.builder()
   .build();
 ```
 
-`OffsetManager` is a thin SPI — implement `markOffsetProcessed`, `getOffsetsToCommit`, and `close`. The consumer threads
-call into it concurrently; implementations must be thread-safe.
+`OffsetManager` is a thin SPI — the load-bearing methods are `trackOffset` (a record entered the pipeline),
+`markOffsetProcessed` (it finished), `notifyCommitComplete` (a queued commit landed), and `close`, plus the `start` /
+`stop` / `isRunning` / `getState` / `getStatistics` lifecycle-and-introspection surface and the default
+`createRebalanceListener()`. The consumer threads call into it concurrently; implementations must be thread-safe.
 
 ### A custom rebalance listener
 
