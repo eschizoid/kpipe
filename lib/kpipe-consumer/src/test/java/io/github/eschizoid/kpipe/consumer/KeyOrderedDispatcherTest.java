@@ -505,7 +505,7 @@ class KeyOrderedDispatcherTest {
     final var snapshot = dispatcher.topKeyQueueDepths(10);
     assertEquals(2, snapshot.size());
     final var hasNullKey = snapshot.stream().anyMatch(e -> e.getKey() == null);
-    final var hasNormalKey = snapshot.stream().anyMatch(e -> "normal".equals(e.getKey()));
+    final var hasNormalKey = snapshot.stream().anyMatch(e -> Arrays.equals("normal".getBytes(UTF_8), e.getKey()));
     assertTrue(hasNullKey, "null-keyed queue must appear with key == null, not an opaque sentinel");
     assertTrue(hasNormalKey, "regular key must appear unchanged in snapshot");
 
