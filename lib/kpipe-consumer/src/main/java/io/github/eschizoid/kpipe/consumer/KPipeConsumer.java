@@ -167,8 +167,9 @@ public class KPipeConsumer implements AutoCloseable {
   /// Creates a new builder for constructing {@link KPipeConsumer} instances.
   ///
   /// Bytes at the boundary, both sides: keys and values are always `byte[]`. Format SerDe lives
-  /// inside the pipeline; key interpretation (e.g. `new String(record.key(), UTF_8)`) is the
-  /// caller's concern in error handlers and sinks.
+  /// inside the pipeline; key interpretation is the caller's concern in error handlers and sinks.
+  /// Kafka keys are nullable, so null-guard the decode:
+  /// `record.key() == null ? null : new String(record.key(), UTF_8)`.
   ///
   /// @return a new builder instance
   public static Builder builder() {
