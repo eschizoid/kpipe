@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -40,21 +41,21 @@ class OffsetConcurrencyStressTest {
 
   private static final String TOPIC = "stress-topic";
 
-  private Consumer<String, byte[]> newMockConsumer() {
+  private Consumer<byte[], byte[]> newMockConsumer() {
     @SuppressWarnings("unchecked")
-    final Consumer<String, byte[]> consumer = mock(Consumer.class);
+    final Consumer<byte[], byte[]> consumer = mock(Consumer.class);
     return consumer;
   }
 
-  private KafkaOffsetManager<String> newManager(final Consumer<String, byte[]> consumer) {
+  private KafkaOffsetManager newManager(final Consumer<byte[], byte[]> consumer) {
     return KafkaOffsetManager.builder(consumer).withCommandQueue(new LinkedBlockingQueue<>()).build();
   }
 
-  private static ConsumerRecord<String, byte[]> record(final int partition, final long offset) {
-    return new ConsumerRecord<>(TOPIC, partition, offset, "k", "v".getBytes());
+  private static ConsumerRecord<byte[], byte[]> record(final int partition, final long offset) {
+    return new ConsumerRecord<>(TOPIC, partition, offset, "k".getBytes(UTF_8), "v".getBytes());
   }
 
-  private static long commitPoint(final KafkaOffsetManager<String> manager, final TopicPartition partition) {
+  private static long commitPoint(final KafkaOffsetManager manager, final TopicPartition partition) {
     return (long) manager.getPartitionState(partition).get("nextOffsetToCommit");
   }
 

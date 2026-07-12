@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -64,26 +65,26 @@ class LifecycleLeakCycleTest {
 
   /// Counts its own `close()` invocations and offset marks so a double-release or a skipped release
   /// is observable. One instance per cycle.
-  private static final class CountingOffsetManager implements OffsetManager<String> {
+  private static final class CountingOffsetManager implements OffsetManager {
 
     final AtomicInteger closeCount = new AtomicInteger(0);
     final AtomicInteger marks = new AtomicInteger(0);
 
     @Override
-    public OffsetManager<String> start() {
+    public OffsetManager start() {
       return this;
     }
 
     @Override
-    public OffsetManager<String> stop() {
+    public OffsetManager stop() {
       return this;
     }
 
     @Override
-    public void trackOffset(final ConsumerRecord<String, byte[]> record) {}
+    public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
 
     @Override
-    public void markOffsetProcessed(final ConsumerRecord<String, byte[]> record) {
+    public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       marks.incrementAndGet();
     }
 
@@ -111,7 +112,7 @@ class LifecycleLeakCycleTest {
     }
   }
 
-  private static MockConsumer<String, byte[]> nonSubscribingMock() {
+  private static MockConsumer<byte[], byte[]> nonSubscribingMock() {
     return new MockConsumer<>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
@@ -121,13 +122,13 @@ class LifecycleLeakCycleTest {
     };
   }
 
-  private static MockConsumer<String, byte[]> seeded(final int recordCount) {
+  private static MockConsumer<byte[], byte[]> seeded(final int recordCount) {
     final var mock = nonSubscribingMock();
     final var tp = new TopicPartition(TOPIC, 0);
     mock.assign(List.of(tp));
     mock.updateBeginningOffsets(Map.of(tp, 0L));
     for (int i = 0; i < recordCount; i++) {
-      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
+      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes()));
     }
     mock.updateEndOffsets(Map.of(tp, (long) recordCount));
     return mock;
@@ -158,7 +159,7 @@ class LifecycleLeakCycleTest {
       final var manager = new CountingOffsetManager();
       final var processed = new AtomicInteger(0);
 
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(props())
         .withTopic(TOPIC)
         .withProcessingMode(mode)
@@ -208,7 +209,7 @@ class LifecycleLeakCycleTest {
       final var pollEntered = new CountDownLatch(1);
       final var tp = new TopicPartition(TOPIC, 0);
 
-      final var mock = new MockConsumer<String, byte[]>("earliest") {
+      final var mock = new MockConsumer<byte[], byte[]>("earliest") {
         @Override
         public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -216,7 +217,7 @@ class LifecycleLeakCycleTest {
         public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
 
         @Override
-        public synchronized ConsumerRecords<String, byte[]> poll(final Duration timeout) {
+        public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
           pollEntered.countDown();
           if (poisoned.get()) throw new Error("simulated consumer-thread crash on cycle");
           return ConsumerRecords.empty();
@@ -225,7 +226,7 @@ class LifecycleLeakCycleTest {
       mock.assign(List.of(tp));
       mock.updateBeginningOffsets(Map.of(tp, 0L));
 
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(props())
         .withTopic(TOPIC)
         .withProcessingMode(mode)
@@ -282,7 +283,7 @@ class LifecycleLeakCycleTest {
       final var manager = new CountingOffsetManager();
       final var flushed = new AtomicInteger(0);
 
-      final var consumer = KPipeConsumer.<String>builder()
+      final var consumer = KPipeConsumer.builder()
         .withProperties(props())
         .withBatchPipeline(
           TOPIC,

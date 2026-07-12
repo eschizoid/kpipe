@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,19 +17,16 @@ import org.junit.jupiter.api.Test;
 /// consumer built-but-never-started leaks it.
 class ParallelDispatcherTest {
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>("test-topic", 0, offset, "k", new byte[0]);
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>("test-topic", 0, offset, "k".getBytes(UTF_8), new byte[0]);
   }
 
-  private static ParallelDispatcher<String> newDispatcher(final AtomicInteger rejectCount) {
+  private static ParallelDispatcher newDispatcher(final AtomicInteger rejectCount) {
     return newDispatcher(rejectCount, Duration.ofSeconds(1));
   }
 
-  private static ParallelDispatcher<String> newDispatcher(
-    final AtomicInteger rejectCount,
-    final Duration terminationTimeout
-  ) {
-    return new ParallelDispatcher<>((_, _) -> rejectCount.incrementAndGet(), terminationTimeout);
+  private static ParallelDispatcher newDispatcher(final AtomicInteger rejectCount, final Duration terminationTimeout) {
+    return new ParallelDispatcher((_, _) -> rejectCount.incrementAndGet(), terminationTimeout);
   }
 
   @Test
@@ -171,7 +169,11 @@ class ParallelDispatcherTest {
 
     assertEquals(1, rejectCount.get(), "dispatch after close must hit the reject handler");
     assertEquals(0, taskRan.get(), "rejected task body must NOT execute");
-    assertEquals(0, onCompleteRan.get(), "rejected dispatch must NOT invoke onComplete (the consumer takes the reject path instead)");
+    assertEquals(
+      0,
+      onCompleteRan.get(),
+      "rejected dispatch must NOT invoke onComplete (the consumer takes the reject path instead)"
+    );
     assertEquals(0, dispatcher.pendingCount(), "rejected dispatch must roll back the speculative increment");
   }
 
@@ -193,32 +195,28 @@ class ParallelDispatcherTest {
 
     for (int i = 0; i < totalDispatches; i++) {
       final var offset = i;
-      Thread
-        .ofVirtual()
-        .start(() -> {
-          try {
-            go.await();
-            dispatcher.dispatch(record(offset), started::incrementAndGet, () -> {});
-          } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-          } finally {
-            allDispatchersDone.countDown();
-          }
-        });
+      Thread.ofVirtual().start(() -> {
+        try {
+          go.await();
+          dispatcher.dispatch(record(offset), started::incrementAndGet, () -> {});
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        } finally {
+          allDispatchersDone.countDown();
+        }
+      });
     }
 
     // Close from another thread, mid-flight. close() blocks until awaitTermination returns or
     // times out, so spawning it on a VT keeps the test thread free to release `go`.
     final var closeReturned = new CountDownLatch(1);
-    Thread
-      .ofVirtual()
-      .start(() -> {
-        try {
-          dispatcher.close();
-        } finally {
-          closeReturned.countDown();
-        }
-      });
+    Thread.ofVirtual().start(() -> {
+      try {
+        dispatcher.close();
+      } finally {
+        closeReturned.countDown();
+      }
+    });
 
     go.countDown();
 

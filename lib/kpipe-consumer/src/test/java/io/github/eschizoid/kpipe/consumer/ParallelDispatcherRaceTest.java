@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,15 +33,15 @@ import org.junit.jupiter.api.Test;
 /// that a parked waiter is actually released by the throw-path `onComplete`.
 class ParallelDispatcherRaceTest {
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>("test-topic", 0, offset, "k", new byte[0]);
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>("test-topic", 0, offset, "k".getBytes(UTF_8), new byte[0]);
   }
 
-  private static ParallelDispatcher<String> newDispatcher(final AtomicInteger rejectCount) {
-    return new ParallelDispatcher<>((_, _) -> rejectCount.incrementAndGet(), Duration.ofSeconds(2));
+  private static ParallelDispatcher newDispatcher(final AtomicInteger rejectCount) {
+    return new ParallelDispatcher((_, _) -> rejectCount.incrementAndGet(), Duration.ofSeconds(2));
   }
 
-  private static void awaitInFlightZero(final ParallelDispatcher<String> dispatcher) throws InterruptedException {
+  private static void awaitInFlightZero(final ParallelDispatcher dispatcher) throws InterruptedException {
     final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
     while (dispatcher.pendingCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
   }

@@ -193,7 +193,7 @@ public final class PerRecordLatencyHarness {
         return bytes;
       })
       .build();
-    final var consumer = KPipeConsumer.<byte[]>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(consumerProps(bootstrap, "latency-kpipe"))
       .withTopic(topic)
       .withPipeline(pipeline)

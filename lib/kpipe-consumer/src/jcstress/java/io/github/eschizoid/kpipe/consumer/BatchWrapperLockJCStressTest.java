@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -26,8 +28,8 @@ public class BatchWrapperLockJCStressTest {
 
   private static final String TOPIC = "jcstress-batch";
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>(TOPIC, 0, offset, "k-" + offset, ("v-" + offset).getBytes());
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, ("k-" + offset).getBytes(UTF_8), ("v-" + offset).getBytes());
   }
 
   /// A sink that always reports the whole batch as succeeded. Used so a size-triggered flush runs
@@ -38,13 +40,13 @@ public class BatchWrapperLockJCStressTest {
 
   /// Callbacks that do nothing — the tests assert on the wrapper's own `bufferedCount`, not on
   /// downstream offset bookkeeping.
-  private static BatchPipelineWrapper.BatchCallbacks<String> noopCallbacks() {
-    return new BatchPipelineWrapper.BatchCallbacks<>() {
+  private static BatchPipelineWrapper.BatchCallbacks noopCallbacks() {
+    return new BatchPipelineWrapper.BatchCallbacks() {
       @Override
-      public void markProcessed(final ConsumerRecord<String, byte[]> record) {}
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<String, byte[]> record, final Exception cause) {}
+      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {}
     };
   }
 
@@ -59,7 +61,7 @@ public class BatchWrapperLockJCStressTest {
   @State
   public static class EnqueueEnqueue {
 
-    private final BatchPipelineWrapper<String, byte[]> wrapper;
+    private final BatchPipelineWrapper<byte[]> wrapper;
 
     public EnqueueEnqueue() {
       // High size threshold and long age window: no enqueue trips a flush, so both records
@@ -107,7 +109,7 @@ public class BatchWrapperLockJCStressTest {
   @State
   public static class EnqueueVersusFlush {
 
-    private final BatchPipelineWrapper<String, byte[]> wrapper;
+    private final BatchPipelineWrapper<byte[]> wrapper;
 
     public EnqueueVersusFlush() {
       // Size threshold 2 with one record pre-loaded: the next enqueue trips an inline flush.

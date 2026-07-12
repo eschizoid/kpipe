@@ -11,7 +11,7 @@ package io.github.eschizoid.kpipe.metrics;
 /// Example — no-op (default, zero overhead):
 ///
 /// ```java
-/// KPipeConsumer.<byte[]>builder()
+/// KPipeConsumer.builder()
 ///   .withMetrics(ConsumerMetrics.noop())
 ///   .build();
 /// ```
@@ -19,7 +19,7 @@ package io.github.eschizoid.kpipe.metrics;
 /// Example — OpenTelemetry-backed (requires `kpipe-metrics-otel`):
 ///
 /// ```java
-/// KPipeConsumer.<byte[]>builder()
+/// KPipeConsumer.builder()
 ///   .withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))
 ///   .build();
 /// ```

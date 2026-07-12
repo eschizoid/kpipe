@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Duration;
@@ -49,14 +50,14 @@ class ShutdownOrderingTest {
     return p;
   }
 
-  private ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>(TOPIC, 0, offset, "k" + offset, ("v" + offset).getBytes());
+  private ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, ("k" + offset).getBytes(UTF_8), ("v" + offset).getBytes());
   }
 
   /// A `MockConsumer` whose `subscribe(...)` is a no-op so the test can pre-`assign` partitions and
   /// seed records itself — `MockConsumer` otherwise rejects mixing subscribe + assign. Mirrors the
   /// pattern the existing shutdown tests in `KPipeConsumerTest` use.
-  private static MockConsumer<String, byte[]> nonSubscribingMock() {
+  private static MockConsumer<byte[], byte[]> nonSubscribingMock() {
     return new MockConsumer<>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
@@ -70,35 +71,35 @@ class ShutdownOrderingTest {
   /// own `close()` invocations, so a double-release is observable rather than silently idempotent.
   /// It also captures whether the Kafka consumer was still open at close time (the real
   /// `KafkaOffsetManager.close()` runs a final commitSync that needs it).
-  private static final class OrderRecordingOffsetManager implements OffsetManager<String> {
+  private static final class OrderRecordingOffsetManager implements OffsetManager {
 
     private final ConcurrentLinkedQueue<String> log;
-    private final MockConsumer<String, byte[]> consumerProbe;
+    private final MockConsumer<byte[], byte[]> consumerProbe;
     final AtomicInteger closeCount = new AtomicInteger(0);
     final AtomicInteger marks = new AtomicInteger(0);
     final AtomicBoolean markedAfterClose = new AtomicBoolean(false);
     final AtomicBoolean consumerOpenWhenClosed = new AtomicBoolean(false);
 
-    OrderRecordingOffsetManager(final ConcurrentLinkedQueue<String> log, final MockConsumer<String, byte[]> probe) {
+    OrderRecordingOffsetManager(final ConcurrentLinkedQueue<String> log, final MockConsumer<byte[], byte[]> probe) {
       this.log = log;
       this.consumerProbe = probe;
     }
 
     @Override
-    public OffsetManager<String> start() {
+    public OffsetManager start() {
       return this;
     }
 
     @Override
-    public OffsetManager<String> stop() {
+    public OffsetManager stop() {
       return this;
     }
 
     @Override
-    public void trackOffset(final ConsumerRecord<String, byte[]> r) {}
+    public void trackOffset(final ConsumerRecord<byte[], byte[]> r) {}
 
     @Override
-    public void markOffsetProcessed(final ConsumerRecord<String, byte[]> r) {
+    public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> r) {
       if (closeCount.get() > 0) markedAfterClose.set(true);
       marks.incrementAndGet();
     }
@@ -145,7 +146,7 @@ class ShutdownOrderingTest {
 
     // poll() signals the test on first entry, then throws an Error the instant poisonPoll flips —
     // driving the self-termination path concurrently with the external close().
-    final var mock = new MockConsumer<String, byte[]>("earliest") {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -153,7 +154,7 @@ class ShutdownOrderingTest {
       public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
 
       @Override
-      public synchronized ConsumerRecords<String, byte[]> poll(final Duration timeout) {
+      public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
         pollEntered.countDown();
         if (poisonPoll.get()) throw new Error("simulated self-termination racing external close()");
         return ConsumerRecords.empty();
@@ -163,7 +164,7 @@ class ShutdownOrderingTest {
     mock.updateBeginningOffsets(Map.of(tp, 0L));
     final var manager = new OrderRecordingOffsetManager(log, mock);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props())
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -219,7 +220,7 @@ class ShutdownOrderingTest {
     final var mock = nonSubscribingMock();
     final var manager = new OrderRecordingOffsetManager(log, mock);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props())
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -256,7 +257,7 @@ class ShutdownOrderingTest {
     final var manager = new OrderRecordingOffsetManager(log, mock);
     final var entered = new CountDownLatch(1);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props())
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.PARALLEL)

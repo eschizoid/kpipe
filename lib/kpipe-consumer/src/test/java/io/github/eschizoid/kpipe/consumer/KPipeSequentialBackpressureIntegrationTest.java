@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Collection;
@@ -33,7 +34,7 @@ class KPipeSequentialBackpressureIntegrationTest {
   @Test
   void shouldPauseWhenLagExceedsHighWatermarkInSequentialMode() throws InterruptedException {
     // Arrange: 10 records in Kafka, highWatermark=5
-    final var mockConsumer = new MockConsumer<String, byte[]>("earliest") {
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -45,13 +46,13 @@ class KPipeSequentialBackpressureIntegrationTest {
 
     // Initial 10 records
     for (int i = 0; i < 10; i++) {
-      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, "k" + i, ("v" + i).getBytes()));
+      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes()));
     }
     mockConsumer.updateEndOffsets(Map.of(PARTITION, 10L));
 
     final var processedCount = new AtomicLong(0);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(
@@ -106,11 +107,11 @@ class KPipeSequentialBackpressureIntegrationTest {
 
   @Test
   void testMockConsumerLag() {
-    final var mc = new MockConsumer<String, byte[]>("earliest");
+    final var mc = new MockConsumer<byte[], byte[]>("earliest");
     mc.assign(List.of(PARTITION));
     mc.updateBeginningOffsets(Map.of(PARTITION, 0L));
-    mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 0, "k", "v".getBytes()));
-    mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 1, "k", "v".getBytes()));
+    mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 0, "k".getBytes(UTF_8), "v".getBytes()));
+    mc.addRecord(new ConsumerRecord<>(TOPIC, 0, 1, "k".getBytes(UTF_8), "v".getBytes()));
     mc.updateEndOffsets(Map.of(PARTITION, 10L));
 
     assertEquals(0, mc.position(PARTITION));

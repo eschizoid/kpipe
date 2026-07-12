@@ -335,7 +335,7 @@ class RebalanceAtScaleIntegrationTest {
 
   /// Builds a PARALLEL consumer over `topic`. A non-zero `sinkDelay` slows each record so the
   /// processing trails the fetch, keeping a tail of records in-flight when a rebalance lands.
-  private KPipeConsumer<byte[]> buildConsumer(
+  private KPipeConsumer buildConsumer(
     final String topic,
     final Properties props,
     final Set<String> observed,
@@ -348,7 +348,7 @@ class RebalanceAtScaleIntegrationTest {
   /// Builds a PARALLEL consumer over `topic`. When `revokeThreads` is non-null, the consumer's
   /// OffsetManager is wrapped so each `onPartitionsRevoked` callback records the thread it ran on —
   /// the deterministic single-writer probe used by `revokeRunsOnConsumerThreadUnderRealRebalance`.
-  private KPipeConsumer<byte[]> buildConsumer(
+  private KPipeConsumer buildConsumer(
     final String topic,
     final Properties props,
     final Set<String> observed,
@@ -356,7 +356,7 @@ class RebalanceAtScaleIntegrationTest {
     final Duration sinkDelay,
     final List<String> revokeThreads
   ) {
-    final var builder = KPipeConsumer.<byte[]>builder()
+    final var builder = KPipeConsumer.builder()
       .withProperties(props)
       .withTopic(topic)
       .withProcessingMode(ProcessingMode.PARALLEL)
@@ -377,7 +377,7 @@ class RebalanceAtScaleIntegrationTest {
     if (revokeThreads != null) {
       builder.withOffsetManagerProvider(consumer ->
         new RevokeCapturingOffsetManager(
-          KafkaOffsetManager.<byte[]>builder(consumer).withCommandQueue(builder.getCommandQueue()).build(),
+          KafkaOffsetManager.builder(consumer).withCommandQueue(builder.getCommandQueue()).build(),
           revokeThreads
         )
       );
@@ -388,12 +388,12 @@ class RebalanceAtScaleIntegrationTest {
   /// Decorator that records the calling thread of every non-empty `onPartitionsRevoked` into
   /// `revokeThreads`, then delegates. Everything else passes straight through to the real manager.
   /// Capturing at the callback is deterministic — no log-string match or thread-id resolution.
-  private static final class RevokeCapturingOffsetManager implements OffsetManager<byte[]> {
+  private static final class RevokeCapturingOffsetManager implements OffsetManager {
 
-    private final OffsetManager<byte[]> delegate;
+    private final OffsetManager delegate;
     private final List<String> revokeThreads;
 
-    RevokeCapturingOffsetManager(final OffsetManager<byte[]> delegate, final List<String> revokeThreads) {
+    RevokeCapturingOffsetManager(final OffsetManager delegate, final List<String> revokeThreads) {
       this.delegate = delegate;
       this.revokeThreads = revokeThreads;
     }
@@ -416,13 +416,13 @@ class RebalanceAtScaleIntegrationTest {
     }
 
     @Override
-    public OffsetManager<byte[]> start() {
+    public OffsetManager start() {
       delegate.start();
       return this;
     }
 
     @Override
-    public OffsetManager<byte[]> stop() {
+    public OffsetManager stop() {
       delegate.stop();
       return this;
     }

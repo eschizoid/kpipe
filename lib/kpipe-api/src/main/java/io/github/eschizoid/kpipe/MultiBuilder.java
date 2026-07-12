@@ -222,7 +222,7 @@ public final class MultiBuilder {
     );
 
     final var nonBatchPipelines = new LinkedHashMap<String, MessagePipeline<?>>();
-    final var consumerBuilder = KPipeConsumer.<byte[]>builder().withProperties(kafkaProps);
+    final var consumerBuilder = KPipeConsumer.builder().withProperties(kafkaProps);
 
     for (final var entry : routes.entrySet()) {
       final var topic = entry.getKey();
@@ -317,10 +317,7 @@ public final class MultiBuilder {
 
   /// Type witness: pulls the typed pipeline + sink off the route, then calls the typed builder
   /// method. Without this helper the casts would litter `start()`.
-  private static <T> void addBatchRoute(
-    final KPipeConsumer.Builder<byte[]> consumerBuilder,
-    final DefaultBatchSink<T> route
-  ) {
+  private static <T> void addBatchRoute(final KPipeConsumer.Builder consumerBuilder, final DefaultBatchSink<T> route) {
     consumerBuilder.withBatchPipeline(route.topic(), route.buildPipeline(), route.batchSink(), route.batchPolicy());
   }
 }

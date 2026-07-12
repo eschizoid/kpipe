@@ -52,13 +52,11 @@ import org.apache.kafka.common.TopicPartition;
 /// // Clean up resources when done
 /// offsetManager.close();
 /// ```
-///
-/// @param <K> The type of the record key
-public class KafkaOffsetManager<K> implements OffsetManager<K> {
+public class KafkaOffsetManager implements OffsetManager {
 
   private static final System.Logger LOGGER = System.getLogger(KafkaOffsetManager.class.getName());
 
-  private final Consumer<K, byte[]> kafkaConsumer;
+  private final Consumer<byte[], byte[]> kafkaConsumer;
   private final AtomicReference<OffsetState> state = new AtomicReference<>(OffsetState.CREATED);
 
   /// Shared command queue between `KPipeConsumer` and this manager.
@@ -114,22 +112,19 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   /// Creates a new KafkaOffsetManager instance.
   ///
   /// @param consumer The Kafka consumer to manage offsets for
-  /// @param <K> Type parameter for the key of the consumer
   /// @return A builder to construct the KafkaOffsetManager
-  public static <K> Builder<K> builder(final Consumer<K, byte[]> consumer) {
-    return new Builder<>(consumer);
+  public static Builder builder(final Consumer<byte[], byte[]> consumer) {
+    return new Builder(consumer);
   }
 
   /// Builder class for KafkaOffsetManager.
-  ///
-  /// @param <K> The type of the key
-  public static class Builder<K> {
+  public static class Builder {
 
-    private final Consumer<K, byte[]> kafkaConsumer;
+    private final Consumer<byte[], byte[]> kafkaConsumer;
     private Duration commitInterval = Duration.ofSeconds(30);
     private Queue<ConsumerCommand> commandQueue;
 
-    private Builder(final Consumer<K, byte[]> consumer) {
+    private Builder(final Consumer<byte[], byte[]> consumer) {
       this.kafkaConsumer = Objects.requireNonNull(consumer, "Consumer cannot be null");
     }
 
@@ -137,7 +132,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     ///
     /// @param commandQueue The command queue to use
     /// @return This builder instance
-    public Builder<K> withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
+    public Builder withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
       this.commandQueue = Objects.requireNonNull(commandQueue, "Command queue cannot be null");
       return this;
     }
@@ -146,7 +141,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     ///
     /// @param interval The duration between commits
     /// @return This builder instance
-    public Builder<K> withCommitInterval(final Duration interval) {
+    public Builder withCommitInterval(final Duration interval) {
       this.commitInterval = Objects.requireNonNull(interval, "Commit interval cannot be null");
       if (interval.isNegative() || interval.isZero()) throw new IllegalArgumentException(
         "Commit interval must be positive, got " + interval
@@ -157,13 +152,13 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
     /// Builds the KafkaOffsetManager instance.
     ///
     /// @return A new KafkaOffsetManager instance
-    public KafkaOffsetManager<K> build() {
+    public KafkaOffsetManager build() {
       if (commandQueue == null) throw new IllegalStateException("withCommandQueue(...) must be called before build()");
-      return new KafkaOffsetManager<>(this);
+      return new KafkaOffsetManager(this);
     }
   }
 
-  private KafkaOffsetManager(final Builder<K> builder) {
+  private KafkaOffsetManager(final Builder builder) {
     this.kafkaConsumer = builder.kafkaConsumer;
     this.commitInterval = builder.commitInterval;
     this.commandQueue = builder.commandQueue;
@@ -175,7 +170,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   /// @return this instance for method chaining
   /// @throws IllegalStateException if the KafkaOffsetManager is already closed
   @Override
-  public KafkaOffsetManager<K> start() {
+  public KafkaOffsetManager start() {
     if (state.get() == OffsetState.STOPPED) throw new IllegalStateException(
       "Cannot restart a stopped KafkaOffsetManager"
     );
@@ -220,7 +215,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   ///
   /// @param record The consumer record to track
   @Override
-  public void trackOffset(final ConsumerRecord<K, byte[]> record) {
+  public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {
     if (state.get() == OffsetState.STOPPED) return;
     final var partition = cachedTopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
@@ -246,7 +241,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   ///
   /// @param record The consumer record that was processed
   @Override
-  public void markOffsetProcessed(final ConsumerRecord<K, byte[]> record) {
+  public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
     if (state.get() == OffsetState.STOPPED) return;
     final var partition = cachedTopicPartition(record.topic(), record.partition());
     final var offset = record.offset();
@@ -306,7 +301,7 @@ public class KafkaOffsetManager<K> implements OffsetManager<K> {
   ///
   /// @return this instance for method chaining
   @Override
-  public KafkaOffsetManager<K> stop() {
+  public KafkaOffsetManager stop() {
     if (!state.compareAndSet(OffsetState.RUNNING, OffsetState.STOPPING)) return this; // Not running, nothing to stop
 
     try {

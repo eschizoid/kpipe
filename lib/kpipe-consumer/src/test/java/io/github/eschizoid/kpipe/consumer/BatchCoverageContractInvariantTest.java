@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -67,27 +68,27 @@ class BatchCoverageContractInvariantTest {
 
   /// Records each callback by offset so a test can assert the exact partition of the batch into
   /// processed vs failed, and detect a record that fired on both callbacks (double-fire bug).
-  private static final class RecordingCallbacks implements BatchPipelineWrapper.BatchCallbacks<String> {
+  private static final class RecordingCallbacks implements BatchPipelineWrapper.BatchCallbacks {
 
     final CopyOnWriteArrayList<Long> processed = new CopyOnWriteArrayList<>();
     final CopyOnWriteArrayList<Long> failed = new CopyOnWriteArrayList<>();
     final Map<Long, Exception> failureCauseByOffset = new HashMap<>();
 
     @Override
-    public void markProcessed(final ConsumerRecord<String, byte[]> record) {
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
       processed.add(record.offset());
     }
 
     @Override
-    public synchronized void onBatchFailure(final ConsumerRecord<String, byte[]> record, final Exception cause) {
+    public synchronized void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
       failed.add(record.offset());
       failureCauseByOffset.put(record.offset(), cause);
     }
   }
 
-  private static ConsumerRecord<String, byte[]> record(final String topic, final long offset) {
+  private static ConsumerRecord<byte[], byte[]> record(final String topic, final long offset) {
     final var bytes = Long.toString(offset).getBytes();
-    return new ConsumerRecord<>(topic, 0, offset, "k-" + offset, bytes);
+    return new ConsumerRecord<>(topic, 0, offset, ("k-" + offset).getBytes(UTF_8), bytes);
   }
 
   /// Drives a size-triggered flush: enqueues exactly `batchSize` records under a policy whose

@@ -26,7 +26,7 @@ import org.apache.kafka.common.header.Headers;
 ///
 /// ```java
 /// final var otel = GlobalOpenTelemetry.get();
-/// KPipeConsumer.<byte[]>builder()
+/// KPipeConsumer.builder()
 ///   .withProperties(props)
 ///   .withTracer(new OtelTracer(otel, "my-pipeline"))
 ///   .build();

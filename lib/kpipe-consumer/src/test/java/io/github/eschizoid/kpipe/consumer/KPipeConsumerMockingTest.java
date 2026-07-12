@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -29,19 +30,19 @@ class KPipeConsumerMockingTest {
   private Function<byte[], byte[]> processor;
 
   @Mock
-  private KafkaConsumer<String, byte[]> mockConsumer;
+  private KafkaConsumer<byte[], byte[]> mockConsumer;
 
   @Mock
-  private KPipeConsumer.ErrorHandler<String> errorHandler;
+  private KPipeConsumer.ErrorHandler errorHandler;
 
   @Mock
-  private KafkaOffsetManager<String> offsetManager;
+  private KafkaOffsetManager offsetManager;
 
   @Captor
   private ArgumentCaptor<Collection<String>> topicCaptor;
 
   @Captor
-  private ArgumentCaptor<KPipeConsumer.ProcessingError<String>> errorCaptor;
+  private ArgumentCaptor<KPipeConsumer.ProcessingError> errorCaptor;
 
   @BeforeEach
   void setUp() {
@@ -55,7 +56,7 @@ class KPipeConsumerMockingTest {
   @Test
   void shouldSubscribeToTopic() {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -79,9 +80,11 @@ class KPipeConsumerMockingTest {
     // Create mock records
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key", "test-value".getBytes()));
+    final var recordsList = List.of(
+      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key".getBytes(UTF_8), "test-value".getBytes())
+    );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -128,9 +131,11 @@ class KPipeConsumerMockingTest {
 
     // Create mock records
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key", "test-value".getBytes()));
+    final var recordsList = List.of(
+      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "test-key".getBytes(UTF_8), "test-value".getBytes())
+    );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -156,7 +161,7 @@ class KPipeConsumerMockingTest {
   void shouldCloseKafkaConsumerWhenClosed() {
     // Setup
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -193,11 +198,11 @@ class KPipeConsumerMockingTest {
       .apply(any(byte[].class));
 
     // Create a mock record
-    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), "value".getBytes());
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(record);
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -243,13 +248,13 @@ class KPipeConsumerMockingTest {
       .apply(any(byte[].class));
 
     // Create mock records
-    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), "value".getBytes());
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(record);
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
     // Create a consumer with no retries
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -285,7 +290,7 @@ class KPipeConsumerMockingTest {
 
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -314,7 +319,7 @@ class KPipeConsumerMockingTest {
 
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -349,7 +354,7 @@ class KPipeConsumerMockingTest {
     final var partitions = Set.of(new TopicPartition(TOPIC, PARTITION));
     when(mockConsumer.assignment()).thenReturn(partitions);
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -387,10 +392,10 @@ class KPipeConsumerMockingTest {
 
     // Create mock records
     var partition = new TopicPartition(TOPIC, PARTITION);
-    var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value".getBytes()));
+    var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), "value".getBytes()));
     var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -438,9 +443,11 @@ class KPipeConsumerMockingTest {
 
     // Create mock records
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var recordsList = List.of(new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key", "value".getBytes()));
+    final var recordsList = List.of(
+      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), "value".getBytes())
+    );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -471,11 +478,11 @@ class KPipeConsumerMockingTest {
   void builderShouldRespectAllOptions() {
     // Setup
     final var pollTimeout = Duration.ofMillis(200);
-    final KPipeConsumer.ErrorHandler<String> errorHandler = _ -> {};
+    final KPipeConsumer.ErrorHandler errorHandler = _ -> {};
     final var maxRetries = 3;
     final var retryBackoff = Duration.ofMillis(100);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -497,11 +504,11 @@ class KPipeConsumerMockingTest {
     // The constructor opens the Kafka consumer first, then the dispatcher, then runs the
     // offset-manager provider. A provider that throws lands after both are already open — the
     // constructor must close what it opened (here: the Kafka consumer) instead of leaking it.
-    final var mockConsumer = new MockConsumer<String, byte[]>("earliest");
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest");
     final var boom = new IllegalStateException("offset-manager provider blew up");
 
     final var thrown = assertThrows(IllegalStateException.class, () ->
-      KPipeConsumer.<String>builder()
+      KPipeConsumer.builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
@@ -518,7 +525,7 @@ class KPipeConsumerMockingTest {
 
   @Test
   void builderShouldThrowNullPointerExceptionWhenMissingRequiredFields() {
-    final var builder = KPipeConsumer.<String>builder();
+    final var builder = KPipeConsumer.builder();
 
     assertThrows(NullPointerException.class, builder::build);
 
@@ -533,7 +540,7 @@ class KPipeConsumerMockingTest {
   void shouldHandleEmptyRecordBatch() {
     // Setup
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -546,7 +553,7 @@ class KPipeConsumerMockingTest {
     );
 
     // Create empty records
-    final var records = ConsumerRecords.<String, byte[]>empty();
+    final var records = ConsumerRecords.<byte[], byte[]>empty();
 
     // Process records
     functionalConsumer.executeProcessRecords(records);
@@ -566,7 +573,7 @@ class KPipeConsumerMockingTest {
     // and marks the offset as processed.
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -579,7 +586,9 @@ class KPipeConsumerMockingTest {
     );
 
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var recordsList = List.of(new ConsumerRecord<String, byte[]>(TOPIC, PARTITION, 0L, "key", null));
+    final var recordsList = List.of(
+      new ConsumerRecord<byte[], byte[]>(TOPIC, PARTITION, 0L, "key".getBytes(UTF_8), null)
+    );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
     functionalConsumer.executeProcessRecords(records);
@@ -611,7 +620,7 @@ class KPipeConsumerMockingTest {
       return value;
     };
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       slowProcessor,
@@ -625,9 +634,9 @@ class KPipeConsumerMockingTest {
 
     // Create test records
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var recordsList = new ArrayList<ConsumerRecord<String, byte[]>>();
+    final var recordsList = new ArrayList<ConsumerRecord<byte[], byte[]>>();
     for (int i = 0; i < messageCount; i++) {
-      recordsList.add(new ConsumerRecord<>(TOPIC, PARTITION, i, "key" + i, ("value" + i).getBytes()));
+      recordsList.add(new ConsumerRecord<>(TOPIC, PARTITION, i, ("key" + i).getBytes(UTF_8), ("value" + i).getBytes()));
     }
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
@@ -677,7 +686,7 @@ class KPipeConsumerMockingTest {
     // Use a real offset manager to test rebalance interaction
     final var realOffsetManager = KafkaOffsetManager.builder(mockConsumer).withCommandQueue(commandQueue).build();
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       slowProcessor,
@@ -690,7 +699,7 @@ class KPipeConsumerMockingTest {
     );
 
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key".getBytes(UTF_8), "value".getBytes());
     final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
 
     // processRecords() submits virtual threads and returns immediately — no blocking.
@@ -729,7 +738,7 @@ class KPipeConsumerMockingTest {
     // Configure error handler to also fail
     doThrow(handlerError).when(errorHandler).accept(any());
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -742,7 +751,7 @@ class KPipeConsumerMockingTest {
     );
 
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key".getBytes(UTF_8), "value".getBytes());
     final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
 
     // Process record
@@ -764,7 +773,7 @@ class KPipeConsumerMockingTest {
     // Configure processor to fail
     when(processor.apply(any(byte[].class))).thenThrow(pipelineError);
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -777,7 +786,7 @@ class KPipeConsumerMockingTest {
     );
 
     final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key".getBytes(UTF_8), "value".getBytes());
     final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
 
     // Process record
@@ -792,7 +801,7 @@ class KPipeConsumerMockingTest {
     // Arrange
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -819,7 +828,7 @@ class KPipeConsumerMockingTest {
   void shouldTrackInFlightMessagesCorrectly() throws Exception {
     // Create a custom consumer with tracking methods
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -837,8 +846,8 @@ class KPipeConsumerMockingTest {
     // Create records
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var recordsList = List.of(
-      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key1", "value1".getBytes()),
-      new ConsumerRecord<>(TOPIC, PARTITION, 1L, "key2", "value2".getBytes())
+      new ConsumerRecord<>(TOPIC, PARTITION, 0L, "key1".getBytes(UTF_8), "value1".getBytes()),
+      new ConsumerRecord<>(TOPIC, PARTITION, 1L, "key2".getBytes(UTF_8), "value2".getBytes())
     );
     final var records = new ConsumerRecords<>(Map.of(partition, recordsList), Map.of());
 
@@ -885,7 +894,7 @@ class KPipeConsumerMockingTest {
       .thenThrow(new RuntimeException("Poll interrupted"))
       .thenThrow(new RuntimeException("Poll interrupted again"));
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -920,7 +929,7 @@ class KPipeConsumerMockingTest {
   @Test
   void stateShouldTransitionCorrectlyDuringLifecycle() throws InterruptedException {
     // Create consumer
-    final var functionalConsumer = KPipeConsumer.<String>builder()
+    final var functionalConsumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -990,7 +999,7 @@ class KPipeConsumerMockingTest {
       .when(processor)
       .apply(any(byte[].class));
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -1003,7 +1012,7 @@ class KPipeConsumerMockingTest {
     );
 
     // Create a record that will fail processing
-    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key", "value".getBytes());
+    final var record = new ConsumerRecord<>(TOPIC, PARTITION, 123L, "key".getBytes(UTF_8), "value".getBytes());
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var records = new ConsumerRecords<>(Map.of(partition, List.of(record)), Map.of());
 
@@ -1036,7 +1045,7 @@ class KPipeConsumerMockingTest {
 
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       b -> new String(b).toUpperCase().getBytes(),
@@ -1072,7 +1081,7 @@ class KPipeConsumerMockingTest {
     when(offsetManager.createRebalanceListener()).thenReturn(mock(ConsumerRebalanceListener.class));
 
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       b -> new String(b).toUpperCase().getBytes(),
@@ -1132,7 +1141,7 @@ class KPipeConsumerMockingTest {
       return new String(value).toUpperCase().getBytes();
     };
 
-    final var functionalConsumer = new TestableKPipeConsumer<>(
+    final var functionalConsumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       concurrentProcessor,
@@ -1146,9 +1155,9 @@ class KPipeConsumerMockingTest {
 
     // Create test records
     final var records = Arrays.asList(
-      new ConsumerRecord<>(TOPIC, PARTITION, 1L, "key1", "value1".getBytes()),
-      new ConsumerRecord<>(TOPIC, PARTITION, 2L, "key2", "value2".getBytes()),
-      new ConsumerRecord<>(TOPIC, PARTITION, 3L, "key3", "value3".getBytes())
+      new ConsumerRecord<>(TOPIC, PARTITION, 1L, "key1".getBytes(UTF_8), "value1".getBytes()),
+      new ConsumerRecord<>(TOPIC, PARTITION, 2L, "key2".getBytes(UTF_8), "value2".getBytes()),
+      new ConsumerRecord<>(TOPIC, PARTITION, 3L, "key3".getBytes(UTF_8), "value3".getBytes())
     );
 
     // Create consumer records
@@ -1172,17 +1181,17 @@ class KPipeConsumerMockingTest {
     doThrow(new RuntimeException("processor boom")).when(processor).apply(any(byte[].class));
 
     final var handlerLatch = new CountDownLatch(2);
-    final KPipeConsumer.ErrorHandler<String> throwingHandler = _ -> {
+    final KPipeConsumer.ErrorHandler throwingHandler = _ -> {
       handlerLatch.countDown();
       throw new RuntimeException("handler kaboom");
     };
 
-    final var record1 = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "k1", "v1".getBytes());
-    final var record2 = new ConsumerRecord<>(TOPIC, PARTITION, 1L, "k2", "v2".getBytes());
+    final var record1 = new ConsumerRecord<>(TOPIC, PARTITION, 0L, "k1".getBytes(UTF_8), "v1".getBytes());
+    final var record2 = new ConsumerRecord<>(TOPIC, PARTITION, 1L, "k2".getBytes(UTF_8), "v2".getBytes());
     final var partition = new TopicPartition(TOPIC, PARTITION);
     final var records = new ConsumerRecords<>(Map.of(partition, List.of(record1, record2)), Map.of());
 
-    final var consumer = new TestableKPipeConsumer<>(
+    final var consumer = new TestableKPipeConsumer(
       properties,
       TOPIC,
       processor,
@@ -1211,7 +1220,7 @@ class KPipeConsumerMockingTest {
     verify(offsetManager, times(2)).markOffsetProcessed(any(ConsumerRecord.class));
   }
 
-  public static class TestableKPipeConsumer<K> extends KPipeConsumer<K> {
+  public static class TestableKPipeConsumer extends KPipeConsumer {
 
     private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
     private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
@@ -1221,15 +1230,15 @@ class KPipeConsumerMockingTest {
       final Properties props,
       final String topic,
       final Function<byte[], byte[]> processor,
-      final KafkaConsumer<K, byte[]> mockConsumer,
+      final KafkaConsumer<byte[], byte[]> mockConsumer,
       final int maxRetries,
       final Duration retryBackoff,
-      final KPipeConsumer.ErrorHandler<K> errorHandler,
+      final KPipeConsumer.ErrorHandler errorHandler,
       final Queue<ConsumerCommand> mockCommandQueue,
-      final KafkaOffsetManager<K> mockOffsetManager
+      final KafkaOffsetManager mockOffsetManager
     ) {
       super(
-        KPipeConsumer.<K>builder()
+        KPipeConsumer.builder()
           .withProperties(props)
           .withTopic(topic)
           .withPipeline(TestPipelines.sideEffect(processor::apply))
@@ -1241,7 +1250,7 @@ class KPipeConsumerMockingTest {
       );
     }
 
-    private void executeProcessRecords(final ConsumerRecords<K, byte[]> records) {
+    private void executeProcessRecords(final ConsumerRecords<byte[], byte[]> records) {
       processRecords(records);
       processCommands();
     }

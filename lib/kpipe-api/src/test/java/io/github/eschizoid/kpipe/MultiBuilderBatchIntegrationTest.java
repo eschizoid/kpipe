@@ -133,7 +133,7 @@ class MultiBuilderBatchIntegrationTest {
     final BatchSink<Map<String, Object>> sink = BatchSink.ofVoid(_ -> {});
 
     final var ex = assertThrows(IllegalArgumentException.class, () ->
-      KPipeConsumer.<byte[]>builder()
+      KPipeConsumer.builder()
         .withProperties(consumerProps("test-disjoint"))
         .withTopic("dup-topic")
         .withPipeline(pipeline)
@@ -156,7 +156,7 @@ class MultiBuilderBatchIntegrationTest {
     final BatchSink<Map<String, Object>> perRecordBatch = b -> BatchResult.allSucceeded(b.size());
 
     // No exception: two batch routes on different topics build cleanly.
-    KPipeConsumer.<byte[]>builder()
+    KPipeConsumer.builder()
       .withProperties(consumerProps("test-mixed-batch"))
       .withBatchPipeline("topic-whole", pipeline, wholeBatch, BatchPolicy.ofSize(10))
       .withBatchPipeline("topic-per-record", pipeline, perRecordBatch, BatchPolicy.ofSize(10))

@@ -1,5 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.util.concurrent.LinkedBlockingQueue;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -38,10 +40,10 @@ public class RemoveIfEmptyJCStressTest {
   private static final String TOPIC = "jcstress-topic";
   private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
 
-  private final KafkaOffsetManager<String> manager;
+  private final KafkaOffsetManager manager;
 
   public RemoveIfEmptyJCStressTest() {
-    final var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
     manager.start();
@@ -66,7 +68,7 @@ public class RemoveIfEmptyJCStressTest {
     r.r2 = ((Number) state.get("pendingCount")).longValue();
   }
 
-  private static ConsumerRecord<String, byte[]> record(final long offset) {
-    return new ConsumerRecord<>(TOPIC, 0, offset, "k", "v".getBytes());
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, "k".getBytes(UTF_8), "v".getBytes());
   }
 }

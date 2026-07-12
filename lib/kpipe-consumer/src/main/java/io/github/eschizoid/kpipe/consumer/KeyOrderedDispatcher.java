@@ -54,9 +54,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// should be empty and workers exited. This `close()` performs a defensive short wait for any
 /// straggler then returns; in-progress records that exceed the timeout are abandoned to the
 /// JVM (mirrors the existing `virtualThreadExecutor` shutdown behavior).
-///
-/// @param <K> the Kafka record key type
-final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
+final class KeyOrderedDispatcher implements Dispatcher {
 
   private static final Logger LOGGER = System.getLogger(KeyOrderedDispatcher.class.getName());
 
@@ -105,7 +103,11 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
   }
 
   @Override
-  public void dispatch(final ConsumerRecord<K, byte[]> record, final Runnable processTask, final Runnable onComplete) {
+  public void dispatch(
+    final ConsumerRecord<byte[], byte[]> record,
+    final Runnable processTask,
+    final Runnable onComplete
+  ) {
     // No `if (closed) return` early-exit here — that would orphan records mid-batch
     // (TrackOffset already enqueued in KPipeConsumer.processRecords, but no
     // MarkOffsetProcessed since we skipped). The `closed` flag is checked ONLY inside the
@@ -284,9 +286,9 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
   /// underlying bytes so callers can't mutate the buffer's position/limit or the backing
   /// array and corrupt the dispatcher's internal map.
   @Override
-  public List<Map.Entry<Object, Integer>> topKeyQueueDepths(final int n) {
+  public List<Map.Entry<byte[], Integer>> topKeyQueueDepths(final int n) {
     if (n <= 0) throw new IllegalArgumentException("n must be positive, got " + n);
-    final List<Map.Entry<Object, Integer>> snapshot;
+    final List<Map.Entry<byte[], Integer>> snapshot;
     lock.lock();
     try {
       // queues is a plain LinkedHashMap mutated only under lock — size it here, not before.
@@ -299,31 +301,27 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
     } finally {
       lock.unlock();
     }
-    snapshot.sort(Comparator.comparingInt((Map.Entry<Object, Integer> e) -> e.getValue()).reversed());
+    snapshot.sort(Comparator.comparingInt((Map.Entry<byte[], Integer> e) -> e.getValue()).reversed());
     return snapshot.size() <= n ? snapshot : new ArrayList<>(snapshot.subList(0, n));
   }
 
   /// Converts the dispatcher's internal LRU key into the form returned to diagnostic callers:
-  /// the null sentinel becomes `null`, and `ByteBuffer`-wrapped byte-array keys become a
-  /// defensive copy of the underlying bytes (so callers can't mutate position/limit or the
-  /// backing array on our live map key).
-  private static Object toPublicKey(final Object internalKey) {
+  /// the null sentinel becomes `null`, and the `ByteBuffer` wrapper becomes a defensive copy
+  /// of the underlying bytes (so callers can't mutate position/limit or the backing array on
+  /// our live map key).
+  private static byte[] toPublicKey(final Object internalKey) {
     if (internalKey == NULL_KEY) return null;
-    if (internalKey instanceof ByteBuffer bb) {
-      final var copy = new byte[bb.remaining()];
-      bb.duplicate().get(copy);
-      return copy;
-    }
-    return internalKey;
+    final var bb = (ByteBuffer) internalKey;
+    final var copy = new byte[bb.remaining()];
+    bb.duplicate().get(copy);
+    return copy;
   }
 
-  /// Normalizes the raw Kafka key into something the LRU map can index correctly. The
+  /// Normalizes the raw `byte[]` Kafka key into something the LRU map can index correctly. The
   /// `LinkedHashMap` uses `Object.equals`/`hashCode` to identify entries, but `byte[]` has
   /// reference-based equality — two arrays with identical content would be treated as
-  /// distinct keys and break per-key serialization. Standard Kafka deserializers produce
-  /// content-equality-correct keys (`String`, `Integer`, `Long`, `UUID`); only
-  /// `ByteArrayDeserializer` returns a raw `byte[]`, which we wrap in a `ByteBuffer` to get
-  /// content-based equality.
+  /// distinct keys and break per-key serialization — so keys are wrapped in a `ByteBuffer` to
+  /// get content-based equality.
   ///
   /// The wrapper holds a **defensive copy** of the bytes (via `bytes.clone()`) so the LRU
   /// map's key identity cannot be invalidated by a caller mutating the original `byte[]`
@@ -331,10 +329,9 @@ final class KeyOrderedDispatcher<K> implements Dispatcher<K> {
   /// `equals`/`hashCode` and the map entry would become unreachable, leaking its queue.
   ///
   /// `null` keys all collapse to a single sentinel so they serialize through one queue.
-  private static Object normalizeKey(final Object rawKey) {
+  private static Object normalizeKey(final byte[] rawKey) {
     if (rawKey == null) return NULL_KEY;
-    if (rawKey instanceof byte[] bytes) return ByteBuffer.wrap(bytes.clone());
-    return rawKey;
+    return ByteBuffer.wrap(rawKey.clone());
   }
 
   @Override

@@ -211,10 +211,11 @@ try (var handle = KPipe.json("orders", kafkaProps)
 `Handle` is `AutoCloseable` and `close()` calls `shutdownGracefully(Duration.ofSeconds(5))` by default. The DLQ wires a
 `KafkaProducer` from the same Kafka properties; to share a pre-built producer instead, drop down to the explicit
 `KPipeConsumer.Builder` and call `.withDeadLetterQueue(topic, kpipeProducer)`. The second argument is a
-`KPipeProducer<K, byte[]>` (not a raw `KafkaProducer`) — wrap your producer with
-`KPipeProducer.<K, byte[]>builder().withProducer(rawProducer).build()` if you only have the raw Kafka client. The atomic
-form keeps the topic and producer from drifting out of sync. See [`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md) for
-the full set of explicit-only options (custom `OffsetManager`, multi-topic heterogeneous dispatch).
+`KPipeProducer<byte[], byte[]>` (not a raw `KafkaProducer`) — wrap your producer with
+`KPipeProducer.<byte[], byte[]>builder().withProducer(rawProducer).build()` if you only have the raw Kafka client. The
+atomic form keeps the topic and producer from drifting out of sync. See
+[`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md) for the full set of explicit-only options (custom `OffsetManager`,
+multi-topic heterogeneous dispatch).
 
 ### 3. The full fluent surface
 
@@ -236,7 +237,7 @@ shows you everything that exists:
 | `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate trips (see [Circuit breaker](#9-circuit-breaker))    |
 | `.withTracer(Tracer t)`                                            | propagate W3C trace context through Kafka headers                                            |
 | `.withDeadLetterTopic(String)`                                     | route failed records to a DLQ topic after retries are exhausted                              |
-| `.withErrorHandler(Consumer<ProcessingError<byte[]>>)`             | custom failure handler (DB, alerting, anything not a Kafka topic)                            |
+| `.withErrorHandler(Consumer<ProcessingError>)`                     | custom failure handler; `record()` key is `byte[]` — decode with `new String(key, UTF_8)`    |
 | `.withMetrics(ConsumerMetrics m)`                                  | wire OTel or custom metrics (default `ConsumerMetrics.noop()`)                               |
 | `.withPollTimeout(Duration d)`                                     | override Kafka poll timeout (default 100ms)                                                  |
 | `.onFiltered(Runnable observer)`                                   | observe intentional filtering (an operator returned null) — visibility only                  |
@@ -462,7 +463,10 @@ Error handling is layered:
 - Retries: `.withRetry(maxRetries, backoff)` for transient failures.
 - Dead-letter topic: `.withDeadLetterTopic("events-dlq")` — records land there after retries are exhausted.
 - Custom error handler: `.withErrorHandler(...)` to route failures somewhere other than a Kafka topic — an external DB,
-  alerting system, whatever.
+  alerting system, whatever. The handler receives a `ProcessingError` whose `record()` is a
+  `ConsumerRecord<byte[], byte[]>` — keys are bytes at the boundary, both sides. If you keyed by string, decode where
+  you need it (guarding null, which Kafka permits):
+  `final var key = record.key() == null ? null : new String(record.key(), UTF_8);`
 - Per-processor and per-sink wrapping: `MessageProcessorRegistry.withOperatorErrorHandling()` and
   `MessageProcessorRegistry.withSinkErrorHandling()` swallow failures at the boundary so one bad processor doesn't take
   down the pipeline.
@@ -900,7 +904,7 @@ The consumer hosts its own lifecycle — start, periodic metrics reporting, JVM 
 shutdown. There is no separate runner class; everything is on `KPipeConsumer` directly.
 
 ```java
-try (final var consumer = KPipeConsumer.<byte[]>builder()
+try (final var consumer = KPipeConsumer.builder()
     .withProperties(kafkaProps)
     .withTopic("events")
     .withPipeline(pipeline)

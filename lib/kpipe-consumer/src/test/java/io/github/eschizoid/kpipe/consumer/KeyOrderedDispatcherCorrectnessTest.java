@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -38,8 +39,14 @@ import org.junit.jupiter.api.Test;
 /// the interleaving pressure on the single [java.util.concurrent.locks.ReentrantLock].
 class KeyOrderedDispatcherCorrectnessTest {
 
-  private static ConsumerRecord<String, byte[]> recordWithKey(final String key, final long offset) {
-    return new ConsumerRecord<>("test-topic", 0, offset, key, new byte[0]);
+  private static ConsumerRecord<byte[], byte[]> recordWithKey(final String key, final long offset) {
+    return new ConsumerRecord<byte[], byte[]>(
+      "test-topic",
+      0,
+      offset,
+      key == null ? null : key.getBytes(UTF_8),
+      new byte[0]
+    );
   }
 
   /// Per-key bookkeeping shared across all worker threads. `inside` detects concurrent overlap;
@@ -80,7 +87,7 @@ class KeyOrderedDispatcherCorrectnessTest {
   void perKeySerialOrderingUnderConcurrentDispatch() throws InterruptedException {
     final var keys = 64;
     final var recordsPerKey = 200;
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
 
     final var trackers = new ConcurrentHashMap<String, KeyTracker>();
     for (int k = 0; k < keys; k++) trackers.put("key-" + k, new KeyTracker());
@@ -145,7 +152,7 @@ class KeyOrderedDispatcherCorrectnessTest {
     final var cap = 8;
     final var keys = 500;
     final var recordsPerKey = 6;
-    final var dispatcher = new KeyOrderedDispatcher<String>(cap);
+    final var dispatcher = new KeyOrderedDispatcher(cap);
 
     final var trackers = new ConcurrentHashMap<String, KeyTracker>();
     for (int k = 0; k < keys; k++) trackers.put("key-" + k, new KeyTracker());
@@ -216,7 +223,7 @@ class KeyOrderedDispatcherCorrectnessTest {
     final var cap = 4;
     final var keys = 40;
     final var recordsPerKey = 10;
-    final var dispatcher = new KeyOrderedDispatcher<String>(cap);
+    final var dispatcher = new KeyOrderedDispatcher(cap);
 
     final var trackers = new ConcurrentHashMap<String, KeyTracker>();
     for (int k = 0; k < keys; k++) trackers.put("key-" + k, new KeyTracker());
@@ -298,7 +305,7 @@ class KeyOrderedDispatcherCorrectnessTest {
 
   @Test
   void nullKeyTrafficSerializesAndCoexistsWithKeyedTraffic() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
 
     final var nullTracker = new KeyTracker();
     final var keyedKeys = 16;
@@ -377,7 +384,7 @@ class KeyOrderedDispatcherCorrectnessTest {
 
   @Test
   void topKeyQueueDepthsSnapshotIsStableUnderConcurrentChurn() throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(32);
+    final var dispatcher = new KeyOrderedDispatcher(32);
     final var keys = 200;
     final var recordsPerKey = 8;
     final var totalRecords = keys * recordsPerKey;
@@ -389,7 +396,7 @@ class KeyOrderedDispatcherCorrectnessTest {
     final var snapshotter = Thread.ofVirtual().start(() -> {
       while (!stopSnapshots.get()) {
         try {
-          final List<Map.Entry<Object, Integer>> snap = dispatcher.topKeyQueueDepths(5);
+          final List<Map.Entry<byte[], Integer>> snap = dispatcher.topKeyQueueDepths(5);
           for (final var e : snap) {
             if (e.getValue() < 0) snapshotErrors.add("negative depth: " + e.getValue());
           }
@@ -440,7 +447,7 @@ class KeyOrderedDispatcherCorrectnessTest {
     // Race a close() against in-flight dispatch. pendingCount() must never go negative (a
     // double-decrement bug) and must settle. We don't assert all records ran — close() is allowed
     // to abandon stragglers — only that the counter is non-negative throughout and ends >= 0.
-    final var dispatcher = new KeyOrderedDispatcher<String>(16);
+    final var dispatcher = new KeyOrderedDispatcher(16);
     final var keys = 50;
     final var recordsPerKey = 20;
     final var negativeSeen = new AtomicBoolean(false);

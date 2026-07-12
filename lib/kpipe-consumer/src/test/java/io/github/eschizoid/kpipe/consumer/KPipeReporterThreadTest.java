@@ -64,7 +64,7 @@ class KPipeReporterThreadTest {
     };
 
     final var mockConsumer = buildMockConsumer();
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -92,7 +92,7 @@ class KPipeReporterThreadTest {
   /// failure rather than a deferred NPE on `start()`.
   @Test
   void withMetricsReportersRejectsNullArgs() {
-    final var builder = KPipeConsumer.<String>builder().withProperties(properties).withTopic(TOPIC);
+    final var builder = KPipeConsumer.builder().withProperties(properties).withTopic(TOPIC);
     assertThrows(NullPointerException.class, () -> builder.withMetricsReporters(null));
   }
 
@@ -103,7 +103,7 @@ class KPipeReporterThreadTest {
   /// `start()` as a no-show feature.
   @Test
   void withMetricsIntervalRejectsZeroOrNegative() {
-    final var builder = KPipeConsumer.<String>builder().withProperties(properties).withTopic(TOPIC);
+    final var builder = KPipeConsumer.builder().withProperties(properties).withTopic(TOPIC);
     assertThrows(NullPointerException.class, () -> builder.withMetricsInterval(null));
     assertThrows(IllegalArgumentException.class, () -> builder.withMetricsInterval(Duration.ZERO));
     assertThrows(IllegalArgumentException.class, () -> builder.withMetricsInterval(Duration.ofMillis(-1)));
@@ -112,8 +112,8 @@ class KPipeReporterThreadTest {
   /// Mirrors the helper in `KPipeBackpressureIntegrationTest`: pre-assigns the partition so
   /// `subscribe()` is a no-op, and seeds the beginning offset. No records are added — the
   /// reporter-thread test doesn't need any.
-  private MockConsumer<String, byte[]> buildMockConsumer() {
-    final var mc = new MockConsumer<String, byte[]>("earliest") {
+  private MockConsumer<byte[], byte[]> buildMockConsumer() {
+    final var mc = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 

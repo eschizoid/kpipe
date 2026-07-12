@@ -40,7 +40,7 @@ class KPipeProducerIntegrationTest {
     }
 
     // 2. Start consumer with DLQ
-    final var consumer = KPipeConsumer.<byte[]>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props)
       .withTopic(topic)
       .withPipeline(
@@ -79,7 +79,7 @@ class KPipeProducerIntegrationTest {
     }
 
     // 2. Start consumer with DLQ and external producer
-    final var consumer = KPipeConsumer.<byte[]>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props)
       .withTopic(topic)
       .withPipeline(
@@ -125,7 +125,7 @@ class KPipeProducerIntegrationTest {
       v -> v,
       null
     );
-    final var consumer = KPipeConsumer.<byte[]>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(props)
       .withTopic(topic)
       .withPipeline(

@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -50,7 +51,7 @@ class KeyOrderedDispatcherPropertyTest {
     @ForAll("dispatchStreams") final List<Instruction> stream,
     @ForAll @IntRange(min = 1, max = 64) final int cap
   ) throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(cap);
+    final var dispatcher = new KeyOrderedDispatcher(cap);
     try {
       final var trackers = new ConcurrentHashMap<String, KeyTracker>();
       final var submittedOrder = new HashMap<String, List<Long>>();
@@ -96,7 +97,7 @@ class KeyOrderedDispatcherPropertyTest {
     @ForAll @IntRange(min = 0, max = 30) final int keyedCount,
     @ForAll @IntRange(min = 1, max = 16) final int cap
   ) throws InterruptedException {
-    final var dispatcher = new KeyOrderedDispatcher<String>(cap);
+    final var dispatcher = new KeyOrderedDispatcher(cap);
     try {
       final var nullTracker = new KeyTracker();
       final var keyedTracker = new KeyTracker();
@@ -204,7 +205,13 @@ class KeyOrderedDispatcherPropertyTest {
     return out;
   }
 
-  private static ConsumerRecord<String, byte[]> recordWithKey(final String key, final long offset) {
-    return new ConsumerRecord<>("test-topic", 0, offset, key, new byte[0]);
+  private static ConsumerRecord<byte[], byte[]> recordWithKey(final String key, final long offset) {
+    return new ConsumerRecord<byte[], byte[]>(
+      "test-topic",
+      0,
+      offset,
+      key == null ? null : key.getBytes(UTF_8),
+      new byte[0]
+    );
   }
 }

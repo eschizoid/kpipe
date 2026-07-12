@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -51,25 +52,25 @@ class KPipeConsumerTest {
     properties.put("enable.auto.commit", "true");
   }
 
-  private KPipeConsumer<String> createConsumer(final UnaryOperator<byte[]> processor) {
-    return KPipeConsumer.<String>builder()
+  private KPipeConsumer createConsumer(final UnaryOperator<byte[]> processor) {
+    return KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(processor))
       .build();
   }
 
-  private KPipeConsumer<String> createConsumerWithMockProcessor() {
+  private KPipeConsumer createConsumerWithMockProcessor() {
     return createConsumer(mockProcessor::apply);
   }
 
-  private ConsumerRecord<String, byte[]> createRecord(final long offset, final String key, final String value) {
-    return new ConsumerRecord<>(TOPIC, 0, offset, key, value.getBytes());
+  private ConsumerRecord<byte[], byte[]> createRecord(final long offset, final String key, final String value) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, key.getBytes(UTF_8), value.getBytes());
   }
 
   /// Records whether close() was called — a probe for "did the consumer release its ctor
   /// resources?". Everything else is a minimal no-op OffsetManager impl.
-  private static final class RecordingOffsetManager implements OffsetManager<String> {
+  private static final class RecordingOffsetManager implements OffsetManager {
 
     final AtomicBoolean closed = new AtomicBoolean(false);
     final AtomicInteger marks = new AtomicInteger(0);
@@ -77,24 +78,24 @@ class KPipeConsumerTest {
     // Optional probe: the real KafkaOffsetManager.close() does a final commitSync on the Kafka
     // consumer, so the consumer must still be open when the offset manager is closed. Set this to
     // the MockConsumer to record whether it was still open at close() time.
-    volatile MockConsumer<String, byte[]> consumerProbe;
+    volatile MockConsumer<byte[], byte[]> consumerProbe;
     final AtomicBoolean consumerOpenWhenClosed = new AtomicBoolean(false);
 
     @Override
-    public OffsetManager<String> start() {
+    public OffsetManager start() {
       return this;
     }
 
     @Override
-    public OffsetManager<String> stop() {
+    public OffsetManager stop() {
       return this;
     }
 
     @Override
-    public void trackOffset(final ConsumerRecord<String, byte[]> record) {}
+    public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
 
     @Override
-    public void markOffsetProcessed(final ConsumerRecord<String, byte[]> record) {
+    public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       if (closed.get()) markedAfterClose.set(true);
       marks.incrementAndGet();
     }
@@ -133,7 +134,7 @@ class KPipeConsumerTest {
     // lifetime. Probe via a RecordingOffsetManager: poll() throws an Error (escapes the loop's
     // catch(Exception), so the finally still runs), then assert the manager was closed.
     final var manager = new RecordingOffsetManager();
-    final var mock = new MockConsumer<String, byte[]>("earliest") {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -141,11 +142,11 @@ class KPipeConsumerTest {
       public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
 
       @Override
-      public synchronized ConsumerRecords<String, byte[]> poll(final Duration timeout) {
+      public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
         throw new Error("simulated unexpected consumer-thread failure");
       }
     };
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -182,7 +183,7 @@ class KPipeConsumerTest {
     final var entered = new CountDownLatch(1);
     final var gate = new CountDownLatch(1);
 
-    final var mock = new MockConsumer<String, byte[]>("earliest") {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -194,7 +195,7 @@ class KPipeConsumerTest {
     mock.updateBeginningOffsets(Map.of(tp, 0L));
     mock.addRecord(createRecord(0, "k", "v"));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
@@ -247,7 +248,7 @@ class KPipeConsumerTest {
     final var manager = new RecordingOffsetManager();
     final var entered = new CountDownLatch(1);
 
-    final var mock = new MockConsumer<String, byte[]>("earliest") {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -259,7 +260,7 @@ class KPipeConsumerTest {
     mock.updateBeginningOffsets(Map.of(tp, 0L));
     mock.addRecord(createRecord(0, "k", "v"));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withProcessingMode(ProcessingMode.PARALLEL)
@@ -302,7 +303,7 @@ class KPipeConsumerTest {
     // before it closes the Kafka consumer. Probe: record whether the consumer was still open when
     // the manager's close() ran.
     final var manager = new RecordingOffsetManager();
-    final var mock = new MockConsumer<String, byte[]>("earliest") {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -314,7 +315,7 @@ class KPipeConsumerTest {
     mock.assign(List.of(tp));
     mock.updateBeginningOffsets(Map.of(tp, 0L));
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -348,7 +349,7 @@ class KPipeConsumerTest {
     final var flushedCount = new AtomicInteger(0);
     final var processed = new CountDownLatch(1);
 
-    final var mock = new MockConsumer<String, byte[]>("earliest") {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
 
@@ -361,7 +362,7 @@ class KPipeConsumerTest {
     mock.addRecord(createRecord(0, "k", "v"));
 
     final var waitTimeout = Duration.ofSeconds(3);
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withConsumer(() -> mock)
       .withOffsetManager(manager)
@@ -403,8 +404,8 @@ class KPipeConsumerTest {
     // A consumer built but never started must still release every resource the constructor
     // opened when closed — most importantly the Kafka consumer itself. The CREATED → CLOSED
     // fast path used to return without closing it, leaking network connections + threads.
-    final var mock = new MockConsumer<String, byte[]>("earliest");
-    final var consumer = KPipeConsumer.<String>builder()
+    final var mock = new MockConsumer<byte[], byte[]>("earliest");
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -421,7 +422,7 @@ class KPipeConsumerTest {
     // Arrange & Act & Assert
     assertDoesNotThrow(this::createConsumerWithMockProcessor);
     assertDoesNotThrow(() ->
-      KPipeConsumer.<String>builder()
+      KPipeConsumer.builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
@@ -433,23 +434,15 @@ class KPipeConsumerTest {
   @Test
   void constructorWithNullParametersShouldThrowNullPointerException() {
     // Arrange & Act & Assert
-    assertThrows(NullPointerException.class, () -> KPipeConsumer.<String>builder().build());
+    assertThrows(NullPointerException.class, () -> KPipeConsumer.builder().build());
     assertThrows(NullPointerException.class, () ->
-      KPipeConsumer.<String>builder()
-        .withProperties(null)
-        .withTopic(TOPIC)
-        .withPipeline(TestPipelines.identity())
-        .build()
+      KPipeConsumer.builder().withProperties(null).withTopic(TOPIC).withPipeline(TestPipelines.identity()).build()
     );
     assertThrows(NullPointerException.class, () ->
-      KPipeConsumer.<String>builder()
-        .withProperties(properties)
-        .withTopic(null)
-        .withPipeline(TestPipelines.identity())
-        .build()
+      KPipeConsumer.builder().withProperties(properties).withTopic(null).withPipeline(TestPipelines.identity()).build()
     );
     assertThrows(NullPointerException.class, () ->
-      KPipeConsumer.<String>builder().withProperties(properties).withTopic(TOPIC).withPipeline(null).build()
+      KPipeConsumer.builder().withProperties(properties).withTopic(TOPIC).withPipeline(null).build()
     );
   }
 
@@ -460,21 +453,17 @@ class KPipeConsumerTest {
     // silent ambiguity at runtime ("which route processes the record?"). Without this guard,
     // dispatch evaluation order would silently determine the outcome.
     final var ex = assertThrows(IllegalArgumentException.class, () ->
-      KPipeConsumer.<String>builder()
+      KPipeConsumer.builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
-        .withBatchPipeline(
-          TOPIC,
-          TestPipelines.identity(),
-          BatchSink.ofVoid(batch -> {}),
-          BatchPolicy.ofSize(10)
-        )
+        .withBatchPipeline(TOPIC, TestPipelines.identity(), BatchSink.ofVoid(batch -> {}), BatchPolicy.ofSize(10))
         .build()
     );
     assertTrue(
       ex.getMessage().contains(TOPIC) && ex.getMessage().contains("both"),
-      "rejection message must name the conflicting topic and call out the regular/batch overlap, got: " + ex.getMessage()
+      "rejection message must name the conflicting topic and call out the regular/batch overlap, got: " +
+        ex.getMessage()
     );
   }
 
@@ -532,7 +521,7 @@ class KPipeConsumerTest {
       if (attempts.getAndIncrement() == 0) throw new RuntimeException("First attempt failure");
       return new String(value).toUpperCase().getBytes();
     };
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(retryProcessor))
@@ -564,8 +553,8 @@ class KPipeConsumerTest {
       throw new RuntimeException("Always failing");
     };
     @SuppressWarnings("unchecked")
-    final KPipeConsumer.ErrorHandler<String> errorHandler = mock(KPipeConsumer.ErrorHandler.class);
-    final var consumer = KPipeConsumer.<String>builder()
+    final KPipeConsumer.ErrorHandler errorHandler = mock(KPipeConsumer.ErrorHandler.class);
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(failingProcessor))
@@ -605,7 +594,7 @@ class KPipeConsumerTest {
       if (count % 3 != 0) throw new RuntimeException("Intermittent failure #" + count);
       return new String(value).toUpperCase().getBytes();
     };
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(intermittentProcessor))
@@ -636,7 +625,7 @@ class KPipeConsumerTest {
   void pauseShouldChangeStateAndEnqueuePauseCommand() {
     // Arrange
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(mockProcessor::apply))
@@ -655,7 +644,7 @@ class KPipeConsumerTest {
   void resumeShouldChangeStateAndEnqueueResumeCommand() {
     // Arrange
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(mockProcessor::apply))
@@ -685,7 +674,7 @@ class KPipeConsumerTest {
         return super.offer(command);
       }
     };
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(mockProcessor::apply))
@@ -716,7 +705,7 @@ class KPipeConsumerTest {
   void pipelineShouldProcessMessages() {
     // Arrange
     final var processed = new ArrayList<String>();
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(
@@ -743,7 +732,7 @@ class KPipeConsumerTest {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
     final var sinkStarted = new CountDownLatch(3);
     final var sinkRelease = new CountDownLatch(1);
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(
@@ -783,7 +772,7 @@ class KPipeConsumerTest {
     // Arrange: high watermark of 2, low watermark of 1
     final var sinkStarted = new CountDownLatch(3);
     final var sinkRelease = new CountDownLatch(1);
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(
@@ -818,7 +807,7 @@ class KPipeConsumerTest {
   @Test
   void withBackpressureShouldAddBackpressureMetricsByDefault() {
     // Arrange: no withBackpressure call
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -835,7 +824,7 @@ class KPipeConsumerTest {
   @Test
   void withBackpressureShouldBeEnabledByDefault() {
     // Arrange: no withBackpressure call
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
@@ -851,7 +840,7 @@ class KPipeConsumerTest {
   void withBackpressureNoArgShouldUseDefaultWatermarks() {
     // withBackpressure() with no args should build successfully (uses 10_000 / 7_000 defaults)
     assertDoesNotThrow(() ->
-      KPipeConsumer.<String>builder()
+      KPipeConsumer.builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
@@ -864,7 +853,7 @@ class KPipeConsumerTest {
   @Test
   void withBackpressureShouldThrowWhenLowWatermarkEqualsHighWatermark() {
     assertThrows(IllegalArgumentException.class, () ->
-      KPipeConsumer.<String>builder()
+      KPipeConsumer.builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
@@ -876,7 +865,7 @@ class KPipeConsumerTest {
   @Test
   void withBackpressureShouldThrowWhenLowWatermarkExceedsHighWatermark() {
     assertThrows(IllegalArgumentException.class, () ->
-      KPipeConsumer.<String>builder()
+      KPipeConsumer.builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
@@ -888,7 +877,7 @@ class KPipeConsumerTest {
   @Test
   void withBackpressureAndMetricsDisabledShouldNowWorkAtBuildTime() {
     assertDoesNotThrow(() ->
-      KPipeConsumer.<String>builder()
+      KPipeConsumer.builder()
         .withProperties(properties)
         .withTopic(TOPIC)
         .withPipeline(TestPipelines.identity())
@@ -901,7 +890,7 @@ class KPipeConsumerTest {
   void sequentialProcessingShouldProcessInOrder() {
     // Arrange
     final var processed = new ArrayList<String>();
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(
@@ -939,7 +928,7 @@ class KPipeConsumerTest {
     processed.put("beta", new java.util.concurrent.CopyOnWriteArrayList<>());
     final var latch = new java.util.concurrent.CountDownLatch(6);
 
-    final var consumer = KPipeConsumer.<String>builder()
+    final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(

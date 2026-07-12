@@ -28,15 +28,18 @@ import org.junit.jupiter.api.function.Executable;
 /// then rejects per record, with no obvious source of the misconfig.
 class KPipeConsumerBuilderValidationTest {
 
-  private static KPipeConsumer.Builder<String> builder() {
+  private static KPipeConsumer.Builder builder() {
     return KPipeConsumer.builder();
   }
 
   private static void assertNpeWithMessage(final String expectedSubstring, final Executable action) {
     final var ex = assertThrows(NullPointerException.class, action);
     final var actual = ex.getMessage();
-    assertEquals(true, actual != null && actual.contains(expectedSubstring),
-      () -> "expected NPE message containing '" + expectedSubstring + "' but got: " + actual);
+    assertEquals(
+      true,
+      actual != null && actual.contains(expectedSubstring),
+      () -> "expected NPE message containing '" + expectedSubstring + "' but got: " + actual
+    );
   }
 
   @Test
@@ -74,7 +77,7 @@ class KPipeConsumerBuilderValidationTest {
 
   @Test
   void withKafkaProducerRawRejectsNull() {
-    assertNpeWithMessage("producer", () -> builder().withKafkaProducer((Producer<String, byte[]>) null));
+    assertNpeWithMessage("producer", () -> builder().withKafkaProducer((Producer<byte[], byte[]>) null));
   }
 
   @Test
@@ -124,6 +127,46 @@ class KPipeConsumerBuilderValidationTest {
     assertNpeWithMessage("provider", () -> builder().withConsumer(null));
   }
 
+  // --- key.deserializer pinning ------------------------------------------------------------------
+
+  /// Builds a consumer against a mock Kafka client and returns the properties `build()` mutated.
+  /// Keys are always `byte[]` since 1.17.0, so `build()` must pin the key deserializer no matter
+  /// what the caller configured — the old key-type-witness/deserializer mismatch surfaced as a
+  /// `ClassCastException` deep inside record processing.
+  private static Properties buildWithProps(final Properties props) {
+    @SuppressWarnings("unchecked")
+    final var pipeline = (MessagePipeline<String>) mock(MessagePipeline.class);
+    try (
+      final var consumer = builder()
+        .withProperties(props)
+        .withTopic("t")
+        .withPipeline(pipeline)
+        .withConsumer(() -> mock(Consumer.class))
+        .build()
+    ) {
+      assertEquals(false, consumer == null);
+    }
+    return props;
+  }
+
+  @Test
+  void buildPinsKeyDeserializerOverConflictingUserValue() {
+    final var props = new Properties();
+    props.setProperty("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+    assertEquals(
+      "org.apache.kafka.common.serialization.ByteArrayDeserializer",
+      buildWithProps(props).get("key.deserializer")
+    );
+  }
+
+  @Test
+  void buildPinsKeyDeserializerWhenUnset() {
+    assertEquals(
+      "org.apache.kafka.common.serialization.ByteArrayDeserializer",
+      buildWithProps(new Properties()).get("key.deserializer")
+    );
+  }
+
   // --- happy path: each setter accepts a non-null value without throwing ------------------------
 
   @Test
@@ -131,9 +174,9 @@ class KPipeConsumerBuilderValidationTest {
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<String>) mock(MessagePipeline.class);
     @SuppressWarnings("unchecked")
-    final var producer = (Producer<String, byte[]>) mock(Producer.class);
+    final var producer = (Producer<byte[], byte[]>) mock(Producer.class);
     @SuppressWarnings("unchecked")
-    final var kpipeProducer = (KPipeProducer<String, byte[]>) mock(KPipeProducer.class);
+    final var kpipeProducer = (KPipeProducer<byte[], byte[]>) mock(KPipeProducer.class);
 
     final var props = new Properties();
     props.setProperty("bootstrap.servers", "localhost:9092");

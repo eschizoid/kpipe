@@ -278,7 +278,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
     private AtomicInteger processedCount;
-    private KPipeConsumer<byte[]> consumer;
+    private KPipeConsumer consumer;
 
     @Setup(Level.Invocation)
     public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
@@ -292,7 +292,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
           return b;
         })
         .build();
-      consumer = KPipeConsumer.<byte[]>builder()
+      consumer = KPipeConsumer.builder()
         .withProperties(props)
         .withTopic(TOPIC)
         .withPipeline(pipeline)
@@ -326,7 +326,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
     private AtomicInteger processedCount;
-    private KPipeConsumer<byte[]> consumer;
+    private KPipeConsumer consumer;
 
     @Setup(Level.Invocation)
     public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
@@ -340,7 +340,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
           return b;
         })
         .build();
-      consumer = KPipeConsumer.<byte[]>builder()
+      consumer = KPipeConsumer.builder()
         .withProperties(props)
         .withTopic(TOPIC)
         .withPipeline(pipeline)
