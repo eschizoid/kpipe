@@ -552,7 +552,6 @@ class KPipeConsumerTest {
     final UnaryOperator<byte[]> failingProcessor = _ -> {
       throw new RuntimeException("Always failing");
     };
-    @SuppressWarnings("unchecked")
     final KPipeConsumer.ErrorHandler errorHandler = mock(KPipeConsumer.ErrorHandler.class);
     final var consumer = KPipeConsumer.builder()
       .withProperties(properties)

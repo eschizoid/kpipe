@@ -279,13 +279,6 @@ class KPipeDlqTest {
     };
   }
 
-  private static Properties stringProperties() {
-    return buildProperties(
-      "org.apache.kafka.common.serialization.StringDeserializer",
-      "org.apache.kafka.common.serialization.StringDeserializer"
-    );
-  }
-
   private static Properties byteProperties() {
     return buildProperties(
       "org.apache.kafka.common.serialization.ByteArrayDeserializer",

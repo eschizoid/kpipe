@@ -373,7 +373,7 @@ class BatchPipelineWrapperCoverageContractTest {
   ///
   /// 1. Every buffered record is flushed and reaches the sink.
   /// 2. Every record is then marked processed via
-  // [BatchPipelineWrapper.BatchCallbacks#markProcessed].
+  /// [BatchPipelineWrapper.BatchCallbacks#markProcessed].
   /// 3. All three markProcessed events are observed BEFORE a subsequent simulated
   ///    `OffsetManager.close()` call — pinning the ordering invariant that batch buffers
   ///    drain into the offset manager while it's still alive.
