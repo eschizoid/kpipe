@@ -173,6 +173,7 @@ public final class TestStream<T> implements AutoCloseable {
     while (System.nanoTime() < deadline) {
       if (quiescent(target)) return this;
       try {
+        //noinspection BusyWait — deadline-bounded quiescence poll, not a spin
         Thread.sleep(5);
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();

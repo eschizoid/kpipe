@@ -13,7 +13,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.MockConsumer;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -197,7 +196,7 @@ class ConsumerHealthControllerTest {
   @Test
   void tickBackpressureNoopWhenDisabled() {
     final var health = new ConsumerHealthController(null, null, scheduler, hook);
-    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest");
     health.tickBackpressure(consumer);
     assertEquals(0, hook.pauseCalls);
   }
@@ -207,7 +206,7 @@ class ConsumerHealthControllerTest {
     final var inflight = new AtomicInteger(0);
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
     final var health = new ConsumerHealthController(bp, null, scheduler, hook);
-    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest");
 
     // Below high watermark — no action.
     inflight.set(5);
@@ -239,7 +238,7 @@ class ConsumerHealthControllerTest {
     final var inflight = new AtomicInteger(15);
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
     final var health = new ConsumerHealthController(bp, null, scheduler, hook);
-    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest");
     // Simulate every in-flight record completing between the PAUSE decision and the pause bit
     // becoming visible: those completions all read the pause mask before the BACKPRESSURE bit
     // was set, so none of them unparks the consumer thread. Without the post-pause re-check the
@@ -263,7 +262,7 @@ class ConsumerHealthControllerTest {
     final var inflight = new AtomicInteger(0);
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
     final var health = new ConsumerHealthController(bp, null, scheduler, hook);
-    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest");
     // MANUAL holds the pause; backpressure never paused, so its pause-start timestamp was never
     // set. The metric sits at/below the low watermark, so the raw check() answer is RESUME —
     // releasing here would feed a garbage duration (nanoTime origin) into the backpressure-time

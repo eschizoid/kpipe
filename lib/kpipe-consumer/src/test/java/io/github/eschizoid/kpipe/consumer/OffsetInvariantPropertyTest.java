@@ -15,7 +15,6 @@ import net.jqwik.api.Property;
 import net.jqwik.api.Provide;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
 
 /// Property-based smoke test for the offset-lifecycle invariants — the commit point only ever
@@ -46,7 +45,7 @@ class OffsetInvariantPropertyTest {
 
   @Property(tries = 200)
   void commitPointNeverPassesAGap(@ForAll("operationSequences") final List<Op> ops) {
-    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest");
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
     manager.start();

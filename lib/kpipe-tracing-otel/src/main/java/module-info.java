@@ -15,7 +15,9 @@
 /// propagators).
 module io.github.eschizoid.kpipe.tracing.otel {
   requires transitive io.github.eschizoid.kpipe.producer;
-  requires io.opentelemetry.api;
+  // transitive: OtelTracer takes an OpenTelemetry (an io.opentelemetry.api type) in its public API,
+  // so callers must read it too.
+  requires transitive io.opentelemetry.api;
   requires kafka.clients;
   requires io.opentelemetry.context;
 
