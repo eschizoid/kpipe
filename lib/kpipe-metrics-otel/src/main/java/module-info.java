@@ -15,7 +15,9 @@
 module io.github.eschizoid.kpipe.metrics.otel {
   requires transitive io.github.eschizoid.kpipe.metrics;
   requires transitive io.github.eschizoid.kpipe.core;
-  requires io.opentelemetry.api;
+  // transitive: OtelConsumerMetrics/OtelProducerMetrics/PipelineMetricsObserver take an
+  // OpenTelemetry (an io.opentelemetry.api type) in their public API, so callers must read it too.
+  requires transitive io.opentelemetry.api;
 
   exports io.github.eschizoid.kpipe.metrics.otel;
 }

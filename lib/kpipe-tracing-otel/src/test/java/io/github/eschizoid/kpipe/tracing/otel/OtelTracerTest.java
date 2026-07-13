@@ -103,6 +103,9 @@ class OtelTracerTest {
   }
 
   @Test
+  // The scope makes the span current for injectContextInto; it isn't referenced in the body by
+  // design.
+  @SuppressWarnings("try")
   void injectContextIntoWritesTraceparentDerivedFromActiveSpan() {
     final var inbound = new ConsumerRecord<>("source-topic", 0, 1L, null, new byte[] { 0 });
     inbound.headers().add("traceparent", TRACEPARENT_HEADER.getBytes(StandardCharsets.UTF_8));

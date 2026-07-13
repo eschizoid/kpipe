@@ -22,7 +22,6 @@ import net.jqwik.api.Provide;
 import net.jqwik.api.constraints.IntRange;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
 
 /// Property-based coverage for the offset-lifecycle ordering invariants — lowest-pending commits,
@@ -46,7 +45,7 @@ class OffsetOrderingPropertyTest {
 
   /// Builds a manager wired to a `MockConsumer` with a fresh command queue, started and ready.
   private static KafkaOffsetManager newManager() {
-    final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest");
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
     manager.start();
