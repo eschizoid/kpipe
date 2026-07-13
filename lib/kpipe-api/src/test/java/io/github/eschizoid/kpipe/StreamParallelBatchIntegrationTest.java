@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -54,13 +53,9 @@ class StreamParallelBatchIntegrationTest {
     final var topic = "kpipe-parallel-batch-" + UUID.randomUUID().toString().substring(0, 8);
     createTopic(topic, PARTITIONS);
 
-    final var batches = new CopyOnWriteArrayList<List<Map<String, Object>>>();
     final var totalCaptured = Collections.synchronizedList(new ArrayList<Map<String, Object>>());
 
-    final BatchSink<Map<String, Object>> batchSink = BatchSink.ofVoid(batch -> {
-      batches.add(List.copyOf(batch));
-      totalCaptured.addAll(batch);
-    });
+    final BatchSink<Map<String, Object>> batchSink = BatchSink.ofVoid(totalCaptured::addAll);
 
     final var consumerProps = consumerProps("kpipe-parallel-batch-group-" + UUID.randomUUID());
     // maxSize=20 — 200 records will cause ~10 size-triggered flushes plus a final age/shutdown

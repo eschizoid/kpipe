@@ -62,7 +62,7 @@ class OffsetConcurrencyStressTest {
   /// No commit past a gap under parallel marking: N virtual threads each own a disjoint contiguous
   /// slice of offsets on the SAME partition. Each thread tracks its whole slice, then marks them in
   /// a deterministic but per-thread-shuffled order, so at every instant there are gaps spread
-  // across
+  /// across
   /// the partition.
   ///
   /// The load-bearing assertion is the concurrent probe: a separate thread continuously reads the
@@ -232,7 +232,7 @@ class OffsetConcurrencyStressTest {
   ///
   /// Assertions: no exception escapes any thread; a revoke followed by no further marks leaves a
   /// cleared partition (commit point `-1`); and at no point does the partition report a commit
-  // point
+  /// point
   /// that skips a still-pending offset (revive-after-revoke must still obey lowest-pending).
   @Test
   void i5_revokeDuringProcessingIsCleanAndNeverCorrupts() throws Exception {

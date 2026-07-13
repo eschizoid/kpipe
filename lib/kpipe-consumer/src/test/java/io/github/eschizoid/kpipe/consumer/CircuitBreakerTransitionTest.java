@@ -20,29 +20,29 @@ import org.junit.jupiter.api.Test;
 
 /// Deterministic state-machine transition tests for the circuit breaker, driven directly through
 /// [ConsumerHealthController] with a recording [ConsumerHealthController.Hook] and a
-// hand-controlled
+/// hand-controlled
 /// scheduler. No Kafka, no `MockConsumer`, no timing-based `awaitCondition` — every transition is
 /// driven by an explicit `recordOutcome(...)` call or by firing the captured probe task by hand, so
 /// these assertions are race-free.
 ///
 /// `CircuitBreakerControllerTest` pins the pure `shouldTrip` predicate;
-// `KPipeCircuitBreakerIntegrationTest`
+/// `KPipeCircuitBreakerIntegrationTest`
 /// drives the happy-path CLOSED → OPEN → HALF_OPEN → CLOSED cycle end-to-end through a live
-// consumer.
+/// consumer.
 /// This file fills the edges neither pins deterministically:
 ///
 ///   * HALF_OPEN → OPEN on a failed probe (window restarts, a fresh probe is scheduled).
 ///   * HALF_OPEN → CLOSED on a successful probe (the window is genuinely reset, not merely
-// re-read).
+/// re-read).
 ///   * the trip-rate boundary at the state-machine level (exactly at vs just below threshold).
 ///   * window-not-full: no trip before `windowSize` samples regardless of failure rate.
 ///   * the one-shot OPEN → HALF_OPEN probe is a single scheduled task, fired exactly once.
 class CircuitBreakerTransitionTest {
 
   /// Records every Hook callback so a test can assert on the exact transition sequence. The
-  // CB-relevant
+  /// CB-relevant
   /// counters are the ones the state machine drives; pause/resume bookkeeping is recorded too
-  // because a
+  /// because a
   /// trip must pause and a successful probe must resume.
   private static final class RecordingHook implements ConsumerHealthController.Hook {
 
@@ -85,9 +85,9 @@ class CircuitBreakerTransitionTest {
   }
 
   /// A scheduler that does NOT run anything on its own. It captures each submitted task plus the
-  // delay
+  /// delay
   /// so a test can assert how many probe timers were armed and fire them by hand,
-  // deterministically.
+  /// deterministically.
   private static final class CapturingScheduler implements ScheduledExecutorService {
 
     final List<Runnable> scheduled = new ArrayList<>();
@@ -230,7 +230,7 @@ class CircuitBreakerTransitionTest {
   }
 
   /// Builds a controller wired to the supplied hook + scheduler. windowSize=4, threshold=0.5 keeps
-  // the
+  /// the
   /// arithmetic obvious: a full window of 4 needs 2 failures to hit exactly 50%.
   private static ConsumerHealthController newController(final RecordingHook hook, final CapturingScheduler scheduler) {
     final var cb = new CircuitBreakerController(0.5, 4, Duration.ofMillis(300));

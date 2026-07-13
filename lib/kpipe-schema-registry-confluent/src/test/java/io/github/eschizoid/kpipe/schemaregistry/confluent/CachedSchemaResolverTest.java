@@ -111,12 +111,12 @@ class CachedSchemaResolverTest {
 
   @Test
   void failedLookupIsNotCachedAndIsRetriedOnNextCall() {
-    /// First call's delegate throws; second call's delegate succeeds.
-    /// If the cache poisoned itself with a sentinel on failure, the second call would either
-    /// throw again (sentinel re-raised) or skip the delegate entirely (sentinel served as a
-    /// silent success). Either way the topic would be pinned into a permanent decode-error
-    /// state. Confluent SR schema IDs are immutable, so the "cache forever" rule only applies
-    /// AFTER a successful lookup — failures must propagate without leaving residue.
+    // First call's delegate throws; second call's delegate succeeds.
+    // If the cache poisoned itself with a sentinel on failure, the second call would either
+    // throw again (sentinel re-raised) or skip the delegate entirely (sentinel served as a
+    // silent success). Either way the topic would be pinned into a permanent decode-error
+    // state. Confluent SR schema IDs are immutable, so the "cache forever" rule only applies
+    // AFTER a successful lookup — failures must propagate without leaving residue.
     final var calls = new AtomicInteger();
     final var shouldFail = new AtomicReference<>(Boolean.TRUE);
     final SchemaResolver flaky = id -> {
@@ -147,10 +147,10 @@ class CachedSchemaResolverTest {
 
   @Test
   void concurrentMissOnSameIdCollapsesToOneDelegateCall() throws InterruptedException {
-    /// Two virtual threads race a miss on the same id; the delegate is slow enough that the
-    /// second thread blocks inside `computeIfAbsent` waiting for the first. `computeIfAbsent`
-    /// must collapse concurrent misses to a single delegate call — anything else would amplify
-    /// HTTP load to the registry under deserializer fan-in.
+    // Two virtual threads race a miss on the same id; the delegate is slow enough that the
+    // second thread blocks inside `computeIfAbsent` waiting for the first. `computeIfAbsent`
+    // must collapse concurrent misses to a single delegate call — anything else would amplify
+    // HTTP load to the registry under deserializer fan-in.
     final var delegateCalls = new AtomicInteger();
     final var inDelegate = new CountDownLatch(1);
     final var releaseDelegate = new CountDownLatch(1);
@@ -177,8 +177,8 @@ class CachedSchemaResolverTest {
         done.countDown();
       }
     });
-    /// Wait for t1 to be inside the delegate, then start t2 — guarantees t2 hits the
-    /// `computeIfAbsent` bucket while t1 still holds it.
+    // Wait for t1 to be inside the delegate, then start t2 — guarantees t2 hits the
+    // `computeIfAbsent` bucket while t1 still holds it.
     assertTrue(inDelegate.await(5, TimeUnit.SECONDS), "first thread should enter delegate");
     final var t2 = Thread.ofVirtual().start(() -> {
       try {
@@ -201,12 +201,12 @@ class CachedSchemaResolverTest {
 
   @Test
   void concurrentFailureOnSameIdDoesNotPoisonCache() throws InterruptedException {
-    /// N virtual threads concurrently race a miss on the same id where the delegate throws.
-    /// After all failures settle the delegate is flipped to success and one more call is made.
-    /// If a regression ever wrote a sentinel into the map BEFORE the delegate exception unwound
-    /// (e.g. a future "negative-cache" optimization), the recovery call would either throw or
-    /// skip the delegate. The success on the recovery call proves the cache stayed clean
-    /// through the failure storm.
+    // N virtual threads concurrently race a miss on the same id where the delegate throws.
+    // After all failures settle the delegate is flipped to success and one more call is made.
+    // If a regression ever wrote a sentinel into the map BEFORE the delegate exception unwound
+    // (e.g. a future "negative-cache" optimization), the recovery call would either throw or
+    // skip the delegate. The success on the recovery call proves the cache stayed clean
+    // through the failure storm.
     final var threads = 16;
     final var delegateCalls = new AtomicInteger();
     final var shouldFail = new AtomicReference<>(Boolean.TRUE);
@@ -250,7 +250,7 @@ class CachedSchemaResolverTest {
 
     assertEquals("{\"type\":\"record\",\"name\":\"S7\",\"fields\":[]}", recovered);
     assertEquals(1, cached.size(), "successful recovery must populate the cache normally");
-    /// One more lookup proves the success is now cached — no further delegate call.
+    // One more lookup proves the success is now cached — no further delegate call.
     final var callsAfterRecovery = delegateCalls.get();
     cached.lookupById(7);
     assertEquals(callsAfterRecovery, delegateCalls.get(), "post-recovery lookups must hit the cache");

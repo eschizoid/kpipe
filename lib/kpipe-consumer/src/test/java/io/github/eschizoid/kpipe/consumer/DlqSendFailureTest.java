@@ -256,21 +256,6 @@ class DlqSendFailureTest {
     }
 
     @Override
-    public ConsumerRebalanceListener createRebalanceListener() {
-      return new ConsumerRebalanceListener() {
-        @Override
-        public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
-          // no-op
-        }
-
-        @Override
-        public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
-          // no-op
-        }
-      };
-    }
-
-    @Override
     public OffsetState getState() {
       return OffsetState.RUNNING;
     }

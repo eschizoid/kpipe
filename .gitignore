@@ -245,3 +245,4 @@ gradle-app.setting
 
 # jqwik property-test failure database
 .jqwik-database
+.idea/inspectionProfiles/

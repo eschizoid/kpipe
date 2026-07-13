@@ -74,7 +74,6 @@ import org.openjdk.jmh.annotations.Warmup;
 public class OffsetManagerBoxingBenchmark {
 
   private static final String TOPIC = "kpipe-offsetmgr-bench";
-  private static final int PARTITION_COUNT = 8;
 
   /// Records driven through the manager per `@Benchmark` invocation. Sized to amortize the
   /// JMH per-invocation overhead while keeping the bench cell short enough that JIT/GC noise

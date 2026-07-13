@@ -552,7 +552,6 @@ class KPipeConsumerTest {
     final UnaryOperator<byte[]> failingProcessor = _ -> {
       throw new RuntimeException("Always failing");
     };
-    @SuppressWarnings("unchecked")
     final KPipeConsumer.ErrorHandler errorHandler = mock(KPipeConsumer.ErrorHandler.class);
     final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
@@ -692,13 +691,30 @@ class KPipeConsumerTest {
 
   @Test
   void processCommandsShouldHandleClose() {
-    // Arrange
+    // Arrange — wire the test's queue into the consumer so processCommands() actually drains it
+    // (the old version offered Close to a throwaway queue the consumer never read, so it only
+    // proved processCommands() tolerates an empty queue). pause() puts the consumer in a running
+    // state (PAUSED counts as running) that a Close can transition out of; clearing the Pause
+    // command pause() enqueues leaves only the Close to exercise — so processCommands() never
+    // calls kafkaConsumer.pause() and no live broker is needed.
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var consumer = createConsumerWithMockProcessor();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.sideEffect(mockProcessor::apply))
+      .withCommandQueue(commandQueue)
+      .build();
+    consumer.pause();
+    commandQueue.clear();
+    assertTrue(consumer.isRunning(), "precondition: consumer is running (paused) before the Close");
     commandQueue.offer(new ConsumerCommand.Close());
 
-    // Act & Assert
+    // Act
     assertDoesNotThrow(consumer::processCommands);
+
+    // Assert — the Close command drove the consumer out of the running state into CLOSING.
+    assertFalse(consumer.isRunning(), "processCommands must handle Close by initiating shutdown");
+    assertFalse(consumer.isPaused());
   }
 
   @Test
