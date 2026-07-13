@@ -188,6 +188,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
         try {
           // 1ms park, not Thread.yield, so sustained saturation doesn't peg a CPU core on
           // the consumer thread. Worst-case latency is one sleep tick after a queue drains.
+          //noinspection BusyWait — intentional bounded backpressure park, not a spin
           Thread.sleep(1);
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
@@ -356,6 +357,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
     final var deadline = System.nanoTime() + CLOSE_DRAIN_TIMEOUT.toNanos();
     while (pending.get() > 0 && System.nanoTime() < deadline) {
       try {
+        //noinspection BusyWait — deadline-bounded drain wait during close, not a spin
         Thread.sleep(10);
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
