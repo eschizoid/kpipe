@@ -99,7 +99,6 @@ public class KPipeConsumer implements AutoCloseable {
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
   private final Duration waitForMessagesTimeout;
   private final Duration threadTerminationTimeout;
-  private final Duration executorTerminationTimeout;
   private final OffsetManager offsetManager;
   private final ConsumerRebalanceListener rebalanceListener;
   private final ErrorHandler errorHandler;
@@ -143,7 +142,6 @@ public class KPipeConsumer implements AutoCloseable {
   private volatile Thread metricsReporterThread;
   private final List<KPipeMetricsReporter> metricsReporters;
   private final Duration metricsReporterInterval;
-  private final boolean useShutdownHook;
   /// JVM shutdown hook (when `useShutdownHook=true`); kept so `close()` can remove it explicitly.
   /// Without this, every constructed consumer accumulates a hook in the JVM's shutdown-hook set
   /// for the lifetime of the process — a real leak in hosts that build/close many consumers.
@@ -208,7 +206,7 @@ public class KPipeConsumer implements AutoCloseable {
     private int keyOrderedMaxKeys = KeyOrderedDispatcher.DEFAULT_MAX_KEYS;
     private Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
     private Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
-    private Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
+    private final Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
     private OffsetManager offsetManager;
     private Function<Consumer<byte[], byte[]>, OffsetManager> offsetManagerProvider;
     private Supplier<Consumer<byte[], byte[]>> consumerProvider;
@@ -783,10 +781,9 @@ public class KPipeConsumer implements AutoCloseable {
       this.processingMode = builder.processingMode;
       this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
       this.threadTerminationTimeout = builder.threadTerminationTimeout;
-      this.executorTerminationTimeout = builder.executorTerminationTimeout;
       this.dispatcher = switch (this.processingMode) {
         case SEQUENTIAL -> new SequentialDispatcher();
-        case PARALLEL -> new ParallelDispatcher(this::handleParallelRejection, this.executorTerminationTimeout);
+        case PARALLEL -> new ParallelDispatcher(this::handleParallelRejection, builder.executorTerminationTimeout);
         case KEY_ORDERED -> new KeyOrderedDispatcher(builder.keyOrderedMaxKeys);
       };
       this.offsetManager =
@@ -848,8 +845,8 @@ public class KPipeConsumer implements AutoCloseable {
 
       this.metricsReporters = List.copyOf(builder.metricsReporters);
       this.metricsReporterInterval = builder.metricsReporterInterval;
-      this.useShutdownHook = builder.useShutdownHook;
-      if (this.useShutdownHook) {
+      final var useShutdownHook = builder.useShutdownHook;
+      if (useShutdownHook) {
         this.shutdownHookThread = new Thread(this::close, "kpipe-shutdown-hook");
         Runtime.getRuntime().addShutdownHook(this.shutdownHookThread);
       }
@@ -1076,6 +1073,7 @@ public class KPipeConsumer implements AutoCloseable {
     try {
       while (System.nanoTime() < deadline) {
         if (dispatcher.pendingCount() == 0) return true;
+        //noinspection BusyWait — deadline-bounded drain poll, not a spin
         Thread.sleep(pollMs);
       }
     } catch (final InterruptedException e) {
@@ -1179,6 +1177,7 @@ public class KPipeConsumer implements AutoCloseable {
             }
           }
           try {
+            //noinspection BusyWait — fixed reporting-interval sleep, not a spin
             Thread.sleep(metricsReporterInterval.toMillis());
           } catch (final InterruptedException e) {
             current.interrupt();
