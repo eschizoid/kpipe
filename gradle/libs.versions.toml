@@ -19,6 +19,7 @@ jreleaser = "1.19.0"
 jgit = "6.10.0.202406032230-r"
 jqwik = "1.10.1"
 jcstress = "0.16"
+confluentSchemaRegistry = "8.0.0"
 
 [libraries]
 kafkaClients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
@@ -56,6 +57,8 @@ jgitGpgBc = { module = "org.eclipse.jgit:org.eclipse.jgit.gpg.bc", version.ref =
 
 jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
 jcstressCore = { module = "org.openjdk.jcstress:jcstress-core", version.ref = "jcstress" }
+
+kafkaProtobufProvider = { module = "io.confluent:kafka-protobuf-provider", version.ref = "confluentSchemaRegistry" }
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

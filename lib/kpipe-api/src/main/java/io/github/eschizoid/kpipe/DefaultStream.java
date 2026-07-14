@@ -5,6 +5,7 @@ import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
+import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
@@ -195,15 +196,16 @@ record DefaultStream<T>(
     return mutate(m -> m.format = newFormat);
   }
 
-  /// Returns a registry-backed variant of `format` for any format type that supports it. Today
-  /// this is Avro only — Protobuf SR auto-lookup needs runtime `.proto` text compilation and
-  /// has not shipped.
+  /// Returns a registry-backed variant of `format` for any format that supports per-record schema
+  /// lookup — Avro (its schema parser is bundled) and Protobuf (its compiler is discovered via
+  /// `ServiceLoader` from `kpipe-format-protobuf-confluent`).
   private static MessageFormat<?> registryBackedFormat(final MessageFormat<?> format, final SchemaResolver resolver) {
     if (format instanceof AvroFormat) return AvroFormat.withRegistry(resolver);
+    if (format instanceof ProtobufFormat) return ProtobufFormat.withRegistry(resolver);
     throw new UnsupportedOperationException(
       "withSchemaRegistry is not supported for format " +
         format.getClass().getSimpleName() +
-        " — currently only Avro is wired for per-record schema lookup. Protobuf SR auto-lookup is on the roadmap."
+        " — only Avro and Protobuf are wired for per-record schema lookup."
     );
   }
 
