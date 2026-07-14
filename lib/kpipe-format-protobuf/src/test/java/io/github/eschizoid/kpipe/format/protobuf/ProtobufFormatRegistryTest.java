@@ -291,4 +291,59 @@ class ProtobufFormatRegistryTest {
   void rejectsNullResolver() {
     assertThrows(NullPointerException.class, () -> ProtobufFormat.withRegistry(null, new FakeCompiler()));
   }
+
+  @Test
+  void aThrowingResolveIsNotCachedSoTheNextRecordRetries() {
+    // computeIfAbsent does not cache when the mapping function throws — a transiently-down registry
+    // recovers on the next record rather than poisoning the (id, index) cache forever.
+    final var attempts = new AtomicInteger();
+    final SchemaResolver flaky = schemaId -> {
+      if (attempts.incrementAndGet() == 1) throw new RuntimeException("registry temporarily down");
+      return "catalog.proto text";
+    };
+    final var format = ProtobufFormat.withRegistry(flaky, new FakeCompiler());
+    final var env = envelope(101, new int[] { 0 }, customer(1, "a"));
+
+    assertThrows(RuntimeException.class, () -> format.deserialize(env));
+    final var decoded = format.deserialize(env);
+
+    assertEquals("Customer", decoded.getDescriptorForType().getName());
+    assertEquals(2, attempts.get(), "a throwing resolve must not be cached — the next record retries");
+  }
+
+  @Test
+  void multiElementMessageIndexResolvesNestedType() throws DescriptorValidationException {
+    // A genuine multi-element index path [0,1] → Outer.B, exercising the `for i < size` parse loop
+    // with size > 1 (the single-element base tests never do).
+    final var proto = FileDescriptorProto.newBuilder()
+      .setName("nested.proto")
+      .setSyntax("proto3")
+      .addMessageType(
+        DescriptorProto.newBuilder()
+          .setName("Outer")
+          .addNestedType(DescriptorProto.newBuilder().setName("A").addField(field("x", 1, TYPE_INT64)))
+          .addNestedType(DescriptorProto.newBuilder().setName("B").addField(field("y", 1, TYPE_INT64)))
+      )
+      .build();
+    final var nested = FileDescriptor.buildFrom(proto, new FileDescriptor[0]);
+    final var outerB = nested.getMessageTypes().get(0).getNestedTypes().get(1);
+    final var seen = new int[1][];
+    final ProtobufDescriptorCompiler compiler = (text, index) -> {
+      seen[0] = index.clone();
+      var descriptor = nested.getMessageTypes().get(index[0]);
+      for (var depth = 1; depth < index.length; depth++) descriptor = descriptor.getNestedTypes().get(index[depth]);
+      return descriptor;
+    };
+    final var format = ProtobufFormat.withRegistry(new FakeResolver().put(7, "nested"), compiler);
+    final var payload = DynamicMessage.newBuilder(outerB)
+      .setField(outerB.findFieldByName("y"), 55L)
+      .build()
+      .toByteArray();
+
+    final var decoded = format.deserialize(envelope(7, new int[] { 0, 1 }, payload));
+
+    assertArrayEquals(new int[] { 0, 1 }, seen[0], "the full multi-element index path must reach the compiler");
+    assertEquals("B", decoded.getDescriptorForType().getName());
+    assertEquals(55L, decoded.getField(outerB.findFieldByName("y")));
+  }
 }

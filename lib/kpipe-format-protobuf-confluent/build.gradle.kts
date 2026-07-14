@@ -53,11 +53,23 @@ tasks.named<ShadowJar>("shadowJar") {
 
   val shadedBase = "io.github.eschizoid.kpipe.shaded"
   relocate("com.squareup.wire", "$shadedBase.wire")
+  relocate("com.squareup.kotlinpoet", "$shadedBase.kotlinpoet")
   relocate("okio", "$shadedBase.okio")
   relocate("kotlin", "$shadedBase.kotlin")
   relocate("com.google.common", "$shadedBase.guava")
+  relocate("com.google.errorprone", "$shadedBase.errorprone")
+  relocate("com.google.j2objc", "$shadedBase.j2objc")
+  relocate("com.google.thirdparty", "$shadedBase.guavathirdparty")
+  relocate("com.google.gson", "$shadedBase.gson")
   relocate("com.palantir.javapoet", "$shadedBase.javapoet")
   relocate("com.fasterxml.jackson", "$shadedBase.jackson")
+  relocate("org.yaml.snakeyaml", "$shadedBase.snakeyaml")
+  relocate("org.apache.commons", "$shadedBase.commons")
+  // NOT relocated on purpose: the generated protobuf common-types (com.google.api/type/rpc/...
+  // from proto-google-common-protos) — protobuf registers descriptors by proto name, so relocating
+  // the Java package risks descriptor-registration breakage; they're needed for schema references.
+  // io.confluent.* is the feature's own code. Annotation-only jars (javax.annotation,
+  // org.checkerframework, org.jetbrains) are compile-retention and don't clash at runtime.
 
   // Bundle ONLY the Confluent/Wire compiler. Everything the consumer already has as a proper
   // module stays EXTERNAL — bundling it would split those packages across this jar and the module.
@@ -73,6 +85,9 @@ tasks.named<ShadowJar>("shadowJar") {
     exclude(dependency("com.github.luben:zstd-jni"))
     exclude(dependency("org.lz4:lz4-java"))
     exclude(dependency("org.xerial.snappy:snappy-java"))
+    // Dependency-free-core invariant: KPipe uses java.lang.System.Logger, never SLF4J. Don't ship
+    // an SLF4J-API that would shadow/skew a consumer's own. Confluent's logging degrades to no-op.
+    exclude(dependency("org.slf4j:.*"))
   }
 
   manifest {

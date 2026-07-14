@@ -31,6 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /// ```
 public final class ProtobufFormat implements MessageFormat<Message> {
 
+  private static final System.Logger LOGGER = System.getLogger(ProtobufFormat.class.getName());
+
   /// Non-null in static mode, null in registry mode.
   private final Descriptor descriptor;
 
@@ -89,19 +91,24 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// @return a registry-mode Protobuf codec
   /// @throws IllegalStateException if no [ProtobufDescriptorCompiler] is on the runtime path
   public static ProtobufFormat withRegistry(final SchemaResolver resolver) {
-    final var compiler = ServiceLoader.load(ProtobufDescriptorCompiler.class)
-      .findFirst()
-      .orElseThrow(() ->
-        new IllegalStateException(
-          "No ProtobufDescriptorCompiler found — add kpipe-format-protobuf-confluent to your runtime"
-        )
-      );
+    final var compilers = ServiceLoader.load(ProtobufDescriptorCompiler.class).stream().toList();
+    if (compilers.isEmpty()) throw new IllegalStateException(
+      "No ProtobufDescriptorCompiler found — add kpipe-format-protobuf-confluent to your runtime"
+    );
+    final var compiler = compilers.getFirst().get();
+    if (compilers.size() > 1) LOGGER.log(
+      System.Logger.Level.WARNING,
+      "Found {0} ProtobufDescriptorCompiler implementations on the path — using {1}",
+      compilers.size(),
+      compiler.getClass().getName()
+    );
     return new ProtobufFormat(resolver, compiler);
   }
 
   /// Returns the descriptor this codec is bound to.
   ///
-  /// @return the bound descriptor (never null)
+  /// @return the bound descriptor in static mode; `null` in Schema-Registry mode (each record's
+  ///     descriptor is resolved per-envelope, so there is no single bound descriptor)
   public Descriptor descriptor() {
     return descriptor;
   }
@@ -178,6 +185,13 @@ public final class ProtobufFormat implements MessageFormat<Message> {
       messageIndex = FIRST_MESSAGE_INDEX;
     } else if (size < 0) {
       throw new IllegalStateException("Negative message-index size " + size + " for schema id " + schemaId);
+    } else if (size > data.length - cursor.offset()) {
+      // Each index entry needs at least one byte, so a size larger than the bytes that remain is a
+      // corrupt envelope — reject before allocating (guards against a huge int[] from a bad
+      // varint).
+      throw new IllegalStateException(
+        "Message-index size " + size + " exceeds remaining envelope bytes for schema id " + schemaId
+      );
     } else {
       messageIndex = new int[size];
       for (var i = 0; i < size; i++) messageIndex[i] = cursor.readZigZagVarint();
