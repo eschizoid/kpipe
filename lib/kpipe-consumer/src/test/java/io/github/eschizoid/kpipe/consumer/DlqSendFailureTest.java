@@ -214,6 +214,64 @@ class DlqSendFailureTest {
     }
   }
 
+  /// The per-record error path through a fully STARTED consumer (not `processRecord` in isolation):
+  /// the pipeline throws, the DLQ send then fails, so `handleProcessingError` must leave the offset
+  /// pending. Sibling to `failedDlqSendDoesNotMarkOffset` (which drives `processRecord` directly)
+  /// and to the batch-path started-consumer test above — this closes the per-record
+  // started-consumer
+  /// cell end to end: poll → dispatch → error → failed DLQ → offset held.
+  @Test
+  @SuppressWarnings("unchecked")
+  void failedDlqSendThroughStartedConsumerLeavesOffsetPending() throws Exception {
+    when(mockProducer.send(any(ProducerRecord.class))).thenThrow(new RuntimeException("dlq broker down"));
+
+    final var recorder = new RecordingOffsetManager();
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    final var tp = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(tp));
+    mock.updateBeginningOffsets(Map.of(tp, 0L));
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 5L, "key".getBytes(UTF_8), "value".getBytes(StandardCharsets.UTF_8)));
+
+    try (
+      final var consumer = KPipeConsumer.builder()
+        .withProperties(byteProperties())
+        .withConsumer(() -> mock)
+        .withOffsetManager(recorder)
+        .withTopic(TOPIC)
+        .withPipeline(
+          TestPipelines.sideEffect(_ -> {
+            throw new RuntimeException("processor always fails");
+          })
+        )
+        .withRetry(0, Duration.ofMillis(1))
+        .withDeadLetterTopic(DLQ_TOPIC)
+        .withKafkaProducer(mockProducer)
+        .withPollTimeout(Duration.ofMillis(10))
+        .build()
+    ) {
+      consumer.start();
+
+      final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+      while (consumer.getMetrics().getOrDefault("dlqFailed", 0L) < 1 && System.nanoTime() < deadline) {
+        Thread.sleep(10);
+      }
+
+      assertEquals(1L, consumer.getMetrics().get("dlqFailed"), "per-record DLQ send failure must increment dlqFailed");
+      assertEquals(0L, consumer.getMetrics().get("dlqSent"), "no successful DLQ send occurred");
+      assertTrue(recorder.tracked.contains(5L), "record should have been tracked before dispatch");
+      assertFalse(
+        recorder.marked.contains(5L),
+        "per-record path: offset must NOT be marked when the DLQ send failed (record stays eligible for reprocessing)"
+      );
+    }
+  }
+
   private static Properties byteProperties() {
     final var props = new Properties();
     props.put("bootstrap.servers", "localhost:9092");
