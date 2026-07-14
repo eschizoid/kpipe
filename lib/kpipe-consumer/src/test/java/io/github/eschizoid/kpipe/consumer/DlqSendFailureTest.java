@@ -264,6 +264,8 @@ class DlqSendFailureTest {
 
       assertEquals(1L, consumer.getMetrics().get("dlqFailed"), "per-record DLQ send failure must increment dlqFailed");
       assertEquals(0L, consumer.getMetrics().get("dlqSent"), "no successful DLQ send occurred");
+      // No race: on the DLQ-fail branch the offset is never marked, so once dlqFailed==1 is
+      // observed the record is permanently unmarked — the assertFalse below cannot flake.
       assertTrue(recorder.tracked.contains(5L), "record should have been tracked before dispatch");
       assertFalse(
         recorder.marked.contains(5L),

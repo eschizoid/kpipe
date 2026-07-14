@@ -22,35 +22,33 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
-/// A Docker-free driver that verifies a KPipe pipeline's at-least-once behaviour across a
-/// hard consumer crash — deterministically, with no broker and no timing races.
+/// A Docker-free driver that exercises a KPipe pipeline's resume-window delivery path across
+/// a simulated consumer crash — deterministically, with no broker and no timing races.
 ///
-/// **What it proves.** The premise the whole at-least-once claim rests on: an offset that
-/// was processed but never committed is *re-delivered* after a crash, not lost. A first
-/// consumer (A) processes a prefix and commits only part of it, then crashes; a fresh
-/// consumer (B) resumes from the committed offset and must re-deliver the uncommitted tail.
+/// **What it exercises.** A first consumer (A) processes a prefix `[0, P)` and commits only
+/// `[0, k)`, then crashes; a fresh consumer (B) is driven over the resume window `[k, N)` —
+/// the log a broker replays from committed offset `k` — and runs the full
+/// poll → dispatch → operator → sink path on it. The uncommitted tail `[k, P)` therefore
+/// appears in B's output, which is where a pipeline's own idempotency / dedup gets tested.
 ///
-/// **Why it's deterministic** (where a live-broker version is flaky). The crash geometry
-/// is expressed as seeded ranges, not wall-clock timing. Given a stream of `N` values:
+/// **Scope.** The harness *supplies* B's resume window from `k`; it does not assert that the
+/// consumer *seeks* to a committed offset, nor the commit-frontier math (lowest-pending, no
+/// commit-ahead). Those are covered by the offset jcstress/property suites and the broker E2E
+/// `CrashRestartReprocessingIntegrationTest`. What this pins deterministically is the
+/// resume-window delivery path — the piece a live-broker test can only observe flakily.
 ///
-///   * consumer A is seeded with exactly `[0, P)`, so it processes those `P` and then
-///     idles — the stopping point is the seed, not a "crash it at the right instant" race;
-///   * A commits only through offset `k` (`k < P`), leaving `[k, P)` as a
-///     processed-but-uncommitted tail;
-///   * consumer B is seeded with `[k, N)` — the log a real broker replays to a new group
-///     member that resumes from committed offset `k`.
+/// **Why it's deterministic.** The crash geometry is expressed as seeded ranges, not
+/// wall-clock timing:
 ///
-/// Each phase runs a real [KPipeConsumer] over a subscribe-stubbed `MockConsumer`, so the
-/// production subscribe → poll → dispatch → sink resume path is exercised end to end. The
-/// commit-*frontier* logic itself (lowest-pending-offset, no-commit-ahead) is not the
-/// subject here — it is covered exhaustively by the offset jcstress/property suites; this
-/// harness models the broker's post-crash log by seeding B from `k` and pins the
-/// end-to-end re-delivery property.
+///   * consumer A is seeded with exactly `[0, P)`, so it processes those `P` and then idles
+///     — the stopping point is the seed, not a "crash it at the right instant" race;
+///   * A commits only through offset `k` (`k < P`), leaving `[k, P)` uncommitted;
+///   * consumer B is seeded with `[k, N)` — the log a broker replays from offset `k`.
 ///
-/// The crash is modelled without leaking threads: each phase uses an offset manager that
-/// never commits on its own, and phase A commits exactly `k` explicitly before `close()`.
-/// Because the manager never advanced past `k`, the tail stays uncommitted — exactly as an
-/// abrupt kill would leave it.
+/// Each phase runs a real [KPipeConsumer] over a subscribe-stubbed `MockConsumer`. The crash
+/// is modelled without leaking threads: each phase uses an offset manager that never commits
+/// on its own, and phase A commits exactly `k` explicitly before `close()`. Because the
+/// manager never advanced past `k`, the tail stays uncommitted — as an abrupt kill would.
 ///
 /// ```java
 /// final var result = CrashRestartHarness.builder(JsonFormat.INSTANCE)
@@ -59,10 +57,10 @@ import org.apache.kafka.common.TopicPartition;
 ///     .seed(values)        // N records
 ///     .commitUpTo(3)       // A commits through offset 3
 ///     .crashAfter(7)       // A processes [0,7), then crashes
-///     .restart();          // B resumes from 3 over [3,N)
+///     .restart();          // B's resume window is [3,N)
 ///
-/// // At-least-once: the uncommitted tail [3,7) is re-delivered by B.
-/// assertTrue(result.secondRun().containsAll(result.redeliveredTail()));
+/// // B's resume window includes the uncommitted tail [3,7).
+/// assertTrue(result.secondRun().containsAll(result.uncommittedTail()));
 /// ```
 ///
 /// @param <T> the pipeline value type
@@ -82,9 +80,10 @@ public final class CrashRestartHarness<T> {
   private final List<UnaryOperator<T>> operators = new ArrayList<>();
   private ProcessingMode processingMode = ProcessingMode.SEQUENTIAL;
   private List<T> seed;
-  private long commitUpTo = -1;
+  private int commitUpTo = -1;
   private int crashAfter = -1;
   private int batchMaxSize = 0;
+  private boolean ran = false;
 
   private CrashRestartHarness(final MessageFormat<T> format) {
     this.format = Objects.requireNonNull(format, "format cannot be null");
@@ -100,8 +99,8 @@ public final class CrashRestartHarness<T> {
   }
 
   /// Overrides the processing mode (default [ProcessingMode#SEQUENTIAL]). Under
-  /// [ProcessingMode#PARALLEL] / [ProcessingMode#KEY_ORDERED] the captured order is not the seed
-  /// order, so assertions on the result must be order-insensitive.
+  /// [ProcessingMode#PARALLEL] / [ProcessingMode#KEY_ORDERED] the captured order is not
+  /// the seed order, so assertions on the result must be order-insensitive.
   ///
   /// @param mode the processing mode
   /// @return this harness
@@ -133,7 +132,7 @@ public final class CrashRestartHarness<T> {
   ///
   /// @param k the committed offset
   /// @return this harness
-  public CrashRestartHarness<T> commitUpTo(final long k) {
+  public CrashRestartHarness<T> commitUpTo(final int k) {
     this.commitUpTo = k;
     return this;
   }
@@ -148,26 +147,29 @@ public final class CrashRestartHarness<T> {
     return this;
   }
 
-  /// Routes both phases through a batch sink flushing every `maxSize` records (the trailing partial
-  /// batch flushes on the crash/close). Because the offset manager never commits, batch records
-  /// buffered at crash time are uncommitted and must be re-delivered by B — the batch analogue of
-  /// the per-record crash.
+  /// Routes both phases through a batch sink flushing every `maxSize` records (the trailing
+  /// partial batch flushes on the crash/close). Because the offset manager never commits,
+  /// records buffered at crash time are uncommitted and appear in B's resume window — the
+  /// batch analogue of the per-record crash.
   ///
   /// @param maxSize the size-flush threshold (must be ≥ 1)
   /// @return this harness
-  public CrashRestartHarness<T> toBatchOfSize(final int maxSize) {
+  public CrashRestartHarness<T> toBatch(final int maxSize) {
     if (maxSize < 1) throw new IllegalArgumentException("maxSize must be >= 1, got " + maxSize);
     this.batchMaxSize = maxSize;
     return this;
   }
 
-  /// Runs both phases and returns what each delivered: A over `[0, P)` commits `k` then crashes, B
-  /// resumes over `[k, N)`.
+  /// Runs both phases and returns what each delivered: A over `[0, P)` commits `k` then
+  /// crashes, B over the resume window `[k, N)`. Single-use — build a fresh harness per
+  /// scenario.
   ///
   /// @return the crash-restart result
-  /// @throws IllegalArgumentException if the geometry is invalid (`0 <= k < P <= N` and non-empty
-  ///     seed are required)
+  /// @throws IllegalArgumentException if the geometry is invalid (`0 <= k < P <= N` and a
+  ///     non-empty seed are required)
+  /// @throws IllegalStateException if called more than once
   public CrashRestartResult<T> restart() {
+    if (ran) throw new IllegalStateException("restart() already called — build a fresh harness per scenario");
     Objects.requireNonNull(seed, "seed(...) is required before restart()");
     final var n = seed.size();
     if (n == 0) throw new IllegalArgumentException("seed must be non-empty");
@@ -176,14 +178,15 @@ public final class CrashRestartHarness<T> {
     if (!(commitUpTo < crashAfter && crashAfter <= n)) throw new IllegalArgumentException(
       "require 0 <= commitUpTo(" + commitUpTo + ") < crashAfter(" + crashAfter + ") <= seedSize(" + n + ")"
     );
+    ran = true;
 
     final var first = runPhase(0, crashAfter, commitUpTo);
-    final var second = runPhase((int) commitUpTo, n, -1);
+    final var second = runPhase(commitUpTo, n, -1);
     // The uncommitted tail is defined by offset — the values at offsets [k, P) — not by A's
-    // capture order, which is not offset order under PARALLEL / KEY_ORDERED. It is the tail as the
-    // sink sees it (operators applied, filtered records dropped), so it matches secondRun's shape.
+    // capture order, which is not offset order under PARALLEL / KEY_ORDERED. It is the tail as
+    // the sink sees it (operators applied, filtered records dropped), matching secondRun's shape.
     final var tail = new ArrayList<T>();
-    for (final var value : seed.subList((int) commitUpTo, crashAfter)) {
+    for (final var value : seed.subList(commitUpTo, crashAfter)) {
       final var transformed = applyOperators(value);
       if (transformed != null) tail.add(transformed);
     }
@@ -205,7 +208,7 @@ public final class CrashRestartHarness<T> {
   /// Runs one consumer over the seeded window `[fromOffset, toExclusive)` and returns what
   /// its sink captured. When `commitOffset >= 0` (phase A) the mock is committed to that
   /// offset before close, modelling the durable commit that survives the crash.
-  private List<T> runPhase(final int fromOffset, final int toExclusive, final long commitOffset) {
+  private List<T> runPhase(final int fromOffset, final int toExclusive, final int commitOffset) {
     final var count = toExclusive - fromOffset;
     final var sink = new CapturingSink<T>();
 
