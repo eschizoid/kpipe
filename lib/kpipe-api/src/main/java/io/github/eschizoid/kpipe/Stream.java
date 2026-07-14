@@ -274,18 +274,19 @@ public interface Stream<T> {
   /// @throws IllegalArgumentException if `n` is negative
   Stream<T> skipBytes(final int n);
 
-  /// Switches the stream's format into Schema-Registry mode. Only supported when the originating
-  /// format honours the [SchemaResolver] SPI — at the time of writing, [Avro
-  /// (`kpipe-format-avro`)](https://github.com/eschizoid/kpipe). Each record's Confluent wire
-  /// envelope (1-byte magic + 4-byte schema ID) is consumed inside the format, the writer schema
-  /// is resolved via `resolver` (cache it with `CachedSchemaResolver` from
-  /// `kpipe-schema-registry-confluent`), and the remaining bytes are decoded against that
-  /// schema. Do NOT combine with `skipBytes(5)` — the format already strips the envelope.
+  /// Switches the stream's format into Schema-Registry mode. Supported for **Avro** and
+  /// **Protobuf** — each reads its own Confluent wire envelope, resolves the writer schema per
+  /// record via `resolver` (cache it with `CachedSchemaResolver` from
+  /// `kpipe-schema-registry-confluent`), and decodes the remaining bytes against it. Do NOT
+  /// combine with `skipBytes` — the format already strips the envelope (5 bytes for Avro, 6+ for
+  /// Protobuf including the message-index).
   ///
-  /// **Protobuf is not yet supported** through this entry point. Protobuf SR auto-lookup
-  /// requires runtime `.proto` text compilation (protoc-jar) which is out of scope for the
-  /// current release; use `kpipe-format-protobuf` with `skipBytes(6)` and a single descriptor
-  /// for now.
+  /// **Runtime modules.** Avro needs `kpipe-schema-registry-confluent` for the resolver; Protobuf
+  /// additionally needs **`kpipe-format-protobuf-confluent`** on the runtime path — it supplies
+  /// the `.proto`-text compiler discovered via `ServiceLoader` (protobuf-java has no `.proto`
+  /// parser, so the compiler ships in a separate shaded module, mirroring the `kpipe-metrics` →
+  /// `kpipe-metrics-otel` split). Calling this on a Protobuf stream without that module on the
+  /// path throws at first use with a message telling you to add it.
   ///
   /// @param resolver the schema resolver (typically a `CachedSchemaResolver` wrapping a
   ///                 `ConfluentSchemaResolver`)

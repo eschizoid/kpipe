@@ -7,4 +7,7 @@ module io.github.eschizoid.kpipe.format.protobuf {
   requires com.google.protobuf.util;
 
   exports io.github.eschizoid.kpipe.format.protobuf;
+
+  /// Registry-mode `.proto` compiler, supplied by `kpipe-format-protobuf-confluent` at runtime.
+  uses io.github.eschizoid.kpipe.format.protobuf.ProtobufDescriptorCompiler;
 }

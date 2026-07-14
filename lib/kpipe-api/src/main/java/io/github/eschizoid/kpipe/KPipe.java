@@ -137,6 +137,36 @@ public final class KPipe {
     return new DefaultStream<>(topics, kafkaProps, format, format::consoleSink);
   }
 
+  /// Protobuf-typed stream wired for per-record Confluent Schema Registry lookup — the mirror of
+  /// [#avro(String, Properties, SchemaResolver)]. The 6-byte wire envelope (magic + schema id +
+  /// message-index) is consumed by the format itself; do NOT pair this with `.skipBytes(6)`.
+  ///
+  /// Requires **`kpipe-format-protobuf-confluent`** on the runtime path — it supplies the
+  /// `.proto`-text compiler discovered via `ServiceLoader` (protobuf-java has no `.proto` parser).
+  /// Equivalent to `protobuf(topic, kafkaProps, ProtobufFormat.withRegistry(resolver))`. Wrap the
+  /// resolver with `CachedSchemaResolver` for the cache.
+  ///
+  /// @param topic the Kafka topic to consume
+  /// @param kafkaProps the Kafka consumer properties
+  /// @param resolver the schema resolver (must be non-null; typically a `CachedSchemaResolver`)
+  /// @return a fluent [Stream] configured for Protobuf with per-record schema lookup
+  public static Stream<Message> protobuf(
+    final String topic,
+    final Properties kafkaProps,
+    final SchemaResolver resolver
+  ) {
+    final var format = ProtobufFormat.withRegistry(resolver);
+    return new DefaultStream<>(topic, kafkaProps, format, KPipe::registryModeProtobufConsoleSinkUnsupported);
+  }
+
+  private static MessageSink<Message> registryModeProtobufConsoleSinkUnsupported() {
+    throw new IllegalStateException(
+      "toConsole() requires a fixed descriptor; a ProtobufFormat in Schema-Registry mode has none. " +
+        "Use .toCustom(...) with your own sink, or construct the stream via " +
+        "KPipe.protobuf(topic, props, new ProtobufFormat(descriptor)) to keep the console-sink path."
+    );
+  }
+
   /// Raw `byte[]` stream — identity passthrough, no SerDe. `toConsole()` logs a UTF-8 preview
   /// when the payload looks like text, hex preview otherwise.
   ///
