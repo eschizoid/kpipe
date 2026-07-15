@@ -168,9 +168,10 @@ class KPipeFacadeBuildTest {
 
   // --- per-route consumer-wide-setting rejection ---
   // Every public consumer-wide setting reachable from the per-route Stream is silently dropped
-  // by the original MultiBuilder.start() — it only invokes ds.buildPipeline() / addBatchRoute()
-  // and never replays the route's consumer-level config onto the underlying single
-  // KPipeConsumer.Builder. The tests below pin each setting to fail loud rather than disappear.
+  // by MultiBuilder.start() — it only invokes ds.buildPipeline() / addBatchRoute() and never
+  // replays a route's consumer-level config onto the underlying single KPipeConsumer.Builder.
+  // The tests below pin each setting to fail loud rather than disappear, and to point the user at
+  // the symmetric MultiBuilder.with* setter (all of these now have one).
 
   @Test
   void multiBuilderRejectsPerRouteWithRetry() {
@@ -184,8 +185,8 @@ class KPipeFacadeBuildTest {
       () -> "message should name the offending route: " + ex.getMessage()
     );
     assertTrue(
-      ex.getMessage().contains("KPipeConsumer.Builder"),
-      () -> "message should point users at the explicit-builder escape hatch: " + ex.getMessage()
+      ex.getMessage().contains("MultiBuilder.withRetry"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
     );
   }
 
@@ -198,6 +199,10 @@ class KPipeFacadeBuildTest {
       () -> "message should name withBackpressure: " + ex.getMessage()
     );
     assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withBackpressure"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
   }
 
   @Test
@@ -209,6 +214,10 @@ class KPipeFacadeBuildTest {
       () -> "message should name withDeadLetterTopic: " + ex.getMessage()
     );
     assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withDeadLetterTopic"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
   }
 
   @Test
@@ -220,6 +229,10 @@ class KPipeFacadeBuildTest {
       () -> "message should name withErrorHandler: " + ex.getMessage()
     );
     assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withErrorHandler"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
   }
 
   @Test
@@ -233,6 +246,27 @@ class KPipeFacadeBuildTest {
       () -> "message should name withPollTimeout: " + ex.getMessage()
     );
     assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.withPollTimeout"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
+  }
+
+  @Test
+  void multiBuilderAcceptsConsumerWideRetryDlqBackpressureErrorHandlerPollTimeout() {
+    // The legitimate path for the settings the per-route tests reject: set them on the MultiBuilder
+    // itself. Not calling .start() (would open a real Kafka connection) — chaining is enough to
+    // prove the mirror setters exist, validate, and configure without tripping the reject.
+    assertDoesNotThrow(() ->
+      KPipe.multi(props())
+        .withRetry(3, Duration.ofSeconds(1))
+        .withBackpressure(5_000, 1_000)
+        .withDeadLetterTopic("dlq")
+        .withErrorHandler(_ -> {})
+        .withPollTimeout(Duration.ofMillis(250))
+        .json("topic-a", s -> s.toCustom(_ -> {}))
+        .json("topic-b", s -> s.toCustom(_ -> {}))
+    );
   }
 
   @Test

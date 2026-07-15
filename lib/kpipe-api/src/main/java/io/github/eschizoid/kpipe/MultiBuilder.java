@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe;
 
 import com.google.protobuf.Message;
+import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
@@ -15,11 +16,13 @@ import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.apache.avro.generic.GenericRecord;
@@ -51,6 +54,13 @@ public final class MultiBuilder {
   private CircuitBreakerController circuitBreaker;
   private ProcessingMode processingMode = ProcessingMode.PARALLEL;
   private Integer keyOrderedMaxKeys;
+  private Integer maxRetries;
+  private Duration retryBackoff;
+  private Long backpressureHigh;
+  private Long backpressureLow;
+  private Consumer<KPipeConsumer.ProcessingError> errorHandler;
+  private String deadLetterTopic;
+  private Duration pollTimeout;
 
   MultiBuilder(final Properties kafkaProps) {
     this.kafkaProps = (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone();
@@ -111,6 +121,79 @@ public final class MultiBuilder {
   public MultiBuilder withKeyOrderedMaxKeys(final int maxKeys) {
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
     this.keyOrderedMaxKeys = maxKeys;
+    return this;
+  }
+
+  /// Retries a failing record up to `maxRetries` times with a fixed `backoff` before routing it to
+  /// the DLQ (or logging, if none). Consumer-wide — the same policy applies to every route, mirror
+  /// of `Stream.withRetry(int, Duration)`.
+  ///
+  /// @param maxRetries retry attempts after the first failure (must be non-negative)
+  /// @param backoff delay between attempts (must be non-null)
+  /// @return this builder
+  public MultiBuilder withRetry(final int maxRetries, final Duration backoff) {
+    if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative");
+    this.maxRetries = maxRetries;
+    this.retryBackoff = Objects.requireNonNull(backoff, "backoff cannot be null");
+    return this;
+  }
+
+  /// Enables in-flight backpressure with the default watermarks (pause at
+  /// `BackpressureController.DEFAULT_HIGH_WATERMARK`, resume at `DEFAULT_LOW_WATERMARK`). Mirror of
+  /// `Stream.withBackpressure()`.
+  ///
+  /// @return this builder
+  public MultiBuilder withBackpressure() {
+    return withBackpressure(
+      BackpressureController.DEFAULT_HIGH_WATERMARK,
+      BackpressureController.DEFAULT_LOW_WATERMARK
+    );
+  }
+
+  /// Enables backpressure with custom high/low watermarks (hysteresis). The strategy is derived
+  /// from the consumer's processing mode. Consumer-wide, mirror of
+  /// `Stream.withBackpressure(long, long)`.
+  ///
+  /// @param high pause watermark (must be > low)
+  /// @param low resume watermark (must be >= 0 and < high)
+  /// @return this builder
+  public MultiBuilder withBackpressure(final long high, final long low) {
+    if (low < 0 || low >= high) throw new IllegalArgumentException(
+      "withBackpressure requires high > low > 0 (got high=%d, low=%d)".formatted(high, low)
+    );
+    this.backpressureHigh = high;
+    this.backpressureLow = low;
+    return this;
+  }
+
+  /// Sets a custom error handler invoked (after offset marking) for every record that fails on any
+  /// route. Consumer-wide, mirror of `Stream.withErrorHandler(...)`; default logs at WARNING.
+  ///
+  /// @param handler the error callback (must be non-null)
+  /// @return this builder
+  public MultiBuilder withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler) {
+    this.errorHandler = Objects.requireNonNull(handler, "handler cannot be null");
+    return this;
+  }
+
+  /// Routes records that exhaust their retries to `dlqTopic`. One DLQ for the whole consumer (there
+  /// is no per-route DLQ), mirror of `Stream.withDeadLetterTopic(String)`.
+  ///
+  /// @param dlqTopic the dead-letter topic (must be non-null and non-blank)
+  /// @return this builder
+  public MultiBuilder withDeadLetterTopic(final String dlqTopic) {
+    if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException("dlqTopic cannot be null or blank");
+    this.deadLetterTopic = dlqTopic;
+    return this;
+  }
+
+  /// Sets the Kafka poll timeout for the underlying consumer. Consumer-wide (one poll loop), mirror
+  /// of `Stream.withPollTimeout(Duration)`; default 100ms.
+  ///
+  /// @param timeout the poll timeout (must be non-null)
+  /// @return this builder
+  public MultiBuilder withPollTimeout(final Duration timeout) {
+    this.pollTimeout = Objects.requireNonNull(timeout, "timeout cannot be null");
     return this;
   }
 
@@ -282,6 +365,11 @@ public final class MultiBuilder {
     if (consumerMetrics != null) consumerBuilder.withMetrics(consumerMetrics);
     if (tracer != null) consumerBuilder.withTracer(tracer);
     if (circuitBreaker != null) consumerBuilder.withCircuitBreaker(circuitBreaker);
+    if (maxRetries != null && maxRetries > 0) consumerBuilder.withRetry(maxRetries, retryBackoff);
+    if (backpressureHigh != null) consumerBuilder.withBackpressure(backpressureHigh, backpressureLow);
+    if (errorHandler != null) consumerBuilder.withErrorHandler(errorHandler::accept);
+    if (deadLetterTopic != null) consumerBuilder.withDeadLetterTopic(deadLetterTopic);
+    if (pollTimeout != null) consumerBuilder.withPollTimeout(pollTimeout);
     return DefaultHandle.startAndWrap(consumerBuilder.build());
   }
 
@@ -321,18 +409,20 @@ public final class MultiBuilder {
     if (stream.circuitBreaker() != null) throw new IllegalArgumentException(
       perRouteRejection(topic, "withCircuitBreaker", "MultiBuilder.withCircuitBreaker(...)")
     );
-    if (stream.maxRetries() > 0) throw new IllegalArgumentException(perRouteRejectionDeferred(topic, "withRetry"));
+    if (stream.maxRetries() > 0) throw new IllegalArgumentException(
+      perRouteRejection(topic, "withRetry", "MultiBuilder.withRetry(...)")
+    );
     if (stream.backpressureHigh() != null) throw new IllegalArgumentException(
-      perRouteRejectionDeferred(topic, "withBackpressure")
+      perRouteRejection(topic, "withBackpressure", "MultiBuilder.withBackpressure(...)")
     );
     if (stream.deadLetterTopic() != null) throw new IllegalArgumentException(
-      perRouteRejectionDeferred(topic, "withDeadLetterTopic")
+      perRouteRejection(topic, "withDeadLetterTopic", "MultiBuilder.withDeadLetterTopic(...)")
     );
     if (stream.errorHandler() != null) throw new IllegalArgumentException(
-      perRouteRejectionDeferred(topic, "withErrorHandler")
+      perRouteRejection(topic, "withErrorHandler", "MultiBuilder.withErrorHandler(...)")
     );
     if (stream.pollTimeout() != null) throw new IllegalArgumentException(
-      perRouteRejectionDeferred(topic, "withPollTimeout")
+      perRouteRejection(topic, "withPollTimeout", "MultiBuilder.withPollTimeout(...)")
     );
   }
 
@@ -342,17 +432,6 @@ public final class MultiBuilder {
     return (
       "Route '%s' sets %s on its Stream, but %s is a consumer-wide setting; ".formatted(topic, setting, setting) +
       "set it on %s instead.".formatted(mirror)
-    );
-  }
-
-  /// Builds the rejection message for a per-route setting that does NOT yet have a symmetric
-  /// `MultiBuilder.with*` mirror. Point the user at the explicit `KPipeConsumer.Builder` escape
-  /// hatch and note the open follow-up.
-  private static String perRouteRejectionDeferred(final String topic, final String setting) {
-    return (
-      "Route '%s' sets %s on its Stream, but %s is a consumer-wide setting; ".formatted(topic, setting, setting) +
-      "configure via the explicit KPipeConsumer.Builder for the homogeneous case, " +
-      "or wait for the multi-builder mirror (open issue)."
     );
   }
 

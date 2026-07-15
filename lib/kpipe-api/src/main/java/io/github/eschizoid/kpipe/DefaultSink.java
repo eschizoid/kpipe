@@ -33,8 +33,6 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
       .withKeyOrderedMaxKeys(stream.keyOrderedMaxKeys());
 
     stream.applyCommonConsumerConfig(consumerBuilder);
-    if (stream.tracer() != null) consumerBuilder.withTracer(stream.tracer());
-    if (stream.circuitBreaker() != null) consumerBuilder.withCircuitBreaker(stream.circuitBreaker());
 
     return DefaultHandle.startAndWrap(consumerBuilder.build());
   }

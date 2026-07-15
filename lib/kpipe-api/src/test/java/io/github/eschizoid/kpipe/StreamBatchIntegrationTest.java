@@ -3,7 +3,9 @@ package io.github.eschizoid.kpipe;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
+import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.nio.charset.StandardCharsets;
@@ -15,7 +17,9 @@ import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -112,6 +116,57 @@ class StreamBatchIntegrationTest {
       for (int i = 1; i <= 25; i++) assertEquals(i, observedIds.get(i - 1), "missing id " + i);
     } finally {
       handle.shutdownGracefully(Duration.ofSeconds(2));
+    }
+  }
+
+  @Test
+  void batchPathWiresTracerAndCircuitBreaker() throws Exception {
+    // Regression: DefaultBatchSink.start() used to skip tracer + circuit breaker (it called only
+    // applyCommonConsumerConfig, which excluded both), so a tracer set on a toBatch(...) stream was
+    // silently dropped. Assert the tracer is now invoked once per record on the batch path.
+    final var topic = "kpipe-batch-tracer-" + UUID.randomUUID().toString().substring(0, 8);
+    final var spans = new AtomicInteger();
+    final Tracer countingTracer = new Tracer() {
+      @Override
+      public Tracer.SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
+        spans.incrementAndGet();
+        return Tracer.SpanScope.noop();
+      }
+
+      @Override
+      public void injectContextInto(final org.apache.kafka.common.header.Headers headers) {}
+    };
+    // High threshold + large window so the breaker never trips during the test — we only need it
+    // wired, not tripping.
+    final var breaker = new CircuitBreakerController(0.99, 10_000, Duration.ofSeconds(30));
+
+    final BatchSink<Map<String, Object>> batchSink = BatchSink.ofVoid(batch -> {});
+
+    final var handle = KPipe.json(topic, consumerProps("kpipe-batch-tracer-group-" + UUID.randomUUID()))
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .withTracer(countingTracer)
+      .withCircuitBreaker(breaker)
+      .toBatch(batchSink, new BatchPolicy(5, Duration.ofSeconds(2)))
+      .start();
+
+    try {
+      try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
+        for (int i = 1; i <= 10; i++) {
+          producer
+            .send(new ProducerRecord<>(topic, "{\"id\":%d}".formatted(i).getBytes(StandardCharsets.UTF_8)))
+            .get();
+        }
+        producer.flush();
+      }
+
+      waitFor(
+        () -> spans.get() >= 10,
+        Duration.ofSeconds(20),
+        "batch path must invoke the tracer once per record; the circuit breaker must also be wired"
+      );
+      assertTrue(handle.isHealthy(), "breaker is far below threshold — consumer stays healthy");
+    } finally {
+      handle.shutdownGracefully(Duration.ofSeconds(5));
     }
   }
 
