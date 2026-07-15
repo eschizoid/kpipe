@@ -286,7 +286,7 @@ public interface Stream<T> {
   /// the `.proto`-text compiler discovered via `ServiceLoader` (protobuf-java has no `.proto`
   /// parser, so the compiler ships in a separate shaded module, mirroring the `kpipe-metrics` →
   /// `kpipe-metrics-otel` split). Calling this on a Protobuf stream without that module on the
-  /// path throws at first use with a message telling you to add it. That compiler is a ~17 MB
+  /// path throws at first use with a message telling you to add it. That compiler is a ~19 MB
   /// shaded jar; only SR-Protobuf users pull it — static `new ProtobufFormat(descriptor)` needs
   /// nothing beyond `protobuf-java`.
   ///

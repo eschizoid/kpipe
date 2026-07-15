@@ -27,7 +27,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// backpressure is held.
 ///
 /// **Sealed by design.** The three [ProcessingMode]s form a stable taxonomy covering the known
-/// use cases. Unlike `Tracer` (an open SPI plugged in via `ServiceLoader`), dispatch is NOT a
+/// use cases. Unlike `Tracer` (an open SPI you supply via `withTracer(...)`), dispatch is NOT a
 /// user extension point: a custom mode would need deep hooks into offset commit, backpressure,
 /// and shutdown drain — not a plug-and-play boundary. A new mode is added here and gated by the
 /// full correctness suite, not supplied by users.
