@@ -31,8 +31,10 @@ class MultiBuilderRegistryTest {
       multi.avro("avro-topic", RESOLVER, Stream::toConsole)
     );
     assertTrue(
-      ex.getMessage().contains("Schema-Registry mode has none"),
-      "expected the registry-mode console-unsupported error, got: " + ex.getMessage()
+      // "fixed schema" is Avro's discriminating token (Protobuf's is "fixed descriptor"), so this
+      // fails if the Avro overload wrongly wired the Protobuf console-unsupported factory.
+      ex.getMessage().contains("fixed schema"),
+      "expected the Avro registry-mode console-unsupported error, got: " + ex.getMessage()
     );
   }
 
