@@ -142,7 +142,7 @@ class PipelineMetricsObserverTest {
   }
 
   @Test
-  void bindSchemaRegistryCacheRegistersThreeGaugesAndReadsFromSuppliers() {
+  void bindSchemaRegistryCacheRegistersCountersAndGaugeAndReadsFromSuppliers() {
     final var f = fixture("sr-test");
     final var hits = new AtomicLong(7);
     final var misses = new AtomicLong(3);
@@ -150,9 +150,10 @@ class PipelineMetricsObserverTest {
     final var returned = f.observer().bindSchemaRegistryCache(hits::get, misses::get, size::get);
     assertSame(f.observer(), returned, "bindSchemaRegistryCache must return `this` for fluent chaining");
 
+    // hits/misses are cumulative → async counters (sum data); size is a level → gauge.
     final var metrics = f.collect();
-    assertEquals(7L, gaugeValue(metrics, "kpipe.schema_registry.cache.hits"));
-    assertEquals(3L, gaugeValue(metrics, "kpipe.schema_registry.cache.misses"));
+    assertEquals(7L, valueOf(metrics, "kpipe.schema_registry.cache.hits"));
+    assertEquals(3L, valueOf(metrics, "kpipe.schema_registry.cache.misses"));
     assertEquals(10L, gaugeValue(metrics, "kpipe.schema_registry.cache.size"));
 
     // Suppliers are read on each collection — bumping the values must surface on the next read.
@@ -160,9 +161,44 @@ class PipelineMetricsObserverTest {
     misses.set(4);
     size.set(11);
     final var second = f.collect();
-    assertEquals(15L, gaugeValue(second, "kpipe.schema_registry.cache.hits"));
-    assertEquals(4L, gaugeValue(second, "kpipe.schema_registry.cache.misses"));
+    assertEquals(15L, valueOf(second, "kpipe.schema_registry.cache.hits"));
+    assertEquals(4L, valueOf(second, "kpipe.schema_registry.cache.misses"));
     assertEquals(11L, gaugeValue(second, "kpipe.schema_registry.cache.size"));
+  }
+
+  @Test
+  void rebindClosesPreviousCallbacksAndSwapsSuppliers() {
+    // Binding twice must not leak the first registration's callbacks (which would emit a second,
+    // stale series against the old suppliers). After a re-bind, each metric has exactly one point,
+    // reading from the new suppliers only.
+    final var f = fixture("sr-test");
+    f.observer().bindSchemaRegistryCache(() -> 1L, () -> 1L, () -> 1L);
+    f.observer().bindSchemaRegistryCache(() -> 42L, () -> 9L, () -> 5L);
+
+    final var metrics = f.collect();
+    assertEquals(1, pointCount(metrics, "kpipe.schema_registry.cache.hits"), "leaked stale hits callback");
+    assertEquals(1, pointCount(metrics, "kpipe.schema_registry.cache.size"), "leaked stale size callback");
+    assertEquals(42L, valueOf(metrics, "kpipe.schema_registry.cache.hits"));
+    assertEquals(9L, valueOf(metrics, "kpipe.schema_registry.cache.misses"));
+    assertEquals(5L, gaugeValue(metrics, "kpipe.schema_registry.cache.size"));
+  }
+
+  @Test
+  void closeUnregistersSchemaRegistryInstruments() {
+    final var f = fixture("sr-test");
+    f.observer().bindSchemaRegistryCache(() -> 7L, () -> 3L, () -> 10L);
+    assertEquals(7L, valueOf(f.collect(), "kpipe.schema_registry.cache.hits"));
+
+    f.observer().close();
+
+    // After close the async cache instruments no longer emit; the pipeline counters are unaffected.
+    final var afterClose = f.collect();
+    assertEquals(
+      0,
+      pointCount(afterClose, "kpipe.schema_registry.cache.hits"),
+      "cache instruments must stop emitting after close()"
+    );
+    assertDoesNotThrow(f.observer()::close, "close() must be idempotent");
   }
 
   @Test
@@ -171,6 +207,15 @@ class PipelineMetricsObserverTest {
     assertThrows(NullPointerException.class, () -> f.observer().bindSchemaRegistryCache(null, () -> 0L, () -> 0L));
     assertThrows(NullPointerException.class, () -> f.observer().bindSchemaRegistryCache(() -> 0L, null, () -> 0L));
     assertThrows(NullPointerException.class, () -> f.observer().bindSchemaRegistryCache(() -> 0L, () -> 0L, null));
+  }
+
+  private static long pointCount(final Collection<MetricData> metrics, final String name) {
+    return metrics
+      .stream()
+      .filter(m -> m.getName().equals(name))
+      .findFirst()
+      .map(m -> (long) m.getData().getPoints().size())
+      .orElse(0L);
   }
 
   private static long gaugeValue(final Collection<MetricData> metrics, final String name) {

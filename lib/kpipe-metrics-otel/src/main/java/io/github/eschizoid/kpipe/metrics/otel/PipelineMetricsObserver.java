@@ -5,6 +5,8 @@ import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.metrics.ObservableLongCounter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -37,7 +39,13 @@ import java.util.function.LongSupplier;
 /// [#bindSchemaRegistryCache(LongSupplier, LongSupplier, LongSupplier)]. The observer uses
 /// `LongSupplier` rather than a concrete `CachedSchemaResolver` type so this module stays
 /// independent of `kpipe-schema-registry-confluent`.
-public final class PipelineMetricsObserver implements Consumer<Result<?>> {
+///
+/// Lifecycle. The pipeline-outcome counters are synchronous and need no teardown. The optional
+/// Schema-Registry cache instruments are **asynchronous** — the OTel SDK strongly retains their
+/// callbacks until the instrument is closed. The observer is [AutoCloseable]: call [#close()]
+/// when discarding it so those callbacks stop firing. Re-binding closes the previous cache
+/// registration first, so binding twice never leaks the earlier callbacks.
+public final class PipelineMetricsObserver implements Consumer<Result<?>>, AutoCloseable {
 
   private static final AttributeKey<String> PIPELINE_KEY = AttributeKey.stringKey("pipeline");
 
@@ -45,16 +53,15 @@ public final class PipelineMetricsObserver implements Consumer<Result<?>> {
   private final LongCounter filtered;
   private final LongCounter failed;
   private final Attributes baseAttributes;
-  private final io.opentelemetry.api.metrics.Meter meter;
+  private final Meter meter;
 
-  @SuppressWarnings("unused")
-  private ObservableLongGauge srCacheSizeGauge;
-
-  @SuppressWarnings("unused")
-  private ObservableLongGauge srCacheHitsGauge;
-
-  @SuppressWarnings("unused")
-  private ObservableLongGauge srCacheMissesGauge;
+  // Async Schema-Registry cache instruments, registered lazily by bindSchemaRegistryCache and held
+  // so close() (and a re-bind) can unregister them. buildWithCallback hands the SDK a callback it
+  // strongly retains until the instrument is closed; overwriting these fields without closing would
+  // leak the old callbacks (they keep firing against stale suppliers → duplicate/stale series).
+  private ObservableLongCounter srCacheHits;
+  private ObservableLongCounter srCacheMisses;
+  private ObservableLongGauge srCacheSize;
 
   /// Creates an observer that reports pipeline-outcome counters under the given OTel meter.
   ///
@@ -95,17 +102,24 @@ public final class PipelineMetricsObserver implements Consumer<Result<?>> {
     }
   }
 
-  /// Registers three observable gauges that report the current state of a Confluent Schema
-  /// Registry cache (`CachedSchemaResolver` in `kpipe-schema-registry-confluent`). Wire the
-  /// suppliers to the resolver's `hitCount`, `missCount`, and `size` methods.
+  /// Registers instruments that report the current state of a Confluent Schema Registry cache
+  /// (`CachedSchemaResolver` in `kpipe-schema-registry-confluent`). Wire the suppliers to the
+  /// resolver's `hitCount`, `missCount`, and `size` methods.
   ///
   /// Metrics emitted:
   ///
-  ///   * `kpipe.schema_registry.cache.hits`   — cumulative hits since process start.
-  ///   * `kpipe.schema_registry.cache.misses` — cumulative misses (each one is one HTTP call).
-  ///   * `kpipe.schema_registry.cache.size`   — current distinct-id cardinality.
+  ///   * `kpipe.schema_registry.cache.hits`   — async **counter**: cumulative hits since start.
+  ///   * `kpipe.schema_registry.cache.misses` — async **counter**: cumulative misses (each is an
+  ///     HTTP call).
+  ///   * `kpipe.schema_registry.cache.size`   — gauge: current distinct-id cardinality.
   ///
-  /// Returns `this` for fluent chaining.
+  /// Hits and misses are monotonic cumulative totals, so they are modeled as (observable) counters,
+  /// not gauges — a downstream backend can then compute rates over them. Size is a level, so it
+  /// stays a gauge.
+  ///
+  /// Binding is one-shot per registration: calling this again closes the previous three instruments
+  /// before registering the new ones, so a re-bind swaps suppliers cleanly instead of leaking the
+  /// earlier callbacks. Returns `this` for fluent chaining.
   ///
   /// @param hits   supplier of cumulative cache hits (must be non-null)
   /// @param misses supplier of cumulative cache misses (must be non-null)
@@ -119,24 +133,46 @@ public final class PipelineMetricsObserver implements Consumer<Result<?>> {
     Objects.requireNonNull(hits, "hits supplier cannot be null");
     Objects.requireNonNull(misses, "misses supplier cannot be null");
     Objects.requireNonNull(size, "size supplier cannot be null");
-    this.srCacheHitsGauge = meter
-      .gaugeBuilder("kpipe.schema_registry.cache.hits")
-      .ofLongs()
+    closeSchemaRegistryInstruments();
+    this.srCacheHits = meter
+      .counterBuilder("kpipe.schema_registry.cache.hits")
       .setDescription("Cumulative cache hits for the Confluent Schema Registry resolver")
       .setUnit("{lookup}")
       .buildWithCallback(m -> m.record(hits.getAsLong(), baseAttributes));
-    this.srCacheMissesGauge = meter
-      .gaugeBuilder("kpipe.schema_registry.cache.misses")
-      .ofLongs()
+    this.srCacheMisses = meter
+      .counterBuilder("kpipe.schema_registry.cache.misses")
       .setDescription("Cumulative cache misses (each one resulted in a registry HTTP call)")
       .setUnit("{lookup}")
       .buildWithCallback(m -> m.record(misses.getAsLong(), baseAttributes));
-    this.srCacheSizeGauge = meter
+    this.srCacheSize = meter
       .gaugeBuilder("kpipe.schema_registry.cache.size")
       .ofLongs()
       .setDescription("Current number of distinct schema ids cached")
       .setUnit("{schema}")
       .buildWithCallback(m -> m.record(size.getAsLong(), baseAttributes));
     return this;
+  }
+
+  /// Unregisters the Schema-Registry cache instruments if bound. Idempotent — safe to call when
+  /// nothing was bound, and safe to call more than once. The pipeline-outcome counters are
+  /// synchronous and require no teardown, so this only tears down the async cache callbacks.
+  @Override
+  public void close() {
+    closeSchemaRegistryInstruments();
+  }
+
+  private void closeSchemaRegistryInstruments() {
+    if (srCacheHits != null) {
+      srCacheHits.close();
+      srCacheHits = null;
+    }
+    if (srCacheMisses != null) {
+      srCacheMisses.close();
+      srCacheMisses = null;
+    }
+    if (srCacheSize != null) {
+      srCacheSize.close();
+      srCacheSize = null;
+    }
   }
 }
