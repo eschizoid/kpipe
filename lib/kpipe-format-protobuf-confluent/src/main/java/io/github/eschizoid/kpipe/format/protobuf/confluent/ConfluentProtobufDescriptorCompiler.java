@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.schemaregistry.confluent.protobuf;
+package io.github.eschizoid.kpipe.format.protobuf.confluent;
 
 import com.google.protobuf.Descriptors.Descriptor;
 import io.confluent.kafka.schemaregistry.protobuf.ProtobufSchema;

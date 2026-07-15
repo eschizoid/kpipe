@@ -1,1 +1,1 @@
-io.github.eschizoid.kpipe.schemaregistry.confluent.protobuf.ConfluentProtobufDescriptorCompiler
+io.github.eschizoid.kpipe.format.protobuf.confluent.ConfluentProtobufDescriptorCompiler

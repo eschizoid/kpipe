@@ -286,7 +286,13 @@ public interface Stream<T> {
   /// the `.proto`-text compiler discovered via `ServiceLoader` (protobuf-java has no `.proto`
   /// parser, so the compiler ships in a separate shaded module, mirroring the `kpipe-metrics` →
   /// `kpipe-metrics-otel` split). Calling this on a Protobuf stream without that module on the
-  /// path throws at first use with a message telling you to add it.
+  /// path throws at first use with a message telling you to add it. That compiler is a ~17 MB
+  /// shaded jar; only SR-Protobuf users pull it — static `new ProtobufFormat(descriptor)` needs
+  /// nothing beyond `protobuf-java`.
+  ///
+  /// **Formats are opt-in.** `kpipe-api` declares the format modules `requires static`, so a
+  /// registry (or any format) call needs the matching `kpipe-format-*` module on the runtime
+  /// path or you get a `NoClassDefFoundError`.
   ///
   /// @param resolver the schema resolver (typically a `CachedSchemaResolver` wrapping a
   ///                 `ConfluentSchemaResolver`)
@@ -300,9 +306,13 @@ public interface Stream<T> {
   /// to start. For Avro streams this requires that a default schema has been registered; see
   /// [KPipe#avro] for details.
   ///
+  /// A **registry-mode** Avro/Protobuf stream (via [#withSchemaRegistry]) has no fixed
+  /// schema/descriptor, so the console sink is unsupported there — `toConsole()` throws; use
+  /// `.toCustom(...)` with your own sink instead.
+  ///
   /// @return a [Sink] ready to start
   /// @throws IllegalStateException if the stream's format requires schema/config that has not
-  ///     been registered (e.g. Avro without a default schema)
+  ///     been registered (e.g. Avro without a default schema, or a registry-mode stream)
   Sink<T> toConsole();
 
   /// Terminates the stream with a user-provided sink and returns a [Sink] ready to start.
