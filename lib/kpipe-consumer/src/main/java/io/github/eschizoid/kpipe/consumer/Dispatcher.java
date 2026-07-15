@@ -25,6 +25,12 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// retry + DLQ logic). `onComplete` runs after `processTask`, regardless of throws, on
 /// whichever thread executed the task — it's used to unpark the consumer thread when
 /// backpressure is held.
+///
+/// **Sealed by design.** The three [ProcessingMode]s form a stable taxonomy covering the known
+/// use cases. Unlike `Tracer` (an open SPI you supply via `withTracer(...)`), dispatch is NOT a
+/// user extension point: a custom mode would need deep hooks into offset commit, backpressure,
+/// and shutdown drain — not a plug-and-play boundary. A new mode is added here and gated by the
+/// full correctness suite, not supplied by users.
 sealed interface Dispatcher
   extends AutoCloseable
   permits SequentialDispatcher, ParallelDispatcher, KeyOrderedDispatcher

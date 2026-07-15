@@ -56,6 +56,11 @@ public final class ProtobufFormat implements MessageFormat<Message> {
 
   /// Constructs a codec bound to `descriptor` (static mode).
   ///
+  /// There is no `of(String)` factory (unlike `AvroFormat.of(json)`): protobuf-java compiles a
+  /// [Descriptor] only from a binary `FileDescriptorProto`, not from `.proto` source text, so a
+  /// descriptor must be supplied. For per-record schema lookup from `.proto` text, use
+  /// [#withRegistry(SchemaResolver)] with `kpipe-format-protobuf-confluent`.
+  ///
   /// @param descriptor the Protobuf message descriptor used for deserialization (must be non-null)
   public ProtobufFormat(final Descriptor descriptor) {
     this.descriptor = Objects.requireNonNull(descriptor, "descriptor cannot be null");

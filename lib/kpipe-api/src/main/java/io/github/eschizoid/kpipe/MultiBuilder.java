@@ -11,6 +11,7 @@ import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -142,6 +143,23 @@ public final class MultiBuilder {
     return route(topic, format, format::consoleSink, configurator);
   }
 
+  /// Registers an Avro route for `topic` with per-record Confluent Schema-Registry lookup — the
+  /// multi-topic mirror of [KPipe#avro(String, Properties, SchemaResolver)]. Each record's wire
+  /// envelope is read and its schema resolved via `resolver` (wrap with `CachedSchemaResolver`).
+  /// Registry mode has no fixed schema, so `.toConsole()` on this route is unsupported.
+  ///
+  /// @param topic the Kafka topic
+  /// @param resolver the schema resolver (must be non-null; typically a `CachedSchemaResolver`)
+  /// @param configurator builds the operator chain and chooses a terminal sink
+  /// @return this builder
+  public MultiBuilder avro(
+    final String topic,
+    final SchemaResolver resolver,
+    final Function<Stream<GenericRecord>, Sink<GenericRecord>> configurator
+  ) {
+    return route(topic, AvroFormat.withRegistry(resolver), KPipe::registryModeConsoleSinkUnsupported, configurator);
+  }
+
   /// Registers a Protobuf route for `topic` using `format` for SerDe. Construct the format
   /// explicitly: `new ProtobufFormat(descriptor)`.
   ///
@@ -155,6 +173,29 @@ public final class MultiBuilder {
     final Function<Stream<Message>, Sink<Message>> configurator
   ) {
     return route(topic, format, format::consoleSink, configurator);
+  }
+
+  /// Registers a Protobuf route for `topic` with per-record Confluent Schema-Registry lookup — the
+  /// multi-topic mirror of [KPipe#protobuf(String, Properties, SchemaResolver)]. Requires
+  /// `kpipe-format-protobuf-confluent` on the runtime path (the ServiceLoader-discovered
+  /// `.proto`-text compiler). Registry mode has no fixed descriptor, so `.toConsole()` is
+  /// unsupported.
+  ///
+  /// @param topic the Kafka topic
+  /// @param resolver the schema resolver (must be non-null; typically a `CachedSchemaResolver`)
+  /// @param configurator builds the operator chain and chooses a terminal sink
+  /// @return this builder
+  public MultiBuilder protobuf(
+    final String topic,
+    final SchemaResolver resolver,
+    final Function<Stream<Message>, Sink<Message>> configurator
+  ) {
+    return route(
+      topic,
+      ProtobufFormat.withRegistry(resolver),
+      KPipe::registryModeProtobufConsoleSinkUnsupported,
+      configurator
+    );
   }
 
   /// Registers a raw `byte[]` route for `topic` — identity passthrough, no SerDe.

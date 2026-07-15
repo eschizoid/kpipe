@@ -104,7 +104,7 @@ public final class KPipe {
     return new DefaultStream<>(topic, kafkaProps, format, KPipe::registryModeConsoleSinkUnsupported);
   }
 
-  private static MessageSink<GenericRecord> registryModeConsoleSinkUnsupported() {
+  static MessageSink<GenericRecord> registryModeConsoleSinkUnsupported() {
     throw new IllegalStateException(
       "toConsole() requires a fixed schema; an AvroFormat in Schema-Registry mode has none. " +
         "Use .toCustom(...) with your own sink, or construct the stream via " +
@@ -159,7 +159,7 @@ public final class KPipe {
     return new DefaultStream<>(topic, kafkaProps, format, KPipe::registryModeProtobufConsoleSinkUnsupported);
   }
 
-  private static MessageSink<Message> registryModeProtobufConsoleSinkUnsupported() {
+  static MessageSink<Message> registryModeProtobufConsoleSinkUnsupported() {
     throw new IllegalStateException(
       "toConsole() requires a fixed descriptor; a ProtobufFormat in Schema-Registry mode has none. " +
         "Use .toCustom(...) with your own sink, or construct the stream via " +

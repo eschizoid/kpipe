@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.schemaregistry.confluent.protobuf;
+package io.github.eschizoid.kpipe.format.protobuf.confluent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
