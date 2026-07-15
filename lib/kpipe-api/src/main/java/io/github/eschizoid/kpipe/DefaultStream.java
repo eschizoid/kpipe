@@ -306,10 +306,11 @@ record DefaultStream<T>(
     });
   }
 
-  /// Applies the consumer-level config that both [DefaultSink] and [DefaultBatchSink] share onto
-  /// `builder`: retry, backpressure, metrics, error handler, dead-letter topic, poll timeout.
-  /// Tracer and circuit-breaker are NOT applied here — they're only wired by [DefaultSink];
-  /// `DefaultBatchSink` historically does not expose them (would change behavior to add).
+  /// Applies every consumer-level setting that both [DefaultSink] and [DefaultBatchSink] share onto
+  /// `builder`: retry, backpressure, metrics, error handler, dead-letter topic, poll timeout,
+  /// tracer, and circuit breaker. All are consumer-wide, so wiring them from one place keeps the
+  /// two sink types from drifting — the batch path previously skipped tracer and circuit breaker,
+  /// silently dropping both when set on a `toBatch(...)` stream.
   void applyCommonConsumerConfig(final KPipeConsumer.Builder builder) {
     if (maxRetries > 0) builder.withRetry(maxRetries, retryBackoff);
     if (backpressureHigh != null) builder.withBackpressure(backpressureHigh, backpressureLow);
@@ -317,6 +318,8 @@ record DefaultStream<T>(
     if (errorHandler != null) builder.withErrorHandler(errorHandler::accept);
     if (deadLetterTopic != null) builder.withDeadLetterTopic(deadLetterTopic);
     if (pollTimeout != null) builder.withPollTimeout(pollTimeout);
+    if (tracer != null) builder.withTracer(tracer);
+    if (circuitBreaker != null) builder.withCircuitBreaker(circuitBreaker);
   }
 
   /// Single funnel for every wither: snapshot this record into a [Mut], let the caller change

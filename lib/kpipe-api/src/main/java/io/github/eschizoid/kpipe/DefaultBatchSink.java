@@ -13,7 +13,8 @@ import java.util.Objects;
 /// [KPipeConsumer.Builder#withBatchPipeline] together with the configured [BatchSink] and
 /// [BatchPolicy]. Honors whatever processing mode the underlying [DefaultStream] carries
 /// (default: parallel); consumer-level config (metrics, errorHandler, DLQ, pollTimeout, retry,
-/// backpressure) carries over too.
+/// backpressure, tracer, circuit breaker) carries over too via
+/// [DefaultStream#applyCommonConsumerConfig].
 ///
 /// `Stream.toBatch(...)` produces a single-topic instance. [MultiBuilder] also constructs single-
 /// topic instances per route and collects them at `start()` time into one consumer subscribing
