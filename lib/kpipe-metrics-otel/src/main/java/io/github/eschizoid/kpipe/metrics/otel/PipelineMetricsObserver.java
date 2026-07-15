@@ -8,6 +8,8 @@ import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableLongCounter;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -45,8 +47,13 @@ import java.util.function.LongSupplier;
 /// callbacks until the instrument is closed. The observer is [AutoCloseable]: call [#close()]
 /// when discarding it so those callbacks stop firing. Re-binding closes the previous cache
 /// registration first, so binding twice never leaks the earlier callbacks.
+///
+/// Thread-safety. [#accept] is safe to call concurrently — it only reads the three `final`
+/// counters. The lifecycle methods ([#bindSchemaRegistryCache] and [#close()]) are NOT thread-safe
+/// with respect to each other; call them from a single owning thread (setup / teardown).
 public final class PipelineMetricsObserver implements Consumer<Result<?>>, AutoCloseable {
 
+  private static final Logger LOGGER = System.getLogger(PipelineMetricsObserver.class.getName());
   private static final AttributeKey<String> PIPELINE_KEY = AttributeKey.stringKey("pipeline");
 
   private final LongCounter passed;
@@ -162,17 +169,24 @@ public final class PipelineMetricsObserver implements Consumer<Result<?>>, AutoC
   }
 
   private void closeSchemaRegistryInstruments() {
-    if (srCacheHits != null) {
-      srCacheHits.close();
-      srCacheHits = null;
+    // Close each instrument independently and clear its field regardless of a throw. A sequential
+    // close where the first .close() throws would leave the others registered and non-null — still
+    // firing against stale suppliers, the exact leak this method exists to prevent.
+    srCacheHits = closeQuietly(srCacheHits);
+    srCacheMisses = closeQuietly(srCacheMisses);
+    srCacheSize = closeQuietly(srCacheSize);
+  }
+
+  /// Closes `instrument` if non-null, logging (never rethrowing) any failure so teardown of the
+  /// remaining instruments always continues. Returns null so the caller can clear the field.
+  private static <T extends AutoCloseable> T closeQuietly(final T instrument) {
+    if (instrument != null) {
+      try {
+        instrument.close();
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Failed to close a Schema-Registry cache instrument; continuing teardown", e);
+      }
     }
-    if (srCacheMisses != null) {
-      srCacheMisses.close();
-      srCacheMisses = null;
-    }
-    if (srCacheSize != null) {
-      srCacheSize.close();
-      srCacheSize = null;
-    }
+    return null;
   }
 }
