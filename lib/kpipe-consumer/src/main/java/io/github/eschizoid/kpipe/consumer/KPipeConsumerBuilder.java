@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.consumer.config.AppConfig;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
@@ -53,9 +52,9 @@ public final class KPipeConsumerBuilder {
   Duration retryBackoff = Duration.ofMillis(500);
   ProcessingMode processingMode = ProcessingMode.PARALLEL;
   int keyOrderedMaxKeys = KeyOrderedDispatcher.DEFAULT_MAX_KEYS;
-  Duration waitForMessagesTimeout = AppConfig.DEFAULT_WAIT_FOR_MESSAGES;
-  Duration threadTerminationTimeout = AppConfig.DEFAULT_THREAD_TERMINATION;
-  final Duration executorTerminationTimeout = AppConfig.DEFAULT_EXECUTOR_TERMINATION;
+  Duration waitForMessagesTimeout = ConsumerDefaults.WAIT_FOR_MESSAGES;
+  Duration threadTerminationTimeout = ConsumerDefaults.THREAD_TERMINATION;
+  final Duration executorTerminationTimeout = ConsumerDefaults.EXECUTOR_TERMINATION;
   OffsetManager offsetManager;
   Function<Consumer<byte[], byte[]>, OffsetManager> offsetManagerProvider;
   Supplier<Consumer<byte[], byte[]>> consumerProvider;

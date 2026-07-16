@@ -1038,7 +1038,7 @@ public class KPipeConsumer implements AutoCloseable {
     try {
       health.shutdown();
     } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Error shutting down health server during shutdown", e);
+      LOGGER.log(Level.WARNING, "Error cancelling the circuit-breaker probe timer during shutdown", e);
     }
     if (scheduler != null) scheduler.shutdownNow();
     if (offsetManager != null) {
