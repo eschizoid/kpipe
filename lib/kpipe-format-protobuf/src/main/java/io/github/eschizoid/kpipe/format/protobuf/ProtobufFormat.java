@@ -7,9 +7,9 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.registry.WireDiagnostics;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceLoader;
@@ -158,7 +158,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
           " bytes for descriptor " +
           descriptor.getFullName() +
           " (first bytes " +
-          hexPreview(data) +
+          WireDiagnostics.hexPreview(data) +
           ") — if using Confluent wire format, check skipBytes(6)",
         e
       );
@@ -278,17 +278,4 @@ public final class ProtobufFormat implements MessageFormat<Message> {
     }
   }
 
-  /// Renders a short hex preview of the leading bytes of `data` for diagnostics, capped at
-  /// [#HEX_PREVIEW_LIMIT] bytes. Handles empty/short arrays without throwing.
-  ///
-  /// @param data the byte array to preview (never null at the call site)
-  /// @return space-separated lowercase hex of the leading bytes, ellipsis-suffixed when truncated
-  private static String hexPreview(final byte[] data) {
-    final var count = Math.min(data.length, HEX_PREVIEW_LIMIT);
-    final var hex = HexFormat.ofDelimiter(" ").formatHex(data, 0, count);
-    return count < data.length ? hex + " ..." : hex;
-  }
-
-  /// Maximum number of leading bytes rendered by [#hexPreview].
-  private static final int HEX_PREVIEW_LIMIT = 8;
 }

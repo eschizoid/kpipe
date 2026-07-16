@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONFactory;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
-import java.util.HexFormat;
+import io.github.eschizoid.kpipe.registry.WireDiagnostics;
 import java.util.Map;
 
 /// JSON implementation of [MessageFormat] for KPipe.
@@ -68,23 +68,10 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
       return JSON.parseObject(data);
     } catch (final JSONException e) {
       throw new IllegalStateException(
-        "JsonFormat.deserialize failed on " + data.length + " bytes (first bytes " + hexPreview(data) + ")",
+        "JsonFormat.deserialize failed on " + data.length + " bytes (first bytes " +
+          WireDiagnostics.hexPreview(data) + ")",
         e
       );
     }
   }
-
-  /// Renders a short hex preview of the leading bytes of `data` for diagnostics, capped at
-  /// [#HEX_PREVIEW_LIMIT] bytes. Handles empty/short arrays without throwing.
-  ///
-  /// @param data the byte array to preview (never null at the call site)
-  /// @return space-separated lowercase hex of the leading bytes, with a trailing ellipsis when truncated
-  private static String hexPreview(final byte[] data) {
-    final var count = Math.min(data.length, HEX_PREVIEW_LIMIT);
-    final var hex = HexFormat.ofDelimiter(" ").formatHex(data, 0, count);
-    return count < data.length ? hex + " ..." : hex;
-  }
-
-  /// Maximum number of leading bytes rendered by [#hexPreview].
-  private static final int HEX_PREVIEW_LIMIT = 8;
 }

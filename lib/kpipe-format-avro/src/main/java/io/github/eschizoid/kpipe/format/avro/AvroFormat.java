@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.format.avro;
 
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.registry.WireDiagnostics;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Objects;
@@ -163,7 +164,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
       // visible in the cause chain rather than swallowed.
       throw new IllegalStateException(
         "AvroFormat.deserialize failed in static mode on " + data.length + " bytes against schema " +
-          staticSchema.getFullName(),
+          staticSchema.getFullName() + " (first bytes " + WireDiagnostics.hexPreview(data) + ")",
         e
       );
     }
@@ -171,10 +172,14 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
 
   private GenericRecord deserializeFromEnvelope(final byte[] data) {
     if (data.length < ENVELOPE_LENGTH) throw new IllegalStateException(
-      "Record too short for Confluent wire envelope: " + data.length + " bytes; expected at least " + ENVELOPE_LENGTH
+      "Record too short for Confluent wire envelope: " + data.length + " bytes; expected at least " + ENVELOPE_LENGTH +
+        " (first bytes " + WireDiagnostics.hexPreview(data) + ")"
     );
     if (data[0] != CONFLUENT_MAGIC) throw new IllegalStateException(
-      "Unexpected magic byte 0x%02x; expected 0x00 (Confluent Schema Registry envelope)".formatted(data[0] & 0xff)
+      "Unexpected magic byte 0x%02x; expected 0x00 (Confluent Schema Registry envelope; first bytes %s)".formatted(
+        data[0] & 0xff,
+        WireDiagnostics.hexPreview(data)
+      )
     );
     final int schemaId =
       ((data[1] & 0xff) << 24) | ((data[2] & 0xff) << 16) | ((data[3] & 0xff) << 8) | (data[4] & 0xff);
@@ -191,9 +196,14 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     final var decoder = DecoderFactory.get().binaryDecoder(data, ENVELOPE_LENGTH, data.length - ENVELOPE_LENGTH, null);
     try {
       return reader.read(null, decoder);
-    } catch (final IOException e) {
+    } catch (final IOException | RuntimeException e) {
+      // RuntimeException is caught alongside IOException to match the static path: a malformed
+      // payload under a valid envelope surfaces as Avro's own AvroRuntimeException, not IOException,
+      // so the production SR path would otherwise debug worse than the static path (context-free
+      // escape). The original cause is always attached.
       throw new IllegalStateException(
-        "Failed to decode Avro record under Confluent wire envelope (schema id " + schemaId + ")",
+        "Failed to decode Avro record under Confluent wire envelope (schema id " + schemaId +
+          ", first bytes " + WireDiagnostics.hexPreview(data) + ")",
         e
       );
     }
