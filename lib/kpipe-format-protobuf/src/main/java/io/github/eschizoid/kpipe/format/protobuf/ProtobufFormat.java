@@ -152,7 +152,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
     try {
       return DynamicMessage.parseFrom(descriptor, data);
     } catch (final InvalidProtocolBufferException e) {
-      throw new RuntimeException(
+      throw new IllegalStateException(
         "ProtobufFormat.deserialize failed on " +
           data.length +
           " bytes for descriptor " +
@@ -218,7 +218,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
       final var payload = CodedInputStream.newInstance(data, payloadOffset, data.length - payloadOffset);
       return DynamicMessage.parseFrom(messageDescriptor, payload);
     } catch (final IOException e) {
-      throw new RuntimeException(
+      throw new IllegalStateException(
         "Failed to decode Protobuf record under Confluent wire envelope (schema id " + schemaId + ")",
         e
       );

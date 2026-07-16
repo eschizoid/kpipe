@@ -135,7 +135,7 @@ class AvroFormatRegistryTest {
     final var format = AvroFormat.withRegistry(resolver);
 
     final var bad = new byte[] { 0x01, 0x00, 0x00, 0x00, 0x01, 0x42 };
-    final var ex = assertThrows(RuntimeException.class, () -> format.deserialize(bad));
+    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(bad));
     assertTrue(ex.getMessage().contains("magic byte"), "must mention magic byte; got: " + ex.getMessage());
   }
 
@@ -145,7 +145,7 @@ class AvroFormatRegistryTest {
     final var format = AvroFormat.withRegistry(resolver);
 
     final var tooShort = new byte[] { 0x00, 0x00, 0x00 };
-    final var ex = assertThrows(RuntimeException.class, () -> format.deserialize(tooShort));
+    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(tooShort));
     assertTrue(ex.getMessage().contains("envelope"));
   }
 
@@ -193,7 +193,7 @@ class AvroFormatRegistryTest {
     };
     final var format = AvroFormat.withRegistry(resolver);
     final var anyEnvelope = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x42, 0x00 };
-    final var ex = assertThrows(RuntimeException.class, () -> format.deserialize(anyEnvelope));
+    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(anyEnvelope));
     assertTrue(ex.getMessage().contains("empty schema"));
   }
 }

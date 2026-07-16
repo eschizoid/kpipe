@@ -67,7 +67,7 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
     try {
       return JSON.parseObject(data);
     } catch (final JSONException e) {
-      throw new RuntimeException(
+      throw new IllegalStateException(
         "JsonFormat.deserialize failed on " + data.length + " bytes (first bytes " + hexPreview(data) + ")",
         e
       );

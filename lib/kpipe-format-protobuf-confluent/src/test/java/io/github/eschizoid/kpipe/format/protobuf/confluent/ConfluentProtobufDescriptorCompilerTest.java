@@ -63,8 +63,8 @@ class ConfluentProtobufDescriptorCompilerTest {
   @Test
   void outOfRangeIndexIsRejected() {
     final var proto = "syntax = \"proto3\"; message A { int64 id = 1; }";
-    assertThrows(IllegalArgumentException.class, () -> compiler.compile(proto, new int[] { 5 }));
-    assertThrows(IllegalArgumentException.class, () -> compiler.compile(proto, new int[] {}));
+    assertThrows(IllegalStateException.class, () -> compiler.compile(proto, new int[] { 5 }));
+    assertThrows(IllegalStateException.class, () -> compiler.compile(proto, new int[] {}));
   }
 
   @Test

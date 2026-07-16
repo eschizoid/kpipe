@@ -26,20 +26,20 @@ public final class ConfluentProtobufDescriptorCompiler implements ProtobufDescri
   public Descriptor compile(final String protoText, final int[] messageIndex) {
     Objects.requireNonNull(protoText, "protoText cannot be null");
     Objects.requireNonNull(messageIndex, "messageIndex cannot be null");
-    if (messageIndex.length == 0) throw new IllegalArgumentException("messageIndex must not be empty");
+    if (messageIndex.length == 0) throw new IllegalStateException("messageIndex must not be empty");
 
     final var schema = new ProtobufSchema(protoText);
     final var file = schema.toDescriptor().getFile();
 
     final var topLevel = file.getMessageTypes();
-    if (messageIndex[0] < 0 || messageIndex[0] >= topLevel.size()) throw new IllegalArgumentException(
+    if (messageIndex[0] < 0 || messageIndex[0] >= topLevel.size()) throw new IllegalStateException(
       "message-index[0]=" + messageIndex[0] + " out of range for " + topLevel.size() + " top-level messages"
     );
     var descriptor = topLevel.get(messageIndex[0]);
     for (var depth = 1; depth < messageIndex.length; depth++) {
       final var nested = descriptor.getNestedTypes();
       final var idx = messageIndex[depth];
-      if (idx < 0 || idx >= nested.size()) throw new IllegalArgumentException(
+      if (idx < 0 || idx >= nested.size()) throw new IllegalStateException(
         "message-index[" +
           depth +
           "]=" +
