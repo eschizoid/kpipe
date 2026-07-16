@@ -137,6 +137,7 @@ class AvroFormatRegistryTest {
     final var bad = new byte[] { 0x01, 0x00, 0x00, 0x00, 0x01, 0x42 };
     final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(bad));
     assertTrue(ex.getMessage().contains("magic byte"), "must mention magic byte; got: " + ex.getMessage());
+    assertTrue(ex.getMessage().contains("first bytes 01 00"), "must carry a hex preview; got: " + ex.getMessage());
   }
 
   @Test
@@ -147,6 +148,24 @@ class AvroFormatRegistryTest {
     final var tooShort = new byte[] { 0x00, 0x00, 0x00 };
     final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(tooShort));
     assertTrue(ex.getMessage().contains("envelope"));
+    assertTrue(ex.getMessage().contains("first bytes 00 00 00"), "must carry a hex preview; got: " + ex.getMessage());
+  }
+
+  @Test
+  void malformedPayloadUnderValidEnvelopeIsWrappedWithContext() {
+    // A valid envelope (correct magic + resolvable schema id) but a corrupt Avro payload: the first
+    // string field's length varint decodes to a bad length, so reader.read throws Avro's own
+    // AvroRuntimeException (a RuntimeException, NOT an IOException). The widened envelope-decode
+    // catch must surface it as an IllegalStateException with byte context — before the widening this
+    // escaped context-free, so the production SR path debugged worse than the static path.
+    final var resolver = new FakeResolver().put(1, USER_V1);
+    final var format = AvroFormat.withRegistry(resolver);
+    final var env = new byte[] {
+      0x00, 0x00, 0x00, 0x00, 0x01, (byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff, 0x0f,
+    };
+    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(env));
+    assertTrue(ex.getMessage().contains("schema id 1"), "should name the schema id; got: " + ex.getMessage());
+    assertTrue(ex.getMessage().contains("first bytes"), "should include a hex preview; got: " + ex.getMessage());
   }
 
   @Test
