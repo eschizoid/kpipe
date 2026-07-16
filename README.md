@@ -86,7 +86,7 @@ There are two public entry points; pick whichever matches the shape of your prob
 | Surface                                                | What it gives you                                                                                                                                                                   | When to use                                                                    |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | **`KPipe` fluent facade** (`kpipe-api`)                | 5-line `KPipe.json("topic", props).pipe(...).toConsole().start()`. Returns a `Stream<T>` → `Sink<T>` → `Handle` chain. Immutable, IDE-discoverable.                                 | The common path — most users start here.                                       |
-| **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumer.Builder`. Multi-step, supports custom registries, shared pipelines, custom offset managers, periodic metrics reporting via the builder. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
+| **Registry + Builder explicit API** (`kpipe-consumer`) | `MessageProcessorRegistry` + `KPipeConsumerBuilder`. Multi-step, supports custom registries, shared pipelines, custom offset managers, periodic metrics reporting via the builder. | Custom offset managers, multi-pipeline-per-consumer, advanced lifecycle hooks. |
 
 The facade is a thin layer on top of the explicit API, so dropping down when you outgrow it doesn't cost anything. See
 [`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md) for the full capability map and worked examples of the explicit-only
@@ -210,7 +210,7 @@ try (var handle = KPipe.json("orders", kafkaProps)
 
 `Handle` is `AutoCloseable` and `close()` calls `shutdownGracefully(Duration.ofSeconds(5))` by default. The DLQ wires a
 `KafkaProducer` from the same Kafka properties; to share a pre-built producer instead, drop down to the explicit
-`KPipeConsumer.Builder` and call `.withDeadLetterQueue(topic, kpipeProducer)`. The second argument is a
+`KPipeConsumerBuilder` and call `.withDeadLetterQueue(topic, kpipeProducer)`. The second argument is a
 `KPipeProducer<byte[], byte[]>` (not a raw `KafkaProducer`) — wrap your producer with
 `KPipeProducer.<byte[], byte[]>builder().withProducer(rawProducer).build()` if you only have the raw Kafka client. The
 atomic form keeps the topic and producer from drifting out of sync. See
@@ -452,7 +452,7 @@ entity-level ordering with cross-entity parallelism, or `SEQUENTIAL` for strict 
 
 Kafka-backed offset storage is the default. For external coordination — offsets in Postgres, Redis, or anywhere else —
 implement the `OffsetManager` interface: persist offsets in `markOffsetProcessed`, and seek to the stored offset in the
-rebalance listener returned by `createRebalanceListener()`. Wire it with `KPipeConsumer.Builder.withOffsetManager(...)`
+rebalance listener returned by `createRebalanceListener()`. Wire it with `KPipeConsumerBuilder.withOffsetManager(...)`
 (or `withOffsetManagerProvider(...)` when the manager needs the live Kafka consumer). A worked `PostgresOffsetManager`
 example lives in [`docs/ESCAPE-HATCHES.md`](docs/ESCAPE-HATCHES.md).
 

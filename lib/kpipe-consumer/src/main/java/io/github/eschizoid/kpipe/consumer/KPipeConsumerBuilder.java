@@ -6,31 +6,22 @@ import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.*;
-import org.apache.kafka.common.errors.InterruptException;
-import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
-/// KPipeConsumerBuilder for creating and configuring [KPipeConsumer] instances. Extracted from the former
-/// nested `KPipeConsumer.KPipeConsumerBuilder` (1.19.0) so `KPipeConsumer` stays navigable; the consumer's
-/// constructor reads this builder's package-private fields to assemble the running consumer.
+/// Builder for creating and configuring [KPipeConsumer] instances. Extracted from the former nested
+/// `KPipeConsumer.Builder` so `KPipeConsumer` stays navigable; the consumer's constructor reads this
+/// builder's package-private fields to assemble the running consumer.
 public final class KPipeConsumerBuilder {
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumerBuilder.class.getName());
