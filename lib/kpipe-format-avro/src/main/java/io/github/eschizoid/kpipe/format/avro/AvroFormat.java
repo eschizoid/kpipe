@@ -1,8 +1,8 @@
 package io.github.eschizoid.kpipe.format.avro;
 
-import io.github.eschizoid.kpipe.diagnostics.Diagnostics;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.registry.WireDiagnostics;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Objects;
@@ -164,7 +164,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
       // visible in the cause chain rather than swallowed.
       throw new IllegalStateException(
         "AvroFormat.deserialize failed in static mode on " + data.length + " bytes against schema " +
-          staticSchema.getFullName() + " (first bytes " + Diagnostics.hexPreview(data) + ")",
+          staticSchema.getFullName() + " (first bytes " + WireDiagnostics.hexPreview(data) + ")",
         e
       );
     }
@@ -173,12 +173,12 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   private GenericRecord deserializeFromEnvelope(final byte[] data) {
     if (data.length < ENVELOPE_LENGTH) throw new IllegalStateException(
       "Record too short for Confluent wire envelope: " + data.length + " bytes; expected at least " + ENVELOPE_LENGTH +
-        " (first bytes " + Diagnostics.hexPreview(data) + ")"
+        " (first bytes " + WireDiagnostics.hexPreview(data) + ")"
     );
     if (data[0] != CONFLUENT_MAGIC) throw new IllegalStateException(
       "Unexpected magic byte 0x%02x; expected 0x00 (Confluent Schema Registry envelope; first bytes %s)".formatted(
         data[0] & 0xff,
-        Diagnostics.hexPreview(data)
+        WireDiagnostics.hexPreview(data)
       )
     );
     final int schemaId =
@@ -203,7 +203,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
       // escape). The original cause is always attached.
       throw new IllegalStateException(
         "Failed to decode Avro record under Confluent wire envelope (schema id " + schemaId +
-          ", first bytes " + Diagnostics.hexPreview(data) + ")",
+          ", first bytes " + WireDiagnostics.hexPreview(data) + ")",
         e
       );
     }

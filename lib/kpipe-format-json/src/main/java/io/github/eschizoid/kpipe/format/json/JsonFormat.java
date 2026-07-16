@@ -3,8 +3,8 @@ package io.github.eschizoid.kpipe.format.json;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONFactory;
-import io.github.eschizoid.kpipe.diagnostics.Diagnostics;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
+import io.github.eschizoid.kpipe.registry.WireDiagnostics;
 import java.util.Map;
 
 /// JSON implementation of [MessageFormat] for KPipe.
@@ -68,7 +68,8 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
       return JSON.parseObject(data);
     } catch (final JSONException e) {
       throw new IllegalStateException(
-        "JsonFormat.deserialize failed on " + data.length + " bytes (first bytes " + Diagnostics.hexPreview(data) + ")",
+        "JsonFormat.deserialize failed on " + data.length + " bytes (first bytes " +
+          WireDiagnostics.hexPreview(data) + ")",
         e
       );
     }

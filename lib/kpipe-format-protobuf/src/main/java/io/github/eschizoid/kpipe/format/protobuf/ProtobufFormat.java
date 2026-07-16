@@ -5,9 +5,9 @@ import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
-import io.github.eschizoid.kpipe.diagnostics.Diagnostics;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.registry.WireDiagnostics;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -158,7 +158,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
           " bytes for descriptor " +
           descriptor.getFullName() +
           " (first bytes " +
-          Diagnostics.hexPreview(data) +
+          WireDiagnostics.hexPreview(data) +
           ") — if using Confluent wire format, check skipBytes(6)",
         e
       );

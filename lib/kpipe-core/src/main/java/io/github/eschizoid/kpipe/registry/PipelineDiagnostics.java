@@ -14,6 +14,8 @@ final class PipelineDiagnostics {
 
   private static final int HEX_DUMP_BYTES = 16;
   private static final byte CONFLUENT_MAGIC = 0x00;
+  // Byte rendering is shared with the format modules via WireDiagnostics so the two don't drift;
+  // this boundary keeps the fuller `hexDump` presentation (leading bytes + total count).
 
   private PipelineDiagnostics() {}
 
@@ -70,15 +72,6 @@ final class PipelineDiagnostics {
   }
 
   private static String hexDump(final byte[] data) {
-    final var n = Math.min(data.length, HEX_DUMP_BYTES);
-    final var sb = new StringBuilder(2 + n * 3);
-    sb.append('[');
-    for (int i = 0; i < n; i++) {
-      if (i > 0) sb.append(' ');
-      sb.append(String.format("%02x", data[i] & 0xff));
-    }
-    if (data.length > n) sb.append(" …(").append(data.length).append(" bytes total)");
-    sb.append(']');
-    return sb.toString();
+    return "[" + WireDiagnostics.hexDump(data, HEX_DUMP_BYTES) + "]";
   }
 }

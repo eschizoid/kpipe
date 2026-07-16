@@ -215,4 +215,22 @@ class AvroFormatRegistryTest {
     final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(anyEnvelope));
     assertTrue(ex.getMessage().contains("empty schema"));
   }
+
+  @Test
+  void resolverThatThrowsPropagatesUnwrapped() {
+    // The resolver lookup runs inside computeIfAbsent, BEFORE the decode try/catch — so a
+    // resolver-thrown exception propagates as-is, never reclassified to the format's read-path
+    // IllegalStateException. Uses IllegalArgumentException as a discriminating type: if the widened
+    // envelope-decode catch ever grew to wrap the resolver call, this would surface as ISE instead.
+    final var resolver = new SchemaResolver() {
+      @Override
+      public String lookupById(final int schemaId) {
+        throw new IllegalArgumentException("registry down");
+      }
+    };
+    final var format = AvroFormat.withRegistry(resolver);
+    final var anyEnvelope = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x42, 0x00 };
+    final var ex = assertThrows(IllegalArgumentException.class, () -> format.deserialize(anyEnvelope));
+    assertTrue(ex.getMessage().contains("registry down"), "resolver exception must propagate unwrapped");
+  }
 }
