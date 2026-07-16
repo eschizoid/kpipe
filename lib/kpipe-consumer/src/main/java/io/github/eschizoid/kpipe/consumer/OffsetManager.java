@@ -62,8 +62,8 @@ public interface OffsetManager extends AutoCloseable {
   boolean isRunning();
 
   /// Gets statistics about the offset manager's performance and state.
-  /// @return A map containing statistics
-  Map<String, Object> getStatistics();
+  /// @return a typed statistics snapshot
+  OffsetStatistics getStatistics();
 
   @Override
   void close();

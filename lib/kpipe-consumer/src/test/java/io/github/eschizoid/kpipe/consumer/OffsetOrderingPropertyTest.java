@@ -57,11 +57,11 @@ class OffsetOrderingPropertyTest {
   }
 
   private static long commitPoint(final KafkaOffsetManager manager, final TopicPartition tp) {
-    return (long) manager.getPartitionState(tp).get("nextOffsetToCommit");
+    return (long) manager.getPartitionState(tp).nextOffsetToCommit();
   }
 
   private static long highestProcessed(final KafkaOffsetManager manager, final TopicPartition tp) {
-    return (long) manager.getPartitionState(tp).get("highestProcessedOffset");
+    return (long) manager.getPartitionState(tp).highestProcessedOffset();
   }
 
   /// The commit point the spec mandates for a partition given its pending set and highest marked

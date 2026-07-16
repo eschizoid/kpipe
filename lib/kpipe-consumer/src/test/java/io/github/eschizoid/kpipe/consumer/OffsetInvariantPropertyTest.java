@@ -67,7 +67,7 @@ class OffsetInvariantPropertyTest {
           highestMarked = Math.max(highestMarked, op.offset());
         }
 
-        final var commitPoint = (long) manager.getPartitionState(PARTITION).get("nextOffsetToCommit");
+        final var commitPoint = (long) manager.getPartitionState(PARTITION).nextOffsetToCommit();
 
         if (!pending.isEmpty()) {
           final var lowestPending = pending.stream().mapToLong(Long::longValue).min().orElseThrow();

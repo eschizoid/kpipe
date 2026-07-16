@@ -99,7 +99,7 @@ class KafkaOffsetManagerTest {
       // Verify partition state after first commit
       assertEventually(
         () ->
-          expectedOffsetAfterFirstCommit == (long) offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+          expectedOffsetAfterFirstCommit == (long) offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
         Duration.ofSeconds(2),
         "Offset after first commit should be %d".formatted(expectedOffsetAfterFirstCommit)
       );
@@ -119,7 +119,7 @@ class KafkaOffsetManagerTest {
       assertEventually(
         () ->
           expectedOffsetAfterSecondCommit ==
-          (long) offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+          (long) offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
         Duration.ofSeconds(10),
         "Offset after second commit should be " + expectedOffsetAfterSecondCommit
       );
@@ -147,7 +147,7 @@ class KafkaOffsetManagerTest {
 
       // Verify the partition state after commit
       assertEventually(
-        () -> expectedOffsetAfterCommit == (long) offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+        () -> expectedOffsetAfterCommit == (long) offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
         Duration.ofSeconds(2),
         "Offset after commit should be %d".formatted(expectedOffsetAfterCommit)
       );
@@ -175,7 +175,7 @@ class KafkaOffsetManagerTest {
 
       // Verify the partition state after commit
       assertEventually(
-        () -> expectedOffsetAfterCommit == (long) offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+        () -> expectedOffsetAfterCommit == (long) offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
         Duration.ofSeconds(2),
         "Offset after commit should be %d".formatted(expectedOffsetAfterCommit)
       );
@@ -201,7 +201,7 @@ class KafkaOffsetManagerTest {
       final var stateAfterRevoke = offsetManager.getPartitionState(PARTITION);
       assertEquals(
         -1L,
-        stateAfterRevoke.get("nextOffsetToCommit"),
+        stateAfterRevoke.nextOffsetToCommit(),
         "Next offset to commit should be reset after revoke"
       );
 
@@ -215,7 +215,7 @@ class KafkaOffsetManagerTest {
       final var stateAfterAssign = offsetManager.getPartitionState(PARTITION);
       assertEquals(
         200L,
-        stateAfterAssign.get("nextOffsetToCommit"),
+        stateAfterAssign.nextOffsetToCommit(),
         "Next offset to commit should initialize from first record after assignment"
       );
     }
@@ -274,9 +274,9 @@ class KafkaOffsetManagerTest {
       listener.onPartitionsRevoked(List.of(PARTITION));
 
       // Revoked partition's state is gone
-      assertEquals(-1L, offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"));
+      assertEquals(-1L, offsetManager.getPartitionState(PARTITION).nextOffsetToCommit());
       // Non-revoked partition is preserved
-      assertEquals(310L, offsetManager.getPartitionState(partition2).get("nextOffsetToCommit"));
+      assertEquals(310L, offsetManager.getPartitionState(partition2).nextOffsetToCommit());
     }
 
     /// Pre-existing commit commands targeting a revoked partition would commit against the
@@ -339,7 +339,7 @@ class KafkaOffsetManagerTest {
       assertEquals(1, commandQueue.size(), "command queue must be left alone after stop");
       assertEquals(
         100L,
-        offsetManager.getPartitionState(PARTITION).get("nextOffsetToCommit"),
+        offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
         "partition state must survive a post-stop revoke (regression: would be -1 if revoke ran the clear loop)"
       );
     }
@@ -540,7 +540,7 @@ class KafkaOffsetManagerTest {
 
       // Verify internal state remained consistent
       final var state = offsetManager.getPartitionState(PARTITION);
-      assertEquals(101L, state.get("highestProcessedOffset"), "Should maintain highest processed offset");
+      assertEquals(101L, state.highestProcessedOffset(), "Should maintain highest processed offset");
     }
 
     @Test
@@ -1056,11 +1056,11 @@ class KafkaOffsetManagerTest {
       assertTrue(errors.isEmpty(), "no thread should fail: " + errors);
 
       final var stats = manager.getStatistics();
-      assertEquals(0, (int) stats.get("totalPendingOffsets"), "all tracked offsets should be marked");
+      assertEquals(0, (int) stats.totalPendingOffsets(), "all tracked offsets should be marked");
 
       // The "highest processed" offset must equal the last offset across all threads.
       final var partitionState = manager.getPartitionState(PARTITION);
-      assertEquals(totalOffsets - 1L, partitionState.get("highestProcessedOffset"));
+      assertEquals(totalOffsets - 1L, partitionState.highestProcessedOffset());
       manager.close();
     }
 
@@ -1244,7 +1244,7 @@ class KafkaOffsetManagerTest {
       // Assert: future was cleaned up via the finally block in performCommit().
       assertEquals(
         0,
-        ((Number) offsetManager.getStatistics().get("pendingCommits")).intValue(),
+        offsetManager.getStatistics().pendingCommits(),
         "pendingCommits should be 0 after timeout cleanup"
       );
     }

@@ -385,8 +385,8 @@ class DispatcherIntegrationTest {
             .allMatch(tp -> {
               final var st = manager.getPartitionState(tp);
               return (
-                ((Number) st.get("pendingCount")).intValue() == 0 &&
-                ((Number) st.get("highestProcessedOffset")).longValue() == recordsPerPartition - 1
+                st.pendingCount() == 0 &&
+                st.highestProcessedOffset() == recordsPerPartition - 1
               );
             }),
         5_000
@@ -396,17 +396,17 @@ class DispatcherIntegrationTest {
         final var state = manager.getPartitionState(tp);
         assertEquals(
           0,
-          ((Number) state.get("pendingCount")).intValue(),
+          state.pendingCount(),
           () -> "mode " + mode + " left pending offsets on " + tp + ": " + state
         );
         assertEquals(
           (recordsPerPartition - 1),
-          ((Number) state.get("highestProcessedOffset")).longValue(),
+          state.highestProcessedOffset(),
           () -> "mode " + mode + " did not mark all offsets processed on " + tp + ": " + state
         );
         assertEquals(
           recordsPerPartition,
-          ((Number) state.get("nextOffsetToCommit")).longValue(),
+          state.nextOffsetToCommit(),
           () -> "mode " + mode + " did not advance commit offset on " + tp + ": " + state
         );
       }

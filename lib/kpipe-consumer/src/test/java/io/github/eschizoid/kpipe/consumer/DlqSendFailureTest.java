@@ -326,8 +326,8 @@ class DlqSendFailureTest {
     }
 
     @Override
-    public Map<String, Object> getStatistics() {
-      return Map.of();
+    public OffsetStatistics getStatistics() {
+      return OffsetStatistics.empty();
     }
 
     @Override
