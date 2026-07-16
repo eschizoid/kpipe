@@ -4,7 +4,7 @@
 ///
 /// - [MessageFormat] — codecs that turn raw Kafka bytes into typed records and back.
 /// - [MessagePipeline] / [TypedPipelineBuilder] — the processing-chain abstraction.
-/// - [MessageProcessorRegistry], [RegistryEntry], [RegistryFunctions], [RegistryKey] —
+/// - [MessageProcessorRegistry], [RegistryFunctions], [RegistryKey] —
 ///   registry of named, composable processors.
 /// - [Operators] — common transformation building blocks.
 /// - [SchemaResolver] — pluggable schema lookup (inline, classpath, file, Confluent SR, ...).
