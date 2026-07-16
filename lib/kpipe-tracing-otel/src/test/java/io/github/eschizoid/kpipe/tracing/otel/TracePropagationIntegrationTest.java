@@ -108,7 +108,7 @@ class TracePropagationIntegrationTest {
     // The KPipe consumer produces to the output topic via KafkaMessageSink (with the same tracer
     // so it injects the active context into outbound headers).
     final Producer<byte[], byte[]> sinkProducer = new KafkaProducer<>(producerProps());
-    final var sink = KafkaMessageSink.<byte[]>of(sinkProducer, outputTopic, v -> v, tracer);
+    final var sink = KafkaMessageSink.<byte[]>of(sinkProducer, outputTopic, v -> v, null, tracer);
 
     final var handle = KPipe.bytes(inputTopic, consumerProps("trace-prop-group-" + UUID.randomUUID()))
       .withTracer(tracer)

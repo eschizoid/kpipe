@@ -25,24 +25,25 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
   private final Producer<K, V> producer;
   private final boolean ownProducer;
-  private final ProducerMetrics otelMetrics;
+  private final ProducerMetrics metrics;
   private final Tracer tracer;
 
   /// Creates a new KPipeProducer that wraps an existing Kafka producer.
   ///
   /// @param producer    the Kafka producer to wrap
   /// @param ownProducer whether this wrapper owns the producer and should close it
-  /// @param otelMetrics OpenTelemetry metrics instruments; uses noop if null
+  /// @param metrics the producer metrics — any [ProducerMetrics] impl (e.g. `OtelProducerMetrics`
+  ///                from `kpipe-metrics-otel`); uses noop if null
   /// @param tracer      the tracer for outbound header injection; uses noop if null
   KPipeProducer(
     final Producer<K, V> producer,
     final boolean ownProducer,
-    final ProducerMetrics otelMetrics,
+    final ProducerMetrics metrics,
     final Tracer tracer
   ) {
     this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
     this.ownProducer = ownProducer;
-    this.otelMetrics = otelMetrics != null ? otelMetrics : ProducerMetrics.noop();
+    this.metrics = metrics != null ? metrics : ProducerMetrics.noop();
     this.tracer = tracer != null ? tracer : Tracer.noop();
   }
 
@@ -95,13 +96,12 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /// Sets the OpenTelemetry metrics instruments for this producer.
+    /// Sets the [ProducerMetrics] for this producer. The SPI is vendor-neutral (§10 "bring your own
+    /// SDK"): use `io.github.eschizoid.kpipe.metrics.otel.OtelProducerMetrics` from
+    /// `kpipe-metrics-otel` for an OpenTelemetry-backed instance, or [ProducerMetrics#noop()] for a
+    /// no-op default.
     ///
-    /// Use `io.github.eschizoid.kpipe.metrics.otel.OtelProducerMetrics` to create an instrumented
-    /// instance, or
-    /// [ProducerMetrics#noop()] for a no-op default.
-    ///
-    /// @param metrics the producer metrics instruments
+    /// @param metrics the producer metrics
     /// @return this builder instance for method chaining
     public Builder<K, V> withMetrics(final ProducerMetrics metrics) {
       this.metrics = metrics;
@@ -187,11 +187,11 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     try {
       send(producerRecord);
-      otelMetrics.recordDlqSent();
+      metrics.recordDlqSent();
       LOGGER.log(Level.DEBUG, "Sent record to DLQ topic {0}", dlqTopic);
       return true;
     } catch (final Exception ex) {
-      otelMetrics.recordDlqFailed();
+      metrics.recordDlqFailed();
       LOGGER.log(Level.ERROR, () -> "Failed to send record to DLQ topic " + dlqTopic, ex);
       return false;
     }
@@ -208,14 +208,14 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   public RecordMetadata send(final ProducerRecord<K, V> record) {
     try {
       final var metadata = producer.send(record).get();
-      otelMetrics.recordMessageSent();
+      metrics.recordMessageSent();
       return metadata;
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      otelMetrics.recordMessageFailed();
+      metrics.recordMessageFailed();
       throw new RuntimeException("Send interrupted", e);
     } catch (final ExecutionException e) {
-      otelMetrics.recordMessageFailed();
+      metrics.recordMessageFailed();
       throw new RuntimeException("Send failed", e.getCause());
     }
   }
@@ -229,8 +229,8 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @return a future that will contain the record metadata
   public Future<RecordMetadata> sendAsync(final ProducerRecord<K, V> record) {
     return producer.send(record, (_, exception) -> {
-      if (exception == null) otelMetrics.recordMessageSent();
-      else otelMetrics.recordMessageFailed();
+      if (exception == null) metrics.recordMessageSent();
+      else metrics.recordMessageFailed();
     });
   }
 
