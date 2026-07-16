@@ -386,68 +386,72 @@ public class KafkaOffsetManager implements OffsetManager {
     }
   }
 
-  /// Returns a snapshot of the current processing state for a partition.
+  /// Returns a typed snapshot of the current processing state for a partition.
   ///
   /// @param partition The partition to get state for
-  /// @return Map containing state information
-  public Map<String, Object> getPartitionState(final TopicPartition partition) {
-    final var state = new HashMap<String, Object>();
+  /// @return the partition's offset-tracking state
+  public PartitionState getPartitionState(final TopicPartition partition) {
     final var pending = pendingOffsets.get(partition);
     final var highestProcessed = highestProcessedOffsets.get(partition);
     final var lowestPending = pending != null ? pending.firstOrNull() : null;
 
+    final long nextOffsetToCommit;
     if (lowestPending != null) {
-      state.put("nextOffsetToCommit", lowestPending);
+      nextOffsetToCommit = lowestPending;
     } else if (highestProcessed != null) {
-      state.put("nextOffsetToCommit", highestProcessed + 1);
+      nextOffsetToCommit = highestProcessed + 1;
     } else {
-      state.put("nextOffsetToCommit", -1L);
+      nextOffsetToCommit = -1L;
     }
 
-    state.put("highestProcessedOffset", highestProcessed != null ? highestProcessed : -1L);
-    state.put("managerState", this.state.get().name());
-
-    if (pending != null) {
-      state.put("pendingCount", pending.size());
-      if (lowestPending != null) {
-        state.put("lowestPendingOffset", lowestPending);
-        final var highestPending = pending.lastOrNull();
-        if (highestPending != null) state.put("highestPendingOffset", highestPending);
-      }
-    } else {
-      state.put("pendingCount", 0);
+    var lowestPendingOffset = OptionalLong.empty();
+    var highestPendingOffset = OptionalLong.empty();
+    if (pending != null && lowestPending != null) {
+      lowestPendingOffset = OptionalLong.of(lowestPending);
+      final var highestPending = pending.lastOrNull();
+      if (highestPending != null) highestPendingOffset = OptionalLong.of(highestPending);
     }
 
-    return state;
+    return new PartitionState(
+      nextOffsetToCommit,
+      highestProcessed != null ? highestProcessed : -1L,
+      this.state.get(),
+      pending != null ? pending.size() : 0,
+      lowestPendingOffset,
+      highestPendingOffset
+    );
   }
 
-  /// Returns overall statistics about all partitions being managed.
+  /// Returns typed overall statistics about all partitions being managed.
   ///
-  /// @return Map containing statistics for all partitions
+  /// @return statistics across all partitions
   @Override
-  public Map<String, Object> getStatistics() {
-    final var stats = new HashMap<String, Object>();
-    final var allPartitions = new HashSet<>();
-
+  public OffsetStatistics getStatistics() {
+    final var allPartitions = new HashSet<TopicPartition>();
     allPartitions.addAll(pendingOffsets.keySet());
     allPartitions.addAll(highestProcessedOffsets.keySet());
-    stats.put("partitionCount", allPartitions.size());
 
-    stats.put("totalPendingOffsets", pendingOffsets.values().stream().mapToInt(PendingOffsetSet::size).sum());
-    stats.put("totalProcessedPartitions", highestProcessedOffsets.size());
-    stats.put("managerState", state.get().name());
+    final var totalPending = pendingOffsets.values().stream().mapToInt(PendingOffsetSet::size).sum();
 
+    final Map<TopicPartition, Long> byPartition;
+    final double average;
     if (!highestProcessedOffsets.isEmpty()) {
-      stats.put("highestProcessedOffsetsByPartition", new HashMap<>(highestProcessedOffsets));
-      stats.put(
-        "averageHighestProcessedOffset",
-        highestProcessedOffsets.values().stream().mapToLong(Long::longValue).average().orElse(0)
-      );
+      byPartition = new HashMap<>(highestProcessedOffsets);
+      average = highestProcessedOffsets.values().stream().mapToLong(Long::longValue).average().orElse(0);
+    } else {
+      byPartition = Map.of();
+      average = 0.0;
     }
 
-    stats.put("pendingCommits", commitFutures.size());
-
-    return stats;
+    return new OffsetStatistics(
+      allPartitions.size(),
+      totalPending,
+      highestProcessedOffsets.size(),
+      state.get(),
+      byPartition,
+      average,
+      commitFutures.size()
+    );
   }
 
   /// Gets the current state of the KafkaOffsetManager.

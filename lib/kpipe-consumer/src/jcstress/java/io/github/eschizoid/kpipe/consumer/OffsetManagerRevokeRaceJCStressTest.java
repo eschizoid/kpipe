@@ -81,8 +81,8 @@ public class OffsetManagerRevokeRaceJCStressTest {
   @Arbiter
   public void observe(final JZ_Result r) {
     final var partitionState = manager.getPartitionState(PARTITION);
-    r.r1 = (long) partitionState.get("nextOffsetToCommit");
-    r.r2 = ((int) partitionState.get("pendingCount")) > 0;
+    r.r1 = (long) partitionState.nextOffsetToCommit();
+    r.r2 = ((int) partitionState.pendingCount()) > 0;
   }
 
   private static ConsumerRecord<byte[], byte[]> record(final long offset) {

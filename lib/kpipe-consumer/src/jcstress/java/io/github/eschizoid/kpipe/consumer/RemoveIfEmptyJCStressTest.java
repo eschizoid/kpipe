@@ -64,8 +64,8 @@ public class RemoveIfEmptyJCStressTest {
   @Arbiter
   public void observe(final JJ_Result r) {
     final var state = manager.getPartitionState(PARTITION);
-    r.r1 = (long) state.get("nextOffsetToCommit");
-    r.r2 = ((Number) state.get("pendingCount")).longValue();
+    r.r1 = (long) state.nextOffsetToCommit();
+    r.r2 = state.pendingCount();
   }
 
   private static ConsumerRecord<byte[], byte[]> record(final long offset) {

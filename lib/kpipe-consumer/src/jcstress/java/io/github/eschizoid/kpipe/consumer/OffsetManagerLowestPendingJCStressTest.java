@@ -65,7 +65,7 @@ public class OffsetManagerLowestPendingJCStressTest {
 
   @Arbiter
   public void observe(final J_Result r) {
-    r.r1 = (long) manager.getPartitionState(PARTITION).get("nextOffsetToCommit");
+    r.r1 = (long) manager.getPartitionState(PARTITION).nextOffsetToCommit();
   }
 
   private static ConsumerRecord<byte[], byte[]> record(final long offset) {

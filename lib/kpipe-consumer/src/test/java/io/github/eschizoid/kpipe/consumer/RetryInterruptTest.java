@@ -107,16 +107,21 @@ class RetryInterruptTest {
     // Core no-loss assertion: the offset is still pending and the commit point points AT it, so on
     // the next poll the record is re-fetched and reprocessed rather than silently acknowledged.
     final var state = offsetManager.getPartitionState(TOPIC_PARTITION);
-    assertEquals(1, state.get("pendingCount"), "interrupted record must remain pending");
-    assertEquals(OFFSET, state.get("lowestPendingOffset"), "lowest pending offset must be the interrupted record");
+    assertEquals(1, state.pendingCount(), "interrupted record must remain pending");
+    assertTrue(state.lowestPendingOffset().isPresent(), "there must be a lowest pending offset");
     assertEquals(
       OFFSET,
-      state.get("nextOffsetToCommit"),
+      state.lowestPendingOffset().getAsLong(),
+      "lowest pending offset must be the interrupted record"
+    );
+    assertEquals(
+      OFFSET,
+      state.nextOffsetToCommit(),
       "commit point must not advance past the interrupted, never-acknowledged offset"
     );
     assertEquals(
       -1L,
-      state.get("highestProcessedOffset"),
+      state.highestProcessedOffset(),
       "no offset was successfully processed, so highestProcessed must stay unset"
     );
 

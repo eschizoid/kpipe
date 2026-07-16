@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.test;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.OffsetManager;
 import io.github.eschizoid.kpipe.consumer.OffsetState;
+import io.github.eschizoid.kpipe.consumer.OffsetStatistics;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
@@ -337,8 +338,8 @@ public final class CrashRestartHarness<T> {
     }
 
     @Override
-    public Map<String, Object> getStatistics() {
-      return Map.of();
+    public OffsetStatistics getStatistics() {
+      return OffsetStatistics.empty();
     }
 
     @Override

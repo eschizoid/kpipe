@@ -31,7 +31,7 @@ import org.openjdk.jcstress.infra.results.J_Result;
 /// set starts holding exactly that one element — the set most likely to be observed mid-drain.
 /// The remover actor marks offset 100 processed, which removes it from the set and clears the
 /// partition entry once empty. The reader actor reads the commit point via
-/// `getPartitionState(...).get("nextOffsetToCommit")`, which routes through `firstOrNull`. The two
+/// `getPartitionState(...).nextOffsetToCommit()`, which routes through `firstOrNull`. The two
 /// run concurrently under every interleaving the scheduler can produce.
 ///
 /// The property under test is narrow and exact: the commit-point read must never throw, no matter
@@ -82,7 +82,7 @@ public class SafeFirstJCStressTest {
 
   @Actor
   public void reader(final J_Result r) {
-    r.r1 = (long) manager.getPartitionState(PARTITION).get("nextOffsetToCommit");
+    r.r1 = (long) manager.getPartitionState(PARTITION).nextOffsetToCommit();
   }
 
   private static ConsumerRecord<byte[], byte[]> record(final long offset) {

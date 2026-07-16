@@ -56,7 +56,7 @@ class OffsetConcurrencyStressTest {
   }
 
   private static long commitPoint(final KafkaOffsetManager manager, final TopicPartition partition) {
-    return (long) manager.getPartitionState(partition).get("nextOffsetToCommit");
+    return (long) manager.getPartitionState(partition).nextOffsetToCommit();
   }
 
   /// No commit past a gap under parallel marking: N virtual threads each own a disjoint contiguous
@@ -93,14 +93,16 @@ class OffsetConcurrencyStressTest {
       while (!stopProbe.get()) {
         try {
           final var s = manager.getPartitionState(partition);
-          final var next = (long) s.get("nextOffsetToCommit");
-          final var lowestPending = s.get("lowestPendingOffset");
-          if (lowestPending != null) {
+          final var next = (long) s.nextOffsetToCommit();
+          final var lowestPending = s.lowestPendingOffset();
+          if (lowestPending.isPresent()) {
             // Commit point can never exceed the lowest pending offset — it cannot jump
             // the gap.
-            if (next > (long) lowestPending) {
+            if (next > lowestPending.getAsLong()) {
               errors.add(
-                new AssertionError("commit point %d passed pending gap at %d".formatted(next, (long) lowestPending))
+                new AssertionError(
+                  "commit point %d passed pending gap at %d".formatted(next, lowestPending.getAsLong())
+                )
               );
             }
           }
@@ -145,9 +147,9 @@ class OffsetConcurrencyStressTest {
 
     // After drain: everything marked, no pending → commit point is exactly total.
     final var finalState = manager.getPartitionState(partition);
-    assertEquals(0, (int) finalState.get("pendingCount"), "no offset left pending");
+    assertEquals(0, (int) finalState.pendingCount(), "no offset left pending");
     assertEquals((long) total, commitPoint(manager, partition), "commit point is exactly highestProcessed+1");
-    assertEquals(total - 1L, (long) finalState.get("highestProcessedOffset"));
+    assertEquals(total - 1L, (long) finalState.highestProcessedOffset());
 
     manager.close();
   }
@@ -267,11 +269,13 @@ class OffsetConcurrencyStressTest {
           // Immediately probe: any pending offset must still pin the commit point at or
           // below it.
           final var s = manager.getPartitionState(partition);
-          final var next = (long) s.get("nextOffsetToCommit");
-          final var lowestPending = s.get("lowestPendingOffset");
-          if (lowestPending != null && next > (long) lowestPending) {
+          final var next = (long) s.nextOffsetToCommit();
+          final var lowestPending = s.lowestPendingOffset();
+          if (lowestPending.isPresent() && next > lowestPending.getAsLong()) {
             errors.add(
-              new AssertionError("post-revoke commit point %d skipped pending %d".formatted(next, (long) lowestPending))
+              new AssertionError(
+                "post-revoke commit point %d skipped pending %d".formatted(next, lowestPending.getAsLong())
+              )
             );
           }
           Thread.yield();
@@ -320,8 +324,8 @@ class OffsetConcurrencyStressTest {
 
     // After the dedicated thread's final quiescent revoke: state fully cleared, commit point -1.
     final var cleared = manager.getPartitionState(partition);
-    assertEquals(-1L, (long) cleared.get("nextOffsetToCommit"), "revoked partition reports cleared commit point");
-    assertEquals(0, (int) cleared.get("pendingCount"), "revoked partition has no pending offsets");
+    assertEquals(-1L, (long) cleared.nextOffsetToCommit(), "revoked partition reports cleared commit point");
+    assertEquals(0, (int) cleared.pendingCount(), "revoked partition has no pending offsets");
 
     // Rebalance-safe: a mark for the already-revoked/cleared partition is a clean no-op (no throw),
     // and the lazily re-created entry still obeys lowest-pending. trackOffset / markOffsetProcessed
@@ -366,12 +370,12 @@ class OffsetConcurrencyStressTest {
         for (final var partition : partitions) {
           try {
             final var s = manager.getPartitionState(partition);
-            final var next = (long) s.get("nextOffsetToCommit");
-            final var lowestPending = s.get("lowestPendingOffset");
-            if (lowestPending != null && next > (long) lowestPending) {
+            final var next = (long) s.nextOffsetToCommit();
+            final var lowestPending = s.lowestPendingOffset();
+            if (lowestPending.isPresent() && next > lowestPending.getAsLong()) {
               errors.add(
                 new AssertionError(
-                  "partition %s commit point %d passed gap %d".formatted(partition, next, (long) lowestPending)
+                  "partition %s commit point %d passed gap %d".formatted(partition, next, lowestPending.getAsLong())
                 )
               );
             }
@@ -415,13 +419,13 @@ class OffsetConcurrencyStressTest {
     // Each partition independently reaches the exact contiguous commit point.
     for (final var partition : partitions) {
       final var s = manager.getPartitionState(partition);
-      assertEquals(0, (int) s.get("pendingCount"), "partition " + partition + " fully drained");
+      assertEquals(0, (int) s.pendingCount(), "partition " + partition + " fully drained");
       assertEquals(
         (long) perPartitionTotal,
-        (long) s.get("nextOffsetToCommit"),
+        (long) s.nextOffsetToCommit(),
         "partition " + partition + " commits exactly highestProcessed+1"
       );
-      assertEquals(perPartitionTotal - 1L, (long) s.get("highestProcessedOffset"), "partition " + partition);
+      assertEquals(perPartitionTotal - 1L, (long) s.highestProcessedOffset(), "partition " + partition);
     }
 
     manager.close();

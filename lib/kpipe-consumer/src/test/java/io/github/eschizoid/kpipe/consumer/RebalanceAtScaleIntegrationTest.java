@@ -453,7 +453,7 @@ class RebalanceAtScaleIntegrationTest {
     }
 
     @Override
-    public Map<String, Object> getStatistics() {
+    public OffsetStatistics getStatistics() {
       return delegate.getStatistics();
     }
 
