@@ -18,8 +18,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /// Pins the periodic-reporter-thread subsystem wired through
-/// [KPipeConsumer.Builder#withMetricsReporters(Collection)] +
-/// [KPipeConsumer.Builder#withMetricsInterval(Duration)].
+/// [KPipeConsumerBuilder#withMetricsReporters(Collection)] +
+/// [KPipeConsumerBuilder#withMetricsInterval(Duration)].
 ///
 /// The repo itself has no callers of these setters — they exist purely for downstream users.
 /// Both setters are documented in `docs/escape-hatches.md` (the "Periodic metrics reporting"

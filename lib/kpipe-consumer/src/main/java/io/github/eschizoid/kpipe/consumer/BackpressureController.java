@@ -29,7 +29,7 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   private static final Duration LAG_QUERY_TIMEOUT = Duration.ofSeconds(2);
 
   /// Default high watermark (in-flight count or lag) at which the consumer pauses. Used by
-  /// `KPipeConsumer.Builder.withBackpressure()` (no-arg) and by the constructor when no
+  /// `KPipeConsumerBuilder.withBackpressure()` (no-arg) and by the constructor when no
   /// controller is explicitly configured.
   public static final long DEFAULT_HIGH_WATERMARK = 10_000;
   /// Default low watermark at which the consumer resumes (hysteresis floor).

@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe;
 import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
@@ -311,7 +312,7 @@ record DefaultStream<T>(
   /// tracer, and circuit breaker. All are consumer-wide, so wiring them from one place keeps the
   /// two sink types from drifting — the batch path previously skipped tracer and circuit breaker,
   /// silently dropping both when set on a `toBatch(...)` stream.
-  void applyCommonConsumerConfig(final KPipeConsumer.Builder builder) {
+  void applyCommonConsumerConfig(final KPipeConsumerBuilder builder) {
     if (maxRetries > 0) builder.withRetry(maxRetries, retryBackoff);
     if (backpressureHigh != null) builder.withBackpressure(backpressureHigh, backpressureLow);
     if (consumerMetrics != null) builder.withMetrics(consumerMetrics);

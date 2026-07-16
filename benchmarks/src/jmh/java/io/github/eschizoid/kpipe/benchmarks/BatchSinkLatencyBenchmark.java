@@ -61,7 +61,7 @@ import org.openjdk.jmh.infra.Blackhole;
 /// ### Wrapper-access strategy
 ///
 /// The bench drives the `BatchPipelineWrapper` indirectly through the public
-/// `KPipeConsumer.Builder.withBatchPipeline(...)` entry point — the same API the fluent facade
+/// `KPipeConsumerBuilder.withBatchPipeline(...)` entry point — the same API the fluent facade
 /// (`Stream.toBatch(...)`) delegates to. This keeps `BatchPipelineWrapper` package-private. The
 /// fake Kafka backend is Apache Kafka's `MockConsumer`, which we pre-prime with the workload via
 /// `withConsumer(() -> mockConsumer)` (a public builder hook). No new test bridges are needed in

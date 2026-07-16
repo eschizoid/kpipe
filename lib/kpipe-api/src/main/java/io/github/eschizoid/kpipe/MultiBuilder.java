@@ -4,6 +4,7 @@ import com.google.protobuf.Message;
 import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
@@ -437,7 +438,7 @@ public final class MultiBuilder {
 
   /// Type witness: pulls the typed pipeline + sink off the route, then calls the typed builder
   /// method. Without this helper the casts would litter `start()`.
-  private static <T> void addBatchRoute(final KPipeConsumer.Builder consumerBuilder, final DefaultBatchSink<T> route) {
+  private static <T> void addBatchRoute(final KPipeConsumerBuilder consumerBuilder, final DefaultBatchSink<T> route) {
     consumerBuilder.withBatchPipeline(route.topic(), route.buildPipeline(), route.batchSink(), route.batchPolicy());
   }
 }
