@@ -77,7 +77,7 @@ public class KafkaOffsetManager implements OffsetManager {
   /// same thread (see `assertOnConsumerThread`).
   private final Queue<ConsumerCommand> commandQueue;
 
-  private final Map<String, CompletableFuture<Boolean>> commitFutures = new ConcurrentHashMap<>();
+  private final CommitCoordinator commitCoordinator = new CommitCoordinator();
 
   /// Per-partition pending offsets: a sorted primitive-`long` window (`PendingOffsetSet`) rather
   /// than a `ConcurrentSkipListSet<Long>`. The skiplist cost a `Long` box plus node/marker churn
@@ -199,8 +199,7 @@ public class KafkaOffsetManager implements OffsetManager {
   /// @param success True if the commit was successful, false otherwise
   @Override
   public void notifyCommitComplete(final String commitId, final boolean success) {
-    var future = commitFutures.remove(commitId);
-    if (future != null) future.complete(success);
+    commitCoordinator.complete(commitId, success);
   }
 
   /// Tracks an offset that is about to be processed using a ConsumerRecord.
@@ -370,20 +369,9 @@ public class KafkaOffsetManager implements OffsetManager {
     throws InterruptedException {
     if (offsetsToCommit.isEmpty()) return true;
 
-    final var commitId = UUID.randomUUID().toString();
-    final var future = new CompletableFuture<Boolean>();
-    commitFutures.put(commitId, future);
-
+    final var commitId = commitCoordinator.register();
     commandQueue.offer(new ConsumerCommand.CommitOffsets(offsetsToCommit, commitId));
-
-    try {
-      return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-    } catch (final ExecutionException | TimeoutException e) {
-      LOGGER.log(Level.WARNING, "Error waiting for offset commit", e);
-      return false;
-    } finally {
-      commitFutures.remove(commitId);
-    }
+    return commitCoordinator.await(commitId, timeout);
   }
 
   /// Returns a typed snapshot of the current processing state for a partition.
@@ -450,7 +438,7 @@ public class KafkaOffsetManager implements OffsetManager {
       state.get(),
       byPartition,
       average,
-      commitFutures.size()
+      commitCoordinator.pendingCount()
     );
   }
 
