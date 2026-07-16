@@ -244,14 +244,14 @@ class ProtobufFormatRegistryTest {
     final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
     // magic + id=1 + zig-zag size 0x04 (=2) but truncated before the two index elements.
     final var truncated = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x04 };
-    assertThrows(RuntimeException.class, () -> format.deserialize(truncated));
+    assertThrows(IllegalStateException.class, () -> format.deserialize(truncated));
   }
 
   @Test
   void wrongMagicByteThrows() {
     final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
     final var bad = new byte[] { 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x42 };
-    final var ex = assertThrows(RuntimeException.class, () -> format.deserialize(bad));
+    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(bad));
     assertTrue(ex.getMessage().contains("magic byte"), "must mention magic byte; got: " + ex.getMessage());
   }
 
@@ -259,7 +259,7 @@ class ProtobufFormatRegistryTest {
   void payloadShorterThanEnvelopeThrows() {
     final var format = ProtobufFormat.withRegistry(new FakeResolver(), new FakeCompiler());
     final var tooShort = new byte[] { 0x00, 0x00, 0x00 };
-    final var ex = assertThrows(RuntimeException.class, () -> format.deserialize(tooShort));
+    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(tooShort));
     assertTrue(ex.getMessage().contains("envelope"));
   }
 
@@ -267,7 +267,7 @@ class ProtobufFormatRegistryTest {
   void resolverReturningEmptyThrows() {
     final SchemaResolver resolver = schemaId -> "";
     final var format = ProtobufFormat.withRegistry(resolver, new FakeCompiler());
-    final var ex = assertThrows(RuntimeException.class, () ->
+    final var ex = assertThrows(IllegalStateException.class, () ->
       format.deserialize(envelope(1, new int[] { 0 }, customer(1, "a")))
     );
     assertTrue(ex.getMessage().contains("empty schema"));
@@ -304,6 +304,8 @@ class ProtobufFormatRegistryTest {
     final var format = ProtobufFormat.withRegistry(flaky, new FakeCompiler());
     final var env = envelope(101, new int[] { 0 }, customer(1, "a"));
 
+    // The resolver throws its own RuntimeException; the format propagates it as-is (a resolver/IO
+    // failure is not a malformed-envelope condition to reclassify), so this stays RuntimeException.
     assertThrows(RuntimeException.class, () -> format.deserialize(env));
     final var decoded = format.deserialize(env);
 

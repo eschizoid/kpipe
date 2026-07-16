@@ -93,14 +93,14 @@ class AvroFormatBehaviorTest {
   @Test
   void deserializeThrowsForGarbageBytes() {
     final var format = AvroFormat.of(USER_SCHEMA_JSON);
-    assertThrows(RuntimeException.class, () -> format.deserialize(new byte[] { 0x7f, 0x7f, 0x7f }));
+    assertThrows(IllegalStateException.class, () -> format.deserialize(new byte[] { 0x7f, 0x7f, 0x7f }));
   }
 
   @Test
   void deserializeErrorMessageCarriesFormatNameAndByteLength() {
     final var format = AvroFormat.of(USER_SCHEMA_JSON);
     final var garbage = new byte[] { 0x7f, 0x7f, 0x7f };
-    final var thrown = assertThrows(RuntimeException.class, () -> format.deserialize(garbage));
+    final var thrown = assertThrows(IllegalStateException.class, () -> format.deserialize(garbage));
     final var message = thrown.getMessage();
     assertTrue(message.contains("AvroFormat"), () -> "message should name the format: " + message);
     assertTrue(message.contains(garbage.length + " bytes"), () -> "message should report the byte length: " + message);

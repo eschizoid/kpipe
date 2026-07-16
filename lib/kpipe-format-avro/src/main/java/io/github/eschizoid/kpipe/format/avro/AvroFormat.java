@@ -161,7 +161,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
       // the common bad-payload case would otherwise escape with a bare, context-free message. The
       // original cause is always attached, so a genuine programming error (NPE, IllegalState) is
       // still visible in the cause chain rather than swallowed.
-      throw new RuntimeException(
+      throw new IllegalStateException(
         "AvroFormat.deserialize failed in static mode on " + data.length + " bytes against schema " +
           staticSchema.getFullName(),
         e
@@ -170,10 +170,10 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   }
 
   private GenericRecord deserializeFromEnvelope(final byte[] data) {
-    if (data.length < ENVELOPE_LENGTH) throw new RuntimeException(
+    if (data.length < ENVELOPE_LENGTH) throw new IllegalStateException(
       "Record too short for Confluent wire envelope: " + data.length + " bytes; expected at least " + ENVELOPE_LENGTH
     );
-    if (data[0] != CONFLUENT_MAGIC) throw new RuntimeException(
+    if (data[0] != CONFLUENT_MAGIC) throw new IllegalStateException(
       "Unexpected magic byte 0x%02x; expected 0x00 (Confluent Schema Registry envelope)".formatted(data[0] & 0xff)
     );
     final int schemaId =
@@ -181,7 +181,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
 
     final var schema = resolvedSchemas.computeIfAbsent(schemaId, id -> {
       final var json = resolver.lookupById(id);
-      if (json == null || json.isBlank()) throw new RuntimeException(
+      if (json == null || json.isBlank()) throw new IllegalStateException(
         "Schema resolver returned empty schema for id " + id
       );
       return new Schema.Parser().parse(json);
@@ -192,7 +192,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     try {
       return reader.read(null, decoder);
     } catch (final IOException e) {
-      throw new RuntimeException(
+      throw new IllegalStateException(
         "Failed to decode Avro record under Confluent wire envelope (schema id " + schemaId + ")",
         e
       );

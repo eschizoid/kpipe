@@ -75,13 +75,13 @@ class ProtobufFormatTest {
 
   @Test
   void shouldThrowOnInvalidProtobufBytes() {
-    assertThrows(RuntimeException.class, () -> format.deserialize(new byte[] { (byte) 0xFF, (byte) 0xFF }));
+    assertThrows(IllegalStateException.class, () -> format.deserialize(new byte[] { (byte) 0xFF, (byte) 0xFF }));
   }
 
   @Test
   void deserializeErrorMessageCarriesFormatNameAndByteLength() {
     final var garbage = new byte[] { (byte) 0xFF, (byte) 0xFF };
-    final var thrown = assertThrows(RuntimeException.class, () -> format.deserialize(garbage));
+    final var thrown = assertThrows(IllegalStateException.class, () -> format.deserialize(garbage));
     final var message = thrown.getMessage();
     assertTrue(message.contains("ProtobufFormat"), () -> "message should name the format: " + message);
     assertTrue(message.contains(garbage.length + " bytes"), () -> "message should report the byte length: " + message);

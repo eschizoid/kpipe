@@ -18,7 +18,7 @@ class JsonFormatTest {
   @Test
   void deserializeErrorMessageCarriesFormatNameAndByteLength() {
     final var malformed = "{\"a\":".getBytes(StandardCharsets.UTF_8);
-    final var thrown = assertThrows(RuntimeException.class, () -> JsonFormat.INSTANCE.deserialize(malformed));
+    final var thrown = assertThrows(IllegalStateException.class, () -> JsonFormat.INSTANCE.deserialize(malformed));
     final var message = thrown.getMessage();
     assertTrue(message.contains("JsonFormat"), () -> "message should name the format: " + message);
     assertTrue(
@@ -30,7 +30,7 @@ class JsonFormatTest {
   @Test
   void deserializeErrorMessageHandlesShortPayloadWithoutThrowing() {
     final var shortMalformed = new byte[] { (byte) 0xff, (byte) 0xfe };
-    final var thrown = assertThrows(RuntimeException.class, () -> JsonFormat.INSTANCE.deserialize(shortMalformed));
+    final var thrown = assertThrows(IllegalStateException.class, () -> JsonFormat.INSTANCE.deserialize(shortMalformed));
     assertTrue(thrown.getMessage().contains("2 bytes"), () -> "message: " + thrown.getMessage());
   }
 }
