@@ -4,11 +4,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.common.KafkaException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -22,7 +24,7 @@ class KafkaMessageSinkTest {
 
   @Test
   void shouldSendToKafka() {
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null, null);
 
     sink.accept("hello");
 
@@ -44,6 +46,7 @@ class KafkaMessageSinkTest {
       TOPIC,
       _ -> "key".getBytes(),
       String::getBytes,
+      null,
       null
     );
 
@@ -62,11 +65,41 @@ class KafkaMessageSinkTest {
 
   @Test
   void shouldNotSendWhenValueIsNull() {
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null, null);
 
     sink.accept(null);
 
     verifyNoInteractions(mockProducer);
+  }
+
+  @Test
+  void metricsCountSentOnSuccessfulCallback() {
+    final var metrics = mock(ProducerMetrics.class);
+    final var sink = new KafkaMessageSink<String>(mockProducer, TOPIC, null, String::getBytes, metrics, null);
+
+    sink.accept("hello");
+
+    final var callback = ArgumentCaptor.forClass(Callback.class);
+    verify(mockProducer).send(any(), callback.capture());
+    callback.getValue().onCompletion(null, null); // success — no exception
+
+    verify(metrics, times(1)).recordMessageSent();
+    verify(metrics, never()).recordMessageFailed();
+  }
+
+  @Test
+  void metricsCountFailedOnErrorCallback() {
+    final var metrics = mock(ProducerMetrics.class);
+    final var sink = new KafkaMessageSink<String>(mockProducer, TOPIC, null, String::getBytes, metrics, null);
+
+    sink.accept("hello");
+
+    final var callback = ArgumentCaptor.forClass(Callback.class);
+    verify(mockProducer).send(any(), callback.capture());
+    callback.getValue().onCompletion(null, new KafkaException("async send failed"));
+
+    verify(metrics, times(1)).recordMessageFailed();
+    verify(metrics, never()).recordMessageSent();
   }
 
   /// When the underlying Kafka `Producer.send` throws a `KafkaException` synchronously (e.g.
@@ -80,7 +113,7 @@ class KafkaMessageSinkTest {
     final var failure = new KafkaException("synchronous send failure");
     when(mockProducer.send(any(), any(Callback.class))).thenThrow(failure);
 
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null, null);
 
     final var thrown = assertThrows(KafkaException.class, () -> sink.accept("payload"));
     assertSame(failure, thrown, "the original KafkaException must propagate unwrapped");
@@ -97,7 +130,7 @@ class KafkaMessageSinkTest {
     final var closed = new IllegalStateException("Cannot perform operation after producer has been closed");
     when(mockProducer.send(any(), any(Callback.class))).thenThrow(closed);
 
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null, null);
 
     final var thrown = assertThrows(IllegalStateException.class, () -> sink.accept("payload"));
     assertSame(closed, thrown, "the closed-producer ISE must propagate unwrapped");
@@ -108,7 +141,7 @@ class KafkaMessageSinkTest {
   /// assignment falls back to the configured partitioner — round-robin / sticky for the default).
   @Test
   void ofStaticFactoryWithNullKeyAccepted() {
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null, null);
 
     sink.accept("payload");
 

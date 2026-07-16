@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.producer.sink;
 
+import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.lang.System.Logger;
@@ -12,7 +13,9 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 /// A [MessageSink] that sends processed messages to a Kafka topic.
 ///
 /// Send failures are reported via the producer's async callback at WARNING level so they don't
-/// disappear silently. The Kafka `Future<RecordMetadata>` is otherwise discarded — callers who
+/// disappear silently, and each outcome increments the configured [ProducerMetrics]
+/// (`recordMessageSent` / `recordMessageFailed`) so sends through this sink are counted the same way
+/// as `KPipeProducer`'s. The Kafka `Future<RecordMetadata>` is otherwise discarded — callers who
 /// need synchronous send semantics or precise failure handling per record should use
 /// `KPipeProducer.send` / `sendAsync` directly rather than wiring this sink.
 ///
@@ -29,6 +32,7 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
   private final String topic;
   private final Function<T, byte[]> keyMapper;
   private final Function<T, byte[]> valueMapper;
+  private final ProducerMetrics metrics;
   private final Tracer tracer;
 
   /// Creates a new KafkaMessageSink.
@@ -37,18 +41,21 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
   /// @param topic       the destination topic
   /// @param keyMapper   function to serialize the key (may be null for null keys)
   /// @param valueMapper function to serialize the value
+  /// @param metrics     counts sent / failed records; pass `null` for a no-op
   /// @param tracer      injects span context into outbound headers; pass `null` to disable
   public KafkaMessageSink(
     final Producer<byte[], byte[]> producer,
     final String topic,
     final Function<T, byte[]> keyMapper,
     final Function<T, byte[]> valueMapper,
+    final ProducerMetrics metrics,
     final Tracer tracer
   ) {
     this.producer = Objects.requireNonNull(producer, "producer cannot be null");
     this.topic = Objects.requireNonNull(topic, "topic cannot be null");
     this.keyMapper = keyMapper;
     this.valueMapper = Objects.requireNonNull(valueMapper, "valueMapper cannot be null");
+    this.metrics = metrics != null ? metrics : ProducerMetrics.noop();
     this.tracer = tracer != null ? tracer : Tracer.noop();
   }
 
@@ -65,7 +72,10 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
     }
     producer.send(record, (_, exception) -> {
       if (exception != null) {
+        metrics.recordMessageFailed();
         LOGGER.log(Level.WARNING, () -> "Failed to send record to topic " + topic, exception);
+      } else {
+        metrics.recordMessageSent();
       }
     });
   }
@@ -75,6 +85,7 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
   /// @param producer    the Kafka producer to use
   /// @param topic       the destination topic
   /// @param valueMapper function to serialize the value
+  /// @param metrics     counts sent / failed records; pass `null` for a no-op
   /// @param tracer      injects span context into outbound headers; pass `null` to disable
   /// @param <T>         the type of the processed object
   /// @return a new KafkaMessageSink
@@ -82,8 +93,9 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
     final Producer<byte[], byte[]> producer,
     final String topic,
     final Function<T, byte[]> valueMapper,
+    final ProducerMetrics metrics,
     final Tracer tracer
   ) {
-    return new KafkaMessageSink<>(producer, topic, null, valueMapper, tracer);
+    return new KafkaMessageSink<>(producer, topic, null, valueMapper, metrics, tracer);
   }
 }
