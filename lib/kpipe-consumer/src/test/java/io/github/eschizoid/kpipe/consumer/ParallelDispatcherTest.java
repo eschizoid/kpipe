@@ -5,9 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +34,97 @@ class ParallelDispatcherTest {
 
   private static ParallelDispatcher newDispatcher(final AtomicInteger rejectCount, final Duration terminationTimeout) {
     return new ParallelDispatcher((_, _) -> rejectCount.incrementAndGet(), terminationTimeout);
+  }
+
+  /// Captures [ParallelDispatcher]'s log records at or above `threshold` via a JUL handler
+  /// (`System.Logger` delegates to JUL). Returns the live list plus a detach hook to restore state.
+  private record LogCapture(List<LogRecord> records, Runnable detach) {}
+
+  private static LogCapture captureLogs(final Level threshold) {
+    final var jul = Logger.getLogger(ParallelDispatcher.class.getName());
+    final var captured = new CopyOnWriteArrayList<LogRecord>();
+    final var handler = new Handler() {
+      @Override
+      public void publish(final LogRecord r) {
+        if (r.getLevel().intValue() >= threshold.intValue()) captured.add(r);
+      }
+
+      @Override
+      public void flush() {}
+
+      @Override
+      public void close() {}
+    };
+    final var origLevel = jul.getLevel();
+    final var origUseParent = jul.getUseParentHandlers();
+    jul.addHandler(handler);
+    jul.setLevel(Level.ALL);
+    jul.setUseParentHandlers(false);
+    return new LogCapture(captured, () -> {
+      jul.removeHandler(handler);
+      jul.setLevel(origLevel);
+      jul.setUseParentHandlers(origUseParent);
+    });
+  }
+
+  private static void awaitTrue(final BooleanSupplier cond) throws InterruptedException {
+    final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+    while (!cond.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(5);
+  }
+
+  @Test
+  void throwingTaskIsLoggedBySafetyNetNotSwallowed() throws InterruptedException {
+    // The discarded Future from executor.submit(...) would otherwise swallow a throwable escaping
+    // processTask (a contract violation — processTask owns its error handling). The outer
+    // catch(Throwable) logs it at ERROR (JUL SEVERE), mirroring KeyOrderedDispatcher, so the bug
+    // is visible instead of lost.
+    final var capture = captureLogs(Level.SEVERE);
+    final var dispatcher = newDispatcher(new AtomicInteger(0));
+    final var completed = new CountDownLatch(1);
+    try {
+      dispatcher.dispatch(
+        record(0),
+        () -> {
+          throw new RuntimeException("boom");
+        },
+        completed::countDown
+      );
+      assertTrue(completed.await(2, TimeUnit.SECONDS), "onComplete must fire even when the task throws");
+      awaitTrue(() -> !capture.records().isEmpty());
+      assertEquals(1, capture.records().size(), "the escaping throwable must be logged once at ERROR");
+      assertTrue(
+        capture.records().getFirst().getThrown() instanceof RuntimeException,
+        "the original throwable must be attached to the log record"
+      );
+    } finally {
+      capture.detach().run();
+      dispatcher.close();
+    }
+  }
+
+  @Test
+  void throwingOnCompleteIsGuardedAndInFlightStillDrains() throws InterruptedException {
+    // onComplete is the consumer's afterRecordComplete hook. A bug making it throw must be caught
+    // (logged at WARNING), never escape into the discarded Future, and never strand the in-flight
+    // counter — the decrement runs before onComplete in the finally.
+    final var capture = captureLogs(Level.WARNING);
+    final var dispatcher = newDispatcher(new AtomicInteger(0));
+    final var ran = new CountDownLatch(1);
+    try {
+      dispatcher.dispatch(record(0), ran::countDown, () -> {
+        throw new IllegalStateException("onComplete boom");
+      });
+      assertTrue(ran.await(2, TimeUnit.SECONDS), "processTask must run");
+      awaitTrue(() -> dispatcher.pendingCount() == 0 && !capture.records().isEmpty());
+      assertEquals(0, dispatcher.pendingCount(), "a throwing onComplete must not strand in-flight");
+      assertTrue(
+        capture.records().stream().anyMatch(r -> r.getMessage().contains("onComplete callback threw")),
+        "the throwing onComplete must be logged at WARNING"
+      );
+    } finally {
+      capture.detach().run();
+      dispatcher.close();
+    }
   }
 
   @Test

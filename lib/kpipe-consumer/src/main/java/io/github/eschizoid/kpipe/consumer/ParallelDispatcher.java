@@ -43,11 +43,12 @@ final class ParallelDispatcher implements Dispatcher {
     this.terminationTimeout = terminationTimeout;
   }
 
-  /// `processTask` must handle its own exceptions — `executor.submit(Runnable)` returns a `Future`
-  /// that the dispatcher discards, so any throwable escaping `processTask.run()` is silently
-  /// swallowed by the VT executor. The finally block still decrements `inFlight` and fires
-  /// `onComplete` so accounting and backpressure remain honest, but the failure itself only
-  /// surfaces if `processTask` routed it (e.g. through the consumer's error handler / DLQ).
+  /// `processTask` is expected to handle its own exceptions (the consumer's per-record error
+  /// handling / DLQ runs inside it). As a safety net for a contract violation, an outer
+  /// `catch (Throwable)` logs anything that still escapes `processTask.run()` at ERROR rather than
+  /// letting the discarded `Future` from `executor.submit(...)` swallow it silently — mirroring
+  /// [KeyOrderedDispatcher]'s drain loop. The finally block always decrements `inFlight` and fires
+  /// `onComplete` (itself guarded) so accounting and backpressure stay honest.
   @Override
   public void dispatch(
     final ConsumerRecord<byte[], byte[]> record,
@@ -58,10 +59,22 @@ final class ParallelDispatcher implements Dispatcher {
     try {
       executor.submit(() -> {
         try {
-          processTask.run();
-        } finally {
-          inFlight.decrementAndGet();
-          onComplete.run();
+          try {
+            processTask.run();
+          } finally {
+            inFlight.decrementAndGet();
+            try {
+              onComplete.run();
+            } catch (final RuntimeException e) {
+              LOGGER.log(Level.WARNING, "onComplete callback threw", e);
+            }
+          }
+        } catch (final Throwable t) {
+          LOGGER.log(
+            Level.ERROR,
+            "Dispatched record task threw; the record's own error handling should have caught it",
+            t
+          );
         }
       });
     } catch (final RejectedExecutionException e) {
