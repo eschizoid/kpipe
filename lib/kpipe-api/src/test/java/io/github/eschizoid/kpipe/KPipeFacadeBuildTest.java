@@ -169,7 +169,7 @@ class KPipeFacadeBuildTest {
   // --- per-route consumer-wide-setting rejection ---
   // Every public consumer-wide setting reachable from the per-route Stream is silently dropped
   // by MultiBuilder.start() — it only invokes ds.buildPipeline() / addBatchRoute() and never
-  // replays a route's consumer-level config onto the underlying single KPipeConsumer.Builder.
+  // replays a route's consumer-level config onto the underlying single KPipeConsumerBuilder.
   // The tests below pin each setting to fail loud rather than disappear, and to point the user at
   // the symmetric MultiBuilder.with* setter (all of these now have one).
 

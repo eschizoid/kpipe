@@ -39,7 +39,7 @@ public enum ProcessingMode {
   /// Default LRU cap on distinct in-flight keys for [#KEY_ORDERED]. Single source of truth
   /// shared by the dispatcher (`KeyOrderedDispatcher`), the fluent facade (`DefaultStream`),
   /// and `MultiBuilder` so the default can't drift across modules. Override per-consumer via
-  /// `KPipeConsumer.Builder.withKeyOrderedMaxKeys(int)` /
+  /// `KPipeConsumerBuilder.withKeyOrderedMaxKeys(int)` /
   /// `Stream.withKeyOrderedMaxKeys(int)` / `MultiBuilder.withKeyOrderedMaxKeys(int)`.
   public static final int DEFAULT_KEY_ORDERED_MAX_KEYS = 10_000;
 }

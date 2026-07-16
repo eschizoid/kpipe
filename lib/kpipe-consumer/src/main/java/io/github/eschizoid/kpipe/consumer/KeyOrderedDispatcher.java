@@ -59,7 +59,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   private static final Logger LOGGER = System.getLogger(KeyOrderedDispatcher.class.getName());
 
   /// Default LRU cap on distinct keys held in memory simultaneously. Configurable via
-  /// `KPipeConsumer.Builder.withKeyOrderedMaxKeys(int)`. Aliases the public single-source-of-
+  /// `KPipeConsumerBuilder.withKeyOrderedMaxKeys(int)`. Aliases the public single-source-of-
   /// truth constant so the default can't drift between this module and `kpipe-api`.
   static final int DEFAULT_MAX_KEYS = ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS;
 
@@ -78,7 +78,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// Set once on the first dispatch-stall (cap saturated, every queue non-empty) so the WARN
   /// log fires exactly once per dispatcher instance. Repeating the warning on every stall
   /// would flood logs under sustained saturation; one signal is enough to tell an operator
-  /// to bump `KPipeConsumer.Builder.withKeyOrderedMaxKeys(int)`.
+  /// to bump `KPipeConsumerBuilder.withKeyOrderedMaxKeys(int)`.
   private final AtomicBoolean stallWarningEmitted = new AtomicBoolean(false);
 
   /// Set by [#close()] to break out of the saturation yield-loop in [#allocateNewQueue]. If

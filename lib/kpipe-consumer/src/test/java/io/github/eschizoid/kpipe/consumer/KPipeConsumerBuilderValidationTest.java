@@ -18,9 +18,9 @@ import org.apache.kafka.clients.producer.Producer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
-/// Pins null-argument validation on every public [KPipeConsumer.Builder] `with*` setter. Each
+/// Pins null-argument validation on every public [KPipeConsumerBuilder] `with*` setter. Each
 /// setter that mutates configuration must reject null at the call site rather than deferring the
-/// failure to [KPipeConsumer.Builder#build] (where the NPE is harder to attribute) or to a later
+/// failure to [KPipeConsumerBuilder#build] (where the NPE is harder to attribute) or to a later
 /// runtime moment (where it crashes the consumer thread).
 ///
 /// Also pins the blank-string rejection for `withDeadLetterTopic` — silently accepting an empty
@@ -28,7 +28,7 @@ import org.junit.jupiter.api.function.Executable;
 /// then rejects per record, with no obvious source of the misconfig.
 class KPipeConsumerBuilderValidationTest {
 
-  private static KPipeConsumer.Builder builder() {
+  private static KPipeConsumerBuilder builder() {
     return KPipeConsumer.builder();
   }
 
