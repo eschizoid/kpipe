@@ -369,18 +369,9 @@ public class KafkaOffsetManager implements OffsetManager {
     throws InterruptedException {
     if (offsetsToCommit.isEmpty()) return true;
 
-    final var pending = commitCoordinator.register();
-
-    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsetsToCommit, pending.commitId()));
-
-    try {
-      return pending.future().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-    } catch (final ExecutionException | TimeoutException e) {
-      LOGGER.log(Level.WARNING, "Error waiting for offset commit", e);
-      return false;
-    } finally {
-      commitCoordinator.forget(pending.commitId());
-    }
+    final var commitId = commitCoordinator.register();
+    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsetsToCommit, commitId));
+    return commitCoordinator.await(commitId, timeout);
   }
 
   /// Returns a typed snapshot of the current processing state for a partition.

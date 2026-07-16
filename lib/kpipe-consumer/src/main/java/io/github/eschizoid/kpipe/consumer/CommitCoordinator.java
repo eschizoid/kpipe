@@ -1,51 +1,69 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
-/// Correlates an asynchronous offset commit with its completion.
+/// Correlates an asynchronous offset commit with its completion, owning the whole round trip.
 ///
-/// A commit is a round trip: [KafkaOffsetManager] enqueues a `CommitOffsets` command for the
-/// consumer thread, then blocks until that thread reports back. This owns the UUID →
-/// [CompletableFuture] correlation that bridges the two — [#register] mints a correlation id and
-/// its pending future, the consumer thread calls [#complete] with that id when the commit lands,
-/// and the waiter calls [#forget] once it returns (or times out).
+/// A commit spans two threads: [KafkaOffsetManager] [#register]s a commit and enqueues a
+/// `CommitOffsets` command carrying the returned id, then [#await]s the result; the consumer thread
+/// [#complete]s that id when the commit lands. This owns the `UUID → CompletableFuture` correlation
+/// so the future never escapes — callers hold only the id.
 ///
-/// Thread-safe: the backing map is a [ConcurrentHashMap], and a late [#complete] racing the
-/// waiter's [#forget] is harmless (whichever removes the future first wins; the other is a no-op).
+/// Thread-safe: the backing map is a [ConcurrentHashMap]. [#await] is the sole remover of a
+/// correlation; [#complete] only resolves the future in place (it may run before OR after the
+/// awaiter reaches [#await], and it must not remove the entry the awaiter still needs to look up).
+/// A late [#complete] after the awaiter already timed out and removed the entry is a no-op.
 final class CommitCoordinator {
 
-  /// A registered commit awaiting completion: the correlation id to attach to the outbound
-  /// `CommitOffsets` command, and the future the caller blocks on.
-  record Pending(String commitId, CompletableFuture<Boolean> future) {}
+  private static final Logger LOGGER = System.getLogger(CommitCoordinator.class.getName());
 
   private final Map<String, CompletableFuture<Boolean>> commitFutures = new ConcurrentHashMap<>();
 
-  /// Registers a new commit and returns its correlation id + pending future. Attach the id to the
-  /// outbound command so [#complete] can find the future when the commit lands.
-  Pending register() {
+  /// Registers a new commit and returns its correlation id. Attach the id to the outbound
+  /// `CommitOffsets` command, then block on it via [#await]; the completing thread calls [#complete]
+  /// with the same id.
+  String register() {
     final var commitId = UUID.randomUUID().toString();
-    final var future = new CompletableFuture<Boolean>();
-    commitFutures.put(commitId, future);
-    return new Pending(commitId, future);
+    commitFutures.put(commitId, new CompletableFuture<>());
+    return commitId;
   }
 
-  /// Completes the pending commit for `commitId`. No-op if unknown — a late completion after the
-  /// waiter already timed out and forgot it. Called from the consumer thread.
+  /// Blocks until the commit for `commitId` completes or `timeout` elapses, then drops the
+  /// correlation. Returns the commit's success value, or `false` if it timed out or failed. Must be
+  /// called by the thread that registered the id.
+  ///
+  /// @throws InterruptedException if interrupted while waiting (the correlation is still cleaned up)
+  boolean await(final String commitId, final Duration timeout) throws InterruptedException {
+    final var future = commitFutures.get(commitId);
+    try {
+      return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (final ExecutionException | TimeoutException e) {
+      LOGGER.log(Level.WARNING, "Error waiting for offset commit", e);
+      return false;
+    } finally {
+      commitFutures.remove(commitId);
+    }
+  }
+
+  /// Completes the pending commit for `commitId`, resolving the future in place WITHOUT removing it
+  /// — [#await] owns the single removal, and may not yet have looked the future up. No-op if unknown
+  /// (a late completion after the awaiter already timed out and removed it). Called from the consumer
+  /// thread.
   void complete(final String commitId, final boolean success) {
-    final var future = commitFutures.remove(commitId);
+    final var future = commitFutures.get(commitId);
     if (future != null) future.complete(success);
   }
 
-  /// Drops the correlation for `commitId` (idempotent) — called by the waiter in its finally block
-  /// so a timed-out commit doesn't leak its future.
-  void forget(final String commitId) {
-    commitFutures.remove(commitId);
-  }
-
-  /// Number of commits registered but not yet completed or forgotten — surfaced as
+  /// Number of commits registered but not yet completed or awaited-out — surfaced as
   /// [OffsetStatistics#pendingCommits].
   int pendingCount() {
     return commitFutures.size();
