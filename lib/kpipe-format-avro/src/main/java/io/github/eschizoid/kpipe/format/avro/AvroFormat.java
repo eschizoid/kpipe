@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.format.avro;
 
+import io.github.eschizoid.kpipe.registry.ConfluentEnvelope;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.registry.WireDiagnostics;
@@ -48,10 +49,6 @@ import org.apache.avro.io.EncoderFactory;
 /// Do **not** combine `withRegistry(...)` with `skipBytes(5)` — the format already consumes
 /// the envelope.
 public final class AvroFormat implements MessageFormat<GenericRecord> {
-
-  /// Confluent wire envelope: 1-byte magic (0x00) + 4-byte big-endian schema ID.
-  private static final int ENVELOPE_LENGTH = 5;
-  private static final byte CONFLUENT_MAGIC = 0x00;
 
   private final Schema staticSchema;
   private final SchemaResolver resolver;
@@ -171,18 +168,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   }
 
   private GenericRecord deserializeFromEnvelope(final byte[] data) {
-    if (data.length < ENVELOPE_LENGTH) throw new IllegalStateException(
-      "Record too short for Confluent wire envelope: " + data.length + " bytes; expected at least " + ENVELOPE_LENGTH +
-        " (first bytes " + WireDiagnostics.hexPreview(data) + ")"
-    );
-    if (data[0] != CONFLUENT_MAGIC) throw new IllegalStateException(
-      "Unexpected magic byte 0x%02x; expected 0x00 (Confluent Schema Registry envelope; first bytes %s)".formatted(
-        data[0] & 0xff,
-        WireDiagnostics.hexPreview(data)
-      )
-    );
-    final int schemaId =
-      ((data[1] & 0xff) << 24) | ((data[2] & 0xff) << 16) | ((data[3] & 0xff) << 8) | (data[4] & 0xff);
+    final int schemaId = ConfluentEnvelope.readSchemaId(data);
 
     final var schema = resolvedSchemas.computeIfAbsent(schemaId, id -> {
       final var json = resolver.lookupById(id);
@@ -193,7 +179,8 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
     });
 
     final var reader = new GenericDatumReader<GenericRecord>(schema);
-    final var decoder = DecoderFactory.get().binaryDecoder(data, ENVELOPE_LENGTH, data.length - ENVELOPE_LENGTH, null);
+    final var decoder = DecoderFactory.get()
+      .binaryDecoder(data, ConfluentEnvelope.HEADER_LENGTH, data.length - ConfluentEnvelope.HEADER_LENGTH, null);
     try {
       return reader.read(null, decoder);
     } catch (final IOException | RuntimeException e) {
