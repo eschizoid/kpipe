@@ -39,7 +39,7 @@ public final class KPipeConsumerBuilder {
   MessagePipeline<?> pipeline;
   Map<String, MessagePipeline<?>> pipelinesPerTopic;
   final Map<String, BatchSpec<?>> batchSpecs = new LinkedHashMap<>();
-  Duration pollTimeout = Duration.ofMillis(100);
+  Duration pollTimeout = ConsumerDefaults.POLL_TIMEOUT;
   KPipeConsumer.ErrorHandler errorHandler = e ->
     LOGGER.log(
       Level.WARNING,
@@ -204,8 +204,12 @@ public final class KPipeConsumerBuilder {
   /// @param backoff Duration to wait between retry attempts
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withRetry(final int maxRetries, final Duration backoff) {
+    if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative, got " + maxRetries);
+    Objects.requireNonNull(backoff, "backoff cannot be null");
+    // Zero is legitimate (retry immediately, bounded by maxRetries); only negative is a misconfig.
+    if (backoff.isNegative()) throw new IllegalArgumentException("backoff cannot be negative, got " + backoff);
     this.maxRetries = maxRetries;
-    this.retryBackoff = Objects.requireNonNull(backoff, "backoff cannot be null");
+    this.retryBackoff = backoff;
     return this;
   }
 
@@ -246,7 +250,10 @@ public final class KPipeConsumerBuilder {
   /// @param timeout Maximum time to wait for in-flight messages to complete
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withWaitForMessagesTimeout(final Duration timeout) {
-    this.waitForMessagesTimeout = Objects.requireNonNull(timeout);
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    // Zero is legitimate ("don't wait" on shutdown); only negative is a misconfig.
+    if (timeout.isNegative()) throw new IllegalArgumentException("timeout cannot be negative, got " + timeout);
+    this.waitForMessagesTimeout = timeout;
     return this;
   }
 
@@ -255,7 +262,10 @@ public final class KPipeConsumerBuilder {
   /// @param timeout Maximum time to wait for the consumer thread to finish
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withThreadTerminationTimeout(final Duration timeout) {
-    this.threadTerminationTimeout = Objects.requireNonNull(timeout);
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    // Zero is legitimate ("don't wait" on shutdown); only negative is a misconfig.
+    if (timeout.isNegative()) throw new IllegalArgumentException("timeout cannot be negative, got " + timeout);
+    this.threadTerminationTimeout = timeout;
     return this;
   }
 

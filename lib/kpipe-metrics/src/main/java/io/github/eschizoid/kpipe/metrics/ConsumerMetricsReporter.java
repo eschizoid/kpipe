@@ -36,12 +36,13 @@ public record ConsumerMetricsReporter(
 ) implements KPipeMetricsReporter {
   private static final Logger LOGGER = System.getLogger(ConsumerMetricsReporter.class.getName());
   private static final long APP_START_TIME = System.currentTimeMillis();
-  private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
-  private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
-  private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
-  private static final String METRIC_PROCESSING_DURATION_TOTAL_MS = "processingDurationTotalMs";
-  private static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
-  private static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
+  // Aliases of the shared key set (ConsumerMetricKeys) — never re-declare the literals here.
+  private static final String METRIC_MESSAGES_RECEIVED = ConsumerMetricKeys.MESSAGES_RECEIVED;
+  private static final String METRIC_MESSAGES_PROCESSED = ConsumerMetricKeys.MESSAGES_PROCESSED;
+  private static final String METRIC_PROCESSING_ERRORS = ConsumerMetricKeys.PROCESSING_ERRORS;
+  private static final String METRIC_PROCESSING_DURATION_TOTAL_MS = ConsumerMetricKeys.PROCESSING_DURATION_TOTAL_MS;
+  private static final String METRIC_BACKPRESSURE_PAUSE_COUNT = ConsumerMetricKeys.BACKPRESSURE_PAUSE_COUNT;
+  private static final String METRIC_BACKPRESSURE_TIME_MS = ConsumerMetricKeys.BACKPRESSURE_TIME_MS;
 
   /// Creates a new ConsumerMetricsReporter, defaulting to log-based reporting when reporter is
   /// null.

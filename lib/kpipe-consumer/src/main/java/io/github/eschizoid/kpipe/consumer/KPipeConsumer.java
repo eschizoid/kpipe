@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import io.github.eschizoid.kpipe.consumer.config.AppConfig;
+import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
@@ -79,17 +80,20 @@ public class KPipeConsumer implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
 
-  private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
-  private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
-  private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
-  private static final String METRIC_PROCESSING_DURATION_TOTAL_MS = "processingDurationTotalMs";
-  private static final String METRIC_RETRIES = "retries";
-  static final String METRIC_BACKPRESSURE_PAUSE_COUNT = "backpressurePauseCount";
-  static final String METRIC_BACKPRESSURE_TIME_MS = "backpressureTimeMs";
-  static final String METRIC_CIRCUIT_BREAKER_TRIPS = "circuitBreakerTrips";
-  static final String METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS = "circuitBreakerTimeOpenMs";
-  private static final String METRIC_DLQ_SENT = "dlqSent";
-  private static final String METRIC_DLQ_FAILED = "dlqFailed";
+  // Aliases of the shared public key set (ConsumerMetricKeys) — the single source of truth also
+  // read by ConsumerMetricsReporter and the kpipe-test quiescence check. Never re-declare the
+  // literals here; aliasing keeps every call site short while making drift impossible.
+  private static final String METRIC_MESSAGES_RECEIVED = ConsumerMetricKeys.MESSAGES_RECEIVED;
+  private static final String METRIC_MESSAGES_PROCESSED = ConsumerMetricKeys.MESSAGES_PROCESSED;
+  private static final String METRIC_PROCESSING_ERRORS = ConsumerMetricKeys.PROCESSING_ERRORS;
+  private static final String METRIC_PROCESSING_DURATION_TOTAL_MS = ConsumerMetricKeys.PROCESSING_DURATION_TOTAL_MS;
+  private static final String METRIC_RETRIES = ConsumerMetricKeys.RETRIES;
+  static final String METRIC_BACKPRESSURE_PAUSE_COUNT = ConsumerMetricKeys.BACKPRESSURE_PAUSE_COUNT;
+  static final String METRIC_BACKPRESSURE_TIME_MS = ConsumerMetricKeys.BACKPRESSURE_TIME_MS;
+  static final String METRIC_CIRCUIT_BREAKER_TRIPS = ConsumerMetricKeys.CIRCUIT_BREAKER_TRIPS;
+  static final String METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS = ConsumerMetricKeys.CIRCUIT_BREAKER_TIME_OPEN_MS;
+  private static final String METRIC_DLQ_SENT = ConsumerMetricKeys.DLQ_SENT;
+  private static final String METRIC_DLQ_FAILED = ConsumerMetricKeys.DLQ_FAILED;
 
   private final Queue<ConsumerCommand> commandQueue;
   private final Consumer<byte[], byte[]> kafkaConsumer;
@@ -838,7 +842,7 @@ public class KPipeConsumer implements AutoCloseable {
       .entrySet()
       .stream()
       .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(), (a, _) -> a, HashMap::new));
-    snapshot.put("inFlight", totalInFlight());
+    snapshot.put(ConsumerMetricKeys.IN_FLIGHT, totalInFlight());
     return Collections.unmodifiableMap(snapshot);
   }
 
