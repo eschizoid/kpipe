@@ -6,6 +6,7 @@ import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /// Package-private [Sink] impl for batch terminals. Builds a sink-less
 /// [io.github.eschizoid.kpipe.registry.MessagePipeline]
@@ -20,19 +21,40 @@ import java.util.Objects;
 /// topic instances per route and collects them at `start()` time into one consumer subscribing
 /// to multiple topics.
 ///
+/// Single-shot: the [#started] guard makes a second [#start()] throw. [MultiBuilder] reads
+/// [#buildPipeline()] / [#batchSink()] / [#batchPolicy()] rather than calling this route's
+/// `start()`, so folding a batch route into a multi-topic consumer leaves the guard untripped.
+///
 /// @param <T> the deserialized value type
-record DefaultBatchSink<T>(
-  DefaultStream<T> stream,
-  BatchSink<T> batchSink,
-  BatchPolicy batchPolicy
-) implements Sink<T> {
-  DefaultBatchSink {
-    Objects.requireNonNull(stream, "stream cannot be null");
-    Objects.requireNonNull(batchSink, "batchSink cannot be null");
-    Objects.requireNonNull(batchPolicy, "batchPolicy cannot be null");
+final class DefaultBatchSink<T> implements Sink<T> {
+
+  private final DefaultStream<T> stream;
+  private final BatchSink<T> batchSink;
+  private final BatchPolicy batchPolicy;
+  private final AtomicBoolean started = new AtomicBoolean(false);
+
+  DefaultBatchSink(final DefaultStream<T> stream, final BatchSink<T> batchSink, final BatchPolicy batchPolicy) {
+    this.stream = Objects.requireNonNull(stream, "stream cannot be null");
+    this.batchSink = Objects.requireNonNull(batchSink, "batchSink cannot be null");
+    this.batchPolicy = Objects.requireNonNull(batchPolicy, "batchPolicy cannot be null");
     if (stream.topics().size() != 1) throw new IllegalArgumentException(
       "DefaultBatchSink expects a single-topic stream; got %d topics".formatted(stream.topics().size())
     );
+  }
+
+  /// Exposes the configured stream (route folding + test inspection).
+  DefaultStream<T> stream() {
+    return stream;
+  }
+
+  /// Exposes the batch sink for route folding in [MultiBuilder].
+  BatchSink<T> batchSink() {
+    return batchSink;
+  }
+
+  /// Exposes the batch policy for route folding in [MultiBuilder].
+  BatchPolicy batchPolicy() {
+    return batchPolicy;
   }
 
   /// The topic this batch route is bound to. Single-topic by construction; multi-topic
@@ -52,6 +74,9 @@ record DefaultBatchSink<T>(
 
   @Override
   public Handle start() {
+    if (!started.compareAndSet(false, true)) throw new IllegalStateException(
+      "Sink already started — a Sink is single-shot; build a fresh Stream/Sink to run another consumer"
+    );
     final var consumerBuilder = KPipeConsumer.builder()
       .withProperties(stream.kafkaProps())
       .withProcessingMode(stream.processingMode())

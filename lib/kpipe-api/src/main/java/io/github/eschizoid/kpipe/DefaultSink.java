@@ -8,15 +8,25 @@ import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /// Package-private [Sink] impl. Holds the configured [DefaultStream] plus the chosen terminal
 /// [MessageSink] and constructs a fully-wired [KPipeConsumer] on `start()`. The consumer hosts
 /// its own lifecycle since the 1.13 KPipeRunner fold.
 ///
+/// Single-shot: the [#started] guard makes a second [#start()] throw rather than silently spin up
+/// a second live consumer (the underlying consumer cannot be restarted). [MultiBuilder] does not
+/// call this sink's `start()` — it reads [#buildPipeline()] to fold the route into one shared
+/// consumer — so each route-sink stays independently single-shot.
+///
 /// @param <T> the deserialized message type
-record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) implements Sink<T> {
+final class DefaultSink<T> implements Sink<T> {
   private static final Logger LOGGER = System.getLogger(DefaultSink.class.getName());
+
+  private final DefaultStream<T> stream;
+  private final MessageSink<T> terminalSink;
+  private final AtomicBoolean started = new AtomicBoolean(false);
 
   DefaultSink(final DefaultStream<T> stream, final MessageSink<T> terminalSink) {
     this.stream = Objects.requireNonNull(stream, "stream cannot be null");
@@ -25,6 +35,9 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
 
   @Override
   public Handle start() {
+    if (!started.compareAndSet(false, true)) throw new IllegalStateException(
+      "Sink already started — a Sink is single-shot; build a fresh Stream/Sink to run another consumer"
+    );
     final var consumerBuilder = KPipeConsumer.builder()
       .withProperties(stream.kafkaProps())
       .withTopics(stream.topics())
@@ -105,15 +118,13 @@ record DefaultSink<T>(DefaultStream<T> stream, MessageSink<T> terminalSink) impl
   }
 
   /// Exposes the configured stream for test inspection of composition.
-  @Override
-  public DefaultStream<T> stream() {
+  DefaultStream<T> stream() {
     return stream;
   }
 
   /// Exposes the terminal sink for test inspection of composition (verifies
   /// that `toConsole()` / `toCustom()` / `toMulti()` produced the expected sink type).
-  @Override
-  public MessageSink<T> terminalSink() {
+  MessageSink<T> terminalSink() {
     return terminalSink;
   }
 }

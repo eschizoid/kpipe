@@ -11,6 +11,7 @@ import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.registry.WireDiagnostics;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceLoader;
@@ -92,15 +93,20 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// @return a registry-mode Protobuf codec
   /// @throws IllegalStateException if no [ProtobufDescriptorCompiler] is on the runtime path
   public static ProtobufFormat withRegistry(final SchemaResolver resolver) {
-    final var compilers = ServiceLoader.load(ProtobufDescriptorCompiler.class).stream().toList();
-    if (compilers.isEmpty()) throw new IllegalStateException(
+    // ServiceLoader iteration order is unspecified — sort providers by implementation class name so
+    // the pick is deterministic across classpath layouts. Sort on `provider.type()` (the Class,
+    // no instantiation) and only `get()` the chosen provider.
+    final var providers = ServiceLoader.load(ProtobufDescriptorCompiler.class).stream()
+      .sorted(Comparator.comparing(provider -> provider.type().getName()))
+      .toList();
+    if (providers.isEmpty()) throw new IllegalStateException(
       "No ProtobufDescriptorCompiler found — add kpipe-format-protobuf-confluent to your runtime"
     );
-    final var compiler = compilers.getFirst().get();
-    if (compilers.size() > 1) LOGGER.log(
+    final var compiler = providers.getFirst().get();
+    if (providers.size() > 1) LOGGER.log(
       System.Logger.Level.WARNING,
       "Found {0} ProtobufDescriptorCompiler implementations on the path — using {1}",
-      compilers.size(),
+      providers.size(),
       compiler.getClass().getName()
     );
     return new ProtobufFormat(resolver, compiler);
