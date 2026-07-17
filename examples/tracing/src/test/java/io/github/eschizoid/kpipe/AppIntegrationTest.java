@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.eschizoid.kpipe.sink.MessageSink;
+import io.github.eschizoid.kpipe.test.CapturingSink;
 import io.github.eschizoid.kpipe.tracing.otel.OtelTracer;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
@@ -18,7 +18,6 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -51,7 +50,7 @@ class AppIntegrationTest {
   @Test
   void consumerSpanChainsOffInboundTraceparent() throws Exception {
     final var topic = "trace-ex-" + UUID.randomUUID().toString().substring(0, 8);
-    final var captured = new CopyOnWriteArrayList<Map<String, Object>>();
+    final var capturingSink = new CapturingSink<Map<String, Object>>();
 
     // Wire an OTel SDK with W3C propagator + an InMemorySpanExporter we can assert against.
     final var spanExporter = InMemorySpanExporter.create();
@@ -61,7 +60,6 @@ class AppIntegrationTest {
       .build();
 
     final var tracer = new OtelTracer(sdk, "tracing-example-test");
-    final MessageSink<Map<String, Object>> capturingSink = captured::add;
 
     try (final var handle = KPipe.json(topic, consumerProps()).withTracer(tracer).toCustom(capturingSink).start()) {
       // Produce a record carrying a known traceparent.
@@ -85,11 +83,13 @@ class AppIntegrationTest {
 
       // Wait for the record to be processed and the span exported.
       final var deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
-      while (System.nanoTime() < deadline && (captured.isEmpty() || spanExporter.getFinishedSpanItems().isEmpty())) {
+      while (
+        System.nanoTime() < deadline && (capturingSink.count() == 0 || spanExporter.getFinishedSpanItems().isEmpty())
+      ) {
         TimeUnit.MILLISECONDS.sleep(100);
       }
 
-      assertEquals(1, captured.size(), "consumer should have received the produced record");
+      assertEquals(1, capturingSink.count(), "consumer should have received the produced record");
       final var spans = spanExporter.getFinishedSpanItems();
       assertEquals(1, spans.size(), "exactly one consumer span should have been exported");
 

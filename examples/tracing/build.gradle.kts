@@ -19,4 +19,5 @@ dependencies {
   implementation(rootProject.libs.opentelemetryAutoconfigure)
 
   testImplementation(rootProject.libs.opentelemetrySdkTesting)
+  testImplementation(project(":lib:kpipe-test"))
 }

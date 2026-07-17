@@ -8,15 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.producer.config.KafkaProducerConfig;
-import io.github.eschizoid.kpipe.sink.MessageSink;
+import io.github.eschizoid.kpipe.test.CapturingSink;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Collections;
-import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -59,15 +57,14 @@ class AppIntegrationTest {
   @Test
   void testAvroAppEndToEnd() throws Exception {
     final var topic = "avro-topic-" + UUID.randomUUID().toString().substring(0, 8);
-    final var captured = new CopyOnWriteArrayList<GenericRecord>();
-    final MessageSink<GenericRecord> capturingSink = captured::add;
+    final var capturingSink = new CapturingSink<GenericRecord>();
 
     try (final var handle = KPipe.avro(topic, consumerProps(), format).skipBytes(5).toCustom(capturingSink).start()) {
       assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
 
-      produceUntilConsumed(topic, createConfluentWirePayload(), captured, Duration.ofSeconds(15));
+      produceUntilConsumed(topic, createConfluentWirePayload(), capturingSink, Duration.ofSeconds(15));
 
-      final var processed = captured.getFirst();
+      final var processed = capturingSink.captured().getFirst();
       assertAll(
         () -> assertEquals(1L, processed.get("id")),
         () -> assertEquals("Test User", processed.get("name").toString()),
@@ -114,7 +111,7 @@ class AppIntegrationTest {
   private static void produceUntilConsumed(
     final String topic,
     final byte[] payload,
-    final List<?> sink,
+    final CapturingSink<?> sink,
     final Duration timeout
   ) throws Exception {
     final var producerProps = KafkaProducerConfig.createProducerConfig(kafka.getBootstrapServers());
@@ -122,7 +119,7 @@ class AppIntegrationTest {
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       while (System.nanoTime() < deadline) {
         producer.send(new ProducerRecord<>(topic, payload)).get();
-        if (!sink.isEmpty()) return;
+        if (sink.count() > 0) return;
         TimeUnit.MILLISECONDS.sleep(250);
       }
     }

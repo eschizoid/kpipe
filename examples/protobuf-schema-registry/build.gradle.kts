@@ -24,4 +24,5 @@ dependencies {
   // protobuf module must both be on the test compile+runtime classpath.
   testImplementation(project(":lib:kpipe-format-protobuf"))
   testImplementation(project(":lib:kpipe-format-protobuf-confluent"))
+  testImplementation(project(":lib:kpipe-test"))
 }

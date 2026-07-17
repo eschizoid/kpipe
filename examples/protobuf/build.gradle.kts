@@ -14,4 +14,6 @@ dependencies {
   implementation(project(":lib:kpipe-format-protobuf"))
   implementation(rootProject.libs.protobufJava)
   implementation(rootProject.libs.protobufUtil)
+
+  testImplementation(project(":lib:kpipe-test"))
 }
