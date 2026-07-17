@@ -37,7 +37,7 @@ dependencies {
   testImplementation(libs.junitJupiter)
   testRuntimeOnly(libs.junitPlatformLauncher)
   // Gold-standard wire-compat check: Confluent's own serializer produces the bytes our parser reads.
-  testImplementation("io.confluent:kafka-protobuf-serializer:8.0.0")
+  testImplementation(libs.kafkaProtobufSerializer)
 }
 
 tasks.test {

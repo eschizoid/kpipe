@@ -248,6 +248,29 @@ class ProtobufFormatRegistryTest {
   }
 
   @Test
+  void overlongMessageIndexVarintThrowsAtFiveByteCap() {
+    // Six 0x80 continuation bytes never terminate a varint: the parser must trip the 5-byte cap
+    // rather than keep shifting garbage into the value (or walk into the payload).
+    final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
+    // magic + id=1 + an unterminated varint of six continuation bytes where the index size goes.
+    final var overlong = new byte[] {
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      (byte) 0x80,
+      (byte) 0x80,
+      (byte) 0x80,
+      (byte) 0x80,
+      (byte) 0x80,
+      (byte) 0x80,
+    };
+    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(overlong));
+    assertTrue(ex.getMessage().contains("varint"), "must mention varint; got: " + ex.getMessage());
+  }
+
+  @Test
   void wrongMagicByteThrows() {
     final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
     final var bad = new byte[] { 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x42 };

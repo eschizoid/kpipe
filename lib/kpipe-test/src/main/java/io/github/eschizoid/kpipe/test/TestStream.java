@@ -3,7 +3,6 @@ package io.github.eschizoid.kpipe.test;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.Operators;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -15,7 +14,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Properties;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -325,10 +323,7 @@ public final class TestStream<T> implements AutoCloseable {
         "toCustom and toBatch are mutually exclusive — a stream terminates in exactly one sink shape"
       );
 
-      final var pipelineBuilder = new MessageProcessorRegistry().pipeline(format);
-      for (final var op : operators) pipelineBuilder.add(op);
-      if (sink != null) pipelineBuilder.toSink(sink);
-      final var pipeline = pipelineBuilder.build();
+      final var pipeline = TestKitSupport.pipeline(format, operators, sink);
 
       final var mock = new MockConsumer<byte[], byte[]>("earliest") {
         @Override
@@ -349,7 +344,7 @@ public final class TestStream<T> implements AutoCloseable {
       };
 
       final var consumerBuilder = KPipeConsumer.builder()
-        .withProperties(props())
+        .withProperties(TestKitSupport.props("kpipe-test"))
         .withProcessingMode(processingMode)
         .withErrorHandler(recordingHandler)
         .withConsumer(() -> mock)
@@ -363,18 +358,6 @@ public final class TestStream<T> implements AutoCloseable {
       final var consumer = consumerBuilder.build();
       consumer.start();
       return new TestStream<>(topic, format, consumer, mock, errors);
-    }
-
-    /// Minimal, never-contacted config — the `MockConsumer` supplier bypasses the real client, so
-    /// only the properties object's presence matters.
-    private static Properties props() {
-      final var p = new Properties();
-      p.put("bootstrap.servers", "localhost:9092");
-      p.put("group.id", "kpipe-test");
-      p.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-      p.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-      p.put("enable.auto.commit", "false");
-      return p;
     }
   }
 }

@@ -310,7 +310,8 @@ class AvroFormatSchemaEvolutionTest {
     final var format = AvroFormat.withRegistry(new FakeResolver().put(1, USER_V1));
 
     // Empty-string fields encode to two zero-length varints, so the stripped payload is 2 bytes —
-    // below ENVELOPE_LENGTH. deserialize returns null only for null/empty input; a 2-byte input
+    // below ConfluentEnvelope.HEADER_LENGTH. deserialize returns null only for null/empty input;
+    // a 2-byte input
     // reaches the too-short envelope guard.
     if (stripped.length == 0) {
       assertNull(format.deserialize(stripped));
