@@ -69,12 +69,6 @@ public final class TestStream<T> implements AutoCloseable {
   private static final Duration DEFAULT_FLUSH_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration CLOSE_AGE_CAP = Duration.ofDays(1);
 
-  // Public metric-map keys of KPipeConsumer.getMetrics(); see the metrics table in README.
-  private static final String METRIC_RECEIVED = "messagesReceived";
-  private static final String METRIC_PROCESSED = "messagesProcessed";
-  private static final String METRIC_ERRORS = "processingErrors";
-  private static final String METRIC_IN_FLIGHT = "inFlight";
-
   private final String topic;
   private final MessageFormat<T> format;
   private final KPipeConsumer consumer;
@@ -171,7 +165,7 @@ public final class TestStream<T> implements AutoCloseable {
     final var target = nextOffset.get();
     final var deadline = System.nanoTime() + timeout.toNanos();
     while (System.nanoTime() < deadline) {
-      if (quiescent(target)) return this;
+      if (TestKitMetrics.quiescent(consumer, target)) return this;
       try {
         //noinspection BusyWait — deadline-bounded quiescence poll, not a spin
         Thread.sleep(5);
@@ -208,27 +202,6 @@ public final class TestStream<T> implements AutoCloseable {
   @Override
   public void close() {
     if (closed.compareAndSet(false, true)) consumer.close();
-  }
-
-  /// All sent records are either terminal (processed / filtered / failed) or buffered in a batch
-  /// wrapper, and no dispatcher worker is mid-record. Checked in a deliberate order: records move
-  /// strictly forward (unpolled → in-flight → buffered/terminal), so observing "all accounted
-  /// for" *before* observing "in-flight drained" cannot yield a false positive — a record that
-  /// was still unpolled at the first check keeps the sum below target, and a record still
-  /// processing fails the drain check. The final re-read confirms the accounting after the drain.
-  private boolean quiescent(final long target) {
-    final var snapshot = metrics();
-    if (snapshot.get(METRIC_RECEIVED) < target) return false;
-    if (accountedFor(snapshot) < target) return false;
-    if (!consumer.waitForInFlightDrain(Duration.ofMillis(1))) return false;
-    final var settled = metrics();
-    return settled.get(METRIC_RECEIVED) >= target && accountedFor(settled) >= target;
-  }
-
-  /// Terminal records plus in-flight ones (`inFlight` = dispatcher pending + batch-buffered;
-  /// after a drain, pending is zero so the in-flight component is exactly the buffered count).
-  private static long accountedFor(final Map<String, Long> snapshot) {
-    return snapshot.get(METRIC_PROCESSED) + snapshot.get(METRIC_ERRORS) + snapshot.get(METRIC_IN_FLIGHT);
   }
 
   private void ensureOpen() {
