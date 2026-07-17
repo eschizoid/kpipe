@@ -110,6 +110,18 @@ class OffsetLedgerTest {
     assertEquals(OffsetState.RUNNING, stats.managerState(), "lifecycle state is injected by the manager");
     assertEquals(3, stats.pendingCommits(), "pending-commit count is injected by the manager");
     assertEquals(200L, stats.highestProcessedOffsetsByPartition().get(P1));
+    assertEquals(200.0, stats.averageHighestProcessedOffset(), "mean of the one processed partition's highest offset");
+  }
+
+  @Test
+  void statisticsForAnEmptyLedgerAreZeroed() {
+    final var stats = new OffsetLedger().statistics(OffsetState.CREATED, 0);
+    assertEquals(0, stats.partitionCount());
+    assertEquals(0, stats.totalPendingOffsets());
+    assertEquals(0, stats.totalProcessedPartitions());
+    assertEquals(0.0, stats.averageHighestProcessedOffset(), "no processed partitions -> zero average, not NaN");
+    assertTrue(stats.highestProcessedOffsetsByPartition().isEmpty());
+    assertEquals(OffsetState.CREATED, stats.managerState());
   }
 
   @Test

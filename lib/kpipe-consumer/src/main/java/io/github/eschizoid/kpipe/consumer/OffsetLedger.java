@@ -138,7 +138,7 @@ final class OffsetLedger {
     final Map<TopicPartition, Long> byPartition;
     final double average;
     if (!highestProcessedOffsets.isEmpty()) {
-      byPartition = new HashMap<>(highestProcessedOffsets);
+      byPartition = Map.copyOf(highestProcessedOffsets);
       average = highestProcessedOffsets.values().stream().mapToLong(Long::longValue).average().orElse(0);
     } else {
       byPartition = Map.of();
