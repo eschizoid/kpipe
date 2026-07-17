@@ -3,34 +3,22 @@ package io.github.eschizoid.kpipe.metrics;
 /// Defines a metrics reporting component that collects and publishes system metrics.
 ///
 /// This interface provides a common contract for various metrics reporting implementations,
-/// allowing for consistent monitoring across different system components.
+/// allowing for consistent monitoring across different system components. Implementations report
+/// metrics to different destinations such as logs, monitoring systems, or dashboards.
 ///
-/// Implementations can report metrics to different destinations such as logs, monitoring systems,
-/// or dashboards. The core functionality is defined by [#reportMetrics()], while lifecycle
-/// methods [#start()] and [#stop()] are provided with default empty implementations.
+/// The reporter is a pure sink — it exposes only [#reportMetrics()], invoked on whatever cadence the
+/// host drives (the consumer runs it on a periodic daemon thread it owns; see the metrics-reporter
+/// wiring in `KPipeConsumerBuilder`). The reporter does NOT own a lifecycle: there is deliberately no
+/// `start()` / `stop()` on this SPI, because nothing in KPipe would call them — a reporter that needs
+/// to manage its own resources should do so in its constructor and (if closeable) via `AutoCloseable`.
 ///
 /// Example usage:
 ///
 /// ```java
-/// // Create and use a metrics reporter
 /// final var reporter = ConsumerMetricsReporter.forConsumer(consumer::getMetrics);
-///
-/// // Start the reporter (optional, if implemented)
-/// reporter.start();
-///
-/// // Report metrics on demand
 /// reporter.reportMetrics();
-///
-/// // Stop the reporter when done (optional, if implemented)
-/// reporter.stop();
 /// ```
 public interface KPipeMetricsReporter {
   /// Reports collected metrics to the configured destination.
   void reportMetrics();
-
-  /// Starts the metrics reporter. No-op by default.
-  default void start() {}
-
-  /// Stops the metrics reporter. No-op by default.
-  default void stop() {}
 }
