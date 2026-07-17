@@ -8,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.Result;
+import io.github.eschizoid.kpipe.sink.BatchPolicy;
+import io.github.eschizoid.kpipe.sink.BatchSink;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -212,5 +215,66 @@ class StreamResultObserversTest {
     drive(pipeline, "{\"drop\":\"me\"}".getBytes());
 
     assertEquals(0, failedFired.get());
+  }
+
+  // ── Batch path — observers must fire through toBatch(...) too ─────────────
+  // Regression guard: DefaultBatchSink previously built its pipeline WITHOUT observer dispatch,
+  // silently dropping onFiltered/onFailed/peekResult set on a toBatch(...) stream (the same
+  // silent-drop class as the tracer/circuit-breaker drop fixed on this path earlier).
+
+  @Test
+  void batchPipelineFiresPeekResultOnEveryOutcome() {
+    final var passed = new AtomicInteger();
+    final var filtered = new AtomicInteger();
+    final var failed = new AtomicInteger();
+    final var sink = (DefaultBatchSink<Map<String, Object>>) KPipe.json("topic", props())
+      .filter(m -> m.containsKey("keep"))
+      .pipe(m -> {
+        if (m.containsKey("explode")) throw new RuntimeException("nope");
+        return m;
+      })
+      .peekResult(result -> {
+        switch (result) {
+          case Result.Passed<Map<String, Object>> _ -> passed.incrementAndGet();
+          case Result.Filtered<Map<String, Object>> _ -> filtered.incrementAndGet();
+          case Result.Failed<Map<String, Object>> _ -> failed.incrementAndGet();
+        }
+      })
+      .toBatch(BatchSink.ofVoid(_ -> {}), new BatchPolicy(10, Duration.ofDays(1)));
+
+    final var pipeline = sink.buildPipeline();
+    final var keep = pipeline.deserializeOrFail("{\"keep\":\"yes\"}".getBytes());
+    pipeline.process(keep);
+    final var drop = pipeline.deserializeOrFail("{\"drop\":\"me\"}".getBytes());
+    pipeline.process(drop);
+    final var explode = pipeline.deserializeOrFail("{\"keep\":\"yes\",\"explode\":1}".getBytes());
+    pipeline.process(explode);
+
+    assertEquals(1, passed.get(), "batch pipeline must dispatch peekResult for Passed");
+    assertEquals(1, filtered.get(), "batch pipeline must dispatch peekResult for Filtered");
+    assertEquals(1, failed.get(), "batch pipeline must dispatch peekResult for Failed");
+  }
+
+  @Test
+  void batchPipelineFiresOnFilteredAndOnFailed() {
+    final var filteredFired = new AtomicInteger();
+    final var capturedCause = new AtomicReference<Throwable>();
+    final var boom = new RuntimeException("boom");
+    final var sink = (DefaultBatchSink<Map<String, Object>>) KPipe.json("topic", props())
+      .filter(m -> !m.containsKey("drop"))
+      .pipe(m -> {
+        if (m.containsKey("explode")) throw boom;
+        return m;
+      })
+      .onFiltered(filteredFired::incrementAndGet)
+      .onFailed(capturedCause::set)
+      .toBatch(BatchSink.ofVoid(_ -> {}), new BatchPolicy(10, Duration.ofDays(1)));
+
+    final var pipeline = sink.buildPipeline();
+    pipeline.process(pipeline.deserializeOrFail("{\"drop\":\"me\"}".getBytes()));
+    pipeline.process(pipeline.deserializeOrFail("{\"explode\":1}".getBytes()));
+
+    assertEquals(1, filteredFired.get(), "batch pipeline must dispatch onFiltered");
+    assertSame(boom, capturedCause.get(), "batch pipeline must dispatch onFailed with the cause");
   }
 }
