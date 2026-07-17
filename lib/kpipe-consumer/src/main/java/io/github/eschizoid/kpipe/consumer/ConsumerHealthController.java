@@ -23,8 +23,9 @@ import org.apache.kafka.clients.consumer.Consumer;
 /// Owns the pause bitmask, the CB state machine (`AtomicReference<CircuitBreakerState>`), the
 /// trip timestamp, the probe-timer `ScheduledFuture`, and the rolling success/failure window.
 /// Side effects (`kafkaConsumer.pause`, `LockSupport.unpark`, command-queue inserts) stay on
-/// [KPipeConsumer]; transitions are signalled through the [Hook] supplied at construction so the
-/// host owns the single site that drives the command queue.
+/// [KPipeConsumer]; pause/resume transitions are signalled through the [PauseLifecycleHook] and
+/// metric events through the [HealthMetricsObserver], both supplied at construction so the host
+/// owns the single site that drives the command queue.
 ///
 /// Surface used by [KPipeConsumer]:
 ///
@@ -53,15 +54,43 @@ final class ConsumerHealthController {
     }
   }
 
-  /// Side-effect surface the controller delegates to. KPipeConsumer wires this to its
-  /// `internalPause` / `internalResume` choreography and to the AtomicLong metrics map plus the
-  /// OTel `ConsumerMetrics`. Kept narrow so unit tests can substitute a recording fake.
-  interface Hook {
+  /// Pause-lifecycle side effects the controller drives during arbitration. KPipeConsumer wires
+  /// this to its `internalPause` / `internalResume` choreography — the two callbacks that flip
+  /// actual Kafka consumer state when the arbitrated pause set transitions between empty and
+  /// non-empty. Kept narrow so unit tests can substitute a recording fake.
+  interface PauseLifecycleHook {
     /// Invoked when an arbitrary source transitions the consumer into the paused state.
     void onPause();
 
     /// Invoked when the *last* held source releases the pause and the consumer resumes.
     void onResume();
+  }
+
+  /// Pure metric fan-out for backpressure and circuit-breaker events. KPipeConsumer wires this to
+  /// the AtomicLong metrics map plus the OTel `ConsumerMetrics`. These callbacks observe health
+  /// transitions — they never touch Kafka consumer state (that is [PauseLifecycleHook]'s job).
+  ///
+  /// Because it is a pure observer, a caller (or a test) that doesn't record metrics can substitute
+  /// [#NOOP] and pair it with a real [PauseLifecycleHook] — the point of keeping the two concerns as
+  /// separate interfaces rather than one 7-method hook.
+  interface HealthMetricsObserver {
+    /// A no-op observer: drops every event. For callers wiring pause arbitration without metrics.
+    HealthMetricsObserver NOOP = new HealthMetricsObserver() {
+      @Override
+      public void onBackpressurePause() {}
+
+      @Override
+      public void onBackpressureTimeMs(final long ms) {}
+
+      @Override
+      public void onCircuitBreakerTrip() {}
+
+      @Override
+      public void onCircuitBreakerStateChange(final CircuitBreakerState state) {}
+
+      @Override
+      public void onCircuitBreakerTimeOpenMs(final long ms) {}
+    };
 
     /// Invoked when backpressure first crosses the high watermark and requests a pause.
     void onBackpressurePause();
@@ -100,33 +129,38 @@ final class ConsumerHealthController {
   private volatile ScheduledFuture<?> cbProbeFuture;
   private final ScheduledExecutorService scheduler;
 
-  private final Hook hook;
+  private final PauseLifecycleHook pauseHook;
+  private final HealthMetricsObserver metricsObserver;
 
   /// Constructs the controller. `scheduler` is only required when `cbController` is non-null —
   /// it is used to schedule the OPEN → HALF_OPEN probe timer.
   ///
   /// @param backpressure the backpressure decision module, or `null` to disable backpressure
   /// @param cbController the circuit-breaker decision module, or `null` to disable the breaker
-  /// @param scheduler    a scheduled executor used to fire the OPEN → HALF_OPEN probe; required
-  ///                     iff `cbController` is non-null
-  /// @param hook         side-effect callbacks (pause/resume + metric counters); must be non-null
+  /// @param scheduler       a scheduled executor used to fire the OPEN → HALF_OPEN probe; required
+  ///                        iff `cbController` is non-null
+  /// @param pauseHook       pause/resume lifecycle callbacks; must be non-null
+  /// @param metricsObserver backpressure + circuit-breaker metric callbacks; must be non-null
   /// @throws IllegalArgumentException if `cbController` is non-null and `scheduler` is null, or
-  ///         if `hook` is null
+  ///         if `pauseHook` or `metricsObserver` is null
   ConsumerHealthController(
     final BackpressureController backpressure,
     final CircuitBreakerController cbController,
     final ScheduledExecutorService scheduler,
-    final Hook hook
+    final PauseLifecycleHook pauseHook,
+    final HealthMetricsObserver metricsObserver
   ) {
     this.backpressure = backpressure;
     this.cbController = cbController;
     this.cbWindow = cbController != null ? new SlidingWindow(cbController.windowSize()) : null;
     this.scheduler = scheduler;
-    this.hook = hook;
+    this.pauseHook = pauseHook;
+    this.metricsObserver = metricsObserver;
     if (cbController != null && scheduler == null) {
       throw new IllegalArgumentException("scheduler is required when a CircuitBreakerController is configured");
     }
-    if (hook == null) throw new IllegalArgumentException("hook cannot be null");
+    if (pauseHook == null) throw new IllegalArgumentException("pauseHook cannot be null");
+    if (metricsObserver == null) throw new IllegalArgumentException("metricsObserver cannot be null");
   }
 
   // ─────────────────────────── Pause API ────────────────────────────────────
@@ -184,9 +218,9 @@ final class ConsumerHealthController {
           backpressure.getMetricName(),
           value
         );
-        hook.onBackpressurePause();
+        metricsObserver.onBackpressurePause();
         backpressurePauseStartNanos = System.nanoTime();
-        if (requestPause(Source.BACKPRESSURE)) hook.onPause();
+        if (requestPause(Source.BACKPRESSURE)) pauseHook.onPause();
         // Lost-wakeup guard. The PAUSE decision above came from a metric read taken BEFORE
         // `requestPause` published the BACKPRESSURE bit, but record completions only unpark the
         // consumer thread when they observe that bit after decrementing the in-flight count.
@@ -232,10 +266,10 @@ final class ConsumerHealthController {
   /// post-pause lost-wakeup guard above.
   private void releaseBackpressure() {
     final long duration = Math.max(1, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos));
-    hook.onBackpressureTimeMs(duration);
+    metricsObserver.onBackpressureTimeMs(duration);
     if (releasePause(Source.BACKPRESSURE)) {
       LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
-      hook.onResume();
+      pauseHook.onResume();
     } else {
       LOGGER.log(
         Level.INFO,
@@ -310,9 +344,9 @@ final class ConsumerHealthController {
       cbWindow.failureRate(),
       cbController.openDuration()
     );
-    hook.onCircuitBreakerTrip();
-    hook.onCircuitBreakerStateChange(CircuitBreakerState.OPEN);
-    if (requestPause(Source.CIRCUIT_BREAKER)) hook.onPause();
+    metricsObserver.onCircuitBreakerTrip();
+    metricsObserver.onCircuitBreakerStateChange(CircuitBreakerState.OPEN);
+    if (requestPause(Source.CIRCUIT_BREAKER)) pauseHook.onPause();
     final var existing = cbProbeFuture;
     if (existing != null) existing.cancel(false);
     cbProbeFuture = scheduler.schedule(
@@ -333,9 +367,9 @@ final class ConsumerHealthController {
     final var openedAt = cbOpenedAtNanos.get();
     final var openMs = openedAt == 0L ? 0L : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - openedAt);
     LOGGER.log(Level.INFO, "Circuit breaker probing: open for {0} ms, resuming consumer", openMs);
-    hook.onCircuitBreakerTimeOpenMs(openMs);
-    hook.onCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN);
-    if (releasePause(Source.CIRCUIT_BREAKER)) hook.onResume();
+    metricsObserver.onCircuitBreakerTimeOpenMs(openMs);
+    metricsObserver.onCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN);
+    if (releasePause(Source.CIRCUIT_BREAKER)) pauseHook.onResume();
   }
 
   /// Transitions the breaker back to CLOSED after a successful probe. Resets stats so the next trip
@@ -344,7 +378,7 @@ final class ConsumerHealthController {
     LOGGER.log(Level.INFO, "Circuit breaker closed: probe succeeded, resuming normal operation");
     cbWindow.reset();
     cbOpenedAtNanos.set(0L);
-    hook.onCircuitBreakerStateChange(CircuitBreakerState.CLOSED);
+    metricsObserver.onCircuitBreakerStateChange(CircuitBreakerState.CLOSED);
   }
 
   // ─────────────────────────── Sliding window ───────────────────────────────

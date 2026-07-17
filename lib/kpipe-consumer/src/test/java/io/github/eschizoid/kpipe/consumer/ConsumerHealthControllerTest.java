@@ -40,7 +40,7 @@ class ConsumerHealthControllerTest {
 
   @Test
   void requestPauseReturnsTrueOnlyOnTransition() {
-    final var health = new ConsumerHealthController(null, null, scheduler, hook);
+    final var health = new ConsumerHealthController(null, null, scheduler, hook, hook);
 
     assertTrue(health.requestPause(ConsumerHealthController.Source.MANUAL), "first request causes transition");
     assertFalse(health.requestPause(ConsumerHealthController.Source.MANUAL), "second request idempotent");
@@ -52,7 +52,7 @@ class ConsumerHealthControllerTest {
 
   @Test
   void releasePauseTransitionsOnlyOnLastRelease() {
-    final var health = new ConsumerHealthController(null, null, scheduler, hook);
+    final var health = new ConsumerHealthController(null, null, scheduler, hook, hook);
     health.requestPause(ConsumerHealthController.Source.MANUAL);
     health.requestPause(ConsumerHealthController.Source.BACKPRESSURE);
 
@@ -70,7 +70,7 @@ class ConsumerHealthControllerTest {
 
   @Test
   void currentSourcesReflectsHeldSet() {
-    final var health = new ConsumerHealthController(null, null, scheduler, hook);
+    final var health = new ConsumerHealthController(null, null, scheduler, hook, hook);
     health.requestPause(ConsumerHealthController.Source.MANUAL);
     health.requestPause(ConsumerHealthController.Source.CIRCUIT_BREAKER);
 
@@ -81,8 +81,19 @@ class ConsumerHealthControllerTest {
   }
 
   @Test
-  void hookRejectedAsNull() {
-    assertThrows(IllegalArgumentException.class, () -> new ConsumerHealthController(null, null, scheduler, null));
+  void pauseHookRejectedAsNull() {
+    assertThrows(
+      IllegalArgumentException.class,
+      () -> new ConsumerHealthController(null, null, scheduler, null, hook)
+    );
+  }
+
+  @Test
+  void metricsObserverRejectedAsNull() {
+    assertThrows(
+      IllegalArgumentException.class,
+      () -> new ConsumerHealthController(null, null, scheduler, hook, null)
+    );
   }
 
   // ─────────────────────────── Circuit breaker ──────────────────────────────
@@ -90,12 +101,12 @@ class ConsumerHealthControllerTest {
   @Test
   void cbControllerRequiresSchedulerWhenConfigured() {
     final var cb = new CircuitBreakerController(0.5, 10, Duration.ofMillis(500));
-    assertThrows(IllegalArgumentException.class, () -> new ConsumerHealthController(null, cb, null, hook));
+    assertThrows(IllegalArgumentException.class, () -> new ConsumerHealthController(null, cb, null, hook, hook));
   }
 
   @Test
   void recordOutcomeNoopWhenCircuitBreakerDisabled() {
-    final var health = new ConsumerHealthController(null, null, scheduler, hook);
+    final var health = new ConsumerHealthController(null, null, scheduler, hook, hook);
     health.recordOutcome(false);
     assertEquals(CircuitBreakerState.CLOSED, health.circuitBreakerState());
     assertEquals(0, hook.trips);
@@ -104,7 +115,7 @@ class ConsumerHealthControllerTest {
   @Test
   void breakerTripsAndPausesWhenThresholdCrossed() {
     final var cb = new CircuitBreakerController(0.5, 4, Duration.ofMillis(500));
-    final var health = new ConsumerHealthController(null, cb, scheduler, hook);
+    final var health = new ConsumerHealthController(null, cb, scheduler, hook, hook);
 
     health.recordOutcome(false);
     health.recordOutcome(false);
@@ -121,7 +132,7 @@ class ConsumerHealthControllerTest {
   @Test
   void openIgnoresIncomingOutcomes() {
     final var cb = new CircuitBreakerController(0.5, 2, Duration.ofMillis(500));
-    final var health = new ConsumerHealthController(null, cb, scheduler, hook);
+    final var health = new ConsumerHealthController(null, cb, scheduler, hook, hook);
     health.recordOutcome(false);
     health.recordOutcome(false);
     assertEquals(CircuitBreakerState.OPEN, health.circuitBreakerState());
@@ -136,7 +147,7 @@ class ConsumerHealthControllerTest {
   @Test
   void probeFiresAfterOpenDurationAndHalfOpens() throws InterruptedException {
     final var cb = new CircuitBreakerController(0.5, 2, Duration.ofMillis(150));
-    final var health = new ConsumerHealthController(null, cb, scheduler, hook);
+    final var health = new ConsumerHealthController(null, cb, scheduler, hook, hook);
 
     health.recordOutcome(false);
     health.recordOutcome(false);
@@ -152,7 +163,7 @@ class ConsumerHealthControllerTest {
   @Test
   void halfOpenSuccessClosesBreaker() throws InterruptedException {
     final var cb = new CircuitBreakerController(0.5, 2, Duration.ofMillis(100));
-    final var health = new ConsumerHealthController(null, cb, scheduler, hook);
+    final var health = new ConsumerHealthController(null, cb, scheduler, hook, hook);
 
     health.recordOutcome(false);
     health.recordOutcome(false);
@@ -166,7 +177,7 @@ class ConsumerHealthControllerTest {
   @Test
   void halfOpenFailureTripsBreakerAgain() throws InterruptedException {
     final var cb = new CircuitBreakerController(0.5, 2, Duration.ofMillis(100));
-    final var health = new ConsumerHealthController(null, cb, scheduler, hook);
+    final var health = new ConsumerHealthController(null, cb, scheduler, hook, hook);
 
     health.recordOutcome(false);
     health.recordOutcome(false);
@@ -181,7 +192,7 @@ class ConsumerHealthControllerTest {
   @Test
   void shutdownCancelsPendingProbe() throws InterruptedException {
     final var cb = new CircuitBreakerController(0.5, 2, Duration.ofMillis(200));
-    final var health = new ConsumerHealthController(null, cb, scheduler, hook);
+    final var health = new ConsumerHealthController(null, cb, scheduler, hook, hook);
     health.recordOutcome(false);
     health.recordOutcome(false);
     assertEquals(CircuitBreakerState.OPEN, health.circuitBreakerState());
@@ -195,17 +206,54 @@ class ConsumerHealthControllerTest {
 
   @Test
   void tickBackpressureNoopWhenDisabled() {
-    final var health = new ConsumerHealthController(null, null, scheduler, hook);
+    final var health = new ConsumerHealthController(null, null, scheduler, hook, hook);
     final var consumer = new MockConsumer<byte[], byte[]>("earliest");
     health.tickBackpressure(consumer);
     assertEquals(0, hook.pauseCalls);
   }
 
   @Test
+  void pauseArbitrationIsTestableWithoutAMetricsFake() {
+    // The payoff of splitting the old 7-method Hook into PauseLifecycleHook + HealthMetricsObserver:
+    // a test that cares only about pause arbitration supplies a focused 2-method PauseLifecycleHook
+    // recorder and the shared no-op HealthMetricsObserver — two DISTINCT adapters, wired
+    // independently, with no obligation to stub the five metric callbacks.
+    final var pauses = new AtomicInteger();
+    final var resumes = new AtomicInteger();
+    final ConsumerHealthController.PauseLifecycleHook pauseOnly = new ConsumerHealthController.PauseLifecycleHook() {
+      @Override
+      public void onPause() {
+        pauses.incrementAndGet();
+      }
+
+      @Override
+      public void onResume() {
+        resumes.incrementAndGet();
+      }
+    };
+
+    final var inflight = new AtomicInteger(0);
+    final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
+    final var health =
+      new ConsumerHealthController(bp, null, scheduler, pauseOnly, ConsumerHealthController.HealthMetricsObserver.NOOP);
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest");
+
+    inflight.set(15);
+    health.tickBackpressure(consumer);
+    assertEquals(1, pauses.get(), "pause fires through the PauseLifecycleHook alongside a no-op metrics observer");
+    assertTrue(health.isPaused());
+
+    inflight.set(2);
+    health.tickBackpressure(consumer);
+    assertEquals(1, resumes.get(), "resume fires through the PauseLifecycleHook");
+    assertFalse(health.isPaused());
+  }
+
+  @Test
   void tickBackpressureDispatchesPauseAndResumeViaInFlightStrategy() {
     final var inflight = new AtomicInteger(0);
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
-    final var health = new ConsumerHealthController(bp, null, scheduler, hook);
+    final var health = new ConsumerHealthController(bp, null, scheduler, hook, hook);
     final var consumer = new MockConsumer<byte[], byte[]>("earliest");
 
     // Below high watermark — no action.
@@ -237,7 +285,7 @@ class ConsumerHealthControllerTest {
   void tickBackpressureResumesWhenInFlightDrainsInsidePauseWindow() {
     final var inflight = new AtomicInteger(15);
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
-    final var health = new ConsumerHealthController(bp, null, scheduler, hook);
+    final var health = new ConsumerHealthController(bp, null, scheduler, hook, hook);
     final var consumer = new MockConsumer<byte[], byte[]>("earliest");
     // Simulate every in-flight record completing between the PAUSE decision and the pause bit
     // becoming visible: those completions all read the pause mask before the BACKPRESSURE bit
@@ -261,7 +309,7 @@ class ConsumerHealthControllerTest {
   void tickBackpressureResumeIgnoredWhenBackpressureDoesNotHoldThePause() {
     final var inflight = new AtomicInteger(0);
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
-    final var health = new ConsumerHealthController(bp, null, scheduler, hook);
+    final var health = new ConsumerHealthController(bp, null, scheduler, hook, hook);
     final var consumer = new MockConsumer<byte[], byte[]>("earliest");
     // MANUAL holds the pause; backpressure never paused, so its pause-start timestamp was never
     // set. The metric sits at/below the low watermark, so the raw check() answer is RESUME —
@@ -280,7 +328,7 @@ class ConsumerHealthControllerTest {
   @Test
   void backpressureMetricNameReflectsConfiguredStrategy() {
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(() -> 0L));
-    final var health = new ConsumerHealthController(bp, null, scheduler, hook);
+    final var health = new ConsumerHealthController(bp, null, scheduler, hook, hook);
     assertEquals("in-flight", health.backpressureMetricName());
     assertTrue(health.backpressureEnabled());
   }
@@ -292,7 +340,7 @@ class ConsumerHealthControllerTest {
     // Verify the internal window keeps totals consistent under heavy concurrent writes — the
     // sliding-window invariant we used to test directly on the deleted CircuitBreakerStats class.
     final var cb = new CircuitBreakerController(0.99, 1000, Duration.ofSeconds(30));
-    final var health = new ConsumerHealthController(null, cb, scheduler, hook);
+    final var health = new ConsumerHealthController(null, cb, scheduler, hook, hook);
     final var totalWrites = 50_000;
     final var done = new CountDownLatch(totalWrites);
 
@@ -312,7 +360,8 @@ class ConsumerHealthControllerTest {
     assertEquals(CircuitBreakerState.CLOSED, health.circuitBreakerState());
   }
 
-  private static final class RecordingHook implements ConsumerHealthController.Hook {
+  private static final class RecordingHook
+    implements ConsumerHealthController.PauseLifecycleHook, ConsumerHealthController.HealthMetricsObserver {
 
     int pauseCalls;
     int resumeCalls;

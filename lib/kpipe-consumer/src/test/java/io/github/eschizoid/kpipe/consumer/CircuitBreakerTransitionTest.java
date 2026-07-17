@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /// Deterministic state-machine transition tests for the circuit breaker, driven directly through
-/// [ConsumerHealthController] with a recording [ConsumerHealthController.Hook] and a
+/// [ConsumerHealthController] with a recording hook (pause-lifecycle + metrics-observer) and a
 /// hand-controlled
 /// scheduler. No Kafka, no `MockConsumer`, no timing-based `awaitCondition` — every transition is
 /// driven by an explicit `recordOutcome(...)` call or by firing the captured probe task by hand, so
@@ -39,12 +39,13 @@ import org.junit.jupiter.api.Test;
 ///   * the one-shot OPEN → HALF_OPEN probe is a single scheduled task, fired exactly once.
 class CircuitBreakerTransitionTest {
 
-  /// Records every Hook callback so a test can assert on the exact transition sequence. The
+  /// Records every hook callback so a test can assert on the exact transition sequence. The
   /// CB-relevant
   /// counters are the ones the state machine drives; pause/resume bookkeeping is recorded too
   /// because a
   /// trip must pause and a successful probe must resume.
-  private static final class RecordingHook implements ConsumerHealthController.Hook {
+  private static final class RecordingHook
+    implements ConsumerHealthController.PauseLifecycleHook, ConsumerHealthController.HealthMetricsObserver {
 
     final AtomicInteger pauses = new AtomicInteger();
     final AtomicInteger resumes = new AtomicInteger();
@@ -234,7 +235,7 @@ class CircuitBreakerTransitionTest {
   /// arithmetic obvious: a full window of 4 needs 2 failures to hit exactly 50%.
   private static ConsumerHealthController newController(final RecordingHook hook, final CapturingScheduler scheduler) {
     final var cb = new CircuitBreakerController(0.5, 4, Duration.ofMillis(300));
-    return new ConsumerHealthController(null, cb, scheduler, hook);
+    return new ConsumerHealthController(null, cb, scheduler, hook, hook);
   }
 
   /// Drives the breaker CLOSED → OPEN by feeding a full window of failures, then asserts the trip
@@ -382,7 +383,7 @@ class CircuitBreakerTransitionTest {
     final var hook = new RecordingHook();
     final var scheduler = new CapturingScheduler();
     // No CircuitBreakerController → breaker disabled. recordOutcome must be a clean no-op.
-    final var hc = new ConsumerHealthController(null, null, scheduler, hook);
+    final var hc = new ConsumerHealthController(null, null, scheduler, hook, hook);
 
     for (int i = 0; i < 50; i++) hc.recordOutcome(false);
 

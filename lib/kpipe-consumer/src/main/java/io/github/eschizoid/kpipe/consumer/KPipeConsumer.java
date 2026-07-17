@@ -124,8 +124,8 @@ public class KPipeConsumer implements AutoCloseable {
   /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. The
   /// underlying decision modules ([BackpressureController], [CircuitBreakerController]) remain
   /// public + testable on their own; this controller owns the side-effect choreography and
-  /// dispatches transitions through a Hook that points back at `internalPause` /
-  /// `internalResume` and the metric counters.
+  /// dispatches pause transitions through a PauseLifecycleHook that points back at `internalPause` /
+  /// `internalResume`, and metric events through a HealthMetricsObserver bound to the counters.
   private final ConsumerHealthController health;
 
   private final String deadLetterTopic;
@@ -313,7 +313,7 @@ public class KPipeConsumer implements AutoCloseable {
         bp,
         builder.circuitBreakerController,
         this.scheduler,
-        new ConsumerHealthController.Hook() {
+        new ConsumerHealthController.PauseLifecycleHook() {
           @Override
           public void onPause() {
             internalPause();
@@ -323,7 +323,8 @@ public class KPipeConsumer implements AutoCloseable {
           public void onResume() {
             internalResume();
           }
-
+        },
+        new ConsumerHealthController.HealthMetricsObserver() {
           @Override
           public void onBackpressurePause() {
             metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
