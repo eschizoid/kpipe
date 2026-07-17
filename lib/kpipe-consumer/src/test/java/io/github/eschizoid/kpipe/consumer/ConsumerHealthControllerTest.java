@@ -213,6 +213,43 @@ class ConsumerHealthControllerTest {
   }
 
   @Test
+  void pauseArbitrationIsTestableWithoutAMetricsFake() {
+    // The payoff of splitting the old 7-method Hook into PauseLifecycleHook + HealthMetricsObserver:
+    // a test that cares only about pause arbitration supplies a focused 2-method PauseLifecycleHook
+    // recorder and the shared no-op HealthMetricsObserver — two DISTINCT adapters, wired
+    // independently, with no obligation to stub the five metric callbacks.
+    final var pauses = new AtomicInteger();
+    final var resumes = new AtomicInteger();
+    final ConsumerHealthController.PauseLifecycleHook pauseOnly = new ConsumerHealthController.PauseLifecycleHook() {
+      @Override
+      public void onPause() {
+        pauses.incrementAndGet();
+      }
+
+      @Override
+      public void onResume() {
+        resumes.incrementAndGet();
+      }
+    };
+
+    final var inflight = new AtomicInteger(0);
+    final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
+    final var health =
+      new ConsumerHealthController(bp, null, scheduler, pauseOnly, ConsumerHealthController.HealthMetricsObserver.NOOP);
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest");
+
+    inflight.set(15);
+    health.tickBackpressure(consumer);
+    assertEquals(1, pauses.get(), "pause fires through the PauseLifecycleHook alongside a no-op metrics observer");
+    assertTrue(health.isPaused());
+
+    inflight.set(2);
+    health.tickBackpressure(consumer);
+    assertEquals(1, resumes.get(), "resume fires through the PauseLifecycleHook");
+    assertFalse(health.isPaused());
+  }
+
+  @Test
   void tickBackpressureDispatchesPauseAndResumeViaInFlightStrategy() {
     final var inflight = new AtomicInteger(0);
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));

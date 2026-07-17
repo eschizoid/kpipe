@@ -69,7 +69,29 @@ final class ConsumerHealthController {
   /// Pure metric fan-out for backpressure and circuit-breaker events. KPipeConsumer wires this to
   /// the AtomicLong metrics map plus the OTel `ConsumerMetrics`. These callbacks observe health
   /// transitions — they never touch Kafka consumer state (that is [PauseLifecycleHook]'s job).
+  ///
+  /// Because it is a pure observer, a caller (or a test) that doesn't record metrics can substitute
+  /// [#NOOP] and pair it with a real [PauseLifecycleHook] — the point of keeping the two concerns as
+  /// separate interfaces rather than one 7-method hook.
   interface HealthMetricsObserver {
+    /// A no-op observer: drops every event. For callers wiring pause arbitration without metrics.
+    HealthMetricsObserver NOOP = new HealthMetricsObserver() {
+      @Override
+      public void onBackpressurePause() {}
+
+      @Override
+      public void onBackpressureTimeMs(final long ms) {}
+
+      @Override
+      public void onCircuitBreakerTrip() {}
+
+      @Override
+      public void onCircuitBreakerStateChange(final CircuitBreakerState state) {}
+
+      @Override
+      public void onCircuitBreakerTimeOpenMs(final long ms) {}
+    };
+
     /// Invoked when backpressure first crosses the high watermark and requests a pause.
     void onBackpressurePause();
 
