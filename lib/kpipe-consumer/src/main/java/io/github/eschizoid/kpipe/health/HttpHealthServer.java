@@ -27,7 +27,7 @@ public final class HttpHealthServer implements AutoCloseable {
   private final String appName;
   private final AtomicBoolean started = new AtomicBoolean(false);
 
-  /// Create a new {@link HttpHealthServer} bound to the provided host/port and exposing the
+  /// Create a new [HttpHealthServer] bound to the provided host/port and exposing the
   /// configured health endpoint.
   ///
   /// @param host the host to bind the HTTP server to (e.g. "0.0.0.0")
@@ -63,15 +63,15 @@ public final class HttpHealthServer implements AutoCloseable {
     }
   }
 
-  /// Create an {@link HttpHealthServer} using environment variables when enabled.
-  /// The method reads environment variables via {@link HealthConfig}.
+  /// Create an [HttpHealthServer] using environment variables when enabled.
+  /// The method reads environment variables via [HealthConfig].
   ///
   /// @param healthSupplier supplier that returns true when the application is healthy
   /// @param inFlightSupplier supplier that returns the current number of in-flight messages
   /// @param pausedSupplier supplier that returns true when the consumer is paused
   /// @param appName optional application name used for logging
-  /// @return Optional containing a started {@link HttpHealthServer} instance when enabled and
-  ///     successfully constructed, or {@link Optional#empty()} when disabled or on failure
+  /// @return Optional containing a started [HttpHealthServer] instance when enabled and
+  ///     successfully constructed, or [Optional#empty()] when disabled or on failure
   public static Optional<HttpHealthServer> fromEnv(
     final BooleanSupplier healthSupplier,
     final Supplier<Long> inFlightSupplier,
@@ -162,9 +162,9 @@ public final class HttpHealthServer implements AutoCloseable {
     return path.startsWith("/") ? path : "/" + path;
   }
 
-  /// Returns the actual bind address of the underlying {@link HttpServer}.
+  /// Returns the actual bind address of the underlying [HttpServer].
   ///
-  /// @return the {@link InetSocketAddress} the server is bound to
+  /// @return the [InetSocketAddress] the server is bound to
   public InetSocketAddress getAddress() {
     return server.getAddress();
   }

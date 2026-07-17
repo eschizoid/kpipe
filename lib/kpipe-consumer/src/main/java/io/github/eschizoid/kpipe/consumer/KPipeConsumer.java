@@ -162,7 +162,7 @@ public class KPipeConsumer implements AutoCloseable {
   @FunctionalInterface
   public interface ErrorHandler extends java.util.function.Consumer<ProcessingError> {}
 
-  /// Creates a new builder for constructing {@link KPipeConsumer} instances.
+  /// Creates a new builder for constructing [KPipeConsumer] instances.
   ///
   /// Bytes at the boundary, both sides: keys and values are always `byte[]`. Format SerDe lives
   /// inside the pipeline; key interpretation is the caller's concern in error handlers and sinks.
@@ -713,7 +713,7 @@ public class KPipeConsumer implements AutoCloseable {
   }
 
   /// Pauses consumption from the topic. Any in-flight messages will continue processing, but no new
-  /// messages will be consumed until {@link #resume()} is called.
+  /// messages will be consumed until [#resume()] is called.
   ///
   /// While paused the consumer thread keeps calling `poll()` with every partition paused: the
   /// polls fetch nothing but retain the group membership, so a long pause does not trigger a

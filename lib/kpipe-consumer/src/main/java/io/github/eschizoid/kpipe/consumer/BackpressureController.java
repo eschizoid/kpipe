@@ -43,7 +43,7 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   /// Creates a new BackpressureController with the same watermarks but a different strategy.
   ///
   /// @param strategy the new strategy to use
-  /// @return a new {@link BackpressureController} instance
+  /// @return a new [BackpressureController] instance
   public BackpressureController withStrategy(final Strategy strategy) {
     return new BackpressureController(highWatermark, lowWatermark, strategy);
   }
@@ -74,7 +74,7 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
 
   /// Creates a strategy that monitors Kafka consumer lag.
   ///
-  /// @return a new {@link Strategy} instance
+  /// @return a new [Strategy] instance
   public static Strategy lagStrategy() {
     return new Strategy() {
       @Override
@@ -92,7 +92,7 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   /// Creates a strategy that monitors an in-flight message count.
   ///
   /// @param inFlightSupplier the supplier of the current in-flight count
-  /// @return a new {@link Strategy} instance
+  /// @return a new [Strategy] instance
   public static Strategy inFlightStrategy(final LongSupplier inFlightSupplier) {
     if (inFlightSupplier == null) throw new IllegalArgumentException("inFlightSupplier cannot be null");
     return new Strategy() {
@@ -125,8 +125,8 @@ public record BackpressureController(long highWatermark, long lowWatermark, Stra
   ///
   /// @param consumer the Kafka consumer to monitor
   /// @param currentlyPaused whether the consumer is currently paused
-  /// @return the action to take: {@link Action#PAUSE}, {@link Action#RESUME}, or
-  ///     {@link Action#NONE}
+  /// @return the action to take: [Action#PAUSE], [Action#RESUME], or
+  ///     [Action#NONE]
   public Action check(final Consumer<?, ?> consumer, final boolean currentlyPaused) {
     if (strategy == null) return Action.NONE;
     final long currentValue = strategy.getMetric(consumer);

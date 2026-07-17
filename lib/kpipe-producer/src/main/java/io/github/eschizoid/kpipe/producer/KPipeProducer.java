@@ -58,8 +58,8 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
   /// Builder for creating and configuring [KPipeProducer] instances.
   ///
-  /// Either {@link #withProducer(Producer)} or {@link #withProperties(Properties)} must be
-  /// called before {@link #build()}. When properties are provided, only the connection, security,
+  /// Either [#withProducer(Producer)] or [#withProperties(Properties)] must be
+  /// called before [#build()]. When properties are provided, only the connection, security,
   /// and serialization keys are forwarded to the underlying Kafka producer.
   ///
   /// @param <K> the type of keys in the produced records
@@ -75,9 +75,9 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     /// Sets the properties used to create the underlying Kafka producer.
     ///
-    /// All properties are forwarded as-is. {@code ByteArraySerializer} is set for key and
-    /// value unless explicit serializers are already present. If a {@code client.id} is present,
-    /// {@code "-producer"} is appended to distinguish the producer from the consumer.
+    /// All properties are forwarded as-is. `ByteArraySerializer` is set for key and
+    /// value unless explicit serializers are already present. If a `client.id` is present,
+    /// `"-producer"` is appended to distinguish the producer from the consumer.
     ///
     /// @param props the Kafka producer properties (or consumer properties to derive from)
     /// @return this builder instance for method chaining
@@ -121,8 +121,8 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     /// Builds a new [KPipeProducer].
     ///
     /// @return a new KPipeProducer instance
-    /// @throws NullPointerException if neither {@link #withProducer(Producer)} nor
-    ///     {@link #withProperties(Properties)} was called
+    /// @throws NullPointerException if neither [#withProducer(Producer)] nor
+    ///     [#withProperties(Properties)] was called
     public KPipeProducer<K, V> build() {
       if (producer != null) return new KPipeProducer<>(producer, false, metrics, tracer);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
