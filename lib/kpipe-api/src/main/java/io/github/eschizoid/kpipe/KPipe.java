@@ -10,6 +10,7 @@ import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HexFormat;
 import java.util.Map;
@@ -261,7 +262,7 @@ public final class KPipe {
 
   private static String renderBytes(final byte[] value) {
     if (looksLikeText(value)) return new String(value, StandardCharsets.UTF_8);
-    final var preview = value.length > 64 ? java.util.Arrays.copyOf(value, 64) : value;
+    final var preview = value.length > 64 ? Arrays.copyOf(value, 64) : value;
     final var suffix = value.length > 64 ? "...(%d bytes total)".formatted(value.length) : "";
     return "0x%s%s".formatted(HexFormat.of().formatHex(preview), suffix);
   }

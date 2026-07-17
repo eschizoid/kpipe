@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.producer.config;
 
 import java.util.Properties;
 import java.util.function.UnaryOperator;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
 
 /// A utility class for creating and customizing Kafka producer configuration properties.
 ///
@@ -70,8 +71,8 @@ public final class KafkaProducerConfig {
   ) {
     final var props = new Properties();
     props.put("bootstrap.servers", bootstrapServers);
-    props.put("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-    props.put("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
+    props.put("key.serializer", ByteArraySerializer.class.getName());
+    props.put("value.serializer", ByteArraySerializer.class.getName());
     props.put("acks", "1");
 
     return customizer != null ? customizer.apply(props) : props;
@@ -215,8 +216,8 @@ public final class KafkaProducerConfig {
     ///
     /// @return This builder for chaining
     public ProducerConfigBuilder withByteArraySerializers() {
-      props.put("key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-      props.put("value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
+      props.put("key.serializer", ByteArraySerializer.class.getName());
+      props.put("value.serializer", ByteArraySerializer.class.getName());
       return this;
     }
 
