@@ -43,9 +43,10 @@ import org.openjdk.jcstress.infra.results.II_Result;
 @State
 public class BackpressureHandshakeJCStressTest {
 
-  private static final ConsumerHealthController.Hook NOOP_HOOK = new NoopHook();
+  private static final NoopHook NOOP_HOOK = new NoopHook();
 
-  private final ConsumerHealthController health = new ConsumerHealthController(null, null, null, NOOP_HOOK);
+  private final ConsumerHealthController health =
+    new ConsumerHealthController(null, null, null, NOOP_HOOK, NOOP_HOOK);
   private final AtomicLong inFlight = new AtomicLong(1);
 
   /// Consumer-thread side: publish the pause bit, then run the lost-wakeup guard's re-read of
@@ -66,7 +67,8 @@ public class BackpressureHandshakeJCStressTest {
 
   /// Side-effect-free hook: the stress test exercises only the pause mask, never the pause /
   /// resume choreography, so every callback is a no-op.
-  private static final class NoopHook implements ConsumerHealthController.Hook {
+  private static final class NoopHook
+    implements ConsumerHealthController.PauseLifecycleHook, ConsumerHealthController.HealthMetricsObserver {
 
     @Override
     public void onPause() {}
