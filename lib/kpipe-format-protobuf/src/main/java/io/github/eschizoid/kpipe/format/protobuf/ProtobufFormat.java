@@ -5,6 +5,7 @@ import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
+import io.github.eschizoid.kpipe.registry.ConfluentEnvelope;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.registry.WireDiagnostics;
@@ -45,11 +46,6 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// The resolver caches the `.proto` text; this caches the compiled [Descriptor] so a repeat
   /// (id, index) pair skips both the lookup and the compile. Null in static mode.
   private final ConcurrentHashMap<DescriptorKey, Descriptor> resolvedDescriptors;
-
-  /// Confluent wire envelope: 1-byte magic (0x00) + 4-byte big-endian schema id, then the
-  /// message-index array.
-  private static final byte CONFLUENT_MAGIC = 0x00;
-  private static final int MAGIC_AND_ID_LENGTH = 5;
 
   /// The `[0]` path — Confluent's single-`0x00`-byte shorthand for "the first top-level message".
   private static final int[] FIRST_MESSAGE_INDEX = { 0 };
@@ -174,16 +170,12 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// followed by `size` zig-zag varint path elements — with the shorthand that `size == 0` means
   /// the array `[0]` (the first top-level message), the common single-message case.
   private Message deserializeFromEnvelope(final byte[] data) {
-    if (data.length < MAGIC_AND_ID_LENGTH + 1) throw new IllegalStateException(
+    if (data.length < ConfluentEnvelope.HEADER_LENGTH + 1) throw new IllegalStateException(
       "Record too short for Confluent Protobuf wire envelope: " + data.length + " bytes; expected at least 6"
     );
-    if (data[0] != CONFLUENT_MAGIC) throw new IllegalStateException(
-      "Unexpected magic byte 0x%02x; expected 0x00 (Confluent Schema Registry envelope)".formatted(data[0] & 0xff)
-    );
-    final int schemaId =
-      ((data[1] & 0xff) << 24) | ((data[2] & 0xff) << 16) | ((data[3] & 0xff) << 8) | (data[4] & 0xff);
+    final int schemaId = ConfluentEnvelope.readSchemaId(data);
 
-    final var cursor = new VarintCursor(data, MAGIC_AND_ID_LENGTH);
+    final var cursor = new VarintCursor(data, ConfluentEnvelope.HEADER_LENGTH);
     final var size = cursor.readZigZagVarint();
     final int[] messageIndex;
     if (size == 0) {
