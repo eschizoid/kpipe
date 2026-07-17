@@ -102,8 +102,8 @@ For the 5-line fluent path (recommended), pull `kpipe-api` plus the format modul
 
 ```kotlin
 // Gradle (Kotlin) — JSON via the fluent API
-implementation("io.github.eschizoid:kpipe-api:1.15.0")
-implementation("io.github.eschizoid:kpipe-format-json:1.15.0")
+implementation("io.github.eschizoid:kpipe-api:1.17.0")
+implementation("io.github.eschizoid:kpipe-format-json:1.17.0")
 ```
 
 `kpipe-api` transitively pulls `kpipe-consumer` + `kpipe-producer` + `kpipe-core`. Skip `kpipe-api` only if you want the
@@ -134,7 +134,7 @@ snippets are in the catalog below.
 **Gradle (Kotlin) with BOM**
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.15.0"))
+implementation(platform("io.github.eschizoid:kpipe-bom:1.17.0"))
 implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")
 // add kpipe-metrics-otel only if you want OpenTelemetry-backed metrics
@@ -149,7 +149,7 @@ implementation("io.github.eschizoid:kpipe-metrics-otel")
     <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe-bom</artifactId>
-      <version>1.15.0</version>
+      <version>1.17.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -168,7 +168,7 @@ implementation("io.github.eschizoid:kpipe-metrics-otel")
 </dependencies>
 ```
 
-Gradle (Groovy) and SBT users: the same coordinates apply — `io.github.eschizoid:kpipe-*:1.15.0`.
+Gradle (Groovy) and SBT users: the same coordinates apply — `io.github.eschizoid:kpipe-*:1.17.0`.
 
 </details>
 
@@ -526,7 +526,7 @@ on produce and on DLQ writes. The implementation lives in the opt-in `kpipe-trac
 `kpipe-consumer` are dependency-free, you bring the OTel SDK at runtime.
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe-tracing-otel:1.15.0")
+implementation("io.github.eschizoid:kpipe-tracing-otel:1.17.0")
 ```
 
 ```java
@@ -639,7 +639,7 @@ writer's schema, caches it by ID, and decodes the remaining bytes against it. Th
 the way a static-fetch-at-startup pattern would.
 
 ```kotlin
-implementation("io.github.eschizoid:kpipe-schema-registry-confluent:1.15.0")
+implementation("io.github.eschizoid:kpipe-schema-registry-confluent:1.17.0")
 ```
 
 ```java
