@@ -1,6 +1,8 @@
 package io.github.eschizoid.kpipe.schemaregistry.confluent;
 
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -33,6 +35,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /// final var format = AvroFormat.withRegistry(cached);  // per-record auto-lookup
 /// ```
 public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable {
+
+  private static final Logger LOGGER = System.getLogger(CachedSchemaResolver.class.getName());
 
   private final SchemaResolver delegate;
   private final ConcurrentHashMap<Integer, String> cache = new ConcurrentHashMap<>();
@@ -87,6 +91,7 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
       try {
         closeable.close();
       } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Failed to close delegate resolver", e);
         throw new RuntimeException("Failed to close delegate resolver", e);
       }
     }

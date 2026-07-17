@@ -8,6 +8,8 @@ import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
+import io.github.eschizoid.kpipe.sink.BatchPolicy;
+import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Properties;
@@ -118,6 +120,35 @@ class KPipeFacadeBuildTest {
         .withProcessingMode(ProcessingMode.PARALLEL)
         .toCustom(_ -> {})
     );
+  }
+
+  @Test
+  void sinkStartIsSingleShot() {
+    // A Sink is single-shot — a second start() must throw rather than silently spin up a second
+    // live consumer. The first start() opens a lazy KafkaConsumer (no broker connection at
+    // construction) and returns immediately; close it before asserting so no thread leaks.
+    final var sink = KPipe.json("topic", props()).toCustom(_ -> {});
+    try (final var handle = sink.start()) {
+      final var ex = assertThrows(IllegalStateException.class, sink::start);
+      assertTrue(
+        ex.getMessage().contains("single-shot"),
+        () -> "message should explain the single-shot contract: " + ex.getMessage()
+      );
+    }
+  }
+
+  @Test
+  void batchSinkStartIsSingleShot() {
+    final var sink = KPipe.json("topic", props())
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .toBatch(BatchSink.ofVoid(_ -> {}), new BatchPolicy(10, Duration.ofSeconds(1)));
+    try (final var handle = sink.start()) {
+      final var ex = assertThrows(IllegalStateException.class, sink::start);
+      assertTrue(
+        ex.getMessage().contains("single-shot"),
+        () -> "message should explain the single-shot contract: " + ex.getMessage()
+      );
+    }
   }
 
   @Test

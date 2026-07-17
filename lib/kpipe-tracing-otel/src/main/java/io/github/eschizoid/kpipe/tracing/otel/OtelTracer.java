@@ -16,6 +16,7 @@ import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
@@ -130,7 +131,7 @@ public final class OtelTracer implements Tracer {
 
     private final Span span;
     private final Scope scope;
-    private volatile boolean closed = false;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     OtelSpanScope(final Span span, final Scope scope) {
       this.span = span;
@@ -139,7 +140,7 @@ public final class OtelTracer implements Tracer {
 
     @Override
     public void recordException(final Throwable t) {
-      if (closed || t == null) return;
+      if (closed.get() || t == null) return;
       try {
         span.recordException(t);
         span.setStatus(StatusCode.ERROR, t.getClass().getSimpleName());
@@ -150,8 +151,7 @@ public final class OtelTracer implements Tracer {
 
     @Override
     public void close() {
-      if (closed) return;
-      closed = true;
+      if (!closed.compareAndSet(false, true)) return;
       // Always detach the Context (scope) before ending the span; otherwise a subsequent
       // injection on the same carrier thread would read a stale span.
       try {
