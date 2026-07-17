@@ -4,7 +4,7 @@ package io.github.eschizoid.kpipe;
 /// pipeline but has not started consuming yet — call [#start] to launch the underlying KPipe
 /// consumer and obtain a runtime [Handle].
 ///
-/// A `Sink<T>` is single-shot: calling `start()` more than once produces undefined behavior
+/// A `Sink<T>` is single-shot: calling `start()` a second time throws `IllegalStateException`
 /// (the underlying consumer cannot be restarted). To run multiple pipelines, build separate
 /// `Sink<T>` instances from independent `Stream<T>` chains.
 ///
@@ -23,5 +23,6 @@ public interface Sink<T> {
   /// hook via `KPipeConsumerBuilder.withShutdownHook(true)` on the explicit-API path.
   ///
   /// @return a [Handle] for monitoring and shutdown
+  /// @throws IllegalStateException if `start()` has already been called on this sink (single-shot)
   Handle start();
 }
