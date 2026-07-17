@@ -6,7 +6,6 @@ import io.github.eschizoid.kpipe.consumer.OffsetState;
 import io.github.eschizoid.kpipe.consumer.OffsetStatistics;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
@@ -15,7 +14,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Properties;
 import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -208,10 +206,7 @@ public final class CrashRestartHarness<T> {
     final var count = toExclusive - fromOffset;
     final var sink = new CapturingSink<T>();
 
-    final var pipelineBuilder = new MessageProcessorRegistry().pipeline(format);
-    for (final var op : operators) pipelineBuilder.add(op);
-    if (batchMaxSize == 0) pipelineBuilder.toSink(sink);
-    final var pipeline = pipelineBuilder.build();
+    final var pipeline = TestKitSupport.pipeline(format, operators, batchMaxSize == 0 ? sink : null);
 
     final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
@@ -229,7 +224,7 @@ public final class CrashRestartHarness<T> {
     }
 
     final var consumerBuilder = KPipeConsumer.builder()
-      .withProperties(props())
+      .withProperties(TestKitSupport.props("kpipe-crash-restart"))
       .withProcessingMode(processingMode)
       .withConsumer(() -> mock)
       .withOffsetManager(new NoCommitOffsetManager())
@@ -270,18 +265,6 @@ public final class CrashRestartHarness<T> {
       }
     }
     throw new AssertionError("crash-restart phase timed out awaiting " + target + " records: " + consumer.getMetrics());
-  }
-
-  /// Minimal, never-contacted config — the `MockConsumer` supplier bypasses the real
-  /// client, so only the properties object's presence matters.
-  private static Properties props() {
-    final var p = new Properties();
-    p.put("bootstrap.servers", "localhost:9092");
-    p.put("group.id", "kpipe-crash-restart");
-    p.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-    p.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-    p.put("enable.auto.commit", "false");
-    return p;
   }
 
   /// An [OffsetManager] that never commits: `trackOffset` / `markOffsetProcessed` are

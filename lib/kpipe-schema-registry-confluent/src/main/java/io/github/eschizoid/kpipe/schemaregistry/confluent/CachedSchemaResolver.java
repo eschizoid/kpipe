@@ -85,6 +85,11 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
     return cache.size();
   }
 
+  /// Closes the delegate resolver when it is [AutoCloseable]; a no-op otherwise. The cache
+  /// itself holds no closeable resources.
+  ///
+  /// @throws RuntimeException if the delegate's close fails — the failure is logged at WARNING
+  ///     and then rethrown wrapped, so callers still observe it
   @Override
   public void close() {
     if (delegate instanceof AutoCloseable closeable) {

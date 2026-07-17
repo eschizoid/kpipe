@@ -11,6 +11,10 @@ import java.util.function.UnaryOperator;
 /// This class provides a unified way to track invocations, errors, and processing time for both
 /// [UnaryOperator] and [MessageSink] implementations.
 ///
+/// Processing time is recorded only on success: a failed invocation increments `errorCount` and
+/// skips both the invocation count and the timing accumulator, so `averageProcessingTimeMs`
+/// reflects successful executions only and is not biased by errors.
+///
 /// @param <T> The type of the value being registered (e.g., UnaryOperator or MessageSink)
 class RegistryEntry<T> {
 

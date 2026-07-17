@@ -42,7 +42,9 @@ import java.util.function.LongSupplier;
 /// `LongSupplier` rather than a concrete `CachedSchemaResolver` type so this module stays
 /// independent of `kpipe-schema-registry-confluent`.
 ///
-/// Lifecycle. The pipeline-outcome counters are synchronous and need no teardown. The optional
+/// Lifecycle. No start/stop is needed: construct, pass to `peekResult`, and optionally call
+/// [#close()] to unregister the Schema-Registry cache instruments when discarding the observer.
+/// The pipeline-outcome counters are synchronous and need no teardown. The optional
 /// Schema-Registry cache instruments are **asynchronous** — the OTel SDK strongly retains their
 /// callbacks until the instrument is closed. The observer is [AutoCloseable]: call [#close()]
 /// when discarding it so those callbacks stop firing. Re-binding closes the previous cache
