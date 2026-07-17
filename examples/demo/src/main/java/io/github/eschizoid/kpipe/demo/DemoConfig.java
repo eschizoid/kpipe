@@ -1,7 +1,5 @@
 package io.github.eschizoid.kpipe.demo;
 
-import java.time.Duration;
-
 /// Configuration for the demo application with all three pipeline topics.
 ///
 /// @param bootstrapServers Kafka bootstrap servers
@@ -10,19 +8,13 @@ import java.time.Duration;
 /// @param jsonTopic Topic for JSON messages
 /// @param avroTopic Topic for Avro messages
 /// @param protoTopic Topic for Protobuf messages
-/// @param pollTimeout Poll timeout duration
-/// @param shutdownTimeout Shutdown timeout duration
-/// @param metricsInterval Metrics reporting interval
 public record DemoConfig(
   String bootstrapServers,
   String consumerGroup,
   String schemaRegistryUrl,
   String jsonTopic,
   String avroTopic,
-  String protoTopic,
-  Duration pollTimeout,
-  Duration shutdownTimeout,
-  Duration metricsInterval
+  String protoTopic
 ) {
   private static final String DEFAULT_SCHEMA_REGISTRY_URL = "http://schema-registry:8081";
 
@@ -34,10 +26,7 @@ public record DemoConfig(
       env("SCHEMA_REGISTRY_URL", DEFAULT_SCHEMA_REGISTRY_URL),
       env("JSON_TOPIC", "json-topic"),
       env("AVRO_TOPIC", "avro-topic"),
-      env("PROTO_TOPIC", "proto-topic"),
-      Duration.ofMillis(Long.parseLong(env("KAFKA_POLL_TIMEOUT_MS", "100"))),
-      Duration.ofSeconds(Long.parseLong(env("SHUTDOWN_TIMEOUT_SEC", "30"))),
-      Duration.ofSeconds(Long.parseLong(env("METRICS_INTERVAL_SEC", "60")))
+      env("PROTO_TOPIC", "proto-topic")
     );
   }
 

@@ -23,7 +23,7 @@ import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
-import io.github.eschizoid.kpipe.sink.MessageSink;
+import io.github.eschizoid.kpipe.test.CapturingSink;
 import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 import java.util.Collection;
@@ -32,7 +32,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -95,8 +94,7 @@ class AppIntegrationTest {
       return CUSTOMER_PROTO;
     };
 
-    final var captured = new CopyOnWriteArrayList<Message>();
-    final MessageSink<Message> capturingSink = captured::add;
+    final var capturingSink = new CapturingSink<Message>();
     final var pipeline = new MessageProcessorRegistry()
       .pipeline(ProtobufFormat.withRegistry(resolver))
       .toSink(capturingSink)
@@ -118,9 +116,9 @@ class AppIntegrationTest {
 
     try {
       consumer.start();
-      awaitCondition(() -> !captured.isEmpty() && offsetManager.marked.contains(0L), 10_000);
+      awaitCondition(() -> capturingSink.count() > 0 && offsetManager.marked.contains(0L), 10_000);
 
-      final var decoded = captured.getFirst();
+      final var decoded = capturingSink.captured().getFirst();
       final var desc = decoded.getDescriptorForType();
       assertAll(
         () -> assertEquals("Customer", desc.getName(), "decoded the writer message type resolved from the envelope"),

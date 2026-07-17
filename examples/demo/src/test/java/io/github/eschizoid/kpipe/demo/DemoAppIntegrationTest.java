@@ -46,10 +46,7 @@ class DemoAppIntegrationTest {
       "http://localhost:8081", // unused — formats built above
       "json-test-topic",
       "avro-test-topic",
-      "proto-test-topic",
-      Duration.ofMillis(100),
-      Duration.ofSeconds(5),
-      Duration.ofSeconds(60)
+      "proto-test-topic"
     );
 
     try (final var _ = new DemoApp(config, avroFormat, protoFormat)) {

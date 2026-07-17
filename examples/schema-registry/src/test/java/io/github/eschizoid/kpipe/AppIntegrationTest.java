@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
-import io.github.eschizoid.kpipe.sink.MessageSink;
+import io.github.eschizoid.kpipe.test.CapturingSink;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -90,8 +89,7 @@ class AppIntegrationTest {
       format = AvroFormat.of(fetched);
     }
 
-    final var captured = new CopyOnWriteArrayList<GenericRecord>();
-    final MessageSink<GenericRecord> capturingSink = captured::add;
+    final var capturingSink = new CapturingSink<GenericRecord>();
 
     try (
       final var handle = KPipe.avro(topic, consumerProps(), format)
@@ -106,8 +104,9 @@ class AppIntegrationTest {
       }
 
       final var deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
-      while (System.nanoTime() < deadline && captured.size() < 2) TimeUnit.MILLISECONDS.sleep(100);
+      while (System.nanoTime() < deadline && capturingSink.count() < 2) TimeUnit.MILLISECONDS.sleep(100);
 
+      final var captured = capturingSink.captured();
       assertEquals(2, captured.size(), "consumer should have received both Avro records");
       assertEquals(1L, captured.get(0).get("id"));
       assertEquals("alice", captured.get(0).get("name").toString());

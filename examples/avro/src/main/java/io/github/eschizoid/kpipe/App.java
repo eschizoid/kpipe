@@ -11,6 +11,23 @@ import java.lang.System.Logger.Level;
 /// Reads `AppConfig` from environment, fetches the `com.kpipe.customer` schema from the registry
 /// URL, and starts a `KPipe.avro(...)` stream that strips the 5-byte Confluent envelope before
 /// decoding.
+///
+/// ## Static-fetch footgun (this example is the deliberately UNSAFE path)
+///
+/// The `AvroFormat.of(resolver.lookupBySubjectVersion(...))` call below fetches ONE schema at
+/// startup and then decodes every record against it, forever — the schema id in each record's
+/// 5-byte wire envelope is thrown away by `skipBytes(5)`. This is fine only while the producer
+/// never rolls the schema. The moment a producer writes with an evolved v2 (a field removed,
+/// promoted, or a union reordered under FORWARD compatibility), those v2 bytes are silently
+/// mis-decoded against the frozen v1 reader — extra fields bleed into the next field, or offsets
+/// shift — and the corruption is invisible because deserialization still "succeeds".
+///
+/// For per-record correctness use registry mode instead:
+/// `KPipe.avro(topic, props, resolver)`. It reads the schema id from each record's envelope,
+/// looks the writer schema up (cached by id, immutable in SR), and projects to the reader schema
+/// via Avro's schema-resolution rules — so schema evolution decodes correctly. Registry mode reads
+/// the envelope itself, so drop the `skipBytes(5)` when you switch. This example keeps the static
+/// path on purpose to demonstrate the fetch-at-startup shape and its hazard.
 public final class App {
 
   private static final Logger LOGGER = System.getLogger(App.class.getName());

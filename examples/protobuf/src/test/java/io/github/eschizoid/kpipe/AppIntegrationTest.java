@@ -9,12 +9,10 @@ import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.producer.config.KafkaProducerConfig;
-import io.github.eschizoid.kpipe.sink.MessageSink;
+import io.github.eschizoid.kpipe.test.CapturingSink;
 import java.time.Duration;
-import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -47,8 +45,7 @@ class AppIntegrationTest {
   @Test
   void testProtobufAppEndToEnd() throws Exception {
     final var topic = "protobuf-topic-" + UUID.randomUUID().toString().substring(0, 8);
-    final var captured = new CopyOnWriteArrayList<Message>();
-    final MessageSink<Message> capturingSink = captured::add;
+    final var capturingSink = new CapturingSink<Message>();
 
     final var descriptor = format.descriptor();
 
@@ -72,9 +69,9 @@ class AppIntegrationTest {
         .build()
         .toByteArray();
 
-      produceUntilConsumed(topic, payload, captured, Duration.ofSeconds(15));
+      produceUntilConsumed(topic, payload, capturingSink, Duration.ofSeconds(15));
 
-      final var processed = captured.getFirst();
+      final var processed = capturingSink.captured().getFirst();
       final var desc = processed.getDescriptorForType();
       assertAll(
         () -> assertEquals(1L, processed.getField(desc.findFieldByName("id"))),
@@ -101,7 +98,7 @@ class AppIntegrationTest {
   private static void produceUntilConsumed(
     final String topic,
     final byte[] payload,
-    final List<?> sink,
+    final CapturingSink<?> sink,
     final Duration timeout
   ) throws Exception {
     final var producerProps = KafkaProducerConfig.createProducerConfig(kafka.getBootstrapServers());
@@ -109,7 +106,7 @@ class AppIntegrationTest {
     try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps)) {
       while (System.nanoTime() < deadline) {
         producer.send(new ProducerRecord<>(topic, payload)).get();
-        if (!sink.isEmpty()) return;
+        if (sink.count() > 0) return;
         TimeUnit.MILLISECONDS.sleep(250);
       }
     }

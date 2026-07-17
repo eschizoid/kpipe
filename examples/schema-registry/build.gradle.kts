@@ -14,4 +14,6 @@ dependencies {
   implementation(project(":lib:kpipe-format-avro"))
   implementation(project(":lib:kpipe-schema-registry-confluent"))
   implementation(rootProject.libs.avro)
+
+  testImplementation(project(":lib:kpipe-test"))
 }
