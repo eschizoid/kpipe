@@ -448,8 +448,12 @@ public class KPipeConsumer implements AutoCloseable {
         otelMetrics.recordProcessingError(record.topic());
         health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
-        // Mirror the per-record path: mark the offset only after a successful DLQ send.
-        // A failed send leaves it pending so the record is reprocessed, never dropped.
+        // LOCKSTEP: mirror of the per-record path's DLQ-or-mark block in handleProcessingError —
+        // mark the offset only after a successful DLQ send; a failed send leaves it pending so
+        // the record is reprocessed, never dropped. Deliberately duplicated (the paths differ on
+        // span handling, retry counts, and circuit-breaker ordering — recordOutcome runs BEFORE
+        // this block here, AFTER it on the per-record path). Any change here must be mirrored
+        // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
         if (deadLetterTopic != null && kpipeProducer != null) {
           if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause)) {
             metrics.get(METRIC_DLQ_SENT).incrementAndGet();
@@ -1348,6 +1352,12 @@ public class KPipeConsumer implements AutoCloseable {
       // the record is re-fetched (and the DLQ retried) on the next restart or partition
       // reassignment. A down DLQ stalls the commit point rather than silently dropping data
       // (the fetch position races ahead in-memory; this is a commit stall, not a pause).
+      //
+      // LOCKSTEP: this DLQ-or-mark block is deliberately duplicated in the batch wrapper's
+      // onBatchFailure callback — the two paths differ on span handling, retry counts, and
+      // circuit-breaker ordering (recordOutcome runs AFTER this block here, BEFORE it on the
+      // batch path), so a shared helper would blur those. Any change here must be mirrored
+      // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
       if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e)) {
         metrics.get(METRIC_DLQ_SENT).incrementAndGet();
         markOffsetProcessed(record);
