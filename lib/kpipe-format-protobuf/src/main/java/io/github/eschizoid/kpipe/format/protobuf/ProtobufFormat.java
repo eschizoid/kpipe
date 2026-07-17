@@ -182,23 +182,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
     final int schemaId = ConfluentEnvelope.readSchemaId(data);
 
     final var cursor = new VarintCursor(data, ConfluentEnvelope.HEADER_LENGTH);
-    final var size = cursor.readZigZagVarint();
-    final int[] messageIndex;
-    if (size == 0) {
-      messageIndex = FIRST_MESSAGE_INDEX;
-    } else if (size < 0) {
-      throw new IllegalStateException("Negative message-index size " + size + " for schema id " + schemaId);
-    } else if (size > data.length - cursor.offset()) {
-      // Each index entry needs at least one byte, so a size larger than the bytes that remain is a
-      // corrupt envelope — reject before allocating (guards against a huge int[] from a bad
-      // varint).
-      throw new IllegalStateException(
-        "Message-index size " + size + " exceeds remaining envelope bytes for schema id " + schemaId
-      );
-    } else {
-      messageIndex = new int[size];
-      for (var i = 0; i < size; i++) messageIndex[i] = cursor.readZigZagVarint();
-    }
+    final var messageIndex = readMessageIndex(cursor, data, schemaId);
     final var payloadOffset = cursor.offset();
 
     final var messageDescriptor = resolvedDescriptors.computeIfAbsent(
@@ -221,6 +205,34 @@ public final class ProtobufFormat implements MessageFormat<Message> {
         e
       );
     }
+  }
+
+  /// Reads the Confluent message-index array at the cursor: a zig-zag varint `size` followed by
+  /// `size` zig-zag varint path elements, with the `size == 0` shorthand meaning the array `[0]`
+  /// (first top-level message — the common single-message case). Advances `cursor` past the array,
+  /// leaving it at the payload offset.
+  ///
+  /// @param cursor   positioned at the start of the message-index array; advanced past it
+  /// @param data     the full record bytes (for the remaining-length bound check)
+  /// @param schemaId the envelope's schema id, for diagnostics only
+  /// @return the message-index path
+  /// @throws IllegalStateException on a negative size or a size exceeding the remaining bytes
+  ///     (each index entry needs at least one byte, so a larger size is a corrupt envelope —
+  ///     rejected before allocating, guarding against a huge `int[]` from a bad varint)
+  private static int[] readMessageIndex(final VarintCursor cursor, final byte[] data, final int schemaId) {
+    final var size = cursor.readZigZagVarint();
+    if (size == 0) return FIRST_MESSAGE_INDEX;
+    if (size < 0) {
+      throw new IllegalStateException("Negative message-index size " + size + " for schema id " + schemaId);
+    }
+    if (size > data.length - cursor.offset()) {
+      throw new IllegalStateException(
+        "Message-index size " + size + " exceeds remaining envelope bytes for schema id " + schemaId
+      );
+    }
+    final var messageIndex = new int[size];
+    for (var i = 0; i < size; i++) messageIndex[i] = cursor.readZigZagVarint();
+    return messageIndex;
   }
 
   /// Reads Kafka-style zig-zag varints from a byte array — the encoding Confluent uses for the

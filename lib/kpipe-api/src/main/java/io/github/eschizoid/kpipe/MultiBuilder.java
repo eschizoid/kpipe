@@ -133,7 +133,7 @@ public final class MultiBuilder {
   /// @param backoff delay between attempts (must be non-null)
   /// @return this builder
   public MultiBuilder withRetry(final int maxRetries, final Duration backoff) {
-    if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative");
+    if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative, got " + maxRetries);
     this.maxRetries = maxRetries;
     this.retryBackoff = Objects.requireNonNull(backoff, "backoff cannot be null");
     return this;
@@ -183,7 +183,9 @@ public final class MultiBuilder {
   /// @param dlqTopic the dead-letter topic (must be non-null and non-blank)
   /// @return this builder
   public MultiBuilder withDeadLetterTopic(final String dlqTopic) {
-    if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException("dlqTopic cannot be null or blank");
+    if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException(
+      "dlqTopic cannot be null or blank, got '" + dlqTopic + "'"
+    );
     this.deadLetterTopic = dlqTopic;
     return this;
   }

@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.consumer.config;
 
 import java.util.Properties;
 import java.util.function.UnaryOperator;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
 /// A utility class for creating and customizing Kafka consumer configuration properties.
 ///
@@ -41,6 +42,14 @@ import java.util.function.UnaryOperator;
 /// ```
 public final class KafkaConsumerConfig {
 
+  // The Kafka property keys this class writes, named once. The deserializer default is derived
+  // from the class itself (refactor-safe, compile-checked) rather than a hand-typed FQCN string.
+  private static final String BOOTSTRAP_SERVERS = "bootstrap.servers";
+  private static final String GROUP_ID = "group.id";
+  private static final String KEY_DESERIALIZER = "key.deserializer";
+  private static final String VALUE_DESERIALIZER = "value.deserializer";
+  private static final String ENABLE_AUTO_COMMIT = "enable.auto.commit";
+
   private KafkaConsumerConfig() {}
 
   /// Creates configuration properties for a Kafka consumer with customization.
@@ -76,12 +85,14 @@ public final class KafkaConsumerConfig {
     final String groupId,
     final UnaryOperator<Properties> customizer
   ) {
+    requireNonBlank(bootstrapServers, "bootstrapServers");
+    requireNonBlank(groupId, "groupId");
     final var props = new Properties();
-    props.put("bootstrap.servers", bootstrapServers);
-    props.put("group.id", groupId);
-    props.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-    props.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-    props.put("enable.auto.commit", "true");
+    props.put(BOOTSTRAP_SERVERS, bootstrapServers);
+    props.put(GROUP_ID, groupId);
+    props.put(KEY_DESERIALIZER, ByteArrayDeserializer.class.getName());
+    props.put(VALUE_DESERIALIZER, ByteArrayDeserializer.class.getName());
+    props.put(ENABLE_AUTO_COMMIT, "true");
 
     return customizer != null ? customizer.apply(props) : props;
   }
@@ -127,8 +138,8 @@ public final class KafkaConsumerConfig {
     return props -> {
       final var newProps = new Properties();
       newProps.putAll(props);
-      newProps.put("key.deserializer", keyDeserializer);
-      newProps.put("value.deserializer", valueDeserializer);
+      newProps.put(KEY_DESERIALIZER, keyDeserializer);
+      newProps.put(VALUE_DESERIALIZER, valueDeserializer);
       return newProps;
     };
   }
@@ -150,7 +161,7 @@ public final class KafkaConsumerConfig {
     return props -> {
       final var newProps = new Properties();
       newProps.putAll(props);
-      newProps.put("enable.auto.commit", "false");
+      newProps.put(ENABLE_AUTO_COMMIT, "false");
       return newProps;
     };
   }
@@ -213,6 +224,14 @@ public final class KafkaConsumerConfig {
   ///     .withAutoCommit(false)
   ///     .build();
   /// ```
+  /// Rejects null or blank required strings with the offending value in the message — a blank
+  /// bootstrap-servers or group id otherwise surfaces much later as a cryptic broker error.
+  private static void requireNonBlank(final String value, final String name) {
+    if (value == null || value.isBlank()) throw new IllegalArgumentException(
+      name + " cannot be null or blank, got '" + value + "'"
+    );
+  }
+
   public static class ConsumerConfigBuilder {
 
     private ConsumerConfigBuilder() {}
@@ -224,7 +243,8 @@ public final class KafkaConsumerConfig {
     /// @param bootstrapServers Comma-separated list of host:port pairs
     /// @return This builder for chaining
     public ConsumerConfigBuilder withBootstrapServers(final String bootstrapServers) {
-      props.put("bootstrap.servers", bootstrapServers);
+      requireNonBlank(bootstrapServers, "bootstrapServers");
+      props.put(BOOTSTRAP_SERVERS, bootstrapServers);
       return this;
     }
 
@@ -233,7 +253,8 @@ public final class KafkaConsumerConfig {
     /// @param groupId The consumer group ID
     /// @return This builder for chaining
     public ConsumerConfigBuilder withGroupId(final String groupId) {
-      props.put("group.id", groupId);
+      requireNonBlank(groupId, "groupId");
+      props.put(GROUP_ID, groupId);
       return this;
     }
 
@@ -241,8 +262,8 @@ public final class KafkaConsumerConfig {
     ///
     /// @return This builder for chaining
     public ConsumerConfigBuilder withByteArrayDeserializers() {
-      props.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-      props.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+      props.put(KEY_DESERIALIZER, ByteArrayDeserializer.class.getName());
+      props.put(VALUE_DESERIALIZER, ByteArrayDeserializer.class.getName());
       return this;
     }
 
@@ -251,7 +272,7 @@ public final class KafkaConsumerConfig {
     /// @param enable True to enable auto-commit, false to disable
     /// @return This builder for chaining
     public ConsumerConfigBuilder withAutoCommit(final boolean enable) {
-      props.put("enable.auto.commit", Boolean.toString(enable));
+      props.put(ENABLE_AUTO_COMMIT, Boolean.toString(enable));
       return this;
     }
 
