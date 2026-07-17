@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe.registry;
 import java.util.HexFormat;
 
 /// Cross-cutting helpers for rendering leading bytes in wire-level failure messages. One home so the
-/// pipeline boundary ([PipelineDiagnostics]) and the format modules (JSON/Avro/Protobuf) render byte
+/// pipeline boundary (`PipelineDiagnostics`) and the format modules (JSON/Avro/Protobuf) render byte
 /// previews the same way instead of each hand-rolling — and drifting on — its own copy.
 ///
 /// Two presentations, deliberately distinct:

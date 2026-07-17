@@ -17,7 +17,7 @@ package io.github.eschizoid.kpipe.registry;
 ///     .toSink(b -> System.out.println(new String(b)))
 ///     .build();
 /// ```
-public final class BytesFormat implements MessageFormat<byte[]> {
+final class BytesFormat implements MessageFormat<byte[]> {
 
   static final BytesFormat INSTANCE = new BytesFormat();
 
