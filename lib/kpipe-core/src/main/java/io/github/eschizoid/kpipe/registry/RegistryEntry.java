@@ -2,7 +2,6 @@ package io.github.eschizoid.kpipe.registry;
 
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.UnaryOperator;
 
@@ -34,11 +33,10 @@ class RegistryEntry<T> {
     final long count = invocationCount.sum();
     final long errors = errorCount.sum();
     final long timeNs = totalProcessingTimeNs.sum();
-    final var metrics = new ConcurrentHashMap<String, Object>();
-    metrics.put("invocationCount", count);
-    metrics.put("errorCount", errors);
-    metrics.put("averageProcessingTimeMs", count > 0 ? (timeNs / count) / 1_000_000.0 : 0.0);
-    return metrics;
+    // Divide by (count * 1e6) in one step: `(timeNs / count) / 1e6` would integer-divide first and
+    // drop sub-millisecond precision.
+    final var averageProcessingTimeMs = count > 0 ? timeNs / (count * 1_000_000.0) : 0.0;
+    return Map.of("invocationCount", count, "errorCount", errors, "averageProcessingTimeMs", averageProcessingTimeMs);
   }
 
   /// Executes the entry as a UnaryOperator.
