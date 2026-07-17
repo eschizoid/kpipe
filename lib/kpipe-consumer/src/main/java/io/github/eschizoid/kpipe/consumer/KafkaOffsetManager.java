@@ -7,7 +7,6 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -79,26 +78,12 @@ public class KafkaOffsetManager implements OffsetManager {
 
   private final CommitCoordinator commitCoordinator = new CommitCoordinator();
 
-  /// Per-partition pending offsets: a sorted primitive-`long` window (`PendingOffsetSet`) rather
-  /// than a `ConcurrentSkipListSet<Long>`. The skiplist cost a `Long` box plus node/marker churn
-  /// on every track/mark; the primitive structure allocates nothing in steady state. All map
-  /// mutations keep the bucket-locked `compute` / `computeIfPresent` shapes below; the structure
-  /// itself is monitor-synchronized so commit-scheduler reads outside the bucket lock stay safe.
-  private final Map<TopicPartition, PendingOffsetSet> pendingOffsets = new ConcurrentHashMap<>();
-  private final Map<TopicPartition, Long> highestProcessedOffsets = new ConcurrentHashMap<>();
+  /// Per-partition offset bookkeeping — the pending windows, highest-processed marks, the interned
+  /// `TopicPartition` cache, and the single commit-frontier rule they feed. This manager owns
+  /// lifecycle, scheduling, commit I/O, and rebalance orchestration; the ledger owns everything
+  /// keyed by partition (see [OffsetLedger]).
+  private final OffsetLedger ledger = new OffsetLedger();
 
-  /// Per-partition `TopicPartition` cache used by `trackOffset` and `markOffsetProcessed`. Each
-  /// `ConsumerRecord` carries `topic()` (a `String`) + `partition()` (an `int`) — constructing a
-  /// fresh `TopicPartition` per call on every record allocates twice per record on the hot path
-  /// (track from the consumer thread, mark from the worker), which at 100k rec/s is ~200k
-  /// disposable instances/sec from this manager alone.
-  ///
-  /// The cache is keyed by topic name (outer map) then partition number (inner map) so the
-  /// outer-map miss path (one-time per topic) is small and the per-record fast path is two
-  /// `ConcurrentHashMap` lookups returning a stable, interned instance. Entries are evicted in
-  /// `onPartitionsRevoked` so a rebalance that hands a partition off doesn't leak the cached
-  /// instance — `onPartitionsAssigned` will repopulate on first record.
-  private final Map<String, Map<Integer, TopicPartition>> topicPartitionCache = new ConcurrentHashMap<>();
   private final Duration commitInterval;
   private volatile ScheduledExecutorService scheduler;
   private volatile ScheduledFuture<?> scheduledCommitTask;
@@ -216,18 +201,7 @@ public class KafkaOffsetManager implements OffsetManager {
   @Override
   public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {
     if (state.get() == OffsetState.STOPPED) return;
-    final var partition = cachedTopicPartition(record.topic(), record.partition());
-    final var offset = record.offset();
-    // The add must happen INSIDE the bucket-locked compute, not as a trailing .add() on the value
-    // computeIfAbsent returns. Otherwise the add races markOffsetProcessed's remove-if-empty: that
-    // path can empty the set and atomically drop the key, leaving a trailing .add() to land on an
-    // orphaned set no longer in the map — silently losing a pending offset and letting the commit
-    // point advance past an in-flight record. compute() holds the bucket lock across the add.
-    pendingOffsets.compute(partition, (_, set) -> {
-      final var pending = set == null ? new PendingOffsetSet() : set;
-      pending.add(offset);
-      return pending;
-    });
+    ledger.track(record.topic(), record.partition(), record.offset());
   }
 
   /// Marks an offset as successfully processed using a ConsumerRecord.
@@ -242,44 +216,7 @@ public class KafkaOffsetManager implements OffsetManager {
   @Override
   public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
     if (state.get() == OffsetState.STOPPED) return;
-    final var partition = cachedTopicPartition(record.topic(), record.partition());
-    final var offset = record.offset();
-
-    highestProcessedOffsets.compute(partition, (_, v) -> v == null ? offset : Math.max(v, offset));
-
-    pendingOffsets.computeIfPresent(partition, (_, set) -> {
-      set.remove(offset);
-      return set.isEmpty() ? null : set;
-    });
-  }
-
-  /// Returns a cached `TopicPartition` for the given `(topic, partition)` pair, allocating one
-  /// on first observation and reusing the same instance for every subsequent call. The fast
-  /// path is two `ConcurrentHashMap` lookups returning a stable instance, replacing two `new
-  /// TopicPartition(...)` allocations per record on the hot path.
-  ///
-  /// `computeIfAbsent` on the outer map atomicizes the inner-map creation; the inner-map
-  /// lambda closes over `topic` from the local rather than the `BiFunction`'s `t` argument, so
-  /// the `TopicPartition(topic, partition)` constructor sees the exact `String` reference the
-  /// caller passed (`String#intern` is not assumed — `TopicPartition.equals/hashCode` use
-  /// value equality and pooled inner-map entries don't depend on string identity).
-  private TopicPartition cachedTopicPartition(final String topic, final int partition) {
-    return topicPartitionCache
-      .computeIfAbsent(topic, _ -> new ConcurrentHashMap<>())
-      .computeIfAbsent(partition, p -> new TopicPartition(topic, p));
-  }
-
-  /// Evicts the cached `TopicPartition` for a revoked partition. Uses `computeIfPresent` on the
-  /// inner map so the inner-map removal and the outer-map cleanup are bucket-locked together —
-  /// a concurrent `cachedTopicPartition` call for a different partition under the same topic
-  /// cannot see a transient empty inner map and double-allocate. If the inner map becomes empty
-  /// after removal (last partition for a topic), the outer entry is dropped so the cache doesn't
-  /// retain stale topic keys across rebalances.
-  private void evictCachedTopicPartition(final TopicPartition partition) {
-    topicPartitionCache.computeIfPresent(partition.topic(), (_, inner) -> {
-      inner.remove(partition.partition());
-      return inner.isEmpty() ? null : inner;
-    });
+    ledger.markProcessed(record.topic(), record.partition(), record.offset());
   }
 
   /// Commits offsets that are safe to commit based on the current processing state.
@@ -340,29 +277,10 @@ public class KafkaOffsetManager implements OffsetManager {
   public boolean commitSyncAndWait(final Duration timeout) throws InterruptedException {
     if (state.get() == OffsetState.STOPPED) return true;
 
-    final var offsetsToCommit = prepareOffsetsToCommit();
+    final var offsetsToCommit = ledger.committableOffsets();
     if (offsetsToCommit.isEmpty()) return true;
 
     return performCommit(offsetsToCommit, timeout);
-  }
-
-  /// Prepares offsets for commit based on the current processing state. This method calculates the
-  /// offsets to commit at the time of commit, rather than maintaining them continuously.
-  ///
-  /// @return Map of partition to offset metadata ready for committing
-  private Map<TopicPartition, OffsetAndMetadata> prepareOffsetsToCommit() {
-    return Stream.concat(pendingOffsets.keySet().stream(), highestProcessedOffsets.keySet().stream())
-      .distinct()
-      .flatMap(partition -> {
-        final var pending = pendingOffsets.get(partition);
-        final var lowestPending = pending != null ? pending.firstOrNull() : null;
-        if (lowestPending != null) return Stream.of(Map.entry(partition, new OffsetAndMetadata(lowestPending)));
-        final var highestProcessed = highestProcessedOffsets.get(partition);
-        return highestProcessed != null
-          ? Stream.of(Map.entry(partition, new OffsetAndMetadata(highestProcessed + 1)))
-          : Stream.empty();
-      })
-      .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
   private boolean performCommit(final Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, final Duration timeout)
@@ -379,35 +297,7 @@ public class KafkaOffsetManager implements OffsetManager {
   /// @param partition The partition to get state for
   /// @return the partition's offset-tracking state
   public PartitionState getPartitionState(final TopicPartition partition) {
-    final var pending = pendingOffsets.get(partition);
-    final var highestProcessed = highestProcessedOffsets.get(partition);
-    final var lowestPending = pending != null ? pending.firstOrNull() : null;
-
-    final long nextOffsetToCommit;
-    if (lowestPending != null) {
-      nextOffsetToCommit = lowestPending;
-    } else if (highestProcessed != null) {
-      nextOffsetToCommit = highestProcessed + 1;
-    } else {
-      nextOffsetToCommit = -1L;
-    }
-
-    var lowestPendingOffset = OptionalLong.empty();
-    var highestPendingOffset = OptionalLong.empty();
-    if (pending != null && lowestPending != null) {
-      lowestPendingOffset = OptionalLong.of(lowestPending);
-      final var highestPending = pending.lastOrNull();
-      if (highestPending != null) highestPendingOffset = OptionalLong.of(highestPending);
-    }
-
-    return new PartitionState(
-      nextOffsetToCommit,
-      highestProcessed != null ? highestProcessed : -1L,
-      this.state.get(),
-      pending != null ? pending.size() : 0,
-      lowestPendingOffset,
-      highestPendingOffset
-    );
+    return ledger.partitionState(partition, state.get());
   }
 
   /// Returns typed overall statistics about all partitions being managed.
@@ -415,31 +305,7 @@ public class KafkaOffsetManager implements OffsetManager {
   /// @return statistics across all partitions
   @Override
   public OffsetStatistics getStatistics() {
-    final var allPartitions = new HashSet<TopicPartition>();
-    allPartitions.addAll(pendingOffsets.keySet());
-    allPartitions.addAll(highestProcessedOffsets.keySet());
-
-    final var totalPending = pendingOffsets.values().stream().mapToInt(PendingOffsetSet::size).sum();
-
-    final Map<TopicPartition, Long> byPartition;
-    final double average;
-    if (!highestProcessedOffsets.isEmpty()) {
-      byPartition = new HashMap<>(highestProcessedOffsets);
-      average = highestProcessedOffsets.values().stream().mapToLong(Long::longValue).average().orElse(0);
-    } else {
-      byPartition = Map.of();
-      average = 0.0;
-    }
-
-    return new OffsetStatistics(
-      allPartitions.size(),
-      totalPending,
-      highestProcessedOffsets.size(),
-      state.get(),
-      byPartition,
-      average,
-      commitCoordinator.pendingCount()
-    );
+    return ledger.statistics(state.get(), commitCoordinator.pendingCount());
   }
 
   /// Gets the current state of the KafkaOffsetManager.
@@ -468,7 +334,7 @@ public class KafkaOffsetManager implements OffsetManager {
     try {
       stopScheduler();
       try {
-        final var offsetsToCommit = prepareOffsetsToCommit();
+        final var offsetsToCommit = ledger.committableOffsets();
         if (!offsetsToCommit.isEmpty()) kafkaConsumer.commitSync(offsetsToCommit, Duration.ofSeconds(5));
       } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Error during final offset commit", e);
@@ -495,19 +361,10 @@ public class KafkaOffsetManager implements OffsetManager {
         drainCommandQueueForRevokedPartitions(partitions);
 
         final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
-        partitions.forEach(partition -> {
-          final var pending = pendingOffsets.get(partition);
-          final var lowestPending = pending != null ? pending.firstOrNull() : null;
-          if (lowestPending != null) {
-            offsetsToCommit.put(partition, new OffsetAndMetadata(lowestPending));
-          } else {
-            final var highestProcessed = highestProcessedOffsets.get(partition);
-            if (highestProcessed != null) offsetsToCommit.put(partition, new OffsetAndMetadata(highestProcessed + 1));
-          }
-          pendingOffsets.remove(partition);
-          highestProcessedOffsets.remove(partition);
-          evictCachedTopicPartition(partition);
-        });
+        partitions.forEach(partition ->
+          ledger.frontier(partition).ifPresent(offset -> offsetsToCommit.put(partition, new OffsetAndMetadata(offset)))
+        );
+        ledger.removePartitions(partitions);
 
         if (!offsetsToCommit.isEmpty()) {
           try {
@@ -524,10 +381,7 @@ public class KafkaOffsetManager implements OffsetManager {
         assertOnConsumerThread();
         if (state.get() == OffsetState.STOPPED) return;
         LOGGER.log(Level.INFO, "Partitions assigned: %s".formatted(partitions));
-        partitions.forEach(partition -> {
-          pendingOffsets.remove(partition);
-          highestProcessedOffsets.remove(partition);
-        });
+        ledger.removePartitions(partitions);
       }
 
       @Override
@@ -598,8 +452,6 @@ public class KafkaOffsetManager implements OffsetManager {
 
   /// Cleans up resources.
   private void cleanup() {
-    pendingOffsets.clear();
-    highestProcessedOffsets.clear();
-    topicPartitionCache.clear();
+    ledger.clear();
   }
 }
