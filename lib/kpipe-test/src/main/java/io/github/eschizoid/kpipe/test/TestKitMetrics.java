@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.test;
 
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
 import java.time.Duration;
 import java.util.Map;
 
@@ -13,10 +14,11 @@ import java.util.Map;
 /// identical constants + `accountedFor` + `quiescent`.
 final class TestKitMetrics {
 
-  private static final String METRIC_RECEIVED = "messagesReceived";
-  private static final String METRIC_PROCESSED = "messagesProcessed";
-  private static final String METRIC_ERRORS = "processingErrors";
-  private static final String METRIC_IN_FLIGHT = "inFlight";
+  // Aliases of the shared key set (ConsumerMetricKeys) — never re-declare the literals here.
+  private static final String METRIC_RECEIVED = ConsumerMetricKeys.MESSAGES_RECEIVED;
+  private static final String METRIC_PROCESSED = ConsumerMetricKeys.MESSAGES_PROCESSED;
+  private static final String METRIC_ERRORS = ConsumerMetricKeys.PROCESSING_ERRORS;
+  private static final String METRIC_IN_FLIGHT = ConsumerMetricKeys.IN_FLIGHT;
 
   private TestKitMetrics() {}
 

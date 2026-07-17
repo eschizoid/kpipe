@@ -10,6 +10,10 @@ import java.time.Duration;
 /// scaffolding meant a change to that demo config could ripple into the consumer's shutdown timing.
 final class ConsumerDefaults {
 
+  /// Default `Consumer.poll` timeout — bounds each consumer-loop iteration (and therefore the
+  /// paused-loop backpressure re-check cadence).
+  static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
+
   /// Max time `waitForInFlightDrain` / graceful shutdown waits for in-flight records to finish.
   static final Duration WAIT_FOR_MESSAGES = Duration.ofMillis(5000);
 
