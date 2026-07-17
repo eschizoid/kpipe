@@ -72,11 +72,6 @@ public final class CrashRestartHarness<T> {
   private static final Duration POLL_TIMEOUT = Duration.ofMillis(10);
   private static final String TOPIC = "kpipe-crash-restart-topic";
 
-  private static final String METRIC_RECEIVED = "messagesReceived";
-  private static final String METRIC_PROCESSED = "messagesProcessed";
-  private static final String METRIC_ERRORS = "processingErrors";
-  private static final String METRIC_IN_FLIGHT = "inFlight";
-
   private final MessageFormat<T> format;
   private final List<UnaryOperator<T>> operators = new ArrayList<>();
   private ProcessingMode processingMode = ProcessingMode.SEQUENTIAL;
@@ -265,7 +260,7 @@ public final class CrashRestartHarness<T> {
   private static void awaitQuiescent(final KPipeConsumer consumer, final long target) {
     final var deadline = System.nanoTime() + QUIESCE_TIMEOUT.toNanos();
     while (System.nanoTime() < deadline) {
-      if (quiescent(consumer, target)) return;
+      if (TestKitMetrics.quiescent(consumer, target)) return;
       try {
         //noinspection BusyWait — deadline-bounded quiescence poll, not a spin
         Thread.sleep(5);
@@ -275,19 +270,6 @@ public final class CrashRestartHarness<T> {
       }
     }
     throw new AssertionError("crash-restart phase timed out awaiting " + target + " records: " + consumer.getMetrics());
-  }
-
-  private static boolean quiescent(final KPipeConsumer consumer, final long target) {
-    final var snapshot = consumer.getMetrics();
-    if (snapshot.get(METRIC_RECEIVED) < target) return false;
-    if (accountedFor(snapshot) < target) return false;
-    if (!consumer.waitForInFlightDrain(Duration.ofMillis(1))) return false;
-    final var settled = consumer.getMetrics();
-    return settled.get(METRIC_RECEIVED) >= target && accountedFor(settled) >= target;
-  }
-
-  private static long accountedFor(final Map<String, Long> snapshot) {
-    return snapshot.get(METRIC_PROCESSED) + snapshot.get(METRIC_ERRORS) + snapshot.get(METRIC_IN_FLIGHT);
   }
 
   /// Minimal, never-contacted config — the `MockConsumer` supplier bypasses the real
