@@ -17,4 +17,11 @@ dependencies {
   runtimeOnly(project(":lib:kpipe-format-protobuf-confluent"))
   implementation(project(":lib:kpipe-schema-registry-confluent"))
   implementation(rootProject.libs.protobufJava)
+
+  // The test builds a registry-mode ProtobufFormat directly and drives the REAL
+  // ConfluentProtobufDescriptorCompiler. `ProtobufFormat.withRegistry` throws at construction if no
+  // compiler is on the path, so the (runtimeOnly-for-the-app) shaded confluent module and the base
+  // protobuf module must both be on the test compile+runtime classpath.
+  testImplementation(project(":lib:kpipe-format-protobuf"))
+  testImplementation(project(":lib:kpipe-format-protobuf-confluent"))
 }
