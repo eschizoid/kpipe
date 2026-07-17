@@ -10,6 +10,7 @@ import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
+import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.Operators;
 import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
@@ -17,6 +18,8 @@ import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import io.github.eschizoid.kpipe.sink.CompositeMessageSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -63,6 +66,8 @@ record DefaultStream<T>(
   Consumer<Throwable> onFailedObserver,
   Consumer<Result<T>> peekResultObserver
 ) implements Stream<T> {
+  private static final Logger LOGGER = System.getLogger(DefaultStream.class.getName());
+
   /// Public constructor used by [KPipe] factories — single topic, empty pipeline, default
   /// retry / backpressure settings.
   DefaultStream(
@@ -321,6 +326,71 @@ record DefaultStream<T>(
     if (pollTimeout != null) builder.withPollTimeout(pollTimeout);
     if (tracer != null) builder.withTracer(tracer);
     if (circuitBreaker != null) builder.withCircuitBreaker(circuitBreaker);
+  }
+
+  /// Wraps `base` with dispatch to the configured result observers (`onFiltered` / `onFailed` /
+  /// `peekResult`), or returns `base` unchanged when none is set. Lives here — next to
+  /// [#applyCommonConsumerConfig], and for the same reason — so both [DefaultSink] and
+  /// [DefaultBatchSink] share one wiring site: the batch path previously had no observer dispatch
+  /// at all, silently dropping observers set on a `toBatch(...)` stream.
+  ///
+  /// Observers fire on the PIPELINE outcome at `process()` time — for the batch path that is
+  /// before the record is buffered; batch-sink failures are a separate concern routed through the
+  /// batch DLQ machinery, not `onFailed`.
+  MessagePipeline<T> wrapWithObservers(final MessagePipeline<T> base) {
+    final var onFiltered = onFilteredObserver;
+    final var onFailed = onFailedObserver;
+    final var peek = peekResultObserver;
+    if (onFiltered == null && onFailed == null && peek == null) return base;
+    return new MessagePipeline<>() {
+      @Override
+      public T deserialize(final byte[] data) {
+        return base.deserialize(data);
+      }
+
+      @Override
+      public byte[] serialize(final T data) {
+        return base.serialize(data);
+      }
+
+      @Override
+      public Result<T> process(final T data) {
+        final var result = base.process(data);
+        if (peek != null) safeAccept(peek, result, "peekResult");
+        switch (result) {
+          case Result.Passed<T> _ -> {
+          }
+          case Result.Filtered<T> _ -> {
+            if (onFiltered != null) safeRun(onFiltered);
+          }
+          case Result.Failed<T> failed -> {
+            if (onFailed != null) safeAccept(onFailed, failed.cause(), "onFailed");
+          }
+        }
+        return result;
+      }
+
+      @Override
+      public MessageSink<T> getSink() {
+        return base.getSink();
+      }
+    };
+  }
+
+  private static void safeRun(final Runnable observer) {
+    try {
+      observer.run();
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.WARNING, "onFiltered observer threw; swallowing to keep the pipeline running", e);
+    }
+  }
+
+  private static <A> void safeAccept(final Consumer<A> observer, final A arg, final String name) {
+    try {
+      observer.accept(arg);
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.WARNING, () -> name + " observer threw; swallowing to keep the pipeline running", e);
+    }
   }
 
   /// Single funnel for every wither: snapshot this record into a [Mut], let the caller change
