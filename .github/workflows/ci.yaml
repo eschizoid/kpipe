@@ -32,11 +32,17 @@ jobs:
 
       - name: Concurrency stress (jcstress)
         # Runs the jcstress interleaving suites in every module that has one. The tasks are capped
-        # (-iters 1 -time 50 -f 1, set per module) so each PR run is a few minutes yet still
-        # exercises hundreds of thousands of real interleavings per test and fails on any FORBIDDEN
+        # (-iters 1 -time 50 -f 1, set per module), but the suite has grown to ~19 test classes
+        # (15 in kpipe-consumer alone), so the step's steady-state baseline on a hosted runner is
+        # ~28-30 minutes — measured stable across 11 consecutive runs on 2026-07-17. Each class
+        # still exercises hundreds of thousands of real interleavings and fails on any FORBIDDEN
         # outcome — so a concurrency regression (e.g. the trackOffset add vs remove-if-empty race
         # this suite was built to catch) breaks the build here, not just in a manual run. Deeper,
         # longer campaigns are run on demand by raising the per-module caps locally.
+        #
+        # timeout-minutes is a wedge guard, not a budget: ~1.5x the measured baseline, so a hung
+        # actor fails the job in 45 minutes instead of consuming the 360-minute job default.
+        timeout-minutes: 45
         run: |
           ./gradlew --no-daemon --stacktrace \
             :lib:kpipe-consumer:jcstress \
