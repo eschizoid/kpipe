@@ -208,7 +208,7 @@ public class KafkaOffsetManager implements OffsetManager {
   /// offset+1 to the pending offsets. In Kafka's offset model, committing offset N means you've
   /// processed through offset N-1 and expect to receive N next.
   ///
-  /// When using this method with {@link #markOffsetProcessed(ConsumerRecord)}, the offset
+  /// When using this method with [#markOffsetProcessed(ConsumerRecord)], the offset
   /// transformation is handled automatically. This method initializes the next offset to commit
   /// using the raw record offset, which is appropriate for the first record in a partition.
   ///

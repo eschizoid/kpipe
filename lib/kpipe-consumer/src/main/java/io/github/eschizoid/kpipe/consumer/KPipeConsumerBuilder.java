@@ -291,7 +291,7 @@ public final class KPipeConsumerBuilder {
   ///
   /// A command queue is auto-created in the builder, so most users do not need to call this
   /// method. Use it only when you need to share an externally owned queue (for example, when
-  /// constructing an {@link OffsetManager} outside of [#withOffsetManagerProvider] and wiring
+  /// constructing an [OffsetManager] outside of [#withOffsetManagerProvider] and wiring
   /// it to the same queue the consumer will read from). To grab the auto-created queue from
   /// inside an [#withOffsetManagerProvider] lambda, call [#getCommandQueue()] on the builder.
   ///
@@ -302,8 +302,8 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Returns the {@link ConsumerCommand} queue this builder will hand to the consumer. By
-  /// default the builder auto-creates a {@link ConcurrentLinkedQueue}; callers that supplied
+  /// Returns the [ConsumerCommand] queue this builder will hand to the consumer. By
+  /// default the builder auto-creates a [ConcurrentLinkedQueue]; callers that supplied
   /// their own queue via [#withCommandQueue] will see that instance instead.
   ///
   /// This getter is intended for use inside an [#withOffsetManagerProvider] lambda, so the
@@ -326,7 +326,7 @@ public final class KPipeConsumerBuilder {
   }
 
   /// Enables backpressure control using the default watermarks: high = 10,000 (pause) and
-  /// low = 7,000 (resume). Use {@link #withBackpressure(long, long)} to configure custom values.
+  /// low = 7,000 (resume). Use [#withBackpressure(long, long)] to configure custom values.
   ///
   /// Backpressure is enabled by default.
   ///

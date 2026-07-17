@@ -6,8 +6,8 @@ package io.github.eschizoid.kpipe.metrics;
 /// allowing for consistent monitoring across different system components.
 ///
 /// Implementations can report metrics to different destinations such as logs, monitoring systems,
-/// or dashboards. The core functionality is defined by {@link #reportMetrics()}, while lifecycle
-/// methods {@link #start()} and {@link #stop()} are provided with default empty implementations.
+/// or dashboards. The core functionality is defined by [#reportMetrics()], while lifecycle
+/// methods [#start()] and [#stop()] are provided with default empty implementations.
 ///
 /// Example usage:
 ///
