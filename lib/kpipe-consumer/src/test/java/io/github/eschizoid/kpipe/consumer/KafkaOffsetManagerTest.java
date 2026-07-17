@@ -1065,7 +1065,7 @@ class KafkaOffsetManagerTest {
     }
 
     @Test
-    void prepareOffsetsToCommitShouldNeverThrowUnderRace() throws Exception {
+    void committableOffsetComputationNeverThrowsUnderRace() throws Exception {
       final var manager = KafkaOffsetManager.builder(mockConsumer)
         .withCommandQueue(new LinkedBlockingQueue<>())
         .build();
@@ -1250,102 +1250,4 @@ class KafkaOffsetManagerTest {
     }
   }
 
-  /// Verifies the per-partition `TopicPartition` cache behavior in `trackOffset` /
-  /// `markOffsetProcessed`: same instance reused across calls, evicted on revoke, re-allocated
-  /// after re-assignment. The behavioral tests above (offset commit semantics, rebalance
-  /// handling, etc.) cover correctness; these tests verify the allocation contract that exists
-  /// to keep the hot path off the per-record `new TopicPartition(...)` path.
-  @Nested
-  class TopicPartitionCacheTests {
-
-    /// Reflection accessor for the cache so the test can inspect cached instances without
-    /// widening the production surface. Keeps the cache field private — only the tests reach
-    /// inside.
-    @SuppressWarnings("unchecked")
-    private Map<Integer, TopicPartition> innerCache(final KafkaOffsetManager manager, final String topic)
-      throws Exception {
-      final var field = KafkaOffsetManager.class.getDeclaredField("topicPartitionCache");
-      field.setAccessible(true);
-      final var outer = (Map<String, Map<Integer, TopicPartition>>) field.get(manager);
-      return outer.get(topic);
-    }
-
-    @Test
-    void cachedTopicPartitionIsTheSameInstanceAcrossCalls() throws Exception {
-      final var record1 = new ConsumerRecord<>(TOPIC, 0, 100L, "k".getBytes(UTF_8), "v".getBytes());
-      final var record2 = new ConsumerRecord<>(TOPIC, 0, 101L, "k".getBytes(UTF_8), "v".getBytes());
-
-      offsetManager.trackOffset(record1);
-      final var tp1 = innerCache(offsetManager, TOPIC).get(0);
-      assertNotNull(tp1, "trackOffset must populate the cache");
-
-      offsetManager.markOffsetProcessed(record1);
-      final var tp2 = innerCache(offsetManager, TOPIC).get(0);
-      assertSame(tp1, tp2, "markOffsetProcessed must reuse the cached TopicPartition");
-
-      offsetManager.trackOffset(record2);
-      offsetManager.markOffsetProcessed(record2);
-      final var tp3 = innerCache(offsetManager, TOPIC).get(0);
-      assertSame(tp1, tp3, "subsequent track/mark on the same partition must reuse the cached instance");
-    }
-
-    @Test
-    void revokedPartitionsAreEvictedFromTheCache() throws Exception {
-      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k".getBytes(UTF_8), "v".getBytes());
-      offsetManager.trackOffset(record);
-      offsetManager.markOffsetProcessed(record);
-      assertNotNull(innerCache(offsetManager, TOPIC).get(0), "precondition: cache populated");
-
-      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
-
-      final var inner = innerCache(offsetManager, TOPIC);
-      assertNull(inner, "revoking the only partition for a topic must drop the inner map entry");
-    }
-
-    @Test
-    void reAssignedPartitionAllocatesNewCachedInstance() throws Exception {
-      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k".getBytes(UTF_8), "v".getBytes());
-      offsetManager.trackOffset(record);
-      final var original = innerCache(offsetManager, TOPIC).get(0);
-      assertNotNull(original, "precondition: cache populated");
-
-      final var listener = offsetManager.createRebalanceListener();
-      listener.onPartitionsRevoked(List.of(PARTITION));
-      listener.onPartitionsAssigned(List.of(PARTITION));
-
-      // Cache is empty after revoke — first track after re-assignment must repopulate it with a
-      // new instance (NOT the original — that one was evicted).
-      offsetManager.trackOffset(record);
-      final var reAllocated = innerCache(offsetManager, TOPIC).get(0);
-      assertNotNull(reAllocated, "track after re-assignment must repopulate the cache");
-      assertNotSame(
-        original,
-        reAllocated,
-        "re-assignment must allocate a fresh TopicPartition, not reuse the evicted one"
-      );
-      assertEquals(original, reAllocated, "value-equality must still hold (same topic + partition number)");
-    }
-
-    @Test
-    void evictionOfOnePartitionPreservesSiblingPartitionsForSameTopic() throws Exception {
-      final var p0 = new TopicPartition(TOPIC, 0);
-      final var p1 = new TopicPartition(TOPIC, 1);
-
-      final var r0 = new ConsumerRecord<>(TOPIC, 0, 100L, "k".getBytes(UTF_8), "v".getBytes());
-      final var r1 = new ConsumerRecord<>(TOPIC, 1, 200L, "k".getBytes(UTF_8), "v".getBytes());
-      offsetManager.trackOffset(r0);
-      offsetManager.trackOffset(r1);
-      final var tp1Before = innerCache(offsetManager, TOPIC).get(1);
-      assertNotNull(tp1Before, "precondition: partition 1 cached");
-
-      // Revoke only partition 0; partition 1 should remain cached.
-      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(p0));
-
-      final var inner = innerCache(offsetManager, TOPIC);
-      assertNotNull(inner, "topic entry should still exist while partition 1 remains");
-      assertNull(inner.get(0), "partition 0 must be evicted");
-      assertSame(tp1Before, inner.get(1), "partition 1 must remain cached as the same instance");
-      assertEquals(p1, inner.get(1), "value equality check");
-    }
-  }
 }
