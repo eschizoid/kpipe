@@ -36,7 +36,7 @@ import org.openjdk.jcstress.infra.results.I_Result;
 /// Scenario. Both actors dispatch a record for the same key. Each dispatched task increments
 /// a shared counter once; the dispatcher's per-task `onComplete` then counts down a latch the
 /// arbiter awaits. Awaiting the latch establishes a happens-before edge that BOTH tasks have
-/// fully run before the counter is read — closing the early-exit window a `pendingCount()` spin
+/// fully run before the counter is read — closing the early-exit window a `activeCount()` spin
 /// had (the count can momentarily read zero between an enqueue and the task body executing). The
 /// only acceptable outcome is 2: both tasks ran exactly once. A lost enqueue means a task never
 /// runs, the latch never reaches zero, the await times out, and the run reports the forbidden -1.
@@ -68,7 +68,7 @@ public class KeyOrderedLruJCStressTest {
   public void observe(final I_Result r) {
     // Await both tasks' onComplete (fired per task by the dispatcher after task.run()). The await
     // is the happens-before edge guaranteeing both task bodies fully ran before tasksRun is read,
-    // so a momentary pendingCount==0 between enqueue and execution can't make the read fire early.
+    // so a momentary activeCount==0 between enqueue and execution can't make the read fire early.
     // A lost enqueue leaves the latch above zero; the await times out and the run reports -1.
     try {
       if (!done.await(5, TimeUnit.SECONDS)) {

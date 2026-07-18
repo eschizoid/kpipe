@@ -20,21 +20,21 @@ class SequentialDispatcherTest {
   }
 
   @Test
-  void pendingCountIsZeroWhenIdle() {
+  void activeCountIsZeroWhenIdle() {
     final var dispatcher = new SequentialDispatcher();
-    assertEquals(0L, dispatcher.pendingCount());
+    assertEquals(0L, dispatcher.activeCount());
     dispatcher.close();
   }
 
   @Test
-  void pendingCountReadsOneWhileProcessingThenZero() throws InterruptedException {
+  void activeCountReadsOneWhileProcessingThenZero() throws InterruptedException {
     final var dispatcher = new SequentialDispatcher();
     final var insideTask = new CountDownLatch(1);
     final var allowFinish = new CountDownLatch(1);
     final var observed = new AtomicLong(-1);
 
     // SequentialDispatcher.dispatch is synchronous on the calling thread, so we have to run
-    // it on a separate thread to observe pendingCount mid-flight.
+    // it on a separate thread to observe activeCount mid-flight.
     final var worker = Thread.ofVirtual().start(() ->
       dispatcher.dispatch(
         record(0),
@@ -51,12 +51,12 @@ class SequentialDispatcherTest {
     );
 
     assertTrue(insideTask.await(2, TimeUnit.SECONDS), "task should start");
-    observed.set(dispatcher.pendingCount());
+    observed.set(dispatcher.activeCount());
     allowFinish.countDown();
     worker.join(2_000);
 
-    assertEquals(1L, observed.get(), "pendingCount must report 1 while processing");
-    assertEquals(0L, dispatcher.pendingCount(), "pendingCount must drop to 0 after task returns");
+    assertEquals(1L, observed.get(), "activeCount must report 1 while processing");
+    assertEquals(0L, dispatcher.activeCount(), "activeCount must drop to 0 after task returns");
     dispatcher.close();
   }
 
@@ -78,7 +78,7 @@ class SequentialDispatcherTest {
     }
 
     assertEquals(1L, completed.get(), "onComplete must fire even when task throws");
-    assertEquals(0L, dispatcher.pendingCount(), "pendingCount must drop to 0 even when task throws");
+    assertEquals(0L, dispatcher.activeCount(), "activeCount must drop to 0 even when task throws");
     dispatcher.close();
   }
 
@@ -109,6 +109,6 @@ class SequentialDispatcherTest {
 
     assertEquals(1L, ran.get(), "processTask must still run inline after close()");
     assertEquals(1L, completed.get(), "onComplete must still fire after close()");
-    assertEquals(0L, dispatcher.pendingCount(), "in-flight must drain to 0 after the inline run");
+    assertEquals(0L, dispatcher.activeCount(), "in-flight must drain to 0 after the inline run");
   }
 }

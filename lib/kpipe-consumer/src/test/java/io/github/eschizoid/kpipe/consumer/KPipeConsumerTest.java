@@ -341,7 +341,7 @@ class KPipeConsumerTest {
   void closeDoesNotBurnTimeoutWaitingForBufferedBatchRecords() throws InterruptedException {
     // A size-only batch policy (maxSize=100) means a single buffered record never auto-flushes —
     // it's flushed by BatchPipelineWrapper.close() at teardown. So the in-flight drain must wait
-    // only on the dispatcher's active work (pendingCount), not totalInFlight (which counts the
+    // only on the dispatcher's active work (activeCount), not totalInFlight (which counts the
     // buffered record); otherwise close() burns the whole waitForMessagesTimeout while the
     // dispatcher is already idle. Probe: close() returns well under the timeout AND the buffered
     // record is still flushed + its offset marked at teardown.

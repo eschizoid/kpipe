@@ -292,7 +292,7 @@ class WatermarkHysteresisTest {
   @Nested
   class InFlightIncludesBufferedBatchRecords {
 
-    /// The consumer composes its in-flight metric as `dispatcher.pendingCount() + Σ buffered
+    /// The consumer composes its in-flight metric as `dispatcher.activeCount() + Σ buffered
     /// batch records`. A controller wired to that composite supplier must see buffered records
     /// as real pressure: a dispatcher that has drained to zero can still keep the consumer
     /// paused if enough records are sitting in batch buffers. This models that composite supplier

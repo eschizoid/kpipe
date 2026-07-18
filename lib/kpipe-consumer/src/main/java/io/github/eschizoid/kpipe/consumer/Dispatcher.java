@@ -51,7 +51,7 @@ sealed interface Dispatcher
   /// Sequential mode returns 0 or 1 (one inline record at a time). Lag-based backpressure
   /// doesn't consult this value, but it's still tracked so `inFlight` metrics and
   /// `shutdownGracefully(timeout)` drain reporting are accurate.
-  long pendingCount();
+  long activeCount();
 
   /// Snapshot of the top-`n` keys by current queue depth, ordered deepest-first. Intended for
   /// ad-hoc diagnostics (heap-dump replacement, REPL/JMX inspection) — not for continuous

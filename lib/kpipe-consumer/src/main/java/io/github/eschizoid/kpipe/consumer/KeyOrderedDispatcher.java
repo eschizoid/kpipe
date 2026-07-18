@@ -276,7 +276,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   }
 
   @Override
-  public long pendingCount() {
+  public long activeCount() {
     return pending.get();
   }
 

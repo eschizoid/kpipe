@@ -495,7 +495,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// the calling thread is interrupted. Replaces the former standalone
   /// `MessageTracker.waitForCompletion(...)`.
   ///
-  /// Waits on `dispatcher.pendingCount()` — records a worker is actively processing — NOT
+  /// Waits on `dispatcher.activeCount()` — records a worker is actively processing — NOT
   /// `totalInFlight()`. The latter also counts buffered batch records, which never flush during a
   /// drain (only on a size/age trigger or `BatchPipelineWrapper.close()` at teardown), so waiting
   /// on them would always burn the full `timeout`. Buffered batches are flushed + committed by the
@@ -505,13 +505,13 @@ public class KPipeConsumer implements AutoCloseable {
   /// @param timeout maximum time to wait
   /// @return `true` if active processing drained in time, else `false`
   public boolean waitForInFlightDrain(final Duration timeout) {
-    if (dispatcher.pendingCount() == 0) return true;
+    if (dispatcher.activeCount() == 0) return true;
     final var deadline = System.nanoTime() + timeout.toNanos();
     final var pollNanos = Math.min(timeout.toNanos() / 10, Duration.ofMillis(500).toNanos());
     final var pollMs = Math.max(1, pollNanos / 1_000_000);
     try {
       while (System.nanoTime() < deadline) {
-        if (dispatcher.pendingCount() == 0) return true;
+        if (dispatcher.activeCount() == 0) return true;
         //noinspection BusyWait — deadline-bounded drain poll, not a spin
         Thread.sleep(pollMs);
       }
@@ -519,7 +519,7 @@ public class KPipeConsumer implements AutoCloseable {
       Thread.currentThread().interrupt();
       return false;
     }
-    return dispatcher.pendingCount() == 0;
+    return dispatcher.activeCount() == 0;
   }
 
   /// Runs on the consumer thread, at the top of its `finally`, before any teardown. The poll
@@ -532,7 +532,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// `processCommands()` flushes anything the last workers enqueued. Only the consumer thread may
   /// touch the Kafka consumer, so this must run here, not on the close() thread.
   ///
-  /// We wait on `dispatcher.pendingCount()`, NOT `totalInFlight()`: the latter also counts
+  /// We wait on `dispatcher.activeCount()`, NOT `totalInFlight()`: the latter also counts
   /// buffered batch records, which don't enqueue commands and won't flush on their own (size-only
   /// / long-maxAge policies). They're flushed by each `BatchPipelineWrapper.close()` in
   /// `releaseConstructedResources()` right after this returns — so waiting on them here would just
@@ -540,7 +540,7 @@ public class KPipeConsumer implements AutoCloseable {
   private void drainInFlightBeforeTeardown() {
     if (waitForMessagesTimeout.toMillis() > 0) {
       final var deadline = System.nanoTime() + waitForMessagesTimeout.toNanos();
-      while (dispatcher.pendingCount() > 0 && System.nanoTime() < deadline) {
+      while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) {
         processCommands();
         LockSupport.parkNanos(Duration.ofMillis(5).toNanos());
       }
@@ -957,8 +957,8 @@ public class KPipeConsumer implements AutoCloseable {
     stopMetricsReporterThread();
     commandQueue.offer(new ConsumerCommand.Close());
     dispatcher.signalShutdown();
-    if (waitForMessagesTimeout.toMillis() > 0 && dispatcher.pendingCount() > 0) {
-      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", dispatcher.pendingCount());
+    if (waitForMessagesTimeout.toMillis() > 0 && dispatcher.activeCount() > 0) {
+      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", dispatcher.activeCount());
       waitForInFlightDrain(waitForMessagesTimeout);
     }
   }
@@ -1109,7 +1109,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// - `KeyOrderedDispatcher` enqueues records onto a per-key serial queue + virtual thread.
   ///
   /// The dispatcher also owns the in-flight counter (for non-sequential modes) and feeds
-  /// [#totalInFlight] via `dispatcher.pendingCount()`.
+  /// [#totalInFlight] via `dispatcher.activeCount()`.
   ///
   /// @param records the batch of records to process
   protected void processRecords(final ConsumerRecords<byte[], byte[]> records) {
@@ -1261,7 +1261,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// finishes `processRecord` (which for batch is "the record was buffered"), so the buffer
   /// would otherwise be invisible to the watermark check.
   private long totalInFlight() {
-    var total = dispatcher.pendingCount();
+    var total = dispatcher.activeCount();
     for (final var wrapper : batchWrappers.values()) total += wrapper.bufferedCount();
     return total;
   }

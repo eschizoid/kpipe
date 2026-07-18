@@ -15,7 +15,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// `Executors.newVirtualThreadPerTaskExecutor()`. No ordering guarantees within or across
 /// keys; unbounded parallelism bounded only by Loom's carrier-thread capacity.
 ///
-/// Pairs with [BackpressureController#inFlightStrategy] in [KPipeConsumer] — `pendingCount()`
+/// Pairs with [BackpressureController#inFlightStrategy] in [KPipeConsumer] — `activeCount()`
 /// returns the number of records currently submitted but not yet finished.
 ///
 /// Owns its `ExecutorService` and shuts it down in [#close()] using the same `shutdown +
@@ -84,14 +84,14 @@ final class ParallelDispatcher implements Dispatcher {
   }
 
   @Override
-  public long pendingCount() {
+  public long activeCount() {
     return inFlight.get();
   }
 
   /// `shutdownNow()` doesn't strand `inFlight`: the VT-per-task executor has no work queue, so
   /// it returns an empty list and only interrupts running tasks — and interrupt doesn't skip a
   /// `finally`, so each task still decrements. A pooled executor WOULD strand queued tasks here;
-  /// `ParallelDispatcherTest.pendingCountDrainsToZeroWhenCloseInterruptsRunningTask` guards it.
+  /// `ParallelDispatcherTest.activeCountDrainsToZeroWhenCloseInterruptsRunningTask` guards it.
   @Override
   public void close() {
     try {

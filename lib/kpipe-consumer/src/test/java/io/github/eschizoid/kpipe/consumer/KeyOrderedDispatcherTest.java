@@ -128,7 +128,7 @@ class KeyOrderedDispatcherTest {
   }
 
   @Test
-  void pendingCountReflectsBufferedAndInFlight() throws InterruptedException {
+  void activeCountReflectsBufferedAndInFlight() throws InterruptedException {
     final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var allowFinish = new CountDownLatch(1);
     final var firstStarted = new CountDownLatch(1);
@@ -151,15 +151,15 @@ class KeyOrderedDispatcherTest {
     }
 
     assertTrue(firstStarted.await(2, TimeUnit.SECONDS));
-    assertEquals(3, dispatcher.pendingCount(), "all 3 records pending (1 in-flight + 2 queued)");
+    assertEquals(3, dispatcher.activeCount(), "all 3 records pending (1 in-flight + 2 queued)");
 
     allowFinish.countDown();
     // Wait for everything to drain
     final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-    while (dispatcher.pendingCount() > 0 && System.nanoTime() < deadline) {
+    while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) {
       Thread.sleep(10);
     }
-    assertEquals(0, dispatcher.pendingCount());
+    assertEquals(0, dispatcher.activeCount());
     dispatcher.close();
   }
 
@@ -702,7 +702,7 @@ class KeyOrderedDispatcherTest {
     final var pendingBeforeSignal = new AtomicInteger();
     Thread.ofVirtual().start(() -> {
       dispatcher.dispatch(recordWithKey("c", 0), () -> {}, () -> {});
-      pendingBeforeSignal.set((int) dispatcher.pendingCount());
+      pendingBeforeSignal.set((int) dispatcher.activeCount());
       thirdCompleted.countDown();
     });
 
@@ -845,7 +845,7 @@ class KeyOrderedDispatcherTest {
 
       // Wait for everything to drain so the second saturation round has empty queues to fill.
       final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-      while (dispatcher.pendingCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+      while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
 
       // Saturation round 2: same scenario, fresh blocked workers.
       final var workerA2 = new CountDownLatch(1);
@@ -944,7 +944,7 @@ class KeyOrderedDispatcherTest {
     final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
     while (firstWorker.isAlive() && System.nanoTime() < deadline) Thread.sleep(5);
     assertFalse(firstWorker.isAlive(), "first worker VT must exit after queue drains");
-    assertEquals(0, dispatcher.pendingCount(), "pending must be 0 between batches");
+    assertEquals(0, dispatcher.activeCount(), "pending must be 0 between batches");
 
     // Second dispatch on the same key — must spawn a fresh worker, not reuse the dead one.
     dispatcher.dispatch(
