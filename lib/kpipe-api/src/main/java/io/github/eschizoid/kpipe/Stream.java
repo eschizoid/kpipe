@@ -204,6 +204,10 @@ public interface Stream<T> {
   /// returns `Failed`. The observer is for visibility — it does **not** suppress the failure or
   /// stop the failure from reaching retry / DLQ / `withErrorHandler` logic.
   ///
+  /// Fires on **every** failing pipeline invocation — including each retry attempt, so a record
+  /// that exhausts `withRetry(2, ...)` invokes this observer three times. For exactly one callback
+  /// per record after retries are exhausted, use `withErrorHandler(...)` instead.
+  ///
   /// Runs on the consumer thread immediately after the pipeline returns `Failed`. If the
   /// observer throws, the exception is logged at WARNING and swallowed. Calling this method more
   /// than once replaces the previous observer.

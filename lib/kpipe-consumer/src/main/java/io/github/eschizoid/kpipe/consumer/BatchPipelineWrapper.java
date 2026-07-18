@@ -222,24 +222,49 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
 
     for (int i = 0; i < size; i++) {
       final var record = snapshot.get(i).record();
-      if (succeeded.get(i)) {
-        callbacks.markProcessed(record);
-        continue;
+      // Per-iteration guard: a throwing callback (a custom OffsetManager in markProcessed, or a
+      // buggy hook) must not abort the loop and strand the REMAINING records with no outcome at
+      // all — every record in the batch gets its callback attempt. The failing record's own
+      // outcome is lost (logged at ERROR); its offset stays unmarked, so it is reprocessed rather
+      // than dropped.
+      try {
+        if (succeeded.get(i)) {
+          callbacks.markProcessed(record);
+          continue;
+        }
+        final var perRecordCause = result.failedByIndex().get(i);
+        callbacks.onBatchFailure(
+          record,
+          perRecordCause != null
+            ? perRecordCause
+            : (coverageViolation != null
+                ? coverageViolation
+                : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic))
+        );
+      } catch (final Exception callbackEx) {
+        LOGGER.log(
+          Level.ERROR,
+          "Batch outcome callback threw for offset " + record.offset() + " on topic " + topic +
+            "; continuing with the remaining records (offset stays unmarked, record will be reprocessed)",
+          callbackEx
+        );
       }
-      final var perRecordCause = result.failedByIndex().get(i);
-      callbacks.onBatchFailure(
-        record,
-        perRecordCause != null
-          ? perRecordCause
-          : (coverageViolation != null
-              ? coverageViolation
-              : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic))
-      );
     }
   }
 
   private void failAll(final List<Entry<T>> snapshot, final Exception cause) {
-    for (final var entry : snapshot) callbacks.onBatchFailure(entry.record(), cause);
+    for (final var entry : snapshot) {
+      try {
+        callbacks.onBatchFailure(entry.record(), cause);
+      } catch (final Exception callbackEx) {
+        LOGGER.log(
+          Level.ERROR,
+          "Batch failure callback threw for offset " + entry.record().offset() + " on topic " + topic +
+            "; continuing with the remaining records",
+          callbackEx
+        );
+      }
+    }
   }
 
   private void logOutOfRange(final String kind, final Integer index, final int batchSize) {

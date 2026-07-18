@@ -311,7 +311,9 @@ public class KPipeConsumer implements AutoCloseable {
         )
       );
 
-      this.otelMetrics = builder.consumerMetrics != null ? builder.consumerMetrics : ConsumerMetrics.noop();
+      // Guarded once at the source: a throwing user metrics implementation must never crash a
+      // worker, abort a batch-flush callback loop, or alter an error-path outcome.
+      this.otelMetrics = GuardedConsumerMetrics.guard(builder.consumerMetrics);
 
       this.health = new ConsumerHealthController(
         bp,
