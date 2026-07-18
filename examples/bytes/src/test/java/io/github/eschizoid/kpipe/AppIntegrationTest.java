@@ -61,7 +61,7 @@ class AppIntegrationTest {
     // Operator mirroring App's hexPreviewSink: observe length + preview, pass bytes through.
     final var previews = new CopyOnWriteArrayList<String>();
     final UnaryOperator<byte[]> hexPreviewOperator = payload -> {
-      previews.add(payload.length + ":" + hexPreview(payload));
+      previews.add(payload.length + ":" + App.hexPreview(payload));
       return payload;
     };
 
@@ -113,14 +113,6 @@ class AppIntegrationTest {
     assertFalse(consumer.isRunning(), "consumer must reach terminal state after close()");
   }
 
-  /// Replicates `App.hexPreview` (private there): first 16 bytes, space-delimited hex, `...`
-  /// suffix when truncated. The expected values in the test are literal strings, so this helper
-  /// only feeds the operator — it is asserted against, never asserted with.
-  private static String hexPreview(final byte[] payload) {
-    final var limit = Math.min(payload.length, PREVIEW_BYTES);
-    final var hex = HexFormat.ofDelimiter(" ").formatHex(payload, 0, limit);
-    return payload.length > limit ? hex + " ..." : hex;
-  }
 
   private static Properties consumerProps() {
     final var props = new Properties();

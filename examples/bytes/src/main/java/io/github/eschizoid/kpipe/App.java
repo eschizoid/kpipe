@@ -33,7 +33,9 @@ public final class App {
     }
   }
 
-  private static String hexPreview(final byte[] payload) {
+  /// Package-private (not `private`) so the integration test pins THIS implementation's output
+  /// against hardcoded literals, rather than a drifting copy of it.
+  static String hexPreview(final byte[] payload) {
     final var limit = Math.min(payload.length, PREVIEW_BYTES);
     final var hex = HexFormat.ofDelimiter(" ").formatHex(payload, 0, limit);
     return payload.length > limit ? hex + " ..." : hex;
