@@ -360,7 +360,12 @@ final class ConsumerHealthController {
       // Shutdown race: the scheduler is already closed. Propagating would crash the worker that
       // recorded the outcome; the breaker stays OPEN, which is moot on a dying consumer. Log so a
       // non-shutdown rejection (misconfigured shared scheduler) is still visible.
-      LOGGER.log(Level.WARNING, "Could not schedule the circuit-breaker probe (scheduler shut down?)", e);
+      LOGGER.log(
+        Level.WARNING,
+        "Could not schedule the circuit-breaker probe — if this is not a shutdown, the breaker " +
+          "stays OPEN and the consumer remains paused until restart",
+        e
+      );
     }
   }
 

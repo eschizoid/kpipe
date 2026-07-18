@@ -30,6 +30,15 @@ public interface MessageFormat<T> {
     return BytesFormat.INSTANCE;
   }
 
+  /// True when this codec resolves schemas per record from a Schema Registry (reading the wire
+  /// envelope itself). The facade uses this to reject `skipBytes(...)`, which would strip the
+  /// envelope the codec needs. Default false — only registry-mode codecs override.
+  ///
+  /// @return whether this codec reads a Schema-Registry wire envelope per record
+  default boolean isSchemaRegistryBacked() {
+    return false;
+  }
+
   /// Serializes the given data to a byte array.
   ///
   /// @param data The data to serialize

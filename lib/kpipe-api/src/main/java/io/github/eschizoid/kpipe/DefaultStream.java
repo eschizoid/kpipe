@@ -191,7 +191,7 @@ record DefaultStream<T>(
   @Override
   public Stream<T> skipBytes(final int n) {
     if (n < 0) throw new IllegalArgumentException("n cannot be negative");
-    if (n > 0 && isRegistryBacked(format)) throw new IllegalArgumentException(
+    if (n > 0 && format.isSchemaRegistryBacked()) throw new IllegalArgumentException(
       "skipBytes(" + n + ") cannot be combined with a Schema-Registry-backed format: the format " +
         "reads the Confluent wire envelope itself, and stripping bytes first would corrupt every " +
         "record. Drop the skipBytes(...) call."
@@ -210,15 +210,6 @@ record DefaultStream<T>(
     @SuppressWarnings("unchecked")
     final var newFormat = (MessageFormat<T>) registryBackedFormat(format, resolver);
     return mutate(m -> m.format = newFormat);
-  }
-
-  /// True when `format` is an Avro/Protobuf codec operating in Schema-Registry mode (per-record
-  /// envelope read). Detected via the formats' public mode accessors — both return their static
-  /// schema/descriptor, which is null exactly in registry mode.
-  private static boolean isRegistryBacked(final MessageFormat<?> format) {
-    if (format instanceof AvroFormat avro) return avro.schema() == null;
-    if (format instanceof ProtobufFormat proto) return proto.descriptor() == null;
-    return false;
   }
 
   /// Returns a registry-backed variant of `format` for any format that supports per-record schema

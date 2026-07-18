@@ -242,6 +242,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
                 : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic))
         );
       } catch (final Exception callbackEx) {
+        if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
         LOGGER.log(
           Level.ERROR,
           "Batch outcome callback threw for offset " + record.offset() + " on topic " + topic +
@@ -257,6 +258,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       try {
         callbacks.onBatchFailure(entry.record(), cause);
       } catch (final Exception callbackEx) {
+        if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
         LOGGER.log(
           Level.ERROR,
           "Batch failure callback threw for offset " + entry.record().offset() + " on topic " + topic +

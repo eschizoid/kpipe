@@ -154,16 +154,16 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// ensure reliability in the error path — when called from a virtual thread this does not block
   /// the underlying carrier thread.
   ///
-  /// @param dlqTopic    the name of the dead-letter topic; if null this method is a no-op and
-  ///                    returns false
-  /// @param record      the original consumer record that failed
-  /// @param sourceTopic the original source topic name
-  /// @param exception   the exception that caused the processing failure
   /// The DLQ record carries the original key, value, and ALL original headers, plus the
   /// `x-dlq-*` envelope (exception class/message, source topic/partition/offset/timestamp) and the
   /// current trace context. Original and envelope headers coexist; read `x-dlq-*` keys by last
   /// occurrence if a source header happens to share a name.
   ///
+  /// @param dlqTopic    the name of the dead-letter topic; if null this method is a no-op and
+  ///                    returns false
+  /// @param record      the original consumer record that failed
+  /// @param sourceTopic the original source topic name
+  /// @param exception   the exception that caused the processing failure
   /// @return true if the record was successfully sent to the DLQ, false otherwise (DLQ disabled or
   ///         send failed). Callers can use the return value to update their own counters or
   ///         trigger fallback handling.
