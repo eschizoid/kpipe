@@ -191,12 +191,22 @@ record DefaultStream<T>(
   @Override
   public Stream<T> skipBytes(final int n) {
     if (n < 0) throw new IllegalArgumentException("n cannot be negative");
+    if (n > 0 && format.isSchemaRegistryBacked()) throw new IllegalArgumentException(
+      "skipBytes(" + n + ") cannot be combined with a Schema-Registry-backed format: the format " +
+        "reads the Confluent wire envelope itself, and stripping bytes first would corrupt every " +
+        "record. Drop the skipBytes(...) call."
+    );
     return mutate(m -> m.skipBytes = n);
   }
 
   @Override
   public Stream<T> withSchemaRegistry(final SchemaResolver resolver) {
     Objects.requireNonNull(resolver, "resolver cannot be null");
+    if (skipBytes > 0) throw new IllegalArgumentException(
+      "withSchemaRegistry(...) cannot be combined with skipBytes(" + skipBytes + "): the " +
+        "registry-backed format reads the Confluent wire envelope itself, and stripping bytes " +
+        "first would corrupt every record. Drop the skipBytes(...) call."
+    );
     @SuppressWarnings("unchecked")
     final var newFormat = (MessageFormat<T>) registryBackedFormat(format, resolver);
     return mutate(m -> m.format = newFormat);

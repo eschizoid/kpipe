@@ -4,6 +4,7 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -349,11 +350,23 @@ final class ConsumerHealthController {
     if (requestPause(Source.CIRCUIT_BREAKER)) pauseHook.onPause();
     final var existing = cbProbeFuture;
     if (existing != null) existing.cancel(false);
-    cbProbeFuture = scheduler.schedule(
-      this::tryHalfOpen,
-      cbController.openDuration().toMillis(),
-      TimeUnit.MILLISECONDS
-    );
+    try {
+      cbProbeFuture = scheduler.schedule(
+        this::tryHalfOpen,
+        cbController.openDuration().toMillis(),
+        TimeUnit.MILLISECONDS
+      );
+    } catch (final RejectedExecutionException e) {
+      // Shutdown race: the scheduler is already closed. Propagating would crash the worker that
+      // recorded the outcome; the breaker stays OPEN, which is moot on a dying consumer. Log so a
+      // non-shutdown rejection (misconfigured shared scheduler) is still visible.
+      LOGGER.log(
+        Level.WARNING,
+        "Could not schedule the circuit-breaker probe — if this is not a shutdown, the breaker " +
+          "stays OPEN and the consumer remains paused until restart",
+        e
+      );
+    }
   }
 
   /// One-shot probe-timer callback. CAS OPEN → HALF_OPEN and fire the resume callback; the next

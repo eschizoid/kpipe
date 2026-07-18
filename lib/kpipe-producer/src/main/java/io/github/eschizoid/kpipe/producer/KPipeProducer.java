@@ -43,7 +43,9 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   ) {
     this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
     this.ownProducer = ownProducer;
-    this.metrics = metrics != null ? metrics : ProducerMetrics.noop();
+    // Guarded once at the source: a throwing user metrics implementation must never turn a
+    // successful send/DLQ-park into a reported failure.
+    this.metrics = GuardedProducerMetrics.guard(metrics);
     this.tracer = tracer != null ? tracer : Tracer.noop();
   }
 
@@ -152,6 +154,11 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// ensure reliability in the error path — when called from a virtual thread this does not block
   /// the underlying carrier thread.
   ///
+  /// The DLQ record carries the original key, value, and ALL original headers, plus the
+  /// `x-dlq-*` envelope (exception class/message, source topic/partition/offset/timestamp) and the
+  /// current trace context. Original and envelope headers coexist; read `x-dlq-*` keys by last
+  /// occurrence if a source header happens to share a name.
+  ///
   /// @param dlqTopic    the name of the dead-letter topic; if null this method is a no-op and
   ///                    returns false
   /// @param record      the original consumer record that failed
@@ -169,6 +176,14 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     if (dlqTopic == null) return false;
 
     final var producerRecord = new ProducerRecord<>(dlqTopic, record.key(), record.value());
+    // Preserve the ORIGINAL record's headers first (correlation ids, tenant markers — whatever the
+    // producer attached): an operator replaying from the DLQ needs them, and dropping them made
+    // DLQ records unrecoverable for root-cause analysis. The x-dlq-* envelope is appended after,
+    // so both coexist (Kafka headers allow duplicate keys; DLQ consumers should read x-dlq-* by
+    // last occurrence).
+    for (final var header : record.headers()) {
+      producerRecord.headers().add(header);
+    }
     producerRecord.headers().add("x-dlq-exception-class", exception.getClass().getName().getBytes());
     producerRecord
       .headers()
@@ -176,6 +191,9 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     producerRecord.headers().add("x-dlq-source-topic", sourceTopic.getBytes());
     producerRecord.headers().add("x-dlq-source-partition", String.valueOf(record.partition()).getBytes());
     producerRecord.headers().add("x-dlq-source-offset", String.valueOf(record.offset()).getBytes());
+    // The DLQ record's own Kafka timestamp is the (meaningful) park time; the original event time
+    // travels as a header so replay tooling can restore it.
+    producerRecord.headers().add("x-dlq-source-timestamp", String.valueOf(record.timestamp()).getBytes());
 
     // Inject the current trace context (e.g. W3C `traceparent`) so DLQ subscribers can continue
     // the trace. Guarded — a misbehaving tracer must not break the error path.
@@ -201,6 +219,10 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   ///
   /// When called from a virtual thread this is highly efficient — blocking on the future
   /// parks the virtual thread without pinning its carrier thread.
+  ///
+  /// The blocking wait is bounded by the producer's own `delivery.timeout.ms` (default 2 minutes):
+  /// the Kafka client fails the returned future after that, so this call cannot park forever even
+  /// against a hung broker. Tune that producer property to tighten or relax the bound.
   ///
   /// @param record the record to send
   /// @return the metadata for the record that was sent

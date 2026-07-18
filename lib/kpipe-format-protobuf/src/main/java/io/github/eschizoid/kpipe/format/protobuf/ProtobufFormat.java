@@ -112,6 +112,11 @@ public final class ProtobufFormat implements MessageFormat<Message> {
     return new ProtobufFormat(resolver, compiler);
   }
 
+  @Override
+  public boolean isSchemaRegistryBacked() {
+    return resolver != null;
+  }
+
   /// Returns the descriptor this codec is bound to.
   ///
   /// @return the bound descriptor in static mode; `null` in Schema-Registry mode (each record's

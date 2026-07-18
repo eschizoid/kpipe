@@ -93,6 +93,11 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
 
   /// Returns the schema this codec is bound to in static mode.
   ///
+  @Override
+  public boolean isSchemaRegistryBacked() {
+    return resolver != null;
+  }
+
   /// @return the bound schema in static mode; null in Schema-Registry mode
   public Schema schema() {
     return staticSchema;

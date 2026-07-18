@@ -136,17 +136,17 @@ class KPipeConsumerBuilderValidationTest {
   private static Properties buildWithProps(final Properties props) {
     @SuppressWarnings("unchecked")
     final var pipeline = (MessagePipeline<String>) mock(MessagePipeline.class);
-    try (
-      final var consumer = builder()
-        .withProperties(props)
-        .withTopic("t")
-        .withPipeline(pipeline)
-        .withConsumer(() -> mock(Consumer.class))
-        .build()
-    ) {
+    final var b = builder()
+      .withProperties(props)
+      .withTopic("t")
+      .withPipeline(pipeline)
+      .withConsumer(() -> mock(Consumer.class));
+    try (final var consumer = b.build()) {
       assertEquals(false, consumer == null);
     }
-    return props;
+    // The pin lands on the builder's internal defensive clone — never on the caller's Properties
+    // (HardeningGuardsTest.buildDoesNotMutateTheCallersProperties pins that). Inspect the clone.
+    return b.kafkaProps;
   }
 
   @Test

@@ -7,6 +7,7 @@ import com.google.protobuf.DescriptorProtos.DescriptorProto;
 import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
 import com.google.protobuf.Descriptors.DescriptorValidationException;
 import com.google.protobuf.Descriptors.FileDescriptor;
+import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import java.util.Properties;
@@ -60,5 +61,24 @@ class WithSchemaRegistryDispatchTest {
       ex.getMessage().contains("not supported"),
       "expected the unsupported-format message, got: " + ex.getMessage()
     );
+  }
+
+  @Test
+  void skipBytesAfterRegistryEntryPointIsRejected() {
+    // KPipe.avro(topic, props, resolver) constructs a registry-backed format directly; a
+    // subsequent skipBytes would strip the envelope the format itself reads.
+    final var stream = KPipe.avro("t", props(), (SchemaResolver) id -> "{}");
+    final var ex = assertThrows(IllegalArgumentException.class, () -> stream.skipBytes(5));
+    assertTrue(ex.getMessage().contains("Schema-Registry"), ex.getMessage());
+  }
+
+  @Test
+  void withSchemaRegistryAfterSkipBytesIsRejected() {
+    final var staticAvro = AvroFormat.of(
+      "{\"type\":\"record\",\"name\":\"R\",\"fields\":[{\"name\":\"f\",\"type\":\"string\"}]}"
+    );
+    final var stream = KPipe.avro("t", props(), staticAvro).skipBytes(5);
+    final var ex = assertThrows(IllegalArgumentException.class, () -> stream.withSchemaRegistry(RESOLVER));
+    assertTrue(ex.getMessage().contains("skipBytes"), ex.getMessage());
   }
 }

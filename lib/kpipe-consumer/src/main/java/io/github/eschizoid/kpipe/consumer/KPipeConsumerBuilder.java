@@ -75,7 +75,13 @@ public final class KPipeConsumerBuilder {
   /// @param props The Kafka consumer properties
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withProperties(final Properties props) {
-    this.kafkaProps = Objects.requireNonNull(props, "props cannot be null");
+    Objects.requireNonNull(props, "props cannot be null");
+    // Defensive clone: build() pins key.deserializer into these properties
+    // (forceByteArrayKeyDeserializer), and without a copy that mutation would leak into the
+    // caller's own Properties object — or, on the fluent path, into sibling streams sharing one
+    // internal copy. `(Properties) clone()`, never `new Properties(parent)` (that makes the
+    // parent a getProperty fallback, not a copy).
+    this.kafkaProps = (Properties) props.clone();
     return this;
   }
 
