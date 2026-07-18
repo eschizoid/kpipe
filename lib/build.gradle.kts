@@ -14,6 +14,56 @@ subprojects {
   group = rootProject.group
   version = rootProject.version
 
+  // Shared config for every java-library module. Reacting to the plugin id (rather than applying
+  // unconditionally) skips kpipe-bom, which applies `java-platform` and must not receive any
+  // java/toolchain/test configuration.
+  plugins.withId("java-library") {
+    extensions.configure<JavaPluginExtension> {
+      withSourcesJar()
+      withJavadocJar()
+      modularity.inferModulePath.set(true)
+      toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+      }
+    }
+
+    tasks.withType<Test>().configureEach {
+      useJUnitPlatform()
+
+      if (project.hasProperty("excludeTests")) {
+        val excludePattern = project.property("excludeTests").toString()
+        exclude("**/${excludePattern.replace(".", "/")}.class")
+      }
+    }
+
+    // Module-path wiring for real JPMS modules. kpipe-format-protobuf-confluent has no
+    // module-info.java (it compiles on the classpath because of the shaded Wire split-package),
+    // so the existence check skips it automatically.
+    if (file("src/main/java/module-info.java").exists()) {
+      tasks.named<JavaCompile>("compileJava") {
+        doFirst {
+          options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
+          classpath = files()
+        }
+      }
+
+      tasks.named<Javadoc>("javadoc") {
+        options.modulePath = classpath.toList()
+        classpath = files()
+      }
+    }
+  }
+
+  plugins.withId("jacoco") {
+    tasks.named<JacocoReport>("jacocoTestReport") {
+      reports {
+        csv.required.set(true)
+        xml.required.set(true)
+        html.required.set(true)
+      }
+    }
+  }
+
   afterEvaluate {
     extensions.configure<PublishingExtension> {
       publications {

@@ -10,19 +10,6 @@ description =
   "KPipe Protobuf Confluent Schema Registry support — ConfluentProtobufDescriptorCompiler " +
   "(runtime .proto compilation via Confluent ProtobufSchema)"
 
-java {
-  withSourcesJar()
-  withJavadocJar()
-  toolchain {
-    languageVersion = JavaLanguageVersion.of(25)
-  }
-}
-
-repositories {
-  mavenCentral()
-  maven { url = uri("https://packages.confluent.io/maven/") }
-}
-
 // This module compiles on the CLASSPATH, not the module path: Confluent's ProtobufSchema drags in
 // Square Wire as two jars that both export `com.squareup.wire` (an illegal split-package on the
 // module path). Shading + relocation collapses that split in the published jar; the module ships as
@@ -38,10 +25,6 @@ dependencies {
   testRuntimeOnly(libs.junitPlatformLauncher)
   // Gold-standard wire-compat check: Confluent's own serializer produces the bytes our parser reads.
   testImplementation(libs.kafkaProtobufSerializer)
-}
-
-tasks.test {
-  useJUnitPlatform()
 }
 
 // Bundle Confluent + Wire into one self-contained jar with conflict-prone packages relocated so a
@@ -105,12 +88,4 @@ configurations {
   runtimeElements.get().outgoing.artifacts.clear()
   apiElements.get().outgoing.artifact(tasks.named("shadowJar"))
   runtimeElements.get().outgoing.artifact(tasks.named("shadowJar"))
-}
-
-tasks.jacocoTestReport {
-  reports {
-    csv.required.set(true)
-    xml.required.set(true)
-    html.required.set(true)
-  }
 }

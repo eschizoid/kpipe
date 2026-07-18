@@ -5,19 +5,6 @@ plugins {
 
 description = "KPipe Core - Format-agnostic pipeline machinery for KPipe"
 
-java {
-  withSourcesJar()
-  withJavadocJar()
-  modularity.inferModulePath.set(true)
-  toolchain {
-    languageVersion = JavaLanguageVersion.of(25)
-  }
-}
-
-repositories {
-  mavenCentral()
-}
-
 dependencies {
   testImplementation(platform(libs.junitBom))
   testImplementation(libs.junitJupiter)
@@ -68,28 +55,4 @@ tasks.register<JavaExec>("jcstress") {
   workingDir = outDir
   // -t matches every jcstress test in the core package by its shared JCStressTest suffix.
   args("-t", "JCStressTest", "-iters", "1", "-time", "50", "-f", "1", "-v", "-r", "results")
-}
-
-tasks.test {
-  useJUnitPlatform()
-}
-
-tasks.jacocoTestReport {
-  reports {
-    csv.required.set(true)
-    xml.required.set(true)
-    html.required.set(true)
-  }
-}
-
-tasks.compileJava {
-  doFirst {
-    options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
-    classpath = files()
-  }
-}
-
-tasks.javadoc {
-  options.modulePath = classpath.toList()
-  classpath = files()
 }

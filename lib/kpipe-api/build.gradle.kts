@@ -5,19 +5,6 @@ plugins {
 
 description = "KPipe API — fluent top-level KPipe entry point for the common consumer path"
 
-java {
-  withSourcesJar()
-  withJavadocJar()
-  modularity.inferModulePath.set(true)
-  toolchain {
-    languageVersion = JavaLanguageVersion.of(25)
-  }
-}
-
-repositories {
-  mavenCentral()
-}
-
 dependencies {
   api(project(":lib:kpipe-core"))
   api(project(":lib:kpipe-consumer"))
@@ -51,28 +38,4 @@ dependencies {
   testImplementation(libs.testcontainers)
   testImplementation(libs.testcontainersJunitJupiter)
   testImplementation(libs.testcontainersKafka)
-}
-
-tasks.test {
-  useJUnitPlatform()
-}
-
-tasks.jacocoTestReport {
-  reports {
-    csv.required.set(true)
-    xml.required.set(true)
-    html.required.set(true)
-  }
-}
-
-tasks.compileJava {
-  doFirst {
-    options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
-    classpath = files()
-  }
-}
-
-tasks.javadoc {
-  options.modulePath = classpath.toList()
-  classpath = files()
 }
