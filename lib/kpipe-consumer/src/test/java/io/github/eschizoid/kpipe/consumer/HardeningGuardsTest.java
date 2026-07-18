@@ -131,6 +131,10 @@ class HardeningGuardsTest {
   @SuppressWarnings("unchecked")
   void buildDoesNotMutateTheCallersProperties() {
     final var callerProps = byteProperties();
+    // Seed a DIVERGENT key.deserializer: the pin would overwrite it, so if build() still mutated
+    // the caller's object this assertion flips. (With the default ByteArray value the mutation
+    // writes an identical value and the test can't see it.)
+    callerProps.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
     final var before = (Properties) callerProps.clone();
     try (
       final var consumer = KPipeConsumer.builder()
