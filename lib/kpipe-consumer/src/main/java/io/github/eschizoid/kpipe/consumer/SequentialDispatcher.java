@@ -9,7 +9,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 ///
 /// Pairs with [BackpressureController#lagStrategy] in [KPipeConsumer] — when one record runs
 /// at a time, the only meaningful backlog metric is Kafka lag, not in-flight count. Lag-based
-/// backpressure does not consult `pendingCount()`.
+/// backpressure does not consult `activeCount()`.
 ///
 /// **Why we still track an in-flight count even though dispatch is inline.** The counter is
 /// reported as `inFlight` in [KPipeConsumer#getMetrics] (OTel + user-visible) and feeds the
@@ -20,7 +20,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 ///
 /// Shutdown correctness is preserved by `KPipeConsumer.close()`'s `thread.join` on the
 /// consumer thread — the join waits for any in-flight `processTask.run()` to return regardless
-/// of `pendingCount()`. PARALLEL and KEY_ORDERED dispatch onto distinct virtual threads, so
+/// of `activeCount()`. PARALLEL and KEY_ORDERED dispatch onto distinct virtual threads, so
 /// they need a real counter to participate in `waitForInFlightDrain` too.
 final class SequentialDispatcher implements Dispatcher {
 
@@ -42,7 +42,7 @@ final class SequentialDispatcher implements Dispatcher {
   }
 
   @Override
-  public long pendingCount() {
+  public long activeCount() {
     return inFlight.get();
   }
 

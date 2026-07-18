@@ -32,7 +32,7 @@ import org.openjdk.jcstress.infra.results.JJJ_Result;
 /// Awaiting that latch establishes a happens-before edge: by the time an actor returns, its
 /// own record's decrement is visible. One actor dispatches a record whose task returns
 /// normally; the other dispatches a record whose task throws, exercising the throw-path
-/// finally. Each actor reads `pendingCount()` after its own completion and records it; the
+/// finally. Each actor reads `activeCount()` after its own completion and records it; the
 /// arbiter reads the final settled count once both actors finish.
 ///
 /// jcstress runs the two actors against fresh state under every interleaving its scheduler
@@ -66,7 +66,7 @@ import org.openjdk.jcstress.infra.results.JJJ_Result;
   desc = "A negative observation or non-zero final count: an increment or decrement was lost."
 )
 @State
-public class DispatcherPendingCountJCStressTest {
+public class DispatcherActiveCountJCStressTest {
 
   private static final String TOPIC = "jcstress-topic";
 
@@ -96,7 +96,7 @@ public class DispatcherPendingCountJCStressTest {
   public void observe(final JJJ_Result r) {
     awaitQuietly(normalDone);
     awaitQuietly(throwDone);
-    r.r3 = dispatcher.pendingCount();
+    r.r3 = dispatcher.activeCount();
   }
 
   /// Blocks until this record's completion fires, then snapshots the live count. A snapshot
@@ -105,7 +105,7 @@ public class DispatcherPendingCountJCStressTest {
   /// without a matching increment.
   private long awaitThenObserve(final CountDownLatch done) {
     awaitQuietly(done);
-    return dispatcher.pendingCount();
+    return dispatcher.activeCount();
   }
 
   private static void awaitQuietly(final CountDownLatch done) {
