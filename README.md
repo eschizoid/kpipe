@@ -36,41 +36,47 @@ Two claims, both backed in this repo.
 KIP-932 share consumer, and a raw `KafkaConsumer` + virtual-threads loop — same broker, same workload, simulated
 per-record work. The headline regime is 10–100ms per record, the range where consumers doing real DB or HTTP hops live:
 
-| Runtime (delivery guarantee)                          |   10ms / record | 100ms / record   |
-| ----------------------------------------------------- | --------------: | :--------------- |
-| **KPipe `PARALLEL`** (at-least-once)                  | 94.8k rec/s ±2% | 46.8k ±1%        |
-| **KPipe `KEY_ORDERED`** (at-least-once, per-key FIFO) |       41.0k ±1% | 5.4k             |
-| Confluent PC `UNORDERED` (at-least-once)              |        9.6k ±1% | 996 ±0.1%        |
-| Confluent PC `KEY` (at-least-once, per-key FIFO)      |            9.7k | 996              |
-| Kafka share consumer, KIP-932 (at-least-once)         |            4.4k | 2.8k             |
-| Reactor Kafka (at-least-once)                         |             397 | — (not captured) |
+| Runtime (delivery guarantee)                          |     10ms / record | 100ms / record |
+| ----------------------------------------------------- | ----------------: | :------------- |
+| **KPipe `PARALLEL`** (at-least-once)                  |  57.6k rec/s ± 6% | 40.0k ± 3%     |
+| **KPipe `KEY_ORDERED`** (at-least-once, per-key FIFO) |      34.5k ± 0.3% | 5.2k ± 0.3%    |
+| Confluent PC `UNORDERED` (at-least-once)              |       8.7k ± 0.3% | 968 ± 0.1%     |
+| Confluent PC `KEY` (at-least-once, per-key FIFO)      |       8.7k ± 0.3% | 968 ± 0.1%     |
+| Kafka share consumer, KIP-932 (at-least-once)         |       4.5k ± 0.7% | 2.9k ± 2.5%    |
+| Reactor Kafka (at-least-once)                         |        980 ± 0.2% | — (DNF¹)       |
 
-That is **~10× Confluent PC at 10ms and ~47× at 100ms**. CPC's numbers sit exactly at its architectural ceiling: 100
-workers divided by per-record work-time predicts 10,000 rec/s at 10ms and 1,000 at 100ms; the capture measured 9,639
-and 996. Platform pools saturate; virtual-thread-per-record doesn't. That's a threading-model verdict, not a tuning gap.
+That is **~6.6× Confluent PC at 10ms and ~41× at 100ms**, from the 2026-07-21 reference capture: a local quiesced
+box, fork=5, 25/25 samples per cell. (The earlier shared-CI capture on different hardware,
+[2026-07-09](benchmarks/results/2026-07-09.md), reproduces the same ordering with the gaps a notch wider: ~10× and
+~47×.) CPC's numbers sit exactly at its architectural ceiling: 100 workers divided by per-record work-time predicts
+10,000 rec/s at 10ms and 1,000 at 100ms; the capture measured 8,696 and 968. Platform pools saturate;
+virtual-thread-per-record doesn't. That's a threading-model verdict, not a tuning gap. ¹Reactor's 100ms cell blew
+the harness's fixed 2-minute drain budget in every fork (~105 rec/s effective) — recorded as did-not-finish rather
+than extrapolated.
 
-The sub-millisecond regime tells the same story with smaller margins: at fork=5, KPipe `PARALLEL` does 145.4k rec/s
-(±7%) against Confluent PC `UNORDERED`'s 73.8k (±1%) at 1ms of per-record work (~2×), and KPipe `KEY_ORDERED` does 93.8k
-rec/s (±0.8%) against Confluent PC `KEY`'s 65.9k (±1%) — the same per-key-FIFO guarantee at 1.42× the throughput, with
-cleanly separated error bars. Full tables, error bars, and every caveat:
-[`benchmarks/results/2026-07-09.md`](benchmarks/results/2026-07-09.md), captured per the
+For the same per-key-FIFO guarantee, KPipe `KEY_ORDERED` runs **4× Confluent PC `KEY` at 10ms and 5.4× at 100ms**,
+reproduced on both machines. In the sub-millisecond regime that comparison is box-dependent and we say so: 1.42× on
+the 4-vCPU CI runner, 0.83× on the 12-thread local box, where lock contention in the key-ordered dispatcher becomes
+visible (striped-lock experiment on the backlog). KPipe `PARALLEL` at 1ms holds the lead on both boxes (8.1× CPC
+`UNORDERED` locally, ~2× on CI). Full tables, error bars, and every caveat:
+[`benchmarks/results/2026-07-21.md`](benchmarks/results/2026-07-21.md), captured per the
 [methodology](benchmarks/METHODOLOGY.md).
 
-The only faster arm in the capture is the hand-rolled `KafkaConsumer` + virtual-threads loop (525k at 10ms) — and it is
-unsafe: no honest offset commit, records lost on rebalance. KPipe is what that loop becomes once you make it
+The only faster arm in the capture is the hand-rolled `KafkaConsumer` + virtual-threads loop (458k at 10ms) — and it
+is unsafe: no honest offset commit, records lost on rebalance. KPipe is what that loop becomes once you make it
 at-least-once. One more disclosure that is also part of the pitch: Confluent Parallel Consumer 0.5.3.3 is the last
 release before the project was officially retired in 2026-05, and its successor fork has not yet published an artifact.
 
-The honest tradeoff: KPipe allocates the most per record of any arm measured (1,628 B/op vs Confluent PC's 33 B/op).
+The honest tradeoff: KPipe allocates the most per record of any arm measured (~1.7 KB/op vs Confluent PC's ~35 B/op).
 Roughly 62% of that is the fresh virtual thread per record — the same property that buys the throughput lead under
 blocking work. The attribution profile is in
 [`benchmarks/results/2026-06-21-allocation-attribution.md`](benchmarks/results/2026-06-21-allocation-attribution.md).
 Not free, and not hidden.
 
-Caveats that carry: everything runs on a shared GitHub-hosted CI runner, so read the orderings and the error bars, not
-the absolute magnitudes. (An earlier capture reported KPipe `PARALLEL`'s sub-millisecond cells as single-sample point
-estimates; that turned out to be a real pause/resume liveness bug the benchmark exposed — fixed in #228 and re-captured
-at full fork depth, 25/25 samples. Details in the snapshot's addendum.)
+Caveats that carry: the reference box is a 6-core laptop, so read the ratios and the error bars, not the absolute
+magnitudes — server hardware scales everything up together. (An earlier capture reported KPipe `PARALLEL`'s
+sub-millisecond cells as single-sample point estimates; that turned out to be a real pause/resume liveness bug the
+benchmark exposed — fixed in #228. The reference capture has 25/25 samples in every completed cell.)
 
 **2. The at-least-once claim is verified, not asserted.** Every CI run gates on 16
 [jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 4 modules, plus jqwik
