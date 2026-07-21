@@ -8,46 +8,52 @@ import java.util.AbstractMap;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /// Key-ordered dispatcher: records sharing a key process serially on a single virtual thread;
-/// different keys process in parallel. Maintains an LRU map of active keys with a configurable
-/// cap (default 10,000). Null-keyed records all serialize through a single sentinel queue.
+/// different keys process in parallel. Maintains a bounded map of active keys with a
+/// configurable cap (default 10,000). Null-keyed records all serialize through a single
+/// sentinel queue.
 ///
-/// **LRU eviction policy.** When the cap is reached and a new key needs a queue slot, we walk
-/// the LRU oldest-first looking for a queue that is both empty AND has no worker running. We
-/// never evict a non-empty queue (would break per-key ordering). If every queue at cap is
-/// non-empty, the dispatch call holds — releasing and re-acquiring the lock, yielding the
-/// consumer thread — until some queue drains. This is the implicit-backpressure mechanism for
-/// KEY_ORDERED mode: a hot producer sending many distinct keys faster than they can process
-/// will naturally stall the consumer thread's poll loop.
+/// **Eviction policy.** When the cap is reached and a new key needs a queue slot, we scan for
+/// any queue that is both empty AND has no worker running, and evict it. We never evict a
+/// non-empty queue (would break per-key ordering). If every queue at cap is non-empty, the
+/// dispatch call holds — sleeping briefly and retrying — until some queue drains. This is the
+/// implicit-backpressure mechanism for KEY_ORDERED mode: a hot producer sending many distinct
+/// keys faster than they can process will naturally stall the consumer thread's poll loop.
+/// (The v1 design kept an access-ordered LRU and evicted coldest-first; ordering was never a
+/// correctness requirement — only empty+idle queues are ever reclaimed — so v2 trades the
+/// coldest-first preference for lock-free reads on the hot path.)
 ///
 /// **Per-key worker lifecycle.** When a record arrives for a key with no active worker, the
 /// dispatcher starts a virtual thread that drains the queue until empty, then exits. New
 /// records arriving for the same key (after the worker has exited but the queue entry is
-/// still in the LRU map) trigger a fresh worker. The empty queue stays in the LRU map until
-/// evicted to make room for another key — that's how the LRU naturally retains "warm" keys.
+/// still in the map) trigger a fresh worker. The empty queue stays in the map until evicted
+/// to make room for another key.
 ///
-/// **Concurrency.** All map mutations + queue mutations happen under a single
-/// [ReentrantLock]. Task execution runs OUTSIDE the lock (the worker releases before calling
-/// `task.run()`, reacquires for the next poll). This means the lock is held only for
-/// microseconds at a time — enqueue, dequeue, LRU bookkeeping. Hot lock under very high key
-/// cardinality is a known v1 limitation; striped locking or `Caffeine` are possible v2
-/// optimizations.
+/// **Concurrency.** v2 of this class: the single global `ReentrantLock` (the measured
+/// throughput ceiling at high key cardinality) is replaced by a `ConcurrentHashMap` plus one
+/// monitor per key queue. The hot path — enqueue by the consumer thread, dequeue by that
+/// key's worker — contends only on that key's monitor; workers for different keys never
+/// contend with each other. Map membership changes (insert on first dispatch for a key,
+/// remove on eviction) go through the `ConcurrentHashMap`, and eviction's
+/// empty-and-idle check runs inside `computeIfPresent` while holding the queue's monitor, so
+/// removal is atomic with respect to both enqueuers and the draining worker. Lock ordering is
+/// map-bin → queue monitor (eviction); dispatch and drain acquire the queue monitor only
+/// after any map operation completes, so no cycle exists.
 ///
-/// **Atomic remove-if-empty.** The worker's exit is guarded under the lock — it polls from
-/// the deque AND clears `workerActive` under the same lock acquisition. A concurrent
-/// `dispatch()` either finds `workerActive=true` (in which case it just enqueues, the
-/// existing worker picks it up) or finds `workerActive=false` (in which case it starts a new
-/// worker for the same queue).
+/// **Evict-vs-enqueue race.** A dispatcher may obtain a queue reference just before eviction
+/// removes that queue from the map. Eviction marks the queue `dead` (under its monitor)
+/// atomically with the removal; the dispatcher re-checks `dead` under the same monitor before
+/// enqueuing and retries with a fresh map lookup if it lost the race. A worker cannot race
+/// eviction at all: eviction requires `workerActive == false`, which is only set by the
+/// worker's final monitor section after it has observed an empty queue.
 ///
 /// **Shutdown.** [KPipeConsumer#close] calls `waitForInFlightDrain(waitForMessagesTimeout)`
 /// BEFORE invoking [#close()] on this dispatcher. By the time `close()` runs, all queues
@@ -58,7 +64,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
 
   private static final Logger LOGGER = System.getLogger(KeyOrderedDispatcher.class.getName());
 
-  /// Default LRU cap on distinct keys held in memory simultaneously. Configurable via
+  /// Default cap on distinct keys held in memory simultaneously. Configurable via
   /// `KPipeConsumerBuilder.withKeyOrderedMaxKeys(int)`. Aliases the public single-source-of-
   /// truth constant so the default can't drift between this module and `kpipe-api`.
   static final int DEFAULT_MAX_KEYS = ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS;
@@ -70,10 +76,10 @@ final class KeyOrderedDispatcher implements Dispatcher {
   private static final Duration CLOSE_DRAIN_TIMEOUT = Duration.ofSeconds(5);
 
   private final int maxKeys;
-  /// LRU map of active key queues. `accessOrder=true` means `get/put` move the entry to the
-  /// most-recently-used end. Eviction scans from head (least recently used).
-  private final LinkedHashMap<Object, KeyQueue> queues;
-  private final ReentrantLock lock = new ReentrantLock();
+  /// Active key queues. Concurrent map so workers, diagnostics, and (in tests) concurrent
+  /// dispatchers can operate without a global lock; per-queue state is guarded by each
+  /// [KeyQueue]'s monitor.
+  private final ConcurrentHashMap<Object, KeyQueue> queues = new ConcurrentHashMap<>();
   private final AtomicLong pending = new AtomicLong(0);
   /// Set once on the first dispatch-stall (cap saturated, every queue non-empty) so the WARN
   /// log fires exactly once per dispatcher instance. Repeating the warning on every stall
@@ -81,7 +87,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// to bump `KPipeConsumerBuilder.withKeyOrderedMaxKeys(int)`.
   private final AtomicBoolean stallWarningEmitted = new AtomicBoolean(false);
 
-  /// Set by [#close()] to break out of the saturation yield-loop in [#allocateNewQueue]. If
+  /// Set by [#close()] to break out of the saturation stall-loop in [#reserveCapacity]. If
   /// every queue is full and workers are stuck (e.g. user pipeline deadlock), the consumer
   /// thread would otherwise spin past close until `KPipeConsumer.threadTerminationTimeout`
   /// expires. With this flag, close() causes the in-flight dispatch to abandon — the
@@ -95,11 +101,10 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// shutdown semantics as `ParallelDispatcher`'s `executor.shutdownNow()`.
   private final Set<Thread> activeWorkers = ConcurrentHashMap.newKeySet();
 
-  /// @param maxKeys LRU cap on distinct keys (must be positive)
+  /// @param maxKeys cap on distinct keys (must be positive)
   KeyOrderedDispatcher(final int maxKeys) {
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
     this.maxKeys = maxKeys;
-    this.queues = new LinkedHashMap<>(16, 0.75f, true);
   }
 
   @Override
@@ -111,7 +116,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
     // No `if (closed) return` early-exit here — that would orphan records mid-batch
     // (TrackOffset already enqueued in KPipeConsumer.processRecords, but no
     // MarkOffsetProcessed since we skipped). The `closed` flag is checked ONLY inside the
-    // saturation yield-loop in allocateNewQueue, so a normally-arriving dispatch always
+    // saturation stall-loop in reserveCapacity, so a normally-arriving dispatch always
     // enqueues its task and lets the worker drain it.
     final var key = normalizeKey(record.key());
     pending.incrementAndGet();
@@ -121,105 +126,123 @@ final class KeyOrderedDispatcher implements Dispatcher {
     // directly with its own try/finally, eliminating the per-record wrapper Runnable allocation.
     final var queued = new QueuedTask(processTask, onComplete);
 
-    lock.lock();
-    try {
+    while (true) {
       var queue = queues.get(key);
       if (queue == null) {
-        queue = allocateNewQueue(key);
-        if (queue == null) {
-          // allocateNewQueue returned null because close() fired during the saturation stall.
+        if (!reserveCapacity()) {
+          // reserveCapacity returned false because close() fired during the saturation stall.
           // Roll back the pending increment so totalInFlight() doesn't get stuck.
           pending.decrementAndGet();
           return;
         }
+        final var fresh = new KeyQueue();
+        final var raced = queues.putIfAbsent(key, fresh);
+        queue = raced != null ? raced : fresh;
       }
-      queue.tasks.addLast(queued);
-      if (!queue.workerActive) {
-        queue.workerActive = true;
-        try {
-          startWorker(key, queue);
-        } catch (final RuntimeException e) {
-          // Worker failed to start (e.g. the JVM can't create the thread). Undo the enqueue so
-          // this key isn't wedged with workerActive=true and an undrained task, and pending
-          // doesn't leak (which would stall drain/backpressure). Re-throw to fail fast.
-          queue.workerActive = false;
-          queue.tasks.removeLast();
-          pending.decrementAndGet();
-          throw e;
+      synchronized (queue) {
+        // Re-check under the monitor: eviction may have removed this queue from the map
+        // between our lookup and here. `dead` is set atomically with that removal, so a
+        // retry is guaranteed to observe a fresh map state.
+        if (queue.dead) continue;
+        queue.tasks.addLast(queued);
+        if (!queue.workerActive) {
+          queue.workerActive = true;
+          try {
+            startWorker(key, queue);
+          } catch (final RuntimeException e) {
+            // Worker failed to start (e.g. the JVM can't create the thread). Undo the enqueue
+            // so this key isn't wedged with workerActive=true and an undrained task, and
+            // pending doesn't leak (which would stall drain/backpressure). Re-throw to fail
+            // fast.
+            queue.workerActive = false;
+            queue.tasks.removeLast();
+            pending.decrementAndGet();
+            throw e;
+          }
         }
       }
-    } finally {
-      lock.unlock();
+      return;
     }
   }
 
-  /// Called under `lock`. Walks the LRU map until an empty + idle queue is found, evicts it,
-  /// and allocates a new queue for `key`. Stalls (releasing + reacquiring the lock with a 1ms
-  /// park) only when NO queue is evictable — the implicit-backpressure mechanism. Returns
-  /// `null` if shutdown is signalled (or the thread is interrupted) *while stalled*, so the
-  /// caller can roll back the pending counter and abandon the dispatch.
+  /// Ensures there is room in the map for one more key, evicting an empty + idle queue if the
+  /// cap is reached. Stalls (with a 1ms park) only when NO queue is evictable — the
+  /// implicit-backpressure mechanism. Returns `false` if shutdown is signalled (or the thread
+  /// is interrupted) *while stalled*, so the caller can roll back the pending counter and
+  /// abandon the dispatch.
   ///
   /// The shutdown/interrupt check lives in the stall branch, not at the top of the loop:
   /// during shutdown we still want to evict an idle queue and process the record if we can,
   /// rather than abandoning it (which would orphan its already-tracked offset and force
   /// avoidable reprocessing on restart). We only give up when stalling is the only option.
-  private KeyQueue allocateNewQueue(final Object key) {
-    while (queues.size() >= maxKeys) {
-      final var evictable = findEvictable();
-      if (evictable != null) {
-        queues.remove(evictable);
-      } else {
-        // No evictable queue → the only options are stall or give up. If shutting down or
-        // interrupted, give up (return null → caller abandons). Checking interrupt here
-        // rather than after Thread.sleep also prevents a set interrupt flag from making the
-        // sleep throw every iteration, which would turn the 1ms backoff into a tight spin.
-        if (closed || Thread.currentThread().isInterrupted()) return null;
-        if (stallWarningEmitted.compareAndSet(false, true)) {
-          LOGGER.log(
-            Level.WARNING,
-            "KEY_ORDERED dispatch stalled: all {0} key queues are non-empty and the LRU cap is saturated. " +
-              "The consumer thread will hold until a queue drains. If this is sustained, raise the cap via " +
-              "withKeyOrderedMaxKeys(...) (on the Builder, Stream, or MultiBuilder). This warning fires once " +
-              "per dispatcher instance.",
-            maxKeys
-          );
-        }
-        lock.unlock();
-        try {
-          // 1ms park, not Thread.yield, so sustained saturation doesn't peg a CPU core on
-          // the consumer thread. Worst-case latency is one sleep tick after a queue drains.
-          //noinspection BusyWait — intentional bounded backpressure park, not a spin
-          Thread.sleep(1);
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-        } finally {
-          lock.lock();
-        }
+  ///
+  /// Under concurrent dispatch (a test-only scenario; production has a single consumer
+  /// thread) the size check and insert are not one atomic step, so the map can transiently
+  /// exceed the cap by the number of concurrent dispatchers minus one. The bound is exact in
+  /// production use.
+  private boolean reserveCapacity() {
+    while (queues.mappingCount() >= maxKeys) {
+      if (evictOneIdle()) continue;
+      // No evictable queue → the only options are stall or give up. If shutting down or
+      // interrupted, give up (return false → caller abandons). Checking interrupt here
+      // rather than after Thread.sleep also prevents a set interrupt flag from making the
+      // sleep throw every iteration, which would turn the 1ms backoff into a tight spin.
+      if (closed || Thread.currentThread().isInterrupted()) return false;
+      if (stallWarningEmitted.compareAndSet(false, true)) {
+        LOGGER.log(
+          Level.WARNING,
+          "KEY_ORDERED dispatch stalled: all {0} key queues are non-empty and the key cap is saturated. " +
+            "The consumer thread will hold until a queue drains. If this is sustained, raise the cap via " +
+            "withKeyOrderedMaxKeys(...) (on the Builder, Stream, or MultiBuilder). This warning fires once " +
+            "per dispatcher instance.",
+          maxKeys
+        );
+      }
+      try {
+        // 1ms park, not Thread.yield, so sustained saturation doesn't peg a CPU core on
+        // the consumer thread. Worst-case latency is one sleep tick after a queue drains.
+        //noinspection BusyWait — intentional bounded backpressure park, not a spin
+        Thread.sleep(1);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
     }
-    final var q = new KeyQueue();
-    queues.put(key, q);
-    return q;
+    return true;
   }
 
-  /// Called under `lock`. Returns the LRU-oldest key whose queue is empty AND has no running
-  /// worker, or `null` if none. Iteration is from LRU (oldest) to MRU (newest).
-  private Object findEvictable() {
-    for (final var entry : queues.entrySet()) {
-      final var q = entry.getValue();
-      if (q.tasks.isEmpty() && !q.workerActive) return entry.getKey();
+  /// Scans the map for a queue that is empty AND has no running worker, and removes it.
+  /// The check-and-remove is atomic: `computeIfPresent` holds the map bin while the queue's
+  /// monitor confirms it is reclaimable, and `dead` is set inside that same monitor section,
+  /// so a dispatcher holding a stale reference to the evicted queue will observe `dead` and
+  /// retry, and a worker can never be mid-drain (that would mean `workerActive == true`).
+  /// Returns `true` if a queue was evicted.
+  private boolean evictOneIdle() {
+    for (final var key : queues.keySet()) {
+      final var removed = new AtomicBoolean(false);
+      queues.computeIfPresent(key, (k, q) -> {
+        synchronized (q) {
+          if (q.tasks.isEmpty() && !q.workerActive) {
+            q.dead = true;
+            removed.set(true);
+            return null;
+          }
+          return q;
+        }
+      });
+      if (removed.get()) return true;
     }
-    return null;
+    return false;
   }
 
-  /// Called under `lock`. Starts a new virtual thread that drains the queue until empty.
-  /// Registers the worker in [#activeWorkers] BEFORE starting it — not from inside the
-  /// runnable — so [#close()]'s interrupt loop can't miss a worker that has been started but
-  /// hasn't run its first statement yet. (Registering inside the runnable left a window where
-  /// close() could time out and interrupt the set before the new worker added itself, leaving
-  /// it un-interrupted and able to run after shutdown closed the offset manager / producer.)
-  /// The runnable removes itself on exit; if `start()` throws, we remove it as a fallback
-  /// since the finally would never run.
+  /// Starts a new virtual thread that drains the queue until empty. Called while holding the
+  /// queue's monitor (the new worker's first drain step re-acquires it, so it simply blocks
+  /// until the dispatching thread releases). Registers the worker in [#activeWorkers] BEFORE
+  /// starting it — not from inside the runnable — so [#close()]'s interrupt loop can't miss a
+  /// worker that has been started but hasn't run its first statement yet. (Registering inside
+  /// the runnable left a window where close() could time out and interrupt the set before the
+  /// new worker added itself, leaving it un-interrupted and able to run after shutdown closed
+  /// the offset manager / producer.) The runnable removes itself on exit; if `start()`
+  /// throws, we remove it as a fallback since the finally would never run.
   private void startWorker(final Object key, final KeyQueue queue) {
     final var worker = Thread.ofVirtual()
       .name("kpipe-key-worker-" + System.identityHashCode(key))
@@ -239,25 +262,24 @@ final class KeyOrderedDispatcher implements Dispatcher {
     }
   }
 
-  /// Inner drain loop for [#startWorker]. Pulls tasks under the lock; runs them outside.
-  /// `pending.decrement` and `onComplete` were previously folded into a wrapper [Runnable]
-  /// allocated per-dispatch; they now happen here, removing that allocation from the hot path.
+  /// Inner drain loop for [#startWorker]. Pulls tasks under the queue's monitor; runs them
+  /// outside it. The exit decision (queue empty → `workerActive = false` → return) happens in
+  /// the same monitor section as the failed poll, so an enqueue that lands while the worker
+  /// is deciding either is seen by this worker's next poll or finds `workerActive == false`
+  /// and starts a fresh worker — a task can never be stranded.
   private void drain(final KeyQueue queue) {
     while (true) {
       QueuedTask task;
-      lock.lock();
-      try {
+      synchronized (queue) {
         task = queue.tasks.pollFirst();
         if (task == null) {
           queue.workerActive = false;
           return;
         }
-      } finally {
-        lock.unlock();
       }
-      // Run OUTSIDE the lock. Outer try/finally guarantees pending is decremented and
+      // Run OUTSIDE the monitor. Outer try/finally guarantees pending is decremented and
       // onComplete is invoked even if processTask throws; the outer catch keeps the drain
-      // loop alive on any Throwable, mirroring the previous wrapper's safety net.
+      // loop alive on any Throwable.
       try {
         try {
           task.processTask.run();
@@ -280,33 +302,30 @@ final class KeyOrderedDispatcher implements Dispatcher {
     return pending.get();
   }
 
-  /// Snapshot of the top `n` keys by current queue depth, deepest-first. Walks every queue
-  /// under the lock; intended for ad-hoc diagnostics, not hot-path use. The null-key queue is
-  /// returned with a `null` entry key. `byte[]` keys are internally wrapped in a `ByteBuffer`
-  /// for content-based identity; the snapshot returns a defensive `byte[]` copy of the
-  /// underlying bytes so callers can't mutate the buffer's position/limit or the backing
-  /// array and corrupt the dispatcher's internal map.
+  /// Snapshot of the top `n` keys by current queue depth, deepest-first. Weakly consistent:
+  /// the map is iterated without a global lock (entries may be added or evicted mid-walk) and
+  /// each queue's depth is read under its own monitor. Intended for ad-hoc diagnostics, not
+  /// hot-path use. The null-key queue is returned with a `null` entry key. `byte[]` keys are
+  /// internally wrapped in a `ByteBuffer` for content-based identity; the snapshot returns a
+  /// defensive `byte[]` copy of the underlying bytes so callers can't mutate the buffer's
+  /// position/limit or the backing array and corrupt the dispatcher's internal map.
   @Override
   public List<Map.Entry<byte[], Integer>> topKeyQueueDepths(final int n) {
     if (n <= 0) throw new IllegalArgumentException("n must be positive, got " + n);
-    final List<Map.Entry<byte[], Integer>> snapshot;
-    lock.lock();
-    try {
-      // queues is a plain LinkedHashMap mutated only under lock — size it here, not before.
-      snapshot = new ArrayList<>(queues.size());
-      for (final var entry : queues.entrySet()) {
-        snapshot.add(
-          new AbstractMap.SimpleImmutableEntry<>(toPublicKey(entry.getKey()), entry.getValue().tasks.size())
-        );
+    final List<Map.Entry<byte[], Integer>> snapshot = new ArrayList<>();
+    for (final var entry : queues.entrySet()) {
+      final var q = entry.getValue();
+      final int depth;
+      synchronized (q) {
+        depth = q.tasks.size();
       }
-    } finally {
-      lock.unlock();
+      snapshot.add(new AbstractMap.SimpleImmutableEntry<>(toPublicKey(entry.getKey()), depth));
     }
     snapshot.sort(Comparator.comparingInt((Map.Entry<byte[], Integer> e) -> e.getValue()).reversed());
     return snapshot.size() <= n ? snapshot : new ArrayList<>(snapshot.subList(0, n));
   }
 
-  /// Converts the dispatcher's internal LRU key into the form returned to diagnostic callers:
+  /// Converts the dispatcher's internal map key into the form returned to diagnostic callers:
   /// the null sentinel becomes `null`, and the `ByteBuffer` wrapper becomes a defensive copy
   /// of the underlying bytes (so callers can't mutate position/limit or the backing array on
   /// our live map key).
@@ -318,15 +337,15 @@ final class KeyOrderedDispatcher implements Dispatcher {
     return copy;
   }
 
-  /// Normalizes the raw `byte[]` Kafka key into something the LRU map can index correctly. The
-  /// `LinkedHashMap` uses `Object.equals`/`hashCode` to identify entries, but `byte[]` has
+  /// Normalizes the raw `byte[]` Kafka key into something the map can index correctly. The
+  /// map uses `Object.equals`/`hashCode` to identify entries, but `byte[]` has
   /// reference-based equality — two arrays with identical content would be treated as
   /// distinct keys and break per-key serialization — so keys are wrapped in a `ByteBuffer` to
   /// get content-based equality.
   ///
-  /// The wrapper holds a **defensive copy** of the bytes (via `bytes.clone()`) so the LRU
-  /// map's key identity cannot be invalidated by a caller mutating the original `byte[]`
-  /// after dispatch. Without the copy, post-dispatch mutation would change the buffer's
+  /// The wrapper holds a **defensive copy** of the bytes (via `bytes.clone()`) so the map's
+  /// key identity cannot be invalidated by a caller mutating the original `byte[]` after
+  /// dispatch. Without the copy, post-dispatch mutation would change the buffer's
   /// `equals`/`hashCode` and the map entry would become unreachable, leaking its queue.
   ///
   /// `null` keys all collapse to a single sentinel so they serialize through one queue.
@@ -338,7 +357,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   @Override
   public void signalShutdown() {
     // Non-blocking. Set by KPipeConsumer.close() BEFORE waitForInFlightDrain so a consumer
-    // thread stuck in allocateNewQueue's saturation yield-loop can escape promptly and let
+    // thread stuck in reserveCapacity's saturation stall-loop can escape promptly and let
     // the drain wait + thread.join make progress. Workers already inside task.run() are not
     // interrupted — they finish naturally or get abandoned at JVM exit (VTs are daemon).
     closed = true;
@@ -379,13 +398,17 @@ final class KeyOrderedDispatcher implements Dispatcher {
     }
   }
 
-  /// Per-key state: a serial FIFO queue of pending tasks plus a flag that records whether a
-  /// virtual-thread worker is currently draining it. Mutated only under
-  /// [KeyOrderedDispatcher#lock].
+  /// Per-key state: a serial FIFO queue of pending tasks, a flag that records whether a
+  /// virtual-thread worker is currently draining it, and a tombstone set by eviction. All
+  /// three fields are guarded by this object's monitor.
   private static final class KeyQueue {
 
     final ArrayDeque<QueuedTask> tasks = new ArrayDeque<>();
     boolean workerActive = false;
+    /// Set (under the monitor, atomically with removal from the map) when eviction reclaims
+    /// this queue. A dispatcher that obtained its reference before the removal observes the
+    /// tombstone under the monitor and retries against the live map.
+    boolean dead = false;
   }
 
   /// Pairs the per-record `processTask` with its `onComplete` callback. Replaces the
