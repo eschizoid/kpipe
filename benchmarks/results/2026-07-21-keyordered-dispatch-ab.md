@@ -1,6 +1,6 @@
 # KeyOrderedDispatcher v2 — interleaved A/B (2026-07-21)
 
-The §20 guardrail said any dispatcher-lock work must re-run `KeyOrderedDispatchBenchmark` and demonstrate a
+The standing guardrail for dispatcher-lock work: re-run `KeyOrderedDispatchBenchmark` and demonstrate a
 measurable win before landing. This is that record, for the v2 rewrite (single global `ReentrantLock` →
 `ConcurrentHashMap` + per-queue monitors).
 
@@ -33,12 +33,21 @@ the change (PARALLEL uses `ParallelDispatcher`).
 KEY_ORDERED at high cardinality moves from ~28% of the PARALLEL ceiling to ~64%. The k=1 improvement is monitor
 vs `ReentrantLock` fixed overhead on the uncontended path.
 
+**Scope caveat, stated honestly:** the bench's 10,000-key cell exactly *fills* the default cap but never exceeds
+it, so the eviction/saturation path was not perf-measured — in v1 or v2 (both baselines share this). v2 changed
+the eviction victim policy (coldest-first LRU → any empty+idle queue); that path's cost is covered by
+correctness tests, not by these numbers.
+
 ## Correctness evidence
 
-- All 93 dispatcher/consumer unit + property tests green.
-- `KeyOrderedLruJCStressTest` (lost/duplicate task under enqueue-vs-worker-exit) and the new
-  `KeyOrderedEvictRaceJCStressTest` (cap=1, three actors driving the evict-vs-redispatch tombstone window):
-  312/312 configs passed at `-iters 3 -time 100 -f 2` — deeper than the CI caps.
+- All dispatcher/consumer unit + property tests green, including two tests added with the rewrite:
+  the worker-active eviction guard (an empty-but-active queue must never be evicted) and same-key
+  reallocation FIFO after eviction.
+- `KeyOrderedWorkerHandoffJCStressTest` (lost/duplicate task under enqueue-vs-worker-exit; formerly
+  `KeyOrderedLruJCStressTest`), `KeyOrderedEvictRaceJCStressTest` (cap=1, three actors, evict-vs-redispatch),
+  and `KeyOrderedEvictTombstoneJCStressTest` (pre-seeded two-actor variant that collides the tombstone window
+  directly and reports window-reachability in its outcome histogram): all configs passed at
+  `-iters 3 -time 100 -f 2` — deeper than the CI caps.
 
 Raw JMH JSON: captured under the branch's `.claude/bench/ab-{base,cand}-r{1,2}.json` on the capture machine
 (dev-loop artifacts, not committed; the numbers above are the pooled scores).

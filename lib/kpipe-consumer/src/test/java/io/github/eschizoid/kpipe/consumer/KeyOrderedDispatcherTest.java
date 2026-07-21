@@ -212,7 +212,7 @@ class KeyOrderedDispatcherTest {
   }
 
   @Test
-  void evictionFreesLruEmptyQueueUnderCap() throws InterruptedException {
+  void evictionFreesAnEmptyIdleQueueAtCap() throws InterruptedException {
     final var dispatcher = new KeyOrderedDispatcher(2);
     final var latches = new HashMap<String, CountDownLatch>();
     for (final var k : List.of("a", "b")) {
@@ -223,11 +223,86 @@ class KeyOrderedDispatcherTest {
     // Drain both keys.
     for (final var done : latches.values()) assertTrue(done.await(2, TimeUnit.SECONDS));
 
-    // Both queues should be empty and evictable. Dispatch on a third key — should succeed
-    // without blocking, evicting the LRU one ("a").
+    // Both queues are empty and idle, hence evictable. Dispatch on a third key — should
+    // succeed without blocking by evicting one of them.
     final var thirdDone = new CountDownLatch(1);
     dispatcher.dispatch(recordWithKey("c", 0), thirdDone::countDown, () -> {});
     assertTrue(thirdDone.await(2, TimeUnit.SECONDS), "third key should dispatch by evicting an empty queue");
+    dispatcher.close();
+  }
+
+  @Test
+  void evictionSkipsEmptyQueueWhoseWorkerIsStillRunning() throws InterruptedException {
+    // Pins the worker-active eviction guard: a queue whose worker has polled its only task
+    // (queue empty, worker mid-run) must NOT be evicted — evicting it would let a re-dispatch
+    // of the same key allocate a second queue and a second worker, breaking per-key ordering.
+    final var dispatcher = new KeyOrderedDispatcher(2);
+
+    final var b1Gate = new CountDownLatch(1);
+    final var b1Started = new CountDownLatch(1);
+    final var b1Done = new CountDownLatch(1);
+    dispatcher.dispatch(
+      recordWithKey("b", 0),
+      () -> {
+        b1Started.countDown();
+        try {
+          b1Gate.await();
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      },
+      b1Done::countDown
+    );
+    assertTrue(b1Started.await(2, TimeUnit.SECONDS), "b's worker must have polled its task");
+
+    // "a" completes and goes idle — the only legal eviction victim at cap.
+    final var aDone = new CountDownLatch(1);
+    dispatcher.dispatch(recordWithKey("a", 0), aDone::countDown, () -> {});
+    assertTrue(aDone.await(2, TimeUnit.SECONDS));
+
+    // "c" forces an eviction. It must pick "a" (empty + idle), never "b" (empty but active).
+    final var cDone = new CountDownLatch(1);
+    dispatcher.dispatch(recordWithKey("c", 0), cDone::countDown, () -> {});
+    assertTrue(cDone.await(2, TimeUnit.SECONDS), "c should dispatch by evicting the idle 'a' queue");
+
+    // Re-dispatch "b" while b1 is still gated. If b's queue survived (correct), this enqueues
+    // behind the live worker and MUST NOT run yet. If b's queue was wrongly evicted, a fresh
+    // queue + second worker runs b2 concurrently with b1 — caught by the negative await.
+    final var b2Ran = new CountDownLatch(1);
+    dispatcher.dispatch(recordWithKey("b", 1), b2Ran::countDown, () -> {});
+    assertFalse(
+      b2Ran.await(300, TimeUnit.MILLISECONDS),
+      "b2 ran while b1 was still in flight — b's live queue was evicted and per-key ordering broke"
+    );
+
+    b1Gate.countDown();
+    assertTrue(b1Done.await(2, TimeUnit.SECONDS));
+    assertTrue(b2Ran.await(2, TimeUnit.SECONDS), "b2 must run after b1 completes");
+    dispatcher.close();
+  }
+
+  @Test
+  void sameKeyReallocatesFreshQueueAfterEvictionAndPreservesFifo() throws InterruptedException {
+    // Evict a key's queue, then dispatch the same key again: the key must come back cleanly
+    // (fresh queue, fresh worker) and its records must still process in dispatch order.
+    final var dispatcher = new KeyOrderedDispatcher(1);
+
+    final var a0Done = new CountDownLatch(1);
+    dispatcher.dispatch(recordWithKey("a", 0), a0Done::countDown, () -> {});
+    assertTrue(a0Done.await(2, TimeUnit.SECONDS));
+
+    // At cap=1, dispatching "b" evicts a's (now empty, idle) queue and tombstones it.
+    final var bDone = new CountDownLatch(1);
+    dispatcher.dispatch(recordWithKey("b", 0), bDone::countDown, () -> {});
+    assertTrue(bDone.await(2, TimeUnit.SECONDS));
+
+    // "a" again, twice back-to-back: both must run, in offset order, on a fresh queue.
+    final var order = new CopyOnWriteArrayList<Integer>();
+    final var bothDone = new CountDownLatch(2);
+    dispatcher.dispatch(recordWithKey("a", 1), () -> order.add(1), bothDone::countDown);
+    dispatcher.dispatch(recordWithKey("a", 2), () -> order.add(2), bothDone::countDown);
+    assertTrue(bothDone.await(2, TimeUnit.SECONDS), "re-dispatched key must process after its eviction");
+    assertEquals(List.of(1, 2), order, "per-key FIFO must survive eviction + reallocation");
     dispatcher.close();
   }
 
@@ -366,7 +441,7 @@ class KeyOrderedDispatcherTest {
   @Test
   void dispatchStallUnderSaturationEventuallyRecoversWhenAQueueDrains() throws InterruptedException {
     // Cap=2. Hold both keys' workers blocked, then attempt to dispatch a third key — that call
-    // must stall in allocateNewQueue. Releasing one of the blocked workers must let the third
+    // must stall in reserveCapacity. Releasing one of the blocked workers must let the third
     // dispatch complete.
     final var dispatcher = new KeyOrderedDispatcher(2);
     final var workerA = new CountDownLatch(1);
@@ -425,7 +500,7 @@ class KeyOrderedDispatcherTest {
     // Regression test for the Object-equality footgun on byte[] keys. Kafka's
     // ByteArrayDeserializer hands us a fresh byte[] per record, so two records with the same
     // logical key arrive as different array instances. Without content-based normalization
-    // (ByteBuffer.wrap), the LRU map would treat them as distinct keys and the records would
+    // (ByteBuffer.wrap), the key map would treat them as distinct keys and the records would
     // run concurrently — silently breaking the KEY_ORDERED contract.
     final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var keyContent = "user-A".getBytes();
@@ -516,7 +591,7 @@ class KeyOrderedDispatcherTest {
   @Test
   void byteArrayKeyMutationAfterDispatchDoesNotCorruptQueue() throws InterruptedException {
     // Defensive-copy guarantee: if the caller retains and mutates the byte[] key after
-    // dispatch, the dispatcher's internal LRU key identity must NOT change (otherwise the
+    // dispatch, the dispatcher's internal map-key identity must NOT change (otherwise the
     // map entry becomes unreachable and the queue leaks). normalizeKey clones the bytes
     // before wrapping, so the wrapper holds a snapshot the caller can't alter.
     final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
@@ -697,7 +772,7 @@ class KeyOrderedDispatcherTest {
     assertTrue(workerAStarted.await(2, TimeUnit.SECONDS));
     assertTrue(workerBStarted.await(2, TimeUnit.SECONDS));
 
-    // Third key dispatches on a separate thread → will stall in allocateNewQueue's yield-loop.
+    // Third key dispatches on a separate thread → will stall in reserveCapacity's sleep-loop.
     final var thirdCompleted = new CountDownLatch(1);
     final var pendingBeforeSignal = new AtomicInteger();
     Thread.ofVirtual().start(() -> {
@@ -731,7 +806,7 @@ class KeyOrderedDispatcherTest {
   void topKeyQueueDepthsReturnsByteArrayCopyNotInternalBuffer() throws InterruptedException {
     // Diagnostic snapshot must return a defensive byte[] copy for byte[]-keyed queues so a
     // caller can't mutate the internal ByteBuffer (position/limit/backing array) and corrupt
-    // the dispatcher's LRU.
+    // the dispatcher's key map.
     final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var allowFinish = new CountDownLatch(1);
     final var started = new CountDownLatch(1);
@@ -772,11 +847,12 @@ class KeyOrderedDispatcherTest {
   }
 
   @Test
-  void saturationLogsWarningExactlyOnceAcrossRepeatedStalls() throws InterruptedException {
-    // The AtomicBoolean.compareAndSet guard in allocateNewQueue must let exactly one WARN
-    // fire per dispatcher instance, even under sustained or repeated saturation. Without
-    // this, a stuck producer could flood logs at the rate of the consumer's poll loop.
-    // We capture System.Logger output via the JUL handler the System.Logger bridges to.
+  void saturationLogsWarningOncePerEpisode() throws InterruptedException {
+    // The stall WARN must fire exactly once per saturation EPISODE: the guard re-arms when a
+    // stalled dispatch eventually succeeds, so a fresh saturation later gets its own signal,
+    // while a sustained stall within one episode still logs a single line (a stuck producer
+    // must not flood logs at the poll-loop rate). We capture System.Logger output via the
+    // JUL handler the System.Logger bridges to.
     final var dispatcher = new KeyOrderedDispatcher(2);
     final var julLogger = Logger.getLogger(KeyOrderedDispatcher.class.getName());
     final var captured = new CopyOnWriteArrayList<LogRecord>();
@@ -889,15 +965,16 @@ class KeyOrderedDispatcherTest {
       assertTrue(stalledThird2.await(2, TimeUnit.SECONDS));
       workerB2.countDown();
 
-      // Two distinct saturation episodes → still exactly one WARN.
+      // Two distinct saturation episodes → exactly one WARN each. The sustained stall inside
+      // each round (many 1ms sleep iterations) must not add more.
       final var saturationWarnings = captured
         .stream()
         .filter(r -> r.getMessage() != null && r.getMessage().contains("KEY_ORDERED dispatch stalled"))
         .toList();
       assertEquals(
-        1,
+        2,
         saturationWarnings.size(),
-        () -> "exactly one saturation WARN per dispatcher; got " + saturationWarnings.size()
+        () -> "exactly one saturation WARN per episode (two episodes); got " + saturationWarnings.size()
       );
       // Pin the message content so a future reword that drops the saturation signal entirely
       // (e.g. generic "dispatch stalled") still fails this test. Loose `contains` survives

@@ -41,7 +41,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// throughput ceiling at high key cardinality) is replaced by a `ConcurrentHashMap` plus one
 /// monitor per key queue. The hot path — enqueue by the consumer thread, dequeue by that
 /// key's worker — contends only on that key's monitor; workers for different keys never
-/// contend with each other. Map membership changes (insert on first dispatch for a key,
+/// contend on monitors (they still share the `pending` counter and the `activeWorkers`
+/// set). Map membership changes (insert on first dispatch for a key,
 /// remove on eviction) go through the `ConcurrentHashMap`, and eviction's
 /// empty-and-idle check runs inside `computeIfPresent` while holding the queue's monitor, so
 /// removal is atomic with respect to both enqueuers and the draining worker. Lock ordering is
@@ -52,14 +53,16 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// removes that queue from the map. Eviction marks the queue `dead` (under its monitor)
 /// atomically with the removal; the dispatcher re-checks `dead` under the same monitor before
 /// enqueuing and retries with a fresh map lookup if it lost the race. A worker cannot race
-/// eviction at all: eviction requires `workerActive == false`, which is only set by the
-/// worker's final monitor section after it has observed an empty queue.
+/// eviction at all: eviction requires `workerActive == false`, which is cleared only under
+/// the queue's monitor (worker exit after observing an empty queue, or the start-failure
+/// rollback) — never while a worker is mid-drain.
 ///
 /// **Shutdown.** [KPipeConsumer#close] calls `waitForInFlightDrain(waitForMessagesTimeout)`
 /// BEFORE invoking [#close()] on this dispatcher. By the time `close()` runs, all queues
-/// should be empty and workers exited. This `close()` performs a defensive short wait for any
-/// straggler then returns; in-progress records that exceed the timeout are abandoned to the
-/// JVM (mirrors the existing `virtualThreadExecutor` shutdown behavior).
+/// should be empty and workers exited. This `close()` performs a defensive short wait for
+/// any straggler, then interrupts remaining workers and returns; records still in flight
+/// after that are abandoned to the JVM (mirrors the `virtualThreadExecutor` shutdown
+/// behavior in PARALLEL mode).
 final class KeyOrderedDispatcher implements Dispatcher {
 
   private static final Logger LOGGER = System.getLogger(KeyOrderedDispatcher.class.getName());
@@ -82,23 +85,38 @@ final class KeyOrderedDispatcher implements Dispatcher {
   private final ConcurrentHashMap<Object, KeyQueue> queues = new ConcurrentHashMap<>();
   private final AtomicLong pending = new AtomicLong(0);
   /// Set once on the first dispatch-stall (cap saturated, every queue non-empty) so the WARN
-  /// log fires exactly once per dispatcher instance. Repeating the warning on every stall
-  /// would flood logs under sustained saturation; one signal is enough to tell an operator
-  /// to bump `KPipeConsumerBuilder.withKeyOrderedMaxKeys(int)`.
+  /// log fires once per saturation episode: it re-arms when a stalled dispatch eventually
+  /// succeeds, so a NEW saturation hours later warns again, while a sustained stall still
+  /// emits a single line instead of flooding. The signal tells an operator to bump
+  /// `KPipeConsumerBuilder.withKeyOrderedMaxKeys(int)`.
   private final AtomicBoolean stallWarningEmitted = new AtomicBoolean(false);
+
+  /// One-shot flag for the shutdown-abandon WARN in [#dispatch] so a close() landing on a
+  /// saturated consumer logs the first abandoned record (with coordinates) instead of either
+  /// silence or one line per abandoned record in the tail of the poll batch.
+  private final AtomicBoolean abandonWarningEmitted = new AtomicBoolean(false);
+
+  /// Counts dead-tombstone retries in [#dispatch] — the cold path where a dispatcher's queue
+  /// reference was evicted between lookup and monitor entry. Package-private so stress tests
+  /// can observe that the window was actually reached (the retry outcome is invisible from
+  /// the public surface: the record processes normally either way).
+  final AtomicLong tombstoneRetries = new AtomicLong(0);
 
   /// Set by [#close()] to break out of the saturation stall-loop in [#reserveCapacity]. If
   /// every queue is full and workers are stuck (e.g. user pipeline deadlock), the consumer
   /// thread would otherwise spin past close until `KPipeConsumer.threadTerminationTimeout`
-  /// expires. With this flag, close() causes the in-flight dispatch to abandon — the
-  /// untracked record stays uncommitted in the offset manager so Kafka redelivers it on the
-  /// next consumer start (correct at-least-once semantics).
+  /// expires. With this flag, close() causes the in-flight dispatch to abandon — the record
+  /// stays tracked-but-unmarked in the offset manager, so the commit frontier never passes
+  /// it and Kafka redelivers it on the next consumer start (correct at-least-once
+  /// semantics).
   private volatile boolean closed = false;
 
-  /// Live set of currently-running per-key worker VTs. Each worker registers itself on entry
-  /// and removes itself on exit (both inside the runnable, so the lifecycle is race-free).
-  /// [#close()] iterates this set to interrupt stuck workers after the drain timeout — same
-  /// shutdown semantics as `ParallelDispatcher`'s `executor.shutdownNow()`.
+  /// Live set of currently-running per-key worker VTs. The dispatching thread registers a
+  /// worker BEFORE `start()` (so close()'s interrupt loop can't miss a started-but-not-yet-
+  /// running worker); the runnable removes itself in its `finally`, with a fallback removal
+  /// if `start()` throws. [#close()] iterates this set to interrupt stuck workers after the
+  /// drain timeout — same shutdown semantics as `ParallelDispatcher`'s
+  /// `executor.shutdownNow()`.
   private final Set<Thread> activeWorkers = ConcurrentHashMap.newKeySet();
 
   /// @param maxKeys cap on distinct keys (must be positive)
@@ -126,13 +144,26 @@ final class KeyOrderedDispatcher implements Dispatcher {
     // directly with its own try/finally, eliminating the per-record wrapper Runnable allocation.
     final var queued = new QueuedTask(processTask, onComplete);
 
+    var retries = 0L;
     while (true) {
       var queue = queues.get(key);
       if (queue == null) {
         if (!reserveCapacity()) {
           // reserveCapacity returned false because close() fired during the saturation stall.
-          // Roll back the pending increment so totalInFlight() doesn't get stuck.
+          // Roll back the pending increment so totalInFlight() doesn't get stuck; the record
+          // stays tracked-but-unmarked, so it is redelivered on restart.
           pending.decrementAndGet();
+          if (abandonWarningEmitted.compareAndSet(false, true)) {
+            LOGGER.log(
+              Level.WARNING,
+              "Abandoning dispatch during shutdown (cap saturated, close() signalled): {0}-{1}@{2}. " +
+                "This and any further abandoned records in the batch stay uncommitted and will be " +
+                "redelivered on restart. Further abandons are not logged individually.",
+              record.topic(),
+              record.partition(),
+              record.offset()
+            );
+          }
           return;
         }
         final var fresh = new KeyQueue();
@@ -141,9 +172,26 @@ final class KeyOrderedDispatcher implements Dispatcher {
       }
       synchronized (queue) {
         // Re-check under the monitor: eviction may have removed this queue from the map
-        // between our lookup and here. `dead` is set atomically with that removal, so a
-        // retry is guaranteed to observe a fresh map state.
-        if (queue.dead) continue;
+        // between our lookup and here. `dead` is set under this monitor atomically with the
+        // removal, so the retry loop eventually observes the removal (a retry may
+        // transiently re-read the dead entry before the unlink publishes, but `dead` is
+        // permanent so the loop cannot enqueue into it).
+        if (queue.dead) {
+          tombstoneRetries.incrementAndGet();
+          if (++retries == 1_000) {
+            // Production has a single dispatching thread, which cannot race its own
+            // eviction — sustained retries mean concurrent dispatchers are starving this
+            // one. Log so the spin is diagnosable instead of silent CPU burn.
+            LOGGER.log(
+              Level.WARNING,
+              "dispatch retried {0} times against evicted queues for one record; concurrent " +
+                "dispatchers are contending with eviction (cap {1} may be too small)",
+              retries,
+              maxKeys
+            );
+          }
+          continue;
+        }
         queue.tasks.addLast(queued);
         if (!queue.workerActive) {
           queue.workerActive = true;
@@ -181,8 +229,10 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// exceed the cap by the number of concurrent dispatchers minus one. The bound is exact in
   /// production use.
   private boolean reserveCapacity() {
+    var stalled = false;
     while (queues.mappingCount() >= maxKeys) {
       if (evictOneIdle()) continue;
+      stalled = true;
       // No evictable queue → the only options are stall or give up. If shutting down or
       // interrupted, give up (return false → caller abandons). Checking interrupt here
       // rather than after Thread.sleep also prevents a set interrupt flag from making the
@@ -194,7 +244,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
           "KEY_ORDERED dispatch stalled: all {0} key queues are non-empty and the key cap is saturated. " +
             "The consumer thread will hold until a queue drains. If this is sustained, raise the cap via " +
             "withKeyOrderedMaxKeys(...) (on the Builder, Stream, or MultiBuilder). This warning fires once " +
-            "per dispatcher instance.",
+            "per saturation episode.",
           maxKeys
         );
       }
@@ -207,6 +257,9 @@ final class KeyOrderedDispatcher implements Dispatcher {
         Thread.currentThread().interrupt();
       }
     }
+    // Re-arm the stall warning once the episode clears, so the NEXT saturation (possibly
+    // hours later) gets its own signal while a sustained stall still logs a single line.
+    if (stalled) stallWarningEmitted.set(false);
     return true;
   }
 
@@ -292,6 +345,10 @@ final class KeyOrderedDispatcher implements Dispatcher {
           }
         }
       } catch (final Throwable t) {
+        // Restore the interrupt flag if the task surfaced an interrupt (close() interrupts
+        // stuck workers; swallowing the flag here would defeat that signal for the rest of
+        // the drain). Kafka's InterruptException restores it in its own constructor.
+        if (t instanceof InterruptedException) Thread.currentThread().interrupt();
         LOGGER.log(Level.ERROR, "Per-key worker task threw; continuing drain", t);
       }
     }

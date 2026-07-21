@@ -28,7 +28,8 @@ import org.junit.jupiter.api.Test;
 ///   1. records sharing a key are never processed concurrently (no overlap);
 ///   2. records sharing a key are processed in submission (offset) order.
 ///
-/// It also stresses the LRU-eviction and stall-at-cap backpressure paths under saturation churn,
+/// It also stresses the idle-queue-eviction and stall-at-cap backpressure paths under saturation
+// churn,
 /// and the null-key sentinel's serialization + non-starvation. Detection is active, not passive:
 /// each per-key task flips an `AtomicBoolean` on entry and clears it on exit, and any observed
 /// overlap or out-of-order arrival is recorded as a violation the assertions fail on.
@@ -140,7 +141,7 @@ class KeyOrderedDispatcherCorrectnessTest {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Property 2 — LRU eviction safety: many more distinct keys than the cap, no loss, no reorder.
+  // Property 2 — eviction safety: many more distinct keys than the cap, no loss, no reorder.
   // ---------------------------------------------------------------------------------------------
 
   @Test

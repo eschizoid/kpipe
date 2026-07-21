@@ -45,7 +45,7 @@ import org.openjdk.jcstress.infra.results.I_Result;
 @Outcome(id = "-1", expect = Expect.FORBIDDEN, desc = "Drain did not complete within the arbiter deadline.")
 @Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "A same-key task was lost or ran more than once.")
 @State
-public class KeyOrderedLruJCStressTest {
+public class KeyOrderedWorkerHandoffJCStressTest {
 
   private static final String TOPIC = "jcstress-topic";
   private static final String KEY = "shared-key";

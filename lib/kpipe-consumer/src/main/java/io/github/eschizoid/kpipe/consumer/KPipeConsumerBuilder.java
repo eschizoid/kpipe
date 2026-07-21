@@ -19,7 +19,8 @@ import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
 /// Builder for creating and configuring [KPipeConsumer] instances. Extracted from the former nested
-/// `KPipeConsumer.Builder` so `KPipeConsumer` stays navigable; the consumer's constructor reads this
+/// `KPipeConsumer.Builder` so `KPipeConsumer` stays navigable; the consumer's constructor reads
+// this
 /// builder's package-private fields to assemble the running consumer.
 public final class KPipeConsumerBuilder {
 
@@ -225,7 +226,7 @@ public final class KPipeConsumerBuilder {
   ///   backpressure.
   /// - `PARALLEL` (default): virtual thread per record, no ordering. In-flight-based
   ///   backpressure.
-  /// - `KEY_ORDERED`: per-key serial processing with LRU cap (default 10,000 keys, see
+  /// - `KEY_ORDERED`: per-key serial processing with a distinct-key cap (default 10,000, see
   ///   [#withKeyOrderedMaxKeys]). In-flight-based backpressure.
   ///
   /// @param mode The processing mode (must be non-null)
@@ -235,14 +236,14 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// LRU cap on distinct keys held in-memory simultaneously when using
+  /// Cap on distinct keys held in-memory simultaneously when using
   /// [ProcessingMode#KEY_ORDERED]. Below this many distinct in-flight keys, each key gets
-  /// its own serial queue + virtual thread. Above it, least-recently-used keys with empty
-  /// queues are evicted to make room.
+  /// its own serial queue + virtual thread. Above it, keys with empty, idle queues are
+  /// evicted to make room.
   ///
   /// Default 10,000. Has no effect for `SEQUENTIAL` or `PARALLEL` modes.
   ///
-  /// @param maxKeys LRU cap (must be positive)
+  /// @param maxKeys distinct-key cap (must be positive)
   /// @return This builder instance for method chaining
   /// @throws IllegalArgumentException if `maxKeys` is non-positive
   public KPipeConsumerBuilder withKeyOrderedMaxKeys(final int maxKeys) {

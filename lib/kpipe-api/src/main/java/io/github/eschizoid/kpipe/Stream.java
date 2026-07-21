@@ -118,7 +118,7 @@ public interface Stream<T> {
   ///   backpressure.
   /// - `PARALLEL` (default): virtual thread per record. No ordering guarantees. In-flight
   ///   backpressure.
-  /// - `KEY_ORDERED`: per-key serial processing on a virtual thread per key, with an LRU cap
+  /// - `KEY_ORDERED`: per-key serial processing on a virtual thread per key, with a key cap
   ///   (default 10,000 keys; override with [#withKeyOrderedMaxKeys]). Records with the same
   ///   key process in order; different keys process in parallel. In-flight backpressure.
   ///
@@ -127,11 +127,11 @@ public interface Stream<T> {
   /// @throws NullPointerException if `mode` is null
   Stream<T> withProcessingMode(final ProcessingMode mode);
 
-  /// Sets the LRU cap on distinct keys held in-memory simultaneously when this stream uses
+  /// Sets the cap on distinct keys held in-memory simultaneously when this stream uses
   /// [ProcessingMode#KEY_ORDERED]. Default 10,000. Has no effect for `SEQUENTIAL` or
   /// `PARALLEL` modes.
   ///
-  /// @param maxKeys LRU cap (must be positive)
+  /// @param maxKeys distinct-key cap (must be positive)
   /// @return a new stream with the key cap configured
   /// @throws IllegalArgumentException if `maxKeys` is non-positive
   Stream<T> withKeyOrderedMaxKeys(final int maxKeys);

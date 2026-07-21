@@ -114,10 +114,10 @@ public final class MultiBuilder {
     return this;
   }
 
-  /// Sets the LRU cap on distinct keys for `ProcessingMode.KEY_ORDERED`. No-op for other
+  /// Sets the cap on distinct keys for `ProcessingMode.KEY_ORDERED`. No-op for other
   /// modes. Default is `ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS` (10,000).
   ///
-  /// @param maxKeys positive LRU cap
+  /// @param maxKeys positive distinct-key cap
   /// @return this builder
   public MultiBuilder withKeyOrderedMaxKeys(final int maxKeys) {
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
@@ -397,7 +397,7 @@ public final class MultiBuilder {
         "Move the call to MultiBuilder.withProcessingMode(...) instead."
     );
     if (stream.keyOrderedMaxKeys() != ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS) throw new IllegalArgumentException(
-      "Route '%s' sets withKeyOrderedMaxKeys(%d) on its Stream, but the LRU cap is a consumer-wide setting. ".formatted(
+      "Route '%s' sets withKeyOrderedMaxKeys(%d) on its Stream, but the key-ordered key cap is a consumer-wide setting. ".formatted(
           topic,
           stream.keyOrderedMaxKeys()
         ) +

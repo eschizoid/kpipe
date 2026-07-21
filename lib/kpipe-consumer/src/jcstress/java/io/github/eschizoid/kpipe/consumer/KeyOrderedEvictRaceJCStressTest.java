@@ -22,12 +22,17 @@ import org.openjdk.jcstress.infra.results.I_Result;
 /// removes an empty + idle queue via `computeIfPresent`, marking it `dead` inside the queue's
 /// monitor atomically with the removal. A dispatcher for the evicted key may have looked the
 /// queue up just before removal; it must observe the tombstone under the monitor and retry
-/// against the live map, allocating a fresh queue. The forbidden failures are an enqueue into
-/// a dead queue (the task is stranded — no worker will ever drain an unmapped queue) and a
-/// double-run via a stale-plus-fresh queue pair.
+/// against the live map, allocating a fresh queue. The hazard the tombstone prevents is a
+/// stale-plus-fresh queue pair for one key: without the `dead` check, an enqueue into the
+/// evicted queue would start its own worker (workers hold the queue reference directly, so
+/// the task still runs), leaving TWO live queues draining the same key concurrently —
+/// breaking per-key serialization. Observable failures here are a lost task (latch timeout)
+/// or a double-run; a serialization break shows up as the double-run/extra-count outcomes.
 ///
-/// Scenario. The dispatcher's cap is 1, so every dispatch for a new key first forces the
-/// previous key's queue out (or stalls until that queue is empty and idle). Three actors:
+/// Scenario. The dispatcher's cap is 1, so a dispatch for a new key typically forces the
+/// previous key's queue out (or stalls until that queue is empty and idle) — though under
+/// concurrent dispatch the cap check is not atomic with insert, so some interleavings admit
+/// both keys without any eviction and never enter the race window. Three actors:
 /// two dispatch key A, one dispatches key B. Interleavings reached include: B's eviction of
 /// A's drained queue racing A's second dispatch (the tombstone window), and B stalling while
 /// A's queue is still active. Each task increments a shared counter once; the dispatcher's
@@ -46,7 +51,8 @@ public class KeyOrderedEvictRaceJCStressTest {
   private static final String KEY_A = "key-a";
   private static final String KEY_B = "key-b";
 
-  /// Cap of 1: every new-key dispatch must evict the other key's queue or stall until it can.
+  /// Cap of 1: a new-key dispatch typically evicts the other key's queue or stalls until it
+  /// can (concurrent dispatch can transiently overshoot the cap without evicting).
   private final KeyOrderedDispatcher dispatcher = new KeyOrderedDispatcher(1);
 
   private final AtomicInteger tasksRun = new AtomicInteger(0);
@@ -71,8 +77,10 @@ public class KeyOrderedEvictRaceJCStressTest {
   public void observe(final I_Result r) {
     // Await all three tasks' onComplete (fired per task by the dispatcher after task.run()).
     // The await is the happens-before edge guaranteeing all task bodies fully ran before
-    // tasksRun is read. A stranded task (enqueued into an evicted, unmapped queue) leaves the
-    // latch above zero; the await times out and the run reports -1.
+    // tasksRun is read. A lost task leaves the latch above zero; the await times out and the
+    // run reports -1. Note the latch releases at exactly three countdowns, so a duplicate
+    // run racing in AFTER the await returns can escape the read — duplicate detection here
+    // is best-effort; the lost-task detection (the primary purpose) is exact.
     try {
       if (!done.await(5, TimeUnit.SECONDS)) {
         r.r1 = -1;
