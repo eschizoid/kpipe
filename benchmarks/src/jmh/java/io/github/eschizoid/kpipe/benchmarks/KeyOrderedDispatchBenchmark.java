@@ -33,11 +33,12 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 
-/// JMH benchmark for `ProcessingMode.KEY_ORDERED` dispatcher throughput. Establishes a baseline
-/// for the lock-contention ceiling: `KeyOrderedDispatcher` uses a single `ReentrantLock` for
-/// all LRU + queue mutations, and under high throughput with many active keys the lock becomes
-/// the throughput ceiling. Future striped-locking or Caffeine work should re-run this bench
-/// and demonstrate a measurable improvement before landing.
+/// JMH benchmark for `ProcessingMode.KEY_ORDERED` dispatcher throughput. Originally built to
+/// establish the lock-contention baseline of the v1 single-`ReentrantLock` dispatcher; that
+/// baseline arbitrated the v2 rewrite (ConcurrentHashMap + per-queue monitors), which measured
+/// +122% at 10k distinct keys / +112% at 100 keys in an interleaved A/B at stable control
+/// (2026-07-21, see `benchmarks/results/`). The bench remains the gate for any future
+/// dispatcher work: re-run it and demonstrate a measurable win before landing.
 ///
 /// ### What it measures
 ///
