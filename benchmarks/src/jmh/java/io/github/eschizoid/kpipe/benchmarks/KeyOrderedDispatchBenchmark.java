@@ -33,36 +33,38 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 
-/// JMH benchmark for `ProcessingMode.KEY_ORDERED` dispatcher throughput. Establishes a baseline
-/// for the lock-contention ceiling: `KeyOrderedDispatcher` uses a single `ReentrantLock` for
-/// all LRU + queue mutations, and under high throughput with many active keys the lock becomes
-/// the throughput ceiling. Future striped-locking or Caffeine work should re-run this bench
-/// and demonstrate a measurable improvement before landing.
+/// JMH benchmark for `ProcessingMode.KEY_ORDERED` dispatcher throughput. Originally built to
+/// establish the lock-contention baseline of the v1 single-`ReentrantLock` dispatcher; that
+/// baseline arbitrated the v2 rewrite (ConcurrentHashMap + per-queue monitors), which measured
+/// +122% at 10k distinct keys / +112% at 100 keys in an interleaved A/B at stable control
+/// (2026-07-21, see `benchmarks/results/`). The bench remains the gate for any future
+/// dispatcher work: re-run it and demonstrate a measurable win before landing.
 ///
 /// ### What it measures
 ///
 /// End-to-end throughput of `KPipeConsumer` driving a no-op pipeline through MockConsumer. The
 /// pipeline itself is byte-passthrough (no SerDe), so per-record cost is dominated by the
-/// dispatcher: enqueue under lock + worker dequeue under lock + in-flight counter ops. PARALLEL
-/// mode is included as the control — same code path, no per-key lock-protected queue, so its
-/// throughput represents "what KEY_ORDERED would achieve if the lock weren't in the way."
+/// dispatcher: ConcurrentHashMap queue lookup + enqueue/dequeue under the per-queue monitor +
+/// in-flight counter ops. PARALLEL mode is included as the control — same code path, no per-key
+/// queue structure, so its throughput is the floor for dispatcher-attributable cost.
 ///
 /// ### Parameters
 ///
 /// - `mode ∈ {PARALLEL, KEY_ORDERED}` — control vs. system-under-test. PARALLEL has no per-key
-///   structure so its dispatcher path is the floor for lock-attributable cost.
+///   structure so its dispatcher path is the floor for dispatcher-attributable cost.
 /// - `distinctKeys ∈ {1, 100, 10000}` — single hot key (all work serialized on one queue),
-///   moderate fan-out (typical app), and max fan-out (one record per key, filling the LRU to
-///   its default 10,000 cap — the highest lock churn for the single-lock design). `distinctKeys`
-///   never exceeds `RECORDS_PER_INVOCATION`, which is sized to match so every cell is reachable
-///   (keys are `i % distinctKeys`, so a too-small record count would silently cap the key count).
+///   moderate fan-out (typical app), and max fan-out (one record per key, filling the key map
+///   to its default 10,000 cap — the highest map churn; also the highest lock churn for v1's
+///   single-lock design, which is where the rewrite won biggest). `distinctKeys` never exceeds
+///   `RECORDS_PER_INVOCATION`, which is sized to match so every cell is reachable (keys are
+///   `i % distinctKeys`, so a too-small record count would silently cap the key count).
 ///
 /// ### Wrapper-access strategy
 ///
 /// Drives the public `KPipeConsumer` end-to-end via the same `MockConsumer` setup used by
 /// `BatchSinkLatencyBenchmark` and `DispatcherIntegrationTest`. `KeyOrderedDispatcher` is
-/// package-private; we measure it through the front door. Dispatcher lock contention manifests
-/// as a KEY_ORDERED-throughput gap relative to PARALLEL — that's the signal future optimization
+/// package-private; we measure it through the front door. Dispatcher overhead manifests as a
+/// KEY_ORDERED-throughput gap relative to PARALLEL — that's the signal future optimization
 /// work targets.
 ///
 /// ### Running
@@ -83,8 +85,8 @@ public class KeyOrderedDispatchBenchmark {
 
   /// Records primed into MockConsumer per invocation. Must be >= the largest `distinctKeys`
   /// value, or that cell silently caps its key count (keys are `i % distinctKeys`). 10,000
-  /// matches both the top `distinctKeys` value and the default KEY_ORDERED LRU cap, so the
-  /// max-fan-out cell genuinely fills the LRU.
+  /// matches both the top `distinctKeys` value and the default KEY_ORDERED key cap, so the
+  /// max-fan-out cell genuinely fills the key map.
   private static final int RECORDS_PER_INVOCATION = 10_000;
 
   private static final byte[] PAYLOAD = "v".getBytes();
@@ -96,7 +98,7 @@ public class KeyOrderedDispatchBenchmark {
   public int distinctKeys;
 
   /// Per-invocation context. Fresh consumer per JMH invocation so MockConsumer state and
-  /// dispatcher LRU don't leak between measurements.
+  /// dispatcher key map don't leak between measurements.
   @State(Scope.Thread)
   public static class InvocationContext {
 

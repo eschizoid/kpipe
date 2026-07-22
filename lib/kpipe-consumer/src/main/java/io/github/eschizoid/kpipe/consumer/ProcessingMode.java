@@ -15,14 +15,14 @@ package io.github.eschizoid.kpipe.consumer;
 ///   guarantees across or within keys. Backpressure is measured by total in-flight count.
 ///
 /// - [#KEY_ORDERED] — records with the same key process serially on a per-key virtual thread;
-///   records with different keys process in parallel. The dispatcher maintains an LRU map of
-///   active keys with a configurable cap (default 10,000 — see
+///   records with different keys process in parallel. The dispatcher maintains a bounded map
+///   of active keys with a configurable cap (default 10,000 — see
 ///   `Builder.withKeyOrderedMaxKeys`). Records with `null` keys all serialize through a single
 ///   sentinel queue. When the cap is reached and every active key still has pending work, the
 ///   consumer thread holds dispatch until a queue drains — this acts as implicit backpressure.
-///   Backpressure is measured by total in-flight count (same as PARALLEL). Eviction walks the
-///   LRU oldest-first and removes the first queue that is both empty AND has no active worker —
-///   non-empty queues are never evicted, which would break per-key ordering.
+///   Backpressure is measured by total in-flight count (same as PARALLEL). Eviction reclaims
+///   any queue that is both empty AND has no active worker — non-empty queues are never
+///   evicted, which would break per-key ordering.
 ///
 /// `PARALLEL` is the default. Older versions of KPipe used a `withSequentialProcessing(boolean)`
 /// setter — removed in this release per the no-deprecation policy; callers migrate to
@@ -32,11 +32,11 @@ public enum ProcessingMode {
   SEQUENTIAL,
   /// Virtual thread per record. No ordering. Backpressure on in-flight count.
   PARALLEL,
-  /// Per-key virtual thread with LRU cap. Same-key records serialize; different keys parallelize.
-  /// Backpressure on in-flight count.
+  /// Per-key virtual thread with a distinct-key cap. Same-key records serialize; different
+  /// keys parallelize. Backpressure on in-flight count.
   KEY_ORDERED;
 
-  /// Default LRU cap on distinct in-flight keys for [#KEY_ORDERED]. Single source of truth
+  /// Default cap on distinct in-flight keys for [#KEY_ORDERED]. Single source of truth
   /// shared by the dispatcher (`KeyOrderedDispatcher`), the fluent facade (`DefaultStream`),
   /// and `MultiBuilder` so the default can't drift across modules. Override per-consumer via
   /// `KPipeConsumerBuilder.withKeyOrderedMaxKeys(int)` /

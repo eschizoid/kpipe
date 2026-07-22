@@ -77,7 +77,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   /// KEY_ORDERED arm reads keys — the unordered arms (PARALLEL, Confluent, Reactor, raw, share)
   /// ignore them, so the same seeded data drives every runtime. 1,000 keys over TARGET_MESSAGES
   /// gives ~25 records/key: enough per-key queue depth for ordering to actually constrain
-  /// scheduling, while staying well under the dispatcher's 10,000-key LRU cap (no eviction).
+  /// scheduling, while staying well under the dispatcher's 10,000-key cap (no eviction).
   static final int KEY_CARDINALITY = 1_000;
 
   /// Confluent Parallel Consumer max concurrency (number of worker threads it spins up).

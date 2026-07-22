@@ -23,10 +23,10 @@ import org.openjdk.jcstress.infra.results.I_Result;
 /// single-threaded sequence test cannot exercise that window.
 ///
 /// The race. The dispatcher keeps one FIFO queue per key plus a `workerActive` flag. A
-/// dispatch enqueues its task under the lock, then starts a worker only if none is active.
-/// The worker drains under the same lock: it polls the queue and, when it finds the queue
-/// empty, clears `workerActive` and exits. The create-or-append in dispatch and the
-/// drain-and-exit in the worker both run fully under the lock, so a task that is enqueued
+/// dispatch enqueues its task under the queue's monitor, then starts a worker only if none
+/// is active. The worker drains under the same monitor: it polls the queue and, when it
+/// finds the queue empty, clears `workerActive` and exits. The enqueue-and-check in dispatch
+/// and the drain-and-exit in the worker both run under the queue's monitor, so a task enqueued
 /// while a worker is alive must be observed by that worker before it can exit, and a task
 /// enqueued after a worker exits must start a fresh worker. Either way every enqueued task
 /// runs exactly once. The forbidden failures are a lost enqueue (a task that never runs
@@ -45,7 +45,7 @@ import org.openjdk.jcstress.infra.results.I_Result;
 @Outcome(id = "-1", expect = Expect.FORBIDDEN, desc = "Drain did not complete within the arbiter deadline.")
 @Outcome(id = ".*", expect = Expect.FORBIDDEN, desc = "A same-key task was lost or ran more than once.")
 @State
-public class KeyOrderedLruJCStressTest {
+public class KeyOrderedWorkerHandoffJCStressTest {
 
   private static final String TOPIC = "jcstress-topic";
   private static final String KEY = "shared-key";

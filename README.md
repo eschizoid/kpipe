@@ -239,7 +239,7 @@ shows you everything that exists:
 | `.withRetry(int max, Duration backoff)`                            | configure retry behavior                                                                     |
 | `.withBackpressure()` / `.withBackpressure(high, low)`             | enable backpressure with default or explicit watermarks                                      |
 | `.withProcessingMode(ProcessingMode)`                              | `SEQUENTIAL` (per-partition serial), `PARALLEL` (default), or `KEY_ORDERED` (per-key serial) |
-| `.withKeyOrderedMaxKeys(int)`                                      | LRU cap on distinct keys in `KEY_ORDERED` (default 10,000)                                   |
+| `.withKeyOrderedMaxKeys(int)`                                      | cap on distinct keys in `KEY_ORDERED` (default 10,000)                                       |
 | `.withCircuitBreaker(double threshold, int window, Duration open)` | open the circuit when sink failure rate trips (see [Circuit breaker](#9-circuit-breaker))    |
 | `.withTracer(Tracer t)`                                            | propagate W3C trace context through Kafka headers                                            |
 | `.withDeadLetterTopic(String)`                                     | route failed records to a DLQ topic after retries are exhausted                              |
@@ -444,7 +444,8 @@ Three modes via `.withProcessingMode(ProcessingMode)`:
   in-flight count is always ≤ 1.
 - `KEY_ORDERED`. Records sharing a key process serially on a per-key virtual thread; different keys process in parallel.
   The production sweet spot for stateful workloads where order matters per entity (per user, per order, per session) but
-  entities are independent. LRU cap on active keys defaults to 10,000; override with `.withKeyOrderedMaxKeys(int)`.
+  entities are independent. The bounded key map caps active keys at 10,000 by default; override with
+  `.withKeyOrderedMaxKeys(int)`.
   Records with `null` keys all serialize through a single sentinel queue. When the cap saturates with every queue
   non-empty, dispatch stalls the consumer thread until a queue drains — implicit backpressure — and a one-shot `WARNING`
   log fires the first time to hint at raising the cap. For diagnostics under high cardinality,
