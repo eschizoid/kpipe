@@ -51,3 +51,24 @@ correctness tests, not by these numbers.
 
 Raw JMH JSON: captured under the branch's `.claude/bench/ab-{base,cand}-r{1,2}.json` on the capture machine
 (dev-loop artifacts, not committed; the numbers above are the pooled scores).
+
+## Scope check — the win is dispatch-overhead, NOT end-to-end broker throughput (verified)
+
+The A/B above is a MockConsumer micro-bench: byte-passthrough, no SerDe, no broker I/O, no offset commits, so
+per-record cost IS the dispatcher. To check whether the +112%/+122% translates to the real broker path, the
+`kpipeKeyOrdered` + `confluentKey` arms were re-run against a live broker at `workMicros=1000`, fork=5, on merged
+main (`7f9cdec`, 2026-07-21):
+
+| arm | v1 reference (2026-07-21) | v2 (merged) | change |
+|---|---:|---:|---|
+| kpipe KEY_ORDERED @1ms | 52,949 ± 0.6% | 52,216 ± 0.2% | **flat** |
+| CPC KEY @1ms (canary) | 63,986 ± 1.0% | 60,580 ± 2.9% | −5% (run ~5% slower) |
+| ratio KEY_ORDERED / CPC KEY | 0.83× | 0.86× | within noise |
+
+**Honest finding:** at the broker level with 1ms of per-record work, the dispatcher lock was never the bottleneck —
+throughput is bound by broker fetch + deserialize + offset tracking + per-key serialization, so removing the lock
+moved the end-to-end number by nothing. The v2 rewrite is a real, large win for **dispatch-bound** workloads (high
+key cardinality, cheap per-record work — the micro-bench regime), and it makes the dispatcher scale *up* with cores
+instead of down. But it does **not** change the broker-level 1ms KEY_ORDERED story: still ~flat, still slightly
+behind CPC KEY on this box, still box-dependent (1.42× on the 4-vCPU CI runner). The README's sub-millisecond
+caveat stays as written — v2 did not flip it. Prediction made, measured, refuted.
