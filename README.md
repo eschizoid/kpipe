@@ -56,10 +56,14 @@ than extrapolated.
 
 For the same per-key-FIFO guarantee, KPipe `KEY_ORDERED` runs **4× Confluent PC `KEY` at 10ms and 5.4× at 100ms**,
 reproduced on both machines. In the sub-millisecond regime that comparison is box-dependent and we say so: 1.42× on
-the 4-vCPU CI runner, 0.83× on the 12-thread local box, where lock contention in the key-ordered dispatcher becomes
-visible (striped-lock experiment on the backlog). KPipe `PARALLEL` at 1ms holds the lead on both boxes (8.1× CPC
-`UNORDERED` locally, ~2× on CI). Full tables, error bars, and every caveat:
-[`benchmarks/results/2026-07-21.md`](benchmarks/results/2026-07-21.md), captured per the
+the 4-vCPU CI runner, 0.86× on the 12-thread local box. The dispatcher's global lock was the prime suspect and has
+since been eliminated (v2: `ConcurrentHashMap` + per-queue monitors — **+122% at high key cardinality** in the
+isolated dispatch benchmark, and the dispatcher now scales up with cores instead of down), but the broker-level
+sub-ms cell didn't move: at 1ms of real work the budget is dominated by fetch, deserialization, and offset tracking,
+not dispatch — measured and recorded in
+[`benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`](benchmarks/results/2026-07-21-keyordered-dispatch-ab.md).
+KPipe `PARALLEL` at 1ms holds the lead on both boxes (8.1× CPC `UNORDERED` locally, ~2× on CI). Full tables, error
+bars, and every caveat: [`benchmarks/results/2026-07-21.md`](benchmarks/results/2026-07-21.md), captured per the
 [methodology](benchmarks/METHODOLOGY.md).
 
 The only faster arm in the capture is the hand-rolled `KafkaConsumer` + virtual-threads loop (458k at 10ms) — and it

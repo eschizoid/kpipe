@@ -59,7 +59,7 @@ ingest tens of thousands of externally-measured timestamp pairs. Producer stamps
 | Bench                        | Arm / `@Benchmark` | `@Param` sweep                                                | What it isolates                                                                                            |
 | ---------------------------- | ------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `BatchSinkLatencyBenchmark`  | `run`              | `sinkLatencyMicros ∈ {10,100,1000}`, `batchSize ∈ {1,10,100}` | The `Stream.toBatch(...)` amortisation when the destination has a per-call cost (`batchSize=1` is the control). |
-| `KeyOrderedDispatchBenchmark`| `dispatch`         | `mode ∈ {PARALLEL, KEY_ORDERED}`, key cardinality `{1,100,10000}` | The single-`ReentrantLock` cost of the `KEY_ORDERED` dispatcher vs `PARALLEL` (the striped-locking baseline). |
+| `KeyOrderedDispatchBenchmark`| `dispatch`         | `mode ∈ {PARALLEL, KEY_ORDERED}`, key cardinality `{1,100,10000}` | Dispatcher overhead of `KEY_ORDERED` vs `PARALLEL`. Arbitrated the v2 rewrite (CHM + per-queue monitors, +122% at 10k keys — `results/2026-07-21-keyordered-dispatch-ab.md`); stays the gate for future dispatcher work. |
 | `OffsetManagerBoxingBenchmark`| `trackAndMark`    | partitions `{8}`                                              | Allocation/boxing cost on the offset-tracking hot path.                                                     |
 
 ## Running benchmarks
