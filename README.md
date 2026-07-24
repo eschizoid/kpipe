@@ -48,46 +48,45 @@ per-record work. The headline regime is 10–100ms per record, the range where c
 That is **~6.6× Confluent PC at 10ms and ~41× at 100ms**, from the 2026-07-21 reference capture: a local quiesced
 box, fork=5, 25/25 samples per cell. (The earlier shared-CI capture on different hardware,
 [2026-07-09](benchmarks/results/2026-07-09.md), reproduces the same ordering with the gaps a notch wider: ~10× and
-~47×.) CPC's numbers sit exactly at its architectural ceiling: 100 workers divided by per-record work-time predicts
-10,000 rec/s at 10ms and 1,000 at 100ms; the capture measured 8,696 and 968. Platform pools saturate;
-virtual-thread-per-record doesn't. That's a threading-model verdict, not a tuning gap. ¹Reactor's 100ms cell blew
-the harness's fixed 2-minute drain budget in every fork (~105 rec/s effective) — recorded as did-not-finish rather
-than extrapolated.
+~47×.) CPC's numbers sit exactly where its architecture puts them: 100 workers divided by per-record work-time
+predicts 10,000 rec/s at 10ms and 1,000 at 100ms, and the capture measured 8,696 and 968. A fixed pool cannot beat
+`workers ÷ work-time` no matter how it is tuned; a virtual thread per record has no such ceiling, which is why the
+multiple grows as per-record work grows. ¹Reactor's 100ms cell blew the harness's 2-minute drain budget in every
+fork (~105 rec/s effective), so the table says DNF instead of an extrapolated guess.
 
 For the same per-key-FIFO guarantee, KPipe `KEY_ORDERED` runs **4× Confluent PC `KEY` at 10ms and 5.4× at 100ms**,
-reproduced on both machines. In the sub-millisecond regime that comparison is box-dependent and we say so: 1.42× on
-the 4-vCPU CI runner, 0.86× on the 12-thread local box. The dispatcher's global lock was the prime suspect and has
-since been eliminated (v2: `ConcurrentHashMap` + per-queue monitors — **+122% at high key cardinality** in the
-isolated dispatch benchmark, and the dispatcher now scales up with cores instead of down), but the broker-level
-sub-ms cell didn't move: at 1ms of real work the budget is dominated by fetch, deserialization, and offset tracking,
-not dispatch — measured and recorded in
+reproduced on both machines. In the sub-millisecond regime the comparison depends on the machine: 1.42× on the
+4-vCPU CI runner, 0.86× on the 12-thread local box. The dispatcher's global lock was the prime suspect, so we
+removed it (v2: `ConcurrentHashMap` + per-queue monitors, **+122% at high key cardinality** in the isolated dispatch
+benchmark, and the dispatcher now scales up with cores instead of down). The broker-level sub-ms cell still didn't
+move: at 1ms of real work, fetch, deserialization, and offset tracking dominate the per-record budget, and dispatch
+is a rounding error inside them. The measurement is in
 [`benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`](benchmarks/results/2026-07-21-keyordered-dispatch-ab.md).
 KPipe `PARALLEL` at 1ms holds the lead on both boxes (8.1× CPC `UNORDERED` locally, ~2× on CI). Full tables, error
 bars, and every caveat: [`benchmarks/results/2026-07-21.md`](benchmarks/results/2026-07-21.md), captured per the
 [methodology](benchmarks/METHODOLOGY.md).
 
-The only faster arm in the capture is the hand-rolled `KafkaConsumer` + virtual-threads loop (458k at 10ms) — and it
-is unsafe: no honest offset commit, records lost on rebalance. KPipe is what that loop becomes once you make it
-at-least-once. One more disclosure that is also part of the pitch: Confluent Parallel Consumer 0.5.3.3 is the last
-release before the project was officially retired in 2026-05, and its successor fork has not yet published an artifact.
+The only faster arm in the capture is the hand-rolled `KafkaConsumer` + virtual-threads loop (458k at 10ms), and it
+cheats: it never commits offsets safely and loses records on a rebalance. KPipe is what that loop becomes once you
+make it at-least-once. Also worth knowing when you read the table: Confluent Parallel Consumer 0.5.3.3 is the last
+release before the project was retired in 2026-05, and its successor fork has not yet published an artifact.
 
-The honest tradeoff: KPipe allocates the most per record of any arm measured (~1.7 KB/op vs Confluent PC's ~35 B/op).
-Roughly 62% of that is the fresh virtual thread per record — the same property that buys the throughput lead under
-blocking work. The attribution profile is in
+The cost: KPipe allocates more per record than any other arm measured (~1.7 KB/op vs Confluent PC's ~35 B/op).
+Roughly 62% of that is the fresh virtual thread itself, the same thing that buys the throughput lead under blocking
+work. You are trading memory for throughput; the attribution profile is in
 [`benchmarks/results/2026-06-21-allocation-attribution.md`](benchmarks/results/2026-06-21-allocation-attribution.md).
-Not free, and not hidden.
 
-Caveats that carry: the reference box is a 6-core laptop, so read the ratios and the error bars, not the absolute
-magnitudes — server hardware scales everything up together. (An earlier capture reported KPipe `PARALLEL`'s
-sub-millisecond cells as single-sample point estimates; that turned out to be a real pause/resume liveness bug the
-benchmark exposed — fixed in #228. The reference capture has 25/25 samples in every completed cell.)
+One caveat to keep in mind: the reference box is a 6-core laptop. The ratios and error bars are what transfer;
+absolute throughput scales up with the hardware. (An earlier capture reported KPipe `PARALLEL`'s sub-millisecond
+cells as single-sample point estimates; that turned out to be a real pause/resume liveness bug the benchmark
+exposed, fixed in #228. The reference capture has 25/25 samples in every completed cell.)
 
-**2. The at-least-once claim is verified, not asserted.** Every CI run gates on 16
+**2. The at-least-once claim comes with receipts.** Every CI run gates on 16
 [jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 4 modules, plus jqwik
 property-based suites over the offset lifecycle and chaos-rebalance + crash-restart Testcontainers E2E tests against a
 real broker. Building that suite found and fixed three real data-loss and correctness bugs before any user hit them (an
 offset-tracking race, silent loss on DLQ send failure, a circuit breaker blind to the batch path). None of the runtimes
-we benchmark against state — or test — their delivery guarantee this way.
+we benchmark against document their delivery guarantee this way, let alone test it.
 
 ## Two API surfaces
 
@@ -211,7 +210,7 @@ try (var handle = KPipe.json("orders", kafkaProps)
     .withRetry(3, Duration.ofMillis(100))
     .withBackpressure()                            // pause at 10k in-flight, resume at 7k
     .withDeadLetterTopic("orders.dlq")             // bad records flow here after retries exhaust
-    .onFailed(cause -> log.warn("processing failed", cause))   // observer, not a handler — log only
+    .onFailed(cause -> log.warn("processing failed", cause))   // log-only observer; withErrorHandler still runs
     .toCustom(WarehouseSink.create())
     .start()) {
   handle.awaitShutdown();
@@ -347,8 +346,8 @@ Spring runtime and a fluent API that's discoverable via IDE autocomplete. What c
   thread-per-record, which is where I/O-bound enrichment scales without pool tuning.
 - No `@KafkaListener` indirection. Pipelines are values you build in `main` and pass around — no classpath scanning, no
   proxied beans. `KPipe.multi(props).json("a", ...).avro("b", ...)` replaces one listener class per topic.
-- Failures are typed, not swallowed. Pipeline outcomes are a sealed `Result` (`Passed` / `Filtered` / `Failed`), so
-  filtering and failure are distinct types — harder to misconfigure into silent drops than an
+- Typed failure outcomes. Pipeline results are a sealed `Result` (`Passed` / `Filtered` / `Failed`), so filtering
+  and failure are distinct types. That is harder to misconfigure into silent drops than an
   `ErrorHandlingDeserializer` + `RetryableTopic` chain.
 
 A `@KafkaListener` method that stamps a timestamp and hands off to a sink becomes:

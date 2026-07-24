@@ -5,15 +5,16 @@ hand-rolled straw man; a competitive suite pits KPipe against the alternatives a
 Share Consumer, Confluent Parallel Consumer, Reactor Kafka, a raw `KafkaConsumer + virtual threads`, and a
 single-threaded consumer); and three micro-benches isolate internals.
 
-**The numbers live in [`results/`](results/), dated per capture, not in this file.** Embedding a single run here is how
-the old README drifted out of sync. Read [`METHODOLOGY.md`](METHODOLOGY.md) before quoting any figure — it explains what
-each bench isolates, why fork count matters, and which comparisons are honest.
+**The numbers live in [`results/`](results/), one dated snapshot per capture.** Embedding a single run here is how
+the old README drifted out of sync. Read [`METHODOLOGY.md`](METHODOLOGY.md) before quoting any figure; it explains
+what each bench isolates, why fork count matters, and which comparisons hold up.
 
 ## Benchmark scenarios
 
 ### Design validation (in-memory, no broker)
 
-These are KPipe-vs-straw-man. They show the design choices paid off; they are **not** competitive claims.
+These pit KPipe against a straw man to check that the design choices paid off. Don't quote them as competitive
+numbers.
 
 | Bench                   | `@Benchmark` arms                                                      | What it isolates                                                                                          |
 | ----------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -106,7 +107,8 @@ All properties are optional (values above are the defaults). Results print as a 
 ## Results
 
 Captured runs live in [`results/`](results/), one dated markdown snapshot (plus raw JSON) per capture — read the most
-recent one, and read the **ordering**, not the absolutes, for any CI-runner capture. Every snapshot records the box, JDK,
+recent one. For any capture taken on a shared CI runner, trust the ordering and treat the absolute numbers as
+indicative only. Every snapshot records the box, JDK,
 fork count, and `workMicros` cells per the [publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
 
 The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run:
