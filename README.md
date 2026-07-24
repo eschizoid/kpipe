@@ -29,7 +29,7 @@ own consumer loop together every time.
 
 ## The numbers, up front
 
-Two claims, both backed in this repo.
+Two claims.
 
 **1. The fastest at-least-once runtime we measured, and the gap widens where real work happens.** The
 [`benchmarks/`](benchmarks/) module runs KPipe head-to-head against Confluent Parallel Consumer, Reactor Kafka, the
@@ -76,7 +76,7 @@ Roughly 62% of that is the fresh virtual thread itself, the same thing that buys
 work. You are trading memory for throughput; the attribution profile is in
 [`benchmarks/results/2026-06-21-allocation-attribution.md`](benchmarks/results/2026-06-21-allocation-attribution.md).
 
-One caveat to keep in mind: the reference box is a 6-core laptop. The ratios and error bars are what transfer;
+One caveat: the reference box is a 6-core laptop. The ratios and error bars are what transfer;
 absolute throughput scales up with the hardware. (An earlier capture reported KPipe `PARALLEL`'s sub-millisecond
 cells as single-sample point estimates; that turned out to be a real pause/resume liveness bug the benchmark
 exposed, fixed in #228. The reference capture has 25/25 samples in every completed cell.)
@@ -139,7 +139,8 @@ snippets are in the catalog below.
 | `kpipe-consumer`                  | `KPipeConsumer` (hosts lifecycle, metrics-reporter thread, shutdown hook), `BackpressureController`, `CircuitBreakerController`, `ConsumerHealthController` |
 | `kpipe-format-json`               | `JsonFormat`, `JsonConsoleSink`                                                                                                                             |
 | `kpipe-format-avro`               | `AvroFormat`, `AvroConsoleSink`                                                                                                                             |
-| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`                                                                                                                     |
+| `kpipe-format-protobuf`           | `ProtobufFormat`, `ProtobufConsoleSink`, `ProtobufDescriptorCompiler` SPI                                                                                   |
+| `kpipe-format-protobuf-confluent` | Confluent SR `.proto`-text compiler (shaded; opt-in — needed only for Protobuf registry mode)                                                               |
 | `kpipe-test`                      | `TestStream<T>` + `CapturingSink<T>` — Docker-free pipeline unit tests over a real consumer (`testImplementation` scope)                                    |
 
 **Gradle (Kotlin) with BOM**
@@ -240,7 +241,7 @@ shows you everything that exists:
 | `.peek(Consumer<T> sideEffect)`                                    | observe without modifying (logging, metrics)                                                 |
 | `.when(Predicate, ifTrue, ifFalse)`                                | branch the pipeline conditionally                                                            |
 | `.skipBytes(int n)`                                                | drop a leading wire-format prefix (Confluent: 5 for Avro, 6 for Proto)                       |
-| `.withSchemaRegistry(SchemaResolver r)`                            | Confluent SR per-record schema auto-lookup (Avro only; don't pair with `.skipBytes`)         |
+| `.withSchemaRegistry(SchemaResolver r)`                            | Confluent SR per-record schema auto-lookup (Avro + Protobuf; don't pair with `.skipBytes`)   |
 | `.withRetry(int max, Duration backoff)`                            | configure retry behavior                                                                     |
 | `.withBackpressure()` / `.withBackpressure(high, low)`             | enable backpressure with default or explicit watermarks                                      |
 | `.withProcessingMode(ProcessingMode)`                              | `SEQUENTIAL` (per-partition serial), `PARALLEL` (default), or `KEY_ORDERED` (per-key serial) |
@@ -286,7 +287,7 @@ one consumer-group / one offset manager:
 ```java
 KPipe.multi(kafkaProps)
     .json("events-json",  s -> s.pipe(addTimestamp).toCustom(jsonSink))
-    .avro("events-avro",  s -> s.filter(active).toCustom(avroSink))
+    .avro("events-avro",  avroFormat, s -> s.filter(active).toCustom(avroSink))  // static AvroFormat or a SchemaResolver
     .bytes("events-raw",  s -> s.toCustom(rawSink))
     .start();
 ```
@@ -378,14 +379,16 @@ KPipe ships focused JPMS modules with a clean dependency direction (no cycles, n
 breakdown is in the module catalog under [Getting started](#1-add-the-dependencies).
 
 ```
-kpipe-metrics ← kpipe-core ← kpipe-consumer
-                          ← kpipe-producer
-                          ← kpipe-format-{json, avro, protobuf}
-                          ← kpipe-api  (KPipe fluent facade)
-kpipe-metrics-otel              ← kpipe-metrics    (opt-in OTel metrics)
-kpipe-tracing-otel              ← kpipe-producer   (opt-in OTel tracing)
-kpipe-schema-registry-confluent ← kpipe-core       (opt-in Confluent SR client)
-kpipe-bom                                          (Maven BOM — pins versions)
+kpipe-core, kpipe-metrics          — roots, no kpipe dependencies
+kpipe-producer                     → core, metrics
+kpipe-consumer                     → core, producer (metrics transitively)
+kpipe-format-{json,avro,protobuf}  → core
+kpipe-api (KPipe fluent facade)    → consumer + producer; format modules are opt-in (requires static)
+kpipe-metrics-otel                 → metrics            (opt-in OTel metrics)
+kpipe-tracing-otel                 → producer           (opt-in OTel tracing)
+kpipe-schema-registry-confluent    → core               (opt-in Confluent SR client)
+kpipe-format-protobuf-confluent    → format-protobuf    (opt-in shaded .proto compiler for Protobuf SR)
+kpipe-bom                          — Maven BOM, pins versions
 ```
 
 Use KPipe in a modular project:
@@ -408,10 +411,11 @@ Most pipelines do `byte[] → Object → byte[]` at every step. KPipe doesn't:
 - Typed sinks can attach directly to the pipeline and receive the object before final serialization, skipping it
   entirely.
 
-The win is fewer allocations and less CPU spent on intermediate SerDe steps. Two hot-path specifics: magic-byte handling
-is zero-copy (`skipBytes` passes an offset instead of `Arrays.copyOfRange`), and JSON parsing uses
-[fastjson2](https://github.com/alibaba/fastjson2) — faster than Jackson on the hot path with similar GC pressure.
-Benchmark numbers are in [`benchmarks/README.md`](benchmarks/README.md).
+The win is fewer allocations and less CPU spent on intermediate SerDe steps — `JsonPipelineBenchmark` measures the
+single-cycle pipeline against a naive re-serialize-between-operators chain (see
+[`benchmarks/README.md`](benchmarks/README.md)). Two hot-path specifics: registry-mode Avro decodes past the wire
+envelope with an offset (no prefix copy; the generic `skipBytes` path copies the payload once), and JSON parsing uses
+[fastjson2](https://github.com/alibaba/fastjson2).
 
 ### 3. Virtual threads
 
@@ -431,7 +435,7 @@ KPipe never commits past an in-flight record. The implementation:
 - `OffsetManager` is an interface — Kafka-backed by default, but you can plug in external storage.
 - Every in-flight offset is tracked in a sorted primitive-`long` pending set per partition (see `KafkaOffsetManager` /
   `PendingOffsetSet` — allocation-free on the track/mark hot path).
-- Offset 102 cannot be committed until 101 finishes, even if 102 completes first. No gaps.
+- Offset 102 cannot be committed until 101 finishes, even if 102 completes first.
 - On crash, the consumer resumes from the last committed offset. Some records may be reprocessed — standard
   at-least-once behavior — but nothing is skipped.
 
@@ -562,9 +566,9 @@ Without `.withTracer(...)`, `Tracer.noop()` is used: zero allocation, no OTel AP
 
 ### 11. Graceful shutdown and interrupts
 
-KPipe respects JVM signals without losing records. Interrupts trigger a coordinated shutdown; they don't cause records
-to be skipped. If a record's processing is interrupted mid-flight (during retry backoff or transformation), its offset
-is not marked as processed — the next consumer instance picks it up, so at-least-once still holds during shutdown. The
+KPipe respects JVM signals. Interrupts trigger a coordinated shutdown: if a record's processing is interrupted
+mid-flight (during retry backoff or transformation), its offset is not marked as processed — the next consumer
+instance picks it up, so at-least-once still holds during shutdown. The
 drain and shutdown-hook API is covered under [Consumer lifecycle](#consumer-lifecycle).
 
 ---
@@ -682,10 +686,14 @@ The static-mode path is still supported for shops with strict append-only evolut
 startup: `resolver.lookupBySubjectVersion("orders-value", "latest")` → `AvroFormat.of(schemaJson)`, paired with
 `.skipBytes(5)`. `lookupById(int)` is also available for managing your own caching.
 
-**Scope.** Avro only for now. Protobuf SR auto-lookup needs runtime `.proto` text compilation and has not shipped — use
-`kpipe-format-protobuf` with a compiled descriptor and `skipBytes(6)` for the single-top-level-message case. No schema
-publishing (Confluent's own producer client handles that). No compatibility checks at the consumer — those run at
-registration time inside SR.
+**Scope.** Avro and Protobuf both support per-record SR auto-lookup. Protobuf works the same way through
+`KPipe.protobuf(topic, props, resolver)` / `ProtobufFormat.withRegistry(resolver)`, reading the 6-byte envelope
+(magic + schema ID + message-index); it needs the opt-in `kpipe-format-protobuf-confluent` module on the classpath,
+which carries the `.proto`-text compiler (Confluent SR stores Protobuf schemas as source text, and `protobuf-java`
+cannot parse it). Wire compatibility with Confluent's own `KafkaProtobufSerializer` is covered by a round-trip test in
+that module. The static path — `kpipe-format-protobuf` with a compiled descriptor and `skipBytes(6)` — remains for the
+descriptor-in-hand case. No schema publishing (Confluent's own producer client handles that). No compatibility checks
+at the consumer — those run at registration time inside SR.
 
 ### Protobuf
 
@@ -764,15 +772,18 @@ To produce processed messages back to a Kafka topic, use `KafkaMessageSink` (in
 `io.github.eschizoid.kpipe.producer.sink`):
 
 ```java
-import io.github.eschizoid.kpipe.producer.KPipeProducer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
 import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
+import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 
-final var producer = KPipeProducer.<byte[], byte[]>builder().withProperties(kafkaProps).build();
+final var producer = new KafkaProducer<byte[], byte[]>(producerProps);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
   .add(RegistryKey.json("transform"))
-  .toSink(KafkaMessageSink.of(producer.getProducer(), "output-topic", JsonFormat.INSTANCE::serialize))
+  .toSink(KafkaMessageSink.of(
+    producer, "output-topic", JsonFormat.INSTANCE::serialize, ProducerMetrics.noop(), Tracer.noop()))
   .build();
 ```
 
@@ -813,7 +824,7 @@ KPipe.json("events", kafkaProps)
 API that returns which rows failed — return `BatchResult` directly with the succeeded / failed indexes; the wrapper
 routes only the failures to the DLQ.
 
-Highlights:
+Semantics:
 
 - **Both modes.** Sequential and parallel processing both work; in parallel mode the buffer participates in the
   in-flight backpressure metric so a slow batch sink can't let the buffer grow unbounded.
@@ -823,7 +834,7 @@ Highlights:
 - **Shutdown drain.** A final flush runs before the offset manager closes, so partially-filled buffers commit cleanly.
 
 Headline number from `BatchSinkLatencyBenchmark` at 1ms-per-call sink latency: **84× throughput at batch=100** versus
-the per-record control. Full numbers in [`benchmarks/README.md`](benchmarks/README.md).
+the per-record control (2026-05 capture; raw JMH JSON in [`benchmarks/results/`](benchmarks/results/)).
 
 ---
 
@@ -861,6 +872,7 @@ is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` is used: zero al
 | `kpipe.producer.messages.sent`                 | Counter   | Records successfully produced                      |
 | `kpipe.producer.messages.failed`               | Counter   | Records that failed to produce                     |
 | `kpipe.producer.dlq.sent`                      | Counter   | Records sent to DLQ                                |
+| `kpipe.producer.dlq.failed`                    | Counter   | DLQ sends that failed (record stays uncommitted)   |
 
 ### Pipeline outcome counters
 
@@ -916,17 +928,22 @@ The consumer hosts its own lifecycle — start, periodic metrics reporting, JVM 
 shutdown. There is no separate runner class; everything is on `KPipeConsumer` directly.
 
 ```java
+// The reporter needs the consumer's metrics, and the consumer needs the reporter at build
+// time — bridge the cycle with a reference the try block fills in.
+final var consumerRef = new AtomicReference<KPipeConsumer>();
 try (final var consumer = KPipeConsumer.builder()
     .withProperties(kafkaProps)
     .withTopic("events")
     .withPipeline(pipeline)
     .withMetricsReporters(List.of(
-      ConsumerMetricsReporter.forConsumer(c -> consumer.getMetrics()),
+      ConsumerMetricsReporter.forConsumer(
+        () -> consumerRef.get() == null ? Map.of() : consumerRef.get().getMetrics()),
       EntryMetricsReporter.forProcessors(processorRegistry)
     ))
     .withMetricsInterval(Duration.ofSeconds(30))
     .withShutdownHook(true)   // installs Runtime.getRuntime().addShutdownHook(consumer::close)
     .build()) {
+  consumerRef.set(consumer);
   consumer.start();
   consumer.awaitShutdown(Duration.ofMinutes(5));   // bounded wait; no-arg blocks until close()
 }
@@ -1127,8 +1144,8 @@ public enum StandardProcessors implements UnaryOperator<Map<String, Object>> {
   }
 }
 
-// Bulk register all enum constants
-registry.registerEnum(Map.class, StandardProcessors.class);
+// Bulk register all enum constants (the double cast pins the payload type)
+registry.registerEnum((Class<Map<String, Object>>) (Class<?>) Map.class, StandardProcessors.class);
 
 // Now they can be used by name in configuration
 // PROCESSOR_PIPELINE=TIMESTAMP,SOURCE
