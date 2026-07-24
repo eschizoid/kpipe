@@ -81,12 +81,14 @@ absolute throughput scales up with the hardware. (An earlier capture reported KP
 cells as single-sample point estimates; that turned out to be a real pause/resume liveness bug the benchmark
 exposed, fixed in #228. The reference capture has 25/25 samples in every completed cell.)
 
-**2. The at-least-once claim comes with receipts.** Every CI run gates on 16
-[jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress tests across 4 modules, plus jqwik
+**2. The at-least-once claim comes with receipts.** Every CI run gates on 21
+[jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress classes across 4 modules, plus jqwik
 property-based suites over the offset lifecycle and chaos-rebalance + crash-restart Testcontainers E2E tests against a
 real broker. Building that suite found and fixed three real data-loss and correctness bugs before any user hit them (an
 offset-tracking race, silent loss on DLQ send failure, a circuit breaker blind to the batch path). None of the runtimes
-we benchmark against document their delivery guarantee this way, let alone test it.
+we benchmark against document their delivery guarantee this way, let alone test it. The same discipline is packaged
+for your code too: [`kpipe-test`](#testing-your-pipeline) drives your pipeline through the real consumer runtime with
+no broker and no Docker.
 
 ## Two API surfaces
 
@@ -450,8 +452,8 @@ Three modes via `.withProcessingMode(ProcessingMode)`:
   entities are independent. The bounded key map caps active keys at 10,000 by default; override with
   `.withKeyOrderedMaxKeys(int)`.
   Records with `null` keys all serialize through a single sentinel queue. When the cap saturates with every queue
-  non-empty, dispatch stalls the consumer thread until a queue drains — implicit backpressure — and a one-shot `WARNING`
-  log fires the first time to hint at raising the cap. For diagnostics under high cardinality,
+  non-empty, dispatch stalls the consumer thread until a queue drains — implicit backpressure — and a `WARNING` log
+  fires once per saturation episode to hint at raising the cap. For diagnostics under high cardinality,
   `Handle.topKeyQueueDepths(int n)` returns a snapshot of the deepest per-key queues.
 
 For per-entity ordering (Authorize before Capture, balance updates in sequence), have your producer key by the entity
