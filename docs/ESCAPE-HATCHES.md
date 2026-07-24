@@ -1,6 +1,6 @@
 # Escape hatches — when the fluent facade isn't enough
 
-The [`KPipe` fluent facade](../README.md#the-fluent-facade) covers the 80% path:
+The [`KPipe` fluent facade](API.md) covers the 80% path:
 
 ```java
 try (var handle = KPipe.json("orders", props)
@@ -181,3 +181,20 @@ thin layer over the builder.
 
 If you find yourself reaching for an escape hatch that isn't in the table above, open an issue — either it's missing
 from this doc, or it's a real gap in the API.
+
+## Advanced registry patterns
+
+Patterns that only make sense on the explicit `MessageProcessorRegistry` surface.
+
+**Enum-based registration** — declare a service's operators as an enum and bulk-register them, so
+`PROCESSOR_PIPELINE=TIMESTAMP,SOURCE`-style configuration can reference them by name:
+
+```java
+// Bulk register all enum constants (the double cast pins the payload type)
+registry.registerEnum((Class<Map<String, Object>>) (Class<?>) Map.class, StandardProcessors.class);
+```
+
+**Conditional processing** — `Operators.when(predicate, ifTrue, ifFalse)` branches inside one pipeline; both branches
+are required. For drop-on-condition, use `filter` — a false predicate marks the record `Filtered` (offset still
+commits, sink skipped), which is the deliberate-skip half of the sealed `Result` type. The failure half (`Failed`)
+routes through retry / error handler / DLQ — the two are distinct types precisely so a filter can never mask a bug.
