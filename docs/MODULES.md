@@ -45,8 +45,8 @@ Maven equivalent:
 </dependencies>
 ```
 
-`kpipe-api` pulls `kpipe-consumer`, `kpipe-producer`, `kpipe-core`, and `kpipe-metrics` transitively, so those never
-appear in your build file. Format modules are deliberately **not** transitive — you add only the one(s) you use.
+`kpipe-api` pulls `kpipe-consumer`, `kpipe-producer`, `kpipe-core`, and `kpipe-metrics` transitively, so you do not
+list them in your build file. Format modules are deliberately **not** transitive — you add only the one(s) you use.
 
 Skip `kpipe-api` only if you want the explicit registry/builder API without the fluent facade; in that case depend on
 `kpipe-consumer` directly.
