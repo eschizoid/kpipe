@@ -24,6 +24,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Documentation consistency
+        # Relative links resolve, one kpipe version across install snippets, and the README
+        # quickstart matches the compiled ReadmeQuickstart.java it claims to be.
+        run: ./scripts/check-docs.sh
+
       - name: Test with Gradle
         run: |
           ./gradlew clean
