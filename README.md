@@ -4,15 +4,15 @@
 
 # kpipe
 
-A Kafka consumer library for the modern JVM: one virtual thread per record, a typed pipeline API, and at-least-once
-delivery with parallel processing.
-
 [![JVM 25+](https://img.shields.io/badge/JVM-25%2B-brightgreen.svg?&logo=openjdk)](https://openjdk.org/projects/jdk/25/)
 [![Build](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml/badge.svg)](https://github.com/eschizoid/kpipe/actions/workflows/ci.yaml)
 [![Codecov](https://codecov.io/gh/eschizoid/kpipe/graph/badge.svg?token=X50GBU4X7J)](https://codecov.io/gh/eschizoid/kpipe)
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.eschizoid/kpipe-consumer.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.eschizoid/kpipe-consumer)
 [![Javadoc](https://javadoc.io/badge2/io.github.eschizoid/kpipe-api/javadoc.svg?color=purple)](https://javadoc.io/doc/io.github.eschizoid/kpipe-api)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+A Kafka consumer library for the modern JVM: one virtual thread per record, a typed pipeline API, and at-least-once
+delivery with parallel processing.
 
 KPipe replaces the hand-rolled `Consumer.poll` loop that most Kafka services grow around their business logic. You
 declare a pipeline — deserialize, transform, sink — and KPipe runs it with:
