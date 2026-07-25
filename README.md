@@ -18,8 +18,9 @@ KPipe replaces the hand-rolled `Consumer.poll` loop that most Kafka services gro
 declare a pipeline — deserialize, transform, sink — and KPipe runs it with:
 
 - **A virtual thread per record.** I/O-bound work (DB writes, HTTP calls) overlaps without a worker pool to configure.
-  You still bound in-flight work (KPipe's backpressure does this) and your downstream resources — connection pools and
-  rate limits don't disappear because threads got cheap.
+  You still bound in-flight work — records currently being processed — which KPipe's backpressure does by pausing
+  consumption past a watermark; and your downstream resources — connection pools and rate limits — don't disappear
+  because threads got cheap.
 - **At-least-once delivery, kept honest under parallelism.** An offset is committed only after its record reaches a
   terminal state (sink completed, filtered, or parked in the dead-letter topic), and commits never pass a record that
   is still in flight. The exact guarantee boundary and failure matrix: [docs/GUARANTEES.md](docs/GUARANTEES.md).
@@ -152,9 +153,10 @@ published raw JSON. Summary of the 2026-07 reference capture (one 6-core machine
 
 The costs, measured in the same captures: KPipe allocates more per record than any alternative tested (~1.7 KB/op,
 mostly the per-record virtual thread, vs ~35 B/op for CPC); at sub-millisecond workloads the `KEY_ORDERED` mode's
-advantage over CPC's equivalent is machine-dependent (it loses on one of our two test machines); and the raw-loop
-baseline is faster than KPipe at every cell — it omits rebalance-safe offset tracking, so it is not comparable on
-delivery guarantees.
+advantage over CPC's equivalent is machine-dependent (it loses on one of our two test machines); the
+virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes CPU-bound (there is nothing
+to overlap); and the raw-loop baseline is faster than KPipe at every cell — it omits rebalance-safe offset tracking,
+so it is not comparable on delivery guarantees.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks/).
@@ -181,6 +183,10 @@ against the versions you run — competitors evolve):
 | Transactions / EOS | **Not supported** | Supported (transactional templates, listeners) | Supported (EOS v2) | Sender transactions |
 | Stateful processing (joins, windows, stores) | **Not supported** | Not built-in | Core feature | Not built-in |
 | Ecosystem & maturity | Young, small API surface | Large ecosystem, long history | Large ecosystem, long history | Established in reactive stacks |
+
+Benchmarked/tested against: Confluent Parallel Consumer 0.5.3.3, Reactor Kafka 1.3.25, kafka-clients 4.3.1
+(pinned in [`gradle/libs.versions.toml`](gradle/libs.versions.toml)); the Spring Kafka and Kafka Streams columns
+describe documented behavior, not versions we test.
 
 Choose Spring Kafka when you live in the Spring ecosystem or need transactions; Kafka Streams when you need stateful
 processing; Reactor Kafka when your service is already reactive. KPipe's case is the plain-JVM consumer service doing
