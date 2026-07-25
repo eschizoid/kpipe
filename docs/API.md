@@ -2,7 +2,7 @@
 
 The fluent surface, grouped by the type each method actually lives on. Chain shape:
 `KPipe.<format>(...)` → `Stream<T>` (build the pipeline) → terminal → `Sink<T>` → `start()` → `Handle` (lifecycle).
-This catalog is verified against the source of `kpipe-api` 1.18.0; the
+This catalog is verified against the `kpipe-api` source; the
 [Javadoc](https://javadoc.io/doc/io.github.eschizoid/kpipe-api) is the normative reference.
 
 Code snippets on this page use placeholder values (`kafkaProps`, `enrich`, `mySink`, ...) — they show shape, not a

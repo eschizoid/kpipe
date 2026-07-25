@@ -79,7 +79,7 @@ implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")   // or -avro / -protobuf — formats are opt-in
 ```
 
-`kpipe-api` brings the consumer, producer, and core modules transitively; its only external runtime dependency is
+`kpipe-api` brings the consumer, producer, core, and metrics modules transitively; its only external runtime dependency is
 `kafka-clients`. Maven snippets, the full module catalog, `platform` vs `enforcedPlatform`, and JPMS
 (`module-info.java`) guidance: [docs/MODULES.md](docs/MODULES.md).
 
