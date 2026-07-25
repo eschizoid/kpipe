@@ -24,7 +24,8 @@ runnable program. For a complete runnable example see
 
 ## `Stream<T>` — building the pipeline
 
-Every method returns a **new immutable** `Stream<T>`; branching two pipelines from one prefix is safe.
+Every method returns a **new immutable** `Stream<T>`, so two pipelines can branch from one prefix without
+affecting each other.
 
 ### Transforms
 
@@ -123,8 +124,9 @@ KPipe.multi(kafkaProps)
 `io.github.eschizoid.kpipe.registry.Operators` provides ready-made operators for `.pipe(...)`: `filter`, `drop`,
 `peek`, `map`, `compose`, `safe`, `requireField`, `rename`, `removeFields`, `addField`. The `Map`-typed helpers
 (`rename`, `removeFields`, `addField`, `requireField`) **mutate the payload map in place and return it** — they are
-convenient, not pure functions. That is safe under KPipe's threading model (one record's payload is only ever touched
-by the one worker processing it) but matters if your own code shares payload references beyond the pipeline.
+convenient, not pure functions. In the standard sink path this is sound (a record's payload is confined to the one
+worker processing that attempt; the batch path hands buffered values to the flusher under a lock), but it matters if
+your own code shares payload references beyond the pipeline.
 
 ## The explicit API
 

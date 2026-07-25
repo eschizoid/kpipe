@@ -8,8 +8,9 @@ format's payload type: `Map<String, Object>` for JSON, `GenericRecord` for Avro,
 
 A note on mutability: the **pipeline definition** is immutable (each fluent call returns a new `Stream<T>`), but the
 **payload objects** are not necessarily — JSON maps and Avro records are mutable, and several `Operators` helpers
-mutate them in place. That is safe because one record's payload is confined to the single worker processing it, and a
-retry re-deserializes from the raw bytes rather than reusing a possibly-mutated object. Protobuf messages are
+mutate them in place. In the standard sink path this is sound: a record's payload is confined to the worker running
+that processing attempt, and a retry re-deserializes from the raw bytes rather than reusing a possibly-mutated
+object. (The batch path hands buffered values to the flusher under a lock.) Protobuf messages are
 immutable; transforms build a new message via `toBuilder()`.
 
 ## JSON
