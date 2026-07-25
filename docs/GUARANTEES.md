@@ -87,6 +87,17 @@ consumer **keeps polling**: paused partitions fetch nothing, but the poll keeps 
 (no `max.poll.interval.ms` eviction) and keeps the pause/resume decision on a fixed cadence. The monitored metric is
 in-flight records for `PARALLEL`/`KEY_ORDERED` and consumer lag for `SEQUENTIAL` (where in-flight is always ≤ 1).
 
+## What actually limits scale
+
+A virtual thread per record removes the worker pool, not the physics. The resources that bound a KPipe consumer in
+practice: **partition count** caps fetch parallelism (Kafka delivers a partition's records in order, so more in-flight
+work than the topic's partitions can supply never materializes); **heap** grows with in-flight records × payload size,
+which is exactly what the backpressure watermark bounds; **pinned virtual threads** — third-party clients that block
+inside `synchronized` can pin their carrier and erode the overlap the model relies on (prefer lock-based or
+Loom-friendly clients on the hot path); **retry amplification** — `withRetry(n)` multiplies a failing sink's load by
+up to n+1; and the usual downstream limits (connection pools, rate limits, file descriptors) arrive sooner than
+thread limits do. CPU-bound work gains little from any of this — virtual threads overlap waiting, not computation.
+
 ## Sinks
 
 The guarantee boundary is the sink invocation: KPipe guarantees your sink is invoked at least once per non-filtered
