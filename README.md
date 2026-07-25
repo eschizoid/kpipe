@@ -11,7 +11,7 @@
 [![Javadoc](https://javadoc.io/badge2/io.github.eschizoid/kpipe-api/javadoc.svg?color=purple)](https://javadoc.io/doc/io.github.eschizoid/kpipe-api)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A Kafka consumer library for the modern JVM: one virtual thread per record, a typed pipeline API, and at-least-once
+A Kafka consumer library for Java 25+: one virtual thread per record, a typed pipeline API, and at-least-once
 delivery with parallel processing.
 
 KPipe replaces the hand-rolled `Consumer.poll` loop that most Kafka services grow around their business logic. You
@@ -21,11 +21,12 @@ declare a pipeline — deserialize, transform, sink — and KPipe runs it with:
   You still bound in-flight work — records currently being processed — which KPipe's backpressure does by pausing
   consumption past a watermark; and your downstream resources — connection pools and rate limits — don't disappear
   because threads got cheap.
-- **At-least-once delivery, kept honest under parallelism.** An offset is committed only after its record reaches a
-  terminal state (sink completed, filtered, or parked in the dead-letter topic), and commits never pass a record that
-  is still in flight. The exact guarantee boundary and failure matrix: [docs/GUARANTEES.md](docs/GUARANTEES.md).
-- **One deserialize, one serialize.** Operators transform the typed payload (`Map`, `GenericRecord`, `Message`)
-  between a single decode and a single encode, instead of re-serializing between steps.
+- **At-least-once delivery, held under parallelism.** An offset is committed only after its record reaches a
+  terminal state (sink completed, filtered, or parked in the dead-letter topic, the DLQ), and commits never pass a
+  record that is still in flight. The exact guarantee boundary and failure matrix: [docs/GUARANTEES.md](docs/GUARANTEES.md).
+- **One deserialize, one serialize per processing attempt.** Operators transform the typed payload (`Map`,
+  `GenericRecord`, `Message`) between a single decode and at most one encode (typed sinks skip it), instead of
+  re-serializing between steps.
 - **Typed outcomes instead of nulls.** Every record ends as `Passed`, `Filtered`, or `Failed` — a sealed type, so
   "intentionally skipped" and "broken" cannot be confused, in code or in metrics.
 - **The operational stack as configuration.** Retries, dead-letter routing, backpressure, a circuit breaker, metrics,
@@ -86,13 +87,14 @@ implementation("io.github.eschizoid:kpipe-format-json")   // or -avro / -protobu
 
 ## How processing works
 
-Each polled record flows through: **track offset → deserialize → operators → sink → mark processed**. The whole unit
-runs on one virtual thread, and the payload object is confined to it — operators may freely mutate a JSON `Map` or
-Avro `GenericRecord` in place (several built-in helpers do), because no other thread sees it and a retry
-re-deserializes from the raw bytes rather than reusing a possibly-mutated object.
+Each polled record flows through: **track offset → deserialize → operators → sink → mark processed**. In the standard sink path the
+whole unit runs on one virtual thread, and the payload is confined to it for the attempt — operators may mutate a
+JSON `Map` or Avro `GenericRecord` in place (several built-in helpers do), because no other thread touches it
+mid-attempt and a retry re-deserializes from the raw bytes rather than reusing a possibly-mutated object. (The batch
+path hands buffered values to the flusher under a lock.)
 
-The pipeline *definition* is immutable: every fluent call returns a new `Stream<T>`, so branching two pipelines from a
-shared prefix is safe.
+The pipeline *definition* is immutable: every fluent call returns a new `Stream<T>`, so two pipelines can branch
+from a shared prefix without affecting each other.
 
 A record's outcome is one of three sealed variants:
 
@@ -103,8 +105,8 @@ A record's outcome is one of three sealed variants:
   error handler and (if configured) the dead-letter topic.
 
 Offsets commit on a 30-second cadence (synchronously, on the consumer thread), always at the **commit frontier** — the
-lowest offset still in flight per partition. A fast record cannot commit past a slow one, which is what makes
-at-least-once true with parallel processing. Full lifecycle, failure matrix, and rebalance/shutdown behavior:
+lowest offset still in flight per partition. A fast record cannot commit past a slow one, which is how
+at-least-once holds under parallel processing. Full lifecycle, failure matrix, and rebalance/shutdown behavior:
 [docs/GUARANTEES.md](docs/GUARANTEES.md).
 
 ## Processing modes
@@ -130,7 +132,8 @@ Each is one fluent call; exact semantics are in [docs/API.md](docs/API.md).
   replayable. A failed DLQ send leaves the offset uncommitted — a down DLQ applies backpressure rather than dropping
   records.
 - **Backpressure** — on by default: pauses all assigned partitions at 10,000 in-flight records, resumes at 7,000
-  (hysteresis prevents flapping). A paused consumer keeps polling so it is never evicted from the group.
+  (hysteresis prevents flapping). A paused consumer keeps polling, which keeps its group membership alive (no `max.poll.interval.ms` eviction while
+  paused).
 - **Circuit breaker** — `withCircuitBreaker(threshold, window, openDuration)`: pauses consumption when the terminal
   failure rate trips, probes recovery after a cool-down. Off unless configured.
 - **Metrics** — `withMetrics(...)`: OpenTelemetry-backed counters/histograms via the opt-in `kpipe-metrics-otel`, or
@@ -155,13 +158,13 @@ The costs, measured in the same captures: KPipe allocates more per record than a
 mostly the per-record virtual thread, vs ~35 B/op for CPC); at sub-millisecond workloads the `KEY_ORDERED` mode's
 advantage over CPC's equivalent is machine-dependent (it loses on one of our two test machines); the
 virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes CPU-bound (there is nothing
-to overlap); and the raw-loop baseline is faster than KPipe at every cell — it omits rebalance-safe offset tracking,
+to overlap); and the raw-loop baseline is faster than KPipe at every measured cell — it omits rebalance-safe offset tracking,
 so it is not comparable on delivery guarantees.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks/).
 
-The at-least-once claim is tested, not only documented: every CI run gates on 21
+The at-least-once claim is itself under test: every CI run gates on 21
 [jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress classes plus jqwik property suites
 over the offset lifecycle and chaos-rebalance/crash-restart integration tests against a real broker. Building that
 suite caught three real data-loss bugs before release ([docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md)).
@@ -169,8 +172,8 @@ suite caught three real data-loss bugs before release ([docs/OFFSET-INVARIANTS.m
 ## Positioning
 
 KPipe sits between a hand-rolled `KafkaConsumer` loop and a stream-processing framework: it is a **consumer runtime**
-for transform/enrich/route services, not a stream processor. Honest comparison across current versions (verify
-against the versions you run — competitors evolve):
+for transform/enrich/route services, not a stream processor. Comparison across current versions (verify against the
+versions you run — these projects evolve):
 
 | Concern | KPipe | Spring Kafka | Kafka Streams | Reactor Kafka |
 | --- | --- | --- | --- | --- |
@@ -203,8 +206,8 @@ your sink may see a record twice after a crash.
 ## Testing your pipeline
 
 `kpipe-test` drives your pipeline through a real `KPipeConsumer` over an in-memory `MockConsumer` — no broker, no
-Docker, milliseconds per test. `flush()` returns only once every sent record has fully settled, so assertions never
-race the consumer:
+Docker, milliseconds per test. `flush()` returns only after every sent record has settled, so assertions run
+against a stable state:
 
 ```java
 final var captured = new CapturingSink<Map<String, Object>>();
@@ -220,7 +223,8 @@ try (final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTA
 ```
 
 A `CrashRestartHarness` covers the harder question — does the resume window reprocess correctly after a crash —
-without a broker to flake on. Add `testImplementation("io.github.eschizoid:kpipe-test")`.
+without a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-test")`; the full kit lives in
+[`lib/kpipe-test`](lib/kpipe-test).
 
 ## Documentation
 
