@@ -30,8 +30,10 @@ for f in README.md docs/*.md benchmarks/README.md; do
 done
 
 # --- 2. one version string everywhere ------------------------------------------------------
-versions=$(grep -rhoE 'io\.github\.eschizoid:kpipe[a-z-]*:[0-9]+\.[0-9]+\.[0-9]+' README.md docs/MODULES.md \
-  | sed -E 's/.*:([0-9]+\.[0-9]+\.[0-9]+)$/\1/' | sort -u)
+versions=$( (grep -rhoE 'io\.github\.eschizoid:kpipe[a-z-]*:[0-9]+\.[0-9]+\.[0-9]+' README.md docs/MODULES.md \
+  | sed -E 's/.*:([0-9]+\.[0-9]+\.[0-9]+)$/\1/'; \
+  grep -rhoE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' README.md docs/MODULES.md \
+  | sed -E 's/<\/?version>//g') | sort -u)
 count=$(echo "$versions" | grep -c . || true)
 if [ "$count" -gt 1 ]; then
   echo "VERSION DRIFT: multiple kpipe versions referenced in docs: $(echo "$versions" | tr '\n' ' ')"
@@ -45,6 +47,7 @@ if [ -z "$snippet" ]; then
   echo "QUICKSTART CHECK: no java block found in README.md"
   fail=1
 else
+  # README -> class: every README code line must exist in the compiled class
   while IFS= read -r line; do
     trimmed=$(echo "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
     [ -z "$trimmed" ] && continue
@@ -53,6 +56,20 @@ else
       fail=1
     fi
   done <<< "$snippet"
+  # class -> README: every code line of the class (minus /// docs and the private ctor)
+  # must appear in the README block, so the class cannot silently gain behavior the
+  # README does not show
+  while IFS= read -r line; do
+    trimmed=$(echo "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+    [ -z "$trimmed" ] && continue
+    case "$trimmed" in
+      ///*|"private ReadmeQuickstart"*) continue ;;
+    esac
+    if ! printf '%s\n' "$snippet" | grep -qF "$trimmed"; then
+      echo "QUICKSTART DRIFT: $quickstart line not in README: $trimmed"
+      fail=1
+    fi
+  done < "$quickstart"
 fi
 
 if [ "$fail" -ne 0 ]; then

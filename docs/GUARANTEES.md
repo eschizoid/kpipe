@@ -1,7 +1,7 @@
 # Delivery and ordering guarantees
 
 What KPipe guarantees, the exact boundary of each guarantee, and the failure matrix. Everything on this page is
-verified against `kpipe-consumer` 1.18.0 source; the machine-checkable invariants (jcstress + property suites) are
+verified against the `kpipe-consumer` source; the machine-checkable invariants (jcstress + property suites) are
 written down in [OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md).
 
 ## The headline guarantee

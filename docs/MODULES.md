@@ -77,7 +77,7 @@ kpipe-core, kpipe-metrics          — roots, no kpipe dependencies
 kpipe-producer                     → core, metrics
 kpipe-consumer                     → core, producer (metrics transitively)
 kpipe-format-{json,avro,protobuf}  → core
-kpipe-api                          → consumer + producer; format modules are compile-only (requires static)
+kpipe-api                          → core, consumer, producer; format modules are compile-only (requires static)
 kpipe-metrics-otel                 → metrics
 kpipe-tracing-otel                 → producer
 kpipe-schema-registry-confluent    → core
