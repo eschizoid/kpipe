@@ -217,10 +217,10 @@ class BatchCoverageContractInvariantTest {
   }
 
   /// **Overlap precedence.** Index 1 appears in BOTH the succeeded list and the failure map. The
-  /// `BatchResult` Javadoc declares overlap "undefined," but the wrapper's behavior is
-  /// deterministic and worth pinning so a refactor can't silently flip it: the succeeded check is
-  /// consulted first, so an overlapping index is marked processed and its failure-map entry is
-  /// ignored. Coverage is still complete (no missing indexes), so no record hits the DLQ.
+  /// `BatchResult` defines overlap as success-wins. The wrapper's behavior is deterministic and
+  /// worth pinning so a refactor can't silently flip it: the succeeded check is consulted first, so
+  /// an overlapping index is marked processed and its failure-map entry is ignored. Coverage is
+  /// still complete (no missing indexes), so no record hits the DLQ.
   @Test
   void overlappingIndexIsMarkedProcessedSucceededWins() {
     final var topic = "inv-overlap";
