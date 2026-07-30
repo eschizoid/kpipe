@@ -190,10 +190,11 @@ public interface Stream<T> {
   /// [#withDeadLetterTopic] for real failure routing; this is purely a hook for logging and
   /// metrics.
   ///
-  /// Runs on the consumer thread immediately after the pipeline returns `Filtered`. If the
-  /// observer throws, the exception is logged at WARNING and swallowed so observer bugs cannot
-  /// crash the pipeline. Calling this method more than once replaces the previous observer —
-  /// for fan-out, compose externally.
+  /// Runs on the same thread that processes the record: the consumer thread in `SEQUENTIAL`
+  /// mode, or a virtual worker thread in `PARALLEL` / `KEY_ORDERED` mode. If the observer
+  /// throws, the exception is logged at WARNING and swallowed so observer bugs cannot crash the
+  /// pipeline. Calling this method more than once replaces the previous observer — for fan-out,
+  /// compose externally.
   ///
   /// @param observer a side-effect invoked when a record is filtered (must not be null)
   /// @return a new stream with the observer attached
@@ -208,9 +209,10 @@ public interface Stream<T> {
   /// that exhausts `withRetry(2, ...)` invokes this observer three times. For exactly one callback
   /// per record after retries are exhausted, use `withErrorHandler(...)` instead.
   ///
-  /// Runs on the consumer thread immediately after the pipeline returns `Failed`. If the
-  /// observer throws, the exception is logged at WARNING and swallowed. Calling this method more
-  /// than once replaces the previous observer.
+  /// Runs on the same thread that processes the record: the consumer thread in `SEQUENTIAL`
+  /// mode, or a virtual worker thread in `PARALLEL` / `KEY_ORDERED` mode. If the observer
+  /// throws, the exception is logged at WARNING and swallowed. Calling this method more than
+  /// once replaces the previous observer.
   ///
   /// **Use this when "processed" counters look healthy but the sink is starved.** If
   /// `messagesProcessed` keeps rising while `sinkInvocationCount` stays at 0, the pipeline is
@@ -227,9 +229,10 @@ public interface Stream<T> {
   /// `Passed`, `Filtered`, or `Failed`. The lowest-level observer hook; use this for full
   /// pattern-matching diagnostic taps. Does **not** affect pipeline flow.
   ///
-  /// Runs on the consumer thread before any downstream sink invocation. If the observer throws,
-  /// the exception is logged at WARNING and swallowed. Calling this method more than once
-  /// replaces the previous observer.
+  /// Runs on the same thread that processes the record, before any downstream sink invocation:
+  /// the consumer thread in `SEQUENTIAL` mode, or a virtual worker thread in `PARALLEL` /
+  /// `KEY_ORDERED` mode. If the observer throws, the exception is logged at WARNING and
+  /// swallowed. Calling this method more than once replaces the previous observer.
   ///
   /// @param observer a side-effect invoked with every pipeline outcome (must not be null)
   /// @return a new stream with the observer attached

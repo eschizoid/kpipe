@@ -192,7 +192,8 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       if (i != null && i >= 0 && i < size) succeeded.set(i);
       else logOutOfRange("succeeded", i, size);
     }
-    for (final var i : result.failedByIndex().keySet()) {
+    final var failedByIndex = result.failedByIndex();
+    for (final var i : failedByIndex.keySet()) {
       if (i == null || i < 0 || i >= size) logOutOfRange("failed", i, size);
     }
 
@@ -201,12 +202,12 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     // contract-violation path (rare); the common success path stays allocation-free.
     var missingCount = 0;
     for (int i = 0; i < size; i++) {
-      if (!succeeded.get(i) && !result.failedByIndex().containsKey(i)) missingCount++;
+      if (!succeeded.get(i) && !failedByIndex.containsKey(i)) missingCount++;
     }
     if (missingCount > 0) {
       final var missing = new ArrayList<Integer>(missingCount);
       for (int i = 0; i < size; i++) {
-        if (!succeeded.get(i) && !result.failedByIndex().containsKey(i)) missing.add(i);
+        if (!succeeded.get(i) && !failedByIndex.containsKey(i)) missing.add(i);
       }
       coverageViolation = new IllegalStateException(
         "BatchSink for topic " +
@@ -232,7 +233,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
           callbacks.markProcessed(record);
           continue;
         }
-        final var perRecordCause = result.failedByIndex().get(i);
+        final var perRecordCause = failedByIndex.get(i);
         callbacks.onBatchFailure(
           record,
           perRecordCause != null

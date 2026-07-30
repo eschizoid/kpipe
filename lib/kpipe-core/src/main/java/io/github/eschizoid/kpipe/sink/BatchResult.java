@@ -15,7 +15,9 @@ import java.util.Objects;
 /// position in the input batch (i.e. their disjoint union must be exactly `[0, batchSize)`). The
 /// `BatchPipelineWrapper` in `kpipe-consumer` enforces this — any indexes left unaccounted for
 /// are treated as failures and routed to the configured DLQ. Implementations should not return
-/// overlapping entries (an index appearing in both lists); behavior in that case is undefined.
+/// overlapping entries (an index appearing in both lists). If an overlap is returned, success
+/// wins and the failure entry for that index is ignored; callers should still avoid overlaps
+/// because they usually indicate ambiguous sink accounting.
 ///
 /// **Sentinel factories.** Use [#allSucceeded] and [#allFailed] for the trivial all-or-nothing
 /// outcomes — these are the natural results when a downstream system either confirms the whole
