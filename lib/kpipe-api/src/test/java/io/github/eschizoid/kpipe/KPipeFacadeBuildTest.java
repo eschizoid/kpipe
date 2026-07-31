@@ -8,9 +8,11 @@ import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
+import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
@@ -353,6 +355,36 @@ class KPipeFacadeBuildTest {
         .withCircuitBreaker(breaker)
         .json("topic-a", s -> s.toCustom(_ -> {}))
         .json("topic-b", s -> s.toCustom(_ -> {}))
+    );
+  }
+
+  @Test
+  void avroCollectionResolverOverloadBuildsAndRejectsConsoleSink() {
+    final SchemaResolver resolver = schemaId -> "{}";
+    final var stream = KPipe.avro(List.of("topic-a", "topic-b"), props(), resolver);
+    assertNotNull(stream, "the Collection resolver overload must build a stream");
+
+    // Registry mode has no fixed schema, so the console sink is the dedicated "unsupported" one.
+    final var ex = assertThrows(IllegalStateException.class, stream::toConsole);
+    assertTrue(
+      ex.getMessage().contains("toConsole()"),
+      () -> "expected the registry-mode console-sink rejection, got: " + ex.getMessage()
+    );
+  }
+
+  @Test
+  void protobufCollectionResolverOverloadRoutesToTheRegistryFormat() {
+    // kpipe-api's test path has no kpipe-format-protobuf-confluent, so
+    // ProtobufFormat.withRegistry fails ServiceLoader lookup with a "ProtobufDescriptorCompiler"
+    // message — reachable ONLY if the overload delegated to the registry-mode factory. With the
+    // compiler on the path the overload builds a stream whose toConsole() throws, mirroring Avro.
+    final SchemaResolver resolver = schemaId -> "syntax = \"proto3\";";
+    final var ex = assertThrows(IllegalStateException.class, () ->
+      KPipe.protobuf(List.of("topic-a", "topic-b"), props(), resolver)
+    );
+    assertTrue(
+      ex.getMessage().contains("ProtobufDescriptorCompiler"),
+      () -> "expected the registry branch's ServiceLoader error, got: " + ex.getMessage()
     );
   }
 }

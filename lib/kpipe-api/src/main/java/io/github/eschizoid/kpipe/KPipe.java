@@ -105,6 +105,24 @@ public final class KPipe {
     return new DefaultStream<>(topic, kafkaProps, format, KPipe::registryModeConsoleSinkUnsupported);
   }
 
+  /// Avro-typed stream wired for per-record Confluent Schema Registry lookup across multiple
+  /// homogeneous topics through a single shared pipeline. See
+  /// [#avro(String, Properties, SchemaResolver)] — the same envelope and `.skipBytes(5)` rules
+  /// apply.
+  ///
+  /// @param topics the Kafka topics to consume (must be non-empty)
+  /// @param kafkaProps the Kafka consumer properties
+  /// @param resolver the schema resolver (must be non-null; typically a `CachedSchemaResolver`)
+  /// @return a fluent [Stream] configured for Avro with per-record schema lookup
+  public static Stream<GenericRecord> avro(
+    final Collection<String> topics,
+    final Properties kafkaProps,
+    final SchemaResolver resolver
+  ) {
+    final var format = AvroFormat.withRegistry(resolver);
+    return new DefaultStream<>(topics, kafkaProps, format, KPipe::registryModeConsoleSinkUnsupported);
+  }
+
   static MessageSink<GenericRecord> registryModeConsoleSinkUnsupported() {
     throw new IllegalStateException(
       "toConsole() requires a fixed schema; an AvroFormat in Schema-Registry mode has none. " +
@@ -158,6 +176,24 @@ public final class KPipe {
   ) {
     final var format = ProtobufFormat.withRegistry(resolver);
     return new DefaultStream<>(topic, kafkaProps, format, KPipe::registryModeProtobufConsoleSinkUnsupported);
+  }
+
+  /// Protobuf-typed stream wired for per-record Confluent Schema Registry lookup across multiple
+  /// homogeneous topics through a single shared pipeline. See
+  /// [#protobuf(String, Properties, SchemaResolver)] — the same `kpipe-format-protobuf-confluent`
+  /// requirement, envelope handling, and `.skipBytes(6)` rules apply.
+  ///
+  /// @param topics the Kafka topics to consume (must be non-empty)
+  /// @param kafkaProps the Kafka consumer properties
+  /// @param resolver the schema resolver (must be non-null; typically a `CachedSchemaResolver`)
+  /// @return a fluent [Stream] configured for Protobuf with per-record schema lookup
+  public static Stream<Message> protobuf(
+    final Collection<String> topics,
+    final Properties kafkaProps,
+    final SchemaResolver resolver
+  ) {
+    final var format = ProtobufFormat.withRegistry(resolver);
+    return new DefaultStream<>(topics, kafkaProps, format, KPipe::registryModeProtobufConsoleSinkUnsupported);
   }
 
   static MessageSink<Message> registryModeProtobufConsoleSinkUnsupported() {

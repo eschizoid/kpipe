@@ -20,4 +20,20 @@ public interface SchemaResolver {
   /// @return the schema text (Avro JSON or Protobuf `.proto` source)
   /// @throws RuntimeException if the lookup fails or the schema is not found
   String lookupById(int schemaId);
+
+  /// Returns [#lookupById(int)]'s result after enforcing the no-null/no-blank contract. Format
+  /// modules call this on the read path so a misbehaving resolver fails with one uniform
+  /// message instead of each format re-checking locally. Read-path failures throw
+  /// `IllegalStateException`, matching the formats' own deserialize failures.
+  ///
+  /// @param schemaId the integer schema identifier (typically extracted from the wire envelope)
+  /// @return the schema text, guaranteed non-null and non-blank
+  /// @throws IllegalStateException if the resolver returned null or blank text
+  default String lookupRequired(final int schemaId) {
+    final var text = lookupById(schemaId);
+    if (text == null || text.isBlank()) throw new IllegalStateException(
+      "Schema resolver returned empty schema for id " + schemaId
+    );
+    return text;
+  }
 }

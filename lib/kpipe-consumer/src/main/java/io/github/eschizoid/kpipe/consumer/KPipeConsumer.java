@@ -230,7 +230,7 @@ public class KPipeConsumer implements AutoCloseable {
       ).withStrategy(
         this.processingMode == ProcessingMode.SEQUENTIAL
           ? BackpressureController.lagStrategy()
-          : BackpressureController.inFlightStrategy(this::totalInFlight)
+          : BackpressureController.inFlightStrategy(this::backpressureLoad)
       );
 
       final var tracer = builder.tracer != null ? builder.tracer : Tracer.noop();
@@ -430,27 +430,20 @@ public class KPipeConsumer implements AutoCloseable {
     }
   }
 
-  /// Blocks until the dispatcher's in-flight records finish processing, or `timeout` elapses, or
-  /// the calling thread is interrupted. Replaces the former standalone
-  /// `MessageTracker.waitForCompletion(...)`.
-  ///
-  /// Waits on `dispatcher.activeCount()` — records a worker is actively processing — NOT
-  /// `totalInFlight()`. The latter also counts buffered batch records, which never flush during a
-  /// drain (only on a size/age trigger or `BatchPipelineWrapper.close()` at teardown), so waiting
-  /// on them would always burn the full `timeout`. Buffered batches are flushed + committed by the
-  /// teardown that follows, so a `true` return here means "active processing is done, safe to tear
-  /// down."
+  /// Blocks until `dispatcher.drainableCount()` reaches zero, or `timeout` elapses, or the
+  /// calling thread is interrupted. A `true` return means "active processing is done, safe to
+  /// tear down" — buffered batches are flushed + committed by the teardown that follows.
   ///
   /// @param timeout maximum time to wait
   /// @return `true` if active processing drained in time, else `false`
   public boolean waitForInFlightDrain(final Duration timeout) {
-    if (dispatcher.activeCount() == 0) return true;
+    if (dispatcher.drainableCount() == 0) return true;
     final var deadline = System.nanoTime() + timeout.toNanos();
     final var pollNanos = Math.min(timeout.toNanos() / 10, Duration.ofMillis(500).toNanos());
     final var pollMs = Math.max(1, pollNanos / 1_000_000);
     try {
       while (System.nanoTime() < deadline) {
-        if (dispatcher.activeCount() == 0) return true;
+        if (dispatcher.drainableCount() == 0) return true;
         //noinspection BusyWait — deadline-bounded drain poll, not a spin
         Thread.sleep(pollMs);
       }
@@ -458,7 +451,7 @@ public class KPipeConsumer implements AutoCloseable {
       Thread.currentThread().interrupt();
       return false;
     }
-    return dispatcher.activeCount() == 0;
+    return dispatcher.drainableCount() == 0;
   }
 
   /// Runs on the consumer thread, at the top of its `finally`, before any teardown. The poll
@@ -469,17 +462,13 @@ public class KPipeConsumer implements AutoCloseable {
   /// by `waitForMessagesTimeout`. Finishing workers mark their offsets directly on the
   /// thread-safe `OffsetManager`, so those don't need the command queue. A final
   /// `processCommands()` flushes anything the last workers enqueued. Only the consumer thread may
-  /// touch the Kafka consumer, so this must run here, not on the close() thread.
-  ///
-  /// We wait on `dispatcher.activeCount()`, NOT `totalInFlight()`: the latter also counts
-  /// buffered batch records, which don't enqueue commands and won't flush on their own (size-only
-  /// / long-maxAge policies). They're flushed by each `BatchPipelineWrapper.close()` in
-  /// `releaseConstructedResources()` right after this returns — so waiting on them here would just
-  /// burn the whole timeout while the dispatcher is already idle.
+  /// touch the Kafka consumer, so this must run here, not on the close() thread. Waits on
+  /// `dispatcher.drainableCount()`; buffered batch records are flushed by each
+  /// `BatchPipelineWrapper.close()` in `releaseConstructedResources()` right after this returns.
   private void drainInFlightBeforeTeardown() {
     if (waitForMessagesTimeout.toMillis() > 0) {
       final var deadline = System.nanoTime() + waitForMessagesTimeout.toNanos();
-      while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) {
+      while (dispatcher.drainableCount() > 0 && System.nanoTime() < deadline) {
         processCommands();
         LockSupport.parkNanos(Duration.ofMillis(5).toNanos());
       }
@@ -529,7 +518,7 @@ public class KPipeConsumer implements AutoCloseable {
     // they observed rather than calling pause()/close() on an already-shutting consumer.
     final var snapshot = state.get();
     if (snapshot == ConsumerState.CLOSED) return true;
-    if (snapshot == ConsumerState.CLOSING) return awaitShutdown(timeout) && totalInFlight() == 0;
+    if (snapshot == ConsumerState.CLOSING) return awaitShutdown(timeout) && backpressureLoad() == 0;
     pause();
     final var drained = waitForInFlightDrain(timeout);
     close();
@@ -781,7 +770,7 @@ public class KPipeConsumer implements AutoCloseable {
       .entrySet()
       .stream()
       .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(), (a, _) -> a, HashMap::new));
-    snapshot.put(ConsumerMetricKeys.IN_FLIGHT, totalInFlight());
+    snapshot.put(ConsumerMetricKeys.IN_FLIGHT, backpressureLoad());
     return Collections.unmodifiableMap(snapshot);
   }
 
@@ -821,7 +810,13 @@ public class KPipeConsumer implements AutoCloseable {
   /// @return an immutable snapshot of this consumer's health
   public HealthSnapshot health() {
     final var sources = health.currentSources().stream().map(Enum::name).collect(Collectors.toUnmodifiableSet());
-    return new HealthSnapshot(isRunning(), health.isPaused(), sources, health.circuitBreakerState(), totalInFlight());
+    return new HealthSnapshot(
+      isRunning(),
+      health.isPaused(),
+      sources,
+      health.circuitBreakerState(),
+      backpressureLoad()
+    );
   }
 
   /// Atomically transitions from any active state (RUNNING or PAUSED) to CLOSING.
@@ -907,8 +902,8 @@ public class KPipeConsumer implements AutoCloseable {
     stopMetricsReporterThread();
     commandQueue.offer(new ConsumerCommand.Close());
     dispatcher.signalShutdown();
-    if (waitForMessagesTimeout.toMillis() > 0 && dispatcher.activeCount() > 0) {
-      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", dispatcher.activeCount());
+    if (waitForMessagesTimeout.toMillis() > 0 && dispatcher.drainableCount() > 0) {
+      LOGGER.log(Level.INFO, "Waiting for {0} in-flight messages to complete", dispatcher.drainableCount());
       waitForInFlightDrain(waitForMessagesTimeout);
     }
   }
@@ -1059,7 +1054,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// - `KeyOrderedDispatcher` enqueues records onto a per-key serial queue + virtual thread.
   ///
   /// The dispatcher also owns the in-flight counter (for non-sequential modes) and feeds
-  /// [#totalInFlight] via `dispatcher.activeCount()`.
+  /// [#backpressureLoad] via `dispatcher.drainableCount()`.
   ///
   /// @param records the batch of records to process
   protected void processRecords(final ConsumerRecords<byte[], byte[]> records) {
@@ -1106,14 +1101,10 @@ public class KPipeConsumer implements AutoCloseable {
     recordProcessor.process(record);
   }
 
-  /// Returns the total number of records currently being tracked for backpressure: whatever
-  /// the per-mode dispatcher reports as pending plus the sum of records buffered across all
-  /// configured batch wrappers. Without the buffered piece, a slow batch sink would let the
-  /// buffer grow unbounded — the dispatcher decrements its counter the moment a record
-  /// finishes `processRecord` (which for batch is "the record was buffered"), so the buffer
-  /// would otherwise be invisible to the watermark check.
-  private long totalInFlight() {
-    var total = dispatcher.activeCount();
+  /// Returns the load the in-flight backpressure strategy reads: `dispatcher.drainableCount()`
+  /// plus the sum of records buffered across all configured batch wrappers.
+  private long backpressureLoad() {
+    var total = dispatcher.drainableCount();
     for (final var wrapper : batchWrappers.values()) total += wrapper.bufferedCount();
     return total;
   }

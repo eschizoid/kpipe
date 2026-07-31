@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 /// Race-on-throw correctness tests for [ParallelDispatcher].
 ///
 /// The dispatcher owns the in-flight counter that the parallel-mode in-flight backpressure
-/// strategy reads through `KPipeConsumer.totalInFlight()`. The counter is the single source
+/// strategy reads through `KPipeConsumer.backpressureLoad()`. The counter is the single source
 /// of truth for the high/low watermark, so a leaked or double-counted in-flight on the throw
 /// path translates directly into either pause-forever (the watermark latches high and the
 /// consumer parks indefinitely) or pause-never (the count underflows and backpressure stops
@@ -43,7 +43,7 @@ class ParallelDispatcherRaceTest {
 
   private static void awaitInFlightZero(final ParallelDispatcher dispatcher) throws InterruptedException {
     final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-    while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+    while (dispatcher.drainableCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
   }
 
   @Test
@@ -62,7 +62,7 @@ class ParallelDispatcherRaceTest {
       // Park until the throw-path onComplete unparks us, the way the consumer thread
       // waits for
       // the in-flight count to drop. A while-loop guards against spurious wakeups.
-      while (dispatcher.activeCount() > 0) {
+      while (dispatcher.drainableCount() > 0) {
         LockSupport.park();
       }
       waiterReleased.countDown();
@@ -83,7 +83,7 @@ class ParallelDispatcherRaceTest {
       "throw-path onComplete must unpark the waiter; a swallowed onComplete would strand it"
     );
     awaitInFlightZero(dispatcher);
-    assertEquals(0, dispatcher.activeCount(), "in-flight must drain to 0 after the throwing record");
+    assertEquals(0, dispatcher.drainableCount(), "in-flight must drain to 0 after the throwing record");
     assertEquals(0, rejectCount.get(), "a throwing task body is not a rejection");
     dispatcher.close();
   }
@@ -132,7 +132,7 @@ class ParallelDispatcherRaceTest {
     assertTrue(allCompleted.await(10, TimeUnit.SECONDS), "onComplete must fire for every record");
 
     awaitInFlightZero(dispatcher);
-    assertEquals(0, dispatcher.activeCount(), "interleaved throws and successes must drain to 0");
+    assertEquals(0, dispatcher.drainableCount(), "interleaved throws and successes must drain to 0");
     assertEquals(total, onCompleteCount.get(), "onComplete must fire exactly once per record");
     assertEquals(0, rejectCount.get(), "no dispatch was rejected before close");
     dispatcher.close();
@@ -140,7 +140,7 @@ class ParallelDispatcherRaceTest {
 
   @Test
   void backpressureRecoversAfterABurstOfThrows() throws InterruptedException {
-    // The consumer's totalInFlight() feeds the dispatcher's activeCount() into the in-flight
+    // The consumer's backpressureLoad() feeds the dispatcher's drainableCount() into the in-flight
     // backpressure strategy. This test wires a real BackpressureController to the dispatcher's
     // count, the same way the consumer does, and then exercises the pause/resume transition
     // across a burst of records that all throw.
@@ -157,7 +157,7 @@ class ParallelDispatcherRaceTest {
     final var controller = new BackpressureController(
       8,
       4,
-      BackpressureController.inFlightStrategy(dispatcher::activeCount)
+      BackpressureController.inFlightStrategy(dispatcher::drainableCount)
     );
     final var total = 32;
     final var release = new CountDownLatch(1);
@@ -196,7 +196,7 @@ class ParallelDispatcherRaceTest {
     assertTrue(allCompleted.await(10, TimeUnit.SECONDS), "every throwing record must complete after release");
     awaitInFlightZero(dispatcher);
 
-    assertEquals(0, dispatcher.activeCount(), "a burst of throws must leave no residual in-flight count");
+    assertEquals(0, dispatcher.drainableCount(), "a burst of throws must leave no residual in-flight count");
     // A consumer that paused at the high watermark must now be told to RESUME — the throwing
     // burst did not corrupt the count, so the watermark recovers.
     assertEquals(
@@ -222,7 +222,7 @@ class ParallelDispatcherRaceTest {
 
     final var watcher = Thread.ofVirtual().start(() -> {
       while (stopWatching.getCount() > 0) {
-        final var current = dispatcher.activeCount();
+        final var current = dispatcher.drainableCount();
         minObserved.updateAndGet(prev -> Math.min(prev, current));
         Thread.onSpinWait();
       }
@@ -255,7 +255,7 @@ class ParallelDispatcherRaceTest {
     watcher.join(Duration.ofSeconds(2));
 
     assertTrue(minObserved.get() >= 0, "in-flight count must never go negative; saw " + minObserved.get());
-    assertEquals(0, dispatcher.activeCount(), "in-flight must settle at exactly 0 after the throwing burst");
+    assertEquals(0, dispatcher.drainableCount(), "in-flight must settle at exactly 0 after the throwing burst");
     dispatcher.close();
   }
 }

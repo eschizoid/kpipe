@@ -115,10 +115,13 @@ class ParallelDispatcherTest {
         throw new IllegalStateException("onComplete boom");
       });
       assertTrue(ran.await(2, TimeUnit.SECONDS), "processTask must run");
-      awaitTrue(() -> dispatcher.activeCount() == 0 && !capture.records().isEmpty());
-      assertEquals(0, dispatcher.activeCount(), "a throwing onComplete must not strand in-flight");
+      awaitTrue(() -> dispatcher.drainableCount() == 0 && !capture.records().isEmpty());
+      assertEquals(0, dispatcher.drainableCount(), "a throwing onComplete must not strand in-flight");
       assertTrue(
-        capture.records().stream().anyMatch(r -> r.getMessage().contains("onComplete callback threw")),
+        capture
+          .records()
+          .stream()
+          .anyMatch(r -> r.getMessage().contains("onComplete callback threw")),
         "the throwing onComplete must be logged at WARNING"
       );
     } finally {
@@ -139,7 +142,7 @@ class ParallelDispatcherTest {
 
     dispatcher.dispatch(record(0), () -> {}, () -> {});
     assertEquals(1, rejectCount.get(), "dispatch after close must be rejected (executor shut down)");
-    assertEquals(0, dispatcher.activeCount(), "rejected dispatch must roll back the in-flight counter");
+    assertEquals(0, dispatcher.drainableCount(), "rejected dispatch must roll back the in-flight counter");
   }
 
   @Test
@@ -154,17 +157,17 @@ class ParallelDispatcherTest {
     assertTrue(ran.await(2, TimeUnit.SECONDS), "task must run on a virtual thread");
     assertTrue(completed.await(2, TimeUnit.SECONDS), "onComplete must fire");
     final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-    while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
-    assertEquals(0, dispatcher.activeCount(), "in-flight must drain to 0");
+    while (dispatcher.drainableCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+    assertEquals(0, dispatcher.drainableCount(), "in-flight must drain to 0");
     assertEquals(0, rejectCount.get(), "no rejection on the happy path");
     dispatcher.close();
   }
 
   @Test
-  void activeCountDecrementedWhenTaskThrows() throws InterruptedException {
+  void drainableCountDecrementedWhenTaskThrows() throws InterruptedException {
     // Guards the criticality-9 race in §20: ParallelDispatcher owns the in-flight counter that
     // drives PARALLEL-mode backpressure (§5). If the task body throws and the finally block did
-    // NOT decrement, activeCount() would climb monotonically per failed record — the watermark
+    // NOT decrement, drainableCount() would climb monotonically per failed record — the watermark
     // would latch at HIGH and the consumer would pause forever (deadlock). Conversely, double
     // decrement would underflow toward negative and the consumer would never pause (false-
     // negative backpressure). The production code wraps processTask.run() in try/finally so
@@ -183,17 +186,17 @@ class ParallelDispatcherTest {
 
     assertTrue(completed.await(2, TimeUnit.SECONDS), "onComplete must fire even when task throws");
     final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-    while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
-    assertEquals(0, dispatcher.activeCount(), "throwing task's finally must still decrement in-flight");
+    while (dispatcher.drainableCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+    assertEquals(0, dispatcher.drainableCount(), "throwing task's finally must still decrement in-flight");
     assertEquals(0, rejectCount.get(), "a throwing task body is not a rejection");
     dispatcher.close();
   }
 
   @Test
-  void activeCountDrainsWhenTaskThrowsError() throws InterruptedException {
-    // Sibling of activeCountDecrementedWhenTaskThrows for `Error` (e.g. `AssertionError`),
+  void drainableCountDrainsWhenTaskThrowsError() throws InterruptedException {
+    // Sibling of drainableCountDecrementedWhenTaskThrows for `Error` (e.g. `AssertionError`),
     // which is a Throwable-not-Exception and would bypass any future narrowing of the production
-    // try/finally to `catch (Exception) { ... } finally { ... }` — activeCount would silently
+    // try/finally to `catch (Exception) { ... } finally { ... }` — drainableCount would silently
     // strand on every Error escape.
     final var rejectCount = new AtomicInteger(0);
     final var dispatcher = newDispatcher(rejectCount);
@@ -209,14 +212,14 @@ class ParallelDispatcherTest {
 
     assertTrue(completed.await(2, TimeUnit.SECONDS), "onComplete must fire even when task throws an Error");
     final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-    while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
-    assertEquals(0, dispatcher.activeCount(), "Error-throwing task's finally must still decrement in-flight");
+    while (dispatcher.drainableCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+    assertEquals(0, dispatcher.drainableCount(), "Error-throwing task's finally must still decrement in-flight");
     dispatcher.close();
   }
 
   @Test
   void onCompleteFiresExactlyOnceWhenTaskThrows() throws InterruptedException {
-    // Pair test for activeCountDecrementedWhenTaskThrows: the consumer's afterRecordComplete()
+    // Pair test for drainableCountDecrementedWhenTaskThrows: the consumer's afterRecordComplete()
     // unparks the consumer thread when backpressure is held (§11 LockSupport park/unpark). If
     // onComplete fired twice on the throw path (e.g. once in a catch and once in finally), the
     // consumer would re-evaluate twice per failed record — wasteful but tolerable. If it fired
@@ -243,8 +246,8 @@ class ParallelDispatcherTest {
     Thread.sleep(100);
     assertEquals(1, completeCount.get(), "onComplete must fire exactly once when task throws");
     final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-    while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
-    assertEquals(0, dispatcher.activeCount(), "in-flight must drain to 0 after throwing task");
+    while (dispatcher.drainableCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+    assertEquals(0, dispatcher.drainableCount(), "in-flight must drain to 0 after throwing task");
     dispatcher.close();
   }
 
@@ -252,7 +255,7 @@ class ParallelDispatcherTest {
   void dispatchAfterCloseHitsRejectHandler() throws InterruptedException {
     // Explicit pin for the post-close rejection path. closeShutsDownExecutorEvenWithNoDispatches
     // already exercises the reject handler via a never-dispatched dispatcher; this test adds the
-    // stronger contract: the task body itself MUST NOT execute on rejection, and activeCount()
+    // stronger contract: the task body itself MUST NOT execute on rejection, and drainableCount()
     // must roll back from the speculative increment in dispatch(). If the increment were not
     // rolled back, every shutdown-race rejection would leak a count, and shutdownGracefully()
     // would burn its full timeout waiting on a ghost.
@@ -272,7 +275,7 @@ class ParallelDispatcherTest {
       onCompleteRan.get(),
       "rejected dispatch must NOT invoke onComplete (the consumer takes the reject path instead)"
     );
-    assertEquals(0, dispatcher.activeCount(), "rejected dispatch must roll back the speculative increment");
+    assertEquals(0, dispatcher.drainableCount(), "rejected dispatch must roll back the speculative increment");
   }
 
   @Test
@@ -281,8 +284,9 @@ class ParallelDispatcherTest {
     // shut-down mid-flight while N dispatcher threads call dispatch() concurrently. Each
     // dispatch ends in one of two terminal accounting states — task started + finally drained,
     // OR rejected + counter rolled back. There is no third "leaked" state. The invariant: after
-    // all dispatcher threads return and close() has completed, activeCount() must drain to 0,
-    // AND (started + rejected) must equal total. A leak shows up either as a non-zero activeCount
+    // all dispatcher threads return and close() has completed, drainableCount() must drain to 0,
+    // AND (started + rejected) must equal total. A leak shows up either as a non-zero
+    // drainableCount
     // (decrement missing) or as a started + rejected != total mismatch (silent drop).
     final var rejectCount = new AtomicInteger(0);
     final var dispatcher = newDispatcher(rejectCount, Duration.ofSeconds(2));
@@ -322,8 +326,8 @@ class ParallelDispatcherTest {
     assertTrue(closeReturned.await(10, TimeUnit.SECONDS), "close() must return");
 
     final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-    while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) Thread.sleep(10);
-    assertEquals(0, dispatcher.activeCount(), "activeCount must drain to 0 after concurrent dispatch+close");
+    while (dispatcher.drainableCount() > 0 && System.nanoTime() < deadline) Thread.sleep(10);
+    assertEquals(0, dispatcher.drainableCount(), "drainableCount must drain to 0 after concurrent dispatch+close");
     assertEquals(
       totalDispatches,
       started.get() + rejectCount.get(),
@@ -332,7 +336,7 @@ class ParallelDispatcherTest {
   }
 
   @Test
-  void activeCountDrainsToZeroWhenCloseInterruptsRunningTask() throws InterruptedException {
+  void drainableCountDrainsToZeroWhenCloseInterruptsRunningTask() throws InterruptedException {
     // close() calls shutdownNow() when awaitTermination times out. The concern: an interrupted
     // task never runs its finally, leaving inFlight stuck > 0. That's a real risk for a POOLED
     // executor (shutdownNow returns queued-unstarted tasks), but ParallelDispatcher uses
@@ -358,12 +362,12 @@ class ParallelDispatcherTest {
       () -> {}
     );
     assertTrue(started.await(2, TimeUnit.SECONDS), "task must start");
-    assertEquals(1, dispatcher.activeCount(), "one task in flight before close");
+    assertEquals(1, dispatcher.drainableCount(), "one task in flight before close");
 
     dispatcher.close(); // awaitTermination(50ms) times out → shutdownNow() interrupts the sleep
 
     final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-    while (dispatcher.activeCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
-    assertEquals(0, dispatcher.activeCount(), "interrupted task's finally must still decrement in-flight");
+    while (dispatcher.drainableCount() > 0 && System.nanoTime() < deadline) Thread.sleep(5);
+    assertEquals(0, dispatcher.drainableCount(), "interrupted task's finally must still decrement in-flight");
   }
 }

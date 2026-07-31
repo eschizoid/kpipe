@@ -288,14 +288,15 @@ class KeyOrderedDispatcherCorrectnessTest {
         () -> "key " + key + " reordered under saturation hold: " + tracker.observed
       );
     }
-    // activeCount is decremented in the worker's finally, which can run just after the per-record
+    // drainableCount is decremented in the worker's finally, which can run just after the
+    // per-record
     // latch the producers awaited counts down — so poll for the drain rather than reading it the
     // instant the latch releases (an immediate read flaked on slow CI runners).
     final var drainDeadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-    while (dispatcher.activeCount() != 0 && System.nanoTime() < drainDeadline) {
+    while (dispatcher.drainableCount() != 0 && System.nanoTime() < drainDeadline) {
       Thread.onSpinWait();
     }
-    assertEquals(0, dispatcher.activeCount(), "no records may remain pending after saturation drains");
+    assertEquals(0, dispatcher.drainableCount(), "no records may remain pending after saturation drains");
     dispatcher.close();
   }
 
@@ -432,20 +433,21 @@ class KeyOrderedDispatcherCorrectnessTest {
     for (final var p : producers) p.join(Duration.ofSeconds(5));
 
     assertTrue(snapshotErrors.isEmpty(), () -> "diagnostic snapshot errors under churn: " + snapshotErrors);
-    // activeCount is decremented in the worker's finally, which can run just after the per-record
+    // drainableCount is decremented in the worker's finally, which can run just after the
+    // per-record
     // latch the producers awaited counts down — so poll for the drain rather than reading it the
     // instant the latch releases (an immediate read flaked on slow CI runners).
     final var drainDeadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-    while (dispatcher.activeCount() != 0 && System.nanoTime() < drainDeadline) {
+    while (dispatcher.drainableCount() != 0 && System.nanoTime() < drainDeadline) {
       Thread.onSpinWait();
     }
-    assertEquals(0, dispatcher.activeCount(), "pending must drain to 0");
+    assertEquals(0, dispatcher.drainableCount(), "pending must drain to 0");
     dispatcher.close();
   }
 
   @Test
   void concurrentDispatchAndCloseNeverLeavesPendingNegativeOrStuck() throws InterruptedException {
-    // Race a close() against in-flight dispatch. activeCount() must never go negative (a
+    // Race a close() against in-flight dispatch. drainableCount() must never go negative (a
     // double-decrement bug) and must settle. We don't assert all records ran — close() is allowed
     // to abandon stragglers — only that the counter is non-negative throughout and ends >= 0.
     final var dispatcher = new KeyOrderedDispatcher(16);
@@ -456,7 +458,7 @@ class KeyOrderedDispatcherCorrectnessTest {
 
     final var watcher = Thread.ofVirtual().start(() -> {
       while (!stopWatch.get()) {
-        if (dispatcher.activeCount() < 0) negativeSeen.set(true);
+        if (dispatcher.drainableCount() < 0) negativeSeen.set(true);
         Thread.onSpinWait();
       }
     });
@@ -488,8 +490,8 @@ class KeyOrderedDispatcherCorrectnessTest {
     stopWatch.set(true);
     watcher.join(Duration.ofSeconds(5));
 
-    assertFalse(negativeSeen.get(), "activeCount() must never go negative under dispatch/close race");
-    assertTrue(dispatcher.activeCount() >= 0, "activeCount() must end non-negative");
+    assertFalse(negativeSeen.get(), "drainableCount() must never go negative under dispatch/close race");
+    assertTrue(dispatcher.drainableCount() >= 0, "drainableCount() must end non-negative");
   }
 
   private static List<Long> expectedOrder(final int n) {
