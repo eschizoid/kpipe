@@ -162,7 +162,7 @@ class MessageProcessorRegistryJsonTest {
     final var key = RegistryKey.json("p1");
     registry.registerOperator(key, obj -> obj);
 
-    assertTrue(registry.getKeys().contains(key));
+    assertTrue(registry.getOperatorKeys().contains(key));
   }
 
   @Test
@@ -170,11 +170,11 @@ class MessageProcessorRegistryJsonTest {
     final var key = RegistryKey.json("p1");
     registry.registerOperator(key, obj -> obj);
 
-    assertTrue(registry.getKeys().contains(key));
-    final var removed = registry.unregister(key);
+    assertTrue(registry.getOperatorKeys().contains(key));
+    final var removed = registry.unregisterOperator(key);
 
     assertTrue(removed);
-    assertFalse(registry.getKeys().contains(key));
+    assertFalse(registry.getOperatorKeys().contains(key));
   }
 
   @Test
@@ -187,7 +187,7 @@ class MessageProcessorRegistryJsonTest {
     roundTrip(pipeline, "{}".getBytes());
     roundTrip(pipeline, "{}".getBytes());
 
-    final var metrics = registry.getMetrics(key);
+    final var metrics = registry.getOperatorMetrics(key);
     assertEquals(2L, metrics.get("invocationCount"));
   }
 

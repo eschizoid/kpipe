@@ -52,10 +52,15 @@ class EntryMetricsReporterTest {
 
   @Test
   void forProcessors_emitsOneLinePerKeyUsingProcessorPrefix() {
-    doReturn(keys).when(registry).getKeys();
-    doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
+    doReturn(keys).when(registry).getOperatorKeys();
+    doReturn(testMetrics).when(registry).getOperatorMetrics(any(RegistryKey.class));
 
-    new EntryMetricsReporter("Processor", registry::getKeys, registry::getMetrics, reporter).reportMetrics();
+    new EntryMetricsReporter(
+      "Processor",
+      registry::getOperatorKeys,
+      registry::getOperatorMetrics,
+      reporter
+    ).reportMetrics();
 
     verify(reporter, times(keys.size())).accept(reportCaptor.capture());
     for (final var line : reportCaptor.getAllValues()) {
@@ -68,18 +73,18 @@ class EntryMetricsReporterTest {
   void forProcessors_subset_doesNotQueryAllKeys() {
     final RegistryKey<?> selectedKey = RegistryKey.of("selected", Object.class);
     final Set<RegistryKey<?>> selected = Collections.singleton(selectedKey);
-    doReturn(testMetrics).when(registry).getMetrics(selectedKey);
+    doReturn(testMetrics).when(registry).getOperatorMetrics(selectedKey);
 
-    new EntryMetricsReporter("Processor", () -> selected, registry::getMetrics, reporter).reportMetrics();
+    new EntryMetricsReporter("Processor", () -> selected, registry::getOperatorMetrics, reporter).reportMetrics();
 
     verify(reporter, times(1)).accept(contains("selected"));
-    verify(registry, never()).getKeys();
+    verify(registry, never()).getOperatorKeys();
   }
 
   @Test
   void forProcessors_defaultReporterUsesLOGGING() {
-    doReturn(keys).when(registry).getKeys();
-    doReturn(testMetrics).when(registry).getMetrics(any(RegistryKey.class));
+    doReturn(keys).when(registry).getOperatorKeys();
+    doReturn(testMetrics).when(registry).getOperatorMetrics(any(RegistryKey.class));
 
     final var rep = EntryMetricsReporter.forProcessors(registry);
     assertSame(EntryMetricsReporter.LOGGING, rep.reporter(), "factory must wire the LOGGING reporter");
