@@ -8,6 +8,7 @@ import io.github.eschizoid.kpipe.consumer.config.KafkaConsumerConfig;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonConsoleSink;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
+import io.github.eschizoid.kpipe.health.HttpHealthServer;
 import io.github.eschizoid.kpipe.metrics.otel.OtelConsumerMetrics;
 import io.github.eschizoid.kpipe.registry.Operators;
 import io.github.eschizoid.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
@@ -50,7 +51,20 @@ public class DemoApp implements AutoCloseable {
 
     try (final var app = new DemoApp(config, avroFormat, protoFormat)) {
       LOGGER.log(Level.INFO, "Demo application started — JSON/Avro/Protobuf routes via KPipe.multi");
-      app.handle.awaitShutdown();
+      // Liveness probe wired to the handle's health snapshot: reports unhealthy when the
+      // circuit breaker is OPEN, not merely when the process has exited. Enabled/configured via
+      // HEALTH_* environment variables (see HealthConfig); disabled = empty Optional, no server.
+      final var healthServer = HttpHealthServer.fromEnv(
+        () -> app.handle.health().healthy(),
+        () -> app.handle.health().inFlight(),
+        () -> app.handle.health().paused(),
+        "demo-app"
+      );
+      try {
+        app.handle.awaitShutdown();
+      } finally {
+        healthServer.ifPresent(HttpHealthServer::close);
+      }
     } catch (final Exception e) {
       LOGGER.log(Level.ERROR, "Fatal error in demo application", e);
       System.exit(1);

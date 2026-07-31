@@ -3,9 +3,12 @@ package io.github.eschizoid.kpipe;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
+import io.github.eschizoid.kpipe.consumer.CircuitBreakerState;
+import io.github.eschizoid.kpipe.consumer.HealthSnapshot;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +27,11 @@ class HandleDefaultsTest {
     @Override
     public boolean isHealthy() {
       return true;
+    }
+
+    @Override
+    public HealthSnapshot health() {
+      return new HealthSnapshot(true, false, Set.of(), CircuitBreakerState.CLOSED, 0L);
     }
 
     @Override

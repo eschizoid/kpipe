@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe;
 
+import io.github.eschizoid.kpipe.consumer.HealthSnapshot;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,13 @@ public interface Handle extends AutoCloseable {
   ///
   /// @return true when the consumer is running and the configured health check passes
   boolean isHealthy();
+
+  /// Full health snapshot: running/paused state, active pause sources, circuit-breaker state,
+  /// and in-flight count. Wire liveness probes (e.g. `HttpHealthServer`) to this rather than
+  /// polling `metrics()`.
+  ///
+  /// @return an immutable point-in-time health view
+  HealthSnapshot health();
 
   /// Returns an unmodifiable snapshot of the consumer's metrics. All values are counters or
   /// gauges represented as `Long`. Returns an empty map when metrics are disabled on the

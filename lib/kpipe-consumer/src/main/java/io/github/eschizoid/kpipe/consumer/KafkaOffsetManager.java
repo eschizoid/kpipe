@@ -296,6 +296,9 @@ public class KafkaOffsetManager implements OffsetManager {
   ///
   /// @param partition The partition to get state for
   /// @return the partition's offset-tracking state
+  /// **Test observation point.** No production caller — jcstress and property suites assert on
+  /// the commit frontier through this window. Not intended for operational dashboards; wire
+  /// [KPipeConsumer#health()] or `getStatistics()` for those.
   public PartitionState getPartitionState(final TopicPartition partition) {
     return ledger.partitionState(partition, state.get());
   }
