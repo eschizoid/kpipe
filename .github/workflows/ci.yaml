@@ -8,7 +8,10 @@ on:
 
 jobs:
   build:
-
+    # Compile, unit/integration tests, coverage. Runs in parallel with the jcstress job;
+    # jacoco lives here (not in its own job) because jacocoTestReport consumes the .exec
+    # execution data produced by the test task in the same workspace — a separate job
+    # would silently re-run every test to regenerate it.
     runs-on: ubuntu-latest
 
     steps:
@@ -35,31 +38,6 @@ jobs:
           ./gradlew spotlessApply
           ./gradlew build test --stacktrace --no-daemon --max-workers=2
 
-      - name: Concurrency stress (jcstress)
-        # Runs the jcstress interleaving suites in every module that has one. The tasks are capped
-        # (-iters 1 -time 50 -f 1, set per module), but the suite has grown to ~21 test classes
-        # (17 in kpipe-consumer alone, incl. the KeyOrdered worker-handoff / evict-race /
-        # evict-tombstone trio), so the step's steady-state baseline on a hosted runner is
-        # ~30-35 minutes. Unlike the mostly-sequential build+test step, jcstress races threads
-        # across ~21 forked JVMs and is acutely sensitive to shared-runner CPU contention: a
-        # noisy neighbour can inflate a normal 33-min run past 45 with the test step unaffected
-        # (observed 2026-07-21). Each class still exercises hundreds of thousands of real
-        # interleavings and fails on any FORBIDDEN outcome — so a concurrency regression (e.g.
-        # the trackOffset add vs remove-if-empty race this suite was built to catch) breaks the
-        # build here, not just in a manual run. Deeper campaigns run on demand by raising the
-        # per-module caps locally.
-        #
-        # timeout-minutes is a wedge guard, not a budget: ~1.5x the measured baseline plus margin
-        # for the contention variance above, so a genuinely hung actor fails the job in 55 minutes
-        # instead of consuming the 360-minute job default.
-        timeout-minutes: 55
-        run: |
-          ./gradlew --no-daemon --stacktrace \
-            :lib:kpipe-consumer:jcstress \
-            :lib:kpipe-core:jcstress \
-            :lib:kpipe-producer:jcstress \
-            :lib:kpipe-schema-registry-confluent:jcstress
-
       - name: Jacoco
         run: |
           # jacocoAllLibModules fans out to every :lib:* jacocoTestReport (see lib/build.gradle.kts).
@@ -81,3 +59,40 @@ jobs:
           slug: eschizoid/kpipe
           files: |
             ./**/build/test-results/test/*.xml
+
+  jcstress:
+    # Runs the jcstress interleaving suites in every module that has one, in parallel with
+    # the build job — jcstress is CPU-bound on forked JVMs and shares nothing with the test
+    # step, so serializing them only added its ~30-35 minutes to the wall clock. The tasks
+    # are capped (-iters 1 -time 50 -f 1, set per module) across ~21 test classes; each
+    # class still exercises hundreds of thousands of real interleavings and fails the build
+    # on any FORBIDDEN outcome. Deeper campaigns run on demand by raising the per-module
+    # caps locally.
+    #
+    # timeout-minutes is a wedge guard, not a budget: ~1.5x the measured baseline plus
+    # shared-runner contention margin (a noisy neighbour inflated a normal ~33-min run past
+    # 45 on 2026-07-21), so a genuinely hung actor fails the job in 55 minutes instead of
+    # consuming the 360-minute job default.
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: "graalvm"
+          java-version: "25"
+          cache: "gradle"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Concurrency stress (jcstress)
+        run: |
+          ./gradlew --no-daemon --stacktrace \
+            :lib:kpipe-consumer:jcstress \
+            :lib:kpipe-core:jcstress \
+            :lib:kpipe-producer:jcstress \
+            :lib:kpipe-schema-registry-confluent:jcstress
