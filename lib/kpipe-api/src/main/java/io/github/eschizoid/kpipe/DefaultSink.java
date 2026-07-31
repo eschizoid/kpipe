@@ -36,11 +36,9 @@ final class DefaultSink<T> implements Sink<T> {
     final var consumerBuilder = KPipeConsumer.builder()
       .withProperties(stream.kafkaProps())
       .withTopics(stream.topics())
-      .withPipeline(buildPipeline())
-      .withProcessingMode(stream.processingMode())
-      .withKeyOrderedMaxKeys(stream.keyOrderedMaxKeys());
+      .withPipeline(buildPipeline());
 
-    stream.applyCommonConsumerConfig(consumerBuilder);
+    stream.consumerConfig().applyTo(consumerBuilder);
 
     return DefaultHandle.startAndWrap(consumerBuilder.build());
   }

@@ -12,10 +12,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /// [io.github.eschizoid.kpipe.registry.MessagePipeline]
 /// from the stream's operator chain (deserialize → operators → return value) and wires it into
 /// [KPipeConsumerBuilder#withBatchPipeline] together with the configured [BatchSink] and
-/// [BatchPolicy]. Honors whatever processing mode the underlying [DefaultStream] carries
-/// (default: parallel); consumer-level config (metrics, errorHandler, DLQ, pollTimeout, retry,
-/// backpressure, tracer, circuit breaker) carries over too via
-/// [DefaultStream#applyCommonConsumerConfig].
+/// [BatchPolicy]. Every consumer-wide setting the underlying [DefaultStream] carries (processing
+/// mode, metrics, errorHandler, DLQ, pollTimeout, retry, backpressure, tracer, circuit breaker)
+/// carries over via [ConsumerConfig#applyTo] — the same chain the non-batch path uses.
 ///
 /// `Stream.toBatch(...)` produces a single-topic instance. [MultiBuilder] also constructs single-
 /// topic instances per route and collects them at `start()` time into one consumer subscribing
@@ -84,11 +83,9 @@ final class DefaultBatchSink<T> implements Sink<T> {
     );
     final var consumerBuilder = KPipeConsumer.builder()
       .withProperties(stream.kafkaProps())
-      .withProcessingMode(stream.processingMode())
-      .withKeyOrderedMaxKeys(stream.keyOrderedMaxKeys())
       .withBatchPipeline(topic(), buildPipeline(), batchSink, batchPolicy);
 
-    stream.applyCommonConsumerConfig(consumerBuilder);
+    stream.consumerConfig().applyTo(consumerBuilder);
 
     return DefaultHandle.startAndWrap(consumerBuilder.build());
   }

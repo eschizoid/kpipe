@@ -54,11 +54,11 @@ class KPipeFacadeBuildTest {
       .withBackpressure(2_000, 1_000)
       .withProcessingMode(ProcessingMode.SEQUENTIAL);
 
-    assertEquals(5, stream.maxRetries());
-    assertEquals(java.time.Duration.ofMillis(100), stream.retryBackoff());
-    assertEquals(2_000L, stream.backpressureHigh());
-    assertEquals(1_000L, stream.backpressureLow());
-    assertEquals(ProcessingMode.SEQUENTIAL, stream.processingMode());
+    assertEquals(5, stream.consumerConfig().maxRetries());
+    assertEquals(java.time.Duration.ofMillis(100), stream.consumerConfig().retryBackoff());
+    assertEquals(2_000L, stream.consumerConfig().backpressureHigh());
+    assertEquals(1_000L, stream.consumerConfig().backpressureLow());
+    assertEquals(ProcessingMode.SEQUENTIAL, stream.consumerConfig().processingMode());
   }
 
   @Test
@@ -67,10 +67,10 @@ class KPipeFacadeBuildTest {
     // Stream.withBackpressure() must produce the same defaults as the BackpressureController
     // constants. Hardcoded literals here would drift if the constants change; assert against the
     // single source of truth and pin the literal values as a separate smoke check.
-    assertEquals(BackpressureController.DEFAULT_HIGH_WATERMARK, stream.backpressureHigh());
-    assertEquals(BackpressureController.DEFAULT_LOW_WATERMARK, stream.backpressureLow());
-    assertEquals(10_000L, stream.backpressureHigh());
-    assertEquals(7_000L, stream.backpressureLow());
+    assertEquals(BackpressureController.DEFAULT_HIGH_WATERMARK, stream.consumerConfig().backpressureHigh());
+    assertEquals(BackpressureController.DEFAULT_LOW_WATERMARK, stream.consumerConfig().backpressureLow());
+    assertEquals(10_000L, stream.consumerConfig().backpressureHigh());
+    assertEquals(7_000L, stream.consumerConfig().backpressureLow());
   }
 
   @Test
@@ -302,7 +302,9 @@ class KPipeFacadeBuildTest {
 
   @Test
   void multiBuilderRejectsPerRouteWithMetrics() {
-    final var multi = KPipe.multi(props()).json("topic-a", s -> s.withMetrics(ConsumerMetrics.noop()).toCustom(_ -> {}));
+    final var multi = KPipe.multi(props()).json("topic-a", s ->
+      s.withMetrics(ConsumerMetrics.noop()).toCustom(_ -> {})
+    );
     final var ex = assertThrows(IllegalArgumentException.class, multi::start);
     assertTrue(ex.getMessage().contains("withMetrics"), () -> "message should name withMetrics: " + ex.getMessage());
     assertTrue(
