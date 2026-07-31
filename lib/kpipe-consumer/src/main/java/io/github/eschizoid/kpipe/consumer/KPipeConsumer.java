@@ -1,15 +1,12 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
@@ -92,16 +89,12 @@ public class KPipeConsumer implements AutoCloseable {
   private final Queue<ConsumerCommand> commandQueue;
   private final Consumer<byte[], byte[]> kafkaConsumer;
   private final Set<String> topics;
-  private final Map<String, MessagePipeline<?>> pipelines;
   private final Duration pollTimeout;
   private final AtomicReference<Thread> consumerThread = new AtomicReference<>();
   private final Duration waitForMessagesTimeout;
   private final Duration threadTerminationTimeout;
   private final OffsetManager offsetManager;
   private final ConsumerRebalanceListener rebalanceListener;
-  private final ErrorHandler errorHandler;
-  private final int maxRetries;
-  private final Duration retryBackoff;
   private final AtomicReference<ConsumerState> state = new AtomicReference<>(ConsumerState.CREATED);
   /// Guards [#releaseConstructedResources] so it runs exactly once no matter which path ends
   /// the consumer: external `close()`, the never-started fast path, or the consumer thread
@@ -112,8 +105,6 @@ public class KPipeConsumer implements AutoCloseable {
   private final AtomicBoolean resourcesReleased = new AtomicBoolean(false);
   private final ProcessingMode processingMode;
   private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
-  private final ConsumerMetrics otelMetrics;
-  private final Tracer tracer;
   /// Owns the per-mode dispatch strategy and the in-flight counter for non-sequential modes.
   /// Constructed once in the consumer constructor from [#processingMode]; closed in `close()`
   /// before `offsetManager.close()` so any in-flight records get their offsets marked before
@@ -127,8 +118,12 @@ public class KPipeConsumer implements AutoCloseable {
   /// `internalResume`, and metric events through a HealthMetricsObserver bound to the counters.
   private final ConsumerHealthController health;
 
-  private final String deadLetterTopic;
   private final KPipeProducer<byte[], byte[]> kpipeProducer;
+
+  /// Per-record processing engine: deserialize → operators → sink → mark/DLQ, including the
+  /// retry loop, span handling, and the batch-route buffering. The consumer only tracks,
+  /// dispatches, and delegates; see [RecordProcessor] for the per-record semantics.
+  private final RecordProcessor recordProcessor;
 
   private final Map<String, BatchPipelineWrapper<?>> batchWrappers;
 
@@ -193,19 +188,17 @@ public class KPipeConsumer implements AutoCloseable {
       // `build()` sets `topics` to the UNION of regular + batch routes for Kafka subscription, so
       // the homogeneous branch must filter out batch-route topics to avoid replicating the regular
       // pipeline onto a topic that's owned by a batch wrapper.
+      final Map<String, MessagePipeline<?>> pipelines;
       if (builder.pipelinesPerTopic != null) {
-        this.pipelines = builder.pipelinesPerTopic;
+        pipelines = builder.pipelinesPerTopic;
       } else if (builder.pipeline != null) {
         final var map = new LinkedHashMap<String, MessagePipeline<?>>(builder.topics.size());
         for (final var t : builder.topics) if (!builder.batchSpecs.containsKey(t)) map.put(t, builder.pipeline);
-        this.pipelines = Map.copyOf(map);
+        pipelines = Map.copyOf(map);
       } else {
-        this.pipelines = Map.of();
+        pipelines = Map.of();
       }
       this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
-      this.errorHandler = builder.errorHandler;
-      this.maxRetries = builder.maxRetries;
-      this.retryBackoff = builder.retryBackoff;
       this.processingMode = builder.processingMode;
       this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
       this.threadTerminationTimeout = builder.threadTerminationTimeout;
@@ -240,14 +233,14 @@ public class KPipeConsumer implements AutoCloseable {
           : BackpressureController.inFlightStrategy(this::totalInFlight)
       );
 
-      this.tracer = builder.tracer != null ? builder.tracer : Tracer.noop();
+      final var tracer = builder.tracer != null ? builder.tracer : Tracer.noop();
 
-      this.deadLetterTopic = builder.deadLetterTopic;
+      final var deadLetterTopic = builder.deadLetterTopic;
       this.kpipeProducer =
         builder.kpipeProducer != null
           ? builder.kpipeProducer
-          : this.deadLetterTopic != null
-            ? KPipeProducer.<byte[], byte[]>builder().withProperties(builder.kafkaProps).withTracer(this.tracer).build()
+          : deadLetterTopic != null
+            ? KPipeProducer.<byte[], byte[]>builder().withProperties(builder.kafkaProps).withTracer(tracer).build()
             : null;
 
       final var needScheduler = !builder.batchSpecs.isEmpty() || builder.circuitBreakerController != null;
@@ -259,16 +252,6 @@ public class KPipeConsumer implements AutoCloseable {
         });
       } else {
         this.scheduler = null;
-      }
-
-      if (!builder.batchSpecs.isEmpty()) {
-        final var wrappers = new LinkedHashMap<String, BatchPipelineWrapper<?>>(builder.batchSpecs.size());
-        for (final var entry : builder.batchSpecs.entrySet()) {
-          wrappers.put(entry.getKey(), createBatchWrapper(entry.getValue()));
-        }
-        this.batchWrappers = Map.copyOf(wrappers);
-      } else {
-        this.batchWrappers = Map.of();
       }
 
       this.metricsReporters = List.copyOf(builder.metricsReporters);
@@ -307,7 +290,7 @@ public class KPipeConsumer implements AutoCloseable {
 
       // Guarded once at the source: a throwing user metrics implementation must never crash a
       // worker, abort a batch-flush callback loop, or alter an error-path outcome.
-      this.otelMetrics = GuardedConsumerMetrics.guard(builder.consumerMetrics);
+      final var otelMetrics = GuardedConsumerMetrics.guard(builder.consumerMetrics);
 
       this.health = new ConsumerHealthController(
         bp,
@@ -355,6 +338,28 @@ public class KPipeConsumer implements AutoCloseable {
           }
         }
       );
+
+      // The processing engine owns the per-record unit (retries, span handling, DLQ-or-mark,
+      // batch buffering) and creates the batch wrappers so their flush callbacks live next to
+      // the per-record error path they mirror. The consumer keeps the wrapper map for
+      // start/drain/in-flight bookkeeping.
+      this.recordProcessor = new RecordProcessor(
+        pipelines,
+        builder.batchSpecs.values(),
+        this.scheduler,
+        this.offsetManager,
+        this.health,
+        otelMetrics,
+        this.metrics,
+        builder.errorHandler,
+        deadLetterTopic,
+        this.kpipeProducer,
+        tracer,
+        builder.maxRetries,
+        builder.retryBackoff,
+        this::isRunning
+      );
+      this.batchWrappers = recordProcessor.batchWrappers();
     } catch (final Throwable t) {
       closePartiallyConstructed(t);
       throw t;
@@ -423,70 +428,6 @@ public class KPipeConsumer implements AutoCloseable {
         original.addSuppressed(e);
       }
     }
-  }
-
-  private <T> BatchPipelineWrapper<T> createBatchWrapper(final KPipeConsumerBuilder.BatchSpec<T> spec) {
-    // Batch flushes call the OffsetManager directly rather than going through commandQueue. The
-    // queue exists to serialize Kafka-consumer calls (pause/resume/commitSync) on the consumer
-    // thread; OffsetManager.markOffsetProcessed is already thread-safe and avoiding the queue
-    // means the shutdown drain works even after the consumer thread has exited.
-    final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
-      @Override
-      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
-        metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-        otelMetrics.recordMessageProcessed(record.topic());
-        // Feed the circuit breaker / health window so batch outcomes count toward the failure
-        // rate, exactly like the per-record path. Both branches must report, or the rolling
-        // window would see only failures and trip spuriously.
-        health.recordOutcome(true);
-        if (offsetManager != null) offsetManager.markOffsetProcessed(record);
-      }
-
-      @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
-        metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-        otelMetrics.recordProcessingError(record.topic());
-        health.recordOutcome(false);
-        LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
-        // LOCKSTEP: mirror of the per-record path's DLQ-or-mark block in handleProcessingError
-        // —
-        // mark the offset only after a successful DLQ send; a failed send leaves it pending so
-        // the record is reprocessed, never dropped. Deliberately duplicated (the paths differ
-        // on
-        // span handling, retry counts, and circuit-breaker ordering — recordOutcome runs BEFORE
-        // this block here, AFTER it on the per-record path). Any change here must be mirrored
-        // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
-        if (deadLetterTopic != null && kpipeProducer != null) {
-          if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause)) {
-            metrics.get(METRIC_DLQ_SENT).incrementAndGet();
-            if (offsetManager != null) offsetManager.markOffsetProcessed(record);
-          } else {
-            metrics.get(METRIC_DLQ_FAILED).incrementAndGet();
-            LOGGER.log(
-              Level.ERROR,
-              () ->
-                "DLQ delivery failed for batch record at offset " +
-                record.offset() +
-                "; offset NOT committed, record will be reprocessed on restart/rebalance"
-            );
-          }
-        } else if (offsetManager != null) {
-          offsetManager.markOffsetProcessed(record);
-        }
-        try {
-          errorHandler.accept(new ProcessingError(record, cause, 0));
-        } catch (final Exception ex) {
-          LOGGER.log(
-            Level.ERROR,
-            "Error handler threw on batch failure at offset {0}: {1}",
-            record.offset(),
-            ex.getMessage(),
-            ex
-          );
-        }
-      }
-    };
-    return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), scheduler, callbacks);
   }
 
   /// Blocks until the dispatcher's in-flight records finish processing, or `timeout` elapses, or
@@ -1129,24 +1070,13 @@ public class KPipeConsumer implements AutoCloseable {
   }
 
   /// Surfaces a rejection from `ParallelDispatcher`'s executor (typically during shutdown)
-  /// back to the consumer's error path. Mirrors the prior inline behavior in `processRecords`.
+  /// back to the processing engine's error path. Kept as an instance method so the dispatcher
+  /// can be constructed (with a method reference) before the engine field is assigned.
   private void handleParallelRejection(
     final ConsumerRecord<byte[], byte[]> record,
     final RejectedExecutionException e
   ) {
-    if (!isRunning()) return;
-    LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
-    metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-    otelMetrics.recordProcessingError(record.topic());
-    try {
-      errorHandler.accept(new ProcessingError(record, e, 0));
-    } catch (final Exception ex) {
-      LOGGER.log(
-        Level.ERROR,
-        () -> "Error handler threw while handling rejected task at offset " + record.offset(),
-        ex
-      );
-    }
+    recordProcessor.handleParallelRejection(record, e);
   }
 
   /// Runs after every record finishes (on whichever thread executed it). Unparks the consumer
@@ -1165,102 +1095,15 @@ public class KPipeConsumer implements AutoCloseable {
     }
   }
 
-  /// Processes a single Kafka consumer record using the topic's configured pipeline. Runs in the
-  /// current virtual thread; retries on exception according to `maxRetries` + `retryBackoff`. On
-  /// success the per-record outcome feeds the circuit-breaker window; on retry-exhausted failure
-  /// the record is routed to the DLQ (when configured) and the error handler is invoked.
-  ///
-  /// Metrics tracked during processing:
-  ///
-  /// * `messagesReceived` — incremented on entry
-  /// * `messagesProcessed` — incremented on success
-  /// * `processingDurationTotalMs` — incremented on success by the wall-clock duration
-  /// * `retries` — incremented per retry attempt (not the initial attempt)
-  /// * `processingErrors` — incremented when processing fails after all retries
+  /// Processes a single Kafka consumer record by delegating to the [RecordProcessor] engine:
+  /// the full deserialize → operators → sink → mark/DLQ unit, including retries per
+  /// `withRetry(maxRetries, backoff)` and tracing-span handling. Runs in the current
+  /// virtual thread. Kept on the consumer (and `protected`) as the per-record entry point for
+  /// the dispatcher and for tests that drive a single record without a poll loop.
   ///
   /// @param record the Kafka consumer record to process
   protected void processRecord(final ConsumerRecord<byte[], byte[]> record) {
-    metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
-    otelMetrics.recordMessageReceived(record.topic());
-
-    Tracer.SpanScope span;
-    try {
-      span = tracer.startConsumerSpan(record);
-    } catch (final Exception traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.startConsumerSpan threw", traceEx);
-      span = Tracer.SpanScope.noop();
-    }
-
-    final long startTime = System.currentTimeMillis();
-    try {
-      final var result = tryProcessRecord(record, span);
-      if (result) {
-        final var durationMs = System.currentTimeMillis() - startTime;
-        metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-        metrics.get(METRIC_PROCESSING_DURATION_TOTAL_MS).addAndGet(durationMs);
-        otelMetrics.recordMessageProcessed(record.topic());
-        otelMetrics.recordProcessingDuration(record.topic(), durationMs);
-      }
-    } finally {
-      try {
-        span.close();
-      } catch (final Exception traceEx) {
-        LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw", traceEx);
-      }
-      // In-flight count + backpressure-unpark handled by the dispatcher's `onComplete`
-      // callback (`afterRecordComplete`). See `processRecords`.
-    }
-  }
-
-  private boolean tryProcessRecord(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
-    final var batchWrapper = batchWrappers.get(record.topic());
-    if (batchWrapper != null) return tryEnqueueBatchRecord(record, batchWrapper, span);
-    final var pipeline = pipelines.get(record.topic());
-    if (pipeline == null) {
-      LOGGER.log(
-        Level.WARNING,
-        "No pipeline registered for topic {0}; dropping record at offset {1}",
-        record.topic(),
-        record.offset()
-      );
-      markOffsetProcessed(record);
-      return false;
-    }
-    for (int attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) {
-        metrics.get(METRIC_RETRIES).incrementAndGet();
-        LOGGER.log(
-          Level.DEBUG,
-          "Retrying message at offset {0} (attempt {1} of {2})",
-          record.offset(),
-          attempt,
-          maxRetries
-        );
-        try {
-          Thread.sleep(retryBackoff.toMillis());
-        } catch (final InterruptedException ie) {
-          Thread.currentThread().interrupt();
-          return false;
-        }
-      }
-
-      try {
-        driveSinkedPipeline(pipeline, record.value());
-        markOffsetProcessed(record);
-        health.recordOutcome(true);
-        return true;
-      } catch (final Exception e) {
-        if (isInterruptionRelated(e)) {
-          Thread.currentThread().interrupt();
-          return false;
-        }
-        if (attempt == maxRetries) {
-          handleProcessingError(record, e, attempt, span);
-          return false;
-        }
-      }
-    }
-    return false;
+    recordProcessor.process(record);
   }
 
   /// Returns the total number of records currently being tracked for backpressure: whatever
@@ -1273,140 +1116,6 @@ public class KPipeConsumer implements AutoCloseable {
     var total = dispatcher.activeCount();
     for (final var wrapper : batchWrappers.values()) total += wrapper.bufferedCount();
     return total;
-  }
-
-  private <T> boolean tryEnqueueBatchRecord(
-    final ConsumerRecord<byte[], byte[]> record,
-    final BatchPipelineWrapper<T> wrapper,
-    final Tracer.SpanScope span
-  ) {
-    try {
-      final var pipeline = wrapper.pipeline();
-      final var deserialized = pipeline.deserializeOrFail(record.value());
-      switch (pipeline.process(deserialized)) {
-        case Result.Passed<T> p -> {
-          wrapper.enqueue(record, p.value());
-          // Buffered: messagesProcessed will be incremented in the flush callback when the batch
-          // is committed to the user sink.
-          return false;
-        }
-        case Result.Filtered<T> _ -> {
-          // Intentional filter — mark processed immediately; nothing to buffer.
-          markOffsetProcessed(record);
-          return true;
-        }
-        case Result.Failed<T> f -> throw rethrowResultCause(f.cause());
-      }
-    } catch (final Exception e) {
-      if (isInterruptionRelated(e)) {
-        Thread.currentThread().interrupt();
-        return false;
-      }
-      handleProcessingError(record, e, 0, span);
-      return false;
-    }
-  }
-
-  /// Drive a pipeline (with erased element type) from raw bytes to its terminal sink. Throws if
-  /// the pipeline reports `Failed` so the calling retry/error path handles it the same way it
-  /// always did. Returns normally on `Passed` (after the sink runs) and on `Filtered`.
-  private static <T> void driveSinkedPipeline(final MessagePipeline<T> pipeline, final byte[] data) {
-    final var deserialized = pipeline.deserializeOrFail(data);
-    switch (pipeline.process(deserialized)) {
-      case Result.Passed<T> p -> {
-        final var sink = pipeline.getSink();
-        if (sink != null) sink.accept(p.value());
-      }
-      case Result.Filtered<T> _ -> {
-        /* intentional filter — no sink invocation */
-      }
-      case Result.Failed<T> f -> throw rethrowResultCause(f.cause());
-    }
-  }
-
-  /// Re-throw a captured `Result.Failed` cause as an unchecked exception so the retry/error path
-  /// can catch it. Mirrors the legacy MessagePipeline byte-level entry point behavior — it just
-  /// lives here now, where the catching happens, rather than buried in three duplicated unwrap
-  /// blocks inside MessagePipeline.
-  private static RuntimeException rethrowResultCause(final Throwable cause) {
-    if (cause instanceof RuntimeException re) return re;
-    if (cause instanceof Error err) throw err;
-    return new RuntimeException(cause);
-  }
-
-  private void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
-    if (offsetManager != null) offsetManager.markOffsetProcessed(record);
-  }
-
-  private void handleProcessingError(
-    final ConsumerRecord<byte[], byte[]> record,
-    final Exception e,
-    final int retryCount,
-    final Tracer.SpanScope span
-  ) {
-    metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
-    otelMetrics.recordProcessingError(record.topic());
-    // Mark the span as errored. Guarded — a misbehaving tracer must never crash the consumer
-    // thread, leak in-flight counts, or skip offset marking.
-    try {
-      span.recordException(e);
-    } catch (final Exception traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.recordException threw", traceEx);
-    }
-    LOGGER.log(
-      Level.WARNING,
-      () -> "Failed to process message at offset " + record.offset() + " after " + (retryCount + 1) + " attempt(s)",
-      e
-    );
-    if (deadLetterTopic != null && kpipeProducer != null) {
-      // The offset advances only once the record reaches a durable terminal state: either the sink
-      // processed it (handled elsewhere) or it is safely parked in the DLQ. If the DLQ send fails
-      // the record is in neither place, so leave the offset pending — the commit point holds and
-      // the record is re-fetched (and the DLQ retried) on the next restart or partition
-      // reassignment. A down DLQ stalls the commit point rather than silently dropping data
-      // (the fetch position races ahead in-memory; this is a commit stall, not a pause).
-      //
-      // LOCKSTEP: this DLQ-or-mark block is deliberately duplicated in the batch wrapper's
-      // onBatchFailure callback — the two paths differ on span handling, retry counts, and
-      // circuit-breaker ordering (recordOutcome runs AFTER this block here, BEFORE it on the
-      // batch path), so a shared helper would blur those. Any change here must be mirrored
-      // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
-      if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e)) {
-        metrics.get(METRIC_DLQ_SENT).incrementAndGet();
-        markOffsetProcessed(record);
-      } else {
-        metrics.get(METRIC_DLQ_FAILED).incrementAndGet();
-        LOGGER.log(
-          Level.ERROR,
-          () ->
-            "DLQ delivery failed for record at offset " +
-            record.offset() +
-            "; offset NOT committed, record will be reprocessed on restart/rebalance"
-        );
-      }
-    } else {
-      // No DLQ configured: the caller opted into log-and-advance. Mark processed and move on.
-      markOffsetProcessed(record);
-    }
-    health.recordOutcome(false);
-    try {
-      errorHandler.accept(new ProcessingError(record, e, retryCount));
-    } catch (final Exception ex) {
-      LOGGER.log(
-        Level.ERROR,
-        "Error handler threw while handling failure at offset {0}: {1}",
-        record.offset(),
-        ex.getMessage(),
-        ex
-      );
-    }
-  }
-
-  private static boolean isInterruptionRelated(final Throwable error) {
-    for (Throwable current = error; current != null; current = current.getCause()) {
-      if (current instanceof InterruptedException || current instanceof ClosedByInterruptException) return true;
-    }
-    return false;
   }
 
   private ConsumerRecords<byte[], byte[]> pollRecords() {

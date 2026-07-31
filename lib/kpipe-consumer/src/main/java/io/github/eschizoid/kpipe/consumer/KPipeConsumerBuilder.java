@@ -163,6 +163,12 @@ public final class KPipeConsumerBuilder {
   /// buffered records participate in the in-flight backpressure metric so a slow sink cannot
   /// let the buffer grow unbounded.
   ///
+  /// Retry interplay: [#withRetry] covers each record's deserialize + operator step before it
+  /// is buffered — a transiently failing operator gets the configured attempts, and only
+  /// retry-exhausted records go to the DLQ / error handler. The batch sink flush itself is
+  /// never retried; a flush failure is handled through the per-record
+  /// [io.github.eschizoid.kpipe.sink.BatchResult] outcomes and the DLQ path described above.
+  ///
   /// @param topic the Kafka topic
   /// @param pipeline the typed pipeline to deserialize+process raw bytes into `T`
   /// @param sink the batch sink invoked on each flush
@@ -205,7 +211,14 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Configures retry behavior for failed message processing.
+  /// Configures retry behavior for failed message processing. The backoff is fixed (the same
+  /// delay before every retry); an interruption during processing or backoff aborts without
+  /// further attempts.
+  ///
+  /// On regular routes the retried unit is the record's full deserialize → operators → sink
+  /// pass. On batch routes ([#withBatchPipeline]) the retried unit is the record's
+  /// deserialize + operator step before buffering; the batch sink flush is not retried — a
+  /// flush failure is handled through the `BatchResult` / DLQ path, not this policy.
   ///
   /// @param maxRetries Maximum number of retry attempts
   /// @param backoff Duration to wait between retry attempts
