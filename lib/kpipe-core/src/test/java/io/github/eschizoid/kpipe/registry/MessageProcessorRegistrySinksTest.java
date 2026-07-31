@@ -65,9 +65,9 @@ class MessageProcessorRegistrySinksTest {
     final var sinkKey = RegistryKey.of("aSink", Object.class);
     registry.registerSink(sinkKey, testSink);
 
-    registry.clear(); // operator-side only
+    registry.clearOperators();
 
-    assertTrue(registry.getAllSinks().containsKey(sinkKey), "clear() must not touch the sink namespace");
+    assertTrue(registry.getAllSinks().containsKey(sinkKey), "clearOperators() must not touch the sink namespace");
   }
 
   @Test

@@ -18,6 +18,14 @@ import java.util.function.UnaryOperator;
 /// operator, as a sink, as both, or as neither. Internally both namespaces share a single
 /// `Namespace` helper so the structural-mirror methods all funnel into one body each.
 ///
+/// The public surface is a perfect per-namespace mirror: every operation carries its namespace
+/// in the method name (`registerOperator`/`registerSink`, `getOperator`/`getSink`,
+/// `unregisterOperator`/`unregisterSink`, `clearOperators`/`clearSinks`,
+/// `getOperatorKeys`/`getSinkKeys`, `getAllOperators`/`getAllSinks`,
+/// `getOperatorMetrics`/`getSinkMetrics`). Renamed in 1.19.0 from the bare operator-side names
+/// (`unregister`/`clear`/`getKeys`/`getMetrics`), which read registry-wide but touched only
+/// operators.
+///
 /// Example:
 ///
 /// ```java
@@ -165,11 +173,7 @@ public class MessageProcessorRegistry {
         // Warn once per distinct key — repeats are suppressed so a sustained misconfig
         // doesn't flood logs while still surfacing the unrouted key the first time.
         if (warnedMissingOperatorKeys.add(key)) {
-          LOGGER.log(
-            Level.WARNING,
-            "No operator registered under key {0} — passing input through unchanged",
-            key
-          );
+          LOGGER.log(Level.WARNING, "No operator registered under key {0} — passing input through unchanged", key);
         }
         return input;
       }
@@ -182,27 +186,34 @@ public class MessageProcessorRegistry {
   ///
   /// @param key the registry key to remove
   /// @return `true` iff an entry was removed
-  public boolean unregister(final RegistryKey<?> key) {
+  public boolean unregisterOperator(final RegistryKey<?> key) {
     return operators.remove(key);
   }
 
   /// Removes every operator entry. Sinks are untouched — use [#clearSinks()] for those.
-  public void clear() {
+  public void clearOperators() {
     operators.clear();
   }
 
   /// Returns the registered operator keys.
   ///
   /// @return an unmodifiable view of registered operator keys
-  public Set<RegistryKey<?>> getKeys() {
+  public Set<RegistryKey<?>> getOperatorKeys() {
     return operators.keys();
+  }
+
+  /// Returns a summary of registered operators.
+  ///
+  /// @return an unmodifiable view of registered operators (key → implementation simple name)
+  public Map<RegistryKey<?>, String> getAllOperators() {
+    return operators.all();
   }
 
   /// Gets metrics for a specific operator entry.
   ///
   /// @param key the registry key to look up
   /// @return the entry's metrics, or an empty map if `key` is not registered
-  public Map<String, Object> getMetrics(final RegistryKey<?> key) {
+  public Map<String, Object> getOperatorMetrics(final RegistryKey<?> key) {
     return operators.metrics(key);
   }
 

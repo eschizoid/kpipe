@@ -90,7 +90,7 @@ public record EntryMetricsReporter(
   /// @return a new reporter wired with the [#LOGGING] default output
   public static EntryMetricsReporter forProcessors(final MessageProcessorRegistry registry) {
     Objects.requireNonNull(registry, "registry cannot be null");
-    return new EntryMetricsReporter("Processor", registry::getKeys, registry::getMetrics, LOGGING);
+    return new EntryMetricsReporter("Processor", registry::getOperatorKeys, registry::getOperatorMetrics, LOGGING);
   }
 
   /// Creates a reporter for the given subset of operator keys, with default log-based output.
@@ -104,7 +104,7 @@ public record EntryMetricsReporter(
   ) {
     Objects.requireNonNull(registry, "registry cannot be null");
     Objects.requireNonNull(keys, "keys cannot be null");
-    return new EntryMetricsReporter("Processor", () -> keys, registry::getMetrics, LOGGING);
+    return new EntryMetricsReporter("Processor", () -> keys, registry::getOperatorMetrics, LOGGING);
   }
 
   /// Creates a reporter for every sink registered in `registry`, with default log-based output.
