@@ -149,6 +149,61 @@ class TestStreamTest {
     }
   }
 
+  @Test
+  void whenRoutesThroughMatchingBranch() {
+    final UnaryOperator<Map<String, Object>> tagActive = m -> {
+      final var copy = new HashMap<>(m);
+      copy.put("branch", "active");
+      return copy;
+    };
+    final UnaryOperator<Map<String, Object>> tagInactive = m -> {
+      final var copy = new HashMap<>(m);
+      copy.put("branch", "inactive");
+      return copy;
+    };
+
+    final var captured = new CapturingSink<Map<String, Object>>();
+    try (
+      final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
+        .when(ACTIVE, tagActive, tagInactive)
+        .toCustom(captured)
+        .build()
+    ) {
+      driver.send(record("a", true));
+      driver.send(record("b", false));
+      driver.flush();
+
+      assertEquals(
+        List.of("active", "inactive"),
+        captured
+          .captured()
+          .stream()
+          .map(m -> m.get("branch"))
+          .toList(),
+        "when must route each record through exactly the branch its predicate selects"
+      );
+    }
+  }
+
+  @Test
+  void whenBranchReturningNullFiltersTheRecord() {
+    final var captured = new CapturingSink<Map<String, Object>>();
+    try (
+      final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
+        .when(ACTIVE, UnaryOperator.identity(), m -> null)
+        .toCustom(captured)
+        .build()
+    ) {
+      driver.send(record("keep", true));
+      driver.send(record("drop", false));
+      driver.flush();
+
+      assertEquals(List.of("keep"), ids(captured), "a null-returning branch filters the record");
+      assertEquals(2L, driver.metrics().get("messagesProcessed"), "branch-filtered records still count processed");
+      assertEquals(List.of(), driver.errors(), "branch filtering is not an error");
+    }
+  }
+
   // ────────────────────────────────────────────────────────────────────────────────
   // Filter path — dropped records are processed, not errors, never reach the sink
   // ────────────────────────────────────────────────────────────────────────────────
