@@ -96,7 +96,8 @@ public final class ProtobufFormat implements MessageFormat<Message> {
     // ServiceLoader iteration order is unspecified — sort providers by implementation class name so
     // the pick is deterministic across classpath layouts. Sort on `provider.type()` (the Class,
     // no instantiation) and only `get()` the chosen provider.
-    final var providers = ServiceLoader.load(ProtobufDescriptorCompiler.class).stream()
+    final var providers = ServiceLoader.load(ProtobufDescriptorCompiler.class)
+      .stream()
       .sorted(Comparator.comparing(provider -> provider.type().getName()))
       .toList();
     if (providers.isEmpty()) throw new IllegalStateException(
@@ -190,15 +191,8 @@ public final class ProtobufFormat implements MessageFormat<Message> {
     final var messageIndex = readMessageIndex(cursor, data, schemaId);
     final var payloadOffset = cursor.offset();
 
-    final var messageDescriptor = resolvedDescriptors.computeIfAbsent(
-      new DescriptorKey(schemaId, messageIndex),
-      key -> {
-        final var protoText = resolver.lookupById(key.schemaId());
-        if (protoText == null || protoText.isBlank()) throw new IllegalStateException(
-          "Schema resolver returned empty schema for id " + key.schemaId()
-        );
-        return compiler.compile(protoText, key.messageIndex());
-      }
+    final var messageDescriptor = resolvedDescriptors.computeIfAbsent(new DescriptorKey(schemaId, messageIndex), key ->
+      compiler.compile(resolver.lookupRequired(key.schemaId()), key.messageIndex())
     );
 
     try {
@@ -292,5 +286,4 @@ public final class ProtobufFormat implements MessageFormat<Message> {
       return List.copyOf(list);
     }
   }
-
 }

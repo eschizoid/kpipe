@@ -15,9 +15,9 @@ runnable program. For a complete runnable example see
 | --- | --- | --- |
 | `json(topic, props)` | `Stream<Map<String, Object>>` | also `json(Collection<String>, props)` for many topics, one pipeline |
 | `avro(topic, props, AvroFormat)` | `Stream<GenericRecord>` | static single-schema mode; `Collection` overload exists |
-| `avro(topic, props, SchemaResolver)` | `Stream<GenericRecord>` | Confluent SR per-record lookup; no `Collection` overload; `toConsole()` unsupported in this mode |
+| `avro(topic, props, SchemaResolver)` | `Stream<GenericRecord>` | Confluent SR per-record lookup; `Collection` overload exists; `toConsole()` unsupported in this mode |
 | `protobuf(topic, props, ProtobufFormat)` | `Stream<Message>` | static descriptor mode; `Collection` overload exists |
-| `protobuf(topic, props, SchemaResolver)` | `Stream<Message>` | SR mode; requires `kpipe-format-protobuf-confluent` at runtime; no `Collection` overload; `toConsole()` unsupported |
+| `protobuf(topic, props, SchemaResolver)` | `Stream<Message>` | SR mode; requires `kpipe-format-protobuf-confluent` at runtime; `Collection` overload exists; `toConsole()` unsupported |
 | `bytes(topic, props)` | `Stream<byte[]>` | passthrough; `Collection` overload exists |
 | `custom(topic, props, MessageFormat<T>)` | `Stream<T>` | your own format; `Collection` overload exists |
 | `multi(props)` | `MultiBuilder` | heterogeneous per-topic routes on one consumer |

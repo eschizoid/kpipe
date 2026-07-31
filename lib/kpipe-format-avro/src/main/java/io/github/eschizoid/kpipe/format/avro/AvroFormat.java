@@ -45,7 +45,8 @@ import org.apache.avro.io.EncoderFactory;
 /// }
 /// ```
 ///
-/// Schema-Registry mode replaces the manual `KPipe.avro(topic, props, format).skipBytes(5).pipe(...)` pattern.
+/// Schema-Registry mode replaces the manual `KPipe.avro(topic, props,
+// format).skipBytes(5).pipe(...)` pattern.
 /// Do **not** combine `withRegistry(...)` with `skipBytes(5)` — the format already consumes
 /// the envelope.
 public final class AvroFormat implements MessageFormat<GenericRecord> {
@@ -165,8 +166,13 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
       // original cause is always attached, so a genuine programming error (e.g. an NPE) is still
       // visible in the cause chain rather than swallowed.
       throw new IllegalStateException(
-        "AvroFormat.deserialize failed in static mode on " + data.length + " bytes against schema " +
-          staticSchema.getFullName() + " (first bytes " + WireDiagnostics.hexPreview(data) + ")",
+        "AvroFormat.deserialize failed in static mode on " +
+          data.length +
+          " bytes against schema " +
+          staticSchema.getFullName() +
+          " (first bytes " +
+          WireDiagnostics.hexPreview(data) +
+          ")",
         e
       );
     }
@@ -175,27 +181,31 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   private GenericRecord deserializeFromEnvelope(final byte[] data) {
     final int schemaId = ConfluentEnvelope.readSchemaId(data);
 
-    final var schema = resolvedSchemas.computeIfAbsent(schemaId, id -> {
-      final var json = resolver.lookupById(id);
-      if (json == null || json.isBlank()) throw new IllegalStateException(
-        "Schema resolver returned empty schema for id " + id
-      );
-      return new Schema.Parser().parse(json);
-    });
+    final var schema = resolvedSchemas.computeIfAbsent(schemaId, id ->
+      new Schema.Parser().parse(resolver.lookupRequired(id))
+    );
 
     final var reader = new GenericDatumReader<GenericRecord>(schema);
-    final var decoder = DecoderFactory.get()
-      .binaryDecoder(data, ConfluentEnvelope.HEADER_LENGTH, data.length - ConfluentEnvelope.HEADER_LENGTH, null);
+    final var decoder = DecoderFactory.get().binaryDecoder(
+      data,
+      ConfluentEnvelope.HEADER_LENGTH,
+      data.length - ConfluentEnvelope.HEADER_LENGTH,
+      null
+    );
     try {
       return reader.read(null, decoder);
     } catch (final IOException | RuntimeException e) {
       // RuntimeException is caught alongside IOException to match the static path: a malformed
-      // payload under a valid envelope surfaces as Avro's own AvroRuntimeException, not IOException,
+      // payload under a valid envelope surfaces as Avro's own AvroRuntimeException, not
+      // IOException,
       // so the production SR path would otherwise debug worse than the static path (context-free
       // escape). The original cause is always attached.
       throw new IllegalStateException(
-        "Failed to decode Avro record under Confluent wire envelope (schema id " + schemaId +
-          ", first bytes " + WireDiagnostics.hexPreview(data) + ")",
+        "Failed to decode Avro record under Confluent wire envelope (schema id " +
+          schemaId +
+          ", first bytes " +
+          WireDiagnostics.hexPreview(data) +
+          ")",
         e
       );
     }

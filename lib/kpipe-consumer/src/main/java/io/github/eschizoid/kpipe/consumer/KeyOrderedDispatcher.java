@@ -150,7 +150,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
       if (queue == null) {
         if (!reserveCapacity()) {
           // reserveCapacity returned false because close() fired during the saturation stall.
-          // Roll back the pending increment so totalInFlight() doesn't get stuck; the record
+          // Roll back the pending increment so drainableCount() doesn't get stuck; the record
           // stays tracked-but-unmarked, so it is redelivered on restart.
           pending.decrementAndGet();
           if (abandonWarningEmitted.compareAndSet(false, true)) {
@@ -355,7 +355,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   }
 
   @Override
-  public long activeCount() {
+  public long drainableCount() {
     return pending.get();
   }
 

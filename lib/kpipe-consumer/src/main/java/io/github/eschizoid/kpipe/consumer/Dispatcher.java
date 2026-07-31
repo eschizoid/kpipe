@@ -44,14 +44,9 @@ sealed interface Dispatcher
   ///                     (typically an unpark of the consumer thread if backpressure-held)
   void dispatch(ConsumerRecord<byte[], byte[]> record, Runnable processTask, Runnable onComplete);
 
-  /// Returns the number of records currently dispatched but not yet finished. Fed into
-  /// `KPipeConsumer.totalInFlight()` so the in-flight backpressure strategy sees the
-  /// dispatcher's buffered + active records.
-  ///
-  /// Sequential mode returns 0 or 1 (one inline record at a time). Lag-based backpressure
-  /// doesn't consult this value, but it's still tracked so `inFlight` metrics and
-  /// `shutdownGracefully(timeout)` drain reporting are accurate.
-  long activeCount();
+  /// Returns the number of records dispatched but not yet finished — the count shutdown
+  /// drain waits on. Sequential mode returns 0 or 1 (one inline record at a time).
+  long drainableCount();
 
   /// Snapshot of the top-`n` keys by current queue depth, ordered deepest-first. Intended for
   /// ad-hoc diagnostics (heap-dump replacement, REPL/JMX inspection) — not for continuous
