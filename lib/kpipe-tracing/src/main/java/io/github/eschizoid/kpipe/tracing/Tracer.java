@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.producer.tracing;
+package io.github.eschizoid.kpipe.tracing;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Headers;
@@ -10,23 +10,21 @@ import org.apache.kafka.common.header.Headers;
 ///   1. **Extract** a parent context from an inbound [ConsumerRecord]'s headers and **start a
 ///      span** that represents the work of processing the record.
 ///   2. **Inject** the active span's context into outbound [Headers] so downstream consumers (DLQ
-///      subscribers, services that read records produced by
-/// [io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink])
-///      see the same trace.
+///      subscribers, services that read records produced by `KafkaMessageSink`) see the same
+///      trace.
 ///
 /// This module ships no concrete implementation. The default [#noop()] is a zero-cost stub used
 /// when tracing is not configured. Add the `kpipe-tracing-otel` module and pass
 /// `new OtelTracer(openTelemetry, "my-pipeline")` to wire W3C `traceparent` propagation through
 /// the OpenTelemetry API.
 ///
-/// **Why this lives in `kpipe-producer`:** the SPI references Kafka's `Headers` and
-/// `ConsumerRecord` types, so it must live in a module that already requires `kafka.clients`.
-/// `kpipe-metrics` is interfaces-only and dep-free; widening it would regress that.
-/// `kpipe-consumer`
-/// already `requires transitive io.github.eschizoid.kpipe.producer`, so the SPI is reachable from
-/// both injection
-/// callsites (`KPipeProducer.sendToDlq`, `KafkaMessageSink`) and the span-start callsite
-/// (`KPipeConsumer.processRecord`) without introducing new module edges.
+/// **Why this is its own module:** the SPI references Kafka's `Headers` and `ConsumerRecord`
+/// types, so it requires `kafka.clients` — but nothing else. Keeping it standalone means a
+/// tracing backend (`kpipe-tracing-otel`, or a custom implementation) depends only on this SPI
+/// and never drags `kpipe-producer` onto its consumers' classpath. `kpipe-producer` and
+/// `kpipe-consumer` both `requires transitive` this module, so the SPI is reachable from the
+/// injection callsites (`KPipeProducer.sendToDlq`, `KafkaMessageSink`) and the span-start
+/// callsite (`KPipeConsumer.processRecord`) alike.
 ///
 /// **No OTel types in this SPI** — kept pure-Java so implementations can be swapped (B3, Datadog,
 /// custom) without dragging an OTel API dependency onto every user's classpath.
@@ -44,9 +42,8 @@ public interface Tracer {
   SpanScope startConsumerSpan(ConsumerRecord<?, byte[]> record);
 
   /// Injects the currently-active span context into `headers` so a downstream consumer can pick
-  /// up the same trace. Called by [io.github.eschizoid.kpipe.producer.KPipeProducer#sendToDlq] and
-  /// the Kafka sink
-  /// before each outbound `send`.
+  /// up the same trace. Called by `KPipeProducer.sendToDlq` and the Kafka sink before each
+  /// outbound `send`.
   ///
   /// @param headers the outbound record's headers
   void injectContextInto(Headers headers);

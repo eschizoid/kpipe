@@ -6,6 +6,8 @@ module io.github.eschizoid.kpipe.consumer {
   requires transitive io.github.eschizoid.kpipe.core;
   requires transitive io.github.eschizoid.kpipe.metrics;
   requires transitive io.github.eschizoid.kpipe.producer;
+  // transitive: KPipeConsumerBuilder.withTracer exposes Tracer in the public builder API.
+  requires transitive io.github.eschizoid.kpipe.tracing;
   requires jdk.httpserver;
   requires transitive kafka.clients;
 

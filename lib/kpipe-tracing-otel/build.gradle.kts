@@ -6,7 +6,7 @@ plugins {
 description = "KPipe Tracing OTel - OpenTelemetry-backed implementation of the kpipe Tracer SPI"
 
 dependencies {
-  api(project(":lib:kpipe-producer"))
+  api(project(":lib:kpipe-tracing"))
   api(libs.opentelemetryApi)
   implementation(libs.kafkaClients)
 

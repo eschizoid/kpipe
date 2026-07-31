@@ -1,7 +1,7 @@
 package io.github.eschizoid.kpipe.producer;
 
 import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
-import io.github.eschizoid.kpipe.producer.tracing.Tracer;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.Objects;

@@ -11,6 +11,8 @@ module io.github.eschizoid.kpipe {
   requires transitive io.github.eschizoid.kpipe.core;
   requires transitive io.github.eschizoid.kpipe.consumer;
   requires transitive io.github.eschizoid.kpipe.producer;
+  // transitive: Stream.withTracer / ConsumerConfig expose Tracer in the public facade API.
+  requires transitive io.github.eschizoid.kpipe.tracing;
   requires static io.github.eschizoid.kpipe.format.json;
   requires static io.github.eschizoid.kpipe.format.avro;
   requires static io.github.eschizoid.kpipe.format.protobuf;

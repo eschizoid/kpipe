@@ -8,4 +8,4 @@
 /// An OpenTelemetry-backed implementation is provided by `kpipe-tracing-otel`. The library
 /// code in `kpipe-consumer` / `kpipe-producer` depends only on this SPI and has no transitive
 /// dependency on any tracing vendor.
-package io.github.eschizoid.kpipe.producer.tracing;
+package io.github.eschizoid.kpipe.tracing;

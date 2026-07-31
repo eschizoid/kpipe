@@ -72,8 +72,9 @@ The observer takes `LongSupplier`s rather than the resolver itself, so `kpipe-me
 KPipe propagates `traceparent` / `tracestate` Kafka headers: the upstream context is extracted on poll, a CONSUMER
 span with `messaging.kafka.{topic,partition,offset}` attributes wraps processing (closed in a nested `finally` so a
 throwing user callback cannot leak the scope), and the current context is injected into outbound headers on produce
-and on DLQ writes. The implementation is the opt-in `kpipe-tracing-otel` module; without `.withTracer(...)`,
-`Tracer.noop()` is used and no OTel API is needed.
+and on DLQ writes. The `Tracer` SPI lives in `kpipe-tracing` (pulled transitively — nothing to add to your build);
+the implementation is the opt-in `kpipe-tracing-otel` module. Without `.withTracer(...)`, `Tracer.noop()` is used
+and no OTel API is needed.
 
 ```java
 final OpenTelemetry otel = /* GlobalOpenTelemetry.get() or your SDK */;

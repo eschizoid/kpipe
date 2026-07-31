@@ -42,7 +42,7 @@ the pipeline; the failure is logged and contained at the sink boundary.
 import org.apache.kafka.clients.producer.KafkaProducer;
 import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
 import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
-import io.github.eschizoid.kpipe.producer.tracing.Tracer;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 
 final var producer = new KafkaProducer<byte[], byte[]>(producerProps);
 

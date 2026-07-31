@@ -8,6 +8,7 @@ description = "KPipe Producer - Functional Kafka producer wrapper for KPipe"
 dependencies {
   api(project(":lib:kpipe-core"))
   api(project(":lib:kpipe-metrics"))
+  api(project(":lib:kpipe-tracing"))
 
   implementation(libs.kafkaClients)
 
