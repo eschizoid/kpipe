@@ -320,10 +320,7 @@ public final class KPipeConsumerBuilder {
   /// Sets a custom command queue for the consumer.
   ///
   /// A command queue is auto-created in the builder, so most users do not need to call this
-  /// method. Use it only when you need to share an externally owned queue (for example, when
-  /// constructing an [OffsetManager] outside of [#withOffsetManagerProvider] and wiring
-  /// it to the same queue the consumer will read from). To grab the auto-created queue from
-  /// inside an [#withOffsetManagerProvider] lambda, call [#getCommandQueue()] on the builder.
+  /// method — it is a test seam for observing or injecting [ConsumerCommand]s.
   ///
   /// @param commandQueue the queue to use for consumer commands
   /// @return this KPipeConsumerBuilder instance for method chaining
@@ -332,17 +329,29 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Returns the [ConsumerCommand] queue this builder will hand to the consumer. By
-  /// default the builder auto-creates a [ConcurrentLinkedQueue]; callers that supplied
-  /// their own queue via [#withCommandQueue] will see that instance instead.
+  /// Returns a [CommitExecutor] that runs commits on the consumer thread of the consumer this
+  /// builder will build. Requests enqueue onto the builder's command queue; the consumer drains
+  /// them in `processCommands()` and completes each request's future with the `commitSync`
+  /// outcome. Requests submitted before the consumer starts simply wait in the queue.
   ///
-  /// This getter is intended for use inside an [#withOffsetManagerProvider] lambda, so the
-  /// offset manager and the consumer share the same queue without forcing the caller to
-  /// construct one upfront.
+  /// Intended for use inside an [#withOffsetManagerProvider] lambda, so an externally
+  /// constructed [KafkaOffsetManager] commits through the same consumer thread:
   ///
-  /// @return the command queue this builder will pass to the consumer
-  public Queue<ConsumerCommand> getCommandQueue() {
-    return commandQueue;
+  /// ```java
+  /// builder.withOffsetManagerProvider(consumer ->
+  ///     KafkaOffsetManager.builder(consumer)
+  ///         .withCommitExecutor(builder.getCommitExecutor())
+  ///         .build());
+  /// ```
+  ///
+  /// @return a commit executor bound to this builder's command queue
+  public CommitExecutor getCommitExecutor() {
+    // Read the queue field lazily (per commit) so a later withCommandQueue(...) still wins.
+    return offsets -> {
+      final var outcome = new CompletableFuture<Boolean>();
+      commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, outcome));
+      return outcome;
+    };
   }
 
   /// Sets the supplier for providing a consumer instance.

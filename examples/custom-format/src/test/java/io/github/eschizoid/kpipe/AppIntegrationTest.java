@@ -56,7 +56,8 @@ class AppIntegrationTest {
     final var capturingSink = new CapturingSink<CsvOrder>();
     final var pipeline = new MessageProcessorRegistry()
       .pipeline(new CsvOrderFormat())
-      // Mirrors App's .filter(order -> order.quantity() > 0): null return = intentional filter.
+      // Mirrors App's .filter(order -> order.quantity() > 0): null return = intentional
+      // filter.
       .add(order -> order.quantity() > 0 ? order : null)
       // Mirrors App's .pipe(...): uppercase the SKU.
       .add(order -> new CsvOrder(order.id(), order.sku().toUpperCase(), order.quantity()))
@@ -65,7 +66,8 @@ class AppIntegrationTest {
 
     final var offsetManager = new MarkRecordingOffsetManager();
     final var mock = seededWith(
-      "o-1, widget ,3\n", // offset 0: padded + trailing newline, decodes to ("o-1","widget",3)
+      "o-1, widget ,3\n", // offset 0: padded + trailing newline, decodes to
+      // ("o-1","widget",3)
       "o-2,gadget,0", // offset 1: quantity 0 -> filtered, never reaches the sink
       "definitely-not-csv", // offset 2: one field -> codec throws -> error path
       "o-3,doohickey,7" // offset 3: plain valid line
@@ -87,9 +89,7 @@ class AppIntegrationTest {
       consumer.start();
       awaitCondition(
         () ->
-          capturingSink.count() >= 2 &&
-          errors.size() >= 1 &&
-          offsetManager.marked.containsAll(Set.of(0L, 1L, 2L, 3L)),
+          capturingSink.count() >= 2 && errors.size() >= 1 && offsetManager.marked.containsAll(Set.of(0L, 1L, 2L, 3L)),
         10_000
       );
 
@@ -107,11 +107,12 @@ class AppIntegrationTest {
       final var failure = errors.getFirst();
       assertAll(
         () -> assertEquals(2L, failure.record().offset(), "the failure is the malformed record at offset 2"),
-        () -> assertInstanceOf(
-          IllegalArgumentException.class,
-          failure.exception().getCause(),
-          "the codec's IllegalArgumentException must be preserved as the cause"
-        )
+        () ->
+          assertInstanceOf(
+            IllegalArgumentException.class,
+            failure.exception().getCause(),
+            "the codec's IllegalArgumentException must be preserved as the cause"
+          )
       );
 
       // All four offsets marked: passed (0, 3), filtered (1), and failed-without-DLQ (2) all
@@ -137,16 +138,18 @@ class AppIntegrationTest {
 
     assertAll(
       () -> assertThrows(IllegalArgumentException.class, () -> format.deserialize(new byte[0]), "empty payload"),
-      () -> assertThrows(
-        IllegalArgumentException.class,
-        () -> format.deserialize("only,two".getBytes(UTF_8)),
-        "wrong field count"
-      ),
-      () -> assertThrows(
-        IllegalArgumentException.class,
-        () -> format.deserialize("o-1,widget,many".getBytes(UTF_8)),
-        "non-integer quantity"
-      )
+      () ->
+        assertThrows(
+          IllegalArgumentException.class,
+          () -> format.deserialize("only,two".getBytes(UTF_8)),
+          "wrong field count"
+        ),
+      () ->
+        assertThrows(
+          IllegalArgumentException.class,
+          () -> format.deserialize("o-1,widget,many".getBytes(UTF_8)),
+          "non-integer quantity"
+        )
     );
   }
 
@@ -217,9 +220,6 @@ class AppIntegrationTest {
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       marked.add(record.offset());
     }
-
-    @Override
-    public void notifyCommitComplete(final String commitId, final boolean success) {}
 
     @Override
     public OffsetState getState() {

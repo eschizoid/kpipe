@@ -17,7 +17,6 @@ import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.test.CapturingSink;
 import java.time.Duration;
 import java.util.Collection;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -88,10 +87,7 @@ class AppIntegrationTest {
 
     try {
       consumer.start();
-      awaitCondition(
-        () -> capturingSink.count() >= 2 && offsetManager.marked.containsAll(Set.of(0L, 1L)),
-        10_000
-      );
+      awaitCondition(() -> capturingSink.count() >= 2 && offsetManager.marked.containsAll(Set.of(0L, 1L)), 10_000);
 
       final var delivered = capturingSink.captured();
       assertAll(
@@ -112,7 +108,6 @@ class AppIntegrationTest {
 
     assertFalse(consumer.isRunning(), "consumer must reach terminal state after close()");
   }
-
 
   private static Properties consumerProps() {
     final var props = new Properties();
@@ -177,9 +172,6 @@ class AppIntegrationTest {
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       marked.add(record.offset());
     }
-
-    @Override
-    public void notifyCommitComplete(final String commitId, final boolean success) {}
 
     @Override
     public OffsetState getState() {

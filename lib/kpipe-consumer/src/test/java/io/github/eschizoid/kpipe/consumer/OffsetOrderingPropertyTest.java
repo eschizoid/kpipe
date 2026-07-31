@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Collectors;
 import net.jqwik.api.Arbitraries;
 import net.jqwik.api.Arbitrary;
@@ -46,8 +45,7 @@ class OffsetOrderingPropertyTest {
   /// Builds a manager wired to a `MockConsumer` with a fresh command queue, started and ready.
   private static KafkaOffsetManager newManager() {
     final var consumer = new MockConsumer<byte[], byte[]>("earliest");
-    final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
-    final var manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
+    final var manager = KafkaOffsetManager.builder(consumer).withCommitExecutor(TestCommitExecutors.unwired()).build();
     manager.start();
     return manager;
   }

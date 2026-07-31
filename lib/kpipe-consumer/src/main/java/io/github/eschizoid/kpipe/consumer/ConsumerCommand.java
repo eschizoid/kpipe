@@ -1,6 +1,8 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
@@ -21,17 +23,16 @@ public sealed interface ConsumerCommand {
   /// Close the consumer and release resources.
   record Close() implements ConsumerCommand {}
 
-  /// Commit offsets to Kafka.
+  /// Commit offsets to Kafka and report the outcome. This is the queued form of a
+  /// [CommitExecutor] request — see that interface for the execution-time-supplier contract
+  /// (late binding is what makes queued commits rebalance-safe without any queue rewriting).
   ///
-  /// @param offsets  the offsets to commit
-  /// @param commitId the commit ID for tracking completion
-  record CommitOffsets(Map<TopicPartition, OffsetAndMetadata> offsets, String commitId) implements ConsumerCommand {
-    /// Returns a new CommitOffsets with the given offsets but same commitId.
-    ///
-    /// @param newOffsets the replacement offsets
-    /// @return a new CommitOffsets instance
-    public CommitOffsets withOffsets(final Map<TopicPartition, OffsetAndMetadata> newOffsets) {
-      return new CommitOffsets(newOffsets, this.commitId);
-    }
-  }
+  /// @param offsets  supplies the offsets to commit, invoked on the consumer thread just before
+  ///     `commitSync`
+  /// @param outcome  completed with the commit result: `true` on success (or nothing to
+  ///     commit), `false` on failure
+  record CommitOffsets(
+    Supplier<Map<TopicPartition, OffsetAndMetadata>> offsets,
+    CompletableFuture<Boolean> outcome
+  ) implements ConsumerCommand {}
 }

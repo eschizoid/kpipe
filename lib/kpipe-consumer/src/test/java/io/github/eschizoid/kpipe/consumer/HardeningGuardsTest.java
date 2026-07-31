@@ -4,7 +4,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -88,9 +87,6 @@ class HardeningGuardsTest {
       public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
         marked.add(record.offset());
       }
-
-      @Override
-      public void notifyCommitComplete(final String commitId, final boolean success) {}
 
       @Override
       public OffsetState getState() {
@@ -203,10 +199,7 @@ class HardeningGuardsTest {
       new String(dlqRecord.headers().lastHeader("x-dlq-source-timestamp").value(), UTF_8),
       "the original event timestamp must travel in the envelope"
     );
-    assertEquals(
-      String.valueOf(7L),
-      new String(dlqRecord.headers().lastHeader("x-dlq-source-offset").value(), UTF_8)
-    );
+    assertEquals(String.valueOf(7L), new String(dlqRecord.headers().lastHeader("x-dlq-source-offset").value(), UTF_8));
   }
 
   private static Properties byteProperties() {

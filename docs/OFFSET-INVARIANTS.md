@@ -93,15 +93,18 @@ moves on.
 
 On `onPartitionsRevoked`, for each revoked partition the manager commits the current commit point (lowest pending, else
 `highestProcessed + 1`), then clears that partition's pending set, highest-processed entry, and cached `TopicPartition`
-before the partition can be reassigned. Stale queued commit commands that reference revoked partitions are dropped from
-the command queue.
+before the partition can be reassigned. A commit request already submitted through the `CommitExecutor` seam but not
+yet executed cannot commit a revoked partition: its offsets supplier reads the ledger on the consumer thread at
+execution time — after this callback has cleared the revoked partitions — so revoked entries are structurally
+invisible to it (no queue rewriting involved).
 
 **Assertable property.** After `onPartitionsRevoked([p])`:
 
 - `kafkaConsumer.commitSync(...)` was invoked with an entry for `p` equal to the pre-revoke commit point (when `p` had
   any tracked/processed state);
 - `getPartitionState(p)` reports `nextOffsetToCommit == -1` and `pendingCount == 0` (state cleared);
-- any `CommitOffsets` command still in the queue no longer contains `p`.
+- any still-pending `CommitOffsets` request, when its offsets supplier is invoked, computes a map with no entry
+  for `p`.
 
 ## I5 — rebalance-safe (mark after revoke is a clean no-op)
 

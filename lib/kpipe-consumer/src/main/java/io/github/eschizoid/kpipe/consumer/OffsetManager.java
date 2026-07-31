@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import java.util.Collection;
-import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -26,11 +25,6 @@ public interface OffsetManager extends AutoCloseable {
   /// Marks an offset as successfully processed.
   /// @param record The consumer record whose offset is marked as processed
   void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record);
-
-  /// Notifies the offset manager that a commit operation has completed.
-  /// @param commitId The ID of the commit operation
-  /// @param success Whether the commit was successful
-  void notifyCommitComplete(final String commitId, final boolean success);
 
   /// Creates a rebalance listener for this offset manager.
   ///

@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.OptionalLong;
@@ -22,11 +21,12 @@ import org.apache.kafka.common.TopicPartition;
 /// three places (commit prep, per-partition reporting, rebalance revoke) before this type pulled it
 /// into one function ([#frontierOf]).
 ///
-/// **Ownership boundary.** The ledger owns everything keyed by partition. It knows nothing about the
-/// consumer lifecycle (start/stop/close), the commit I/O (command queue, [CommitCoordinator]), or
+/// **Ownership boundary.** The ledger owns everything keyed by partition. It knows nothing about
+// the
+/// consumer lifecycle (start/stop/close), the commit I/O (the [CommitExecutor] seam), or
 /// rebalance orchestration — those stay on [KafkaOffsetManager], which injects the two fields it
-/// owns ([OffsetState], pending-commit count) into the reporting projections. The `commandQueue`
-/// single-writer invariant never crosses this seam: the ledger touches no queue.
+/// owns ([OffsetState], pending-commit count) into the reporting projections. The ledger's only
+/// role in a commit is being read: [#committableOffsets] is the executor's offsets supplier.
 ///
 /// **Concurrency.** The maps are [ConcurrentHashMap]; every read-modify-write on a per-partition
 /// value stays inside a bucket-locked `compute` / `computeIfPresent` so it is atomic against the
@@ -52,7 +52,8 @@ final class OffsetLedger {
   ///
   /// The `add` must happen INSIDE the bucket-locked `compute`, not as a trailing `.add()` on the
   /// value `computeIfAbsent` returns. Otherwise the add races [#markProcessed]'s remove-if-empty:
-  /// that path can empty the set and atomically drop the key, leaving a trailing `.add()` to land on
+  /// that path can empty the set and atomically drop the key, leaving a trailing `.add()` to land
+  // on
   /// an orphaned set no longer in the map — silently losing a pending offset and letting the commit
   /// point advance past an in-flight record. `compute()` holds the bucket lock across the add.
   ///
@@ -156,7 +157,8 @@ final class OffsetLedger {
     );
   }
 
-  /// A typed snapshot of one partition's offset-tracking state. Reads the pending window once so the
+  /// A typed snapshot of one partition's offset-tracking state. Reads the pending window once so
+  // the
   /// frontier and the pending-window fields come from a single consistent snapshot.
   ///
   /// @param partition     the partition to snapshot
@@ -227,7 +229,8 @@ final class OffsetLedger {
       .computeIfAbsent(partition, p -> new TopicPartition(topic, p));
   }
 
-  /// Evicts the cached [TopicPartition] for a revoked partition. `computeIfPresent` bucket-locks the
+  /// Evicts the cached [TopicPartition] for a revoked partition. `computeIfPresent` bucket-locks
+  // the
   /// inner-map removal and the outer-map cleanup together, so a concurrent [#cachedTopicPartition]
   /// for a different partition under the same topic can't see a transient empty inner map and
   /// double-allocate. Drops the outer entry when the last partition for a topic leaves.

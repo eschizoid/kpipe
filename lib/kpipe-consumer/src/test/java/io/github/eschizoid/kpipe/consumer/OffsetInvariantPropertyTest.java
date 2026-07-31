@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.LinkedBlockingQueue;
 import net.jqwik.api.Arbitraries;
 import net.jqwik.api.Arbitrary;
 import net.jqwik.api.Combinators;
@@ -46,8 +45,7 @@ class OffsetInvariantPropertyTest {
   @Property(tries = 200)
   void commitPointNeverPassesAGap(@ForAll("operationSequences") final List<Op> ops) {
     final var consumer = new MockConsumer<byte[], byte[]>("earliest");
-    final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
-    final var manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
+    final var manager = KafkaOffsetManager.builder(consumer).withCommitExecutor(TestCommitExecutors.unwired()).build();
     manager.start();
 
     try {

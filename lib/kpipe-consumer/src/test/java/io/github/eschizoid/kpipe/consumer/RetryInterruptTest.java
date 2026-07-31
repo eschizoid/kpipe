@@ -62,7 +62,9 @@ class RetryInterruptTest {
       .withConsumer(() -> mockConsumer)
       .withCommandQueue(commandQueue)
       .withOffsetManagerProvider(c -> {
-        final var manager = KafkaOffsetManager.builder(c).withCommandQueue(commandQueue).build();
+        final var manager = KafkaOffsetManager.builder(c)
+          .withCommitExecutor(TestCommitExecutors.toQueue(commandQueue))
+          .build();
         managerHolder.set(manager);
         return manager;
       })

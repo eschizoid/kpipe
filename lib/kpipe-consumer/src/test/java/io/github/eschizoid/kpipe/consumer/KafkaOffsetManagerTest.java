@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -46,7 +45,9 @@ class KafkaOffsetManagerTest {
   @BeforeEach
   void setup() {
     commandQueue = new LinkedBlockingQueue<>();
-    offsetManager = KafkaOffsetManager.builder(mockConsumer).withCommandQueue(commandQueue).build();
+    offsetManager = KafkaOffsetManager.builder(mockConsumer)
+      .withCommitExecutor(TestCommitExecutors.toQueue(commandQueue))
+      .build();
     offsetManager.start();
   }
 
@@ -94,12 +95,11 @@ class KafkaOffsetManagerTest {
       final var firstCommand = performCommitAndCaptureCommand();
 
       // Verify the first commit completed successfully
-      offsetManager.notifyCommitComplete(firstCommand.commitId(), true);
+      firstCommand.outcome().complete(true);
 
       // Verify partition state after first commit
       assertEventually(
-        () ->
-          expectedOffsetAfterFirstCommit == (long) offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
+        () -> expectedOffsetAfterFirstCommit == (long) offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
         Duration.ofSeconds(2),
         "Offset after first commit should be %d".formatted(expectedOffsetAfterFirstCommit)
       );
@@ -113,13 +113,11 @@ class KafkaOffsetManagerTest {
       final var secondCommand = performCommitAndCaptureCommand();
 
       // Complete the second commit
-      offsetManager.notifyCommitComplete(secondCommand.commitId(), true);
+      secondCommand.outcome().complete(true);
 
       // Verify partition state after second commit
       assertEventually(
-        () ->
-          expectedOffsetAfterSecondCommit ==
-          (long) offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
+        () -> expectedOffsetAfterSecondCommit == (long) offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
         Duration.ofSeconds(10),
         "Offset after second commit should be " + expectedOffsetAfterSecondCommit
       );
@@ -143,7 +141,7 @@ class KafkaOffsetManagerTest {
       final var firstCommand = performCommitAndCaptureCommand();
 
       // Verify the commit completed successfully
-      offsetManager.notifyCommitComplete(firstCommand.commitId(), true);
+      firstCommand.outcome().complete(true);
 
       // Verify the partition state after commit
       assertEventually(
@@ -171,7 +169,7 @@ class KafkaOffsetManagerTest {
       final var firstCommand = performCommitAndCaptureCommand();
 
       // Verify the commit completed successfully
-      offsetManager.notifyCommitComplete(firstCommand.commitId(), true);
+      firstCommand.outcome().complete(true);
 
       // Verify the partition state after commit
       assertEventually(
@@ -199,11 +197,7 @@ class KafkaOffsetManagerTest {
 
       // Verify state cleared after revoke
       final var stateAfterRevoke = offsetManager.getPartitionState(PARTITION);
-      assertEquals(
-        -1L,
-        stateAfterRevoke.nextOffsetToCommit(),
-        "Next offset to commit should be reset after revoke"
-      );
+      assertEquals(-1L, stateAfterRevoke.nextOffsetToCommit(), "Next offset to commit should be reset after revoke");
 
       // Simulate a new partition assignment
       listener.onPartitionsAssigned(List.of(PARTITION));
@@ -244,8 +238,8 @@ class KafkaOffsetManagerTest {
         final var command = commandQueue.poll(1, TimeUnit.SECONDS);
         assertNotNull(command, "Should have generated a commit command");
         final var commitCmd = assertInstanceOf(ConsumerCommand.CommitOffsets.class, command);
-        mockConsumer.commitSync(commitCmd.offsets());
-        offsetManager.notifyCommitComplete(commitCmd.commitId(), true);
+        mockConsumer.commitSync(commitCmd.offsets().get());
+        commitCmd.outcome().complete(true);
 
         // Verify the correct offset committed
         verify(mockConsumer).commitSync(offsetCaptor.capture());
@@ -279,55 +273,62 @@ class KafkaOffsetManagerTest {
       assertEquals(310L, offsetManager.getPartitionState(partition2).nextOffsetToCommit());
     }
 
-    /// Pre-existing commit commands targeting a revoked partition would commit against the
-    /// wrong owner once the partition is reassigned. The listener prunes them at revoke time.
+    /// A commit request that is already queued when a revoke fires must not commit the revoked
+    /// partition — that would target the partition's new owner. The request's offsets supplier
+    /// reads the ledger at execution time, after the revoke callback has cleared the revoked
+    /// partition's state, so the revoked entry is structurally invisible to it while surviving
+    /// partitions still commit normally.
     @Test
-    void shouldDrainCommandQueueForRevokedPartitions() {
+    void queuedCommitMustNotSeeRevokedPartitionsAtExecutionTime() {
       final var partition1 = new TopicPartition(TOPIC, 1);
-      final var offsets = Map.of(PARTITION, new OffsetAndMetadata(100L), partition1, new OffsetAndMetadata(200L));
-      commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, "commit-1"));
+      final var recordOnP0 = new ConsumerRecord<>(TOPIC, 0, 100L, "k".getBytes(UTF_8), "v".getBytes());
+      final var recordOnP1 = new ConsumerRecord<>(TOPIC, 1, 200L, "k".getBytes(UTF_8), "v".getBytes());
+      offsetManager.trackOffset(recordOnP0);
+      offsetManager.markOffsetProcessed(recordOnP0);
+      offsetManager.trackOffset(recordOnP1);
+      offsetManager.markOffsetProcessed(recordOnP1);
 
+      // Submit a commit; it stays queued (nothing pumps the queue in this test yet).
+      final var command = performCommitAndCaptureCommand();
+
+      // Revoke partition 0 before the queued request executes.
       offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
 
-      // Command stays, but the revoked-partition entry is filtered out
-      assertEquals(1, commandQueue.size());
-      final var remaining = assertInstanceOf(ConsumerCommand.CommitOffsets.class, commandQueue.peek());
-      assertFalse(remaining.offsets().containsKey(PARTITION), "revoked partition entry must be stripped");
-      assertEquals(200L, remaining.offsets().get(partition1).offset(), "surviving partition entry preserved");
+      // Execute the request as the consumer thread would: the computed offsets must exclude the
+      // revoked partition and preserve the surviving one.
+      final var offsets = command.offsets().get();
+      assertFalse(offsets.containsKey(PARTITION), "revoked partition entry must be invisible at execution time");
+      assertEquals(201L, offsets.get(partition1).offset(), "surviving partition entry preserved");
+      command.outcome().complete(true);
     }
 
-    /// Non-commit commands (Pause, Resume, Close, …) don't reference partitions, so they pass
-    /// through the drain untouched.
+    /// If everything a queued commit request would have committed was revoked, its supplier
+    /// computes an empty map at execution time — and the consumer-side executor skips
+    /// `commitSync` entirely for an empty map (a no-op at best, a broker error at worst).
     @Test
-    void shouldPreserveNonCommitCommandsDuringRevoke() {
-      commandQueue.offer(new ConsumerCommand.Pause());
+    void queuedCommitWhoseOnlyPartitionWasRevokedComputesEmptyOffsets() {
+      final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k".getBytes(UTF_8), "v".getBytes());
+      offsetManager.trackOffset(record);
+      offsetManager.markOffsetProcessed(record);
+
+      final var command = performCommitAndCaptureCommand();
 
       offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
 
-      assertEquals(1, commandQueue.size());
-      assertInstanceOf(ConsumerCommand.Pause.class, commandQueue.peek());
+      assertTrue(
+        command.offsets().get().isEmpty(),
+        "a queued commit whose partitions were all revoked must compute an empty offsets map"
+      );
+      command.outcome().complete(true);
     }
 
-    /// If a commit command's offsets are all on revoked partitions, the entire command is
-    /// dropped — committing it would target zero partitions, which is a no-op at best and a
-    /// brokerwide error at worst depending on the broker version.
-    @Test
-    void shouldRemoveCommitCommandsThatOnlyTargetRevokedPartitions() {
-      commandQueue.offer(new ConsumerCommand.CommitOffsets(Map.of(PARTITION, new OffsetAndMetadata(100L)), "commit-1"));
-
-      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
-
-      assertTrue(commandQueue.isEmpty(), "command with only revoked-partition entries must be removed entirely");
-    }
-
-    /// After stop(), the listener is a no-op — it must not commit, must not clear state, must
-    /// not drain the command queue. Otherwise a late rebalance callback racing with shutdown
-    /// would corrupt the post-stop state.
+    /// After stop(), the listener is a no-op — it must not commit and must not clear state.
+    /// Otherwise a late rebalance callback racing with shutdown would corrupt the post-stop
+    /// state.
     @Test
     void shouldBeNoOpAfterStop() {
       final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "k".getBytes(UTF_8), "v".getBytes());
       offsetManager.trackOffset(record);
-      commandQueue.offer(new ConsumerCommand.Pause());
 
       final var listener = offsetManager.createRebalanceListener();
       offsetManager.stop();
@@ -336,7 +337,6 @@ class KafkaOffsetManagerTest {
       listener.onPartitionsAssigned(List.of(PARTITION));
 
       verify(mockConsumer, never()).commitSync(anyMap());
-      assertEquals(1, commandQueue.size(), "command queue must be left alone after stop");
       assertEquals(
         100L,
         offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
@@ -416,98 +416,6 @@ class KafkaOffsetManagerTest {
     }
   }
 
-  /// Guards the single-writer invariant documented on `KafkaOffsetManager.commandQueue`: every
-  /// rebalance callback must run on the same thread the listener was first bound to (the Kafka
-  /// consumer thread in production). Without this, the poll-then-readd drain in
-  /// `drainCommandQueueForRevokedPartitions` becomes racy against concurrent `CommitOffsets`
-  /// writers and revoked-partition entries can slip back into the queue.
-  ///
-  /// Tests in this nested class rely on JVM assertions being enabled (`-ea`). Gradle's `Test`
-  /// task enables them by default, so `./gradlew :lib:kpipe-consumer:test` exercises the check.
-  @Nested
-  class SingleWriterInvariantTests {
-
-    /// Calls the listener from one thread to bind the invariant, then from a different thread
-    /// — the second call must trip the `assert` in `assertOnConsumerThread`.
-    @Test
-    void rebalanceCallbackFromDifferentThreadTripsAssertion() throws Exception {
-      final var listener = offsetManager.createRebalanceListener();
-
-      // First call from the JUnit thread captures it as the bound consumer thread.
-      listener.onPartitionsRevoked(List.of(PARTITION));
-
-      // Second call from a different thread must trigger the AssertionError.
-      final var thrown = new AtomicReference<Throwable>();
-      final var off = new Thread(
-        () -> {
-          try {
-            listener.onPartitionsRevoked(List.of(PARTITION));
-          } catch (final Throwable t) {
-            thrown.set(t);
-          }
-        },
-        "off-thread-rebalancer"
-      );
-      off.start();
-      off.join(2_000);
-
-      final var actual = thrown.get();
-      assertNotNull(actual, "off-thread rebalance must throw — assertions disabled?");
-      assertInstanceOf(AssertionError.class, actual, "expected AssertionError, got: " + actual);
-      assertTrue(
-        actual.getMessage().contains("single-writer invariant violated"),
-        "assertion message should call out the invariant: " + actual.getMessage()
-      );
-    }
-
-    /// Mirror of [#rebalanceCallbackFromDifferentThreadTripsAssertion] for the
-    /// `onPartitionsAssigned` half of the listener. The first same-thread call binds the consumer
-    /// thread; the second call from a different thread must trip the invariant.
-    @Test
-    void partitionsAssignedFromDifferentThreadTripsAssertion() throws Exception {
-      final var listener = offsetManager.createRebalanceListener();
-
-      // First call from the JUnit thread captures it as the bound consumer thread.
-      listener.onPartitionsAssigned(List.of(PARTITION));
-
-      // Second call from a different thread must trigger the AssertionError.
-      final var thrown = new AtomicReference<Throwable>();
-      final var off = new Thread(
-        () -> {
-          try {
-            listener.onPartitionsAssigned(List.of(PARTITION));
-          } catch (final Throwable t) {
-            thrown.set(t);
-          }
-        },
-        "off-thread-rebalancer"
-      );
-      off.start();
-      off.join(2_000);
-
-      final var actual = thrown.get();
-      assertNotNull(actual, "off-thread rebalance must throw — assertions disabled?");
-      assertInstanceOf(AssertionError.class, actual, "expected AssertionError, got: " + actual);
-      assertTrue(
-        actual.getMessage().contains("single-writer invariant violated"),
-        "assertion message should call out the invariant: " + actual.getMessage()
-      );
-    }
-
-    /// Repeated callbacks on the same thread must pass — the bound-thread check only fires on a
-    /// mismatch.
-    @Test
-    void repeatedCallbacksOnSameThreadDoNotTrip() {
-      final var listener = offsetManager.createRebalanceListener();
-      assertDoesNotThrow(() -> {
-        listener.onPartitionsRevoked(List.of(PARTITION));
-        listener.onPartitionsAssigned(List.of(PARTITION));
-        listener.onPartitionsRevoked(List.of(PARTITION));
-        listener.onPartitionsLost(List.of(PARTITION));
-      });
-    }
-  }
-
   @Nested
   class ErrorHandlingTests {
 
@@ -532,7 +440,7 @@ class KafkaOffsetManagerTest {
       assertNotNull(command, "Should generate a commit command");
 
       // Simulate failure by completing the future with false
-      offsetManager.notifyCommitComplete(command.commitId(), false);
+      command.outcome().complete(false);
 
       // Assert - the commit should return false but not throw
       final var result = commitFuture.get(2, TimeUnit.SECONDS);
@@ -563,7 +471,7 @@ class KafkaOffsetManagerTest {
       assertNotNull(command, "Should have generated a commit command");
 
       // Simulate consumer closed exception
-      offsetManager.notifyCommitComplete(command.commitId(), false);
+      command.outcome().complete(false);
 
       // Assert - should handle gracefully
       final var result = commitFuture.get(2, TimeUnit.SECONDS);
@@ -577,7 +485,7 @@ class KafkaOffsetManagerTest {
     void shouldHandleAsyncCommitFailures() throws Exception {
       // Create a manager with a very short commit interval
       final var asyncManager = KafkaOffsetManager.builder(mockConsumer)
-        .withCommandQueue(commandQueue)
+        .withCommitExecutor(TestCommitExecutors.toQueue(commandQueue))
         .withCommitInterval(Duration.ofMillis(50))
         .build();
 
@@ -596,7 +504,7 @@ class KafkaOffsetManagerTest {
         assertInstanceOf(ConsumerCommand.CommitOffsets.class, command, "Command should be of type COMMIT_OFFSETS");
 
         // Simulate a commit failure
-        asyncManager.notifyCommitComplete(command.commitId(), false);
+        command.outcome().complete(false);
       } finally {
         // Clean up - should not throw even after failure
         assertDoesNotThrow(() -> asyncManager.close());
@@ -619,7 +527,7 @@ class KafkaOffsetManagerTest {
         () -> {
           final var closeFuture = CompletableFuture.runAsync(offsetManager::close);
           final var command = pollCommitCommand(Duration.ofSeconds(2));
-          if (command != null) offsetManager.notifyCommitComplete(command.commitId(), false);
+          if (command != null) command.outcome().complete(false);
           closeFuture.get(2, TimeUnit.SECONDS);
         },
         "Should close gracefully even when final commit fails"
@@ -680,7 +588,7 @@ class KafkaOffsetManagerTest {
     void shouldAutomaticallyCommitAtInterval() throws Exception {
       // Create a manager with a short commit interval
       final var autoCommitManager = KafkaOffsetManager.builder(mockConsumer)
-        .withCommandQueue(commandQueue)
+        .withCommitExecutor(TestCommitExecutors.toQueue(commandQueue))
         .withCommitInterval(Duration.ofMillis(50))
         .build();
 
@@ -697,10 +605,11 @@ class KafkaOffsetManagerTest {
         final var command = pollCommitCommand(Duration.ofSeconds(2));
         assertNotNull(command, "Should have generated a commit command");
         assertInstanceOf(ConsumerCommand.CommitOffsets.class, command, "Command should be of type COMMIT_OFFSETS");
-        assertNotNull(command.offsets(), "Command should contain offsets");
-        assertTrue(command.offsets().containsKey(PARTITION), "Command should contain our partition");
+        final var commandOffsets = command.offsets().get();
+        assertNotNull(commandOffsets, "Command should contain offsets");
+        assertTrue(commandOffsets.containsKey(PARTITION), "Command should contain our partition");
 
-        autoCommitManager.notifyCommitComplete(command.commitId(), true);
+        command.outcome().complete(true);
       } finally {
         autoCommitManager.close();
       }
@@ -727,14 +636,14 @@ class KafkaOffsetManagerTest {
       assertNotNull(command, "Should have generated a commit command");
 
       // Simulate successful commit completion
-      offsetManager.notifyCommitComplete(command.commitId(), true);
+      command.outcome().complete(true);
 
       // Get the result and verify
       final var result = commitFuture.get(1, TimeUnit.SECONDS);
       assertTrue(result, "Commit should succeed with timeout");
 
       // Verify the offset was correctly committed
-      final var offsets = command.offsets();
+      final var offsets = command.offsets().get();
       assertEquals(102L, offsets.get(PARTITION).offset(), "Should commit correct offset");
     }
   }
@@ -763,14 +672,14 @@ class KafkaOffsetManagerTest {
       assertNotNull(command, "Should have generated a commit command");
 
       // Complete the commit successfully
-      offsetManager.notifyCommitComplete(command.commitId(), true);
+      command.outcome().complete(true);
 
       // Assert
       final var result = commitFuture.get(2, TimeUnit.SECONDS);
       assertTrue(result, "Commit should succeed");
 
       // Verify the offset in the commit command
-      final var offsets = command.offsets();
+      final var offsets = command.offsets().get();
       assertEquals(100L, offsets.get(PARTITION).offset(), "Should commit exactly the processed offset (99+1)");
     }
 
@@ -807,13 +716,13 @@ class KafkaOffsetManagerTest {
       assertInstanceOf(ConsumerCommand.CommitOffsets.class, command, "Command should be of type COMMIT_OFFSETS");
 
       // Verify the offsets in the command
-      var offsets = command.offsets();
+      var offsets = command.offsets().get();
       assertNotNull(offsets, "Command should contain offsets");
       assertTrue(offsets.containsKey(PARTITION), "Command should contain our partition");
       assertEquals(102L, offsets.get(PARTITION).offset(), "Should deduplicate tracked offsets");
 
       // Complete the commit
-      offsetManager.notifyCommitComplete(command.commitId(), true);
+      command.outcome().complete(true);
 
       // Assert commit completed successfully
       final var result = commitFuture.get(2, TimeUnit.SECONDS);
@@ -842,10 +751,10 @@ class KafkaOffsetManagerTest {
       final var command = performCommitAndCaptureCommand();
 
       // Simulate successful commit
-      offsetManager.notifyCommitComplete(command.commitId(), true);
+      command.outcome().complete(true);
 
       // Assert - check the command's offsets
-      final var committedOffsets = command.offsets();
+      final var committedOffsets = command.offsets().get();
       assertEquals(2, committedOffsets.size(), "Should commit for both partitions");
       assertEquals(102L, committedOffsets.get(partition0).offset(), "Should commit correct offset for partition 0");
       assertEquals(202L, committedOffsets.get(partition1).offset(), "Should commit correct offset for partition 1");
@@ -859,7 +768,7 @@ class KafkaOffsetManagerTest {
     void shouldHandleConcurrentAccess() throws Exception {
       // Use a manager with a shorter interval for this test
       final var concurrentManager = KafkaOffsetManager.builder(mockConsumer)
-        .withCommandQueue(commandQueue)
+        .withCommitExecutor(TestCommitExecutors.toQueue(commandQueue))
         .withCommitInterval(Duration.ofMillis(500))
         .build();
 
@@ -908,7 +817,7 @@ class KafkaOffsetManagerTest {
 
         final var command = pollCommitCommand(Duration.ofSeconds(2));
         assertNotNull(command, "Should generate a commit command after concurrent processing");
-        concurrentManager.notifyCommitComplete(command.commitId(), true);
+        command.outcome().complete(true);
         assertTrue(commitFuture.get(2, TimeUnit.SECONDS), "Final commit should complete successfully");
       } finally {
         concurrentManager.close();
@@ -924,7 +833,7 @@ class KafkaOffsetManagerTest {
       // Create a manager with custom configuration
       final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key".getBytes(UTF_8), "value".getBytes());
       final var customManager = KafkaOffsetManager.builder(mockConsumer)
-        .withCommandQueue(commandQueue)
+        .withCommitExecutor(TestCommitExecutors.toQueue(commandQueue))
         .withCommitInterval(Duration.ofMillis(200))
         .build();
 
@@ -1018,7 +927,7 @@ class KafkaOffsetManagerTest {
     @Test
     void shouldNotDropOffsetsUnderConcurrentTrackAndMark() throws Exception {
       final var manager = KafkaOffsetManager.builder(mockConsumer)
-        .withCommandQueue(new LinkedBlockingQueue<>())
+        .withCommitExecutor(TestCommitExecutors.unwired())
         .build();
       manager.start();
 
@@ -1067,7 +976,7 @@ class KafkaOffsetManagerTest {
     @Test
     void committableOffsetComputationNeverThrowsUnderRace() throws Exception {
       final var manager = KafkaOffsetManager.builder(mockConsumer)
-        .withCommandQueue(new LinkedBlockingQueue<>())
+        .withCommitExecutor(TestCommitExecutors.unwired())
         .build();
       manager.start();
 
@@ -1142,7 +1051,7 @@ class KafkaOffsetManagerTest {
 
       for (int i = 0; i < iterations; i++) {
         final var manager = KafkaOffsetManager.builder(mockConsumer)
-          .withCommandQueue(new LinkedBlockingQueue<>())
+          .withCommitExecutor(TestCommitExecutors.unwired())
           .withCommitInterval(Duration.ofMillis(50))
           .build();
 
@@ -1200,19 +1109,20 @@ class KafkaOffsetManagerTest {
     }
   }
 
-  /// Verifies that `commitSyncAndWait` honors its timeout and cleans up its
-  /// `commitFutures` entry when `notifyCommitComplete` never arrives.
+  /// Verifies that `commitSyncAndWait` honors its timeout and drops its pending-commit count
+  /// when the executor never completes the outcome future.
   @Nested
   class CommitTimeoutTests {
 
-    /// When a commit command is enqueued but no `notifyCommitComplete` callback ever fires,
-    /// `commitSyncAndWait` must:
+    /// When a commit request is submitted but its outcome future is never completed (the
+    /// consumer thread is gone, or a custom executor drops the request), `commitSyncAndWait`
+    /// must:
     /// 1. Return `false` once the timeout elapses (not block forever).
-    /// 2. Remove its `CompletableFuture` from `commitFutures`, so `getStatistics()` reports
+    /// 2. Decrement the pending-commit counter, so `getStatistics()` reports
     ///    `pendingCommits == 0` afterwards.
     @Test
-    void commitSyncAndWaitReturnsFalseWhenNotifyDoesNotArrive() throws Exception {
-      // Arrange: track and mark a single offset so commitSyncAndWait actually enqueues a command.
+    void commitSyncAndWaitReturnsFalseWhenOutcomeNeverCompletes() throws Exception {
+      // Arrange: track and mark a single offset so commitSyncAndWait actually submits a request.
       final var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key".getBytes(UTF_8), "value".getBytes());
       offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
@@ -1228,7 +1138,7 @@ class KafkaOffsetManagerTest {
         }
       });
 
-      // Confirm the command was enqueued — but intentionally do NOT call notifyCommitComplete.
+      // Confirm the request was submitted — but intentionally never complete its outcome.
       final var command = pollCommitCommand(Duration.ofSeconds(2));
       assertNotNull(command, "commitSyncAndWait should have enqueued a CommitOffsets command");
 
@@ -1249,5 +1159,4 @@ class KafkaOffsetManagerTest {
       );
     }
   }
-
 }

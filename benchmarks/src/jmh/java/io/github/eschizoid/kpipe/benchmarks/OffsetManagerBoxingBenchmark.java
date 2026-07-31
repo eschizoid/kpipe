@@ -2,12 +2,10 @@ package io.github.eschizoid.kpipe.benchmarks;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import io.github.eschizoid.kpipe.consumer.ConsumerCommand;
 import io.github.eschizoid.kpipe.consumer.KafkaOffsetManager;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -86,14 +84,12 @@ public class OffsetManagerBoxingBenchmark {
   public int partitions;
 
   private KafkaOffsetManager offsetManager;
-  private Queue<ConsumerCommand> commandQueue;
   private MockConsumer<byte[], byte[]> mockConsumer;
   private ConsumerRecord<byte[], byte[]>[] records;
 
   @Setup(Level.Trial)
   @SuppressWarnings("unchecked")
   public void setup() {
-    commandQueue = new ConcurrentLinkedQueue<>();
     mockConsumer = new MockConsumer<>("earliest");
     final var assignment = new ArrayList<TopicPartition>(partitions);
     for (var p = 0; p < partitions; p++) assignment.add(new TopicPartition(TOPIC, p));
@@ -102,7 +98,9 @@ public class OffsetManagerBoxingBenchmark {
     for (final var tp : assignment) beginningOffsets.put(tp, 0L);
     mockConsumer.updateBeginningOffsets(beginningOffsets);
 
-    offsetManager = KafkaOffsetManager.builder(mockConsumer).withCommandQueue(commandQueue).build();
+    offsetManager = KafkaOffsetManager.builder(mockConsumer)
+      .withCommitExecutor(offsets -> new CompletableFuture<>())
+      .build();
     offsetManager.start();
 
     // Pre-build the synthetic record set so the bench loop does no allocation outside the
@@ -124,7 +122,6 @@ public class OffsetManagerBoxingBenchmark {
   public void tearDown() {
     if (offsetManager != null) offsetManager.close();
     if (mockConsumer != null) mockConsumer.close();
-    if (commandQueue != null) commandQueue.clear();
   }
 
   /// Drives `trackOffset` then `markOffsetProcessed` for each pre-built `ConsumerRecord`. The

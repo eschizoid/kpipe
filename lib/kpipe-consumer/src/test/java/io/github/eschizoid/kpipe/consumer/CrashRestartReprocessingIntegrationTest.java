@@ -332,7 +332,7 @@ class CrashRestartReprocessingIntegrationTest {
       );
     builder.withOffsetManagerProvider(consumer -> {
       final var manager = KafkaOffsetManager.builder(consumer)
-        .withCommandQueue(builder.getCommandQueue())
+        .withCommitExecutor(builder.getCommitExecutor())
         // Very long auto-commit interval: the test drives the single commit manually so
         // the commit
         // point is deterministic and everything processed after it is a guaranteed

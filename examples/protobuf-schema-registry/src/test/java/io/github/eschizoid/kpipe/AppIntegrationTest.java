@@ -44,27 +44,31 @@ import org.junit.jupiter.api.Test;
 ///
 /// A Confluent-format wire record (1 magic byte `0x00` + 4-byte big-endian schema id +
 /// message-index array + a `DynamicMessage` body) is assembled exactly as `KafkaProtobufSerializer`
-/// writes it, seeded into a [MockConsumer], and driven through a real, started [KPipeConsumer] whose
+/// writes it, seeded into a [MockConsumer], and driven through a real, started [KPipeConsumer]
+// whose
 /// pipeline is built from `ProtobufFormat.withRegistry(resolver)` — the same registry-mode format
-/// `KPipe.protobuf(topic, props, resolver)` wires in `App`. The resolver returns the `.proto` source
+/// `KPipe.protobuf(topic, props, resolver)` wires in `App`. The resolver returns the `.proto`
+// source
 /// text for the schema id (what Confluent SR serves), so the REAL
 /// `ConfluentProtobufDescriptorCompiler` (discovered from `kpipe-format-protobuf-confluent` via
 /// `ServiceLoader`) compiles the writer schema and decodes the payload against it.
 ///
-/// The bytes are hand-assembled rather than generated with `KafkaProtobufSerializer` on purpose: the
-/// `kpipe-format-protobuf-confluent` jar is SHADED (it relocates `com.google.common`), and putting it
+/// The bytes are hand-assembled rather than generated with `KafkaProtobufSerializer` on purpose:
+// the
+/// `kpipe-format-protobuf-confluent` jar is SHADED (it relocates `com.google.common`), and putting
+// it
 /// on the same classpath as the un-shaded Confluent serializer stack triggers a guava
 /// `Ticker`-signature clash. The envelope layout used here is the exact format that module's own
 /// `ProtobufConfluentWireCompatTest` proves wire-compatible against Confluent's real serializer, so
-/// the byte shape is not in doubt — this test pins the CONSUMER decode path end to end without Docker.
+/// the byte shape is not in doubt — this test pins the CONSUMER decode path end to end without
+// Docker.
 class AppIntegrationTest {
 
   private static final String TOPIC = "customer-protobuf-sr";
   private static final int SCHEMA_ID = 7;
 
   /// The `.proto` source Confluent SR would serve for [#SCHEMA_ID]. The real compiler parses this.
-  private static final String CUSTOMER_PROTO =
-    """
+  private static final String CUSTOMER_PROTO = """
     syntax = "proto3";
     package com.kpipe.catalog;
     message Customer {
@@ -165,7 +169,8 @@ class AppIntegrationTest {
 
   /// Assembles the Confluent Protobuf wire envelope: 1-byte magic `0x00`, 4-byte big-endian schema
   /// id, then the single-message shorthand (`0x00`) for the first top-level message, then the
-  /// message body. This is exactly what `KafkaProtobufSerializer` emits for a single-message schema.
+  /// message body. This is exactly what `KafkaProtobufSerializer` emits for a single-message
+  // schema.
   private static byte[] confluentEnvelope(final int schemaId, final Message body) {
     final var out = new ByteArrayOutputStream();
     out.write(0x00); // magic
@@ -217,7 +222,8 @@ class AppIntegrationTest {
     }
   }
 
-  /// Minimal offset manager that records which offsets were marked processed, so the test can assert
+  /// Minimal offset manager that records which offsets were marked processed, so the test can
+  // assert
   /// the commit frontier advances past the seeded record.
   private static final class MarkRecordingOffsetManager implements OffsetManager {
 
@@ -240,9 +246,6 @@ class AppIntegrationTest {
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       marked.add(record.offset());
     }
-
-    @Override
-    public void notifyCommitComplete(final String commitId, final boolean success) {}
 
     @Override
     public OffsetState getState() {

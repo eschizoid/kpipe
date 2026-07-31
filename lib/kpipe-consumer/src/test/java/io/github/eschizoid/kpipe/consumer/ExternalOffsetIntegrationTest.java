@@ -139,9 +139,6 @@ class ExternalOffsetIntegrationTest {
     }
 
     @Override
-    public void notifyCommitComplete(final String id, final boolean success) {}
-
-    @Override
     public OffsetState getState() {
       return state;
     }

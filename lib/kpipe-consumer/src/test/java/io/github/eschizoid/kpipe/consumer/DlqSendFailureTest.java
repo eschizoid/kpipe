@@ -311,11 +311,6 @@ class DlqSendFailureTest {
     }
 
     @Override
-    public void notifyCommitComplete(final String commitId, final boolean success) {
-      // no-op
-    }
-
-    @Override
     public OffsetState getState() {
       return OffsetState.RUNNING;
     }
