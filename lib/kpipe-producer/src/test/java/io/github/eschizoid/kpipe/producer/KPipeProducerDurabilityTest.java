@@ -2,7 +2,7 @@ package io.github.eschizoid.kpipe.producer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import io.github.eschizoid.kpipe.producer.tracing.Tracer;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;

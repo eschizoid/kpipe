@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -152,9 +152,7 @@ class StreamBatchIntegrationTest {
     try {
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
         for (int i = 1; i <= 10; i++) {
-          producer
-            .send(new ProducerRecord<>(topic, "{\"id\":%d}".formatted(i).getBytes(StandardCharsets.UTF_8)))
-            .get();
+          producer.send(new ProducerRecord<>(topic, "{\"id\":%d}".formatted(i).getBytes(StandardCharsets.UTF_8))).get();
         }
         producer.flush();
       }

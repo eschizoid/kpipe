@@ -5,7 +5,7 @@ import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
-import io.github.eschizoid.kpipe.producer.tracing.Tracer;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.List;
 import java.util.function.BiFunction;

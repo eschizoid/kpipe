@@ -1,6 +1,6 @@
 package io.github.eschizoid.kpipe.tracing.otel;
 
-import io.github.eschizoid.kpipe.producer.tracing.Tracer;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
@@ -33,7 +33,7 @@ import org.apache.kafka.common.header.Headers;
 ///   .build();
 /// ```
 ///
-/// When OpenTelemetry is not configured, prefer [Tracer#noop()] from `kpipe-producer` to avoid
+/// When OpenTelemetry is not configured, prefer [Tracer#noop()] from `kpipe-tracing` to avoid
 /// this module's classpath dependency entirely.
 ///
 /// **Scope of v1:** uses `otel.getPropagators().getTextMapPropagator()` which defaults to W3C

@@ -9,6 +9,7 @@ dependencies {
   api(project(":lib:kpipe-core"))
   api(project(":lib:kpipe-consumer"))
   api(project(":lib:kpipe-producer"))
+  api(project(":lib:kpipe-tracing"))
 
   // Formats are opt-in: the facade references them (KPipe.json/avro/protobuf, withSchemaRegistry)
   // but does not force them on consumers (`requires static` in module-info). A JSON-only consumer

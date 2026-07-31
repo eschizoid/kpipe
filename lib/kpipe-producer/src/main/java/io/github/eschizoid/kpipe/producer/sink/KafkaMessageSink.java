@@ -1,8 +1,8 @@
 package io.github.eschizoid.kpipe.producer.sink;
 
 import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
-import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.sink.MessageSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.Objects;
@@ -14,7 +14,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 ///
 /// Send failures are reported via the producer's async callback at WARNING level so they don't
 /// disappear silently, and each outcome increments the configured [ProducerMetrics]
-/// (`recordMessageSent` / `recordMessageFailed`) so sends through this sink are counted the same way
+/// (`recordMessageSent` / `recordMessageFailed`) so sends through this sink are counted the same
+// way
 /// as `KPipeProducer`'s. The Kafka `Future<RecordMetadata>` is otherwise discarded — callers who
 /// need synchronous send semantics or precise failure handling per record should use
 /// `KPipeProducer.send` / `sendAsync` directly rather than wiring this sink.
@@ -75,7 +76,8 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
         LOGGER.log(Level.WARNING, () -> "Failed to send record to topic " + topic, exception);
       }
       // Count after logging, and guard the user-supplied metrics impl the same way tracer is
-      // guarded above: a throwing ProducerMetrics must never crash the producer callback thread or
+      // guarded above: a throwing ProducerMetrics must never crash the producer callback thread
+      // or
       // swallow the failure log (§11 error-handler safety).
       try {
         if (exception == null) metrics.recordMessageSent();

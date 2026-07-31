@@ -1,4 +1,4 @@
-/// OpenTelemetry-backed implementation of the [io.github.eschizoid.kpipe.producer.tracing.Tracer]
+/// OpenTelemetry-backed implementation of the [io.github.eschizoid.kpipe.tracing.Tracer]
 /// SPI.
 ///
 /// - [OtelTracer] — wraps an OpenTelemetry `Tracer` and produces span scopes around producer
