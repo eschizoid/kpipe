@@ -206,9 +206,20 @@ public final class TestStream<T> implements AutoCloseable {
     if (closed.get()) throw new IllegalStateException("TestStream is closed");
   }
 
-  /// Builder for [TestStream]. Mirrors the production facade's `pipe` / `filter` / `peek` /
-  /// `toCustom` vocabulary so a passing TestStream chain translates 1:1 to a `KPipe.X(...)`
-  /// chain.
+  /// Builder for [TestStream]. The operator vocabulary — `pipe` / `filter` / `peek` / `when` —
+  /// and the sink terminals (`toCustom`, `toBatch`) map 1:1 onto the production facade, so a
+  /// transform chain proven here carries over to a `KPipe.X(...)` chain unchanged.
+  ///
+  /// Deliberate differences from the facade's `Stream`:
+  ///
+  ///   * **Mutable builder.** Methods return `this`, not a new immutable instance — branching
+  ///     one builder into two streams is not supported; build one `TestStream` per chain.
+  ///   * **`toBatch(sink, maxSize)` is size-only.** The facade takes a `BatchPolicy`
+  ///     (size + age); the test kit's v1 batch semantics flush on size and shutdown only, so
+  ///     the age trigger is not configurable here.
+  ///   * **No observers.** `onFiltered` / `onFailed` / `peekResult` do not exist — assert
+  ///     filter and failure outcomes through the captured sink output,
+  ///     [TestStream#metrics], and [TestStream#errors] instead.
   ///
   /// @param <T> the pipeline value type
   public static final class Builder<T> {
@@ -265,6 +276,22 @@ public final class TestStream<T> implements AutoCloseable {
     public Builder<T> peek(final Consumer<T> sideEffect) {
       Objects.requireNonNull(sideEffect, "sideEffect cannot be null");
       operators.add(Operators.peek(sideEffect));
+      return this;
+    }
+
+    /// Appends a conditional transform: records matching the predicate go through `ifTrue`,
+    /// the rest through `ifFalse`. Either branch may return `null` to filter the record. Same
+    /// composition as the production facade's `when`.
+    ///
+    /// @param cond the branching predicate
+    /// @param ifTrue applied when the predicate matches
+    /// @param ifFalse applied when the predicate does not match
+    /// @return this builder
+    public Builder<T> when(final Predicate<T> cond, final UnaryOperator<T> ifTrue, final UnaryOperator<T> ifFalse) {
+      Objects.requireNonNull(cond, "condition cannot be null");
+      Objects.requireNonNull(ifTrue, "ifTrue cannot be null");
+      Objects.requireNonNull(ifFalse, "ifFalse cannot be null");
+      operators.add(value -> cond.test(value) ? ifTrue.apply(value) : ifFalse.apply(value));
       return this;
     }
 
