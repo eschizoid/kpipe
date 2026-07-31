@@ -3,7 +3,6 @@ package io.github.eschizoid.kpipe;
 import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
-import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
@@ -37,10 +36,11 @@ import java.util.function.UnaryOperator;
 /// This makes branching safe (`s.pipe(a)` and `s.pipe(b)` produce independent streams) and
 /// matches the Java Stream API's functional style.
 ///
-/// Adding a new fluent setter is a one-place change: declare the record component, mirror it on
-/// [Mut], and write the `with*` method as `mutate(m -> m.field = newValue)`. There is no
-/// constructor copy-paste — [#mutate(Consumer)] funnels every wither through a single instance
-/// of [Mut] and rebuilds via [Mut#build].
+/// Pipeline-level state (topics, format, operators, skipBytes, result observers) lives as record
+/// components here; every consumer-wide setting lives in the single [ConsumerConfig] component,
+/// whose `with*` methods below are thin delegates. Adding a new fluent setter is a one-place
+/// change: declare it on [ConsumerConfig] (or as a component + [Mut] field here if it is
+/// pipeline-level) and write the `with*` method as a `mutate(...)` / `mutateConfig(...)` lambda.
 ///
 /// @param <T> the deserialized message type
 record DefaultStream<T>(
@@ -49,19 +49,8 @@ record DefaultStream<T>(
   MessageFormat<T> format,
   Supplier<MessageSink<T>> defaultConsoleSinkFactory,
   List<UnaryOperator<T>> operators,
-  int maxRetries,
-  Duration retryBackoff,
-  Long backpressureHigh,
-  Long backpressureLow,
-  ProcessingMode processingMode,
-  int keyOrderedMaxKeys,
   int skipBytes,
-  ConsumerMetrics consumerMetrics,
-  Consumer<KPipeConsumer.ProcessingError> errorHandler,
-  String deadLetterTopic,
-  Duration pollTimeout,
-  Tracer tracer,
-  CircuitBreakerController circuitBreaker,
+  ConsumerConfig consumerConfig,
   Runnable onFilteredObserver,
   Consumer<Throwable> onFailedObserver,
   Consumer<Result<T>> peekResultObserver
@@ -95,18 +84,7 @@ record DefaultStream<T>(
       Objects.requireNonNull(defaultConsoleSinkFactory, "defaultConsoleSinkFactory cannot be null"),
       List.of(),
       0,
-      Duration.ofMillis(500),
-      null,
-      null,
-      ProcessingMode.PARALLEL,
-      ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS,
-      0,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
+      ConsumerConfig.defaults(),
       null,
       null,
       null
@@ -151,9 +129,9 @@ record DefaultStream<T>(
   public Stream<T> withRetry(final int maxRetries, final Duration backoff) {
     if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative");
     Objects.requireNonNull(backoff, "backoff cannot be null");
-    return mutate(m -> {
-      m.maxRetries = maxRetries;
-      m.retryBackoff = backoff;
+    return mutateConfig(c -> {
+      c.maxRetries = maxRetries;
+      c.retryBackoff = backoff;
     });
   }
 
@@ -170,29 +148,31 @@ record DefaultStream<T>(
     if (low < 0 || low >= high) throw new IllegalArgumentException(
       "withBackpressure requires high > low > 0 (got high=%d, low=%d)".formatted(high, low)
     );
-    return mutate(m -> {
-      m.backpressureHigh = high;
-      m.backpressureLow = low;
+    return mutateConfig(c -> {
+      c.backpressureHigh = high;
+      c.backpressureLow = low;
     });
   }
 
   @Override
   public Stream<T> withProcessingMode(final ProcessingMode mode) {
     Objects.requireNonNull(mode, "mode cannot be null");
-    return mutate(m -> m.processingMode = mode);
+    return mutateConfig(c -> c.processingMode = mode);
   }
 
   @Override
   public Stream<T> withKeyOrderedMaxKeys(final int maxKeys) {
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
-    return mutate(m -> m.keyOrderedMaxKeys = maxKeys);
+    return mutateConfig(c -> c.keyOrderedMaxKeys = maxKeys);
   }
 
   @Override
   public Stream<T> skipBytes(final int n) {
     if (n < 0) throw new IllegalArgumentException("n cannot be negative");
     if (n > 0 && format.isSchemaRegistryBacked()) throw new IllegalArgumentException(
-      "skipBytes(" + n + ") cannot be combined with a Schema-Registry-backed format: the format " +
+      "skipBytes(" +
+        n +
+        ") cannot be combined with a Schema-Registry-backed format: the format " +
         "reads the Confluent wire envelope itself, and stripping bytes first would corrupt every " +
         "record. Drop the skipBytes(...) call."
     );
@@ -203,7 +183,9 @@ record DefaultStream<T>(
   public Stream<T> withSchemaRegistry(final SchemaResolver resolver) {
     Objects.requireNonNull(resolver, "resolver cannot be null");
     if (skipBytes > 0) throw new IllegalArgumentException(
-      "withSchemaRegistry(...) cannot be combined with skipBytes(" + skipBytes + "): the " +
+      "withSchemaRegistry(...) cannot be combined with skipBytes(" +
+        skipBytes +
+        "): the " +
         "registry-backed format reads the Confluent wire envelope itself, and stripping bytes " +
         "first would corrupt every record. Drop the skipBytes(...) call."
     );
@@ -228,31 +210,31 @@ record DefaultStream<T>(
   @Override
   public Stream<T> withMetrics(final ConsumerMetrics metrics) {
     Objects.requireNonNull(metrics, "metrics cannot be null");
-    return mutate(m -> m.consumerMetrics = metrics);
+    return mutateConfig(c -> c.consumerMetrics = metrics);
   }
 
   @Override
   public Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler) {
     Objects.requireNonNull(handler, "handler cannot be null");
-    return mutate(m -> m.errorHandler = handler);
+    return mutateConfig(c -> c.errorHandler = handler);
   }
 
   @Override
   public Stream<T> withDeadLetterTopic(final String dlqTopic) {
     if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException("dlqTopic cannot be null or blank");
-    return mutate(m -> m.deadLetterTopic = dlqTopic);
+    return mutateConfig(c -> c.deadLetterTopic = dlqTopic);
   }
 
   @Override
   public Stream<T> withPollTimeout(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
-    return mutate(m -> m.pollTimeout = timeout);
+    return mutateConfig(c -> c.pollTimeout = timeout);
   }
 
   @Override
   public Stream<T> withTracer(final Tracer tracer) {
     Objects.requireNonNull(tracer, "tracer cannot be null");
-    return mutate(m -> m.tracer = tracer);
+    return mutateConfig(c -> c.tracer = tracer);
   }
 
   @Override
@@ -267,7 +249,7 @@ record DefaultStream<T>(
   @Override
   public Stream<T> withCircuitBreaker(final CircuitBreakerController controller) {
     Objects.requireNonNull(controller, "controller cannot be null");
-    return mutate(m -> m.circuitBreaker = controller);
+    return mutateConfig(c -> c.circuitBreaker = controller);
   }
 
   @Override
@@ -322,27 +304,10 @@ record DefaultStream<T>(
     });
   }
 
-  /// Applies every consumer-level setting that both [DefaultSink] and [DefaultBatchSink] share onto
-  /// `builder`: retry, backpressure, metrics, error handler, dead-letter topic, poll timeout,
-  /// tracer, and circuit breaker. All are consumer-wide, so wiring them from one place keeps the
-  /// two sink types from drifting — the batch path previously skipped tracer and circuit breaker,
-  /// silently dropping both when set on a `toBatch(...)` stream.
-  void applyCommonConsumerConfig(final KPipeConsumerBuilder builder) {
-    if (maxRetries > 0) builder.withRetry(maxRetries, retryBackoff);
-    if (backpressureHigh != null) builder.withBackpressure(backpressureHigh, backpressureLow);
-    if (consumerMetrics != null) builder.withMetrics(consumerMetrics);
-    if (errorHandler != null) builder.withErrorHandler(errorHandler::accept);
-    if (deadLetterTopic != null) builder.withDeadLetterTopic(deadLetterTopic);
-    if (pollTimeout != null) builder.withPollTimeout(pollTimeout);
-    if (tracer != null) builder.withTracer(tracer);
-    if (circuitBreaker != null) builder.withCircuitBreaker(circuitBreaker);
-  }
-
   /// Wraps `base` with dispatch to the configured result observers (`onFiltered` / `onFailed` /
-  /// `peekResult`), or returns `base` unchanged when none is set. Lives here — next to
-  /// [#applyCommonConsumerConfig], and for the same reason — so both [DefaultSink] and
-  /// [DefaultBatchSink] share one wiring site: the batch path previously had no observer dispatch
-  /// at all, silently dropping observers set on a `toBatch(...)` stream.
+  /// `peekResult`), or returns `base` unchanged when none is set. Lives here so both
+  /// [DefaultSink] and [DefaultBatchSink] share one wiring site: the batch path previously had
+  /// no observer dispatch at all, silently dropping observers set on a `toBatch(...)` stream.
   ///
   /// Observers fire on the PIPELINE outcome at `process()` time — for the batch path that is
   /// before the record is buffered; batch-sink failures are a separate concern routed through the
@@ -404,12 +369,18 @@ record DefaultStream<T>(
   }
 
   /// Single funnel for every wither: snapshot this record into a [Mut], let the caller change
-  /// what they need, rebuild a new record. Replaces 13 hand-rolled 15-arg constructor calls with
-  /// one. New fields slot in at one site (the Mut declaration + its `from`/`build`).
+  /// what they need, rebuild a new record. New pipeline-level fields slot in at one site (the
+  /// Mut declaration + its `from`/`build`); consumer-wide fields go through [#mutateConfig].
   private DefaultStream<T> mutate(final Consumer<Mut<T>> change) {
     final var m = Mut.from(this);
     change.accept(m);
     return m.build();
+  }
+
+  /// Funnel for the consumer-wide withers: rebuilds this stream around an updated
+  /// [ConsumerConfig], preserving the immutability contract (a new stream per call).
+  private DefaultStream<T> mutateConfig(final Consumer<ConsumerConfig.Mut> change) {
+    return mutate(m -> m.consumerConfig = consumerConfig.with(change));
   }
 
   /// Mutable mirror of [DefaultStream]'s components used only inside [#mutate]. Each public
@@ -422,19 +393,8 @@ record DefaultStream<T>(
     MessageFormat<T> format;
     Supplier<MessageSink<T>> defaultConsoleSinkFactory;
     List<UnaryOperator<T>> operators;
-    int maxRetries;
-    Duration retryBackoff;
-    Long backpressureHigh;
-    Long backpressureLow;
-    ProcessingMode processingMode;
-    int keyOrderedMaxKeys;
     int skipBytes;
-    ConsumerMetrics consumerMetrics;
-    Consumer<KPipeConsumer.ProcessingError> errorHandler;
-    String deadLetterTopic;
-    Duration pollTimeout;
-    Tracer tracer;
-    CircuitBreakerController circuitBreaker;
+    ConsumerConfig consumerConfig;
     Runnable onFilteredObserver;
     Consumer<Throwable> onFailedObserver;
     Consumer<Result<T>> peekResultObserver;
@@ -446,19 +406,8 @@ record DefaultStream<T>(
       m.format = s.format;
       m.defaultConsoleSinkFactory = s.defaultConsoleSinkFactory;
       m.operators = s.operators;
-      m.maxRetries = s.maxRetries;
-      m.retryBackoff = s.retryBackoff;
-      m.backpressureHigh = s.backpressureHigh;
-      m.backpressureLow = s.backpressureLow;
-      m.processingMode = s.processingMode;
-      m.keyOrderedMaxKeys = s.keyOrderedMaxKeys;
       m.skipBytes = s.skipBytes;
-      m.consumerMetrics = s.consumerMetrics;
-      m.errorHandler = s.errorHandler;
-      m.deadLetterTopic = s.deadLetterTopic;
-      m.pollTimeout = s.pollTimeout;
-      m.tracer = s.tracer;
-      m.circuitBreaker = s.circuitBreaker;
+      m.consumerConfig = s.consumerConfig;
       m.onFilteredObserver = s.onFilteredObserver;
       m.onFailedObserver = s.onFailedObserver;
       m.peekResultObserver = s.peekResultObserver;
@@ -472,19 +421,8 @@ record DefaultStream<T>(
         format,
         defaultConsoleSinkFactory,
         operators,
-        maxRetries,
-        retryBackoff,
-        backpressureHigh,
-        backpressureLow,
-        processingMode,
-        keyOrderedMaxKeys,
         skipBytes,
-        consumerMetrics,
-        errorHandler,
-        deadLetterTopic,
-        pollTimeout,
-        tracer,
-        circuitBreaker,
+        consumerConfig,
         onFilteredObserver,
         onFailedObserver,
         peekResultObserver

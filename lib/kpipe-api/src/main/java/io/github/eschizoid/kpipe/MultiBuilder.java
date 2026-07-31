@@ -50,18 +50,7 @@ public final class MultiBuilder {
 
   private final Properties kafkaProps;
   private final Map<String, Sink<?>> routes = new LinkedHashMap<>();
-  private ConsumerMetrics consumerMetrics;
-  private Tracer tracer;
-  private CircuitBreakerController circuitBreaker;
-  private ProcessingMode processingMode = ProcessingMode.PARALLEL;
-  private Integer keyOrderedMaxKeys;
-  private Integer maxRetries;
-  private Duration retryBackoff;
-  private Long backpressureHigh;
-  private Long backpressureLow;
-  private Consumer<KPipeConsumer.ProcessingError> errorHandler;
-  private String deadLetterTopic;
-  private Duration pollTimeout;
+  private ConsumerConfig consumerConfig = ConsumerConfig.defaults();
 
   MultiBuilder(final Properties kafkaProps) {
     this.kafkaProps = (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone();
@@ -75,7 +64,8 @@ public final class MultiBuilder {
   ///     from `kpipe-metrics-otel`)
   /// @return this builder
   public MultiBuilder withMetrics(final ConsumerMetrics metrics) {
-    this.consumerMetrics = Objects.requireNonNull(metrics, "metrics cannot be null");
+    Objects.requireNonNull(metrics, "metrics cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.consumerMetrics = metrics);
     return this;
   }
 
@@ -86,7 +76,8 @@ public final class MultiBuilder {
   ///     `kpipe-tracing-otel`); pass `Tracer.noop()` to disable explicitly
   /// @return this builder
   public MultiBuilder withTracer(final Tracer tracer) {
-    this.tracer = Objects.requireNonNull(tracer, "tracer cannot be null");
+    Objects.requireNonNull(tracer, "tracer cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.tracer = tracer);
     return this;
   }
 
@@ -97,7 +88,8 @@ public final class MultiBuilder {
   /// @param controller the breaker policy (must not be null)
   /// @return this builder
   public MultiBuilder withCircuitBreaker(final CircuitBreakerController controller) {
-    this.circuitBreaker = Objects.requireNonNull(controller, "controller cannot be null");
+    Objects.requireNonNull(controller, "controller cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.circuitBreaker = controller);
     return this;
   }
 
@@ -110,7 +102,8 @@ public final class MultiBuilder {
   /// @param mode the processing mode (must not be null)
   /// @return this builder
   public MultiBuilder withProcessingMode(final ProcessingMode mode) {
-    this.processingMode = Objects.requireNonNull(mode, "mode cannot be null");
+    Objects.requireNonNull(mode, "mode cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.processingMode = mode);
     return this;
   }
 
@@ -121,7 +114,7 @@ public final class MultiBuilder {
   /// @return this builder
   public MultiBuilder withKeyOrderedMaxKeys(final int maxKeys) {
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
-    this.keyOrderedMaxKeys = maxKeys;
+    consumerConfig = consumerConfig.with(c -> c.keyOrderedMaxKeys = maxKeys);
     return this;
   }
 
@@ -134,8 +127,11 @@ public final class MultiBuilder {
   /// @return this builder
   public MultiBuilder withRetry(final int maxRetries, final Duration backoff) {
     if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative, got " + maxRetries);
-    this.maxRetries = maxRetries;
-    this.retryBackoff = Objects.requireNonNull(backoff, "backoff cannot be null");
+    Objects.requireNonNull(backoff, "backoff cannot be null");
+    consumerConfig = consumerConfig.with(c -> {
+      c.maxRetries = maxRetries;
+      c.retryBackoff = backoff;
+    });
     return this;
   }
 
@@ -162,8 +158,10 @@ public final class MultiBuilder {
     if (low < 0 || low >= high) throw new IllegalArgumentException(
       "withBackpressure requires high > low > 0 (got high=%d, low=%d)".formatted(high, low)
     );
-    this.backpressureHigh = high;
-    this.backpressureLow = low;
+    consumerConfig = consumerConfig.with(c -> {
+      c.backpressureHigh = high;
+      c.backpressureLow = low;
+    });
     return this;
   }
 
@@ -173,7 +171,8 @@ public final class MultiBuilder {
   /// @param handler the error callback (must be non-null)
   /// @return this builder
   public MultiBuilder withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler) {
-    this.errorHandler = Objects.requireNonNull(handler, "handler cannot be null");
+    Objects.requireNonNull(handler, "handler cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.errorHandler = handler);
     return this;
   }
 
@@ -186,7 +185,7 @@ public final class MultiBuilder {
     if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException(
       "dlqTopic cannot be null or blank, got '" + dlqTopic + "'"
     );
-    this.deadLetterTopic = dlqTopic;
+    consumerConfig = consumerConfig.with(c -> c.deadLetterTopic = dlqTopic);
     return this;
   }
 
@@ -196,7 +195,8 @@ public final class MultiBuilder {
   /// @param timeout the poll timeout (must be non-null)
   /// @return this builder
   public MultiBuilder withPollTimeout(final Duration timeout) {
-    this.pollTimeout = Objects.requireNonNull(timeout, "timeout cannot be null");
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.pollTimeout = timeout);
     return this;
   }
 
@@ -363,16 +363,7 @@ public final class MultiBuilder {
     }
 
     if (!nonBatchPipelines.isEmpty()) consumerBuilder.withPipelines(nonBatchPipelines);
-    consumerBuilder.withProcessingMode(processingMode);
-    if (keyOrderedMaxKeys != null) consumerBuilder.withKeyOrderedMaxKeys(keyOrderedMaxKeys);
-    if (consumerMetrics != null) consumerBuilder.withMetrics(consumerMetrics);
-    if (tracer != null) consumerBuilder.withTracer(tracer);
-    if (circuitBreaker != null) consumerBuilder.withCircuitBreaker(circuitBreaker);
-    if (maxRetries != null && maxRetries > 0) consumerBuilder.withRetry(maxRetries, retryBackoff);
-    if (backpressureHigh != null) consumerBuilder.withBackpressure(backpressureHigh, backpressureLow);
-    if (errorHandler != null) consumerBuilder.withErrorHandler(errorHandler::accept);
-    if (deadLetterTopic != null) consumerBuilder.withDeadLetterTopic(deadLetterTopic);
-    if (pollTimeout != null) consumerBuilder.withPollTimeout(pollTimeout);
+    consumerConfig.applyTo(consumerBuilder);
     return DefaultHandle.startAndWrap(consumerBuilder.build());
   }
 
@@ -384,58 +375,20 @@ public final class MultiBuilder {
   ///
   /// Routes are expected to be terminal sinks built via `toCustom(...)` / `toBatch(...)` /
   /// `toConsole()` etc.; unknown sink shapes are passed through (no false-positives).
+  ///
+  /// Iterates [ConsumerConfig#CONSUMER_WIDE_SETTINGS] rather than one hand-written check per
+  /// setting — registering a setting on the descriptor list is what makes this guard cover it.
   private static void rejectPerRouteConsumerWideSettings(final String topic, final Sink<?> sink) {
     final DefaultStream<?> stream;
     if (sink instanceof DefaultSink<?> ds) stream = ds.stream();
     else if (sink instanceof DefaultBatchSink<?> dbs) stream = dbs.stream();
     else return;
-    if (stream.processingMode() != ProcessingMode.PARALLEL) throw new IllegalArgumentException(
-      "Route '%s' sets withProcessingMode(%s) on its Stream, but processing mode is a consumer-wide setting. ".formatted(
-          topic,
-          stream.processingMode()
-        ) +
-        "Move the call to MultiBuilder.withProcessingMode(...) instead."
-    );
-    if (stream.keyOrderedMaxKeys() != ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS) throw new IllegalArgumentException(
-      "Route '%s' sets withKeyOrderedMaxKeys(%d) on its Stream, but the key-ordered key cap is a consumer-wide setting. ".formatted(
-          topic,
-          stream.keyOrderedMaxKeys()
-        ) +
-        "Move the call to MultiBuilder.withKeyOrderedMaxKeys(...) instead."
-    );
-    if (stream.consumerMetrics() != null) throw new IllegalArgumentException(
-      perRouteRejection(topic, "withMetrics", "MultiBuilder.withMetrics(...)")
-    );
-    if (stream.tracer() != null) throw new IllegalArgumentException(
-      perRouteRejection(topic, "withTracer", "MultiBuilder.withTracer(...)")
-    );
-    if (stream.circuitBreaker() != null) throw new IllegalArgumentException(
-      perRouteRejection(topic, "withCircuitBreaker", "MultiBuilder.withCircuitBreaker(...)")
-    );
-    if (stream.maxRetries() > 0) throw new IllegalArgumentException(
-      perRouteRejection(topic, "withRetry", "MultiBuilder.withRetry(...)")
-    );
-    if (stream.backpressureHigh() != null) throw new IllegalArgumentException(
-      perRouteRejection(topic, "withBackpressure", "MultiBuilder.withBackpressure(...)")
-    );
-    if (stream.deadLetterTopic() != null) throw new IllegalArgumentException(
-      perRouteRejection(topic, "withDeadLetterTopic", "MultiBuilder.withDeadLetterTopic(...)")
-    );
-    if (stream.errorHandler() != null) throw new IllegalArgumentException(
-      perRouteRejection(topic, "withErrorHandler", "MultiBuilder.withErrorHandler(...)")
-    );
-    if (stream.pollTimeout() != null) throw new IllegalArgumentException(
-      perRouteRejection(topic, "withPollTimeout", "MultiBuilder.withPollTimeout(...)")
-    );
-  }
-
-  /// Builds the rejection message for a per-route setting that already has a symmetric
-  /// `MultiBuilder.with*` setter — point the user at it.
-  private static String perRouteRejection(final String topic, final String setting, final String mirror) {
-    return (
-      "Route '%s' sets %s on its Stream, but %s is a consumer-wide setting; ".formatted(topic, setting, setting) +
-      "set it on %s instead.".formatted(mirror)
-    );
+    final var routeConfig = stream.consumerConfig();
+    for (final var setting : ConsumerConfig.CONSUMER_WIDE_SETTINGS) {
+      if (setting.isSet().test(routeConfig)) throw new IllegalArgumentException(
+        setting.rejection().apply(topic, routeConfig)
+      );
+    }
   }
 
   /// Type witness: pulls the typed pipeline + sink off the route, then calls the typed builder
