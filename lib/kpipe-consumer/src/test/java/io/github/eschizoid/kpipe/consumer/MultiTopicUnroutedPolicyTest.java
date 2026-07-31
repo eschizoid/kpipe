@@ -183,8 +183,9 @@ class MultiTopicUnroutedPolicyTest {
     end.put(unroutedTp, 1L);
     mock.updateEndOffsets(end);
 
-    // Capture WARNING logs emitted by KPipeConsumer (System.Logger → JUL by default).
-    final var julLogger = Logger.getLogger(KPipeConsumer.class.getName());
+    // Capture WARNING logs emitted by the per-record engine (System.Logger → JUL by default);
+    // the unrouted-topic drop is logged by RecordProcessor, where the routing decision lives.
+    final var julLogger = Logger.getLogger(RecordProcessor.class.getName());
     final var captured = new CopyOnWriteArrayList<LogRecord>();
     final var handler = new Handler() {
       @Override
