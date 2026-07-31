@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe;
 
+import io.github.eschizoid.kpipe.consumer.HealthSnapshot;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import java.time.Duration;
 import java.util.List;
@@ -16,7 +17,15 @@ record DefaultHandle(KPipeConsumer consumer) implements Handle {
 
   @Override
   public boolean isHealthy() {
-    return consumer.isRunning();
+    // Delegates to the snapshot's definition: running AND breaker not OPEN. `isRunning()` alone
+    // reads true while a tripped circuit breaker has the consumer PAUSED — the one incident a
+    // liveness probe must see.
+    return consumer.health().healthy();
+  }
+
+  @Override
+  public HealthSnapshot health() {
+    return consumer.health();
   }
 
   @Override

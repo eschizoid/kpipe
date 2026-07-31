@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.consumer.config.AppConfig;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
@@ -8,8 +7,6 @@ import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.producer.tracing.Tracer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.Result;
-import io.github.eschizoid.kpipe.sink.BatchPolicy;
-import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.channels.ClosedByInterruptException;
@@ -20,14 +17,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
-import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
 /// A functional-style Kafka consumer that processes records using a provided function.
 ///
@@ -128,7 +122,8 @@ public class KPipeConsumer implements AutoCloseable {
   /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. The
   /// underlying decision modules ([BackpressureController], [CircuitBreakerController]) remain
   /// public + testable on their own; this controller owns the side-effect choreography and
-  /// dispatches pause transitions through a PauseLifecycleHook that points back at `internalPause` /
+  /// dispatches pause transitions through a PauseLifecycleHook that points back at `internalPause`
+  // /
   /// `internalResume`, and metric events through a HealthMetricsObserver bound to the counters.
   private final ConsumerHealthController health;
 
@@ -177,7 +172,6 @@ public class KPipeConsumer implements AutoCloseable {
   public static KPipeConsumerBuilder builder() {
     return new KPipeConsumerBuilder();
   }
-
 
   /// Creates a new KPipeConsumer using the provided builder.
   ///
@@ -454,9 +448,11 @@ public class KPipeConsumer implements AutoCloseable {
         otelMetrics.recordProcessingError(record.topic());
         health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
-        // LOCKSTEP: mirror of the per-record path's DLQ-or-mark block in handleProcessingError —
+        // LOCKSTEP: mirror of the per-record path's DLQ-or-mark block in handleProcessingError
+        // —
         // mark the offset only after a successful DLQ send; a failed send leaves it pending so
-        // the record is reprocessed, never dropped. Deliberately duplicated (the paths differ on
+        // the record is reprocessed, never dropped. Deliberately duplicated (the paths differ
+        // on
         // span handling, retry counts, and circuit-breaker ordering — recordOutcome runs BEFORE
         // this block here, AFTER it on the per-record path). Any change here must be mirrored
         // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
@@ -874,6 +870,17 @@ public class KPipeConsumer implements AutoCloseable {
   public boolean isRunning() {
     final var s = state.get();
     return s == ConsumerState.RUNNING || s == ConsumerState.PAUSED;
+  }
+
+  /// Point-in-time health snapshot: running/paused state, active pause sources, circuit-breaker
+  /// state, and in-flight count. This is the source of truth for liveness probes — see
+  /// [HealthSnapshot#healthy()] for why `isRunning()` alone is the wrong probe signal (a
+  /// breaker-tripped consumer is alive but deliberately not consuming).
+  ///
+  /// @return an immutable snapshot of this consumer's health
+  public HealthSnapshot health() {
+    final var sources = health.currentSources().stream().map(Enum::name).collect(Collectors.toUnmodifiableSet());
+    return new HealthSnapshot(isRunning(), health.isPaused(), sources, health.circuitBreakerState(), totalInFlight());
   }
 
   /// Atomically transitions from any active state (RUNNING or PAUSED) to CLOSING.

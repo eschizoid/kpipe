@@ -79,6 +79,16 @@ class KPipeCircuitBreakerIntegrationTest {
       "exactly one trip should have been recorded"
     );
 
+    // The health snapshot must tell the truth during the incident: the consumer thread is
+    // alive (running) but the breaker is OPEN, so healthy() is false. isRunning() alone reads
+    // true here - the exact false-positive a liveness probe must not serve.
+    final var snapshot = consumer.health();
+    assertTrue(snapshot.running(), "consumer thread is alive while the breaker is open");
+    assertTrue(snapshot.paused(), "breaker pause must be visible in the snapshot");
+    assertEquals(CircuitBreakerState.OPEN, snapshot.circuitBreaker(), "snapshot must expose the OPEN breaker");
+    assertTrue(snapshot.pauseSources().contains("CIRCUIT_BREAKER"), "pause source must name the breaker");
+    assertTrue(!snapshot.healthy(), "an OPEN breaker must make the consumer unhealthy");
+
     consumer.close();
   }
 
