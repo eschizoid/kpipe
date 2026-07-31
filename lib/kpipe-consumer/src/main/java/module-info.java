@@ -4,6 +4,7 @@
 /// `kpipe-format-json`, `kpipe-format-avro`, `kpipe-format-protobuf`.
 module io.github.eschizoid.kpipe.consumer {
   requires transitive io.github.eschizoid.kpipe.core;
+  requires transitive io.github.eschizoid.kpipe.metrics;
   requires transitive io.github.eschizoid.kpipe.producer;
   requires jdk.httpserver;
   requires transitive kafka.clients;
