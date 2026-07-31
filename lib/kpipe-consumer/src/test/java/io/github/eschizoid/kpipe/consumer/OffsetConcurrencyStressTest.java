@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -48,7 +47,7 @@ class OffsetConcurrencyStressTest {
   }
 
   private KafkaOffsetManager newManager(final Consumer<byte[], byte[]> consumer) {
-    return KafkaOffsetManager.builder(consumer).withCommandQueue(new LinkedBlockingQueue<>()).build();
+    return KafkaOffsetManager.builder(consumer).withCommitExecutor(TestCommitExecutors.unwired()).build();
   }
 
   private static ConsumerRecord<byte[], byte[]> record(final int partition, final long offset) {

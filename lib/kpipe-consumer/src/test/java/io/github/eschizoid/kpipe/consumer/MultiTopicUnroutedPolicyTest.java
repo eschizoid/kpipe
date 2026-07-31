@@ -114,11 +114,6 @@ class MultiTopicUnroutedPolicyTest {
     }
 
     @Override
-    public void notifyCommitComplete(final String commitId, final boolean success) {
-      delegate.notifyCommitComplete(commitId, success);
-    }
-
-    @Override
     public ConsumerRebalanceListener createRebalanceListener() {
       return delegate.createRebalanceListener();
     }
@@ -270,7 +265,9 @@ class MultiTopicUnroutedPolicyTest {
     final Queue<ConsumerCommand> queue,
     final Map<String, AtomicInteger> markCounts
   ) {
-    final var real = KafkaOffsetManager.builder(consumer).withCommandQueue(queue).build();
+    final var real = KafkaOffsetManager.builder(consumer)
+      .withCommitExecutor(TestCommitExecutors.toQueue(queue))
+      .build();
     return new RecordingOffsetManager(real, markCounts);
   }
 

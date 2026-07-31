@@ -81,7 +81,7 @@ final var consumer = KPipeConsumer.builder()
 ```
 
 `OffsetManager` is a thin SPI — the load-bearing methods are `trackOffset` (a record entered the pipeline),
-`markOffsetProcessed` (it finished), `notifyCommitComplete` (a queued commit landed), and `close`, plus the `start` /
+`markOffsetProcessed` (it finished), and `close`, plus the `start` /
 `stop` / `isRunning` / `getState` / `getStatistics` lifecycle-and-introspection surface and the default
 `createRebalanceListener()`. The consumer threads call into it concurrently; implementations must be thread-safe.
 
@@ -125,18 +125,17 @@ final class FlushingOffsetManager implements OffsetManager {
 }
 
 // Wire it up with the Provider form so the Kafka consumer is available when the manager is built.
-// Share a single command queue with the consumer — KafkaOffsetManager.Builder requires it, and the
-// consumer needs to drain the same queue to actually run the commits the manager enqueues.
-final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-
-final var consumer = KPipeConsumer.builder()
+// KafkaOffsetManager.Builder requires a CommitExecutor — the seam that runs its periodic commits on
+// the consumer thread. Grab the one bound to this builder via getCommitExecutor().
+final var builder = KPipeConsumer.builder()
   .withProperties(kafkaProps)
   .withTopic("orders")
-  .withPipeline(pipeline)
-  .withCommandQueue(commandQueue)
+  .withPipeline(pipeline);
+
+final var consumer = builder
   .withOffsetManagerProvider((kafkaConsumer) ->
     new FlushingOffsetManager(
-      KafkaOffsetManager.builder(kafkaConsumer).withCommandQueue(commandQueue).build(),
+      KafkaOffsetManager.builder(kafkaConsumer).withCommitExecutor(builder.getCommitExecutor()).build(),
       externalBuffer
     )
   )

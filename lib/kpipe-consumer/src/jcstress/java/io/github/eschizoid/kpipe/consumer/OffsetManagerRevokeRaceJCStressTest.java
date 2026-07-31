@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe.consumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.util.List;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -59,8 +59,9 @@ public class OffsetManagerRevokeRaceJCStressTest {
 
   public OffsetManagerRevokeRaceJCStressTest() {
     final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
-    final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
-    manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
+    manager = KafkaOffsetManager.builder(consumer)
+      .withCommitExecutor(offsets -> new CompletableFuture<>())
+      .build();
     manager.start();
     rebalanceListener = manager.createRebalanceListener();
     // Offset 100 starts pending on the partition: the offset the revoke will race against.

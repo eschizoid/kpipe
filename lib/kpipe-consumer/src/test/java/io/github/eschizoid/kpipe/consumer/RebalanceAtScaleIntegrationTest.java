@@ -377,7 +377,7 @@ class RebalanceAtScaleIntegrationTest {
     if (revokeThreads != null) {
       builder.withOffsetManagerProvider(consumer ->
         new RevokeCapturingOffsetManager(
-          KafkaOffsetManager.builder(consumer).withCommandQueue(builder.getCommandQueue()).build(),
+          KafkaOffsetManager.builder(consumer).withCommitExecutor(builder.getCommitExecutor()).build(),
           revokeThreads
         )
       );
@@ -435,11 +435,6 @@ class RebalanceAtScaleIntegrationTest {
     @Override
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       delegate.markOffsetProcessed(record);
-    }
-
-    @Override
-    public void notifyCommitComplete(final String commitId, final boolean success) {
-      delegate.notifyCommitComplete(commitId, success);
     }
 
     @Override

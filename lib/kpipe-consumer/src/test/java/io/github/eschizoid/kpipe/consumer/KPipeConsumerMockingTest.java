@@ -684,7 +684,9 @@ class KPipeConsumerMockingTest {
     };
 
     // Use a real offset manager to test rebalance interaction
-    final var realOffsetManager = KafkaOffsetManager.builder(mockConsumer).withCommandQueue(commandQueue).build();
+    final var realOffsetManager = KafkaOffsetManager.builder(mockConsumer)
+      .withCommitExecutor(TestCommitExecutors.toQueue(commandQueue))
+      .build();
 
     final var functionalConsumer = new TestableKPipeConsumer(
       properties,
@@ -1059,20 +1061,18 @@ class KPipeConsumerMockingTest {
 
     // Create an offset map to commit
     final var offsets = new HashMap<TopicPartition, OffsetAndMetadata>();
-    final var commitId = "test-commit-id";
     offsets.put(new TopicPartition(TOPIC, PARTITION), new OffsetAndMetadata(123));
 
-    // Send commit command
-    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, commitId));
+    // Send commit command; the supplier is invoked on the consumer thread at execution time
+    final var outcome = new CompletableFuture<Boolean>();
+    commandQueue.offer(new ConsumerCommand.CommitOffsets(() -> offsets, outcome));
 
     // Process commands
     functionalConsumer.processCommands();
 
-    // Verify the commit was performed
+    // Verify the commit was performed and the outcome future resolved successfully
     verify(mockConsumer).commitSync(offsets);
-
-    // Verify notification of commit completion
-    verify(offsetManager).notifyCommitComplete(commitId, true);
+    assertEquals(Boolean.TRUE, outcome.getNow(null), "outcome must complete true on commit success");
   }
 
   @Test
@@ -1098,17 +1098,17 @@ class KPipeConsumerMockingTest {
 
     // Create an offset map to commit
     final var offsets = new HashMap<TopicPartition, OffsetAndMetadata>();
-    final var commitId = "test-commit-id";
     offsets.put(new TopicPartition(TOPIC, PARTITION), new OffsetAndMetadata(123));
 
     // Send commit command
-    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsets, commitId));
+    final var outcome = new CompletableFuture<Boolean>();
+    commandQueue.offer(new ConsumerCommand.CommitOffsets(() -> offsets, outcome));
 
     // Process commands
     functionalConsumer.processCommands();
 
-    // Verify notification of commit failure
-    verify(offsetManager).notifyCommitComplete(commitId, false);
+    // Verify the outcome future reports commit failure
+    assertEquals(Boolean.FALSE, outcome.getNow(null), "outcome must complete false on commit failure");
   }
 
   @Test

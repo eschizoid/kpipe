@@ -360,7 +360,7 @@ class DispatcherIntegrationTest {
 
     final var managerRef = new AtomicReference<KafkaOffsetManager>();
     builder.withOffsetManagerProvider(c -> {
-      final var mgr = KafkaOffsetManager.builder(c).withCommandQueue(builder.getCommandQueue()).build();
+      final var mgr = KafkaOffsetManager.builder(c).withCommitExecutor(builder.getCommitExecutor()).build();
       managerRef.set(mgr);
       return mgr;
     });
@@ -384,21 +384,14 @@ class DispatcherIntegrationTest {
             .stream()
             .allMatch(tp -> {
               final var st = manager.getPartitionState(tp);
-              return (
-                st.pendingCount() == 0 &&
-                st.highestProcessedOffset() == recordsPerPartition - 1
-              );
+              return (st.pendingCount() == 0 && st.highestProcessedOffset() == recordsPerPartition - 1);
             }),
         5_000
       );
 
       for (final var tp : topicPartitions) {
         final var state = manager.getPartitionState(tp);
-        assertEquals(
-          0,
-          state.pendingCount(),
-          () -> "mode " + mode + " left pending offsets on " + tp + ": " + state
-        );
+        assertEquals(0, state.pendingCount(), () -> "mode " + mode + " left pending offsets on " + tp + ": " + state);
         assertEquals(
           (recordsPerPartition - 1),
           state.highestProcessedOffset(),

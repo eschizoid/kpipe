@@ -290,9 +290,6 @@ public final class CrashRestartHarness<T> {
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {}
 
     @Override
-    public void notifyCommitComplete(final String commitId, final boolean success) {}
-
-    @Override
     public OffsetState getState() {
       return OffsetState.RUNNING;
     }

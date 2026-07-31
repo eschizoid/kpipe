@@ -101,9 +101,6 @@ class KPipeConsumerTest {
     }
 
     @Override
-    public void notifyCommitComplete(final String commitId, final boolean success) {}
-
-    @Override
     public OffsetState getState() {
       return OffsetState.CREATED;
     }

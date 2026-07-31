@@ -5,8 +5,8 @@ import static java.lang.System.Logger.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -36,8 +36,10 @@ import org.apache.kafka.common.TopicPartition;
 /// Example usage:
 ///
 /// ```java
-/// // Create offset manager with default settings
-/// final var offsetManager = KafkaOffsetManager.builder(consumer).build();
+/// // Create offset manager wired to the consumer builder's commit executor
+/// final var offsetManager = KafkaOffsetManager.builder(consumer)
+///     .withCommitExecutor(consumerBuilder.getCommitExecutor())
+///     .build();
 /// offsetManager.start();
 ///
 /// // Track and process records
@@ -58,25 +60,16 @@ public class KafkaOffsetManager implements OffsetManager {
   private final Consumer<byte[], byte[]> kafkaConsumer;
   private final AtomicReference<OffsetState> state = new AtomicReference<>(OffsetState.CREATED);
 
-  /// Shared command queue between `KPipeConsumer` and this manager.
-  ///
-  /// **Single-writer invariant.** All writes to this queue happen from the Kafka consumer thread
-  /// — `KPipeConsumer.consumerLoop` enqueues `Pause` / `Resume` / `Close` commands, and
-  /// `performCommit` enqueues `CommitOffsets`. The rebalance callback `onPartitionsRevoked`
-  /// (which calls `drainCommandQueueForRevokedPartitions`) is invoked by `Consumer.poll(...)`
-  /// on that same consumer thread, so the poll-then-readd drain in
-  /// `drainCommandQueueForRevokedPartitions` is atomic with respect to any writer.
-  ///
-  /// If a future change introduces an off-thread `CommitOffsets` writer (async commit hook, an
-  /// ad-hoc commit from another module, etc.), the drain becomes racy: a new command landing
-  /// between the last `poll()` returning `null` and `addAll(remaining)` completing would jump
-  /// the queue and bypass revoked-partition filtering — the consumer thread would then commit
-  /// against the new owner of a revoked partition. To enforce the invariant we capture the
-  /// consumer thread on the first listener callback and assert subsequent callbacks run on the
-  /// same thread (see `assertOnConsumerThread`).
-  private final Queue<ConsumerCommand> commandQueue;
+  /// The consumer-thread seam for periodic commits. The manager decides *when* to commit; the
+  /// executor runs `commitSync` on the Kafka consumer thread and completes the returned future
+  /// with the outcome. The offsets supplier ([OffsetLedger#committableOffsets]) is invoked at
+  /// execution time on the consumer thread, so a request that was queued before a rebalance
+  /// never commits partitions the rebalance revoked — see [CommitExecutor].
+  private final CommitExecutor commitExecutor;
 
-  private final CommitCoordinator commitCoordinator = new CommitCoordinator();
+  /// Commits submitted through [#commitExecutor] whose outcome has not yet resolved — surfaced
+  /// as [OffsetStatistics#pendingCommits].
+  private final AtomicInteger pendingCommits = new AtomicInteger();
 
   /// Per-partition offset bookkeeping — the pending windows, highest-processed marks, the interned
   /// `TopicPartition` cache, and the single commit-frontier rule they feed. This manager owns
@@ -87,12 +80,6 @@ public class KafkaOffsetManager implements OffsetManager {
   private final Duration commitInterval;
   private volatile ScheduledExecutorService scheduler;
   private volatile ScheduledFuture<?> scheduledCommitTask;
-
-  /// Captured on the first rebalance callback to enforce the single-writer invariant documented
-  /// on `commandQueue`. `volatile` for visibility across the consumer thread and any test
-  /// thread that violates the invariant. Only ever written once: from `null` to the first
-  /// thread that runs `onPartitionsRevoked` / `onPartitionsAssigned`.
-  private volatile Thread consumerThread;
 
   /// Creates a new KafkaOffsetManager instance.
   ///
@@ -107,18 +94,19 @@ public class KafkaOffsetManager implements OffsetManager {
 
     private final Consumer<byte[], byte[]> kafkaConsumer;
     private Duration commitInterval = Duration.ofSeconds(30);
-    private Queue<ConsumerCommand> commandQueue;
+    private CommitExecutor commitExecutor;
 
     private Builder(final Consumer<byte[], byte[]> consumer) {
       this.kafkaConsumer = Objects.requireNonNull(consumer, "Consumer cannot be null");
     }
 
-    /// Shared command queue for the KPipeConsumer and KafkaOffsetManager.
+    /// Sets the executor that runs commits on the Kafka consumer thread. When pairing with
+    /// [KPipeConsumer], obtain it from [KPipeConsumerBuilder#getCommitExecutor()].
     ///
-    /// @param commandQueue The command queue to use
+    /// @param commitExecutor The commit executor to use
     /// @return This builder instance
-    public Builder withCommandQueue(final Queue<ConsumerCommand> commandQueue) {
-      this.commandQueue = Objects.requireNonNull(commandQueue, "Command queue cannot be null");
+    public Builder withCommitExecutor(final CommitExecutor commitExecutor) {
+      this.commitExecutor = Objects.requireNonNull(commitExecutor, "Commit executor cannot be null");
       return this;
     }
 
@@ -138,7 +126,9 @@ public class KafkaOffsetManager implements OffsetManager {
     ///
     /// @return A new KafkaOffsetManager instance
     public KafkaOffsetManager build() {
-      if (commandQueue == null) throw new IllegalStateException("withCommandQueue(...) must be called before build()");
+      if (commitExecutor == null) throw new IllegalStateException(
+        "withCommitExecutor(...) must be called before build()"
+      );
       return new KafkaOffsetManager(this);
     }
   }
@@ -146,7 +136,7 @@ public class KafkaOffsetManager implements OffsetManager {
   private KafkaOffsetManager(final Builder builder) {
     this.kafkaConsumer = builder.kafkaConsumer;
     this.commitInterval = builder.commitInterval;
-    this.commandQueue = builder.commandQueue;
+    this.commitExecutor = builder.commitExecutor;
   }
 
   /// Starts the KafkaOffsetManager and begins periodic offset commits. This method is idempotent -
@@ -176,15 +166,6 @@ public class KafkaOffsetManager implements OffsetManager {
     }
 
     return this;
-  }
-
-  /// Notifies the KafkaOffsetManager that a commit operation has completed.
-  ///
-  /// @param commitId The ID of the commit operation
-  /// @param success True if the commit was successful, false otherwise
-  @Override
-  public void notifyCommitComplete(final String commitId, final boolean success) {
-    commitCoordinator.complete(commitId, success);
   }
 
   /// Tracks an offset that is about to be processed using a ConsumerRecord.
@@ -271,25 +252,35 @@ public class KafkaOffsetManager implements OffsetManager {
 
   /// Commits offsets synchronously and waits up to `timeout` for the commit to complete.
   ///
+  /// On failure or timeout this returns `false` and leaves the ledger untouched — nothing is
+  /// discarded, so the next interval (or a later explicit call) simply retries with the then-
+  /// current frontier.
+  ///
   /// @param timeout Maximum time to wait for the commit
   /// @return true if the commit was successful
   /// @throws InterruptedException if the thread is interrupted while waiting
   public boolean commitSyncAndWait(final Duration timeout) throws InterruptedException {
     if (state.get() == OffsetState.STOPPED) return true;
+    if (ledger.committableOffsets().isEmpty()) return true;
 
-    final var offsetsToCommit = ledger.committableOffsets();
-    if (offsetsToCommit.isEmpty()) return true;
-
-    return performCommit(offsetsToCommit, timeout);
+    return performCommit(timeout);
   }
 
-  private boolean performCommit(final Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, final Duration timeout)
-    throws InterruptedException {
-    if (offsetsToCommit.isEmpty()) return true;
-
-    final var commitId = commitCoordinator.register();
-    commandQueue.offer(new ConsumerCommand.CommitOffsets(offsetsToCommit, commitId));
-    return commitCoordinator.await(commitId, timeout);
+  /// Submits a commit through the [CommitExecutor] and waits for its outcome. The executor
+  /// invokes `ledger::committableOffsets` on the consumer thread at execution time, so the
+  /// committed frontier is always current (and never includes partitions revoked between
+  /// submission and execution).
+  private boolean performCommit(final Duration timeout) throws InterruptedException {
+    pendingCommits.incrementAndGet();
+    try {
+      final var outcome = commitExecutor.commit(ledger::committableOffsets);
+      return outcome.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (final ExecutionException | TimeoutException e) {
+      LOGGER.log(Level.WARNING, "Error waiting for offset commit", e);
+      return false;
+    } finally {
+      pendingCommits.decrementAndGet();
+    }
   }
 
   /// Returns a typed snapshot of the current processing state for a partition.
@@ -308,7 +299,7 @@ public class KafkaOffsetManager implements OffsetManager {
   /// @return statistics across all partitions
   @Override
   public OffsetStatistics getStatistics() {
-    return ledger.statistics(state.get(), commitCoordinator.pendingCount());
+    return ledger.statistics(state.get(), pendingCommits.get());
   }
 
   /// Gets the current state of the KafkaOffsetManager.
@@ -348,20 +339,21 @@ public class KafkaOffsetManager implements OffsetManager {
     }
   }
 
-  /// Creates a rebalance listener that commits per-partition offsets on revoke, clears partition
-  /// state on assign/revoke, and prunes the command queue so commands targeting revoked
-  /// partitions don't fire against a stale assignment. The listener is an inline anonymous class
-  /// that closes over the manager's own state — no separate type, no parallel constructor.
+  /// Creates a rebalance listener that commits per-partition offsets on revoke and clears
+  /// partition state on assign/revoke. The listener is an inline anonymous class that closes
+  /// over the manager's own state — no separate type, no parallel constructor.
+  ///
+  /// A commit request already queued behind a [CommitExecutor] when the revoke fires needs no
+  /// pruning here: its offsets supplier reads this ledger on the consumer thread at execution
+  /// time, after this callback has already cleared the revoked partitions, so revoked-partition
+  /// entries are structurally invisible to it.
   @Override
   public ConsumerRebalanceListener createRebalanceListener() {
     return new ConsumerRebalanceListener() {
       @Override
       public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
-        assertOnConsumerThread();
         if (state.get() == OffsetState.STOPPED) return;
         LOGGER.log(Level.INFO, "Partitions revoked: %s".formatted(partitions));
-
-        drainCommandQueueForRevokedPartitions(partitions);
 
         final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
         partitions.forEach(partition ->
@@ -381,7 +373,6 @@ public class KafkaOffsetManager implements OffsetManager {
 
       @Override
       public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
-        assertOnConsumerThread();
         if (state.get() == OffsetState.STOPPED) return;
         LOGGER.log(Level.INFO, "Partitions assigned: %s".formatted(partitions));
         ledger.removePartitions(partitions);
@@ -392,65 +383,6 @@ public class KafkaOffsetManager implements OffsetManager {
         onPartitionsRevoked(partitions);
       }
     };
-  }
-
-  /// Captures the consumer thread on the first invocation and asserts subsequent invocations
-  /// run on the same thread. Enforces the single-writer invariant on `commandQueue` for
-  /// `drainCommandQueueForRevokedPartitions` — see the field Javadoc. `assert` so the check
-  /// costs nothing in production (no `-ea`); tests run with assertions enabled and will fail
-  /// loudly if a future change starts firing the listener off-thread.
-  ///
-  /// The first-touch capture is intentional: there is no clean seam for `KPipeConsumer` to
-  /// hand us its thread before `Consumer.poll(...)` first dispatches the listener, so we treat
-  /// "whoever ran first" as the source of truth and pin every subsequent caller to that thread.
-  private void assertOnConsumerThread() {
-    final var captured = consumerThread;
-    if (captured == null) {
-      consumerThread = Thread.currentThread();
-      return;
-    }
-    assert captured ==
-    Thread.currentThread() : "rebalance callback ran on %s but was previously bound to %s — commandQueue single-writer invariant violated".formatted(
-      Thread.currentThread(),
-      captured
-    );
-  }
-
-  /// Filters offset-commit commands so any references to revoked partitions are dropped before
-  /// the partitions reappear under a new owner. Non-commit commands pass through untouched.
-  /// Drains the queue by polling, transforms each command, and re-enqueues whatever remains in
-  /// order.
-  ///
-  /// **Single-writer invariant required.** The poll-then-readd sequence is *not* atomic with
-  /// respect to a concurrent `commandQueue.offer(...)`. It is safe today because every writer
-  /// is the Kafka consumer thread, and `Consumer.poll(...)` dispatches `onPartitionsRevoked`
-  /// on that same thread — see the `commandQueue` field Javadoc. Introducing an off-thread
-  /// `CommitOffsets` writer would let a new command land between the loop's last `poll()`
-  /// returning `null` and `addAll(remaining)` completing, bypassing revoked-partition
-  /// filtering. The runtime check sits in `assertOnConsumerThread`.
-  private void drainCommandQueueForRevokedPartitions(final Collection<TopicPartition> partitions) {
-    if (commandQueue == null || commandQueue.isEmpty()) return;
-
-    LOGGER.log(Level.INFO, "Draining command queue for revoked partitions");
-
-    final var remainingCommands = new ArrayList<ConsumerCommand>();
-    for (var cmd = commandQueue.poll(); cmd != null; cmd = commandQueue.poll()) {
-      switch (cmd) {
-        case ConsumerCommand.CommitOffsets commitCmd when !commitCmd.offsets().isEmpty() -> {
-          final var filteredOffsets = commitCmd
-            .offsets()
-            .entrySet()
-            .stream()
-            .filter(entry -> !partitions.contains(entry.getKey()))
-            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-          if (!filteredOffsets.isEmpty()) remainingCommands.add(commitCmd.withOffsets(filteredOffsets));
-        }
-        default -> remainingCommands.add(cmd);
-      }
-    }
-
-    commandQueue.addAll(remainingCommands);
-    LOGGER.log(Level.INFO, "Command queue drained, %s commands remaining".formatted(remainingCommands.size()));
   }
 
   /// Cleans up resources.

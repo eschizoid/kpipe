@@ -679,7 +679,8 @@ public class KPipeConsumer implements AutoCloseable {
   /// * `Pause` — `kafkaConsumer.pause(assignment)`
   /// * `Resume` — `kafkaConsumer.resume(assignment)`
   /// * `Close` — flips the consumer to `CLOSING`
-  /// * `CommitOffsets` — `kafkaConsumer.commitSync(offsets)` plus offset-manager notification
+  /// * `CommitOffsets` — invokes the command's offsets supplier (execution-time frontier, see
+  ///   [CommitExecutor]), runs `kafkaConsumer.commitSync`, completes the outcome future
   ///
   /// Offset tracking + per-record marking do NOT go through this queue — they call `OffsetManager`
   /// directly from whichever thread finishes processing (the manager is already thread-safe).
@@ -705,13 +706,19 @@ public class KPipeConsumer implements AutoCloseable {
             LOGGER.log(Level.INFO, "Consumer shutdown initiated for topics {0}", topics);
           }
           case ConsumerCommand.CommitOffsets cmd -> {
+            // The supplier reads the submitter's commit frontier NOW, on this thread — after any
+            // rebalance callback that already ran inside poll(). A request queued before a revoke
+            // therefore never sees the revoked partitions (their ledger state is cleared), which
+            // is what makes queued commits rebalance-safe without rewriting queue payloads.
+            var success = false;
             try {
-              kafkaConsumer.commitSync(cmd.offsets());
-              if (offsetManager != null) offsetManager.notifyCommitComplete(cmd.commitId(), true);
-            } catch (Exception e) {
+              final var offsets = cmd.offsets().get();
+              if (!offsets.isEmpty()) kafkaConsumer.commitSync(offsets);
+              success = true;
+            } catch (final Exception e) {
               LOGGER.log(Level.WARNING, "Failed to commit offsets", e);
-              if (offsetManager != null) offsetManager.notifyCommitComplete(cmd.commitId(), false);
             }
+            cmd.outcome().complete(success);
           }
         }
       } catch (final Exception e) {

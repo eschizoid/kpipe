@@ -2,7 +2,7 @@ package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
@@ -46,8 +46,9 @@ public class OffsetManagerGapHoldJCStressTest {
 
   public OffsetManagerGapHoldJCStressTest() {
     final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
-    final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
-    manager = KafkaOffsetManager.builder(consumer).withCommandQueue(commandQueue).build();
+    manager = KafkaOffsetManager.builder(consumer)
+      .withCommitExecutor(offsets -> new CompletableFuture<>())
+      .build();
     manager.start();
     // Offset 100 is tracked but never marked: the permanent gap pinning the commit point.
     manager.trackOffset(record(100L));
