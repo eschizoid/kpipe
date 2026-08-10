@@ -69,7 +69,7 @@ jobs:
           cache: "gradle"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.2.0
+        uses: gradle/actions/setup-gradle@v6.3.0
 
       # Scheduled runs use the Docker-free smoke set at low iterations (fast, reliable rot
       # detection). Manual runs use whatever the dispatcher asked for.
