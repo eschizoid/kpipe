@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -103,7 +102,6 @@ class KeyOrderedEvictTombstoneFrayTest {
     private static final long FIRST_A_OFFSET = 1L;
     private static final long B_OFFSET = 2L;
     private static final long SECOND_A_OFFSET = 3L;
-    private static final long DRAIN_TIMEOUT_SECONDS = 10L;
 
     private final KeyOrderedDispatcher dispatcher = new KeyOrderedDispatcher(1);
     private final AtomicInteger tasksRun = new AtomicInteger();
@@ -177,24 +175,29 @@ class KeyOrderedEvictTombstoneFrayTest {
       }
     }
 
+    /// Unbounded for the same reason as [#await]: under a controlled scheduler a real-time
+    /// deadline measures Fray's exploration order rather than the dispatcher's liveness. A task
+    /// that genuinely never completes is a deadlock, which Fray detects and reports.
     private void awaitDrain() {
       try {
-        if (!allDone.await(DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-          throw new AssertionError(
-            "A dispatched task never completed: " + allDone.getCount() + " of 3 callbacks outstanding."
-          );
-        }
+        allDone.await();
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
         throw new IllegalStateException("interrupted while draining the dispatcher", e);
       }
     }
 
+    /// Waits without a deadline, which is the correct shape under a controlled scheduler.
+    ///
+    /// A wall-clock timeout asks "did this finish within N seconds of real time", a question
+    /// that has no meaning when Fray decides which thread runs: the scheduler can legitimately
+    /// hold the dispatching worker parked for the whole timeout while it explores another
+    /// ordering, and the wait then fails a test whose code is correct. Fray detects a genuine
+    /// stall itself and reports it as a deadlock, so an unbounded wait cannot hang the suite —
+    /// it hands the liveness question to the component that actually knows the answer.
     private static void await(final CountDownLatch latch, final String what) {
       try {
-        if (!latch.await(DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-          throw new AssertionError(what + " did not complete");
-        }
+        latch.await();
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
         throw new IllegalStateException("interrupted during " + what, e);
