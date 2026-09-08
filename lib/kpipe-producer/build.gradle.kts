@@ -68,6 +68,9 @@ dependencies {
   frayTestImplementation(libs.junitJupiter)
   frayTestImplementation(libs.kafkaClients)
   frayTestImplementation(project(":lib:kpipe-metrics"))
+  // KPipeProducer.build() resolves Tracer at construction, so it has to be on the runtime
+  // classpath even for a scenario that never traces anything.
+  frayTestImplementation(project(":lib:kpipe-tracing"))
   "frayTestRuntimeOnly"(libs.junitPlatformLauncher)
 }
 

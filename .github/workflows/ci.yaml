@@ -130,8 +130,11 @@ jobs:
         # One task per module carrying Fray tests. The plugin rewires each Test task
         # independently, so a module missing from this list is not covered by any other module's
         # run — and each module carries its own FrayInstrumentationGuardTest for the same reason.
+        # --continue so every module's suite reports: without it the first failing module
+        # aborts the build and the modules after it never run, hiding their results behind
+        # one failure.
         run: |
-          ./gradlew --no-daemon --stacktrace \
+          ./gradlew --no-daemon --stacktrace --continue \
             :lib:kpipe-consumer:frayTest \
             :lib:kpipe-core:frayTest \
             :lib:kpipe-producer:frayTest \
