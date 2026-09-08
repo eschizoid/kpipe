@@ -242,6 +242,7 @@ without a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-te
 | [docs/MODULES.md](docs/MODULES.md) | Module catalog, BOM usage, JPMS |
 | [docs/ESCAPE-HATCHES.md](docs/ESCAPE-HATCHES.md) | The explicit builder API: custom offset managers, reporters, seams |
 | [docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md) | The machine-checked offset invariants |
+| [docs/adr/](docs/adr/) | Architecture decision records — why the concurrency tooling is what it is |
 | [benchmarks/](benchmarks/) | Methodology, raw results, dated capture snapshots |
 | [examples/](examples/) | Runnable apps per format + a full demo with observability stack (`./scripts/run-demo.sh`) |
 
