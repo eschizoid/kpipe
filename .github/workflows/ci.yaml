@@ -96,3 +96,59 @@ jobs:
             :lib:kpipe-core:jcstress \
             :lib:kpipe-producer:jcstress \
             :lib:kpipe-schema-registry-confluent:jcstress
+
+  fray:
+    # Fray controlled-concurrency pilot, running alongside the jcstress job rather than
+    # replacing it — jcstress stays the gate until the pilot's evidence says otherwise.
+    # Fray explores schedules under its own scheduler instead of running racy code many
+    # times and hoping, so this job is expected to be far shorter than the ~33-minute
+    # stress baseline; the timeout is a wedge guard sized for a bounded exploration plus
+    # the one-off jlink of Fray's instrumented JDK, not a budget.
+    #
+    # ubuntu-latest is linux-x8664, which is one of the three platforms Fray publishes its
+    # native JVMTI agent for. On anything else the plugin skips the agent and the suite
+    # would run un-instrumented; FrayInstrumentationSelfCheckTest fails the job in that
+    # case rather than letting it read green, so pinning the runner is a performance
+    # choice, not the safety mechanism.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: "graalvm"
+          java-version: "25"
+          cache: "gradle"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.3.0
+
+      - name: Controlled concurrency (Fray)
+        # One task per module carrying Fray tests. The plugin rewires each Test task
+        # independently, so a module missing from this list is not covered by any other module's
+        # run — and each module carries its own FrayInstrumentationGuardTest for the same reason.
+        # --continue so every module's suite reports: without it the first failing module
+        # aborts the build and the modules after it never run, hiding their results behind
+        # one failure.
+        run: |
+          ./gradlew --no-daemon --stacktrace --continue \
+            :lib:kpipe-consumer:frayTest \
+            :lib:kpipe-core:frayTest \
+            :lib:kpipe-producer:frayTest \
+            :lib:kpipe-schema-registry-confluent:frayTest
+
+      - name: Upload Fray report
+        # The report directory carries fray.log plus the recording files that replay a
+        # failing schedule deterministically. Without it a red job leaves nothing to debug,
+        # since the interesting schedule is not reproducible from the test output alone.
+        # always(), not failure(): a job that exceeds timeout-minutes is CANCELLED rather
+        # than failed, and that is precisely the run whose partial report is worth reading.
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fray-report
+          path: build/fray/fray-report
+          if-no-files-found: ignore
