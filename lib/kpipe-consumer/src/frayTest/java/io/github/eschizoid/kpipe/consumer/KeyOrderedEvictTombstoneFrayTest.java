@@ -127,11 +127,19 @@ class KeyOrderedEvictTombstoneFrayTest {
   }
 
   /// Fails when no schedule reached the dead-tombstone retry path, so "the suite ran but never
-  /// explored the interesting region" is a red build rather than a silent pass.
+  /// explored the interesting region" is a red build rather than a silent pass. That is not
+  /// hypothetical: an earlier revision of this scenario kept a spare idle queue, so eviction
+  /// never had to touch key A, and this assertion is what caught it.
+  ///
+  /// The count is printed on every run, not only on failure. Whether exploration reaches the
+  /// window is a property of Fray's scheduler and this scenario, and a rate drifting toward zero
+  /// is the early warning that the gate is about to stop meaning anything — visible in the log
+  /// before it ever turns red.
   @AfterAll
   static void theEvictionWindowWasActuallyReached() {
     final var hits = Long.parseLong(System.getProperty(HITS_PROPERTY, "0"));
     System.clearProperty(HITS_PROPERTY);
+    System.out.printf("eviction-tombstone retries observed across the run: %d%n", hits);
     assertTrue(
       hits > 0,
       "no schedule reached the dead-tombstone retry path, so this run proved nothing about it. "
