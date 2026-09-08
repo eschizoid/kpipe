@@ -13,8 +13,11 @@ import java.util.function.BiConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /// Parallel dispatcher: every record gets its own thread, virtual by default via
-/// `Thread.ofVirtual().factory()`. No ordering guarantees within or across
-/// keys; unbounded parallelism bounded only by Loom's carrier-thread capacity.
+/// `Thread.ofVirtual().factory()`. No ordering guarantees within or across keys, and
+/// parallelism is unbounded — with the default virtual threads that is bounded in practice
+/// only by Loom's carrier-thread capacity, but a caller supplying a platform-thread factory
+/// through the test seam gets one operating-system thread per in-flight record instead.
+/// Backpressure, not this class, is what keeps that number sane.
 ///
 /// Pairs with [BackpressureController#inFlightStrategy] in [KPipeConsumer] — `drainableCount()`
 /// returns the number of records currently submitted but not yet finished.
