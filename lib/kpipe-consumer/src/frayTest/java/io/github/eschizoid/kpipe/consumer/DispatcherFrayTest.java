@@ -5,11 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.concurrent.Executors;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
@@ -22,14 +22,6 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// test uses [ParallelDispatcher], which has no per-key map and no stall loop at all.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
-@Disabled(
-  "Fray cannot afford these. It costs a fixed ~30s per iteration for any scenario touching a "
-    + "virtual thread, because the JDK VirtualThread carrier pool is not the ForkJoinPool it "
-    + "tracks, so every iteration waits out threads that never complete. These scenarios "
-    + "exceeded 26 minutes without finishing one iteration, and one schedule is not a gate. The "
-    + "dispatcher invariants stay on jcstress, which runs virtual threads at native speed "
-    + "because it does not control scheduling. Measured by BasicVirtualThreadFrayTest."
-)
 class DispatcherFrayTest {
 
   private static final String TOPIC = "fray-topic";
@@ -47,16 +39,9 @@ class DispatcherFrayTest {
   /// park for work and never complete — the iteration then never ends and the run reports
   /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
   /// test body has returned.
-  /// Iteration count is deliberately low. Fray costs roughly 30 seconds per iteration for any
-  /// scenario touching a virtual thread — a fixed straggler timeout, not computation, since the
-  /// JDK's VirtualThread carrier pool is not the ForkJoinPool Fray tracks and its threads never
-  /// reach a completed state. Platform-thread scenarios in this suite run 500 iterations in a few
-  /// seconds; the same count here would take hours. Measured by
-  /// [BasicVirtualThreadFrayTest#frayCanRunAPlainVirtualThread()], which is kept precisely so this
-  /// number stays honest.
-  @FrayTest(iterations = 5, abortThreadExecutionAfterMainExit = true)
+  @FrayTest(iterations = 500)
   void sameKeyHandoffNeverLosesATask() {
-    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS, Thread.ofPlatform().factory());
     final var tasksRun = new AtomicInteger();
     final var done = new CountDownLatch(2);
 
@@ -82,16 +67,9 @@ class DispatcherFrayTest {
   /// park for work and never complete — the iteration then never ends and the run reports
   /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
   /// test body has returned.
-  /// Iteration count is deliberately low. Fray costs roughly 30 seconds per iteration for any
-  /// scenario touching a virtual thread — a fixed straggler timeout, not computation, since the
-  /// JDK's VirtualThread carrier pool is not the ForkJoinPool Fray tracks and its threads never
-  /// reach a completed state. Platform-thread scenarios in this suite run 500 iterations in a few
-  /// seconds; the same count here would take hours. Measured by
-  /// [BasicVirtualThreadFrayTest#frayCanRunAPlainVirtualThread()], which is kept precisely so this
-  /// number stays honest.
-  @FrayTest(iterations = 5, abortThreadExecutionAfterMainExit = true)
+  @FrayTest(iterations = 500)
   void drainableCountBalancesAcrossNormalAndThrowingRecords() {
-    final var dispatcher = new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(5));
+    final var dispatcher = new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(5), Executors.newCachedThreadPool());
     final var normalDone = new CountDownLatch(1);
     final var throwDone = new CountDownLatch(1);
     final var afterNormal = new AtomicLong();

@@ -33,43 +33,6 @@ dependencies {
   testImplementation(libs.postgresql)
 }
 
-// jcstress is retained for the four dispatcher classes only. Fray cannot gate them: it costs a
-// fixed ~30 seconds per iteration for any scenario touching a virtual thread, and the dispatcher
-// scenarios exceeded 26 minutes without completing a single iteration. jcstress runs virtual
-// threads at native speed precisely because it does not control scheduling. The other seventeen
-// classes are ported to Fray and deleted.
-val jcstress: SourceSet by sourceSets.creating {
-  java.srcDir("src/jcstress/java")
-  compileClasspath += sourceSets.main.get().output + sourceSets.test.get().output
-  runtimeClasspath += sourceSets.main.get().output + sourceSets.test.get().output
-}
-
-val jcstressImplementation: Configuration by configurations.getting {
-  extendsFrom(configurations.testImplementation.get())
-}
-configurations["jcstressRuntimeOnly"].extendsFrom(configurations.testRuntimeOnly.get())
-configurations["jcstressAnnotationProcessor"].extendsFrom(configurations["annotationProcessor"])
-
-dependencies {
-  jcstressImplementation(libs.jcstressCore)
-  "jcstressAnnotationProcessor"(libs.jcstressCore)
-}
-
-tasks.named<JavaCompile>("compileJcstressJava") {
-  modularity.inferModulePath.set(false)
-}
-
-tasks.register<JavaExec>("jcstress") {
-  group = "verification"
-  description = "Runs the jcstress harness for the dispatcher classes Fray cannot afford to explore."
-  classpath = jcstress.runtimeClasspath
-  mainClass.set("org.openjdk.jcstress.Main")
-  val outDir = layout.buildDirectory.dir("jcstress").get().asFile
-  workingDir = outDir
-  doFirst { outDir.mkdirs() }
-  args("-t", "JCStressTest", "-iters", "1", "-time", "50", "-f", "1", "-v", "-r", "results")
-}
-
 // The Fray plugin derives its dependency configurations from the configured test-task name
 // (`frayTestImplementation`, `frayTestCompileOnly`), so this source set's name is load-bearing:
 // renaming it without renaming the task silently drops fray-core/fray-junit off the classpath.

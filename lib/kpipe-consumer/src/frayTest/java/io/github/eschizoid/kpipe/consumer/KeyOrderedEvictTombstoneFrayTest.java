@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
@@ -34,14 +33,6 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// needed keeps that guarantee: A can be evicted for C, and B for A's reallocation.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
-@Disabled(
-  "Fray cannot afford these. It costs a fixed ~30s per iteration for any scenario touching a "
-    + "virtual thread, because the JDK VirtualThread carrier pool is not the ForkJoinPool it "
-    + "tracks, so every iteration waits out threads that never complete. These scenarios "
-    + "exceeded 26 minutes without finishing one iteration, and one schedule is not a gate. The "
-    + "dispatcher invariants stay on jcstress, which runs virtual threads at native speed "
-    + "because it does not control scheduling. Measured by BasicVirtualThreadFrayTest."
-)
 class KeyOrderedEvictTombstoneFrayTest {
 
   private static final String TOPIC = "fray-topic";
@@ -59,16 +50,9 @@ class KeyOrderedEvictTombstoneFrayTest {
   /// park for work and never complete — the iteration then never ends and the run reports
   /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
   /// test body has returned.
-  /// Iteration count is deliberately low. Fray costs roughly 30 seconds per iteration for any
-  /// scenario touching a virtual thread — a fixed straggler timeout, not computation, since the
-  /// JDK's VirtualThread carrier pool is not the ForkJoinPool Fray tracks and its threads never
-  /// reach a completed state. Platform-thread scenarios in this suite run 500 iterations in a few
-  /// seconds; the same count here would take hours. Measured by
-  /// [BasicVirtualThreadFrayTest#frayCanRunAPlainVirtualThread()], which is kept precisely so this
-  /// number stays honest.
-  @FrayTest(iterations = 5, abortThreadExecutionAfterMainExit = true)
+  @FrayTest(iterations = 500)
   void evictionNeverBreaksPerKeySerialization() {
-    final var dispatcher = new KeyOrderedDispatcher(2);
+    final var dispatcher = new KeyOrderedDispatcher(2, Thread.ofPlatform().factory());
     seedAndDrain(dispatcher, KEY_A, 0L);
     seedAndDrain(dispatcher, KEY_B, 1L);
 

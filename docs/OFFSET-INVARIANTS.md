@@ -19,10 +19,6 @@ phrased as a property a test can assert.
   jcstress suite it replaced did not cover that either in practice: its one memory-model test forbids only an outcome
   that x86 cannot produce, and CI has only ever run x86.
 
-- **jcstress** is retained for the four dispatcher classes only. Fray costs a fixed ~30 seconds per iteration for any
-  scenario touching a virtual thread, and the dispatcher scenarios exceeded 26 minutes without completing a single
-  iteration; jcstress runs them at native speed because it does not control scheduling. See
-  [../docs/adr/0001-concurrency-testing-tooling.md](adr/0001-concurrency-testing-tooling.md).
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass
   throws `Unsupported class file major version 69` while retransforming classpath classes, which crashes the test JVM.

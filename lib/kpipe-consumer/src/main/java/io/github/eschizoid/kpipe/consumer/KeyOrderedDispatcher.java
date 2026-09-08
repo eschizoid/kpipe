@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -120,7 +121,27 @@ final class KeyOrderedDispatcher implements Dispatcher {
   private final Set<Thread> activeWorkers = ConcurrentHashMap.newKeySet();
 
   /// @param maxKeys cap on distinct keys (must be positive)
+  /// Creates the per-key worker threads. Virtual in production; a test may supply platform
+  /// threads so controlled-concurrency tooling can explore this class at a usable speed.
+  private final ThreadFactory workerFactory;
+
   KeyOrderedDispatcher(final int maxKeys) {
+    this(maxKeys, Thread.ofVirtual().factory());
+  }
+
+  /// Test seam: supplies the worker thread factory rather than pinning virtual threads.
+  ///
+  /// Controlled-concurrency tooling cannot afford virtual threads here. The JDK idles the
+  /// VirtualThread carrier pool out on a 30-second schedule, and a scheduler that waits for every
+  /// thread to reach a completed state pays that cost on every iteration — enough that a single
+  /// schedule does not finish inside a CI budget. Nothing this class guarantees depends on the
+  /// workers being virtual: per-key serialization, the eviction tombstone and the worker handoff
+  /// are properties of the queue and monitor protocol, and hold identically on platform threads.
+  ///
+  /// @param maxKeys       distinct keys held before eviction reclaims an idle queue
+  /// @param workerFactory creates each per-key worker thread
+  KeyOrderedDispatcher(final int maxKeys, final ThreadFactory workerFactory) {
+    this.workerFactory = workerFactory;
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
     this.maxKeys = maxKeys;
   }
@@ -297,15 +318,14 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// the offset manager / producer.) The runnable removes itself on exit; if `start()`
   /// throws, we remove it as a fallback since the finally would never run.
   private void startWorker(final Object key, final KeyQueue queue) {
-    final var worker = Thread.ofVirtual()
-      .name("kpipe-key-worker-" + System.identityHashCode(key))
-      .unstarted(() -> {
+    final var worker = workerFactory.newThread(() -> {
         try {
           drain(queue);
         } finally {
           activeWorkers.remove(Thread.currentThread());
         }
       });
+    worker.setName("kpipe-key-worker-" + System.identityHashCode(key));
     activeWorkers.add(worker);
     try {
       worker.start();

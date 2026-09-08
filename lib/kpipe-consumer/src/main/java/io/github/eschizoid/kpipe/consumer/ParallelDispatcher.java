@@ -24,7 +24,7 @@ final class ParallelDispatcher implements Dispatcher {
 
   private static final Logger LOGGER = System.getLogger(ParallelDispatcher.class.getName());
 
-  private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  private final ExecutorService executor;
   private final AtomicLong inFlight = new AtomicLong(0);
   private final BiConsumer<ConsumerRecord<byte[], byte[]>, RejectedExecutionException> rejectHandler;
   private final Duration terminationTimeout;
@@ -39,8 +39,31 @@ final class ParallelDispatcher implements Dispatcher {
     final BiConsumer<ConsumerRecord<byte[], byte[]>, RejectedExecutionException> rejectHandler,
     final Duration terminationTimeout
   ) {
+    this(rejectHandler, terminationTimeout, Executors.newVirtualThreadPerTaskExecutor());
+  }
+
+  /// Test seam: supplies the executor rather than creating one.
+  ///
+  /// Controlled-concurrency tooling cannot afford virtual threads here. The JDK idles the
+  /// VirtualThread carrier pool out on a 30-second schedule, and a scheduler that waits for every
+  /// thread to reach a completed state pays that cost on every iteration — enough that a single
+  /// schedule does not finish inside a CI budget. Nothing this class guarantees depends on the
+  /// threads being virtual: the in-flight accounting and the reject path behave identically on
+  /// platform threads, so a test can supply those and explore hundreds of schedules in seconds.
+  /// Production keeps the virtual-thread executor via the constructor above.
+  ///
+  /// @param rejectHandler      invoked when the executor refuses a record during shutdown
+  /// @param terminationTimeout maximum time `close()` waits for in-flight tasks to finish
+  /// @param executor           the executor to dispatch on; owned by this dispatcher and closed
+  ///                           by `close()`
+  ParallelDispatcher(
+    final BiConsumer<ConsumerRecord<byte[], byte[]>, RejectedExecutionException> rejectHandler,
+    final Duration terminationTimeout,
+    final ExecutorService executor
+  ) {
     this.rejectHandler = rejectHandler;
     this.terminationTimeout = terminationTimeout;
+    this.executor = executor;
   }
 
   /// `processTask` is expected to handle its own exceptions (the consumer's per-record error

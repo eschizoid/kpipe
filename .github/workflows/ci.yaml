@@ -60,31 +60,6 @@ jobs:
           files: |
             ./**/build/test-results/test/*.xml
 
-  jcstress:
-    # Retained for the four dispatcher classes only — the ones Fray cannot afford to explore.
-    # Fray costs a fixed ~30s per iteration for anything touching a virtual thread, and these
-    # scenarios exceeded 26 minutes without completing one iteration. jcstress runs virtual
-    # threads at native speed because it does not control scheduling. The other seventeen
-    # classes are ported to Fray and deleted, so this is minutes rather than the old ~45.
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up JDK
-        uses: actions/setup-java@v6
-        with:
-          distribution: "graalvm"
-          java-version: "25"
-          cache: "gradle"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.3.0
-
-      - name: Dispatcher concurrency stress (jcstress)
-        run: ./gradlew --no-daemon --stacktrace :lib:kpipe-consumer:jcstress
-
   fray:
     # The concurrency gate. Fray explores schedules under its own scheduler instead of
     # running racy code many times and hoping the bad interleaving surfaces, which is why
