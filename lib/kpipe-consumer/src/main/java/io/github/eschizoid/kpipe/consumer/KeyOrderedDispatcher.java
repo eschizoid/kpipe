@@ -319,7 +319,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// @param factory the candidate worker factory
   /// @return the same factory, when it produces daemon threads
   /// @throws IllegalArgumentException when it does not
-  private static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
+  static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
     if (!factory.newThread(() -> {}).isDaemon()) {
       throw new IllegalArgumentException(
         "workerFactory must produce daemon threads: close() interrupts workers that outlast the "

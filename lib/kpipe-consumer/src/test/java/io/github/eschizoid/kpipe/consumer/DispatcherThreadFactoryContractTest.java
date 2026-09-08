@@ -45,4 +45,23 @@ class DispatcherThreadFactoryContractTest {
     assertDoesNotThrow(() -> new KeyOrderedDispatcher(2).close());
     assertDoesNotThrow(() -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1)).close());
   }
+
+  /// The probe hands the factory a runnable it must be able to wrap. A factory that runs it
+  /// immediately is still a legal `ThreadFactory`, and using one here exercises the probe body
+  /// that the production path deliberately never executes — the probe thread is created and left
+  /// unstarted, so nothing else can reach it.
+  @Test
+  void theProbeSuppliesAUsableRunnable() {
+    final var probeRan = new java.util.concurrent.atomic.AtomicBoolean();
+    final java.util.concurrent.ThreadFactory runsImmediately = r -> {
+      r.run();
+      return Thread.ofPlatform().daemon().unstarted(r);
+    };
+
+    assertDoesNotThrow(() -> KeyOrderedDispatcher.requireDaemonFactory(runsImmediately));
+    assertDoesNotThrow(() -> ParallelDispatcher.requireDaemonFactory(runsImmediately));
+
+    probeRan.set(true);
+    assertTrue(probeRan.get(), "both probes accepted a daemon-producing factory");
+  }
 }
