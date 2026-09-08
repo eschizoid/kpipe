@@ -168,7 +168,7 @@ so it is not comparable on delivery guarantees.
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks/).
 
-The at-least-once claim is itself under test: every CI run gates on 20 [Fray](https://github.com/cmu-pasta/fray)
+The at-least-once claim is itself under test: every CI run gates on 13 [Fray](https://github.com/cmu-pasta/fray)
 controlled-concurrency classes plus jqwik property suites over the offset lifecycle and chaos-rebalance/crash-restart
 integration tests against a real broker. Fray explores thread schedules under its own scheduler rather than running
 racy code repeatedly and hoping, and the suite is falsification-tested — deliberately breaking an invariant makes it

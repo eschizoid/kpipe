@@ -32,7 +32,7 @@ import org.apache.kafka.common.TopicPartition;
 ///
 /// **Scope.** The harness *supplies* B's resume window from `k`; it does not assert that the
 /// consumer *seeks* to a committed offset, nor the commit-frontier math (lowest-pending, no
-/// commit-ahead). Those are covered by the offset jcstress/property suites and the broker E2E
+/// commit-ahead). Those are covered by the offset Fray/property suites and the broker E2E
 /// `CrashRestartReprocessingIntegrationTest`. What this pins deterministically is the
 /// resume-window delivery path — the piece a live-broker test can only observe flakily.
 ///

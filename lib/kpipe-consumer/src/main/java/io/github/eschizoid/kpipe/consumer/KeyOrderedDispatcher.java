@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-/// Key-ordered dispatcher: records sharing a key process serially on a single virtual thread;
+/// Key-ordered dispatcher: records sharing a key process serially on a single worker thread;
 /// different keys process in parallel. Maintains a bounded map of active keys with a
 /// configurable cap (default 10,000). Null-keyed records all serialize through a single
 /// sentinel queue.
@@ -33,7 +33,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// coldest-first preference for lock-free reads on the hot path.)
 ///
 /// **Per-key worker lifecycle.** When a record arrives for a key with no active worker, the
-/// dispatcher starts a virtual thread that drains the queue until empty, then exits. New
+/// dispatcher starts a worker that drains the queue until empty, then exits. New
 /// records arriving for the same key (after the worker has exited but the queue entry is
 /// still in the map) trigger a fresh worker. The empty queue stays in the map until evicted
 /// to make room for another key.
@@ -311,7 +311,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
     return false;
   }
 
-  /// Starts a new virtual thread that drains the queue until empty. Called while holding the
+  /// Starts a worker that drains the queue until empty. Called while holding the
   /// queue's monitor (the new worker's first drain step re-acquires it, so it simply blocks
   /// until the dispatching thread releases). Registers the worker in [#activeWorkers] BEFORE
   /// starting it — not from inside the runnable — so [#close()]'s interrupt loop can't miss a

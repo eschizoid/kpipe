@@ -37,13 +37,6 @@ class DispatcherFrayTest {
   /// schedule is the second dispatch arriving exactly as the first worker decides it is done.
   /// Losing that handoff drops the record silently: no error, no retry, just a task that never
   /// runs.
-  /// `abortThreadExecutionAfterMainExit` is required, not cosmetic. At main exit Fray waits for
-  /// every registered thread to complete, excluding only ForkJoinWorkerThreads belonging to its
-  /// own tracked pool. Virtual-thread carriers are ForkJoinWorkerThreads in the JDK's
-  /// VirtualThread scheduler pool, which is a different pool, so Fray waits for threads that
-  /// park for work and never complete — the iteration then never ends and the run reports
-  /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
-  /// test body has returned.
   @FrayTest(iterations = 500)
   void sameKeyHandoffNeverLosesATask() {
     final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS, PLATFORM_DAEMON);
@@ -65,20 +58,13 @@ class DispatcherFrayTest {
   /// decrement that runs without a matching increment drives the count negative, and an
   /// increment whose decrement is skipped on the throwing path leaves the consumer permanently
   /// believing work is outstanding.
-  /// `abortThreadExecutionAfterMainExit` is required, not cosmetic. At main exit Fray waits for
-  /// every registered thread to complete, excluding only ForkJoinWorkerThreads belonging to its
-  /// own tracked pool. Virtual-thread carriers are ForkJoinWorkerThreads in the JDK's
-  /// VirtualThread scheduler pool, which is a different pool, so Fray waits for threads that
-  /// park for work and never complete — the iteration then never ends and the run reports
-  /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
-  /// test body has returned.
   @FrayTest(iterations = 500)
   void drainableCountBalancesAcrossNormalAndThrowingRecords() {
     final var dispatcher = new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(5), PLATFORM_DAEMON);
     final var normalDone = new CountDownLatch(1);
     final var throwDone = new CountDownLatch(1);
-    final var afterNormal = new AtomicLong();
-    final var afterThrow = new AtomicLong();
+    final var afterNormal = new AtomicLong(Long.MIN_VALUE);
+    final var afterThrow = new AtomicLong(Long.MIN_VALUE);
 
     FrayScenarios.runConcurrently(
       () -> {
@@ -105,8 +91,18 @@ class DispatcherFrayTest {
 
     // A snapshot taken after one record's own decrement may still see its sibling in flight, so
     // 0 and 1 are both legal here; what must never appear is a negative count.
-    assertTrue(afterNormal.get() >= 0, () -> "negative drainable count after the normal record: " + afterNormal.get());
-    assertTrue(afterThrow.get() >= 0, () -> "negative drainable count after the throwing record: " + afterThrow.get());
+    // With two records in flight the only legal snapshots are 0 and 1: the awaited record has
+    // already decremented, so at most its sibling remains. A negative value means a decrement ran
+    // without a matching increment; anything above 1 means one ran twice. The sentinel makes an
+    // actor that never reached the read fail here rather than pass as a zero.
+    assertTrue(
+      afterNormal.get() >= 0 && afterNormal.get() <= 1,
+      () -> "drainable count after the normal record was " + afterNormal.get() + ", outside {0, 1}"
+    );
+    assertTrue(
+      afterThrow.get() >= 0 && afterThrow.get() <= 1,
+      () -> "drainable count after the throwing record was " + afterThrow.get() + ", outside {0, 1}"
+    );
     assertEquals(0L, finalCount, "the drainable count did not settle to zero once both records completed");
   }
 

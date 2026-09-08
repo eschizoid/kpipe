@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
@@ -40,16 +42,15 @@ class KeyOrderedEvictTombstoneFrayTest {
   private static final byte[] KEY_B = "key-b".getBytes(UTF_8);
   private static final byte[] KEY_C = "key-c".getBytes(UTF_8);
 
+  /// Accumulated across schedules so the class can assert the interesting region was reached at
+  /// least once. Whether a given schedule enters the retry path is invisible from the public
+  /// surface — the record processes correctly either way — so without this the test passes
+  /// identically when no schedule ever exercises what it exists to cover.
+  private static final AtomicLong TOMBSTONE_HITS = new AtomicLong();
+
   /// One thread dispatches two records for key A back to back, mirroring production where a single
   /// consumer thread dispatches, while another forces an eviction by introducing key C. Every task
   /// must run exactly once, and key A's two tasks must never overlap.
-  /// `abortThreadExecutionAfterMainExit` is required, not cosmetic. At main exit Fray waits for
-  /// every registered thread to complete, excluding only ForkJoinWorkerThreads belonging to its
-  /// own tracked pool. Virtual-thread carriers are ForkJoinWorkerThreads in the JDK's
-  /// VirtualThread scheduler pool, which is a different pool, so Fray waits for threads that
-  /// park for work and never complete — the iteration then never ends and the run reports
-  /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
-  /// test body has returned.
   @FrayTest(iterations = 500)
   void evictionNeverBreaksPerKeySerialization() {
     final var dispatcher = new KeyOrderedDispatcher(2, Thread.ofPlatform().daemon().factory());
@@ -77,6 +78,7 @@ class KeyOrderedEvictTombstoneFrayTest {
     await(done);
     dispatcher.close();
 
+    TOMBSTONE_HITS.addAndGet(dispatcher.tombstoneRetries.get());
     assertEquals(3, tasksRun.get(), "a task was lost or ran more than once across the eviction");
     assertEquals(
       1,
@@ -108,5 +110,17 @@ class KeyOrderedEvictTombstoneFrayTest {
 
   private static ConsumerRecord<byte[], byte[]> record(final byte[] key, final long offset) {
     return new ConsumerRecord<>(TOPIC, 0, offset, key, ("v-" + offset).getBytes(UTF_8));
+  }
+
+  /// Fails when no schedule reached the dead-tombstone retry path, so "the suite ran but never
+  /// explored the interesting region" is a red build rather than a silent pass.
+  @AfterAll
+  static void theEvictionWindowWasActuallyReached() {
+    assertTrue(
+      TOMBSTONE_HITS.get() > 0,
+      "no schedule reached the dead-tombstone retry path, so this run proved nothing about it. "
+        + "Either the scheduler is not exploring, or the scenario no longer sets up the "
+        + "{A: empty, idle} precondition that eviction needs."
+    );
   }
 }

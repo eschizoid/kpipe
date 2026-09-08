@@ -28,11 +28,12 @@ class CachedSchemaResolverFrayTest {
   @FrayTest(iterations = 500)
   void concurrentMissesCollapseToOneLoad() {
     final var loadCount = new AtomicInteger();
-    // Counting fake: every underlying load bumps the counter and returns the same instance, so a
-    // duplicate load shows up both as a count above one and as a differing reference.
+    // Counting fake: every underlying load bumps the counter and returns a DISTINCT instance.
+    // A compile-time constant would be interned and handed back identically on every call, which
+    // would make the reference check below pass however many loads ran.
     final SchemaResolver counting = id -> {
       loadCount.incrementAndGet();
-      return SCHEMA_JSON;
+      return new String(SCHEMA_JSON.toCharArray());
     };
     final var resolver = new CachedSchemaResolver(counting);
     final var first = new AtomicReference<String>();

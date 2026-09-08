@@ -26,8 +26,15 @@ class ConsumerHealthFrayTest {
   ///
   /// The handshake stopped being a liveness invariant when the paused consumer moved to
   /// polling on a fixed cadence instead of parking indefinitely, so today this bounds resume
-  /// latency rather than preventing a permanent stall. It is still the property the ordering is
-  /// written to provide.
+  /// latency rather than preventing a permanent stall.
+  ///
+  /// **What this cannot show.** The mutually-blind outcome is forbidden by the *memory model*,
+  /// not by the interleaving: reaching it needs the two reads to precede both writes, which is a
+  /// cycle in any total order over the four operations. A scheduling explorer preserves per-thread
+  /// program order, so it can never produce it, and this suite does not interleave memory
+  /// operations. What the assertion still catches is a `requestPause` that fails to publish at
+  /// all. Detecting a weakened implementation — plain fields in place of the atomics — needs a
+  /// tool that models reordering, and the suite has none since the publication test was retired.
   @FrayTest(iterations = 500)
   void pauseHandshakeIsNeverMutuallyBlind() {
     final var health = new ConsumerHealthController(null, null, null, NoopHook.INSTANCE, NoopHook.INSTANCE);

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /// Fails this module's Fray suite when Fray is not actually instrumenting it.
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test;
 /// The full behavioural check — plant a known race and require Fray to report it — lives once, in
 /// kpipe-consumer. That one proves Fray detects races at all; this one proves this module's task
 /// is running on the instrumented JVM.
+@Tag("FrayTest")
 class FrayInstrumentationGuardTest {
 
   private static final String FRAY_IMPLEMENTOR = "IMPLEMENTOR=Fray";

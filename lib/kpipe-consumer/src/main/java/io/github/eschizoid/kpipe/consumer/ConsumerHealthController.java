@@ -235,7 +235,7 @@ final class ConsumerHealthController {
         // least one record was still in flight at this read and its completion is guaranteed to
         // see the bit and unpark. Both reads and the bit are volatile, so the total order of
         // the flag/count accesses makes this Dekker-style handshake sound
-        // (BackpressureHandshakeJCStressTest exercises the pair).
+        // (ConsumerHealthFrayTest exercises the pair).
         //
         // Gated to the in-flight strategy: the lag metric only moves when the consumer thread
         // itself advances positions, so it cannot drop concurrently inside this window (there
