@@ -1,8 +1,10 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -58,6 +60,90 @@ class OffsetManagerFrayTest {
         seen +
         ", which is neither the pending offset, the post-drain commit point, nor the " +
         "nothing-tracked sentinel"
+    );
+  }
+
+  /// Two workers retire offsets on both sides of a permanent gap. Offset 100 is tracked and never
+  /// marked, so it is the lowest pending offset for the whole scenario; the workers track and
+  /// retire 101 and 102 around it. The commit point must stay pinned at 100 under every schedule.
+  ///
+  /// This is the at-least-once guarantee stated as an invariant: committing 102 because it
+  /// finished would silently discard offset 100 on the next restart, since Kafka resumes from the
+  /// committed position and never revisits earlier offsets.
+  @FrayTest(iterations = 500)
+  void commitPointHoldsAtTheGapWhenTheSuccessorRetires() {
+    assertGapHolds(101L, 102L);
+  }
+
+  /// The same invariant with both retiring offsets above the gap's immediate successor, so the
+  /// pending window has a hole at 101 as well. The frontier rule is "lowest still-pending offset",
+  /// not "highest contiguous run", and this pins that distinction.
+  @FrayTest(iterations = 500)
+  void commitPointHoldsAtTheGapWhenNonAdjacentOffsetsRetire() {
+    assertGapHolds(102L, 103L);
+  }
+
+  /// A partition revoke races a worker still tracking and retiring offsets on that partition.
+  ///
+  /// Three end states are legitimate, depending on where the revoke lands: the worker's track
+  /// survives and pins the commit point at 100; the revoke clears everything and leaves the
+  /// nothing-tracked sentinel; or the revoke clears the pending window after the worker's mark,
+  /// leaving the retired offset's successor. The forbidden shape is a commit point that advanced
+  /// past an offset still counted as pending — that combination means a record in flight during a
+  /// rebalance was committed away.
+  @FrayTest(iterations = 500)
+  void revokeNeverCommitsPastAStillPendingOffset() {
+    final var manager = newManager();
+    final var rebalanceListener = manager.createRebalanceListener();
+    manager.trackOffset(record(100L));
+
+    FrayScenarios.runConcurrently(
+      () -> rebalanceListener.onPartitionsRevoked(List.of(PARTITION)),
+      () -> {
+        manager.trackOffset(record(100L));
+        manager.markOffsetProcessed(record(101L));
+      }
+    );
+
+    final var state = manager.getPartitionState(PARTITION);
+    final var seen = state.nextOffsetToCommit();
+    final var pending = state.pendingCount() > 0;
+    assertTrue(
+      (seen == 100L && pending) || (seen == -1L && !pending) || (seen == 102L && !pending),
+      () ->
+        "revoke left commit point " +
+        seen +
+        " with pending=" +
+        pending +
+        "; a commit point past a still-pending offset would drop an in-flight record"
+    );
+  }
+
+  /// Tracks offset 100 and leaves it pending, then has two workers track and retire `first` and
+  /// `second` concurrently. The commit frontier must remain at 100 throughout.
+  ///
+  /// @param first  offset the first worker tracks and retires
+  /// @param second offset the second worker tracks and retires
+  private static void assertGapHolds(final long first, final long second) {
+    final var manager = newManager();
+    // Tracked and never marked: the permanent gap that pins the commit point.
+    manager.trackOffset(record(100L));
+
+    FrayScenarios.runConcurrently(
+      () -> {
+        manager.trackOffset(record(first));
+        manager.markOffsetProcessed(record(first));
+      },
+      () -> {
+        manager.trackOffset(record(second));
+        manager.markOffsetProcessed(record(second));
+      }
+    );
+
+    assertEquals(
+      100L,
+      manager.getPartitionState(PARTITION).nextOffsetToCommit(),
+      "the commit point advanced past offset 100, which is still pending"
     );
   }
 
