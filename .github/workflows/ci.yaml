@@ -88,6 +88,24 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6.3.0
 
+      # TEMPORARY DIAGNOSTIC — removed once the dispatcher hang is understood. Each scenario
+      # runs in its own bounded step so a hang identifies itself instead of taking the job down
+      # and hiding which one it was.
+      - name: Diagnose - KeyOrdered handoff
+        timeout-minutes: 5
+        continue-on-error: true
+        run: ./gradlew --no-daemon :lib:kpipe-consumer:frayTest --tests "*DispatcherFrayTest.sameKeyHandoff*"
+
+      - name: Diagnose - ParallelDispatcher drainable count
+        timeout-minutes: 5
+        continue-on-error: true
+        run: ./gradlew --no-daemon :lib:kpipe-consumer:frayTest --tests "*DispatcherFrayTest.drainableCount*"
+
+      - name: Diagnose - KeyOrdered eviction
+        timeout-minutes: 5
+        continue-on-error: true
+        run: ./gradlew --no-daemon :lib:kpipe-consumer:frayTest --tests "*KeyOrderedEvictTombstoneFrayTest*"
+
       - name: Controlled concurrency (Fray)
         # One task per module carrying Fray tests. The plugin rewires each Test task
         # independently, so a module missing from this list is not covered by any other module's

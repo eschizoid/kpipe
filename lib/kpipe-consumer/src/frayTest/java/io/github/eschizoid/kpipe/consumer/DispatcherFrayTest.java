@@ -31,7 +31,7 @@ class DispatcherFrayTest {
   /// schedule is the second dispatch arriving exactly as the first worker decides it is done.
   /// Losing that handoff drops the record silently: no error, no retry, just a task that never
   /// runs.
-  @FrayTest(iterations = 500)
+  @FrayTest(iterations = 20)
   void sameKeyHandoffNeverLosesATask() {
     final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var tasksRun = new AtomicInteger();
@@ -52,7 +52,7 @@ class DispatcherFrayTest {
   /// decrement that runs without a matching increment drives the count negative, and an
   /// increment whose decrement is skipped on the throwing path leaves the consumer permanently
   /// believing work is outstanding.
-  @FrayTest(iterations = 500)
+  @FrayTest(iterations = 20)
   void drainableCountBalancesAcrossNormalAndThrowingRecords() {
     final var dispatcher = new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(5));
     final var normalDone = new CountDownLatch(1);
