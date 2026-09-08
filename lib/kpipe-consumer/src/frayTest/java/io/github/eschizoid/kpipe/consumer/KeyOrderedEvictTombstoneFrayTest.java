@@ -52,7 +52,7 @@ class KeyOrderedEvictTombstoneFrayTest {
   /// test body has returned.
   @FrayTest(iterations = 500)
   void evictionNeverBreaksPerKeySerialization() {
-    final var dispatcher = new KeyOrderedDispatcher(2, Thread.ofPlatform().factory());
+    final var dispatcher = new KeyOrderedDispatcher(2, Thread.ofPlatform().daemon().factory());
     seedAndDrain(dispatcher, KEY_A, 0L);
     seedAndDrain(dispatcher, KEY_B, 1L);
 

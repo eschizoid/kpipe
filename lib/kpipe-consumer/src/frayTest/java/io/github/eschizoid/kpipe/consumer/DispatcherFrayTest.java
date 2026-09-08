@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
-import java.util.concurrent.Executors;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -27,6 +27,11 @@ class DispatcherFrayTest {
   private static final String TOPIC = "fray-topic";
   private static final byte[] SHARED_KEY = "shared-key".getBytes(UTF_8);
 
+  /// Platform threads so Fray can explore these scenarios at the same speed as the rest of the
+  /// suite; daemon because both dispatchers abandon rather than interrupt a worker still running
+  /// at shutdown, and only a daemon thread lets the JVM exit with one outstanding.
+  private static final ThreadFactory PLATFORM_DAEMON = Thread.ofPlatform().daemon().factory();
+
   /// Two records for the same key are dispatched concurrently. Each key has one serial queue
   /// drained by one worker, and the worker exits when its queue empties — so the dangerous
   /// schedule is the second dispatch arriving exactly as the first worker decides it is done.
@@ -41,7 +46,7 @@ class DispatcherFrayTest {
   /// test body has returned.
   @FrayTest(iterations = 500)
   void sameKeyHandoffNeverLosesATask() {
-    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS, Thread.ofPlatform().factory());
+    final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS, PLATFORM_DAEMON);
     final var tasksRun = new AtomicInteger();
     final var done = new CountDownLatch(2);
 
@@ -69,7 +74,7 @@ class DispatcherFrayTest {
   /// test body has returned.
   @FrayTest(iterations = 500)
   void drainableCountBalancesAcrossNormalAndThrowingRecords() {
-    final var dispatcher = new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(5), Executors.newCachedThreadPool());
+    final var dispatcher = new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(5), PLATFORM_DAEMON);
     final var normalDone = new CountDownLatch(1);
     final var throwDone = new CountDownLatch(1);
     final var afterNormal = new AtomicLong();

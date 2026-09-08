@@ -120,26 +120,29 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// `executor.shutdownNow()`.
   private final Set<Thread> activeWorkers = ConcurrentHashMap.newKeySet();
 
-  /// @param maxKeys cap on distinct keys (must be positive)
   /// Creates the per-key worker threads. Virtual in production; a test may supply platform
   /// threads so controlled-concurrency tooling can explore this class at a usable speed.
   private final ThreadFactory workerFactory;
 
+  /// @param maxKeys cap on distinct keys (must be positive)
   KeyOrderedDispatcher(final int maxKeys) {
     this(maxKeys, Thread.ofVirtual().factory());
   }
 
   /// Test seam: supplies the worker thread factory rather than pinning virtual threads.
   ///
-  /// Controlled-concurrency tooling cannot afford virtual threads here. The JDK idles the
-  /// VirtualThread carrier pool out on a 30-second schedule, and a scheduler that waits for every
-  /// thread to reach a completed state pays that cost on every iteration — enough that a single
-  /// schedule does not finish inside a CI budget. Nothing this class guarantees depends on the
-  /// workers being virtual: per-key serialization, the eviction tombstone and the worker handoff
-  /// are properties of the queue and monitor protocol, and hold identically on platform threads.
+  /// The JDK idles the VirtualThread carrier pool out on a 30-second schedule, so a
+  /// scheduler that waits for every thread to reach a completed state pays that once per
+  /// iteration. Per-key serialization, the eviction tombstone and the worker handoff are
+  /// properties of the queue and monitor protocol rather than of the thread kind, so
+  /// platform threads exercise them equally.
+  ///
+  /// The factory must produce **daemon** threads. Shutdown abandons a worker still inside
+  /// `task.run()` rather than interrupting it, and only a daemon thread lets the JVM exit with
+  /// one outstanding.
   ///
   /// @param maxKeys       distinct keys held before eviction reclaims an idle queue
-  /// @param workerFactory creates each per-key worker thread
+  /// @param workerFactory creates each per-key worker thread; must produce daemon threads
   KeyOrderedDispatcher(final int maxKeys, final ThreadFactory workerFactory) {
     this.workerFactory = workerFactory;
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);

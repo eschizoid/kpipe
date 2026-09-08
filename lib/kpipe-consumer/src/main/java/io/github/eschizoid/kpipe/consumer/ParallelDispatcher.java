@@ -6,19 +6,20 @@ import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-/// Parallel dispatcher: every record gets its own virtual thread via
-/// `Executors.newVirtualThreadPerTaskExecutor()`. No ordering guarantees within or across
+/// Parallel dispatcher: every record gets its own thread, virtual by default via
+/// `Thread.ofVirtual().factory()`. No ordering guarantees within or across
 /// keys; unbounded parallelism bounded only by Loom's carrier-thread capacity.
 ///
 /// Pairs with [BackpressureController#inFlightStrategy] in [KPipeConsumer] — `drainableCount()`
 /// returns the number of records currently submitted but not yet finished.
 ///
-/// Owns its `ExecutorService` and shuts it down in [#close()] using the same `shutdown +
+/// Creates and owns its `ExecutorService`, shut down in [#close()] using the same `shutdown +
 /// awaitTermination + shutdownNow` pattern KPipeConsumer used previously.
 final class ParallelDispatcher implements Dispatcher {
 
@@ -39,31 +40,35 @@ final class ParallelDispatcher implements Dispatcher {
     final BiConsumer<ConsumerRecord<byte[], byte[]>, RejectedExecutionException> rejectHandler,
     final Duration terminationTimeout
   ) {
-    this(rejectHandler, terminationTimeout, Executors.newVirtualThreadPerTaskExecutor());
+    this(rejectHandler, terminationTimeout, Thread.ofVirtual().factory());
   }
 
-  /// Test seam: supplies the executor rather than creating one.
+  /// Test seam: supplies the thread factory rather than pinning virtual threads.
   ///
-  /// Controlled-concurrency tooling cannot afford virtual threads here. The JDK idles the
-  /// VirtualThread carrier pool out on a 30-second schedule, and a scheduler that waits for every
-  /// thread to reach a completed state pays that cost on every iteration — enough that a single
-  /// schedule does not finish inside a CI budget. Nothing this class guarantees depends on the
-  /// threads being virtual: the in-flight accounting and the reject path behave identically on
-  /// platform threads, so a test can supply those and explore hundreds of schedules in seconds.
-  /// Production keeps the virtual-thread executor via the constructor above.
+  /// The JDK idles the VirtualThread carrier pool out on a 30-second schedule, so a
+  /// scheduler that waits for every thread to reach a completed state pays that once per
+  /// iteration. The in-flight accounting is a property of the increment/decrement protocol
+  /// rather than of the thread kind, so platform threads exercise it equally.
+  ///
+  /// Takes a factory rather than an executor deliberately. `close()` relies on this executor
+  /// having no work queue — that is what makes `shutdownNow()` return nothing and leaves no task
+  /// stranded with `inFlight` already incremented. Building the executor here keeps that
+  /// guarantee out of a caller's hands: a queueing executor would leave `drainableCount()`
+  /// permanently non-zero after `close()`, and that value drives the backpressure watermark and
+  /// the drain wait. It also settles ownership, since the dispatcher only ever closes what it
+  /// created.
   ///
   /// @param rejectHandler      invoked when the executor refuses a record during shutdown
   /// @param terminationTimeout maximum time `close()` waits for in-flight tasks to finish
-  /// @param executor           the executor to dispatch on; owned by this dispatcher and closed
-  ///                           by `close()`
+  /// @param threadFactory      creates one thread per dispatched record
   ParallelDispatcher(
     final BiConsumer<ConsumerRecord<byte[], byte[]>, RejectedExecutionException> rejectHandler,
     final Duration terminationTimeout,
-    final ExecutorService executor
+    final ThreadFactory threadFactory
   ) {
     this.rejectHandler = rejectHandler;
     this.terminationTimeout = terminationTimeout;
-    this.executor = executor;
+    this.executor = Executors.newThreadPerTaskExecutor(threadFactory);
   }
 
   /// `processTask` is expected to handle its own exceptions (the consumer's per-record error
