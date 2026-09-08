@@ -97,6 +97,10 @@ dependencies {
   frayTestImplementation(platform(libs.junitBom))
   frayTestImplementation(libs.junitJupiter)
   frayTestImplementation(libs.kafkaClients)
+  // Scenarios that build a pipeline or a batch sink need the core types by name. Declared
+  // explicitly rather than by extending testImplementation, which would also drag Testcontainers
+  // and the rest of the integration-test stack onto this source set.
+  frayTestImplementation(project(":lib:kpipe-core"))
   "frayTestRuntimeOnly"(libs.junitPlatformLauncher)
 }
 
