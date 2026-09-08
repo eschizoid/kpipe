@@ -46,10 +46,14 @@ class KeyOrderedEvictTombstoneFrayTest {
   private static final byte[] KEY_B = "key-b".getBytes(UTF_8);
   private static final byte[] KEY_C = "key-c".getBytes(UTF_8);
 
-  /// Counts schedules that reached the retry path, so the class can assert the interesting
-  /// region was entered at least once. Whether a given schedule enters it is invisible from the
-  /// public surface — the record processes correctly either way — so without this the test passes
-  /// identically when no schedule ever exercises what it exists to cover.
+  /// Total retries against a dead tombstone, summed across every schedule, so the class can
+  /// assert the interesting region was entered at least once. This is the raw retry count rather
+  /// than a per-schedule hit count — one schedule can retry more than once — which is the more
+  /// useful number when diagnosing how often exploration reaches the window.
+  ///
+  /// Whether a given schedule enters that path is invisible from the public surface, because the
+  /// record processes correctly either way. Without this counter the test passes identically when
+  /// no schedule ever exercises what it exists to cover.
   ///
   /// Kept in a system property rather than a static field. `@FrayTest` defaults
   /// `resetClassLoaderPerIteration` to true, and Fray's loader is child-first, so this class is
