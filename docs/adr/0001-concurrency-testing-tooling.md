@@ -94,9 +94,38 @@ tests **pass**. See "Silent no-op is the failure mode to guard" below.
   decision — the campaign item is deleted from the roadmap rather than deferred. The judgement is that kpipe's
   concurrency risk is overwhelmingly interleaving-shaped (lost enqueue, evict-vs-enqueue, remove-if-empty, worker
   handoff, offset frontier), and that those are exactly what Fray targets directly instead of by chance.
-- CI keeps a dedicated concurrency job; expected to be substantially faster than the 30-35 minute stress baseline,
-  though this is unmeasured until the pilot lands.
+- CI keeps a dedicated concurrency job. **No speed win is demonstrated yet** — the pilot's first ported scenario
+  consumed the full 30-minute budget without returning a verdict (see the spin-wait section below), so the comparison
+  against the 30-35 minute stress baseline remains open.
 - Local runs on macOS x86_64 will not exercise Fray. Reproduction uses a `linux/amd64` container.
+
+## Fray is hostile to sleep-based spin-wait loops
+
+Found in the pilot (PR #310), and the sharpest constraint on the port. A retry loop that waits by calling
+`Thread.sleep` cannot be explored to completion by Fray, for reasons that no configuration reaches:
+
+- Fray's launcher sets `sleepAsYield = true`, so a sleeping thread is modelled as *yielding*, never blocked. A
+  spin-wait loop is therefore permanently runnable.
+- The POS scheduler carries no fairness obligation, so it may re-pick that runnable spinner indefinitely instead of
+  advancing the worker the spinner is waiting on.
+- `maxScheduledStep` would bound the runaway, but it lives on `ExecutionInfo` as a `val`, and `launchFrayTest` hardcodes
+  `-1`. The `additionalConfigs: (Configuration) -> Unit` hook cannot reach it, because `Configuration.executionInfo` is
+  itself a `val`.
+
+Observed on `ubuntu-latest`: one iteration reached `step: 32976576` before Fray reported a `DeadlockException`, then
+`OutOfMemoryError` in `JsonToStringWriter` while serializing that 33-million-step trace into the run report. The job hit
+its 30-minute cap with no verdict. The launcher's other defaults compound it — `launchFrayTest` runs 10,000 iterations
+at a 120-second per-iteration timeout, which cannot fit any reasonable CI budget.
+
+**This is a property of the tool, not a defect in the code under test.** `KeyOrderedDispatcher.reserveCapacity` holds no
+monitor while it sleeps: it is called before `synchronized (queue)`, and `evictOneIdle` takes the per-queue monitor only
+transiently inside `computeIfPresent`. There is no circular wait, and the stalling thread blocks nothing the draining
+worker needs. Under any fair scheduler it makes progress, which is what a real JVM provides.
+
+Consequence for the port: `kpipe-consumer` main source has five such loops (`KeyOrderedDispatcher` ×2, `RecordProcessor`
+retry backoff, `KPipeConsumer` ×2), and `kpipe-test` has two more. Any ported scenario that drives a thread into one of
+them will not terminate under exploration. Scenarios must be built so no thread waits on another by sleeping — or the
+invariant must be verified some other way.
 
 ## Silent no-op is the failure mode to guard
 
