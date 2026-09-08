@@ -28,7 +28,10 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// **Why a permanently idle queue is part of the setup.** Key B is seeded, drained and never
 /// dispatched to again, so an idle queue is always available and `evictOneIdle` succeeds on its
 /// first attempt without entering `reserveCapacity`'s stall loop. Eviction still races the
-/// dispatcher exactly as before — key A remains the first idle candidate the scan finds.
+/// dispatcher exactly as before. Which idle queue the scan picks is NOT assumed: `evictOneIdle`
+/// walks a `ConcurrentHashMap` keySet, whose iteration order is unspecified, so a schedule may
+/// evict either key. That is why [#theEvictionWindowWasActuallyReached()] asserts the retry path
+/// was entered across the run rather than trusting any single schedule to reach it.
 ///
 /// This is a scheduling-space choice, not a workaround for a Fray limitation. `@FrayTest`
 /// defaults `sleepAsYield` to false, so a thread in that loop is modelled as blocked and released

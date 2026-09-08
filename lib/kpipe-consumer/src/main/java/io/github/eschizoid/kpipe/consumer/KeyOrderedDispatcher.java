@@ -312,15 +312,6 @@ final class KeyOrderedDispatcher implements Dispatcher {
     return false;
   }
 
-  /// Starts a worker that drains the queue until empty. Called while holding the
-  /// queue's monitor (the new worker's first drain step re-acquires it, so it simply blocks
-  /// until the dispatching thread releases). Registers the worker in [#activeWorkers] BEFORE
-  /// starting it — not from inside the runnable — so [#close()]'s interrupt loop can't miss a
-  /// worker that has been started but hasn't run its first statement yet. (Registering inside
-  /// the runnable left a window where close() could time out and interrupt the set before the
-  /// new worker added itself, leaving it un-interrupted and able to run after shutdown closed
-  /// the offset manager / producer.) The runnable removes itself on exit; if `start()`
-  /// throws, we remove it as a fallback since the finally would never run.
   /// Rejects a factory that produces non-daemon threads, which is a contract the constructor is
   /// the only place able to enforce. The probe is never started, so it costs an object and no
   /// operating-system resource.
@@ -338,6 +329,15 @@ final class KeyOrderedDispatcher implements Dispatcher {
     return factory;
   }
 
+  /// Starts a worker that drains the queue until empty. Called while holding the
+  /// queue's monitor (the new worker's first drain step re-acquires it, so it simply blocks
+  /// until the dispatching thread releases). Registers the worker in [#activeWorkers] BEFORE
+  /// starting it — not from inside the runnable — so [#close()]'s interrupt loop can't miss a
+  /// worker that has been started but hasn't run its first statement yet. (Registering inside
+  /// the runnable left a window where close() could time out and interrupt the set before the
+  /// new worker added itself, leaving it un-interrupted and able to run after shutdown closed
+  /// the offset manager / producer.) The runnable removes itself on exit; if `start()`
+  /// throws, we remove it as a fallback since the finally would never run.
   private void startWorker(final Object key, final KeyQueue queue) {
     final var worker = workerFactory.newThread(() -> {
         try {

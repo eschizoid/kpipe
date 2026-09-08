@@ -136,7 +136,7 @@ final class ParallelDispatcher implements Dispatcher {
     return factory;
   }
 
-  /// `shutdownNow()` doesn't strand `inFlight`: the VT-per-task executor has no work queue, so
+  /// `shutdownNow()` doesn't strand `inFlight`: a thread-per-task executor has no work queue, so
   /// it returns an empty list and only interrupts running tasks — and interrupt doesn't skip a
   /// `finally`, so each task still decrements. A pooled executor WOULD strand queued tasks here;
   /// `ParallelDispatcherTest.drainableCountDrainsToZeroWhenCloseInterruptsRunningTask` guards it.
