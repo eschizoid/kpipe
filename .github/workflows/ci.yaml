@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    # Compile, unit/integration tests, coverage. Runs in parallel with the jcstress job;
+    # Compile, unit/integration tests, coverage. Runs in parallel with the fray job;
     # jacoco lives here (not in its own job) because jacocoTestReport consumes the .exec
     # execution data produced by the test task in the same workspace — a separate job
     # would silently re-run every test to regenerate it.
@@ -60,50 +60,12 @@ jobs:
           files: |
             ./**/build/test-results/test/*.xml
 
-  jcstress:
-    # Runs the jcstress interleaving suites in every module that has one, in parallel with
-    # the build job — jcstress is CPU-bound on forked JVMs and shares nothing with the test
-    # step, so serializing them only added its ~30-35 minutes to the wall clock. The tasks
-    # are capped (-iters 1 -time 50 -f 1, set per module) across ~21 test classes; each
-    # class still exercises hundreds of thousands of real interleavings and fails the build
-    # on any FORBIDDEN outcome. Deeper campaigns run on demand by raising the per-module
-    # caps locally.
-    #
-    # timeout-minutes is a wedge guard, not a budget: ~1.5x the measured baseline plus
-    # shared-runner contention margin (a noisy neighbour inflated a normal ~33-min run past
-    # 45 on 2026-07-21), so a genuinely hung actor fails the job in 55 minutes instead of
-    # consuming the 360-minute job default.
-    runs-on: ubuntu-latest
-    timeout-minutes: 55
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up JDK
-        uses: actions/setup-java@v6
-        with:
-          distribution: "graalvm"
-          java-version: "25"
-          cache: "gradle"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.3.0
-
-      - name: Concurrency stress (jcstress)
-        run: |
-          ./gradlew --no-daemon --stacktrace \
-            :lib:kpipe-consumer:jcstress \
-            :lib:kpipe-core:jcstress \
-            :lib:kpipe-producer:jcstress \
-            :lib:kpipe-schema-registry-confluent:jcstress
-
   fray:
-    # Fray controlled-concurrency pilot, running alongside the jcstress job rather than
-    # replacing it — jcstress stays the gate until the pilot's evidence says otherwise.
-    # Fray explores schedules under its own scheduler instead of running racy code many
-    # times and hoping, so this job is expected to be far shorter than the ~33-minute
-    # stress baseline; the timeout is a wedge guard sized for a bounded exploration plus
-    # the one-off jlink of Fray's instrumented JDK, not a budget.
+    # The concurrency gate. Fray explores schedules under its own scheduler instead of
+    # running racy code many times and hoping the bad interleaving surfaces, which is why
+    # this job takes minutes where the stress harness it replaced took 30-45. The timeout
+    # is a wedge guard sized for a bounded exploration plus the one-off jlink of Fray's
+    # instrumented JDK, not a budget.
     #
     # ubuntu-latest is linux-x8664, which is one of the three platforms Fray publishes its
     # native JVMTI agent for. On anything else the plugin skips the agent and the suite

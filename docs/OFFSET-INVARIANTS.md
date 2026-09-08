@@ -7,13 +7,18 @@ phrased as a property a test can assert.
 
 - **jqwik** (Java-native property testing) is wired and green. `OffsetInvariantPropertyTest` generates randomized
   track/mark sequences and asserts I1 on a single partition. This is the active sequence-property layer.
-- **jcstress** (OpenJDK concurrency-stress harness) is wired and green on JDK 25 via a dedicated `jcstress` source set,
-  and runs in CI (capped at `-iters 1 -time 50 -f 1` per run — a few minutes that still hits hundreds of thousands of
-  interleavings and fails on any forbidden outcome; deeper campaigns are run on demand by raising the caps locally). The
-  `OffsetManagerLowestPendingJCStressTest`, `OffsetManagerGapHoldJCStressTest`, `OffsetManagerRevokeRaceJCStressTest`,
-  `RemoveIfEmptyJCStressTest`, and `SafeFirstJCStressTest` suites exercise real track/mark/revoke interleavings — the
-  concurrency-interleaving layer the single-threaded property tests cannot reach. This fills the role Lincheck would
-  have, until Lincheck supports JDK 25 (below).
+- **Fray** (CMU PASTA controlled-concurrency checker) is wired and green on JDK 25 via a per-module `frayTest` source
+  set, and is the CI concurrency gate. It explores thread schedules under its own scheduler and replays a failing one
+  deterministically, rather than running racy code many times and hoping the bad interleaving appears.
+  `OffsetManagerFrayTest` and `RemoveIfEmptyFrayTest` cover the track/mark/revoke and remove-if-empty interleavings —
+  the layer the single-threaded property tests cannot reach. The gate is falsification-tested: splitting the atomic
+  remove-if-empty into a separate check and removal makes `RemoveIfEmptyFrayTest` fail on its first iteration, naming
+  the lost offset. This fills the role Lincheck would have, and unlike Lincheck it runs on JDK 25 (below).
+
+  Fray controls scheduling but does not model hardware reordering, so visibility bugs are outside its reach. The
+  jcstress suite it replaced did not cover that either in practice: its one memory-model test forbids only an outcome
+  that x86 cannot produce, and CI has only ever run x86. See
+  [../docs/adr/0001-concurrency-testing-tooling.md](adr/0001-concurrency-testing-tooling.md).
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass
   throws `Unsupported class file major version 69` while retransforming classpath classes, which crashes the test JVM.
