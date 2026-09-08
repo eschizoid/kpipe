@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
@@ -42,11 +41,17 @@ class KeyOrderedEvictTombstoneFrayTest {
   private static final byte[] KEY_B = "key-b".getBytes(UTF_8);
   private static final byte[] KEY_C = "key-c".getBytes(UTF_8);
 
-  /// Accumulated across schedules so the class can assert the interesting region was reached at
-  /// least once. Whether a given schedule enters the retry path is invisible from the public
-  /// surface — the record processes correctly either way — so without this the test passes
+  /// Counts schedules that reached the retry path, so the class can assert the interesting
+  /// region was entered at least once. Whether a given schedule enters it is invisible from the
+  /// public surface — the record processes correctly either way — so without this the test passes
   /// identically when no schedule ever exercises what it exists to cover.
-  private static final AtomicLong TOMBSTONE_HITS = new AtomicLong();
+  ///
+  /// Kept in a system property rather than a static field. `@FrayTest` defaults
+  /// `resetClassLoaderPerIteration` to true, and Fray's loader is child-first, so this class is
+  /// redefined every iteration and any static it holds is a fresh zero — while `@AfterAll` runs
+  /// on the application-loaded copy and would read a counter no iteration ever touched. `System`
+  /// is a JDK class shared by every loader, so a property survives both.
+  private static final String HITS_PROPERTY = "kpipe.fray.tombstoneHits";
 
   /// One thread dispatches two records for key A back to back, mirroring production where a single
   /// consumer thread dispatches, while another forces an eviction by introducing key C. Every task
@@ -78,7 +83,7 @@ class KeyOrderedEvictTombstoneFrayTest {
     await(done);
     dispatcher.close();
 
-    TOMBSTONE_HITS.addAndGet(dispatcher.tombstoneRetries.get());
+    recordTombstoneHits(dispatcher.tombstoneRetries.get());
     assertEquals(3, tasksRun.get(), "a task was lost or ran more than once across the eviction");
     assertEquals(
       1,
@@ -116,11 +121,22 @@ class KeyOrderedEvictTombstoneFrayTest {
   /// explored the interesting region" is a red build rather than a silent pass.
   @AfterAll
   static void theEvictionWindowWasActuallyReached() {
+    final var hits = Long.parseLong(System.getProperty(HITS_PROPERTY, "0"));
+    System.clearProperty(HITS_PROPERTY);
     assertTrue(
-      TOMBSTONE_HITS.get() > 0,
+      hits > 0,
       "no schedule reached the dead-tombstone retry path, so this run proved nothing about it. "
-        + "Either the scheduler is not exploring, or the scenario no longer sets up the "
-        + "{A: empty, idle} precondition that eviction needs."
+        + "Either the key cap leaves a spare idle queue so eviction never has to touch key A, or "
+        + "the scenario no longer sets up the {A: empty, idle} precondition eviction needs, or "
+        + "the suite ran un-instrumented and every schedule was skipped."
     );
+  }
+
+  /// Adds this schedule's retry count to the cross-loader total.
+  ///
+  /// @param hits retries observed by one scenario
+  private static void recordTombstoneHits(final long hits) {
+    final var total = Long.parseLong(System.getProperty(HITS_PROPERTY, "0")) + hits;
+    System.setProperty(HITS_PROPERTY, Long.toString(total));
   }
 }

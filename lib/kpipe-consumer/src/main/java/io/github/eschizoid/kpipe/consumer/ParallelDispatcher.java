@@ -58,9 +58,12 @@ final class ParallelDispatcher implements Dispatcher {
   /// the drain wait. It also settles ownership, since the dispatcher only ever closes what it
   /// created.
   ///
+  /// The factory must produce daemon threads, for the same reason: `close()` reaches
+  /// `shutdownNow()`, which interrupts, and a task that ignores interruption outlives it.
+  ///
   /// @param rejectHandler      invoked when the executor refuses a record during shutdown
   /// @param terminationTimeout maximum time `close()` waits for in-flight tasks to finish
-  /// @param threadFactory      creates one thread per dispatched record
+  /// @param threadFactory      creates one thread per dispatched record; must produce daemon threads
   ParallelDispatcher(
     final BiConsumer<ConsumerRecord<byte[], byte[]>, RejectedExecutionException> rejectHandler,
     final Duration terminationTimeout,

@@ -1,10 +1,9 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
@@ -16,47 +15,43 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 @Tag("FrayTest")
 class ConsumerHealthFrayTest {
 
-  /// The lost-wakeup handshake between the consumer thread and the last worker to finish.
+  /// Two subsystems request a pause at once, each owning a different bit of the mask.
   ///
-  /// The consumer publishes the pause bit and then re-reads the in-flight count; the worker
-  /// decrements the in-flight count and then reads the pause bit to decide whether to nudge the
-  /// consumer. Three outcomes are fine — either side may observe the other, or both may. The one
-  /// forbidden state is neither side seeing the other: the consumer would hold with nothing in
-  /// flight and no completion left to release it.
+  /// The mask is one `AtomicInteger` mutated by read-modify-write, and `requestPause` returns
+  /// whether the caller was the one that moved the consumer from running to paused. Two things
+  /// must hold under every interleaving: both bits survive, and exactly one caller claims the
+  /// transition. A non-atomic get-then-set drops whichever bit lost the race, so the consumer
+  /// resumes while a subsystem still believes it is holding the pause; two callers both claiming
+  /// the transition would fire the pause hook twice.
   ///
-  /// The handshake stopped being a liveness invariant when the paused consumer moved to
-  /// polling on a fixed cadence instead of parking indefinitely, so today this bounds resume
-  /// latency rather than preventing a permanent stall.
-  ///
-  /// **What this cannot show.** The mutually-blind outcome is forbidden by the *memory model*,
-  /// not by the interleaving: reaching it needs the two reads to precede both writes, which is a
-  /// cycle in any total order over the four operations. A scheduling explorer preserves per-thread
-  /// program order, so it can never produce it, and this suite does not interleave memory
-  /// operations. What the assertion still catches is a `requestPause` that fails to publish at
-  /// all. Detecting a weakened implementation — plain fields in place of the atomics — needs a
-  /// tool that models reordering, and the suite has none since the publication test was retired.
+  /// This replaces a port of the jcstress backpressure handshake, whose forbidden outcome was
+  /// mutually-blind reads. That one is a memory-model property — reaching it needs both reads to
+  /// precede both writes, which is a cycle in any total order — so no scheduling explorer can
+  /// produce it, and the assertion could not fail. The mask race is the property on this class
+  /// that a scheduler can actually break, because the atomic is a scheduling point.
   @FrayTest(iterations = 500)
-  void pauseHandshakeIsNeverMutuallyBlind() {
+  void concurrentPauseSourcesBothLandAndExactlyOneOwnsTheTransition() {
     final var health = new ConsumerHealthController(null, null, null, NoopHook.INSTANCE, NoopHook.INSTANCE);
-    final var inFlight = new AtomicLong(1);
-    final var consumerSawDrain = new AtomicBoolean();
-    final var workerSawPause = new AtomicBoolean();
+    final var manualClaimed = new AtomicBoolean();
+    final var backpressureClaimed = new AtomicBoolean();
 
     FrayScenarios.runConcurrently(
-      () -> {
-        health.requestPause(ConsumerHealthController.Source.BACKPRESSURE);
-        consumerSawDrain.set(inFlight.get() == 0);
-      },
-      () -> {
-        inFlight.decrementAndGet();
-        workerSawPause.set(health.isHeldBy(ConsumerHealthController.Source.BACKPRESSURE));
-      }
+      () -> manualClaimed.set(health.requestPause(ConsumerHealthController.Source.MANUAL)),
+      () -> backpressureClaimed.set(health.requestPause(ConsumerHealthController.Source.BACKPRESSURE))
     );
 
-    assertFalse(
-      !consumerSawDrain.get() && !workerSawPause.get(),
-      "neither side observed the other: the consumer holds with nothing in flight and no " +
-        "completion left to release it"
+    assertTrue(health.isHeldBy(ConsumerHealthController.Source.MANUAL), "the MANUAL pause bit was lost");
+    assertTrue(
+      health.isHeldBy(ConsumerHealthController.Source.BACKPRESSURE),
+      "the BACKPRESSURE pause bit was lost"
+    );
+    assertTrue(
+      manualClaimed.get() ^ backpressureClaimed.get(),
+      () ->
+        "exactly one caller must observe the running-to-paused transition, but manual="
+          + manualClaimed.get()
+          + " and backpressure="
+          + backpressureClaimed.get()
     );
   }
 

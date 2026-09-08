@@ -137,9 +137,10 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// properties of the queue and monitor protocol rather than of the thread kind, so
   /// platform threads exercise them equally.
   ///
-  /// The factory must produce **daemon** threads. Shutdown abandons a worker still inside
-  /// `task.run()` rather than interrupting it, and only a daemon thread lets the JVM exit with
-  /// one outstanding.
+  /// The factory must produce **daemon** threads. `close()` interrupts workers that outlast the
+  /// drain wait, but a task that ignores interruption or is CPU-bound survives it, and only
+  /// daemon status lets the JVM exit with one still running. Virtual threads are always daemon,
+  /// so the production path satisfies this by construction.
   ///
   /// @param maxKeys       distinct keys held before eviction reclaims an idle queue
   /// @param workerFactory creates each per-key worker thread; must produce daemon threads

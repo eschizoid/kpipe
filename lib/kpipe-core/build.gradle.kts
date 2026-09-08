@@ -51,7 +51,6 @@ tasks.register<Test>("frayTest") {
   // not one this suite can rely on.
   forkEvery = 1
   testLogging { showStandardStreams = true }
-  useJUnitPlatform { includeTags("FrayTest") }
 }
 
 configure<FrayExtension> {
