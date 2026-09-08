@@ -93,4 +93,21 @@ class DispatcherThreadFactoryContractTest {
     );
     assertTrue(fromParallel.getMessage().contains("refused"), "the message should say the factory refused");
   }
+
+  /// A null factory is a caller mistake worth naming, not an NPE thrown from inside a
+  /// constructor several frames below where the argument was passed.
+  @Test
+  void aNullFactoryIsRejectedClearly() {
+    final var fromKeyOrdered = assertThrows(
+      IllegalArgumentException.class,
+      () -> new KeyOrderedDispatcher(2, null)
+    );
+    assertTrue(fromKeyOrdered.getMessage().contains("null"), "the message should name the null argument");
+
+    final var fromParallel = assertThrows(
+      IllegalArgumentException.class,
+      () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), null)
+    );
+    assertTrue(fromParallel.getMessage().contains("null"), "the message should name the null argument");
+  }
 }

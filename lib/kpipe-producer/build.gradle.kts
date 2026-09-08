@@ -53,6 +53,14 @@ dependencies {
   "frayTestRuntimeOnly"(libs.junitPlatformLauncher)
 }
 
+// This source set compiles against the main module's exported packages as plain classpath
+// classes. lib/build.gradle.kts turns modularity.inferModulePath on for every java-library
+// subproject, and frayTest shares packages with main, so without this opt-out it can be pushed
+// onto the module path and hit JPMS split-package errors.
+tasks.named<JavaCompile>("compileFrayTestJava") {
+  modularity.inferModulePath.set(false)
+}
+
 // On an unsupported OS/arch the plugin leaves this as a plain Test run rather than failing, so
 // every @FrayTest reports as skipped and the build reads green. FrayInstrumentationGuardTest in
 // this source set is what turns that state red.

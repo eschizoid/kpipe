@@ -320,6 +320,9 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// @return the same factory, when it produces daemon threads
   /// @throws IllegalArgumentException when it does not
   static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
+    if (factory == null) {
+      throw new IllegalArgumentException("workerFactory must not be null");
+    }
     // ThreadFactory.newThread is specified to return null when it declines to create a
     // thread, so the probe has to handle that rather than dereference it.
     final var probe = factory.newThread(() -> {});
