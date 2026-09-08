@@ -111,7 +111,7 @@ Measured on `ubuntu-latest`, the CI platform.
 | Wall clock | ~30-35 min | **5m45s** |
 | Classes | 21 | 16 ported |
 | Schedules | unbounded stress, outcome histogram | 7,701 explored across 18 runs |
-| Planted bug found | still running at 10+ min | **iteration 1, step 852, 764ms** |
+| Planted bug found | 15m37s from job start | **58s from job start** (764ms of exploration) |
 | Failure output | forbidden outcome tuple | names the invariant that broke |
 
 The planted-bug row is the one that matters most. The suite was falsified on purpose before being trusted: splitting
@@ -119,6 +119,11 @@ The planted-bug row is the one that matters most. The suite was falsified on pur
 remove-if-empty window, and Fray failed on the first iteration naming the lost offset. A green concurrency suite is
 worth nothing until it has been shown to go red, and the probe plus its revert stay in the pilot's history as the
 evidence.
+
+Both tools ran against that same broken commit, so the detection row is a direct comparison. jcstress found it too —
+this is a speed and diagnosability difference, not a capability one. The qualitative gap is in what comes back: Fray
+reported `offset 200 was lost to the concurrent remove-if-empty`, jcstress reported a forbidden outcome tuple plus the
+CPU and compilation plan, leaving the reader to map that back to the invariant.
 
 **Not ported, with reasons:**
 
