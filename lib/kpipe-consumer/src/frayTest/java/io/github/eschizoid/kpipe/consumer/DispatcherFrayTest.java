@@ -9,6 +9,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
@@ -21,6 +22,14 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// test uses [ParallelDispatcher], which has no per-key map and no stall loop at all.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
+@Disabled(
+  "Fray cannot afford these. It costs a fixed ~30s per iteration for any scenario touching a "
+    + "virtual thread, because the JDK VirtualThread carrier pool is not the ForkJoinPool it "
+    + "tracks, so every iteration waits out threads that never complete. These scenarios "
+    + "exceeded 26 minutes without finishing one iteration, and one schedule is not a gate. The "
+    + "dispatcher invariants stay on jcstress, which runs virtual threads at native speed "
+    + "because it does not control scheduling. Measured by BasicVirtualThreadFrayTest."
+)
 class DispatcherFrayTest {
 
   private static final String TOPIC = "fray-topic";
