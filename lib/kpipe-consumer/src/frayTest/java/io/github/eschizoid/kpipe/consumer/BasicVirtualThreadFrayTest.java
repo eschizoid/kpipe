@@ -27,7 +27,7 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 class BasicVirtualThreadFrayTest {
 
   /// One virtual thread, started and joined. Nothing else.
-  @FrayTest(iterations = 10)
+  @FrayTest(iterations = 3)
   void frayCanRunAPlainVirtualThread() {
     final var ran = new AtomicBoolean();
     final var t = Thread.ofVirtual().unstarted(() -> ran.set(true));
@@ -43,7 +43,7 @@ class BasicVirtualThreadFrayTest {
 
   /// The same question for the virtual-thread-per-task executor, which is what ParallelDispatcher
   /// uses. Separated from the plain-thread case because the executor also brings a shutdown path.
-  @FrayTest(iterations = 10)
+  @FrayTest(iterations = 3)
   void frayCanRunAVirtualThreadPerTaskExecutor() {
     final var count = new AtomicInteger();
     try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {

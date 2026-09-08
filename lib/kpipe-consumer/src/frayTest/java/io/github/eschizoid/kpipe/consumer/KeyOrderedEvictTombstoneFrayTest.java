@@ -50,7 +50,14 @@ class KeyOrderedEvictTombstoneFrayTest {
   /// park for work and never complete — the iteration then never ends and the run reports
   /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
   /// test body has returned.
-  @FrayTest(iterations = 500, abortThreadExecutionAfterMainExit = true)
+  /// Iteration count is deliberately low. Fray costs roughly 30 seconds per iteration for any
+  /// scenario touching a virtual thread — a fixed straggler timeout, not computation, since the
+  /// JDK's VirtualThread carrier pool is not the ForkJoinPool Fray tracks and its threads never
+  /// reach a completed state. Platform-thread scenarios in this suite run 500 iterations in a few
+  /// seconds; the same count here would take hours. Measured by
+  /// [BasicVirtualThreadFrayTest#frayCanRunAPlainVirtualThread()], which is kept precisely so this
+  /// number stays honest.
+  @FrayTest(iterations = 5, abortThreadExecutionAfterMainExit = true)
   void evictionNeverBreaksPerKeySerialization() {
     final var dispatcher = new KeyOrderedDispatcher(2);
     seedAndDrain(dispatcher, KEY_A, 0L);
