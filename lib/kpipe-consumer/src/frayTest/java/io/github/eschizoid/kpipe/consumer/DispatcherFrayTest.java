@@ -28,8 +28,9 @@ class DispatcherFrayTest {
   private static final byte[] SHARED_KEY = "shared-key".getBytes(UTF_8);
 
   /// Platform threads so Fray can explore these scenarios at the same speed as the rest of the
-  /// suite; daemon because both dispatchers abandon rather than interrupt a worker still running
-  /// at shutdown, and only a daemon thread lets the JVM exit with one outstanding.
+  /// suite; daemon because both dispatchers interrupt workers that outlast the drain wait, and a task
+  /// that ignores interruption survives that — only daemon status lets the JVM exit with one
+  /// still running.
   private static final ThreadFactory PLATFORM_DAEMON = Thread.ofPlatform().daemon().factory();
 
   /// Two records for the same key are dispatched concurrently. Each key has one serial queue

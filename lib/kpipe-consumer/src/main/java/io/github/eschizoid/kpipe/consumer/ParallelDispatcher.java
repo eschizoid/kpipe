@@ -120,8 +120,8 @@ final class ParallelDispatcher implements Dispatcher {
   }
 
   /// Rejects a factory that produces non-daemon threads, which is a contract the constructor is
-  /// the only place able to enforce. The probe is never started, so it costs an object and no
-  /// operating-system resource.
+  /// the only place able to enforce. The probe must come back unstarted, which is checked here,
+  /// so it costs an object and no operating-system resource.
   ///
   /// @param factory the candidate thread factory
   /// @return the same factory, when it produces daemon threads
@@ -136,6 +136,12 @@ final class ParallelDispatcher implements Dispatcher {
     if (probe == null) {
       throw new IllegalArgumentException(
         "threadFactory refused to create a thread, so its daemon status cannot be established"
+      );
+    }
+    if (probe.getState() != Thread.State.NEW) {
+      throw new IllegalArgumentException(
+        "threadFactory must return unstarted threads; the daemon probe would otherwise run work and the "
+          + "dispatcher would not own the thread's lifecycle"
       );
     }
     if (!probe.isDaemon()) {

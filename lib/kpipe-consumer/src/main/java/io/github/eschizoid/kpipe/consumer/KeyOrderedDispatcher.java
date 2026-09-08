@@ -313,8 +313,8 @@ final class KeyOrderedDispatcher implements Dispatcher {
   }
 
   /// Rejects a factory that produces non-daemon threads, which is a contract the constructor is
-  /// the only place able to enforce. The probe is never started, so it costs an object and no
-  /// operating-system resource.
+  /// the only place able to enforce. The probe must come back unstarted, which is checked here,
+  /// so it costs an object and no operating-system resource.
   ///
   /// @param factory the candidate worker factory
   /// @return the same factory, when it produces daemon threads
@@ -329,6 +329,12 @@ final class KeyOrderedDispatcher implements Dispatcher {
     if (probe == null) {
       throw new IllegalArgumentException(
         "workerFactory refused to create a thread, so its daemon status cannot be established"
+      );
+    }
+    if (probe.getState() != Thread.State.NEW) {
+      throw new IllegalArgumentException(
+        "workerFactory must return unstarted threads; the daemon probe would otherwise run work and the "
+          + "dispatcher would not own the thread's lifecycle"
       );
     }
     if (!probe.isDaemon()) {
@@ -349,14 +355,27 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// new worker added itself, leaving it un-interrupted and able to run after shutdown closed
   /// the offset manager / producer.) The runnable removes itself on exit; if `start()`
   /// throws, we remove it as a fallback since the finally would never run.
+  /// A factory validated at construction can still decline a later request, and
+  /// `ThreadFactory.newThread` signals that with null. Without this the caller sees an opaque
+  /// NullPointerException raised after `workerActive` and `pending` were already advanced.
+  ///
+  /// @param thread the thread the factory returned
+  /// @return that thread, when the factory produced one
+  private static Thread requireThread(final Thread thread) {
+    if (thread == null) {
+      throw new IllegalStateException("workerFactory declined to create a worker thread");
+    }
+    return thread;
+  }
+
   private void startWorker(final Object key, final KeyQueue queue) {
-    final var worker = workerFactory.newThread(() -> {
+    final var worker = requireThread(workerFactory.newThread(() -> {
         try {
           drain(queue);
         } finally {
           activeWorkers.remove(Thread.currentThread());
         }
-      });
+      }));
     worker.setName("kpipe-key-worker-" + System.identityHashCode(key));
     activeWorkers.add(worker);
     try {

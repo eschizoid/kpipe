@@ -110,4 +110,21 @@ class DispatcherThreadFactoryContractTest {
     );
     assertTrue(fromParallel.getMessage().contains("null"), "the message should name the null argument");
   }
+
+  /// `ThreadFactory` is not required to hand back an unstarted thread, and a probe that runs work
+  /// would both have side effects and leave the dispatcher not owning the thread's lifecycle.
+  @Test
+  void aFactoryReturningAStartedThreadIsRejected() {
+    final java.util.concurrent.ThreadFactory startsIt = r -> {
+      final var t = Thread.ofPlatform().daemon().unstarted(r);
+      t.start();
+      return t;
+    };
+
+    assertThrows(IllegalArgumentException.class, () -> new KeyOrderedDispatcher(2, startsIt));
+    assertThrows(
+      IllegalArgumentException.class,
+      () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), startsIt)
+    );
+  }
 }
