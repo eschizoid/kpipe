@@ -71,7 +71,7 @@ final class ParallelDispatcher implements Dispatcher {
   ) {
     this.rejectHandler = rejectHandler;
     this.terminationTimeout = terminationTimeout;
-    this.executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    this.executor = Executors.newThreadPerTaskExecutor(requireDaemonFactory(threadFactory));
   }
 
   /// `processTask` is expected to handle its own exceptions (the consumer's per-record error
@@ -117,6 +117,23 @@ final class ParallelDispatcher implements Dispatcher {
   @Override
   public long drainableCount() {
     return inFlight.get();
+  }
+
+  /// Rejects a factory that produces non-daemon threads, which is a contract the constructor is
+  /// the only place able to enforce. The probe is never started, so it costs an object and no
+  /// operating-system resource.
+  ///
+  /// @param factory the candidate thread factory
+  /// @return the same factory, when it produces daemon threads
+  /// @throws IllegalArgumentException when it does not
+  private static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
+    if (!factory.newThread(() -> {}).isDaemon()) {
+      throw new IllegalArgumentException(
+        "threadFactory must produce daemon threads: close() reaches shutdownNow(), which "
+          + "interrupts, and a task that ignores interruption would keep the JVM alive"
+      );
+    }
+    return factory;
   }
 
   /// `shutdownNow()` doesn't strand `inFlight`: the VT-per-task executor has no work queue, so

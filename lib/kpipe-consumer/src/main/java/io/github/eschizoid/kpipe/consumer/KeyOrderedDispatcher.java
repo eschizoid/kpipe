@@ -145,7 +145,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// @param maxKeys       distinct keys held before eviction reclaims an idle queue
   /// @param workerFactory creates each per-key worker thread; must produce daemon threads
   KeyOrderedDispatcher(final int maxKeys, final ThreadFactory workerFactory) {
-    this.workerFactory = workerFactory;
+    this.workerFactory = requireDaemonFactory(workerFactory);
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
     this.maxKeys = maxKeys;
   }
@@ -321,6 +321,23 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// new worker added itself, leaving it un-interrupted and able to run after shutdown closed
   /// the offset manager / producer.) The runnable removes itself on exit; if `start()`
   /// throws, we remove it as a fallback since the finally would never run.
+  /// Rejects a factory that produces non-daemon threads, which is a contract the constructor is
+  /// the only place able to enforce. The probe is never started, so it costs an object and no
+  /// operating-system resource.
+  ///
+  /// @param factory the candidate worker factory
+  /// @return the same factory, when it produces daemon threads
+  /// @throws IllegalArgumentException when it does not
+  private static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
+    if (!factory.newThread(() -> {}).isDaemon()) {
+      throw new IllegalArgumentException(
+        "workerFactory must produce daemon threads: close() interrupts workers that outlast the "
+          + "drain wait, and a task that ignores interruption would keep the JVM alive"
+      );
+    }
+    return factory;
+  }
+
   private void startWorker(final Object key, final KeyQueue queue) {
     final var worker = workerFactory.newThread(() -> {
         try {

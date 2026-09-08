@@ -25,13 +25,15 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// that key allocates a second queue and a second worker, and two workers then process the same
 /// key at once.
 ///
-/// **Why a permanently idle queue is part of the setup.** `reserveCapacity` waits by sleeping when
-/// the cap is saturated and nothing is evictable, and Fray models a sleep as a yield, so a thread
-/// in that loop stays runnable forever and exploration never terminates. Key B is seeded, drained,
-/// and then never dispatched to again, so an idle queue is always available and `evictOneIdle`
-/// always succeeds on its first attempt. Eviction still races the dispatcher exactly as before —
-/// the loop that cannot be explored is simply never entered. Cap 2 with at most two evictions
-/// needed keeps that guarantee: A can be evicted for C, and B for A's reallocation.
+/// **Why a permanently idle queue is part of the setup.** Key B is seeded, drained and never
+/// dispatched to again, so an idle queue is always available and `evictOneIdle` succeeds on its
+/// first attempt without entering `reserveCapacity`'s stall loop. Eviction still races the
+/// dispatcher exactly as before — key A remains the first idle candidate the scan finds.
+///
+/// This is a scheduling-space choice, not a workaround for a Fray limitation. `@FrayTest`
+/// defaults `sleepAsYield` to false, so a thread in that loop is modelled as blocked and released
+/// once nothing else is runnable; the loop terminates under exploration either way. Avoiding it
+/// keeps the schedules spent on the eviction window rather than on the stall.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
 class KeyOrderedEvictTombstoneFrayTest {
