@@ -43,7 +43,14 @@ class KeyOrderedEvictTombstoneFrayTest {
   /// One thread dispatches two records for key A back to back, mirroring production where a single
   /// consumer thread dispatches, while another forces an eviction by introducing key C. Every task
   /// must run exactly once, and key A's two tasks must never overlap.
-  @FrayTest(iterations = 500)
+  /// `abortThreadExecutionAfterMainExit` is required, not cosmetic. At main exit Fray waits for
+  /// every registered thread to complete, excluding only ForkJoinWorkerThreads belonging to its
+  /// own tracked pool. Virtual-thread carriers are ForkJoinWorkerThreads in the JDK's
+  /// VirtualThread scheduler pool, which is a different pool, so Fray waits for threads that
+  /// park for work and never complete — the iteration then never ends and the run reports
+  /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
+  /// test body has returned.
+  @FrayTest(iterations = 500, abortThreadExecutionAfterMainExit = true)
   void evictionNeverBreaksPerKeySerialization() {
     final var dispatcher = new KeyOrderedDispatcher(2);
     seedAndDrain(dispatcher, KEY_A, 0L);

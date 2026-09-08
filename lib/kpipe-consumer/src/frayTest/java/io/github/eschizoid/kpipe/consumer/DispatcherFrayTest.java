@@ -31,7 +31,14 @@ class DispatcherFrayTest {
   /// schedule is the second dispatch arriving exactly as the first worker decides it is done.
   /// Losing that handoff drops the record silently: no error, no retry, just a task that never
   /// runs.
-  @FrayTest(iterations = 500)
+  /// `abortThreadExecutionAfterMainExit` is required, not cosmetic. At main exit Fray waits for
+  /// every registered thread to complete, excluding only ForkJoinWorkerThreads belonging to its
+  /// own tracked pool. Virtual-thread carriers are ForkJoinWorkerThreads in the JDK's
+  /// VirtualThread scheduler pool, which is a different pool, so Fray waits for threads that
+  /// park for work and never complete — the iteration then never ends and the run reports
+  /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
+  /// test body has returned.
+  @FrayTest(iterations = 500, abortThreadExecutionAfterMainExit = true)
   void sameKeyHandoffNeverLosesATask() {
     final var dispatcher = new KeyOrderedDispatcher(KeyOrderedDispatcher.DEFAULT_MAX_KEYS);
     final var tasksRun = new AtomicInteger();
@@ -52,7 +59,14 @@ class DispatcherFrayTest {
   /// decrement that runs without a matching increment drives the count negative, and an
   /// increment whose decrement is skipped on the throwing path leaves the consumer permanently
   /// believing work is outstanding.
-  @FrayTest(iterations = 500)
+  /// `abortThreadExecutionAfterMainExit` is required, not cosmetic. At main exit Fray waits for
+  /// every registered thread to complete, excluding only ForkJoinWorkerThreads belonging to its
+  /// own tracked pool. Virtual-thread carriers are ForkJoinWorkerThreads in the JDK's
+  /// VirtualThread scheduler pool, which is a different pool, so Fray waits for threads that
+  /// park for work and never complete — the iteration then never ends and the run reports
+  /// `Iterations: 0` until the job is killed. The flag lets Fray abort those stragglers once the
+  /// test body has returned.
+  @FrayTest(iterations = 500, abortThreadExecutionAfterMainExit = true)
   void drainableCountBalancesAcrossNormalAndThrowingRecords() {
     final var dispatcher = new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(5));
     final var normalDone = new CountDownLatch(1);
