@@ -135,7 +135,9 @@ jobs:
         # The report directory carries fray.log plus the recording files that replay a
         # failing schedule deterministically. Without it a red job leaves nothing to debug,
         # since the interesting schedule is not reproducible from the test output alone.
-        if: ${{ failure() }}
+        # always(), not failure(): a job that exceeds timeout-minutes is CANCELLED rather
+        # than failed, and that is precisely the run whose partial report is worth reading.
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: fray-report

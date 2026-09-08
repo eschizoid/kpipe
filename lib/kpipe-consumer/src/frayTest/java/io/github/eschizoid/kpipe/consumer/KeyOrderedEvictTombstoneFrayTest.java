@@ -10,6 +10,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +47,13 @@ import org.pastalab.fray.junit.plain.FrayInTestLauncher;
 /// the interesting region" is a failure rather than a silent pass.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
+@Disabled(
+  "Does not terminate under exploration. KeyOrderedDispatcher.reserveCapacity waits by sleeping, and Fray " +
+    "models a sleep as a yield, so the spinning thread stays permanently runnable and the scheduler is free " +
+    "to re-pick it instead of advancing the worker it waits on. maxScheduledStep would bound the runaway " +
+    "but is not reachable from either entry point. Re-enable once the scenario no longer drives a thread " +
+    "into that loop; the constraint is recorded in docs/adr/0001-concurrency-testing-tooling.md."
+)
 class KeyOrderedEvictTombstoneFrayTest {
 
   /// Drives the scenario across Fray's whole schedule space and fails on the first schedule
