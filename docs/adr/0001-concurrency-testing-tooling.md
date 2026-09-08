@@ -89,15 +89,58 @@ tests **pass**. See "Silent no-op is the failure mode to guard" below.
 
 - The 21-class jcstress suite is ported to Fray and jcstress is removed, including its Gradle source sets and the
   dedicated CI job.
-- **Accepted, deliberately: memory-model coverage is dropped.** Fray controls thread scheduling; it does not model
-  hardware reordering. `CasPublicationJCStressTest` and the ARM/weakly-ordered campaign have no successor under this
-  decision — the campaign item is deleted from the roadmap rather than deferred. The judgement is that kpipe's
-  concurrency risk is overwhelmingly interleaving-shaped (lost enqueue, evict-vs-enqueue, remove-if-empty, worker
-  handoff, offset frontier), and that those are exactly what Fray targets directly instead of by chance.
-- CI keeps a dedicated concurrency job. **No speed win is demonstrated yet** — the pilot's first ported scenario
-  consumed the full 30-minute budget without returning a verdict (see the spin-wait section below), so the comparison
-  against the 30-35 minute stress baseline remains open.
+- **Memory-model coverage is dropped — and it was never actually present.** Fray controls thread scheduling; it does
+  not model hardware reordering, so visibility bugs (unsafe publication, a missing `volatile`, a torn read) are outside
+  what it can find. That gap is real. What makes it acceptable is that jcstress was not filling it either:
+  `CasPublicationJCStressTest`'s only FORBIDDEN outcome is `1, 0` — reader observes the published handle but a stale
+  payload — and x86 does not reorder store-store, so that signature cannot be produced on the only platform CI has ever
+  run. Its interesting outcome, `0, 7`, is marked ACCEPTABLE and manifests only off x86. A gate that cannot fail on the
+  platform it runs on is the same silent no-op this ADR exists to guard against; retiring it removes a false signal
+  rather than a real one.
+- CI keeps a dedicated concurrency job, one Gradle task per module holding Fray tests. Measured on `ubuntu-latest`:
+  **16 ported classes across 4 modules, 18 explorations, 7,701 schedules, 5m45s** — against the 30-35 minute jcstress
+  baseline for 21 classes. Roughly a 6x reduction with schedule coverage counted rather than hoped for.
 - Local runs on macOS x86_64 will not exercise Fray. Reproduction uses a `linux/amd64` container.
+
+## Migration results
+
+Measured on `ubuntu-latest`, the CI platform.
+
+| | jcstress | Fray |
+| --- | --- | --- |
+| Wall clock | ~30-35 min | **5m45s** |
+| Classes | 21 | 16 ported |
+| Schedules | unbounded stress, outcome histogram | 7,701 explored across 18 runs |
+| Planted bug found | still running at 10+ min | **iteration 1, step 852, 764ms** |
+| Failure output | forbidden outcome tuple | names the invariant that broke |
+
+The planted-bug row is the one that matters most. The suite was falsified on purpose before being trusted: splitting
+`OffsetLedger.markProcessed`'s atomic `computeIfPresent` into a separate empty-check and map removal reopens the
+remove-if-empty window, and Fray failed on the first iteration naming the lost offset. A green concurrency suite is
+worth nothing until it has been shown to go red, and the probe plus its revert stay in the pilot's history as the
+evidence.
+
+**Not ported, with reasons:**
+
+- **Four dispatcher scenarios** (`KeyOrderedEvictRace`, `KeyOrderedEvictTombstone`, `KeyOrderedWorkerHandoff`,
+  `DispatcherDrainableCount`) — blocked on the spin-wait constraint below. `@Disabled` carrying that reason.
+- **`CasPublication`** — memory-model only; see the consequence above for why it has no successor and why that costs
+  less than it appears to.
+
+## Two further constraints the port established
+
+Both were found by a scenario failing to terminate rather than failing an assertion, which is how tooling constraints
+tend to present.
+
+- **No live threads when the test body returns.** Fray does not finish an iteration while any thread it started is
+  still alive. `KafkaOffsetManager.start()` schedules a periodic commit task that outlives the body, and a scenario
+  that started the manager wedged on its first schedule and consumed a whole 30-minute job reporting `Iterations: 0`.
+  Components owning a scheduler — the offset manager, the batch wrapper, the circuit breaker, the consumer itself —
+  are constructed but not started, and every thread a scenario spawns is joined.
+- **Every module carrying Fray tests needs its own instrumentation guard.** The plugin rewires each `Test` task
+  independently, so one module instrumenting correctly proves nothing about another; a module whose task was missed
+  runs un-instrumented, reports every `@FrayTest` as skipped, and reads green. The guard is a plain `@Test`, because a
+  `@FrayTest` would itself be skipped in precisely the state it exists to detect.
 
 ## Fray is hostile to sleep-based spin-wait loops
 
@@ -145,8 +188,11 @@ and produces the best failure output of the three, but it cannot read Java 25 cl
 
 1. **Fray publishes a `macos-x8664` agent, or this machine moves to Apple Silicon.** Local runs become first-class and
    the container wrapper can go.
-2. **A memory-model bug escapes to production.** That is the evidence that would reverse the accepted risk above; the
-   response is to reintroduce a small jcstress remnant for JMM outcomes only, not to restore the full suite.
+2. **Memory-model coverage is wanted for real.** The response is not to restore the jcstress suite, which could not
+   produce the outcome it was guarding on x86. It is to run `CasPublication` alone on a weakly-ordered runner, where
+   its forbidden signature can actually appear — GitHub offers arm64 hosted runners to public repositories, so this is
+   one small job rather than a campaign. Until that runs, the honest statement is that kpipe's publication discipline
+   is unverified against weak memory ordering, not that it is verified.
 3. **Fray stops being maintained.** Re-run the probe against whatever the field offers then.
 
 ## Note on method
