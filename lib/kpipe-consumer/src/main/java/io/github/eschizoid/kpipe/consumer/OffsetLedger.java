@@ -78,10 +78,14 @@ final class OffsetLedger {
   void markProcessed(final String topic, final int partition, final long offset) {
     final var tp = cachedTopicPartition(topic, partition);
     highestProcessedOffsets.compute(tp, (_, v) -> v == null ? offset : Math.max(v, offset));
-    pendingOffsets.computeIfPresent(tp, (_, set) -> {
+    // FALSIFICATION PROBE - REVERTED IN THE NEXT COMMIT. Splits the empty-check from the map
+    // removal so a concurrent track() can add to a set that is already condemned.
+    final var set = pendingOffsets.get(tp);
+    if (set != null) {
       set.remove(offset);
-      return set.isEmpty() ? null : set;
-    });
+      final var nowEmpty = set.isEmpty();
+      if (nowEmpty) pendingOffsets.remove(tp);
+    }
   }
 
   /// The commit-frontier rule for one partition. Lowest still-pending offset if any (can't commit
