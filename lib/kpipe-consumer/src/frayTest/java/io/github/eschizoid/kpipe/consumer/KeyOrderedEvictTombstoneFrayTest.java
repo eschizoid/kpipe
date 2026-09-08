@@ -4,6 +4,9 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -64,7 +67,8 @@ class KeyOrderedEvictTombstoneFrayTest {
 
   /// One thread dispatches two records for key A back to back, mirroring production where a single
   /// consumer thread dispatches, while another forces an eviction by introducing key C. Every task
-  /// must run exactly once, and key A's two tasks must never overlap.
+  /// must run exactly once, key A's two tasks must never overlap, and they must run in the
+/// order they were dispatched.
   @FrayTest(iterations = 500)
   void evictionNeverBreaksPerKeySerialization() {
     final var dispatcher = new KeyOrderedDispatcher(2, Thread.ofPlatform().daemon().factory());
@@ -75,17 +79,19 @@ class KeyOrderedEvictTombstoneFrayTest {
     final var concurrentOnA = new AtomicInteger();
     final var maxConcurrentOnA = new AtomicInteger();
     final var done = new CountDownLatch(3);
-    final Runnable keyATask = () -> {
+    final var keyAOrder = Collections.synchronizedList(new ArrayList<Long>());
+    final java.util.function.LongFunction<Runnable> keyATask = offset -> () -> {
       final var live = concurrentOnA.incrementAndGet();
       maxConcurrentOnA.accumulateAndGet(live, Math::max);
+      keyAOrder.add(offset);
       tasksRun.incrementAndGet();
       concurrentOnA.decrementAndGet();
     };
 
     FrayScenarios.runConcurrently(
       () -> {
-        dispatcher.dispatch(record(KEY_A, 10L), keyATask, done::countDown);
-        dispatcher.dispatch(record(KEY_A, 11L), keyATask, done::countDown);
+        dispatcher.dispatch(record(KEY_A, 10L), keyATask.apply(10L), done::countDown);
+        dispatcher.dispatch(record(KEY_A, 11L), keyATask.apply(11L), done::countDown);
       },
       () -> dispatcher.dispatch(record(KEY_C, 12L), tasksRun::incrementAndGet, done::countDown)
     );
@@ -94,6 +100,13 @@ class KeyOrderedEvictTombstoneFrayTest {
 
     recordTombstoneHits(dispatcher.tombstoneRetries.get());
     assertEquals(3, tasksRun.get(), "a task was lost or ran more than once across the eviction");
+    assertEquals(
+      List.of(10L, 11L),
+      List.copyOf(keyAOrder),
+      "key A's records ran out of dispatch order. Non-overlap alone is not the KEY_ORDERED "
+        + "guarantee — records sharing a key must also run in the order they were dispatched, and "
+        + "an eviction between the two dispatches is exactly where that can be lost."
+    );
     assertEquals(
       1,
       maxConcurrentOnA.get(),

@@ -156,9 +156,11 @@ final class ParallelDispatcher implements Dispatcher {
     return factory;
   }
 
-  /// `shutdownNow()` doesn't strand `inFlight`: a thread-per-task executor has no work queue, so
-  /// it returns an empty list and only interrupts running tasks — and interrupt doesn't skip a
-  /// `finally`, so each task still decrements. A pooled executor WOULD strand queued tasks here;
+  /// `shutdownNow()` doesn't strand `inFlight`: a thread-per-task executor starts every task as
+  /// it is submitted, so there is no queue of accepted-but-never-run tasks to abandon — it only
+  /// interrupts tasks already running, and interrupt doesn't skip a `finally`, so each one still
+  /// decrements. A queueing executor WOULD strand them here, which is why the seam takes a
+  /// factory and builds the executor rather than accepting one.
   /// `ParallelDispatcherTest.drainableCountDrainsToZeroWhenCloseInterruptsRunningTask` guards it.
   @Override
   public void close() {
