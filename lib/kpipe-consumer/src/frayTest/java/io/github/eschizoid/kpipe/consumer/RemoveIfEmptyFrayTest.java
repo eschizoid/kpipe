@@ -23,7 +23,8 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// poll thread while `markOffsetProcessed` runs on worker virtual threads for the same partition.
 ///
 /// **Why this is the port that carries the pilot.** Unlike the dispatcher scenarios, nothing on
-/// this path waits by sleeping, so every schedule terminates. The invariant is also falsifiable in
+/// this path waits by sleeping, and the scenario leaves no thread running when the body returns,
+/// so every schedule terminates. The invariant is also falsifiable in
 /// one edit: replacing the atomic `computeIfPresent` remove-if-empty with a separate
 /// `if (isEmpty()) remove(key)` reopens the window, and a run that still passes after that edit has
 /// proven it is not exploring.
@@ -64,13 +65,18 @@ class RemoveIfEmptyFrayTest {
     assertEquals(1, state.pendingCount(), "the partition should hold exactly the one still-pending offset");
   }
 
+  /// Deliberately never started. `start()` schedules a periodic commit task on a
+  /// `ScheduledThreadPoolExecutor` that runs until the manager is closed, and Fray does not finish
+  /// an iteration while any thread is still live — a started manager wedges exploration on the
+  /// first schedule. Neither `trackOffset` nor `markOffsetProcessed` needs the scheduler: both
+  /// mutate the ledger directly and only skip their work once the manager reaches `STOPPED`, so an
+  /// unstarted manager in `CREATED` exercises the full race. The commit executor is likewise a
+  /// completed future rather than a pending one, so nothing can block on it.
   private static KafkaOffsetManager newManager() {
     final var consumer = new MockConsumer<byte[], byte[]>(OffsetResetStrategy.EARLIEST);
-    final var manager = KafkaOffsetManager.builder(consumer)
-      .withCommitExecutor(offsets -> new CompletableFuture<>())
+    return KafkaOffsetManager.builder(consumer)
+      .withCommitExecutor(offsets -> CompletableFuture.completedFuture(null))
       .build();
-    manager.start();
-    return manager;
   }
 
   private static ConsumerRecord<byte[], byte[]> record(final long offset) {
