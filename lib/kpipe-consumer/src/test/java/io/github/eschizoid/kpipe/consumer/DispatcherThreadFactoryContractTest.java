@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,22 +47,30 @@ class DispatcherThreadFactoryContractTest {
     assertDoesNotThrow(() -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1)).close());
   }
 
-  /// The probe hands the factory a runnable it must be able to wrap. A factory that runs it
-  /// immediately is still a legal `ThreadFactory`, and using one here exercises the probe body
-  /// that the production path deliberately never executes — the probe thread is created and left
-  /// unstarted, so nothing else can reach it.
+  /// The probe hands the factory a runnable it must be able to wrap, and asks for exactly one
+  /// thread. A factory that runs the runnable immediately is still a legal `ThreadFactory`, and
+  /// using one here executes the probe's no-op body — which the production path deliberately
+  /// never reaches, because it creates the probe thread and leaves it unstarted.
+  ///
+  /// The assertion counts threads requested rather than bodies run: the no-op has no observable
+  /// effect, so a caller cannot detect it executing. What it does pin is that neither probe
+  /// allocates more than the one thread it needs to read `isDaemon()`.
   @Test
   void theProbeSuppliesAUsableRunnable() {
-    final var probeRan = new java.util.concurrent.atomic.AtomicBoolean();
+    final var threadsRequested = new java.util.concurrent.atomic.AtomicInteger();
     final java.util.concurrent.ThreadFactory runsImmediately = r -> {
       r.run();
+      threadsRequested.incrementAndGet();
       return Thread.ofPlatform().daemon().unstarted(r);
     };
 
     assertDoesNotThrow(() -> KeyOrderedDispatcher.requireDaemonFactory(runsImmediately));
     assertDoesNotThrow(() -> ParallelDispatcher.requireDaemonFactory(runsImmediately));
 
-    probeRan.set(true);
-    assertTrue(probeRan.get(), "both probes accepted a daemon-producing factory");
+    assertEquals(
+      2,
+      threadsRequested.get(),
+      "each probe should ask the factory for exactly one thread"
+    );
   }
 }

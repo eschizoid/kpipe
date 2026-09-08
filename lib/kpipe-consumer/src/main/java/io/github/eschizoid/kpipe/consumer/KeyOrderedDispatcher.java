@@ -145,8 +145,8 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// @param maxKeys       distinct keys held before eviction reclaims an idle queue
   /// @param workerFactory creates each per-key worker thread; must produce daemon threads
   KeyOrderedDispatcher(final int maxKeys, final ThreadFactory workerFactory) {
-    this.workerFactory = requireDaemonFactory(workerFactory);
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
+    this.workerFactory = requireDaemonFactory(workerFactory);
     this.maxKeys = maxKeys;
   }
 
