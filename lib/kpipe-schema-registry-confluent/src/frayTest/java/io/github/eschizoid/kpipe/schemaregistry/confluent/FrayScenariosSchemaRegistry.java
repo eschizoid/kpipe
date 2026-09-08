@@ -1,0 +1,30 @@
+package io.github.eschizoid.kpipe.schemaregistry.confluent;
+
+/// Shared plumbing for this module's Fray ports: run actions on their own threads and join them.
+///
+/// Fray does not finish an iteration while any thread it started is still live, so joining is a
+/// correctness requirement rather than tidiness — a leaked thread wedges exploration instead of
+/// failing.
+final class FrayScenariosSchemaRegistry {
+
+  private FrayScenariosSchemaRegistry() {}
+
+  /// Runs each action on its own thread and joins them all before returning.
+  ///
+  /// @param actions the concurrent actions making up one schedule
+  static void runConcurrently(final Runnable... actions) {
+    final var threads = new Thread[actions.length];
+    for (var i = 0; i < actions.length; i++) {
+      threads[i] = new Thread(actions[i], "fray-actor-" + i);
+    }
+    for (final var t : threads) t.start();
+    for (final var t : threads) {
+      try {
+        t.join();
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("interrupted joining " + t.getName(), e);
+      }
+    }
+  }
+}

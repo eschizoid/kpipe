@@ -127,9 +127,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v6.3.0
 
       - name: Controlled concurrency (Fray)
+        # One task per module carrying Fray tests. The plugin rewires each Test task
+        # independently, so a module missing from this list is not covered by any other module's
+        # run — and each module carries its own FrayInstrumentationGuardTest for the same reason.
         run: |
           ./gradlew --no-daemon --stacktrace \
-            :lib:kpipe-consumer:frayTest
+            :lib:kpipe-consumer:frayTest \
+            :lib:kpipe-core:frayTest \
+            :lib:kpipe-producer:frayTest \
+            :lib:kpipe-schema-registry-confluent:frayTest
 
       - name: Upload Fray report
         # The report directory carries fray.log plus the recording files that replay a

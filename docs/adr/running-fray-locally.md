@@ -1,12 +1,12 @@
 # Running the Fray suite locally
 
-Companion note to ADR 0001. That ADR records _why_ the concurrency suite is moving to Fray; this one records how to
-run it on a machine Fray does not support natively.
+Companion note to ADR 0001. That ADR records _why_ the concurrency suite is moving to Fray; this one records how to run
+it on a machine Fray does not support natively.
 
 ## Why there is a problem
 
-Fray drives the JVM with a native JVMTI agent, and its Gradle plugin only wires that agent in on the three platforms
-the agent is published for:
+Fray drives the JVM with a native JVMTI agent, and its Gradle plugin only wires that agent in on the three platforms the
+agent is published for:
 
 ```kotlin
 val supportedOsArchitectures = listOf("linux-x8664", "windows-x8664", "macos-aarch64")
@@ -63,8 +63,8 @@ Notes on the flags:
   changes.
 - `--user` keeps build outputs owned by the host user rather than root.
 
-On an Apple Silicon Mac none of this is needed: `macos-aarch64` is supported, so `./gradlew :lib:kpipe-consumer:frayTest`
-works directly on the host.
+On an Apple Silicon Mac none of this is needed: `macos-aarch64` is supported, so
+`./gradlew :lib:kpipe-consumer:frayTest` works directly on the host.
 
 ## What a real run looks like
 
@@ -85,5 +85,5 @@ Two signals distinguish an instrumented run from the no-op:
 ## Reproducing a failure
 
 A failing schedule writes a report directory under `build/fray/fray-report`, containing `fray.log` and the recording
-files needed to replay that exact schedule. The CI job uploads it as an artifact on failure, because the schedule is
-not recoverable from the test output alone.
+files needed to replay that exact schedule. The CI job uploads it as an artifact on failure, because the schedule is not
+recoverable from the test output alone.
