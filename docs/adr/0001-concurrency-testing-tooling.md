@@ -135,8 +135,12 @@ CPU and compilation plan, leaving the reader to map that back to the invariant.
 - **`CasPublication`** and **`BackpressureHandshake`** — both memory-model. Their forbidden
   outcomes are unreachable under scheduling-only exploration: `CasPublication`'s needs store-store
   reordering, and the handshake's mutually-blind outcome needs a cycle in the interleaving order.
-  The handshake scenario is retained because it still catches a pause that fails to publish at
-  all, but its documented forbidden case is not what it now gates.
+  The handshake scenario was removed rather than kept with a caveat: this ADR retires
+  `CasPublication` precisely because a gate that cannot fail is a silent no-op, and keeping a
+  second one would contradict that. A falsifiable property replaced it — two sources requesting a
+  pause at once must both land their bit of the mask, and exactly one must claim the
+  running-to-paused transition. The mask is an atomic read-modify-write, so a non-atomic rewrite
+  loses a bit under an interleaving a scheduler can produce.
 
 ## Two further constraints the port established
 

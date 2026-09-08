@@ -89,8 +89,6 @@ class DispatcherFrayTest {
     final var finalCount = dispatcher.drainableCount();
     dispatcher.close();
 
-    // A snapshot taken after one record's own decrement may still see its sibling in flight, so
-    // 0 and 1 are both legal here; what must never appear is a negative count.
     // With two records in flight the only legal snapshots are 0 and 1: the awaited record has
     // already decremented, so at most its sibling remains. A negative value means a decrement ran
     // without a matching increment; anything above 1 means one ran twice. The sentinel makes an
