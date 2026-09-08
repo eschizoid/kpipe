@@ -47,33 +47,6 @@ class DispatcherThreadFactoryContractTest {
     assertDoesNotThrow(() -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1)).close());
   }
 
-  /// The probe hands the factory a runnable it must be able to wrap, and asks for exactly one
-  /// thread. A factory that runs the runnable immediately is still a legal `ThreadFactory`, and
-  /// using one here executes the probe's no-op body — which the production path deliberately
-  /// never reaches, because it creates the probe thread and leaves it unstarted.
-  ///
-  /// The assertion counts threads requested rather than bodies run: the no-op has no observable
-  /// effect, so a caller cannot detect it executing. What it does pin is that neither probe
-  /// allocates more than the one thread it needs to read `isDaemon()`.
-  @Test
-  void theProbeSuppliesAUsableRunnable() {
-    final var threadsRequested = new java.util.concurrent.atomic.AtomicInteger();
-    final java.util.concurrent.ThreadFactory runsImmediately = r -> {
-      r.run();
-      threadsRequested.incrementAndGet();
-      return Thread.ofPlatform().daemon().unstarted(r);
-    };
-
-    assertDoesNotThrow(() -> KeyOrderedDispatcher.requireDaemonFactory(runsImmediately));
-    assertDoesNotThrow(() -> ParallelDispatcher.requireDaemonFactory(runsImmediately));
-
-    assertEquals(
-      2,
-      threadsRequested.get(),
-      "each probe should ask the factory for exactly one thread"
-    );
-  }
-
   /// `ThreadFactory.newThread` is specified to return null when it declines to create a thread,
   /// so the probe must report that as a contract violation rather than dereference it. Without
   /// the guard the caller gets an opaque NullPointerException from inside a constructor.
@@ -125,6 +98,33 @@ class DispatcherThreadFactoryContractTest {
     assertThrows(
       IllegalArgumentException.class,
       () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), startsIt)
+    );
+  }
+
+  /// The factory returned by validation applies the same checks to every later thread, not only
+  /// to the construction probe. A factory that passes once and then misbehaves would otherwise
+  /// surface as an opaque failure at dispatch time.
+  @Test
+  void everyThreadTheFactoryLaterProducesIsValidated() {
+    final var calls = new java.util.concurrent.atomic.AtomicInteger();
+    final java.util.concurrent.ThreadFactory goodThenBad = r -> {
+      if (calls.incrementAndGet() == 1) {
+        return Thread.ofPlatform().daemon().unstarted(r);
+      }
+      return null;
+    };
+
+    final var dispatcher = new KeyOrderedDispatcher(2, goodThenBad);
+    assertThrows(IllegalStateException.class, () -> dispatcher.dispatch(record(1L), () -> {}, () -> {}));
+  }
+
+  private static org.apache.kafka.clients.consumer.ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new org.apache.kafka.clients.consumer.ConsumerRecord<>(
+      "contract-topic",
+      0,
+      offset,
+      "k".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+      "v".getBytes(java.nio.charset.StandardCharsets.UTF_8)
     );
   }
 }

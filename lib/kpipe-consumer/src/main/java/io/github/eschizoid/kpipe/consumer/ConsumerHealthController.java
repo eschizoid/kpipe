@@ -234,8 +234,10 @@ final class ConsumerHealthController {
         // either the metric is already at/below the low watermark (release right now), or at
         // least one record was still in flight at this read and its completion is guaranteed to
         // see the bit and unpark. Both reads and the bit are volatile, so the total order of
-        // the flag/count accesses makes this Dekker-style handshake sound
-        // (ConsumerHealthFrayTest exercises the pair).
+        // the flag/count accesses makes this Dekker-style handshake sound. No test gates it: the
+        // mutually-blind outcome needs both reads to precede both writes, which is a cycle in any
+        // interleaving, so only a tool modelling reordering could produce it and the suite has
+        // none since the publication test was retired.
         //
         // Gated to the in-flight strategy: the lag metric only moves when the consumer thread
         // itself advances positions, so it cannot drop concurrently inside this window (there

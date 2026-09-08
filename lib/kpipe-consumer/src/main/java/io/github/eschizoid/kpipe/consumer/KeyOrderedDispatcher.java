@@ -317,7 +317,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// so it costs an object and no operating-system resource.
   ///
   /// @param factory the candidate worker factory
-  /// @return the same factory, when it produces daemon threads
+  /// @return a factory that applies the same checks to every thread it later produces
   /// @throws IllegalArgumentException when it does not
   static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
     if (factory == null) {
@@ -343,7 +343,19 @@ final class KeyOrderedDispatcher implements Dispatcher {
           + "and a task that ignores interruption would keep the JVM alive"
       );
     }
-    return factory;
+    return r -> {
+      final var t = factory.newThread(r);
+      if (t == null) {
+        throw new IllegalStateException("workerFactory declined to create a thread");
+      }
+      if (t.getState() != Thread.State.NEW || !t.isDaemon()) {
+        throw new IllegalStateException(
+          "workerFactory returned a thread that is already started or not a daemon; the dispatcher owns "
+            + "the thread's lifecycle and relies on daemon status to let the JVM exit"
+        );
+      }
+      return t;
+    };
   }
 
   /// Starts a worker that drains the queue until empty. Called while holding the

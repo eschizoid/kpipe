@@ -28,18 +28,17 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// that key allocates a second queue and a second worker, and two workers then process the same
 /// key at once.
 ///
-/// **Why a permanently idle queue is part of the setup.** Key B is seeded, drained and never
-/// dispatched to again, so an idle queue is always available and `evictOneIdle` succeeds on its
-/// first attempt without entering `reserveCapacity`'s stall loop. Eviction still races the
-/// dispatcher exactly as before. Which idle queue the scan picks is NOT assumed: `evictOneIdle`
-/// walks a `ConcurrentHashMap` keySet, whose iteration order is unspecified, so a schedule may
-/// evict either key. That is why [#theEvictionWindowWasActuallyReached()] asserts the retry path
-/// was entered across the run rather than trusting any single schedule to reach it.
+/// **Cap of one, which is what makes the window reachable.** `evictOneIdle` takes the first
+/// evictable queue in `ConcurrentHashMap` iteration order, so any spare idle key can absorb every
+/// eviction and key A is then never condemned — the retry path becomes unreachable and the
+/// run-wide window assertion fails on a correct implementation. With a cap of one and only key A
+/// seeded, the new-key dispatch has no other candidate.
 ///
-/// This is a scheduling-space choice, not a workaround for a Fray limitation. `@FrayTest`
-/// defaults `sleepAsYield` to false, so a thread in that loop is modelled as blocked and released
-/// once nothing else is runnable; the loop terminates under exploration either way. Avoiding it
-/// keeps the schedules spent on the eviction window rather than on the stall.
+/// Cap one was rejected earlier over `reserveCapacity`'s stall loop, on the belief that Fray
+/// models a sleep as a yield and would spin forever. That is the plain launcher's configuration;
+/// `@FrayTest` defaults `sleepAsYield` to false, so the sleeper blocks and is released once
+/// nothing else is runnable. The loop terminates under exploration.
+
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
 class KeyOrderedEvictTombstoneFrayTest {
@@ -47,7 +46,6 @@ class KeyOrderedEvictTombstoneFrayTest {
   private static final String TOPIC = "fray-topic";
   private static final byte[] KEY_A = "key-a".getBytes(UTF_8);
   private static final byte[] KEY_B = "key-b".getBytes(UTF_8);
-  private static final byte[] KEY_C = "key-c".getBytes(UTF_8);
 
   /// Total retries against a dead tombstone, summed across every schedule, so the class can
   /// assert the interesting region was entered at least once. This is the raw retry count rather
@@ -71,9 +69,8 @@ class KeyOrderedEvictTombstoneFrayTest {
 /// order they were dispatched.
   @FrayTest(iterations = 500)
   void evictionNeverBreaksPerKeySerialization() {
-    final var dispatcher = new KeyOrderedDispatcher(2, Thread.ofPlatform().daemon().factory());
+    final var dispatcher = new KeyOrderedDispatcher(1, Thread.ofPlatform().daemon().factory());
     seedAndDrain(dispatcher, KEY_A, 0L);
-    seedAndDrain(dispatcher, KEY_B, 1L);
 
     final var tasksRun = new AtomicInteger();
     final var concurrentOnA = new AtomicInteger();
@@ -93,7 +90,7 @@ class KeyOrderedEvictTombstoneFrayTest {
         dispatcher.dispatch(record(KEY_A, 10L), keyATask.apply(10L), done::countDown);
         dispatcher.dispatch(record(KEY_A, 11L), keyATask.apply(11L), done::countDown);
       },
-      () -> dispatcher.dispatch(record(KEY_C, 12L), tasksRun::incrementAndGet, done::countDown)
+      () -> dispatcher.dispatch(record(KEY_B, 12L), tasksRun::incrementAndGet, done::countDown)
     );
     await(done);
     dispatcher.close();
