@@ -127,10 +127,18 @@ final class ParallelDispatcher implements Dispatcher {
   /// @return the same factory, when it produces daemon threads
   /// @throws IllegalArgumentException when it does not
   static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
-    if (!factory.newThread(() -> {}).isDaemon()) {
+    // ThreadFactory.newThread is specified to return null when it declines to create a
+    // thread, so the probe has to handle that rather than dereference it.
+    final var probe = factory.newThread(() -> {});
+    if (probe == null) {
       throw new IllegalArgumentException(
-        "threadFactory must produce daemon threads: close() reaches shutdownNow(), which "
-          + "interrupts, and a task that ignores interruption would keep the JVM alive"
+        "threadFactory refused to create a thread, so its daemon status cannot be established"
+      );
+    }
+    if (!probe.isDaemon()) {
+      throw new IllegalArgumentException(
+        "threadFactory must produce daemon threads: close() reaches shutdownNow(), which interrupts, "
+          + "and a task that ignores interruption would keep the JVM alive"
       );
     }
     return factory;

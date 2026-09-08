@@ -320,10 +320,18 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// @return the same factory, when it produces daemon threads
   /// @throws IllegalArgumentException when it does not
   static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
-    if (!factory.newThread(() -> {}).isDaemon()) {
+    // ThreadFactory.newThread is specified to return null when it declines to create a
+    // thread, so the probe has to handle that rather than dereference it.
+    final var probe = factory.newThread(() -> {});
+    if (probe == null) {
       throw new IllegalArgumentException(
-        "workerFactory must produce daemon threads: close() interrupts workers that outlast the "
-          + "drain wait, and a task that ignores interruption would keep the JVM alive"
+        "workerFactory refused to create a thread, so its daemon status cannot be established"
+      );
+    }
+    if (!probe.isDaemon()) {
+      throw new IllegalArgumentException(
+        "workerFactory must produce daemon threads: close() interrupts workers that outlast the drain wait, "
+          + "and a task that ignores interruption would keep the JVM alive"
       );
     }
     return factory;

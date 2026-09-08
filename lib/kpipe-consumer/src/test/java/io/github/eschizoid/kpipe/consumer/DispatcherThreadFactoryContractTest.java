@@ -73,4 +73,24 @@ class DispatcherThreadFactoryContractTest {
       "each probe should ask the factory for exactly one thread"
     );
   }
+
+  /// `ThreadFactory.newThread` is specified to return null when it declines to create a thread,
+  /// so the probe must report that as a contract violation rather than dereference it. Without
+  /// the guard the caller gets an opaque NullPointerException from inside a constructor.
+  @Test
+  void aFactoryThatRefusesToCreateAThreadIsRejectedClearly() {
+    final java.util.concurrent.ThreadFactory refuses = r -> null;
+
+    final var fromKeyOrdered = assertThrows(
+      IllegalArgumentException.class,
+      () -> new KeyOrderedDispatcher(2, refuses)
+    );
+    assertTrue(fromKeyOrdered.getMessage().contains("refused"), "the message should say the factory refused");
+
+    final var fromParallel = assertThrows(
+      IllegalArgumentException.class,
+      () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), refuses)
+    );
+    assertTrue(fromParallel.getMessage().contains("refused"), "the message should say the factory refused");
+  }
 }
