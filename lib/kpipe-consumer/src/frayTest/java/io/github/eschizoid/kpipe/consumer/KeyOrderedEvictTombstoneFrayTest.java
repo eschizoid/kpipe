@@ -43,7 +43,7 @@ class KeyOrderedEvictTombstoneFrayTest {
   /// One thread dispatches two records for key A back to back, mirroring production where a single
   /// consumer thread dispatches, while another forces an eviction by introducing key C. Every task
   /// must run exactly once, and key A's two tasks must never overlap.
-  @FrayTest(iterations = 20)
+  @FrayTest(iterations = 500)
   void evictionNeverBreaksPerKeySerialization() {
     final var dispatcher = new KeyOrderedDispatcher(2);
     seedAndDrain(dispatcher, KEY_A, 0L);

@@ -73,6 +73,12 @@ tasks.register<Test>("frayTest") {
   classpath = frayTest.runtimeClasspath
   // Fray forks one JVM and drives scheduling itself; parallel forks would only fight over cores.
   maxParallelForks = 1
+  // A fresh JVM per test class. Fray installs a global scheduler and instruments thread
+  // lifecycle process-wide, so state from a finished class can leave the next one unable to
+  // complete a single iteration — observed as a run that reports "Iterations: 0" forever for a
+  // class that passes when run alone. Sharing one JVM across classes is the cheaper default but
+  // not one this suite can rely on.
+  forkEvery = 1
   testLogging { showStandardStreams = true }
 }
 
