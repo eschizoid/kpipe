@@ -85,6 +85,9 @@ implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")   // or -avro / -protobuf — formats are opt-in
 ```
 
+Minor releases may remove public API through 1.x — see [docs/VERSIONING.md](docs/VERSIONING.md) for what is
+covered, how a break reaches you, and when that rule changes.
+
 `kpipe-api` brings the consumer, producer, core, metrics, and tracing modules transitively; its only external runtime dependency is
 `kafka-clients`. Maven snippets, the full module catalog, `platform` vs `enforcedPlatform`, and JPMS
 (`module-info.java`) guidance: [docs/MODULES.md](docs/MODULES.md).
@@ -244,6 +247,7 @@ without a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-te
 | [docs/MODULES.md](docs/MODULES.md) | Module catalog, BOM usage, JPMS |
 | [docs/ESCAPE-HATCHES.md](docs/ESCAPE-HATCHES.md) | The explicit builder API: custom offset managers, reporters, seams |
 | [docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md) | The machine-checked offset invariants |
+| [docs/VERSIONING.md](docs/VERSIONING.md) | What breaks in a minor, what counts as public API, and when the rule changes |
 | [docs/adr/](docs/adr/) | Architecture decision records — why the concurrency tooling is what it is |
 | [benchmarks/](benchmarks/) | Methodology, raw results, dated capture snapshots |
 | [examples/](examples/) | Runnable apps per format + a full demo with observability stack (`./scripts/run-demo.sh`) |
