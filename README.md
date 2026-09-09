@@ -80,7 +80,7 @@ installed unless you opt in.
 ## Installation
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.18.0"))
+implementation(platform("io.github.eschizoid:kpipe-bom:1.20.0"))
 implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")   // or -avro / -protobuf — formats are opt-in
 ```

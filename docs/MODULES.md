@@ -8,7 +8,7 @@ Gradle/Maven view.
 Most applications need exactly three lines: the BOM, the fluent API, and one format module.
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.18.0"))
+implementation(platform("io.github.eschizoid:kpipe-bom:1.20.0"))
 implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")   // or -avro / -protobuf
 ```
@@ -26,7 +26,7 @@ Maven equivalent:
     <dependency>
       <groupId>io.github.eschizoid</groupId>
       <artifactId>kpipe-bom</artifactId>
-      <version>1.18.0</version>
+      <version>1.20.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>

@@ -6,8 +6,7 @@ reading its commit history.
 ## The short version
 
 **Through 1.x, a minor release may remove or rename public API.** There is no deprecation cycle: an API that goes
-is deleted in the same change that migrates its callers, and the release notes carry a migration table for every
-break. Patch releases never break anything.
+is deleted in the same change that migrates its callers. Patch releases never break anything.
 
 **From 2.0 onward, KPipe follows strict semantic versioning.** Breaking changes land only in majors, and anything
 removed is deprecated for at least one minor first.
@@ -26,27 +25,44 @@ shape and wrong once people depend on it. 2.0 is where it flips.
 
 ## What counts as public API
 
-| Tier | What it covers | Stability |
-| --- | --- | --- |
-| **Public API** | `KPipe`, `Stream`, `Sink`, `Handle`, `MessageFormat`, `MessageSink`, `BatchSink`, `Result`, the `RegistryKey` / `MessageProcessorRegistry` pair, and the builders reachable from them | Covered by the rules above |
-| **SPI** | `SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `ConsumerMetrics`, `ProducerMetrics` | Same rules, but implementing one means a new abstract method is a break for you and not for a caller |
-| **Internal** | Anything package-private, anything under a package a module does not export, and every `*Dispatcher`, `*Controller` and `*Ledger` type | No guarantees. May change in any release |
+The tiers are defined by a rule rather than a list, because an enumeration goes stale the moment a type is added.
 
-A type being `public` for JPMS reasons does not make it public API — the module's `exports` clauses are the
-boundary that counts.
+**Public API** — any `public` type in an exported package that is not covered by the two rules below. Reaching it
+from the documented paths (`KPipe` → `Stream` → `Sink` → `Handle`, `KPipeConsumer.builder()`, the format and sink
+types they accept) is what makes it public, and that includes the types those signatures mention:
+`CircuitBreakerController` and `BackpressureController` are parameters to `Stream` methods, so they are public API,
+as are `BatchPolicy`, `BatchResult` and `ProcessingMode`. The published `kpipe-test` module is public API too —
+user test code compiles against it.
+
+**SPI** — a public interface users are expected to *implement*: `MessageFormat`, `MessageSink`, `BatchSink`,
+`SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `ConsumerMetrics`, `ProducerMetrics`.
+Same stability rules, with one asymmetry worth knowing: adding a method to one of these is a breaking change for
+an implementer and invisible to a caller.
+
+**Internal** — anything **package-private**, whatever package it lives in. That is the boundary that actually
+operates here: every package in every module is exported, with no qualified exports anywhere, so JPMS is not
+hiding anything. `KeyOrderedDispatcher`, `ParallelDispatcher`, `SequentialDispatcher`, `OffsetLedger`,
+`RecordProcessor`, `ConsumerHealthController`, `BatchPipelineWrapper` and `PendingOffsetSet` are all
+package-private and carry no guarantees. Note the shape of the names is not the rule — `CircuitBreakerController`
+and `BackpressureController` are public API despite the suffix.
+
+One exception exists and is called out rather than papered over: `RegistryFunctions` in `kpipe-core` is public and
+exported but is not intended as user surface. Treat it as internal.
 
 ## How a break reaches you
 
-- **Release notes** carry a migration table: the removed form, the replacement, and the mechanical edit.
-- **The PR that removes it** names the removal in its description and updates every caller in the repository,
-  so there is always a worked example.
-- **No compiler warning.** That is the cost of having no deprecation cycle, and it is the reason to read the notes
-  for a minor upgrade rather than assuming a minor is safe.
+- **The PR that removes it** carries the migration detail — the removed form, the replacement, and the mechanical
+  edit — and updates every caller in the repository, so there is always a worked example. The same table is in the
+  commit message.
+- **Release notes are generated from commit subjects**, so a break appears there as a `feat!:` or `refactor(x)!:`
+  line pointing at that commit rather than as a prose migration guide. Follow the commit for the table.
+- **No compiler warning.** That is the cost of having no deprecation cycle, and it is the reason to read the
+  release diff for a minor upgrade rather than assuming a minor is safe.
 
 ## Support window
 
-The newest minor on the current major receives fixes. Older minors do not get backports; upgrading forward is the
-supported path. When 2.0 arrives, 1.x gets security fixes for six months.
+The newest minor on the current major receives fixes. Older minors do not get backports — no maintenance branches
+exist and none have ever been cut, so upgrading forward is the only supported path.
 
 ## Java baseline
 
