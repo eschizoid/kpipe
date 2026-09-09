@@ -28,16 +28,22 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// that key allocates a second queue and a second worker, and two workers then process the same
 /// key at once.
 ///
-/// **Cap of one, which is what makes the window reachable.** `evictOneIdle` takes the first
-/// evictable queue in `ConcurrentHashMap` iteration order, so any spare idle key can absorb every
-/// eviction and key A is then never condemned — the retry path becomes unreachable and the
-/// run-wide window assertion fails on a correct implementation. With a cap of one and only key A
-/// seeded, the new-key dispatch has no other candidate.
+/// **Cap of one, which is what makes key A the eviction target.** With a spare idle key, the
+/// eviction only lands elsewhere when key A is *busy*: `evictOneIdle` finds A non-evictable once
+/// the first dispatch has enqueued, falls through to the spare, and the new key is admitted
+/// without ever condemning A. The retry path is then unreachable for that schedule. At cap one
+/// there is no fallback — the dispatch stalls until A drains and must then evict A.
+///
+/// This makes the eviction *target* certain, not the window itself: the retry still requires the
+/// second dispatcher to be holding a stale reference across the gap between its map lookup and
+/// its monitor entry. That is why the run-wide assertion counts hits rather than expecting one
+/// per schedule.
 ///
 /// Cap one was rejected earlier over `reserveCapacity`'s stall loop, on the belief that Fray
 /// models a sleep as a yield and would spin forever. That is the plain launcher's configuration;
 /// `@FrayTest` defaults `sleepAsYield` to false, so the sleeper blocks and is released once
-/// nothing else is runnable. The loop terminates under exploration.
+/// nothing else is runnable. A non-idle queue always has an active worker, so the dispatcher is
+/// always waiting on a runnable thread and the loop terminates.
 
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
@@ -64,7 +70,7 @@ class KeyOrderedEvictTombstoneFrayTest {
   private static final String HITS_PROPERTY = "kpipe.fray.tombstoneHits";
 
   /// One thread dispatches two records for key A back to back, mirroring production where a single
-  /// consumer thread dispatches, while another forces an eviction by introducing key C. Every task
+  /// consumer thread dispatches, while another forces an eviction by introducing key B. Every task
   /// must run exactly once, key A's two tasks must never overlap, and they must run in the
 /// order they were dispatched.
   @FrayTest(iterations = 500)

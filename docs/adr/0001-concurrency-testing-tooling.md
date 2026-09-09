@@ -127,11 +127,13 @@ CPU and compilation plan, leaving the reader to map that back to the invariant.
 
 **Not ported, with reasons:**
 
-- **The `reserveCapacity` saturation path.** The eviction port keeps one key permanently idle so
-  `evictOneIdle` always succeeds on its first attempt, which is what makes the scenario explorable; the stall
-  loop is therefore never entered. Ordinary unit and property tests still cover the cap.
-- **Concurrent same-key dispatch racing an eviction.** `KeyOrderedEvictRace` combined both at cap 1. The ports
-  keep each separately — same-key concurrency at the default cap, eviction at cap 2 — and lose the intersection.
+- **Concurrent same-key dispatch racing an eviction.** `KeyOrderedEvictRace` ran three actors at cap 1, two of
+  them dispatching the same key. The ports keep the pieces separately — same-key concurrency at the default cap,
+  eviction at cap 1 with a single seeded key — and lose the three-way intersection.
+
+  The eviction port does enter `reserveCapacity`'s stall loop, which is safe under `@FrayTest`: `sleepAsYield`
+  defaults false, so the sleeper blocks rather than spinning, and a non-idle queue always has an active worker,
+  so the stalling dispatcher is always waiting on a runnable thread.
 - **`CasPublication`** and **`BackpressureHandshake`** — both memory-model. Their forbidden
   outcomes are unreachable under scheduling-only exploration: `CasPublication`'s needs store-store
   reordering, and the handshake's mutually-blind outcome needs a cycle in the interleaving order.

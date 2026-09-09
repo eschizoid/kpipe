@@ -127,4 +127,29 @@ class DispatcherThreadFactoryContractTest {
       "v".getBytes(java.nio.charset.StandardCharsets.UTF_8)
     );
   }
+
+  /// The parallel path must roll back and route through the reject handler when the factory
+  /// declines a later request, rather than letting the failure escape `dispatch`.
+  ///
+  /// `dispatch` increments the in-flight count before submitting and catches only
+  /// `RejectedExecutionException`. Any other type escapes with the count stranded, and that count
+  /// drives the backpressure watermark and the drain wait — so a consumer would pause and never
+  /// resume. An earlier revision of the validating wrapper threw `IllegalStateException` here and
+  /// did exactly that, with the key-ordered path covered and this one not.
+  @Test
+  void aParallelFactoryThatDeclinesLaterDoesNotStrandTheInFlightCount() {
+    final var rejections = new java.util.concurrent.atomic.AtomicInteger();
+    final var calls = new java.util.concurrent.atomic.AtomicInteger();
+    final var dispatcher = new ParallelDispatcher(
+      (r, e) -> rejections.incrementAndGet(),
+      Duration.ofSeconds(1),
+      r -> calls.incrementAndGet() == 1 ? Thread.ofPlatform().daemon().unstarted(r) : null
+    );
+
+    dispatcher.dispatch(record(1L), () -> {}, () -> {});
+
+    assertEquals(0L, dispatcher.drainableCount(), "the in-flight count was stranded by the refusal");
+    assertEquals(1, rejections.get(), "the reject handler should have been invoked");
+    dispatcher.close();
+  }
 }

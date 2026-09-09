@@ -156,10 +156,13 @@ final class ParallelDispatcher implements Dispatcher {
     return r -> {
       final var t = factory.newThread(r);
       if (t == null) {
-        throw new IllegalStateException("threadFactory declined to create a thread");
+        // RejectedExecutionException, not IllegalStateException: dispatch() has already
+        // incremented inFlight and catches only this type, so anything else escapes with the
+        // count stranded and the reject handler never called.
+        throw new RejectedExecutionException("threadFactory declined to create a thread");
       }
       if (t.getState() != Thread.State.NEW || !t.isDaemon()) {
-        throw new IllegalStateException(
+        throw new RejectedExecutionException(
           "threadFactory returned a thread that is already started or not a daemon; the dispatcher owns "
             + "the thread's lifecycle and relies on daemon status to let the JVM exit"
         );
