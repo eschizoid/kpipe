@@ -24,11 +24,10 @@ class ConsumerHealthFrayTest {
   /// resumes while a subsystem still believes it is holding the pause; two callers both claiming
   /// the transition would fire the pause hook twice.
   ///
-  /// This replaces a port of the jcstress backpressure handshake, whose forbidden outcome was
-  /// mutually-blind reads. That one is a memory-model property — reaching it needs both reads to
-  /// precede both writes, which is a cycle in any total order — so no scheduling explorer can
-  /// produce it, and the assertion could not fail. The mask race is the property on this class
-  /// that a scheduler can actually break, because the atomic is a scheduling point.
+  /// The mutually-blind outcome of the pause handshake is not testable here and is deliberately
+  /// not attempted: reaching it needs both reads to precede both writes, which is a cycle in any
+  /// total order, so a scheduling explorer cannot produce it. The mask race is the property on
+  /// this class that a scheduler *can* break, because the atomic is a scheduling point.
   @FrayTest(iterations = 500)
   void concurrentPauseSourcesBothLandAndExactlyOneOwnsTheTransition() {
     final var health = new ConsumerHealthController(null, null, null, NoopHook.INSTANCE, NoopHook.INSTANCE);

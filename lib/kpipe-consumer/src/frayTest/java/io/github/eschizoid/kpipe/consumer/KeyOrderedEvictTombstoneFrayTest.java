@@ -34,16 +34,13 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// without ever condemning A. The retry path is then unreachable for that schedule. At cap one
 /// there is no fallback — the dispatch stalls until A drains and must then evict A.
 ///
-/// This makes the eviction *target* certain, not the window itself: the retry still requires the
-/// second dispatcher to be holding a stale reference across the gap between its map lookup and
-/// its monitor entry. That is why the run-wide assertion counts hits rather than expecting one
-/// per schedule.
+/// That makes the eviction *target* certain, not the window itself: the retry still requires the
+/// key-A dispatcher to be holding a stale reference across the gap between its map lookup and its
+/// monitor entry. Hence the run-wide assertion counts hits rather than expecting one per schedule.
 ///
-/// Cap one was rejected earlier over `reserveCapacity`'s stall loop, on the belief that Fray
-/// models a sleep as a yield and would spin forever. That is the plain launcher's configuration;
-/// `@FrayTest` defaults `sleepAsYield` to false, so the sleeper blocks and is released once
-/// nothing else is runnable. A non-idle queue always has an active worker, so the dispatcher is
-/// always waiting on a runnable thread and the loop terminates.
+/// Entering `reserveCapacity`'s stall loop is safe here. `@FrayTest` defaults `sleepAsYield` to
+/// false, so the sleeper blocks rather than staying runnable, and a non-idle queue always has an
+/// active worker — the stalling dispatcher is therefore always waiting on a runnable thread.
 
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
@@ -143,9 +140,9 @@ class KeyOrderedEvictTombstoneFrayTest {
   }
 
   /// Fails when no schedule reached the dead-tombstone retry path, so "the suite ran but never
-  /// explored the interesting region" is a red build rather than a silent pass. That is not
-  /// hypothetical: an earlier revision of this scenario kept a spare idle queue, so eviction
-  /// never had to touch key A, and this assertion is what caught it.
+  /// explored the interesting region" is a red build rather than a silent pass. A setup that
+  /// leaves any spare idle queue makes the window unreachable while every other assertion still
+  /// holds, which is the shape this guards against.
   ///
   /// The count is printed on every run, not only on failure. Whether exploration reaches the
   /// window is a property of Fray's scheduler and this scenario, and a rate drifting toward zero

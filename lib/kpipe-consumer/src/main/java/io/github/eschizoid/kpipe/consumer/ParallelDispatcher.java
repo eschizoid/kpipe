@@ -162,9 +162,9 @@ final class ParallelDispatcher implements Dispatcher {
     return r -> {
       final var t = factory.newThread(r);
       if (t == null) {
-        // RejectedExecutionException, not IllegalStateException: dispatch() has already
-        // incremented inFlight and catches only this type, so anything else escapes with the
-        // count stranded and the reject handler never called.
+        // A contract violation, not backpressure: dispatch() rolls the in-flight count back and
+        // lets this out, rather than routing it to the reject handler where a misconfigured
+        // factory would be reported as an ordinary shutdown rejection.
         throw new IllegalStateException("threadFactory declined to create a thread");
       }
       if (t.getState() != Thread.State.NEW || !t.isDaemon()) {

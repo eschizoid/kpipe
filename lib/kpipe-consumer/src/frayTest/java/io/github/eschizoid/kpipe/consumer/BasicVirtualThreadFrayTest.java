@@ -11,17 +11,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Establishes whether Fray can explore virtual threads at all, independently of anything kpipe
-/// does with them.
+/// Pins Fray's ability to explore virtual threads, which the rest of the suite depends on and
+/// which is expensive enough to shape how the other scenarios are written.
 ///
-/// This exists because the dispatcher scenarios report `Iterations: 0` forever and the cause was
-/// not identifiable from their own output — they build a dispatcher, a pipeline and a sink, so a
-/// hang there has many candidate explanations. These two tests have one moving part each. If they
-/// pass, virtual threads are fine and the dispatcher scenarios are doing something else wrong. If
-/// they hang, the answer is upstream and the dispatchers are simply the first place kpipe hit it.
+/// Each iteration costs roughly 30 seconds for any scenario touching a virtual thread: the JDK
+/// builds `VirtualThread`'s default scheduler with a 30-second keep-alive, so its carrier threads
+/// idle out on that schedule, and Fray waits for every registered thread to reach a completed
+/// state. Platform-thread scenarios in this suite run 500 iterations in a few seconds. That gap
+/// is why the dispatcher scenarios inject a platform-thread factory rather than exercising the
+/// production virtual-thread path.
 ///
-/// Named to sort ahead of the dispatcher tests so its result is on record even when a later class
-/// takes the job down.
+/// Two tests with one moving part each, so a failure here means Fray, not kpipe.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
 class BasicVirtualThreadFrayTest {
