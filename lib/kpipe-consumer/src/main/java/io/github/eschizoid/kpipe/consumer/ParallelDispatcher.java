@@ -114,6 +114,12 @@ final class ParallelDispatcher implements Dispatcher {
     } catch (final RejectedExecutionException e) {
       inFlight.decrementAndGet();
       rejectHandler.accept(record, e);
+    } catch (final RuntimeException e) {
+      // A thread-factory contract violation is a programming error, not backpressure. Roll the
+      // count back so it cannot strand the drain wait, then let it out: routing it to the reject
+      // handler would report a misconfigured factory as an ordinary shutdown rejection.
+      inFlight.decrementAndGet();
+      throw e;
     }
   }
 
@@ -159,10 +165,10 @@ final class ParallelDispatcher implements Dispatcher {
         // RejectedExecutionException, not IllegalStateException: dispatch() has already
         // incremented inFlight and catches only this type, so anything else escapes with the
         // count stranded and the reject handler never called.
-        throw new RejectedExecutionException("threadFactory declined to create a thread");
+        throw new IllegalStateException("threadFactory declined to create a thread");
       }
       if (t.getState() != Thread.State.NEW || !t.isDaemon()) {
-        throw new RejectedExecutionException(
+        throw new IllegalStateException(
           "threadFactory returned a thread that is already started or not a daemon; the dispatcher owns "
             + "the thread's lifecycle and relies on daemon status to let the JVM exit"
         );

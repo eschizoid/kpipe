@@ -453,7 +453,7 @@ final class RecordProcessor {
   /// poisoned mark.
   void handleParallelRejection(final ConsumerRecord<byte[], byte[]> record, final RejectedExecutionException e) {
     if (!consumerActive.getAsBoolean()) return;
-    LOGGER.log(Level.WARNING, "Task submission rejected during shutdown", e);
+    LOGGER.log(Level.WARNING, "Task submission rejected while the consumer was running", e);
     metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
     otelMetrics.recordProcessingError(record.topic());
     try {

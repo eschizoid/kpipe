@@ -128,14 +128,14 @@ class DispatcherThreadFactoryContractTest {
     );
   }
 
-  /// The parallel path must roll back and route through the reject handler when the factory
-  /// declines a later request, rather than letting the failure escape `dispatch`.
+  /// The parallel path must roll back the in-flight count when the factory violates its contract
+  /// on a later call, and must surface the violation rather than reporting it as backpressure.
   ///
-  /// `dispatch` increments the in-flight count before submitting and catches only
-  /// `RejectedExecutionException`. Any other type escapes with the count stranded, and that count
-  /// drives the backpressure watermark and the drain wait — so a consumer would pause and never
-  /// resume. An earlier revision of the validating wrapper threw `IllegalStateException` here and
-  /// did exactly that, with the key-ordered path covered and this one not.
+  /// `dispatch` increments the in-flight count before submitting, so any escape without a
+  /// rollback strands it — and that count drives the backpressure watermark and the drain wait,
+  /// leaving a consumer paused with nothing to resume it. The bad factory here returns a
+  /// non-daemon thread rather than null, because the executor rejects a null-returning factory on
+  /// its own and the assertions would then hold whether or not the guard exists.
   @Test
   void aParallelFactoryThatDeclinesLaterDoesNotStrandTheInFlightCount() {
     final var rejections = new java.util.concurrent.atomic.AtomicInteger();
@@ -143,13 +143,18 @@ class DispatcherThreadFactoryContractTest {
     final var dispatcher = new ParallelDispatcher(
       (r, e) -> rejections.incrementAndGet(),
       Duration.ofSeconds(1),
-      r -> calls.incrementAndGet() == 1 ? Thread.ofPlatform().daemon().unstarted(r) : null
+      // A non-daemon thread on the second call, not null: the JDK executor rejects a
+      // null-returning factory by itself, so null would pass with or without the wrapper.
+      r ->
+        calls.incrementAndGet() == 1
+          ? Thread.ofPlatform().daemon().unstarted(r)
+          : Thread.ofPlatform().daemon(false).unstarted(r)
     );
 
-    dispatcher.dispatch(record(1L), () -> {}, () -> {});
+    assertThrows(IllegalStateException.class, () -> dispatcher.dispatch(record(1L), () -> {}, () -> {}));
 
-    assertEquals(0L, dispatcher.drainableCount(), "the in-flight count was stranded by the refusal");
-    assertEquals(1, rejections.get(), "the reject handler should have been invoked");
+    assertEquals(0L, dispatcher.drainableCount(), "the in-flight count was stranded by the violation");
+    assertEquals(0, rejections.get(), "a contract violation is not backpressure and must not be handled as it");
     dispatcher.close();
   }
 }
