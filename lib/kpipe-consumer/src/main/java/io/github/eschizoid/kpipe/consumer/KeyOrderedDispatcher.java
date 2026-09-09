@@ -131,11 +131,9 @@ final class KeyOrderedDispatcher implements Dispatcher {
 
   /// Test seam: supplies the worker thread factory rather than pinning virtual threads.
   ///
-  /// The JDK idles the VirtualThread carrier pool out on a 30-second schedule, so a
-  /// scheduler that waits for every thread to reach a completed state pays that once per
-  /// iteration. Per-key serialization, the eviction tombstone and the worker handoff are
-  /// properties of the queue and monitor protocol rather than of the thread kind, so
-  /// platform threads exercise them equally.
+  /// Per-key serialization, the eviction tombstone and the worker handoff are properties of the
+  /// queue and monitor protocol rather than of the thread kind, so platform threads exercise them
+  /// equally.
   ///
   /// The factory must produce **daemon** threads. `close()` interrupts workers that outlast the
   /// drain wait, but a task that ignores interruption or is CPU-bound survives it, and only

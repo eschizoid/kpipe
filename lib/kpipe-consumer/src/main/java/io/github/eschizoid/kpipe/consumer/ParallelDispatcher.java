@@ -48,10 +48,8 @@ final class ParallelDispatcher implements Dispatcher {
 
   /// Test seam: supplies the thread factory rather than pinning virtual threads.
   ///
-  /// The JDK idles the VirtualThread carrier pool out on a 30-second schedule, so a
-  /// scheduler that waits for every thread to reach a completed state pays that once per
-  /// iteration. The in-flight accounting is a property of the increment/decrement protocol
-  /// rather than of the thread kind, so platform threads exercise it equally.
+  /// The in-flight accounting is a property of the increment/decrement protocol rather than of the
+  /// thread kind, so platform threads exercise it equally.
   ///
   /// Takes a factory rather than an executor deliberately. `close()` relies on this executor
   /// having no work queue — that is what makes `shutdownNow()` return nothing and leaves no task

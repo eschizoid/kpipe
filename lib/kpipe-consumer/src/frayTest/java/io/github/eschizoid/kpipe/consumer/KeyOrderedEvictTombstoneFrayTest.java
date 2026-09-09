@@ -16,7 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the eviction-tombstone and evict-race stress tests.
+/// Eviction racing a dispatcher that holds a stale queue reference.
 ///
 /// **The window.** [KeyOrderedDispatcher] evicts an empty, idle key queue to make room for a new
 /// key. A dispatcher that read that queue out of the map a moment earlier still holds a live

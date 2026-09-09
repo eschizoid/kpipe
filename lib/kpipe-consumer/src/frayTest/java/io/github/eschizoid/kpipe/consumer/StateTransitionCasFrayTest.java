@@ -10,7 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the consumer state-machine CAS stress test.
+/// The consumer state-machine CAS race.
 ///
 /// Two paths reach the same transition: an external `close()` and the consumer thread's own
 /// uncaught-exception handler self-terminating. Both call the shared helper, and exactly one

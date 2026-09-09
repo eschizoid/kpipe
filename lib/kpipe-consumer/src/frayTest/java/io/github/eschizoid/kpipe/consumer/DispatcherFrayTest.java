@@ -15,7 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray ports of the dispatcher races that do not saturate the key cap.
+/// Dispatcher races that do not saturate the key cap.
 ///
 /// Neither scenario reaches `reserveCapacity`'s saturation stall, so both explore to completion:
 /// the handoff test runs a single key against the default 10,000-key cap, and the drainable-count

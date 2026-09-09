@@ -11,7 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the schema-cache stampede race.
+/// The schema-cache stampede race.
 ///
 /// Two callers miss on the same schema id at once. `computeIfAbsent` has to collapse them into a
 /// single underlying load: schema ids are immutable in the registry, so caching by id needs no TTL

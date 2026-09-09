@@ -10,7 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the fanout-delegation race.
+/// The fanout-delegation race.
 ///
 /// Two records fan out through one composite to a shared downstream sink at the same time. Fanout
 /// is best-effort about *failures* — a throwing sink is logged and suppressed so the others still

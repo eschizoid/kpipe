@@ -16,7 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray ports of the batch-wrapper buffer-lock races.
+/// Batch-wrapper buffer-lock races.
 ///
 /// The wrapper's `ReentrantLock` serializes enqueue against flush so parallel-mode workers can
 /// buffer records while a flush is mid-flight. `bufferedCount` feeds the in-flight backpressure

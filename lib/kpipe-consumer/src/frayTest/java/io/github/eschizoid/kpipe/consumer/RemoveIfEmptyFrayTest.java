@@ -13,7 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the remove-if-empty race.
+/// The remove-if-empty race.
 ///
 /// **The race.** Per-partition pending offsets live in a `ConcurrentHashMap`. Retiring the last
 /// pending offset empties its set and drops the map key. If tracking a fresh offset adds to that

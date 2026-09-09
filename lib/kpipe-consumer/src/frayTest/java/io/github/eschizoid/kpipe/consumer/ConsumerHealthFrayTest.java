@@ -9,7 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray ports of the health-controller races: the backpressure pause handshake and the circuit
+/// Health-controller races: the pause mask and the circuit
 /// breaker's rolling window.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
