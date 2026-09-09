@@ -13,7 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the producer send-accounting race.
+/// The producer send-accounting race.
 ///
 /// Two sends complete concurrently and each must record exactly one success. The counter is what
 /// operators read to tell "the pipeline is delivering" from "the pipeline is silently dropping",

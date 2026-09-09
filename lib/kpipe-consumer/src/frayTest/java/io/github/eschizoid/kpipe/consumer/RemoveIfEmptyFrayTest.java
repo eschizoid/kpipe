@@ -13,7 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the jcstress remove-if-empty stress test.
+/// The remove-if-empty race.
 ///
 /// **The race.** Per-partition pending offsets live in a `ConcurrentHashMap`. Retiring the last
 /// pending offset empties its set and drops the map key. If tracking a fresh offset adds to that
@@ -22,17 +22,12 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// record that is still in flight. Production hits this exact pairing: `trackOffset` runs on the
 /// poll thread while `markOffsetProcessed` runs on worker virtual threads for the same partition.
 ///
-/// **Why this is the port that carries the pilot.** Unlike the dispatcher scenarios, nothing on
-/// this path waits by sleeping, and the scenario leaves no thread running when the body returns,
-/// so every schedule terminates. The invariant is also falsifiable in
-/// one edit: replacing the atomic `computeIfPresent` remove-if-empty with a separate
-/// `if (isEmpty()) remove(key)` reopens the window, and a run that still passes after that edit has
-/// proven it is not exploring.
+/// **Falsifiable in one edit.** Replacing the atomic `computeIfPresent` remove-if-empty with a
+/// separate `if (isEmpty()) remove(key)` reopens the window; a run that still passes after that
+/// edit is not exploring.
 ///
-/// **Translation note.** jcstress enumerates outcomes and grades each one; Fray explores schedules
-/// and checks an invariant per schedule. The `200, 1` ACCEPTABLE / everything-else FORBIDDEN pair
-/// collapses into the two assertions below. What is lost in the move is the outcome histogram —
-/// Fray reports that an invariant broke, not the distribution of interleavings that produced it.
+/// Nothing on this path waits by sleeping and the scenario leaves no thread running when the body
+/// returns, so every schedule terminates.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
 class RemoveIfEmptyFrayTest {

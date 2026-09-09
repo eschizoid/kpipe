@@ -9,7 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray ports of the three [PendingOffsetSet] stress tests — the sorted primitive-`long` window
+/// Races on [PendingOffsetSet] — the sorted primitive-`long` window
 /// that replaced `ConcurrentSkipListSet<Long>` as the per-partition pending set.
 ///
 /// **What these can and cannot show.** Every mutator on the structure is `synchronized` on the

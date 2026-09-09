@@ -12,11 +12,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
-/// Key-ordered dispatcher: records sharing a key process serially on a single virtual thread;
+/// Key-ordered dispatcher: records sharing a key process serially on a single worker thread;
 /// different keys process in parallel. Maintains a bounded map of active keys with a
 /// configurable cap (default 10,000). Null-keyed records all serialize through a single
 /// sentinel queue.
@@ -32,7 +33,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// coldest-first preference for lock-free reads on the hot path.)
 ///
 /// **Per-key worker lifecycle.** When a record arrives for a key with no active worker, the
-/// dispatcher starts a virtual thread that drains the queue until empty, then exits. New
+/// dispatcher starts a worker that drains the queue until empty, then exits. New
 /// records arriving for the same key (after the worker has exited but the queue entry is
 /// still in the map) trigger a fresh worker. The empty queue stays in the map until evicted
 /// to make room for another key.
@@ -119,9 +120,31 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// `executor.shutdownNow()`.
   private final Set<Thread> activeWorkers = ConcurrentHashMap.newKeySet();
 
+  /// Creates the per-key worker threads. Virtual in production; a test may supply platform
+  /// threads so controlled-concurrency tooling can explore this class at a usable speed.
+  private final ThreadFactory workerFactory;
+
   /// @param maxKeys cap on distinct keys (must be positive)
   KeyOrderedDispatcher(final int maxKeys) {
+    this(maxKeys, Thread.ofVirtual().factory());
+  }
+
+  /// Test seam: supplies the worker thread factory rather than pinning virtual threads.
+  ///
+  /// Per-key serialization, the eviction tombstone and the worker handoff are properties of the
+  /// queue and monitor protocol rather than of the thread kind, so platform threads exercise them
+  /// equally.
+  ///
+  /// The factory must produce **daemon** threads. `close()` interrupts workers that outlast the
+  /// drain wait, but a task that ignores interruption or is CPU-bound survives it, and only
+  /// daemon status lets the JVM exit with one still running. Virtual threads are always daemon,
+  /// so the production path satisfies this by construction.
+  ///
+  /// @param maxKeys       distinct keys held before eviction reclaims an idle queue
+  /// @param workerFactory creates each per-key worker thread; must produce daemon threads
+  KeyOrderedDispatcher(final int maxKeys, final ThreadFactory workerFactory) {
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
+    this.workerFactory = requireDaemonFactory(workerFactory);
     this.maxKeys = maxKeys;
   }
 
@@ -287,7 +310,53 @@ final class KeyOrderedDispatcher implements Dispatcher {
     return false;
   }
 
-  /// Starts a new virtual thread that drains the queue until empty. Called while holding the
+  /// Rejects a factory that produces non-daemon threads, which is a contract the constructor is
+  /// the only place able to enforce. The probe must come back unstarted, which is checked here,
+  /// so it costs an object and no operating-system resource.
+  ///
+  /// @param factory the candidate worker factory
+  /// @return a factory that applies the same checks to every thread it later produces
+  /// @throws IllegalArgumentException when it does not
+  static ThreadFactory requireDaemonFactory(final ThreadFactory factory) {
+    if (factory == null) {
+      throw new IllegalArgumentException("workerFactory must not be null");
+    }
+    // ThreadFactory.newThread is specified to return null when it declines to create a
+    // thread, so the probe has to handle that rather than dereference it.
+    final var probe = factory.newThread(() -> {});
+    if (probe == null) {
+      throw new IllegalArgumentException(
+        "workerFactory refused to create a thread, so its daemon status cannot be established"
+      );
+    }
+    if (probe.getState() != Thread.State.NEW) {
+      throw new IllegalArgumentException(
+        "workerFactory must return unstarted threads; the daemon probe would otherwise run work and the "
+          + "dispatcher would not own the thread's lifecycle"
+      );
+    }
+    if (!probe.isDaemon()) {
+      throw new IllegalArgumentException(
+        "workerFactory must produce daemon threads: close() interrupts workers that outlast the drain wait, "
+          + "and a task that ignores interruption would keep the JVM alive"
+      );
+    }
+    return r -> {
+      final var t = factory.newThread(r);
+      if (t == null) {
+        throw new IllegalStateException("workerFactory declined to create a thread");
+      }
+      if (t.getState() != Thread.State.NEW || !t.isDaemon()) {
+        throw new IllegalStateException(
+          "workerFactory returned a thread that is already started or not a daemon; the dispatcher owns "
+            + "the thread's lifecycle and relies on daemon status to let the JVM exit"
+        );
+      }
+      return t;
+    };
+  }
+
+  /// Starts a worker that drains the queue until empty. Called while holding the
   /// queue's monitor (the new worker's first drain step re-acquires it, so it simply blocks
   /// until the dispatching thread releases). Registers the worker in [#activeWorkers] BEFORE
   /// starting it — not from inside the runnable — so [#close()]'s interrupt loop can't miss a
@@ -296,16 +365,28 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// new worker added itself, leaving it un-interrupted and able to run after shutdown closed
   /// the offset manager / producer.) The runnable removes itself on exit; if `start()`
   /// throws, we remove it as a fallback since the finally would never run.
+  /// A factory validated at construction can still decline a later request, and
+  /// `ThreadFactory.newThread` signals that with null. Without this the caller sees an opaque
+  /// NullPointerException raised after `workerActive` and `pending` were already advanced.
+  ///
+  /// @param thread the thread the factory returned
+  /// @return that thread, when the factory produced one
+  private static Thread requireThread(final Thread thread) {
+    if (thread == null) {
+      throw new IllegalStateException("workerFactory declined to create a worker thread");
+    }
+    return thread;
+  }
+
   private void startWorker(final Object key, final KeyQueue queue) {
-    final var worker = Thread.ofVirtual()
-      .name("kpipe-key-worker-" + System.identityHashCode(key))
-      .unstarted(() -> {
+    final var worker = requireThread(workerFactory.newThread(() -> {
         try {
           drain(queue);
         } finally {
           activeWorkers.remove(Thread.currentThread());
         }
-      });
+      }));
+    worker.setName("kpipe-key-worker-" + System.identityHashCode(key));
     activeWorkers.add(worker);
     try {
       worker.start();

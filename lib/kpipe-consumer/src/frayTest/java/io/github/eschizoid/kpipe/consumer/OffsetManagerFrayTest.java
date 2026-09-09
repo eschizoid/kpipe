@@ -16,7 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray ports of the offset-manager read-path races.
+/// Offset-manager read-path races.
 ///
 /// The manager is never started in these scenarios. `start()` schedules a periodic commit task
 /// on a `ScheduledThreadPoolExecutor` that lives until the manager is closed, and Fray does not

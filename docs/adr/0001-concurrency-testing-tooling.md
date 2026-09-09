@@ -109,8 +109,8 @@ Measured on `ubuntu-latest`, the CI platform.
 | | jcstress | Fray |
 | --- | --- | --- |
 | Wall clock | ~30-35 min | **5m45s** |
-| Classes | 21 | 16 ported |
-| Schedules | unbounded stress, outcome histogram | 7,701 explored across 18 runs |
+| Classes | 21 | 13 Fray classes, 22 scenarios |
+| Schedules | unbounded stress, outcome histogram | ~9,000 explored, timelines counted |
 | Planted bug found | 15m37s from job start | **58s from job start** (764ms of exploration) |
 | Failure output | forbidden outcome tuple | names the invariant that broke |
 
@@ -127,10 +127,22 @@ CPU and compilation plan, leaving the reader to map that back to the invariant.
 
 **Not ported, with reasons:**
 
-- **Four dispatcher scenarios** (`KeyOrderedEvictRace`, `KeyOrderedEvictTombstone`, `KeyOrderedWorkerHandoff`,
-  `DispatcherDrainableCount`) — blocked on the spin-wait constraint below. `@Disabled` carrying that reason.
-- **`CasPublication`** — memory-model only; see the consequence above for why it has no successor and why that costs
-  less than it appears to.
+- **Concurrent same-key dispatch racing an eviction.** `KeyOrderedEvictRace` ran three actors at cap 1, two of
+  them dispatching the same key. The ports keep the pieces separately — same-key concurrency at the default cap,
+  eviction at cap 1 with a single seeded key — and lose the three-way intersection.
+
+  The eviction port does enter `reserveCapacity`'s stall loop, which is safe under `@FrayTest`: `sleepAsYield`
+  defaults false, so the sleeper blocks rather than spinning, and a non-idle queue always has an active worker,
+  so the stalling dispatcher is always waiting on a runnable thread.
+- **`CasPublication`** and **`BackpressureHandshake`** — both memory-model. Their forbidden
+  outcomes are unreachable under scheduling-only exploration: `CasPublication`'s needs store-store
+  reordering, and the handshake's mutually-blind outcome needs a cycle in the interleaving order.
+  The handshake scenario was removed rather than kept with a caveat: this ADR retires
+  `CasPublication` precisely because a gate that cannot fail is a silent no-op, and keeping a
+  second one would contradict that. A falsifiable property replaced it — two sources requesting a
+  pause at once must both land their bit of the mask, and exactly one must claim the
+  running-to-paused transition. The mask is an atomic read-modify-write, so a non-atomic rewrite
+  loses a bit under an interleaving a scheduler can produce.
 
 ## Two further constraints the port established
 
@@ -147,33 +159,30 @@ tend to present.
   runs un-instrumented, reports every `@FrayTest` as skipped, and reads green. The guard is a plain `@Test`, because a
   `@FrayTest` would itself be skipped in precisely the state it exists to detect.
 
-## Fray is hostile to sleep-based spin-wait loops
+## Virtual threads cost about 30 seconds per iteration
 
-Found in the pilot (PR #310), and the sharpest constraint on the port. A retry loop that waits by calling
-`Thread.sleep` cannot be explored to completion by Fray, for reasons that no configuration reaches:
+The dispatcher scenarios initially reported `Iterations: 0` and were killed by the job timeout.
+Several plausible causes were proposed and each was wrong; the measurement that settled it is
+`BasicVirtualThreadFrayTest`, which starts and joins a single virtual thread. Three iterations
+took 90 seconds — a flat 30 seconds each, against roughly 0.01s per iteration for the
+platform-thread scenarios in the same suite.
 
-- Fray's launcher sets `sleepAsYield = true`, so a sleeping thread is modelled as *yielding*, never blocked. A
-  spin-wait loop is therefore permanently runnable.
-- The POS scheduler carries no fairness obligation, so it may re-pick that runnable spinner indefinitely instead of
-  advancing the worker the spinner is waiting on.
-- `maxScheduledStep` would bound the runaway, but it lives on `ExecutionInfo` as a `val`, and `launchFrayTest` hardcodes
-  `-1`. The `additionalConfigs: (Configuration) -> Unit` hook cannot reach it, because `Configuration.executionInfo` is
-  itself a `val`.
+The 30 seconds is the JDK's, not Fray's. `VirtualThread` builds its default scheduler with a
+30-second keep-alive, so carrier threads idle out on that schedule; Fray waits for every
+registered thread to reach a completed state, and `isManagedPoolThread` excludes only
+`ForkJoinWorkerThread`s belonging to the pool Fray itself tracks. Carriers are in the JDK's
+VirtualThread scheduler pool, a different one, so each iteration waits them out. At 500
+iterations the dispatcher scenarios needed hours; given 26 minutes they completed none.
 
-Observed on `ubuntu-latest`: one iteration reached `step: 32976576` before Fray reported a `DeadlockException`, then
-`OutOfMemoryError` in `JsonToStringWriter` while serializing that 33-million-step trace into the run report. The job hit
-its 30-minute cap with no verdict. The launcher's other defaults compound it — `launchFrayTest` runs 10,000 iterations
-at a 120-second per-iteration timeout, which cannot fit any reasonable CI budget.
+**The resolution was to stop testing them on virtual threads.** Both dispatchers take a thread
+factory through a package-private constructor, defaulting to virtual exactly as before, and the
+scenarios supply daemon platform threads. Per-key serialization, the eviction tombstone, worker
+handoff and the in-flight accounting are properties of the queue and monitor protocol rather than
+of the thread kind. The ported scenarios then run 500 iterations in seconds, and reach the
+highest schedule diversity in the suite.
 
-**This is a property of the tool, not a defect in the code under test.** `KeyOrderedDispatcher.reserveCapacity` holds no
-monitor while it sleeps: it is called before `synchronized (queue)`, and `evictOneIdle` takes the per-queue monitor only
-transiently inside `computeIfPresent`. There is no circular wait, and the stalling thread blocks nothing the draining
-worker needs. Under any fair scheduler it makes progress, which is what a real JVM provides.
-
-Consequence for the port: `kpipe-consumer` main source has five such loops (`KeyOrderedDispatcher` ×2, `RecordProcessor`
-retry backoff, `KPipeConsumer` ×2), and `kpipe-test` has two more. Any ported scenario that drives a thread into one of
-them will not terminate under exploration. Scenarios must be built so no thread waits on another by sleeping — or the
-invariant must be verified some other way.
+Anything dispatching on virtual threads needs that seam to be explorable at all. A component that
+cannot offer one cannot be gated by this suite.
 
 ## Silent no-op is the failure mode to guard
 

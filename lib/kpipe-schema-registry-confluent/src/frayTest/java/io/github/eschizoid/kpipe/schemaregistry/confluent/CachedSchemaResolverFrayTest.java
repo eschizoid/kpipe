@@ -11,7 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the schema-cache stampede race.
+/// The schema-cache stampede race.
 ///
 /// Two callers miss on the same schema id at once. `computeIfAbsent` has to collapse them into a
 /// single underlying load: schema ids are immutable in the registry, so caching by id needs no TTL
@@ -28,11 +28,12 @@ class CachedSchemaResolverFrayTest {
   @FrayTest(iterations = 500)
   void concurrentMissesCollapseToOneLoad() {
     final var loadCount = new AtomicInteger();
-    // Counting fake: every underlying load bumps the counter and returns the same instance, so a
-    // duplicate load shows up both as a count above one and as a differing reference.
+    // Counting fake: every underlying load bumps the counter and returns a DISTINCT instance.
+    // A compile-time constant would be interned and handed back identically on every call, which
+    // would make the reference check below pass however many loads ran.
     final SchemaResolver counting = id -> {
       loadCount.incrementAndGet();
-      return SCHEMA_JSON;
+      return new String(SCHEMA_JSON.toCharArray());
     };
     final var resolver = new CachedSchemaResolver(counting);
     final var first = new AtomicReference<String>();

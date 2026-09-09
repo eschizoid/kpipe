@@ -9,7 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 
-/// Fray port of the registry namespace race.
+/// The registry namespace race.
 ///
 /// Operators and sinks live in separate maps under the same key shape, so registering one of each
 /// under an identical key must leave both intact. If the two namespaces shared a map — or a

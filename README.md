@@ -168,10 +168,12 @@ so it is not comparable on delivery guarantees.
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks/).
 
-The at-least-once claim is itself under test: every CI run gates on 21
-[jcstress](https://openjdk.org/projects/code-tools/jcstress/) concurrency-stress classes plus jqwik property suites
-over the offset lifecycle and chaos-rebalance/crash-restart integration tests against a real broker. Building that
-suite caught three real data-loss bugs before release ([docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md)).
+The at-least-once claim is itself under test: every CI run gates on 13 [Fray](https://github.com/cmu-pasta/fray)
+controlled-concurrency classes plus jqwik property suites over the offset lifecycle and chaos-rebalance/crash-restart
+integration tests against a real broker. Fray explores thread schedules under its own scheduler rather than running
+racy code repeatedly and hoping, and the suite is falsification-tested — deliberately breaking an invariant makes it
+fail. Building it caught three real data-loss bugs before release
+([docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md)).
 
 ## Positioning
 
@@ -255,7 +257,7 @@ without a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-te
 
 ## Contributing
 
-Issues and PRs welcome — see the test suites (`unit`, jcstress under `src/jcstress`, integration under `examples/`)
+Issues and PRs welcome — see the test suites (`unit`, Fray under `src/frayTest`, integration under `examples/`)
 for the bar contributions are held to.
 
 ## License

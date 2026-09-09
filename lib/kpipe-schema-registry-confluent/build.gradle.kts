@@ -20,27 +20,6 @@ dependencies {
   testImplementation(libs.testcontainersKafka)
 }
 
-// jcstress concurrency-stress harness. Lives in its own source set so the generated test
-// runner and annotation-processed scaffolding stay isolated from the JUnit test source set,
-// and so it runs purely on the classpath (jcstress instruments bytecode at runtime and does
-// not support the Java module path).
-val jcstress: SourceSet by sourceSets.creating {
-  java.srcDir("src/jcstress/java")
-  compileClasspath += sourceSets.main.get().output + sourceSets.test.get().output
-  runtimeClasspath += sourceSets.main.get().output + sourceSets.test.get().output
-}
-
-val jcstressImplementation: Configuration by configurations.getting {
-  extendsFrom(configurations.testImplementation.get())
-}
-configurations["jcstressRuntimeOnly"].extendsFrom(configurations.testRuntimeOnly.get())
-configurations["jcstressAnnotationProcessor"].extendsFrom(configurations["annotationProcessor"])
-
-dependencies {
-  jcstressImplementation(libs.jcstressCore)
-  "jcstressAnnotationProcessor"(libs.jcstressCore)
-}
-
 // The Fray plugin derives its dependency configurations from the configured test-task name
 // (`frayTestImplementation`, `frayTestCompileOnly`), so this source set's name is load-bearing:
 // renaming it without renaming the task silently drops fray-core/fray-junit off the classpath.
@@ -59,8 +38,10 @@ dependencies {
   "frayTestRuntimeOnly"(libs.junitPlatformLauncher)
 }
 
-// Same rationale as compileJcstressJava: compiled against the main module's exported packages as
-// plain classpath classes.
+// This source set compiles against the main module's exported packages as plain classpath
+// classes. lib/build.gradle.kts turns modularity.inferModulePath on for every java-library
+// subproject, and frayTest shares packages with main, so without this opt-out it can be pushed
+// onto the module path and hit JPMS split-package errors.
 tasks.named<JavaCompile>("compileFrayTestJava") {
   modularity.inferModulePath.set(false)
 }
@@ -75,31 +56,15 @@ tasks.register<Test>("frayTest") {
   classpath = frayTest.runtimeClasspath
   // Fray forks one JVM and drives scheduling itself; parallel forks would only fight over cores.
   maxParallelForks = 1
+  // A fresh JVM per test class. Fray installs a global scheduler and instruments thread
+  // lifecycle process-wide, so state from a finished class can leave the next one unable to
+  // complete a single iteration — observed as a run that reports "Iterations: 0" forever for a
+  // class that passes when run alone. Sharing one JVM across classes is the cheaper default but
+  // not one this suite can rely on.
+  forkEvery = 1
   testLogging { showStandardStreams = true }
 }
 
 configure<FrayExtension> {
   testTask = "frayTest"
-}
-
-// jcstress compiles against the classpath, not the module path. The main module's exported
-// packages are reachable as plain classpath classes, so no --module-path wiring is needed.
-tasks.named<JavaCompile>("compileJcstressJava") {
-  modularity.inferModulePath.set(false)
-}
-
-// Runnable harness. Iterations are capped hard via -t/-iters/-time so a single invocation
-// proves jcstress executes on JDK 25 without launching a multi-minute campaign.
-tasks.register<JavaExec>("jcstress") {
-  group = "verification"
-  description = "Runs the jcstress concurrency harness for kpipe-schema-registry-confluent."
-  classpath = jcstress.runtimeClasspath
-  mainClass.set("org.openjdk.jcstress.Main")
-  jvmArgs("-Djdk.attach.allowAttachSelf=true")
-  // Keep jcstress scratch files (results .bin.gz, HTML report) under build/ instead of the module dir.
-  val outDir = layout.buildDirectory.dir("jcstress").get().asFile
-  doFirst { outDir.mkdirs() }
-  workingDir = outDir
-  // -t matches every jcstress test in this module's package by its shared JCStressTest suffix.
-  args("-t", "JCStressTest", "-iters", "1", "-time", "50", "-f", "1", "-v", "-r", "results")
 }

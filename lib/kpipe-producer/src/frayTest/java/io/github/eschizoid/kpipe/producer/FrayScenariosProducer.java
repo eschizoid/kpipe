@@ -1,6 +1,6 @@
 package io.github.eschizoid.kpipe.producer;
 
-/// Shared plumbing for this module's Fray ports: run actions on their own threads and join them.
+/// Runs actions on their own threads and joins them.
 ///
 /// Fray does not finish an iteration while any thread it started is still live, so joining is a
 /// correctness requirement rather than tidiness — a leaked thread wedges exploration instead of

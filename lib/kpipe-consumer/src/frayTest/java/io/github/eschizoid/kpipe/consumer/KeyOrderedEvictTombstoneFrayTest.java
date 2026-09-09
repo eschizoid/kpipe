@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -8,229 +9,164 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.pastalab.fray.junit.junit5.FrayTestExtension;
 import org.pastalab.fray.junit.junit5.annotations.FrayTest;
-import org.pastalab.fray.junit.plain.FrayInTestLauncher;
 
-/// Fray port of the jcstress eviction-tombstone stress test.
+/// Eviction racing a dispatcher that holds a stale queue reference.
 ///
-/// **The window.** [KeyOrderedDispatcher] evicts an empty, idle key queue to make room for a
-/// new key. A dispatcher that read that queue out of the map a moment earlier still holds a
-/// live reference to it. Eviction marks the queue `dead` under its monitor, atomically with
-/// the map removal, and the dispatcher re-checks `dead` under the same monitor before
-/// enqueuing — the retry that closes the window. Losing that check does not lose the record:
-/// the dispatcher enqueues into the orphaned queue and starts a worker on it, so the task
-/// still runs. What breaks is per-key serialization. The orphan is no longer reachable
-/// through the map, so the *next* record for that key allocates a second queue and a second
-/// worker, and two workers then process the same key at once.
+/// **The window.** [KeyOrderedDispatcher] evicts an empty, idle key queue to make room for a new
+/// key. A dispatcher that read that queue out of the map a moment earlier still holds a live
+/// reference to it. Eviction marks the queue `dead` under its monitor, atomically with the map
+/// removal, and the dispatcher re-checks `dead` under the same monitor before enqueuing — the
+/// retry that closes the window. Losing that check does not lose the record: the dispatcher
+/// enqueues into the orphaned queue and starts a worker on it, so the task still runs. What breaks
+/// is per-key serialization. The orphan is unreachable through the map, so the *next* record for
+/// that key allocates a second queue and a second worker, and two workers then process the same
+/// key at once.
 ///
-/// **What this test drives.** Cap of one key. Key A is pre-seeded and drained, leaving the
-/// map in the exact state eviction wants: `{A: empty, idle}`. Then one thread dispatches two
-/// records for key A back to back — mirroring production, where a single consumer thread
-/// dispatches — while a second thread dispatches one record for key B, forcing A's queue to
-/// be evicted. The interesting schedule slips B's eviction between the first thread's map
-/// lookup and its monitor entry.
+/// **Cap of one, which is what makes key A the eviction target.** With a spare idle key, the
+/// eviction only lands elsewhere when key A is *busy*: `evictOneIdle` finds A non-evictable once
+/// the first dispatch has enqueued, falls through to the spare, and the new key is admitted
+/// without ever condemning A. The retry path is then unreachable for that schedule. At cap one
+/// there is no fallback — the dispatch stalls until A drains and must then evict A.
 ///
-/// **How the window is confirmed.** Whether a schedule reached the retry path is invisible
-/// from the public surface, because the record processes correctly either way. The
-/// dispatcher keeps a package-private `tombstoneRetries` counter for exactly this purpose;
-/// the scenario reads it directly after each schedule (same package, classpath compilation,
-/// no reflection). Under jcstress the window was reached in 78 of 23,427 runs — 0.33%, found
-/// by luck. [#evictVsRedispatchPreservesPerKeySerialization()] asserts the count of schedules
-/// that reached it is non-zero and prints the hit rate, so "the suite ran but never explored
-/// the interesting region" is a failure rather than a silent pass.
+/// That makes the eviction *target* certain, not the window itself: the retry still requires the
+/// key-A dispatcher to be holding a stale reference across the gap between its map lookup and its
+/// monitor entry. Hence the run-wide assertion counts hits rather than expecting one per schedule.
+///
+/// Entering `reserveCapacity`'s stall loop is safe here. `@FrayTest` defaults `sleepAsYield` to
+/// false, so the sleeper blocks rather than staying runnable, and a non-idle queue always has an
+/// active worker — the stalling dispatcher is therefore always waiting on a runnable thread.
+
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
-@Disabled(
-  "Does not terminate under exploration. KeyOrderedDispatcher.reserveCapacity waits by sleeping, and Fray " +
-    "models a sleep as a yield, so the spinning thread stays permanently runnable and the scheduler is free " +
-    "to re-pick it instead of advancing the worker it waits on. maxScheduledStep would bound the runaway " +
-    "but is not reachable from either entry point. Re-enable once the scenario no longer drives a thread " +
-    "into that loop; the constraint is recorded in docs/adr/0001-concurrency-testing-tooling.md."
-)
 class KeyOrderedEvictTombstoneFrayTest {
 
-  /// Drives the scenario across Fray's whole schedule space and fails on the first schedule
-  /// that breaks a per-key invariant. Fray reports whatever the body throws, so a violated
-  /// assertion inside a schedule surfaces here as the thrown `AssertionError`.
+  private static final String TOPIC = "fray-topic";
+  private static final byte[] KEY_A = "key-a".getBytes(UTF_8);
+  private static final byte[] KEY_B = "key-b".getBytes(UTF_8);
+
+  /// Total retries against a dead tombstone, summed across every schedule, so the class can
+  /// assert the interesting region was entered at least once. This is the raw retry count rather
+  /// than a per-schedule hit count — one schedule can retry more than once — which is the more
+  /// useful number when diagnosing how often exploration reaches the window.
   ///
-  /// The hit counters live outside the explored lambda so they accumulate across schedules —
-  /// Fray's plain launcher runs the body directly, without reloading its classes per
-  /// iteration, so ordinary fields survive the whole exploration.
-  @Test
-  void evictVsRedispatchPreservesPerKeySerialization() {
-    final var schedules = new AtomicLong();
-    final var windowHits = new AtomicLong();
-    FrayInTestLauncher.INSTANCE.launchFrayTest(() -> {
-      schedules.incrementAndGet();
-      final var scenario = new Scenario();
-      scenario.run();
-      if (scenario.windowReached()) windowHits.incrementAndGet();
-    });
-    System.out.printf(
-      "Fray reached the eviction-tombstone window in %d of %d schedules (%.2f%%)%n",
-      windowHits.get(),
-      schedules.get(),
-      schedules.get() == 0 ? 0.0 : (100.0 * windowHits.get()) / schedules.get()
-    );
-    assertTrue(
-      windowHits.get() > 0,
-      () ->
-        "No schedule out of " +
-        schedules.get() +
-        " reached the dead-tombstone retry path, so this run proved nothing about it. Either the " +
-        "scheduler is not exploring (check the instrumentation self-check) or the scenario no " +
-        "longer sets up the {A: empty, idle} precondition eviction needs."
-    );
-  }
+  /// Whether a given schedule enters that path is invisible from the public surface, because the
+  /// record processes correctly either way. Without this counter the test passes identically when
+  /// no schedule ever exercises what it exists to cover.
+  ///
+  /// Kept in a system property rather than a static field. `@FrayTest` defaults
+  /// `resetClassLoaderPerIteration` to true, and Fray's loader is child-first, so this class is
+  /// redefined every iteration and any static it holds is a fresh zero — while `@AfterAll` runs
+  /// on the application-loaded copy and would read a counter no iteration ever touched. `System`
+  /// is a JDK class shared by every loader, so a property survives both.
+  private static final String HITS_PROPERTY = "kpipe.fray.tombstoneHits";
 
-  /// The same scenario in the annotation-driven shape a full migration would use, kept so the
-  /// pilot exercises both entry points. Unlike the launcher-driven test above, a `@FrayTest`
-  /// is reported as *skipped* when Fray is not enabled — which is why the instrumentation
-  /// self-check, not this method, is what stands between a no-op and a green build.
-  @FrayTest(iterations = 300, sleepAsYield = true)
-  void evictVsRedispatchUnderTheFrayTestAnnotation() {
-    new Scenario().run();
-  }
+  /// One thread dispatches two records for key A back to back, mirroring production where a single
+  /// consumer thread dispatches, while another forces an eviction by introducing key B. Every task
+  /// must run exactly once, key A's two tasks must never overlap, and they must run in the
+/// order they were dispatched.
+  @FrayTest(iterations = 500)
+  void evictionNeverBreaksPerKeySerialization() {
+    final var dispatcher = new KeyOrderedDispatcher(1, Thread.ofPlatform().daemon().factory());
+    seedAndDrain(dispatcher, KEY_A, 0L);
 
-  /// One schedule's worth of state and assertions. A fresh instance per schedule keeps
-  /// iterations independent.
-  private static final class Scenario {
-
-    private static final String TOPIC = "fray-topic";
-    private static final byte[] KEY_A = "key-a".getBytes(UTF_8);
-    private static final byte[] KEY_B = "key-b".getBytes(UTF_8);
-    private static final long SEED_OFFSET = 0L;
-    private static final long FIRST_A_OFFSET = 1L;
-    private static final long B_OFFSET = 2L;
-    private static final long SECOND_A_OFFSET = 3L;
-
-    private final KeyOrderedDispatcher dispatcher = new KeyOrderedDispatcher(1);
-    private final AtomicInteger tasksRun = new AtomicInteger();
-    private final AtomicInteger liveKeyATasks = new AtomicInteger();
-    private final AtomicInteger peakLiveKeyATasks = new AtomicInteger();
-    private final List<Long> keyACompletions = Collections.synchronizedList(new ArrayList<>());
-    private final CountDownLatch allDone = new CountDownLatch(3);
-
-    void run() {
-      seedKeyA();
-      final var keyBDispatcher = new Thread(this::dispatchKeyB, "fray-dispatch-b");
-      keyBDispatcher.start();
-      dispatcher.dispatch(record(KEY_A, FIRST_A_OFFSET), () -> keyATask(FIRST_A_OFFSET), allDone::countDown);
-      dispatcher.dispatch(record(KEY_A, SECOND_A_OFFSET), () -> keyATask(SECOND_A_OFFSET), allDone::countDown);
-      join(keyBDispatcher);
-      awaitDrain();
-      dispatcher.close();
-      verify();
-    }
-
-    boolean windowReached() {
-      return dispatcher.tombstoneRetries.get() > 0;
-    }
-
-    /// Dispatches one record for key A and waits for it to complete, so the map holds a
-    /// single empty queue for A. That is the precondition eviction needs: the queue is
-    /// reclaimable the instant its worker exits, which is what lets key B's dispatch kill it
-    /// out from under a dispatcher that already holds the reference.
-    private void seedKeyA() {
-      final var seeded = new CountDownLatch(1);
-      dispatcher.dispatch(record(KEY_A, SEED_OFFSET), () -> {}, seeded::countDown);
-      await(seeded, "pre-seed of key A");
-    }
-
-    private void dispatchKeyB() {
-      dispatcher.dispatch(record(KEY_B, B_OFFSET), tasksRun::incrementAndGet, allDone::countDown);
-    }
-
-    /// Body of both key-A records. Tracks how many key-A tasks are inside it at once and the
-    /// order in which they leave it — the two facts per-key serialization is made of. The
-    /// short pause widens the observation window so an overlapping partner is seen even when
-    /// the per-key workers run outside the scheduler's control.
-    private void keyATask(final long offset) {
-      final var live = liveKeyATasks.incrementAndGet();
-      peakLiveKeyATasks.accumulateAndGet(live, Math::max);
-      pause();
-      keyACompletions.add(offset);
-      liveKeyATasks.decrementAndGet();
+    final var tasksRun = new AtomicInteger();
+    final var concurrentOnA = new AtomicInteger();
+    final var maxConcurrentOnA = new AtomicInteger();
+    final var done = new CountDownLatch(3);
+    final var keyAOrder = Collections.synchronizedList(new ArrayList<Long>());
+    final java.util.function.LongFunction<Runnable> keyATask = offset -> () -> {
+      final var live = concurrentOnA.incrementAndGet();
+      maxConcurrentOnA.accumulateAndGet(live, Math::max);
+      keyAOrder.add(offset);
       tasksRun.incrementAndGet();
-    }
+      concurrentOnA.decrementAndGet();
+    };
 
-    private void verify() {
-      if (tasksRun.get() != 3) {
-        throw new AssertionError("Expected 3 tasks to run exactly once, observed " + tasksRun.get());
-      }
-      if (peakLiveKeyATasks.get() > 1) {
-        throw new AssertionError(
-          "Per-key serialization broken: " +
-            peakLiveKeyATasks.get() +
-            " tasks for key A ran concurrently. A dispatcher enqueued into an evicted queue and " +
-            "started a second worker for the key."
-        );
-      }
-      final var completions = List.copyOf(keyACompletions);
-      if (!List.of(FIRST_A_OFFSET, SECOND_A_OFFSET).equals(completions)) {
-        throw new AssertionError(
-          "Per-key ordering broken: key A completed in offset order " +
-            completions +
-            " but was dispatched in order [1, 3] by a single thread."
-        );
-      }
-    }
+    FrayScenarios.runConcurrently(
+      () -> {
+        dispatcher.dispatch(record(KEY_A, 10L), keyATask.apply(10L), done::countDown);
+        dispatcher.dispatch(record(KEY_A, 11L), keyATask.apply(11L), done::countDown);
+      },
+      () -> dispatcher.dispatch(record(KEY_B, 12L), tasksRun::incrementAndGet, done::countDown)
+    );
+    await(done);
+    dispatcher.close();
 
-    /// Unbounded for the same reason as [#await]: under a controlled scheduler a real-time
-    /// deadline measures Fray's exploration order rather than the dispatcher's liveness. A task
-    /// that genuinely never completes is a deadlock, which Fray detects and reports.
-    private void awaitDrain() {
-      try {
-        allDone.await();
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new IllegalStateException("interrupted while draining the dispatcher", e);
-      }
-    }
+    recordTombstoneHits(dispatcher.tombstoneRetries.get());
+    assertEquals(3, tasksRun.get(), "a task was lost or ran more than once across the eviction");
+    assertEquals(
+      List.of(10L, 11L),
+      List.copyOf(keyAOrder),
+      "key A's records ran out of dispatch order. Non-overlap alone is not the KEY_ORDERED "
+        + "guarantee — records sharing a key must also run in the order they were dispatched, and "
+        + "an eviction between the two dispatches is exactly where that can be lost."
+    );
+    assertEquals(
+      1,
+      maxConcurrentOnA.get(),
+      "two workers processed key A at the same time: a dispatcher enqueued into an evicted queue "
+        + "and the next record for that key allocated a second queue and worker"
+    );
+  }
 
-    /// Waits without a deadline, which is the correct shape under a controlled scheduler.
-    ///
-    /// A wall-clock timeout asks "did this finish within N seconds of real time", a question
-    /// that has no meaning when Fray decides which thread runs: the scheduler can legitimately
-    /// hold the dispatching worker parked for the whole timeout while it explores another
-    /// ordering, and the wait then fails a test whose code is correct. Fray detects a genuine
-    /// stall itself and reports it as a deadlock, so an unbounded wait cannot hang the suite —
-    /// it hands the liveness question to the component that actually knows the answer.
-    private static void await(final CountDownLatch latch, final String what) {
-      try {
-        latch.await();
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new IllegalStateException("interrupted during " + what, e);
-      }
-    }
+  /// Dispatches one record for the key and waits for it to finish, leaving the queue present in
+  /// the map but empty and idle — the exact state eviction looks for.
+  private static void seedAndDrain(final KeyOrderedDispatcher dispatcher, final byte[] key, final long offset) {
+    final var seeded = new CountDownLatch(1);
+    dispatcher.dispatch(record(key, offset), () -> {}, seeded::countDown);
+    await(seeded);
+  }
 
-    private static void join(final Thread thread) {
-      try {
-        thread.join();
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new IllegalStateException("interrupted while joining " + thread.getName(), e);
-      }
+  /// Unbounded on purpose: under a controlled scheduler a real-time deadline measures the
+  /// exploration order rather than the code's liveness, and Fray reports a schedule that cannot
+  /// finish as a deadlock.
+  private static void await(final CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("interrupted awaiting dispatch completion", e);
     }
+  }
 
-    private static void pause() {
-      try {
-        Thread.sleep(1);
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
-    }
+  private static ConsumerRecord<byte[], byte[]> record(final byte[] key, final long offset) {
+    return new ConsumerRecord<>(TOPIC, 0, offset, key, ("v-" + offset).getBytes(UTF_8));
+  }
 
-    private static ConsumerRecord<byte[], byte[]> record(final byte[] key, final long offset) {
-      return new ConsumerRecord<>(TOPIC, 0, offset, key.clone(), new byte[0]);
-    }
+  /// Fails when no schedule reached the dead-tombstone retry path, so "the suite ran but never
+  /// explored the interesting region" is a red build rather than a silent pass. A setup that
+  /// leaves any spare idle queue makes the window unreachable while every other assertion still
+  /// holds, which is the shape this guards against.
+  ///
+  /// The count is printed on every run, not only on failure. Whether exploration reaches the
+  /// window is a property of Fray's scheduler and this scenario, and a rate drifting toward zero
+  /// is the early warning that the gate is about to stop meaning anything — visible in the log
+  /// before it ever turns red.
+  @AfterAll
+  static void theEvictionWindowWasActuallyReached() {
+    final var hits = Long.parseLong(System.getProperty(HITS_PROPERTY, "0"));
+    System.clearProperty(HITS_PROPERTY);
+    System.out.printf("eviction-tombstone retries observed across the run: %d%n", hits);
+    assertTrue(
+      hits > 0,
+      "no schedule reached the dead-tombstone retry path, so this run proved nothing about it. "
+        + "Either the key cap leaves a spare idle queue so eviction never has to touch key A, or "
+        + "the scenario no longer sets up the {A: empty, idle} precondition eviction needs, or "
+        + "the suite ran un-instrumented and every schedule was skipped."
+    );
+  }
+
+  /// Adds this schedule's retry count to the cross-loader total.
+  ///
+  /// @param hits retries observed by one scenario
+  private static void recordTombstoneHits(final long hits) {
+    final var total = Long.parseLong(System.getProperty(HITS_PROPERTY, "0")) + hits;
+    System.setProperty(HITS_PROPERTY, Long.toString(total));
   }
 }

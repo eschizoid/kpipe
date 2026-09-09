@@ -1,9 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
-/// Shared plumbing for the Fray ports: run a set of actions on their own threads and wait for
-/// every one to finish.
+/// Runs a set of actions on their own threads and waits for every one to finish.
 ///
-/// Joining matters more here than it does under jcstress, which owns actor lifecycles itself.
 /// Fray does not finish an iteration while any thread it started is still live, so a port that
 /// leaks a thread wedges exploration on its first schedule rather than failing. Everything the
 /// scenarios drive must therefore be joined, and anything holding a scheduler must not be
