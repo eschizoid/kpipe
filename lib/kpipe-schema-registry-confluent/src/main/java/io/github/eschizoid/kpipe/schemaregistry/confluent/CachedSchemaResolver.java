@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /// a producer registering a schema per deploy — or a consumer spanning many topics with
 /// independent lineages — breaks it. The failure mode is a slow leak in a long-running consumer,
 /// which is among the hardest to attribute, so [#lookupById] logs once at WARNING when the cache
-/// passes [#UNEXPECTED_SIZE]. Bounding is deliberately not attempted: eviction would mean a
+/// passes a thousand distinct ids. Bounding is deliberately not attempted: eviction would mean a
 /// synchronous registry round-trip on the record path for a schema about to be used again, and
 /// the warning is what would tell us the assumption had failed.
 ///
@@ -86,7 +86,13 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
   /// record. Schema IDs are immutable, so nothing here is a correctness problem — the entries
   /// stay valid — but the memory is held for the life of the process.
   private void warnOnceIfCacheLooksUnbounded() {
-    if (cache.size() <= UNEXPECTED_SIZE || !sizeWarningEmitted.compareAndSet(false, true)) {
+    // Flag first: after this has fired, size() would be recomputed on every miss for the life
+    // of the process — and the unbounded growth it flags is exactly when misses are endless
+    // and the map is largest.
+    if (sizeWarningEmitted.get() || cache.size() <= UNEXPECTED_SIZE) {
+      return;
+    }
+    if (!sizeWarningEmitted.compareAndSet(false, true)) {
       return;
     }
     LOGGER.log(
@@ -94,7 +100,7 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
       "Schema cache holds more than {0} distinct IDs. This cache never evicts, which assumes a "
         + "topic registers tens of schemas over its lifetime; a producer registering per deploy "
         + "breaks that and the entries are held for the life of the process. Wrap this resolver "
-        + "with your own bounded cache if the count keeps climbing. Logged once.",
+        + "with your own bounded cache if the count keeps climbing. Logged once per resolver.",
       UNEXPECTED_SIZE
     );
   }
