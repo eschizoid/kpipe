@@ -72,9 +72,11 @@ class CachedSchemaResolverSizeWarningTest {
       "sustained growth must log once, not once per record — a stuck producer would otherwise "
         + "flood the log at poll rate"
     );
+    final var message = warnings.getFirst().getMessage();
+    assertTrue(message.contains("never evicts"), "the warning should name the design property that was outgrown");
     assertTrue(
-      warnings.getFirst().getMessage().contains("never evicts"),
-      "the warning should name the design property that has been outgrown"
+      message.contains("bounded cache"),
+      "the warning should name the remedy; a diagnosis an operator cannot act on is half a warning"
     );
   }
 
@@ -146,5 +148,31 @@ class CachedSchemaResolverSizeWarningTest {
       assertEquals(1_200, resolver.hitCount(), "the second pass should be served entirely from cache");
       assertEquals(1_200, resolver.missCount(), "the first pass should account for every miss");
     }
+  }
+
+  /// Pins the threshold and the comparison exactly, rather than bracketing it loosely.
+  ///
+  /// The other tests only establish that 500 is silent and 5,000 warns, which leaves the constant
+  /// free to drift anywhere between and the boundary untested. The javadoc states a thousand in
+  /// prose, and prose does not hold a number still.
+  @Test
+  void theThresholdIsExactlyOneThousand() {
+    final var atThreshold = captureWarnings(() -> {
+      try (final var resolver = new CachedSchemaResolver(id -> "s" + id)) {
+        for (var id = 0; id < 1_000; id++) {
+          resolver.lookupById(id);
+        }
+      }
+    });
+    assertEquals(0, atThreshold.size(), "exactly a thousand distinct ids is within the assumption, not past it");
+
+    final var pastThreshold = captureWarnings(() -> {
+      try (final var resolver = new CachedSchemaResolver(id -> "s" + id)) {
+        for (var id = 0; id < 1_001; id++) {
+          resolver.lookupById(id);
+        }
+      }
+    });
+    assertEquals(1, pastThreshold.size(), "one id past the threshold must warn");
   }
 }
