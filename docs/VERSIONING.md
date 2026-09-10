@@ -67,10 +67,11 @@ API despite the suffix, because `Stream` methods take them as parameters.
   ordinary line in a `## Changes` group rather than as a migration guide. Some releases add a
   hand-written breaking-change section above the generated changelog — v1.17.0 did — but that is
   not automatic and should not be relied on. Follow the commit.
-- **No compiler warning, and no marker to grep for.** Commit subjects do not currently use the
-  conventional-commit `!` breaking marker, so a break is not mechanically distinguishable from any
-  other change in the notes. That is the cost of having no deprecation cycle, and it is the reason
-  to read the release diff for a minor upgrade rather than assuming a minor is safe.
+- **No compiler warning.** That is the cost of having no deprecation cycle, and it is the reason to
+  read the release diff for a minor upgrade rather than assuming a minor is safe. Where a commit
+  subject carries the conventional-commit `!` marker (`refactor(consumer)!:`), that is reliable
+  evidence of a break; its absence is not evidence of safety, because the marker is not applied
+  consistently.
 
 ## Support window
 
