@@ -5,6 +5,7 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /// In-process LRU-free cache wrapping any [SchemaResolver].
@@ -19,7 +20,15 @@ import java.util.concurrent.atomic.AtomicLong;
 /// Cardinality grows on the order of schema-version registrations — typically tens per topic
 /// over the lifetime of a production system, even with active evolution. Unbounded cache size
 /// is not a real concern at that rate. If a user does need a bound, they can wrap this
-/// resolver themselves; we'll add LRU here if a real workload demonstrates the need.
+/// resolver themselves.
+///
+/// That bound is an assumption about producer behaviour, not something this class enforces, and
+/// a producer registering a schema per deploy — or a consumer spanning many topics with
+/// independent lineages — breaks it. The failure mode is a slow leak in a long-running consumer,
+/// which is among the hardest to attribute, so [#lookupById] logs once at WARNING when the cache
+/// passes a thousand distinct ids. Bounding is deliberately not attempted: eviction would mean a
+/// synchronous registry round-trip on the record path for a schema about to be used again, and
+/// the warning is what would tell us the assumption had failed.
 ///
 /// **Thread-safety.** Backed by a [ConcurrentHashMap] so the hot read path is lock-free per
 /// bucket. `computeIfAbsent` makes the load+store atomic — if two threads miss on the same ID
@@ -38,10 +47,16 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
 
   private static final Logger LOGGER = System.getLogger(CachedSchemaResolver.class.getName());
 
+  /// Distinct schema IDs beyond which the cardinality assumption looks wrong. Set well above the
+  /// tens a healthy topic reaches over its lifetime, so crossing it means producer behaviour has
+  /// changed rather than that the cache is merely warm.
+  private static final int UNEXPECTED_SIZE = 1_000;
+
   private final SchemaResolver delegate;
   private final ConcurrentHashMap<Integer, String> cache = new ConcurrentHashMap<>();
   private final AtomicLong hits = new AtomicLong();
   private final AtomicLong misses = new AtomicLong();
+  private final AtomicBoolean sizeWarningEmitted = new AtomicBoolean();
 
   /// Wraps `delegate` with an unbounded by-ID cache.
   ///
@@ -57,10 +72,37 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
       hits.incrementAndGet();
       return hit;
     }
-    return cache.computeIfAbsent(schemaId, id -> {
+    final var resolved = cache.computeIfAbsent(schemaId, id -> {
       misses.incrementAndGet();
       return delegate.lookupById(id);
     });
+    warnOnceIfCacheLooksUnbounded();
+    return resolved;
+  }
+
+  /// Logs once when the cache exceeds the size its no-eviction design assumes.
+  ///
+  /// Guarded by a compare-and-set so sustained growth produces one line rather than one per
+  /// record. Schema IDs are immutable, so nothing here is a correctness problem — the entries
+  /// stay valid — but the memory is held for the life of the process.
+  private void warnOnceIfCacheLooksUnbounded() {
+    // Flag first: after this has fired, size() would be recomputed on every miss for the life
+    // of the process — and the unbounded growth it flags is exactly when misses are endless
+    // and the map is largest.
+    if (sizeWarningEmitted.get() || cache.size() <= UNEXPECTED_SIZE) {
+      return;
+    }
+    if (!sizeWarningEmitted.compareAndSet(false, true)) {
+      return;
+    }
+    LOGGER.log(
+      Level.WARNING,
+      "Schema cache holds more than {0} distinct IDs. This cache never evicts, which assumes a "
+        + "topic registers tens of schemas over its lifetime; a producer registering per deploy "
+        + "breaks that and the entries are held for the life of the process. Wrap this resolver "
+        + "with your own bounded cache if the count keeps climbing. Logged once per resolver.",
+      UNEXPECTED_SIZE
+    );
   }
 
   /// Returns the number of cache hits since this resolver was constructed.
