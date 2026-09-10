@@ -35,29 +35,42 @@ as are `BatchPolicy`, `BatchResult` and `ProcessingMode`. The published `kpipe-t
 user test code compiles against it.
 
 **SPI** — a public interface users are expected to *implement*: `MessageFormat`, `MessageSink`, `BatchSink`,
-`SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `ConsumerMetrics`, `ProducerMetrics`.
+`SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `ConsumerMetrics`,
+`ProducerMetrics`, `KPipeMetricsReporter`.
 Same stability rules, with one asymmetry worth knowing: adding a method to one of these is a breaking change for
 an implementer and invisible to a caller.
 
-**Internal** — anything **package-private**, whatever package it lives in. That is the boundary that actually
-operates here: every package in every module is exported, with no qualified exports anywhere, so JPMS is not
-hiding anything. `KeyOrderedDispatcher`, `ParallelDispatcher`, `SequentialDispatcher`, `OffsetLedger`,
-`RecordProcessor`, `ConsumerHealthController`, `BatchPipelineWrapper` and `PendingOffsetSet` are all
-package-private and carry no guarantees. Note the shape of the names is not the rule — `CircuitBreakerController`
-and `BackpressureController` are public API despite the suffix.
+**Internal** — anything **package-private**, plus a small set of types that are public only because
+Java has no friend-module visibility. Within a single module, package-private is the boundary that
+operates: every package in every JPMS module here is exported, with no qualified exports anywhere,
+so nothing is hidden that way. `KeyOrderedDispatcher`, `ParallelDispatcher`, `SequentialDispatcher`,
+`OffsetLedger`, `RecordProcessor`, `ConsumerHealthController`, `BatchPipelineWrapper` and
+`PendingOffsetSet` are all package-private and carry no guarantees.
 
-One exception exists and is called out rather than papered over: `RegistryFunctions` in `kpipe-core` is public and
-exported but is not intended as user surface. Treat it as internal.
+A helper shared *between* KPipe modules cannot be package-private, so it is forced public and
+exported while remaining internal. `RegistryFunctions`, `ConsoleSinkSupport`, `ConfluentEnvelope`
+and `WireDiagnostics` are those, and `KafkaOffsetManager.getPartitionState` is a test observation
+point with no production caller. None of them are user surface. The shape does not identify them —
+`Operators` and `ConsumerMetricKeys` look identical and are genuine API — so this list is the
+answer, not a pattern to apply.
+
+Note the name is never the rule: `CircuitBreakerController` and `BackpressureController` are public
+API despite the suffix, because `Stream` methods take them as parameters.
 
 ## How a break reaches you
 
-- **The PR that removes it** carries the migration detail — the removed form, the replacement, and the mechanical
-  edit — and updates every caller in the repository, so there is always a worked example. The same table is in the
-  commit message.
-- **Release notes are generated from commit subjects**, so a break appears there as a `feat!:` or `refactor(x)!:`
-  line pointing at that commit rather than as a prose migration guide. Follow the commit for the table.
-- **No compiler warning.** That is the cost of having no deprecation cycle, and it is the reason to read the
-  release diff for a minor upgrade rather than assuming a minor is safe.
+- **The PR that removes it** carries the migration detail — the removed form, the replacement, and
+  the mechanical edit — and updates every caller in the repository, so there is always a worked
+  example. The same detail is in the commit message, sometimes as a table and otherwise as a bullet
+  list.
+- **Release notes are generated from commit subjects**, so a break usually appears there as an
+  ordinary line in a `## Changes` group rather than as a migration guide. Some releases add a
+  hand-written breaking-change section above the generated changelog — v1.17.0 did — but that is
+  not automatic and should not be relied on. Follow the commit.
+- **No compiler warning, and no marker to grep for.** Commit subjects do not currently use the
+  conventional-commit `!` breaking marker, so a break is not mechanically distinguishable from any
+  other change in the notes. That is the cost of having no deprecation cycle, and it is the reason
+  to read the release diff for a minor upgrade rather than assuming a minor is safe.
 
 ## Support window
 
