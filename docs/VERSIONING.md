@@ -11,8 +11,10 @@ is deleted in the same change that migrates its callers. Patch releases never br
 **From 2.0 onward, KPipe follows strict semantic versioning.** Breaking changes land only in majors, and anything
 removed is deprecated for at least one minor first.
 
-If that first rule is unacceptable for your project, pin an exact version and upgrade deliberately. The BOM makes
-that a one-line change.
+If that first rule is unacceptable for your project, set the version deliberately rather than
+tracking latest. The BOM keeps that to one place — though note `platform(...)` contributes a
+constraint to conflict resolution rather than forcing a version, so a hard pin means
+`enforcedPlatform(...)` or explicit versions. See [MODULES.md](MODULES.md).
 
 ## Why it works this way today
 
@@ -36,7 +38,7 @@ user test code compiles against it.
 
 **SPI** — a public interface users are expected to *implement*: `MessageFormat`, `MessageSink`, `BatchSink`,
 `SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `ConsumerMetrics`,
-`ProducerMetrics`, `KPipeMetricsReporter`.
+`ProducerMetrics`, `KPipeMetricsReporter`, `KPipeConsumer.ErrorHandler`.
 Same stability rules, with one asymmetry worth knowing: adding a method to one of these is a breaking change for
 an implementer and invisible to a caller.
 
@@ -47,12 +49,18 @@ so nothing is hidden that way. `KeyOrderedDispatcher`, `ParallelDispatcher`, `Se
 `OffsetLedger`, `RecordProcessor`, `ConsumerHealthController`, `BatchPipelineWrapper` and
 `PendingOffsetSet` are all package-private and carry no guarantees.
 
-A helper shared *between* KPipe modules cannot be package-private, so it is forced public and
-exported while remaining internal. `RegistryFunctions`, `ConsoleSinkSupport`, `ConfluentEnvelope`
-and `WireDiagnostics` are those, and `KafkaOffsetManager.getPartitionState` is a test observation
-point with no production caller. None of them are user surface. The shape does not identify them —
-`Operators` and `ConsumerMetricKeys` look identical and are genuine API — so this list is the
-answer, not a pattern to apply.
+Some types are public without being surface. `ConsoleSinkSupport`, `ConfluentEnvelope` and
+`WireDiagnostics` are shared between KPipe modules and Java has no friend-module visibility, so
+they cannot be package-private. `RegistryFunctions` has no such excuse — it is used only inside
+`kpipe-core`, in the same package as its only caller, and is public for historical reasons alone.
+None of the four are user surface. The shape does not identify them — `Operators` and
+`ConsumerMetricKeys` look identical and are genuine API — so this list is the answer, not a
+pattern to apply.
+
+`KafkaOffsetManager.getPartitionState` and the `PartitionState` it returns sit outside these
+tiers: a diagnostic surface, documented in [OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md) for
+observing the commit frontier, with no production caller inside the library. Treat it as
+observability rather than API — useful for assertions and dashboards, not something to build on.
 
 Note the name is never the rule: `CircuitBreakerController` and `BackpressureController` are public
 API despite the suffix, because `Stream` methods take them as parameters.
@@ -64,14 +72,17 @@ API despite the suffix, because `Stream` methods take them as parameters.
   example. The same detail is in the commit message, sometimes as a table and otherwise as a bullet
   list.
 - **Release notes are generated from commit subjects**, so a break usually appears there as an
-  ordinary line in a `## Changes` group rather than as a migration guide. Some releases add a
+  ordinary line in a `## 🔄️ Changes` group rather than as a migration guide — or, when the subject
+  carries no conventional-commit type at all, in an unlabelled list after the grouped sections,
+  which is where the 1.19.0 registry rename landed. Some releases add a
   hand-written breaking-change section above the generated changelog — v1.17.0 did — but that is
   not automatic and should not be relied on. Follow the commit.
 - **No compiler warning.** That is the cost of having no deprecation cycle, and it is the reason to
-  read the release diff for a minor upgrade rather than assuming a minor is safe. Where a commit
-  subject carries the conventional-commit `!` marker (`refactor(consumer)!:`), that is reliable
-  evidence of a break; its absence is not evidence of safety, because the marker is not applied
-  consistently.
+  read the release diff for a minor upgrade rather than assuming a minor is safe. The conventional-commit `!`
+  marker (`refactor(consumer)!:`) is intended to mark a break, but has not been used to date and
+  nothing enforces it — there is no commit template and no message lint. Its presence would be a
+  signal; its absence is not one. Note also that this repository squash-merges, so the subject
+  reaching the release notes is the PR title rather than any commit message.
 
 ## Support window
 
@@ -80,5 +91,7 @@ exist and none have ever been cut, so upgrading forward is the only supported pa
 
 ## Java baseline
 
-KPipe targets Java 25 and uses virtual threads throughout. A Java baseline increase is treated as a breaking change
-and follows the same rules as an API removal.
+KPipe targets Java 25 and uses virtual threads throughout. The policy is that a baseline increase
+counts as a breaking change and follows the same rules as an API removal. That is intent, not
+precedent: the baseline has been 25 since before 1.0, and the only increase in project history
+shipped in a patch, pre-1.0.
