@@ -98,11 +98,11 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /// Sets the [ProducerMetrics] for this producer. The SPI is vendor-neutral — it builds against
-    /// the OpenTelemetry API with no SDK, so callers supply their own: use
-    /// `io.github.eschizoid.kpipe.metrics.otel.OtelProducerMetrics` from
-    /// `kpipe-metrics-otel` for an OpenTelemetry-backed instance, or [ProducerMetrics#noop()] for a
-    /// no-op default.
+    /// Sets the [ProducerMetrics] for this producer. The SPI carries no telemetry dependency at
+    /// all — `kpipe-metrics` is interfaces plus a no-op default — so a caller wanting
+    /// OpenTelemetry supplies both the API and an SDK: use
+    /// `io.github.eschizoid.kpipe.metrics.otel.OtelProducerMetrics` from `kpipe-metrics-otel`,
+    /// or [ProducerMetrics#noop()] for the no-op default.
     ///
     /// @param metrics the producer metrics
     /// @return this builder instance for method chaining

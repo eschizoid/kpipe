@@ -219,14 +219,14 @@ class ParallelDispatcherTest {
 
   @Test
   void onCompleteFiresExactlyOnceWhenTaskThrows() throws InterruptedException {
-    // Pair test for drainableCountDecrementedWhenTaskThrows: the consumer's afterRecordComplete()
-    // unparks the consumer thread while backpressure is holding it. That unpark is a latency
-    // nudge, not a liveness requirement — a paused consumer keeps polling on its pollTimeout
-    // cadence and re-evaluates backpressure at the top of every iteration, so a missed call costs
-    // at most one poll interval of resume delay and a doubled call costs one redundant
-    // re-evaluation. Exactly-once is still the dispatcher's contract, and it is worth pinning
-    // precisely because both failure shapes are silent: neither changes an observable outcome,
-    // only timing.
+    // Pair test for drainableCountDecrementedWhenTaskThrows: the dispatcher decrements the
+    // in-flight counter and only then runs onComplete, inside its own try/catch, so the counter
+    // that drives backpressure is unaffected by this callback going missing, doubling, or
+    // throwing. What onComplete does is unpark the consumer thread while backpressure holds it,
+    // and that shortens nothing on the resume path — the consumer is inside poll(), which unpark
+    // does not interrupt. The only wait it can shorten is the bounded park in
+    // drainInFlightBeforeTeardown. Exactly-once is still the dispatcher's contract, and it is
+    // worth pinning precisely because neither failure shape would change an observable outcome.
     final var rejectCount = new AtomicInteger(0);
     final var dispatcher = newDispatcher(rejectCount);
     final var completeCount = new AtomicInteger(0);
