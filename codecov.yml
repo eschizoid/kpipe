@@ -1,0 +1,17 @@
+coverage:
+  status:
+    # Total coverage across the repo. Codecov's default threshold is 0%, which fails a pull
+    # request on any decrease at all, including one it did not cause: the total is not stable
+    # between runs, and identical production code re-measures within a couple of tenths of a
+    # percent. At that default, a diff containing no .java file can still fail this gate. The
+    # threshold is set above the drift so a failure here means a real regression.
+    project:
+      default:
+        threshold: 0.5%
+
+    # Coverage of the lines the pull request actually changed. Held at zero tolerance: it is
+    # computed from the diff rather than from the repo total, so it carries none of the drift
+    # above, and it reports "not affected" when a pull request touches no code.
+    patch:
+      default:
+        threshold: 0%
