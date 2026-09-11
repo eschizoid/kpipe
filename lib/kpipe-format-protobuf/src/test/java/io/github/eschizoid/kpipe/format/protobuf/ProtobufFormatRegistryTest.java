@@ -239,12 +239,40 @@ class ProtobufFormatRegistryTest {
   }
 
   @Test
-  void skipBytesLikeDoubleStripIsNotOurConcernButBadIndexSizeThrows() {
-    // A malformed (huge) message-index size must fail loudly, not silently mis-slice the payload.
+  void indexSizeExceedingTheEnvelopeIsRejectedBeforeAllocating() {
+    // The size guard runs before `new int[size]`, so a corrupt varint cannot turn into a huge
+    // allocation. Both cases below assert the guard's own message rather than just the exception
+    // type: without that, deleting the guard still throws IllegalStateException from the truncated
+    // varint the loop would hit next, and the test passes while covering nothing.
     final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
-    // magic + id=1 + zig-zag size 0x04 (=2) but truncated before the two index elements.
+
+    // magic + id=1 + zig-zag size 0x04 (=2), with zero bytes left for the two index elements.
     final var truncated = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x04 };
-    assertThrows(IllegalStateException.class, () -> format.deserialize(truncated));
+    final var small = assertThrows(IllegalStateException.class, () -> format.deserialize(truncated));
+    assertTrue(
+      small.getMessage().contains("exceeds remaining"),
+      "must trip the size guard, not the truncated-varint branch; was: " + small.getMessage()
+    );
+
+    // magic + id=1 + a varint of 8<<28, which zig-zag decodes to 1,073,741,824. Unguarded that is
+    // a 4 GiB int[] request from ten bytes of input.
+    final var huge = new byte[] {
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      (byte) 0x80,
+      (byte) 0x80,
+      (byte) 0x80,
+      (byte) 0x80,
+      0x08,
+    };
+    final var big = assertThrows(IllegalStateException.class, () -> format.deserialize(huge));
+    assertTrue(
+      big.getMessage().contains("exceeds remaining"),
+      "a billion-element index must be rejected by the guard; was: " + big.getMessage()
+    );
   }
 
   @Test
