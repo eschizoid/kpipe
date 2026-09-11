@@ -366,7 +366,10 @@ deliberately escape-hatch-only.
 
   The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
   circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the
-  breaker's OPEN → HALF_OPEN transition. Size-triggered flushes run on worker threads and do not have that property.
+  breaker's OPEN → HALF_OPEN transition. Size-triggered flushes run wherever the dispatcher placed the record — a worker
+  virtual thread under PARALLEL and KEY_ORDERED, but the **consumer thread itself under SEQUENTIAL**, where a blocking
+  sink stalls the poll loop and risks `max.poll.interval.ms` eviction, the same end state the paused loop keeps polling
+  to avoid.
   Whether one-flush-at-a-time is a guarantee worth keeping or an accident of lock placement is tracked in #313.
   Constructed in the consumer ctor, started in `start()`, drained in `close()`.
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
@@ -578,11 +581,13 @@ roadmap lives in the GitHub epics instead (verification in #312, architecture in
   dispatch is a rounding error at the broker level once per-record work reaches a millisecond, and the v2 broker verify
   came back flat. Re-open only with evidence of a dispatch-bound production workload, and re-run
   `KeyOrderedDispatchBenchmark` before landing anything.
-- **Three refuted audit claims.** `send()` cannot hang forever — the ack wait is bounded by `delivery.timeout.ms`,
-  and the pre-return block on metadata and buffer allocation is bounded by `max.block.ms`, so reach for whichever knob
-  matches the phase you are tuning. There is no `Pattern` subscription, so no per-topic cardinality bomb. Protobuf
-  message-index over-allocation is rejected before the allocation and covered by
-  `ProtobufFormatRegistryTest`. Do not re-raise without new facts.
+- **Three refuted audit claims.** `send()` cannot hang forever, but it has two bounds and they **add**: the call
+  blocks first on metadata and buffer allocation, bounded by `max.block.ms`, and only then waits for the ack, bounded
+  by `delivery.timeout.ms`. They are sequential phases of one call, not alternatives — tightening
+  `delivery.timeout.ms` alone does not bound `send()`, which matters for the batch-lock hold described above, where a
+  DLQ produce runs once per record. There is no `Pattern` subscription, so no per-topic cardinality bomb. Protobuf
+  message-index over-allocation is rejected before the allocation, though the test covering it would still pass with
+  the guard removed — see the note below. Do not re-raise without new facts.
 
 - **Header-based schema envelopes** (Azure SR style, schema id in Kafka headers). `MessageFormat.deserialize(byte[])`
   cannot see headers, so this needs a contract extension, not an implementation. Only on real demand.
@@ -593,3 +598,10 @@ roadmap lives in the GitHub epics instead (verification in #312, architecture in
 
 **Still open, and not deferred:** whether tracing should default on when `kpipe-tracing-otel` is present on the
 classpath, or stay explicit.
+
+**Two standing facts about this repo, recorded because nothing else holds them.** Copilot code review is effectively
+off: adding `copilot-pull-request-reviewer[bot]` as a requested reviewer returns success and attaches nobody, and the
+`reviews` array stays empty, so a Copilot done-signal never arrives and any workflow waiting for one will not
+terminate. Re-enabling it is a repository setting. Separately, `ProtobufFormatRegistryTest`'s over-allocation case
+trips the truncated-varint branch rather than the size guard, so it would still pass if the guard were deleted — the
+guard is correctly placed, but untested.
