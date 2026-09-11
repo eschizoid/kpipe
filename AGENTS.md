@@ -560,11 +560,17 @@ test-classifier jar — it's a runtime tool for users' test suites.
   deliberately does **not** load `prettier-plugin-java`: it reformats Java inside fenced code blocks and disagrees with
   google-java-format about lambda parameters, writing `(order) ->` where the Java formatter writes `order ->`, which
   silently rewrote the README quickstart out of step with the compiled `ReadmeQuickstart.java` that
-  `scripts/check-docs.sh` compares line by line. Third and nastiest: the markdown formatter converts `*emphasis*` to
-  `_emphasis_`, and where a bare `SNAKE_CASE` identifier sits beside an emphasis span the underscores re-pair across it
-  — `KEY_ORDERED *behind*` became `KEY*ORDERED \_behind*`, which renders as `KEYORDERED _behind`. Backtick identifiers
-  in prose; `` `KEY_ORDERED` `` is immune. `spotlessCheck` cannot catch that one, because the corrupted text is the
-  formatter's own output and is therefore already canonical.
+  `scripts/check-docs.sh` compares line by line.
+- **The prose formatter is not idempotent, and the second run is the one that corrupts.** Given a bare
+  underscore-bearing word followed by an emphasis span in the same block, pass one is clean and pass two destroys the
+  word: `KEY_ORDERED *behind*` becomes `KEY_ORDERED _behind_`, which on the next run becomes `KEY*ORDERED \_behind*` and
+  renders as `KEYORDERED _behind`. So a file can sit in the repo looking right, pass review, pass `spotlessCheck`, and
+  detonate on a later `spotlessApply` — which is how these notes rotted while they were untracked. `spotlessCheck`
+  structurally cannot catch it, because the corrupted form is the formatter's own fixed point. The blast radius is any
+  bare `_`-bearing word before an emphasis span — not just `SNAKE_CASE` — in headings, list items, table cells,
+  blockquotes or link text; `__dunder__` in prose silently becomes bold instead. **Backtick identifiers in prose**; a
+  code span is never re-parsed for emphasis. To check a tree by hand, run `spotlessApply` twice and diff — a non-empty
+  second diff is the bug, and it needs no heuristics to detect.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
