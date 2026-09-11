@@ -128,18 +128,25 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       final var ageNanos = System.nanoTime() - oldestEnqueueNanos;
       if (ageNanos >= policy.maxAge().toNanos()) flushLocked();
     } catch (final Throwable t) {
-      // Only an Error reaches here. Every RuntimeException path through flushLocked is already
+      // In practice only an Error reaches here. The RuntimeException paths through flushLocked are
       // closed: the sink call and both callback loops catch Exception, a null BatchResult is
-      // handled explicitly, BatchResult's canonical constructor rejects null collections and
-      // null elements while still inside the user's sink call, and BatchPolicy validates maxAge
-      // at construction so the age comparison above cannot throw.
+      // handled explicitly, and BatchResult's canonical constructor rejects null collections and
+      // null elements while still inside the user's sink call. "In practice" because System.Logger
+      // is pluggable through the LoggerFinder SPI, so a throwing implementation would arrive here
+      // from the log calls themselves — not defensible, and not worth defending against.
       //
-      // The log is what an operator sees. The rethrow is a separate decision:
-      // scheduleWithFixedDelay
-      // cancels a task that throws, so this permanently stops the age trigger for this topic —
-      // records then flush only on the size threshold and on shutdown drain. That is the intended
-      // trade. The JVM has thrown an Error, and continuing to schedule flushes on it is worse than
-      // letting a low-volume topic miss its age deadline.
+      // The age comparison above is a subtler case. BatchPolicy does not bound maxAge, and
+      // Duration.toNanos() overflows past roughly 292 years, so a large enough policy would throw
+      // ArithmeticException on that line. What prevents it is that start() derives the tick period
+      // from the same maxAge via toMillis(), which overflows three orders of magnitude later: any
+      // value big enough to break toNanos() schedules the first tick centuries out, so this code
+      // never runs. That coupling is load-bearing — a fixed tick period would open the path.
+      //
+      // The log is what an operator sees. The rethrow is a separate decision: a periodic task that
+      // throws is cancelled and never rescheduled, so this permanently stops the age trigger for
+      // this topic, and records then flush only on the size threshold and on shutdown drain. That
+      // is the intended trade: the JVM has thrown an Error, and continuing to schedule flushes on
+      // it is worse than letting a low-volume topic miss its age deadline.
       LOGGER.log(Level.ERROR, "Batch tick failed for topic {0}: {1}", topic, t.getMessage(), t);
       throw t;
     } finally {
