@@ -354,9 +354,12 @@ deliberately escape-hatch-only.
   `[0, batchSize)` is a contract violation. `BatchPipelineWrapper` flags missing indexes with a synthetic
   `IllegalStateException` and routes them to the DLQ rather than silently marking them processed (§12). Out-of-range
   indexes are logged at WARNING; a `null` `BatchResult` is treated as whole-batch failure.
-- **`BatchPipelineWrapper` owns buffer + lock + gauge + age-tick.** One wrapper per topic; `ReentrantLock` protects
-  `enqueue` / `tick` / `close` / `flushLocked` so parallel-mode workers can enqueue concurrently while a flush is
-  mid-flight. Constructed in the consumer ctor, started in `start()`, drained in `close()`.
+- **`BatchPipelineWrapper` owns buffer + lock + gauge + age-tick.** One wrapper per topic; a single `ReentrantLock`
+  serializes `enqueue` / `tick` / `close` / `flushLocked`. Note what that means on the flush path: `flushLocked` calls
+  the user's `BatchSink` **while holding the lock**, so a flush blocks every other worker's `enqueue` for that topic
+  until the sink returns — and a batch sink is a network call by construction. One flush per topic is in flight at a
+  time. Whether that is a guarantee worth keeping or an accident of lock placement is open; see the batch-lock item in
+  issue #313. Constructed in the consumer ctor, started in `start()`, drained in `close()`.
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
   watermark. The wrapper's `bufferedCount()` is added to `KPipeConsumer.totalInFlight()` to close that gap.
@@ -542,3 +545,30 @@ test-classifier jar — it's a runtime tool for users' test suites.
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
   why some test-tree dangling-Javadoc kept reappearing.
+
+---
+
+## Deliberately deferred
+
+Things decided against, with the reason. Re-proposing any of these needs new evidence, not a new argument — the
+argument was already had. Moved here from an untracked roadmap file so the decisions are reviewable; the forward-looking
+roadmap lives in the GitHub epics instead (verification in #312, architecture in #313), where it is visible.
+
+- **`Stream.strict()` / `.lenient()` toggle, `KPipe.from(props)` short-form, a `just new-format` scaffold.** Surface
+  area without a demonstrated need.
+- **Transient-vs-permanent DLQ-send classification.** Decided 2026-06-22: a failed DLQ send increments a counter, logs
+  at ERROR, and leaves the offset pending so the record is reprocessed on restart. A down DLQ applies backpressure
+  rather than silently dropping.
+- **Extracting a shared DLQ-or-mark helper.** Decided 2026-07-17: the per-path asymmetries are deliberate, and
+  `DlqTerminalContractTest` enforces the lockstep a shared helper would have provided.
+- **Unified metrics collector / `MetricsContext` bundle; `Tracer.isEnabled()`; a `RegistryModeFormat` base class.**
+  Abstractions over two call sites.
+- **Further dispatcher performance work.** Measured 2026-07-21: dispatch is a rounding error at the broker level once
+  per-record work reaches a millisecond, and the v2 broker verify came back flat. Re-open only with evidence of a
+  dispatch-bound production workload, and re-run `KeyOrderedDispatchBenchmark` before landing anything.
+- **Three refuted audit claims.** `send()` blocking is bounded by `delivery.timeout.ms`; there is no `Pattern`
+  subscription, so no per-topic cardinality bomb; Protobuf message-index over-allocation is guarded and tested. Do not
+  re-raise without new facts.
+
+**Still open, and not deferred:** whether tracing should default on when `kpipe-tracing-otel` is present on the
+classpath, or stay explicit.
