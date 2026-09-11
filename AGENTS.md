@@ -123,9 +123,9 @@ a consumer only pulls the format it actually uses (§19).
 
 `kpipe-metrics` carries no telemetry dependency — `build.gradle.kts` declares nothing beyond test libraries and
 `module-info` has no `requires` clause at all, so it is interfaces plus a no-op default and nothing else. On the
-metrics side `opentelemetry-api` arrives only with `kpipe-metrics-otel`, which declares it `api` and `requires
-transitive` it — so adding that module brings the API along and the user supplies just an SDK (Prometheus, OTLP,
-Jaeger). Tracing has its own at `kpipe-tracing-otel`. `ConsumerMetrics` / `ProducerMetrics` default to
+metrics side `opentelemetry-api` arrives only with `kpipe-metrics-otel`, which brings the API along, so the user
+adds just an SDK (`opentelemetry-sdk`) and an exporter (Prometheus, OTLP, Jaeger). Tracing has its own at
+`kpipe-tracing-otel`. `ConsumerMetrics` / `ProducerMetrics` default to
 `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` (zero cost when not configured) and wire via `.withMetrics(...)`.
 
 | Component         | Instrument                                     | Type      |

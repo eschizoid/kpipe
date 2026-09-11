@@ -223,10 +223,12 @@ class ParallelDispatcherTest {
     // in-flight counter and only then runs onComplete, inside its own try/catch, so the counter
     // that drives backpressure is unaffected by this callback going missing, doubling, or
     // throwing. What onComplete does is unpark the consumer thread while backpressure holds it,
-    // and that shortens nothing on the resume path — the consumer is inside poll(), which unpark
-    // does not interrupt. The only wait it can shorten is the bounded park in
-    // drainInFlightBeforeTeardown. Exactly-once is still the dispatcher's contract, and it is
-    // worth pinning precisely because neither failure shape would change an observable outcome.
+    // and that shortens nothing on the resume path: the consumer thread is never parked there —
+    // it is inside poll(), running, or in a Thread.sleep, none of which unpark shortens. The only
+    // wait it can shorten is the bounded park in drainInFlightBeforeTeardown. Exactly-once is the
+    // dispatcher's contract, and it is worth pinning precisely because neither failure shape
+    // changes anything production-observable: no counter, log, or delivered record differs.
+    // ParallelDispatcherRaceTest parks a stand-in thread to make the callback observable at all.
     final var rejectCount = new AtomicInteger(0);
     final var dispatcher = newDispatcher(rejectCount);
     final var completeCount = new AtomicInteger(0);

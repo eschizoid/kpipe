@@ -272,9 +272,12 @@ final class KeyOrderedDispatcher implements Dispatcher {
         );
       }
       try {
-        // 1ms park, not Thread.yield, so sustained saturation doesn't peg a CPU core on
-        // the consumer thread. Worst-case latency is one sleep tick after a queue drains.
-        //noinspection BusyWait — intentional bounded backpressure park, not a spin
+        // A 1ms sleep, not Thread.yield, so sustained saturation doesn't peg a CPU core on the
+        // consumer thread. Worst-case latency is one sleep tick after a queue drains. Sleep
+        // rather than LockSupport.parkNanos deliberately: this runs on the consumer thread, and
+        // a sleeping thread ignores the unpark that record completions deliver, so it cannot
+        // absorb one meant for the teardown drain.
+        //noinspection BusyWait — intentional bounded backpressure sleep, not a spin
         Thread.sleep(1);
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
@@ -331,14 +334,14 @@ final class KeyOrderedDispatcher implements Dispatcher {
     }
     if (probe.getState() != Thread.State.NEW) {
       throw new IllegalArgumentException(
-        "workerFactory must return unstarted threads; the daemon probe would otherwise run work and the "
-          + "dispatcher would not own the thread's lifecycle"
+        "workerFactory must return unstarted threads; the daemon probe would otherwise run work and the " +
+          "dispatcher would not own the thread's lifecycle"
       );
     }
     if (!probe.isDaemon()) {
       throw new IllegalArgumentException(
-        "workerFactory must produce daemon threads: close() interrupts workers that outlast the drain wait, "
-          + "and a task that ignores interruption would keep the JVM alive"
+        "workerFactory must produce daemon threads: close() interrupts workers that outlast the drain wait, " +
+          "and a task that ignores interruption would keep the JVM alive"
       );
     }
     return r -> {
@@ -348,8 +351,8 @@ final class KeyOrderedDispatcher implements Dispatcher {
       }
       if (t.getState() != Thread.State.NEW || !t.isDaemon()) {
         throw new IllegalStateException(
-          "workerFactory returned a thread that is already started or not a daemon; the dispatcher owns "
-            + "the thread's lifecycle and relies on daemon status to let the JVM exit"
+          "workerFactory returned a thread that is already started or not a daemon; the dispatcher owns " +
+            "the thread's lifecycle and relies on daemon status to let the JVM exit"
         );
       }
       return t;
@@ -379,13 +382,15 @@ final class KeyOrderedDispatcher implements Dispatcher {
   }
 
   private void startWorker(final Object key, final KeyQueue queue) {
-    final var worker = requireThread(workerFactory.newThread(() -> {
+    final var worker = requireThread(
+      workerFactory.newThread(() -> {
         try {
           drain(queue);
         } finally {
           activeWorkers.remove(Thread.currentThread());
         }
-      }));
+      })
+    );
     worker.setName("kpipe-key-worker-" + System.identityHashCode(key));
     activeWorkers.add(worker);
     try {
