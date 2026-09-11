@@ -222,9 +222,12 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// When called from a virtual thread this is highly efficient — blocking on the future
   /// parks the virtual thread without pinning its carrier thread.
   ///
-  /// The blocking wait is bounded by the producer's own `delivery.timeout.ms` (default 2 minutes):
-  /// the Kafka client fails the returned future after that, so this call cannot park forever even
-  /// against a hung broker. Tune that producer property to tighten or relax the bound.
+  /// This cannot park forever, but it has two bounds and they add rather than substitute.
+  /// `KafkaProducer.send` blocks first on metadata lookup and buffer allocation, bounded by
+  /// `max.block.ms`; only then does the returned future wait for the broker ack, bounded by
+  /// `delivery.timeout.ms`. They are sequential phases of one call, so tightening
+  /// `delivery.timeout.ms` alone does not bound this method — pick the property that matches the
+  /// phase you are trying to bound, or set both.
   ///
   /// @param record the record to send
   /// @return the metadata for the record that was sent

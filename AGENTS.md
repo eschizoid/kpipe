@@ -360,7 +360,10 @@ deliberately escape-hatch-only.
   sink returns — the per-record outcome dispatch runs there too, including `markProcessed` (which reaches a
   user-supplied `OffsetManager`, possibly Postgres- or Redis-backed) and `onBatchFailure` (which reaches a synchronous
   DLQ produce that waits for the broker ack). `failAll` does that produce once per record, serially, so a whole-batch
-  failure against an unavailable DLQ holds the topic's lock for the batch size times the produce timeout. The sink is
+  failure against an unavailable DLQ holds the topic's lock for the batch size times the per-record produce timeout —
+  `max.block.ms` or `delivery.timeout.ms` depending on whether DLQ topic metadata is cached, per the refuted-claims
+  entry below. An interrupt collapses that: the producer restores the interrupt flag, so every later send in the loop
+  fails on entry and the hold falls to roughly one timeout rather than N. The sink is
   arbitrary user code of unbounded duration — that, not any assumption that it performs I/O, is why holding the lock
   across it matters.
 
@@ -581,20 +584,16 @@ roadmap lives in the GitHub epics instead (verification in #312, architecture in
   dispatch is a rounding error at the broker level once per-record work reaches a millisecond, and the v2 broker verify
   came back flat. Re-open only with evidence of a dispatch-bound production workload, and re-run
   `KeyOrderedDispatchBenchmark` before landing anything.
-- **Three refuted audit claims.** `send()` cannot hang forever, but it has two bounds and they **add**: the call
-  blocks first on metadata and buffer allocation, bounded by `max.block.ms`, and only then waits for the ack, bounded
-  by `delivery.timeout.ms`. They are sequential phases of one call, not alternatives — tightening
-  `delivery.timeout.ms` alone does not bound `send()`, which matters for the batch-lock hold described above, where a
-  DLQ produce runs once per record. There is no `Pattern` subscription, so no per-topic cardinality bomb. Protobuf
-  message-index over-allocation is rejected before the allocation, though the test covering it would still pass with
-  the guard removed — see the note below. Do not re-raise without new facts.
-
+- **Three refuted audit claims.** `send()` cannot hang forever — both of its phases are bounded, and they add rather
+  than substitute; the javadoc on `KPipeProducer.send` carries which knob governs which phase. There is no `Pattern`
+  subscription, so no per-topic cardinality bomb. Protobuf message-index over-allocation is rejected before the
+  allocation. Do not re-raise without new facts.
 - **Header-based schema envelopes** (Azure SR style, schema id in Kafka headers). `MessageFormat.deserialize(byte[])`
   cannot see headers, so this needs a contract extension, not an implementation. Only on real demand.
 - **A Spring Boot starter.** Only on a real ask from a Spring shop — that trigger is the whole decision.
 - **An aggregated NOTICE for the shaded `-confluent` jar.** Shadow's default merge keeps the first-seen LICENSE and
-  NOTICE, and the seven expected entries were verified present. A hand-curated aggregate would be better attribution
-  hygiene, not a correctness fix.
+  NOTICE. A hand-curated aggregate would be better attribution hygiene, not a correctness fix — and if the entry count
+  matters, assert it in the build rather than in prose here.
 
 **Still open, and not deferred:** whether tracing should default on when `kpipe-tracing-otel` is present on the
 classpath, or stay explicit.
@@ -602,6 +601,4 @@ classpath, or stay explicit.
 **Two standing facts about this repo, recorded because nothing else holds them.** Copilot code review is effectively
 off: adding `copilot-pull-request-reviewer[bot]` as a requested reviewer returns success and attaches nobody, and the
 `reviews` array stays empty, so a Copilot done-signal never arrives and any workflow waiting for one will not
-terminate. Re-enabling it is a repository setting. Separately, `ProtobufFormatRegistryTest`'s over-allocation case
-trips the truncated-varint branch rather than the size guard, so it would still pass if the guard were deleted — the
-guard is correctly placed, but untested.
+terminate. Re-enabling it is a repository setting.
