@@ -5,17 +5,17 @@ Metrics, pipeline-outcome counters, tracing, and the local dashboard stack. Snip
 ## Programmatic access
 
 `Handle.metrics()` (fluent path) and `KPipeConsumer.getMetrics()` (explicit path) return an unmodifiable
-`Map<String, Long>` snapshot of the consumer counters — received, processed, errors, in-flight, backpressure pauses,
-and friends. For periodic logging without an OTel backend, the log-based reporters in `kpipe-metrics`
-(`ConsumerMetricsReporter`, `EntryMetricsReporter`) can be attached via
-`KPipeConsumerBuilder.withMetricsReporters(...)` — see [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
+`Map<String, Long>` snapshot of the consumer counters — received, processed, errors, in-flight, backpressure pauses, and
+friends. For periodic logging without an OTel backend, the log-based reporters in `kpipe-metrics`
+(`ConsumerMetricsReporter`, `EntryMetricsReporter`) can be attached via `KPipeConsumerBuilder.withMetricsReporters(...)`
+— see [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
 
 ## OpenTelemetry metrics
 
-`kpipe-metrics` ships interfaces against `opentelemetry-api` only — no SDK. Add `kpipe-metrics-otel` plus your own
-OTel SDK at runtime and wire `.withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))`. When
-`withMetrics(...)` is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` are used: zero allocation, no OTel
-API needed on the classpath.
+`kpipe-metrics` ships interfaces against `opentelemetry-api` only — no SDK. Add `kpipe-metrics-otel` plus your own OTel
+SDK at runtime and wire `.withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))`. When `withMetrics(...)`
+is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` are used: zero allocation, no OTel API needed on the
+classpath.
 
 | Instrument                                     | Type      | Description                                        |
 | ---------------------------------------------- | --------- | -------------------------------------------------- |
@@ -69,12 +69,12 @@ The observer takes `LongSupplier`s rather than the resolver itself, so `kpipe-me
 
 ## Distributed tracing (W3C trace context)
 
-KPipe propagates `traceparent` / `tracestate` Kafka headers: the upstream context is extracted on poll, a CONSUMER
-span with `messaging.kafka.{topic,partition,offset}` attributes wraps processing (closed in a nested `finally` so a
-throwing user callback cannot leak the scope), and the current context is injected into outbound headers on produce
-and on DLQ writes. The `Tracer` SPI lives in `kpipe-tracing` (pulled transitively — nothing to add to your build);
-the implementation is the opt-in `kpipe-tracing-otel` module. Without `.withTracer(...)`, `Tracer.noop()` is used
-and no OTel API is needed.
+KPipe propagates `traceparent` / `tracestate` Kafka headers: the upstream context is extracted on poll, a CONSUMER span
+with `messaging.kafka.{topic,partition,offset}` attributes wraps processing (closed in a nested `finally` so a throwing
+user callback cannot leak the scope), and the current context is injected into outbound headers on produce and on DLQ
+writes. The `Tracer` SPI lives in `kpipe-tracing` (pulled transitively — nothing to add to your build); the
+implementation is the opt-in `kpipe-tracing-otel` module. Without `.withTracer(...)`, `Tracer.noop()` is used and no
+OTel API is needed.
 
 ```java
 final OpenTelemetry otel = /* GlobalOpenTelemetry.get() or your SDK */;
@@ -90,5 +90,5 @@ KPipe.json("events", kafkaProps)
 
 A local observability stack under [`infra/observability/`](../infra/observability/) runs via Docker Compose: OTel
 Collector → Prometheus → Grafana, with a pre-provisioned "KPipe Overview" dashboard. The demo
-([`examples/demo`](../examples/demo/)) wires a multi-format consumer into it end-to-end; `./scripts/run-demo.sh`
-brings the whole thing up with seeded data.
+([`examples/demo`](../examples/demo/)) wires a multi-format consumer into it end-to-end; `./scripts/run-demo.sh` brings
+the whole thing up with seeded data.

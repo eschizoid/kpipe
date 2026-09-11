@@ -14,8 +14,8 @@ implementation("io.github.eschizoid:kpipe-format-json")   // or -avro / -protobu
 ```
 
 Use `platform(...)`, not `enforcedPlatform(...)`. `platform` contributes the BOM's versions to normal dependency
-conflict resolution; `enforcedPlatform` forces them over anything else on your classpath, which can silently downgrade
-a dependency you upgraded deliberately. Reach for `enforcedPlatform` only if you have a specific conflict you have
+conflict resolution; `enforcedPlatform` forces them over anything else on your classpath, which can silently downgrade a
+dependency you upgraded deliberately. Reach for `enforcedPlatform` only if you have a specific conflict you have
 diagnosed and want to override.
 
 Maven equivalent:
@@ -46,30 +46,31 @@ Maven equivalent:
 ```
 
 `kpipe-api` pulls `kpipe-consumer`, `kpipe-producer`, `kpipe-core`, `kpipe-metrics`, and `kpipe-tracing` transitively,
-so you do not list them in your build file. Format modules are deliberately **not** transitive — you add only the one(s) you use.
+so you do not list them in your build file. Format modules are deliberately **not** transitive — you add only the one(s)
+you use.
 
 Skip `kpipe-api` only if you want the explicit registry/builder API without the fluent facade; in that case depend on
 `kpipe-consumer` directly.
 
 ## Module catalog
 
-| Module                            | What it gives you                                                                                                        |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `kpipe-api`                       | Fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                            |
-| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                            |
-| `kpipe-core`                      | Registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                       |
-| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeConsumerBuilder`, backpressure, circuit breaker, offset management, health server                 |
-| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, DLQ producer                                                                 |
-| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                                          |
-| `kpipe-metrics-otel`              | OpenTelemetry-backed metrics implementation (opt-in)                                                                     |
-| `kpipe-tracing`                   | Vendor-neutral `Tracer` SPI for cross-Kafka-boundary trace propagation (no-op default)                                   |
-| `kpipe-tracing-otel`              | W3C trace-context propagation through Kafka headers (opt-in)                                                             |
-| `kpipe-schema-registry-confluent` | Confluent Schema Registry HTTP client + in-process cache (opt-in)                                                        |
-| `kpipe-format-json`               | `JsonFormat` (payload type `Map<String, Object>`), `JsonConsoleSink`                                                     |
-| `kpipe-format-avro`               | `AvroFormat` (payload type `GenericRecord`), `AvroConsoleSink`                                                           |
-| `kpipe-format-protobuf`           | `ProtobufFormat` (payload type `Message`), `ProtobufConsoleSink`, `ProtobufDescriptorCompiler` SPI                       |
-| `kpipe-format-protobuf-confluent` | Confluent SR `.proto`-text compiler (shaded; needed only for Protobuf Schema Registry mode)                              |
-| `kpipe-test`                      | `TestStream<T>`, `CapturingSink<T>`, `CrashRestartHarness` — broker-free pipeline tests (`testImplementation` scope)     |
+| Module                            | What it gives you                                                                                                    |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `kpipe-api`                       | Fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                        |
+| `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                        |
+| `kpipe-core`                      | Registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                   |
+| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeConsumerBuilder`, backpressure, circuit breaker, offset management, health server             |
+| `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, DLQ producer                                                             |
+| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                                      |
+| `kpipe-metrics-otel`              | OpenTelemetry-backed metrics implementation (opt-in)                                                                 |
+| `kpipe-tracing`                   | Vendor-neutral `Tracer` SPI for cross-Kafka-boundary trace propagation (no-op default)                               |
+| `kpipe-tracing-otel`              | W3C trace-context propagation through Kafka headers (opt-in)                                                         |
+| `kpipe-schema-registry-confluent` | Confluent Schema Registry HTTP client + in-process cache (opt-in)                                                    |
+| `kpipe-format-json`               | `JsonFormat` (payload type `Map<String, Object>`), `JsonConsoleSink`                                                 |
+| `kpipe-format-avro`               | `AvroFormat` (payload type `GenericRecord`), `AvroConsoleSink`                                                       |
+| `kpipe-format-protobuf`           | `ProtobufFormat` (payload type `Message`), `ProtobufConsoleSink`, `ProtobufDescriptorCompiler` SPI                   |
+| `kpipe-format-protobuf-confluent` | Confluent SR `.proto`-text compiler (shaded; needed only for Protobuf Schema Registry mode)                          |
+| `kpipe-test`                      | `TestStream<T>`, `CapturingSink<T>`, `CrashRestartHarness` — broker-free pipeline tests (`testImplementation` scope) |
 
 Dependency direction (from the `module-info` declarations):
 
@@ -90,12 +91,12 @@ kpipe-test                         → consumer
 
 Two different notions of "transitive" are in play:
 
-- **Gradle/Maven transitivity** decides what jars land on your classpath/modulepath. Depending on `kpipe-api` brings
-  the consumer, producer, core, and metrics jars along.
-- **JPMS readability** (`requires transitive`) decides which module's types your code can *name*. The
+- **Gradle/Maven transitivity** decides what jars land on your classpath/modulepath. Depending on `kpipe-api` brings the
+  consumer, producer, core, and metrics jars along.
+- **JPMS readability** (`requires transitive`) decides which module's types your code can _name_. The
   `io.github.eschizoid.kpipe` module (the `kpipe-api` jar) declares `requires transitive` on consumer, producer, and
-  core, so requiring it makes those APIs readable too. Format modules are declared `requires static` — compile-only —
-  so your application must require the format module it uses explicitly.
+  core, so requiring it makes those APIs readable too. Format modules are declared `requires static` — compile-only — so
+  your application must require the format module it uses explicitly.
 
 A modular application using the fluent API with JSON:
 

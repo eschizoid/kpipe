@@ -33,9 +33,14 @@ jobs:
         run: ./scripts/check-docs.sh
 
       - name: Test with Gradle
+        # spotlessCheck, not spotlessApply. Apply rewrites the workspace and always succeeds, so
+        # formatting drift never failed a build and survived on main indefinitely — the markdown
+        # files were reformatted on every run and the result thrown away. Check fails the commit
+        # that introduces the drift instead. Note the Java block ratchets from origin/main, so it
+        # only judges files a change actually touches.
         run: |
           ./gradlew clean
-          ./gradlew spotlessApply
+          ./gradlew spotlessCheck
           ./gradlew build test --stacktrace --no-daemon --max-workers=2
 
       - name: Jacoco
