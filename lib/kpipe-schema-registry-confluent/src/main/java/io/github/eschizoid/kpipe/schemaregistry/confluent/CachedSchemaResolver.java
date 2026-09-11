@@ -57,6 +57,7 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
   private final AtomicLong hits = new AtomicLong();
   private final AtomicLong misses = new AtomicLong();
   private final AtomicBoolean sizeWarningEmitted = new AtomicBoolean();
+  private final AtomicLong unboundedChecks = new AtomicLong();
 
   /// Wraps `delegate` with an unbounded by-ID cache.
   ///
@@ -86,6 +87,7 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
   /// record. Schema IDs are immutable, so nothing here is a correctness problem — the entries
   /// stay valid — but the memory is held for the life of the process.
   private void warnOnceIfCacheLooksUnbounded() {
+    unboundedChecks.incrementAndGet();
     // Flag first: after this has fired, size() would be recomputed on every miss for the life
     // of the process — and the unbounded growth it flags is exactly when misses are endless
     // and the map is largest.
@@ -97,12 +99,31 @@ public final class CachedSchemaResolver implements SchemaResolver, AutoCloseable
     }
     LOGGER.log(
       Level.WARNING,
-      "Schema cache holds more than {0} distinct IDs. This cache never evicts, which assumes a "
-        + "topic registers tens of schemas over its lifetime; a producer registering per deploy "
-        + "breaks that and the entries are held for the life of the process. Wrap this resolver "
-        + "with your own bounded cache if the count keeps climbing. Logged once per resolver.",
+      "Schema cache holds more than {0} distinct IDs. This cache never evicts, which assumes a " +
+        "topic registers tens of schemas over its lifetime; a producer registering per deploy " +
+        "breaks that and the entries are held for the life of the process. Wrap this resolver " +
+        "with your own bounded cache if the count keeps climbing. Logged once per resolver.",
       UNEXPECTED_SIZE
     );
+  }
+
+  /// Returns how many times the cardinality check has been evaluated, for tests that pin it to
+  /// the miss path.
+  ///
+  /// [ConcurrentHashMap#size] sums the map's counter cells rather than reading a field, so
+  /// evaluating it per lookup costs real time on a warm cache — the steady state this resolver
+  /// exists to produce, where nearly every lookup is a hit. Keeping the check behind the hit-path
+  /// early return is therefore a performance property with no behavioural shadow: evaluating it
+  /// on hits as well leaves the warning firing once, at the same point, with every other
+  /// assertion about this class still passing. This counter is the only thing that tells those
+  /// two arrangements apart.
+  ///
+  /// It counts calls to the check, so it catches the check being added to the hit path. It would
+  /// not catch a bare `cache.size()` inlined there instead.
+  ///
+  /// @return cumulative count of cardinality-check evaluations
+  long unboundedCheckCount() {
+    return unboundedChecks.get();
   }
 
   /// Returns the number of cache hits since this resolver was constructed.

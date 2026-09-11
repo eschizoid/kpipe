@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,7 +27,7 @@ class CachedSchemaResolverSizeWarningTest {
   ///
   /// @param body what to run while capturing
   /// @return the warnings emitted
-  private static java.util.List<LogRecord> captureWarnings(final Runnable body) {
+  private static List<LogRecord> captureWarnings(final Runnable body) {
     final var julLogger = Logger.getLogger(CachedSchemaResolver.class.getName());
     final var captured = new CopyOnWriteArrayList<LogRecord>();
     final var handler = new Handler() {
@@ -69,8 +70,8 @@ class CachedSchemaResolverSizeWarningTest {
     assertEquals(
       1,
       warnings.size(),
-      "sustained growth must log once, not once per record — a stuck producer would otherwise "
-        + "flood the log at poll rate"
+      "sustained growth must log once, not once per record — a stuck producer would otherwise " +
+        "flood the log at poll rate"
     );
     final var message = warnings.getFirst().getMessage();
     assertTrue(message.contains("never evicts"), "the warning should name the design property that was outgrown");
@@ -102,18 +103,20 @@ class CachedSchemaResolverSizeWarningTest {
     final var warnings = captureWarnings(() -> {
       for (var t = 0; t < 16; t++) {
         final var offset = t * 1_000;
-        Thread.ofPlatform().daemon().start(() -> {
-          try {
-            start.await();
-            for (var i = 0; i < 1_000; i++) {
-              resolver.lookupById(offset + i);
+        Thread.ofPlatform()
+          .daemon()
+          .start(() -> {
+            try {
+              start.await();
+              for (var i = 0; i < 1_000; i++) {
+                resolver.lookupById(offset + i);
+              }
+            } catch (final InterruptedException e) {
+              Thread.currentThread().interrupt();
+            } finally {
+              done.countDown();
             }
-          } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-          } finally {
-            done.countDown();
-          }
-        });
+          });
       }
       start.countDown();
       try {
@@ -174,5 +177,36 @@ class CachedSchemaResolverSizeWarningTest {
       }
     });
     assertEquals(1, pastThreshold.size(), "one id past the threshold must warn");
+  }
+
+  /// Pins the cardinality check to the miss path.
+  ///
+  /// [ConcurrentHashMap#size] sums the map's counter cells rather than reading a field, so
+  /// evaluating it per lookup costs real time on a warm cache — which is the steady state this
+  /// resolver exists to produce.
+  ///
+  /// Adding the check to the hit path while leaving the miss path untouched changes nothing else
+  /// observable: the warning still fires exactly once, at the same cardinality, and every other
+  /// test in this class still passes. This assertion is the only one that fails. Moving the call
+  /// to the top of `lookupById` instead also trips `theThresholdIsExactlyOneThousand`, because
+  /// the check then runs before the entry is inserted and the boundary shifts by one.
+  @Test
+  void theCardinalityCheckStaysOffTheCacheHitPath() {
+    try (final var resolver = new CachedSchemaResolver(id -> "s" + id)) {
+      resolver.lookupById(7);
+      assertEquals(1, resolver.unboundedCheckCount(), "the miss that populated the entry evaluates the check once");
+
+      for (var i = 0; i < 10_000; i++) {
+        resolver.lookupById(7);
+      }
+
+      assertEquals(10_000, resolver.hitCount(), "every lookup after the first should be served from cache");
+      assertEquals(
+        1,
+        resolver.unboundedCheckCount(),
+        "ten thousand cache hits must not evaluate the cardinality check — it belongs behind the " +
+          "hit-path early return, where a warm cache never pays for it"
+      );
+    }
   }
 }
