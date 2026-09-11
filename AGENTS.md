@@ -502,12 +502,12 @@ updated in the same PR per the no-deprecation policy.
   chaining.
 
 **Lock contention — resolved in the v2 dispatcher (2026-07-21).** `benchmarks/KeyOrderedDispatchBenchmark` measures
-KEY*ORDERED vs PARALLEL throughput via MockConsumer (no Docker), parametrized over key cardinality. v1 used a single
+`KEY_ORDERED` vs PARALLEL throughput via MockConsumer (no Docker), parametrized over key cardinality. v1 used a single
 `ReentrantLock` for all LRU + queue mutations and flatlined ~380k ops/s regardless of cardinality; v2 replaced it with
 `ConcurrentHashMap` + one monitor per key queue (eviction via `computeIfPresent` + a `dead` tombstone set atomically
 with removal; a dispatcher holding a stale queue reference observes the tombstone under the monitor and retries).
 Interleaved A/B with the PARALLEL arm as drift canary: **+122% at 10k keys, +112% at 100, +18% at 1, control flat** —
-`benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`. Key insight: LRU \_ordering* was never a correctness
+`benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`. Key insight: LRU _ordering_ was never a correctness
 requirement (only empty+idle queues are ever evicted), so v2 drops the coldest-first preference. Future dispatcher work:
 same rule — re-run the bench and demonstrate a measurable win before landing.
 
@@ -553,14 +553,18 @@ test-classifier jar — it's a runtime tool for users' test suites.
   sink's post-pipeline shape under any mode — computing it from `firstRun.subList` would be wrong under PARALLEL
   (capture order ≠ offset order). A genuinely load-bearing resume-seek assertion (consumer skips `[0,k)` on its own) is
   tracked in the verification epic, #312.
-- **Spotless has two footguns worth knowing before you touch a file.** The Java block sets `ratchetFrom("origin/main")`,
-  so it judges only files a change actually touches — `main` therefore reports clean while individual files still carry
-  violations, and the first edit to such a file drags the whole file's reformatting into your diff. Expect unrelated
-  hunks and a `codecov/patch` drop when that happens. Separately, the markdown formatter deliberately does **not** load
-  `prettier-plugin-java`: it reformats Java inside fenced code blocks and disagrees with google-java-format about lambda
-  parameters, writing `(order) ->` where the Java formatter writes `order ->`. That silently rewrote the README
-  quickstart so it no longer matched the compiled `ReadmeQuickstart.java`, which `scripts/check-docs.sh` compares line
-  by line.
+- **Spotless has three footguns worth knowing before you touch a file.** The Java block sets
+  `ratchetFrom("origin/main")`, so it judges only files a change actually touches — `main` therefore reports clean while
+  individual files still carry violations, and the first edit to such a file drags the whole file's reformatting into
+  your diff. Expect unrelated hunks and a `codecov/patch` drop when that happens. Second, the markdown formatter
+  deliberately does **not** load `prettier-plugin-java`: it reformats Java inside fenced code blocks and disagrees with
+  google-java-format about lambda parameters, writing `(order) ->` where the Java formatter writes `order ->`, which
+  silently rewrote the README quickstart out of step with the compiled `ReadmeQuickstart.java` that
+  `scripts/check-docs.sh` compares line by line. Third and nastiest: the markdown formatter converts `*emphasis*` to
+  `_emphasis_`, and where a bare `SNAKE_CASE` identifier sits beside an emphasis span the underscores re-pair across it
+  — `KEY_ORDERED *behind*` became `KEY*ORDERED \_behind*`, which renders as `KEYORDERED _behind`. Backtick identifiers
+  in prose; `` `KEY_ORDERED` `` is immune. `spotlessCheck` cannot catch that one, because the corrupted text is the
+  formatter's own output and is therefore already canonical.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
