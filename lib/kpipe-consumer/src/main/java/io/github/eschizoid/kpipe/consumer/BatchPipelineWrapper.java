@@ -128,8 +128,18 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       final var ageNanos = System.nanoTime() - oldestEnqueueNanos;
       if (ageNanos >= policy.maxAge().toNanos()) flushLocked();
     } catch (final Throwable t) {
-      // Scheduler swallows uncaught exceptions and silently cancels the task — log and rethrow
-      // so an operator sees the failure if a flush ever throws non-Exception.
+      // Only an Error reaches here. Every RuntimeException path through flushLocked is already
+      // closed: the sink call and both callback loops catch Exception, a null BatchResult is
+      // handled explicitly, BatchResult's canonical constructor rejects null collections and
+      // null elements while still inside the user's sink call, and BatchPolicy validates maxAge
+      // at construction so the age comparison above cannot throw.
+      //
+      // The log is what an operator sees. The rethrow is a separate decision:
+      // scheduleWithFixedDelay
+      // cancels a task that throws, so this permanently stops the age trigger for this topic —
+      // records then flush only on the size threshold and on shutdown drain. That is the intended
+      // trade. The JVM has thrown an Error, and continuing to schedule flushes on it is worse than
+      // letting a low-volume topic miss its age deadline.
       LOGGER.log(Level.ERROR, "Batch tick failed for topic {0}: {1}", topic, t.getMessage(), t);
       throw t;
     } finally {
@@ -246,7 +256,10 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
         if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
         LOGGER.log(
           Level.ERROR,
-          "Batch outcome callback threw for offset " + record.offset() + " on topic " + topic +
+          "Batch outcome callback threw for offset " +
+            record.offset() +
+            " on topic " +
+            topic +
             "; continuing with the remaining records (offset stays unmarked, record will be reprocessed)",
           callbackEx
         );
@@ -262,7 +275,10 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
         if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
         LOGGER.log(
           Level.ERROR,
-          "Batch failure callback threw for offset " + entry.record().offset() + " on topic " + topic +
+          "Batch failure callback threw for offset " +
+            entry.record().offset() +
+            " on topic " +
+            topic +
             "; continuing with the remaining records",
           callbackEx
         );
