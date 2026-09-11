@@ -75,10 +75,10 @@ public class KafkaMessageSink<T> implements MessageSink<T> {
       if (exception != null) {
         LOGGER.log(Level.WARNING, () -> "Failed to send record to topic " + topic, exception);
       }
-      // Count after logging, and guard the user-supplied metrics impl the same way tracer is
+      // Count after logging, and guard the user-supplied metrics impl the same way the tracer
+      // is
       // guarded above: a throwing ProducerMetrics must never crash the producer callback thread
-      // or
-      // swallow the failure log (§11 error-handler safety).
+      // or swallow the failure log.
       try {
         if (exception == null) metrics.recordMessageSent();
         else metrics.recordMessageFailed();

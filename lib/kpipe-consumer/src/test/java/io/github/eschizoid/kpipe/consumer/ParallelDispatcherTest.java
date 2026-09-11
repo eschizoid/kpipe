@@ -165,13 +165,13 @@ class ParallelDispatcherTest {
 
   @Test
   void drainableCountDecrementedWhenTaskThrows() throws InterruptedException {
-    // Guards the criticality-9 race in §20: ParallelDispatcher owns the in-flight counter that
-    // drives PARALLEL-mode backpressure (§5). If the task body throws and the finally block did
-    // NOT decrement, drainableCount() would climb monotonically per failed record — the watermark
-    // would latch at HIGH and the consumer would pause forever (deadlock). Conversely, double
-    // decrement would underflow toward negative and the consumer would never pause (false-
-    // negative backpressure). The production code wraps processTask.run() in try/finally so
-    // interrupt-style and exception-style exits both decrement exactly once; this test pins it.
+    // ParallelDispatcher owns the in-flight counter that drives PARALLEL-mode backpressure. If
+    // the task body throws and the finally block did NOT decrement, drainableCount() would climb
+    // monotonically per failed record — the watermark would latch at HIGH and the consumer would
+    // pause forever. Conversely, double decrement would underflow toward negative and the
+    // consumer would never pause (false-negative backpressure). The production code wraps
+    // processTask.run() in try/finally so interrupt-style and exception-style exits both
+    // decrement exactly once; this test pins it.
     final var rejectCount = new AtomicInteger(0);
     final var dispatcher = newDispatcher(rejectCount);
     final var completed = new CountDownLatch(1);
@@ -220,11 +220,13 @@ class ParallelDispatcherTest {
   @Test
   void onCompleteFiresExactlyOnceWhenTaskThrows() throws InterruptedException {
     // Pair test for drainableCountDecrementedWhenTaskThrows: the consumer's afterRecordComplete()
-    // unparks the consumer thread when backpressure is held (§11 LockSupport park/unpark). If
-    // onComplete fired twice on the throw path (e.g. once in a catch and once in finally), the
-    // consumer would re-evaluate twice per failed record — wasteful but tolerable. If it fired
-    // ZERO times, the consumer would never wake and the pipeline would stall on the first
-    // exception. Exactly-once is the contract.
+    // unparks the consumer thread while backpressure is holding it. That unpark is a latency
+    // nudge, not a liveness requirement — a paused consumer keeps polling on its pollTimeout
+    // cadence and re-evaluates backpressure at the top of every iteration, so a missed call costs
+    // at most one poll interval of resume delay and a doubled call costs one redundant
+    // re-evaluation. Exactly-once is still the dispatcher's contract, and it is worth pinning
+    // precisely because both failure shapes are silent: neither changes an observable outcome,
+    // only timing.
     final var rejectCount = new AtomicInteger(0);
     final var dispatcher = newDispatcher(rejectCount);
     final var completeCount = new AtomicInteger(0);

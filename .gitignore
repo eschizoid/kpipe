@@ -235,7 +235,12 @@ gradle-app.setting
 .junie
 
 ### Claude ###
-.claude
+# Contents ignored, except the agent-instructions pointer: it is a single @AGENTS.md line,
+# so the instructions themselves live in one reviewable file at the repo root. Written as
+# `.claude/*` rather than `.claude` because git will not descend into an excluded directory,
+# and an un-ignore rule for a file inside one never matches.
+.claude/*
+!.claude/CLAUDE.md
 
 ### Toke Savior ###
 .token-savior-cache.json
