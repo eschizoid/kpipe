@@ -274,10 +274,11 @@ final class KeyOrderedDispatcher implements Dispatcher {
       try {
         // A 1ms sleep, not Thread.yield, so sustained saturation doesn't peg a CPU core on the
         // consumer thread. Worst-case latency is one sleep tick after a queue drains. Whatever
-        // this becomes it must stay bounded: an indefinite wait here strands the consumer with
-        // its group membership, which is what keeping the paused loop polling exists to prevent.
-        // Making it event-driven — a draining worker unparking this thread instead of a 1ms
-        // poll — is a legitimate optimization, but it needs a park, and the dispatcher tests
+        // this becomes it must stay bounded: an indefinite wait here stops the consumer returning
+        // to poll(), so the broker evicts it from the group after max.poll.interval.ms — the same
+        // failure that keeping the paused loop polling exists to prevent. Making it event-driven
+        // — a draining worker unparking this thread instead of a 1ms sleep tick — is a
+        // legitimate optimization, but it needs a park, and the dispatcher tests
         // assert that drainInFlightBeforeTeardown is the only wait a record-completion unpark
         // can shorten. Update that claim in the same change.
         //noinspection BusyWait — intentional bounded backpressure sleep, not a spin
