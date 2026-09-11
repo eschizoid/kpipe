@@ -354,9 +354,27 @@ deliberately escape-hatch-only.
   `[0, batchSize)` is a contract violation. `BatchPipelineWrapper` flags missing indexes with a synthetic
   `IllegalStateException` and routes them to the DLQ rather than silently marking them processed (§12). Out-of-range
   indexes are logged at WARNING; a `null` `BatchResult` is treated as whole-batch failure.
-- **`BatchPipelineWrapper` owns buffer + lock + gauge + age-tick.** One wrapper per topic; `ReentrantLock` protects
-  `enqueue` / `tick` / `close` / `flushLocked` so parallel-mode workers can enqueue concurrently while a flush is
-  mid-flight. Constructed in the consumer ctor, started in `start()`, drained in `close()`.
+- **`BatchPipelineWrapper` owns buffer + lock + gauge + age-tick.** One wrapper per topic; a single `ReentrantLock`
+  serializes `enqueue` / `tick` / `close` / `flushLocked`, and one flush per topic is in flight at a time. Note how much
+  runs under that lock: `flushLocked` calls the user's `BatchSink` while holding it, and does **not** release when the
+  sink returns — the per-record outcome dispatch runs there too, including `markProcessed` (which reaches a
+  user-supplied `OffsetManager`, possibly Postgres- or Redis-backed) and `onBatchFailure` (which reaches a synchronous
+  DLQ produce that waits for the broker ack). `failAll` does that produce once per record, serially, so a whole-batch
+  failure against an unavailable DLQ holds the topic's lock for the batch size times the per-record produce timeout —
+  `max.block.ms` or `delivery.timeout.ms` depending on whether DLQ topic metadata is cached, per the refuted-claims
+  entry below. An interrupt collapses that: the producer restores the interrupt flag, so every later send in the loop
+  fails on entry and the hold falls to roughly one timeout rather than N. The sink is
+  arbitrary user code of unbounded duration — that, not any assumption that it performs I/O, is why holding the lock
+  across it matters.
+
+  The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
+  circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the
+  breaker's OPEN → HALF_OPEN transition. Size-triggered flushes run wherever the dispatcher placed the record — a worker
+  virtual thread under PARALLEL and KEY_ORDERED, but the **consumer thread itself under SEQUENTIAL**, where a blocking
+  sink stalls the poll loop and risks `max.poll.interval.ms` eviction, the same end state the paused loop keeps polling
+  to avoid.
+  Whether one-flush-at-a-time is a guarantee worth keeping or an accident of lock placement is tracked in #313.
+  Constructed in the consumer ctor, started in `start()`, drained in `close()`.
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
   watermark. The wrapper's `bufferedCount()` is added to `KPipeConsumer.totalInFlight()` to close that gap.
@@ -537,8 +555,50 @@ test-classifier jar — it's a runtime tool for users' test suites.
   #220 tripped on. `uncommittedTail()` applies the operators to the seeded `[k,P)` (filter-aware) so it matches the
   sink's post-pipeline shape under any mode — computing it from `firstRun.subList` would be wrong under PARALLEL
   (capture order ≠ offset order). A genuinely load-bearing resume-seek assertion (consumer skips `[0,k)` on its own) is
-  still open — see PLAN.md.
+  tracked in the verification epic, #312.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
   why some test-tree dangling-Javadoc kept reappearing.
+
+---
+
+## Deliberately deferred
+
+Things decided against, with the reason. Re-proposing any of these needs new evidence, not a new argument — the
+argument was already had. Moved here from an untracked roadmap file so the decisions are reviewable; the forward-looking
+roadmap lives in the GitHub epics instead (verification in #312, architecture in #313), where it is visible.
+
+- **`Stream.strict()` / `.lenient()` toggle, `KPipe.from(props)` short-form, a `just new-format` scaffold.** Surface
+  area without a demonstrated need.
+- **Transient-vs-permanent DLQ-send classification.** A failed DLQ send increments a counter, logs at ERROR, and
+  leaves the offset pending so the record is reprocessed on restart. A down DLQ applies backpressure rather than
+  silently dropping.
+- **Extracting a shared DLQ-or-mark helper.** The per-path asymmetries are deliberate, and `DlqTerminalContractTest`
+  enforces the lockstep a shared helper would have provided — a 2×3 matrix over both paths, with both production sites
+  carrying `LOCKSTEP:` comments naming it.
+- **A unified metrics collector / `MetricsContext` bundle, and a `RegistryModeFormat` base class.** Extract when a
+  third implementation arrives, not before.
+- **`Tracer.isEnabled()`.** `Tracer.noop()` already makes the guard free, so the method would buy nothing.
+- **Further dispatcher performance work.** Measured in `benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`:
+  dispatch is a rounding error at the broker level once per-record work reaches a millisecond, and the v2 broker verify
+  came back flat. Re-open only with evidence of a dispatch-bound production workload, and re-run
+  `KeyOrderedDispatchBenchmark` before landing anything.
+- **Three refuted audit claims.** `send()` cannot hang forever — both of its phases are bounded, and they add rather
+  than substitute; the javadoc on `KPipeProducer.send` carries which knob governs which phase. There is no `Pattern`
+  subscription, so no per-topic cardinality bomb. Protobuf message-index over-allocation is rejected before the
+  allocation. Do not re-raise without new facts.
+- **Header-based schema envelopes** (Azure SR style, schema id in Kafka headers). `MessageFormat.deserialize(byte[])`
+  cannot see headers, so this needs a contract extension, not an implementation. Only on real demand.
+- **A Spring Boot starter.** Only on a real ask from a Spring shop — that trigger is the whole decision.
+- **An aggregated NOTICE for the shaded `-confluent` jar.** Shadow's default merge keeps the first-seen LICENSE and
+  NOTICE. A hand-curated aggregate would be better attribution hygiene, not a correctness fix — and if the entry count
+  matters, assert it in the build rather than in prose here.
+
+**Still open, and not deferred:** whether tracing should default on when `kpipe-tracing-otel` is present on the
+classpath, or stay explicit.
+
+**Two standing facts about this repo, recorded because nothing else holds them.** Copilot code review is effectively
+off: adding `copilot-pull-request-reviewer[bot]` as a requested reviewer returns success and attaches nobody, and the
+`reviews` array stays empty, so a Copilot done-signal never arrives and any workflow waiting for one will not
+terminate. Re-enabling it is a repository setting.
