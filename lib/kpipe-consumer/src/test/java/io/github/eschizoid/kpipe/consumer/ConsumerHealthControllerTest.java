@@ -292,8 +292,10 @@ class ConsumerHealthControllerTest {
     // was set, so none of them unparks the consumer thread. Without the post-pause re-check the
     // controller stays paused and the isPaused assertion below fails fast (this test asserts the
     // guard's outcome — it does not itself park a thread); in a real consumer the paused loop
-    // keeps polling and re-ticks, so without the guard the miss costs a poll cycle rather than
-    // stranding the consumer. The guard removes even that.
+    // keeps polling and re-ticks, so without the guard the miss costs fetch-nothing poll cycles
+    // rather than stranding the consumer. With the guard the Pause and Resume commands are
+    // queued inside the same tick and cancel when flushed, so the Kafka-level pause never takes
+    // effect and no cycle is lost at all.
     hook.backpressurePauseAction = () -> inflight.set(0);
 
     health.tickBackpressure(consumer);

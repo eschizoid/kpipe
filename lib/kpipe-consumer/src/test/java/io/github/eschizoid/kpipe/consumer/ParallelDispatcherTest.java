@@ -223,9 +223,10 @@ class ParallelDispatcherTest {
     // in-flight counter and only then runs onComplete, inside its own try/catch, so the counter
     // that drives backpressure is unaffected by this callback going missing, doubling, or
     // throwing. What onComplete does is unpark the consumer thread while backpressure holds it,
-    // and that shortens nothing on the resume path: the consumer thread is never parked there —
-    // it is inside poll(), running, or in a Thread.sleep, none of which unpark shortens. The only
-    // wait it can shorten is the bounded park in drainInFlightBeforeTeardown. Exactly-once is the
+    // and that shortens nothing on the resume path: the consumer thread is never parked there in
+    // a wait an unpark could shorten — it is inside Kafka I/O, running, sleeping, or in an AQS
+    // wait that re-checks and re-parks. The only wait the unpark can shorten is the bounded park
+    // in drainInFlightBeforeTeardown. Exactly-once is the
     // dispatcher's contract, and it is worth pinning precisely because neither failure shape
     // changes anything production-observable: no counter, log, or delivered record differs.
     // ParallelDispatcherRaceTest parks a stand-in thread to make the callback observable at all.
