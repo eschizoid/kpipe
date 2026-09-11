@@ -82,18 +82,12 @@ class ConsumerHealthControllerTest {
 
   @Test
   void pauseHookRejectedAsNull() {
-    assertThrows(
-      IllegalArgumentException.class,
-      () -> new ConsumerHealthController(null, null, scheduler, null, hook)
-    );
+    assertThrows(IllegalArgumentException.class, () -> new ConsumerHealthController(null, null, scheduler, null, hook));
   }
 
   @Test
   void metricsObserverRejectedAsNull() {
-    assertThrows(
-      IllegalArgumentException.class,
-      () -> new ConsumerHealthController(null, null, scheduler, hook, null)
-    );
+    assertThrows(IllegalArgumentException.class, () -> new ConsumerHealthController(null, null, scheduler, hook, null));
   }
 
   // ─────────────────────────── Circuit breaker ──────────────────────────────
@@ -214,7 +208,8 @@ class ConsumerHealthControllerTest {
 
   @Test
   void pauseArbitrationIsTestableWithoutAMetricsFake() {
-    // The payoff of splitting the old 7-method Hook into PauseLifecycleHook + HealthMetricsObserver:
+    // The payoff of splitting the old 7-method Hook into PauseLifecycleHook +
+    // HealthMetricsObserver:
     // a test that cares only about pause arbitration supplies a focused 2-method PauseLifecycleHook
     // recorder and the shared no-op HealthMetricsObserver — two DISTINCT adapters, wired
     // independently, with no obligation to stub the five metric callbacks.
@@ -234,8 +229,13 @@ class ConsumerHealthControllerTest {
 
     final var inflight = new AtomicInteger(0);
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
-    final var health =
-      new ConsumerHealthController(bp, null, scheduler, pauseOnly, ConsumerHealthController.HealthMetricsObserver.NOOP);
+    final var health = new ConsumerHealthController(
+      bp,
+      null,
+      scheduler,
+      pauseOnly,
+      ConsumerHealthController.HealthMetricsObserver.NOOP
+    );
     final var consumer = new MockConsumer<byte[], byte[]>("earliest");
 
     inflight.set(15);
@@ -291,8 +291,11 @@ class ConsumerHealthControllerTest {
     // becoming visible: those completions all read the pause mask before the BACKPRESSURE bit
     // was set, so none of them unparks the consumer thread. Without the post-pause re-check the
     // controller stays paused and the isPaused assertion below fails fast (this test asserts the
-    // guard's outcome — it does not itself park a thread); in a real consumer that state is a
-    // parked consumer thread with no remaining wake-up source.
+    // guard's outcome — it does not itself park a thread); in a real consumer the paused loop
+    // keeps polling and re-ticks, so without the guard the miss costs fetch-nothing poll cycles
+    // rather than stranding the consumer. With the guard the Pause and Resume commands are
+    // queued inside the same tick and flush back-to-back in one processCommands() drain, so no
+    // poll ever runs while paused and no cycle is lost.
     hook.backpressurePauseAction = () -> inflight.set(0);
 
     health.tickBackpressure(consumer);
@@ -361,7 +364,8 @@ class ConsumerHealthControllerTest {
   }
 
   private static final class RecordingHook
-    implements ConsumerHealthController.PauseLifecycleHook, ConsumerHealthController.HealthMetricsObserver {
+    implements ConsumerHealthController.PauseLifecycleHook, ConsumerHealthController.HealthMetricsObserver
+  {
 
     int pauseCalls;
     int resumeCalls;

@@ -19,13 +19,16 @@ import org.junit.jupiter.api.Test;
 /// strategy reads through `KPipeConsumer.backpressureLoad()`. The counter is the single source
 /// of truth for the high/low watermark, so a leaked or double-counted in-flight on the throw
 /// path translates directly into either pause-forever (the watermark latches high and the
-/// consumer parks indefinitely) or pause-never (the count underflows and backpressure stops
-/// engaging).
+/// consumer stays paused, fetching nothing) or pause-never (the count underflows and
+/// backpressure stops engaging).
 ///
-/// The consumer also relies on the `onComplete` callback firing after every record — that
-/// callback is what unparks the consumer thread when it parked under backpressure. If a
-/// throwing record swallowed its `onComplete`, a parked consumer thread would never be woken
-/// and the pipeline would stall on the first failure.
+/// The consumer also relies on the `onComplete` callback firing after every record. In the real
+/// consumer that callback only unparks the consumer thread while backpressure holds it, which
+/// shortens the bounded wait in `drainInFlightBeforeTeardown` and nothing else — a paused
+/// consumer keeps polling and re-evaluates backpressure every iteration, so a missed callback
+/// costs no resume latency. Exactly-once is still the dispatcher's contract, and
+/// `onCompleteOnThrowReleasesAParkedWaiter` parks a stand-in thread to make a missed callback
+/// observable at all, which it is not from the consumer's own behaviour.
 ///
 /// These tests drive [ParallelDispatcher] directly (it is package-private) so the throw paths
 /// are deterministic and don't depend on a running Kafka consumer loop. They focus on what
@@ -48,10 +51,11 @@ class ParallelDispatcherRaceTest {
 
   @Test
   void onCompleteOnThrowReleasesAParkedWaiter() throws InterruptedException {
-    // Mirrors the consumer-thread interaction: the consumer parks under backpressure and the
-    // dispatcher's onComplete callback is the unpark source. Here a real thread parks and the
-    // throw-path onComplete must unpark it. If onComplete were skipped when the task threw,
-    // the waiter would stay parked until the test's 3s join timeout and fail.
+    // The dispatcher's onComplete callback is the consumer's unpark source. The real consumer is
+    // not parked while running, so a missed callback is invisible from its behaviour; this parks
+    // a stand-in thread instead, which makes the throw-path callback observable. If onComplete
+    // were skipped when the task threw, the waiter would stay parked until the test's 3s join
+    // timeout and fail.
     final var rejectCount = new AtomicInteger(0);
     final var dispatcher = newDispatcher(rejectCount);
     final var waiterParked = new CountDownLatch(1);
