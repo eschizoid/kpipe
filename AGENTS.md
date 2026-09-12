@@ -561,30 +561,36 @@ test-classifier jar — it's a runtime tool for users' test suites.
   google-java-format about lambda parameters, writing `(order) ->` where the Java formatter writes `order ->`, which
   silently rewrote the README quickstart out of step with the compiled `ReadmeQuickstart.java` that
   `scripts/check-docs.sh` compares line by line.
-- **The prose formatter silently corrupts underscore-bearing identifiers, and one `spotlessApply` does it.** Two
-  triggers, both verified against this repo's build. First, a bare identifier followed later by a single-delimiter
-  emphasis span: `KEY_ORDERED and *behind*` becomes `KEY*ORDERED and \_behind*`, rendering as `KEYORDERED _behind` — the
-  identifier loses a character and the emphasis moves. Second, and needing no emphasis at all, a **trailing** underscore
-  before a non-word character: `Set max_keys_ to 10` becomes `Set max*keys* to 10`, which renders the middle word in
-  italics. Spotless iterates to a fixed point inside one invocation, so both land in a single `./gradlew spotlessApply`
-  and are stable after. **Do not check by applying twice and diffing** — the second apply is a no-op, so it reports
-  clean on a file the first one just destroyed.
-- **Enclose the identifier; what follows it does not matter.** The corrupting scan starts at the identifier's underscore
-  and runs to the end of whatever **encloses** it, so a container that merely opens later is no help:
-  `KEY_ORDERED and **a *b* c**` corrupts and takes the bold with it, as does `KEY_ORDERED and [*behind*](url)`. Wrapping
-  the identifier is what protects — `` `KEY_ORDERED` ``, `**KEY_ORDERED**`, `*KEY_ORDERED*` and `[KEY_ORDERED](url)` all
-  survive whatever follows them. A code span is the strongest shield because its contents are never parsed at all;
-  `<!-- prettier-ignore -->` above a block and fenced code blocks are equally absolute. Order matters too:
-  `*behind* and KEY_ORDERED` is safe, since nothing follows the identifier. A backslash escape is not a remedy — it is
-  stripped in the same run and ends up exactly as corrupted.
+- **The prose formatter swallows text between underscores, and one `spotlessApply` does it.** The mechanism is a single
+  rule: a `_` opens if it is not followed by whitespace, the next `_` that is followed by a non-word character closes,
+  and everything between is eaten. `KEY_ORDERED and *behind*` becomes `KEY*ORDERED and \_behind*` — rendering as
+  `KEYORDERED _behind` — because pass one rewrites `*behind*` to `_behind_` and its closing underscore then pairs with
+  the identifier's. A word-final underscore does the same job with no emphasis anywhere: `A_B and C_D_` becomes
+  `A*B and C_D*`. Note who the victim is — `A_B` has no trailing underscore and is destroyed from four words away, and
+  an ordinary English word with a stray underscore (`and_`) is a perfectly good closer. `a_b_c` is safe because no `_`
+  in it is followed by a non-word character. Spotless iterates to a fixed point inside one invocation, so this lands in
+  a single apply and is stable after — **do not check by applying twice and diffing**, the second apply is a no-op and
+  reports clean on the file the first one destroyed.
+- **Enclose the identifier; what follows it is irrelevant.** The scan runs from the opening `_` to the end of the
+  **innermost** thing enclosing it, so a container that merely opens later is no help — `KEY_ORDERED and **a *b* c**`
+  corrupts and takes the bold with it, as does `KEY_ORDERED and [*behind*](url)`. Wrapping the identifier is what
+  protects: `` `KEY_ORDERED` ``, `**KEY_ORDERED**`, `*KEY_ORDERED*` and `[KEY_ORDERED](url)` all survive anything after
+  them. Scope is the **block**, not the line — a bare identifier reaches a closer across a soft wrap — and one shielded
+  identifier does not protect a second bare one later in the same block. `<!-- prettier-ignore -->` and code blocks
+  (fenced or indented) are equally absolute and work where backticks cannot, such as a table row, but each covers
+  exactly one block (`-start` / `-end` for a run), does nothing written as a list item, and freezes that block's
+  wrapping and alignment too.
 - **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
-  hazardous file fails it and the failure prints the corrupting hunk — which is why CI runs `spotlessCheck` rather than
-  `spotlessApply`. But the failure ends with `Run './gradlew spotlessApply' to fix all violations`, and following that
-  instruction is what destroys the file. **When a violation shows an identifier changing shape, backtick it and re-run
-  the check — never apply.** The gate is blind only to text that arrives already corrupted from outside it, which is how
-  these notes rotted: they lived untracked in `.claude/`, spotless rewrote them across many local runs, and #318 copied
-  the result into a tracked file. Unrelated: `__dunder__` in prose becomes `**dunder**`, which renders identically — GFM
-  already bolds both — but the source loses the underscores.
+  hazardous file fails it — which is why CI runs `spotlessCheck` rather than `spotlessApply`. The failure ends with
+  `Run './gradlew spotlessApply' to fix all violations`, and following that is what destroys the file. **Never apply to
+  clear this class; backtick the identifier and re-run the check.** Do not rely on spotting the damage in the printed
+  hunk either: spotless caps its diff output at fifty lines with a non-tunable constant, so one verbose violation
+  elsewhere reduces later hazardous files to a bare filename with no hunk at all, a re-wrapped line buries the change
+  among reflowed text, and harmless violations look identical. If an apply has already happened, find it in the result
+  instead — `grep -nE '\\_|[A-Za-z0-9]\*[A-Za-z0-9]'` over the tracked `.md` files. The gate is blind only to text
+  arriving already corrupted from outside it, which is how these notes rotted: untracked in `.claude/`, rewritten across
+  many local runs, then copied into a tracked file by #318. Unrelated: `__dunder__` becomes `**dunder**`, which renders
+  identically since GFM bolds both, but the source loses its underscores.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
