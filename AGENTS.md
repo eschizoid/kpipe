@@ -561,25 +561,26 @@ test-classifier jar — it's a runtime tool for users' test suites.
   google-java-format about lambda parameters, writing `(order) ->` where the Java formatter writes `order ->`, which
   silently rewrote the README quickstart out of step with the compiled `ReadmeQuickstart.java` that
   `scripts/check-docs.sh` compares line by line.
-- **The prose formatter is not idempotent, and the second run is the one that corrupts.** Given a bare
-  underscore-bearing word in plain prose, followed anywhere later in the same block by a single-delimiter emphasis span,
-  pass one is clean and pass two destroys the word: `KEY_ORDERED *behind*` becomes `KEY_ORDERED _behind_`, which on the
-  next run becomes `KEY*ORDERED \_behind*` and renders as `KEYORDERED _behind`. Pass three is stable — the corruption
-  escapes the underscores and flips the delimiters, leaving nothing further to pair — so **running `spotlessApply` twice
-  and diffing is a complete check** for any tree, and needs no heuristics.
-- **`spotlessCheck` is the defense against that, which is why CI runs it rather than `spotlessApply`.** The gate passes
-  only when `apply(f) == f`, and a file carrying the latent `KEY_ORDERED _behind_` form is by definition not yet at its
-  fixed point — so the gate fails it and prints the hunk that would corrupt. What the gate cannot see is text that
-  arrives **already** corrupted from outside it, which is how these notes rotted: they lived untracked in `.claude/`,
-  spotless rewrote them on disk across many local runs, and #318 copied the corrupted result into a tracked file. Under
-  the old `spotlessApply` step CI would silently advance a latent file to the corrupted fixed point and discard the
-  result, leaving the bomb in the repo to detonate on somebody's laptop.
-- **Backtick identifiers in prose; escaping them is worse than doing nothing.** A code span is never re-parsed for
-  emphasis, so `` `KEY_ORDERED` `` is inert. A manual backslash escape is not a remedy — `KEY\_ORDERED *behind*`
-  corrupts on pass **one**, a pass earlier than the unescaped form, because the formatter strips the escape and re-pairs
-  in the same run. Underscores are also safe inside link text, autolink URLs, and nested strong or emphasis, and the
-  hazard needs a _single_-delimiter target: `KEY_ORDERED **bold**` is fine. A `__dunder__` in prose is a separate,
-  pass-one effect — it silently becomes bold.
+- **The prose formatter silently corrupts one pattern, and a single `spotlessApply` is enough to do it.** Where a bare
+  underscore-bearing word and a later single-delimiter emphasis span sit in the same inline container,
+  `KEY_ORDERED *behind*` becomes `KEY*ORDERED \_behind*`, which renders as `KEYORDERED _behind` — the identifier loses a
+  character and the emphasis moves. Spotless iterates the formatter to a fixed point inside one invocation, so this
+  lands in a single `./gradlew spotlessApply` and is stable afterwards. **Do not check for it by applying twice and
+  diffing** — the second apply is always a no-op, so that reports clean on a file the first one just destroyed.
+- **`spotlessCheck` is the defense, which is why CI runs it rather than `spotlessApply`.** The gate passes only when
+  `apply(f) == f`, and any file carrying the hazard is not at its fixed point, so the gate fails it and prints the
+  corrupting hunk. What it cannot see is text that arrives **already** corrupted from outside it — which is how these
+  notes rotted: they lived untracked in `.claude/`, spotless rewrote them on disk across many local runs, and #318
+  copied the result into a tracked file. Under the old `spotlessApply` step CI silently converted such files and
+  discarded the evidence, leaving the damage in the repo.
+- **Backtick identifiers in prose — it is the only unconditional shield.** A code span is never parsed for emphasis, so
+  `` `KEY_ORDERED` `` is inert anywhere. Nothing else is reliable: a backslash escape is stripped in the same run, so
+  `KEY\_ORDERED *behind*` ends up exactly as corrupted as the unescaped form. Nesting is not protection either — what
+  matters is whether the underscore and the emphasis span share an inline container. `**KEY_ORDERED** and *behind*` is
+  safe because they do not; `**KEY_ORDERED *behind* together**` and `[KEY_ORDERED *behind*](url)` both corrupt because
+  they do, and that first shape is exactly what the original benchmark line looked like. A strong target is harmless —
+  `KEY_ORDERED and **bold**` needs a single-delimiter span to fire — and a `__dunder__` in prose is a separate same-run
+  effect that turns it bold.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
