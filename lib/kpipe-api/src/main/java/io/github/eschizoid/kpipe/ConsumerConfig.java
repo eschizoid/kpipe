@@ -5,8 +5,10 @@ import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
+import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -40,7 +42,12 @@ record ConsumerConfig(
   String deadLetterTopic,
   Duration pollTimeout,
   Tracer tracer,
-  CircuitBreakerController circuitBreaker
+  CircuitBreakerController circuitBreaker,
+  Collection<KPipeMetricsReporter> metricsReporters,
+  Duration metricsInterval,
+  Boolean shutdownHook,
+  Duration threadTerminationTimeout,
+  Duration waitForMessagesTimeout
 ) {
   /// The all-unset configuration: no retry, no backpressure, parallel mode with the default
   /// key-ordered cap, and every optional component `null`.
@@ -52,6 +59,11 @@ record ConsumerConfig(
       null,
       ProcessingMode.PARALLEL,
       ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS,
+      null,
+      null,
+      null,
+      null,
+      null,
       null,
       null,
       null,
@@ -85,6 +97,11 @@ record ConsumerConfig(
     if (pollTimeout != null) builder.withPollTimeout(pollTimeout);
     if (tracer != null) builder.withTracer(tracer);
     if (circuitBreaker != null) builder.withCircuitBreaker(circuitBreaker);
+    if (metricsReporters != null) builder.withMetricsReporters(metricsReporters);
+    if (metricsInterval != null) builder.withMetricsInterval(metricsInterval);
+    if (shutdownHook != null) builder.withShutdownHook(shutdownHook);
+    if (threadTerminationTimeout != null) builder.withThreadTerminationTimeout(threadTerminationTimeout);
+    if (waitForMessagesTimeout != null) builder.withWaitForMessagesTimeout(waitForMessagesTimeout);
   }
 
   /// One consumer-wide setting as seen by the [MultiBuilder] per-route guard: the `Stream.with*`
@@ -128,7 +145,12 @@ record ConsumerConfig(
     mirrored("withBackpressure", c -> c.backpressureHigh() != null),
     mirrored("withDeadLetterTopic", c -> c.deadLetterTopic() != null),
     mirrored("withErrorHandler", c -> c.errorHandler() != null),
-    mirrored("withPollTimeout", c -> c.pollTimeout() != null)
+    mirrored("withPollTimeout", c -> c.pollTimeout() != null),
+    mirrored("withMetricsReporters", c -> c.metricsReporters() != null),
+    mirrored("withMetricsInterval", c -> c.metricsInterval() != null),
+    mirrored("withShutdownHook", c -> c.shutdownHook() != null),
+    mirrored("withThreadTerminationTimeout", c -> c.threadTerminationTimeout() != null),
+    mirrored("withWaitForMessagesTimeout", c -> c.waitForMessagesTimeout() != null)
   );
 
   /// Descriptor for the common case: a setting whose rejection message points at the
@@ -160,6 +182,11 @@ record ConsumerConfig(
     Duration pollTimeout;
     Tracer tracer;
     CircuitBreakerController circuitBreaker;
+    Collection<KPipeMetricsReporter> metricsReporters;
+    Duration metricsInterval;
+    Boolean shutdownHook;
+    Duration threadTerminationTimeout;
+    Duration waitForMessagesTimeout;
 
     static Mut from(final ConsumerConfig c) {
       final var m = new Mut();
@@ -175,6 +202,11 @@ record ConsumerConfig(
       m.pollTimeout = c.pollTimeout;
       m.tracer = c.tracer;
       m.circuitBreaker = c.circuitBreaker;
+      m.metricsReporters = c.metricsReporters;
+      m.metricsInterval = c.metricsInterval;
+      m.shutdownHook = c.shutdownHook;
+      m.threadTerminationTimeout = c.threadTerminationTimeout;
+      m.waitForMessagesTimeout = c.waitForMessagesTimeout;
       return m;
     }
 
@@ -191,7 +223,12 @@ record ConsumerConfig(
         deadLetterTopic,
         pollTimeout,
         tracer,
-        circuitBreaker
+        circuitBreaker,
+        metricsReporters,
+        metricsInterval,
+        shutdownHook,
+        threadTerminationTimeout,
+        waitForMessagesTimeout
       );
     }
   }
