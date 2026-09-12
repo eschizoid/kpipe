@@ -561,26 +561,30 @@ test-classifier jar — it's a runtime tool for users' test suites.
   google-java-format about lambda parameters, writing `(order) ->` where the Java formatter writes `order ->`, which
   silently rewrote the README quickstart out of step with the compiled `ReadmeQuickstart.java` that
   `scripts/check-docs.sh` compares line by line.
-- **The prose formatter silently corrupts one pattern, and a single `spotlessApply` is enough to do it.** Where a bare
-  underscore-bearing word and a later single-delimiter emphasis span sit in the same inline container,
-  `KEY_ORDERED *behind*` becomes `KEY*ORDERED \_behind*`, which renders as `KEYORDERED _behind` — the identifier loses a
-  character and the emphasis moves. Spotless iterates the formatter to a fixed point inside one invocation, so this
-  lands in a single `./gradlew spotlessApply` and is stable afterwards. **Do not check for it by applying twice and
-  diffing** — the second apply is always a no-op, so that reports clean on a file the first one just destroyed.
-- **`spotlessCheck` is the defense, which is why CI runs it rather than `spotlessApply`.** The gate passes only when
-  `apply(f) == f`, and any file carrying the hazard is not at its fixed point, so the gate fails it and prints the
-  corrupting hunk. What it cannot see is text that arrives **already** corrupted from outside it — which is how these
-  notes rotted: they lived untracked in `.claude/`, spotless rewrote them on disk across many local runs, and #318
-  copied the result into a tracked file. Under the old `spotlessApply` step CI silently converted such files and
-  discarded the evidence, leaving the damage in the repo.
-- **Backtick identifiers in prose — it is the only unconditional shield.** A code span is never parsed for emphasis, so
-  `` `KEY_ORDERED` `` is inert anywhere. Nothing else is reliable: a backslash escape is stripped in the same run, so
-  `KEY\_ORDERED *behind*` ends up exactly as corrupted as the unescaped form. Nesting is not protection either — what
-  matters is whether the underscore and the emphasis span share an inline container. `**KEY_ORDERED** and *behind*` is
-  safe because they do not; `**KEY_ORDERED *behind* together**` and `[KEY_ORDERED *behind*](url)` both corrupt because
-  they do, and that first shape is exactly what the original benchmark line looked like. A strong target is harmless —
-  `KEY_ORDERED and **bold**` needs a single-delimiter span to fire — and a `__dunder__` in prose is a separate same-run
-  effect that turns it bold.
+- **The prose formatter silently corrupts underscore-bearing identifiers, and one `spotlessApply` does it.** Two
+  triggers, both verified against this repo's build. First, a bare identifier followed later by a single-delimiter
+  emphasis span: `KEY_ORDERED and *behind*` becomes `KEY*ORDERED and \_behind*`, rendering as `KEYORDERED _behind` — the
+  identifier loses a character and the emphasis moves. Second, and needing no emphasis at all, a **trailing** underscore
+  before a non-word character: `Set max_keys_ to 10` becomes `Set max*keys* to 10`, which renders the middle word in
+  italics. Spotless iterates to a fixed point inside one invocation, so both land in a single `./gradlew spotlessApply`
+  and are stable after. **Do not check by applying twice and diffing** — the second apply is a no-op, so it reports
+  clean on a file the first one just destroyed.
+- **Enclose the identifier; what follows it does not matter.** The corrupting scan starts at the identifier's underscore
+  and runs to the end of whatever **encloses** it, so a container that merely opens later is no help:
+  `KEY_ORDERED and **a *b* c**` corrupts and takes the bold with it, as does `KEY_ORDERED and [*behind*](url)`. Wrapping
+  the identifier is what protects — `` `KEY_ORDERED` ``, `**KEY_ORDERED**`, `*KEY_ORDERED*` and `[KEY_ORDERED](url)` all
+  survive whatever follows them. A code span is the strongest shield because its contents are never parsed at all;
+  `<!-- prettier-ignore -->` above a block and fenced code blocks are equally absolute. Order matters too:
+  `*behind* and KEY_ORDERED` is safe, since nothing follows the identifier. A backslash escape is not a remedy — it is
+  stripped in the same run and ends up exactly as corrupted.
+- **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
+  hazardous file fails it and the failure prints the corrupting hunk — which is why CI runs `spotlessCheck` rather than
+  `spotlessApply`. But the failure ends with `Run './gradlew spotlessApply' to fix all violations`, and following that
+  instruction is what destroys the file. **When a violation shows an identifier changing shape, backtick it and re-run
+  the check — never apply.** The gate is blind only to text that arrives already corrupted from outside it, which is how
+  these notes rotted: they lived untracked in `.claude/`, spotless rewrote them across many local runs, and #318 copied
+  the result into a tracked file. Unrelated: `__dunder__` in prose becomes `**dunder**`, which renders identically — GFM
+  already bolds both — but the source loses the underscores.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
