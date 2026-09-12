@@ -2,14 +2,13 @@
 
 This file is the long-term memory for working in this repo: the non-obvious invariants, the footguns that have already
 burned us, and the architectural decisions that are not recoverable by reading the code. It is the agent-instructions
-file for this repository — `.claude/CLAUDE.md` is a one-line pointer at it, so there is one copy and it is the one
-under version control and open to review.
+file for this repository — `.claude/CLAUDE.md` is a one-line pointer at it, so there is one copy and it is the one under
+version control and open to review.
 
-Things that *are* recoverable from the code — type signatures, who calls what, package layout — are omitted on
-purpose, because a second copy drifts from the first and the copy is the one that lies. Where a section restates
-something the build already declares, the build is the authority and the section is a reading aid; the package
-ownership list below is the standing example, and it had drifted in three places before anyone checked it against
-`module-info.java`.
+Things that _are_ recoverable from the code — type signatures, who calls what, package layout — are omitted on purpose,
+because a second copy drifts from the first and the copy is the one that lies. Where a section restates something the
+build already declares, the build is the authority and the section is a reading aid; the package ownership list below is
+the standing example, and it had drifted in three places before anyone checked it against `module-info.java`.
 
 When a claim here disagrees with the code, the code is right and this file is a bug. Fix it in the same change.
 
@@ -18,9 +17,8 @@ When a claim here disagrees with the code, the code is right and this file is a 
 - **Byte boundary at the consumer entry.** `KPipeConsumer` operates on `byte[]` values. Format SerDe lives inside the
   pipeline. Mixed wire formats and Confluent magic-byte prefixes are handled inside operators (`skipBytes(n)`), not at
   the consumer level. The key type parameter is gone — it was vestigial ceremony carrying a
-  witness/deserializer-mismatch footgun, and it was deleted rather than deprecated. Keys are routing
-  metadata (partitioning, KEY_ORDERED dispatch), and `KeyOrderedDispatcher` normalizes them internally (`byte[]` →
-  `ByteBuffer`).
+  witness/deserializer-mismatch footgun, and it was deleted rather than deprecated. Keys are routing metadata
+  (partitioning, KEY_ORDERED dispatch), and `KeyOrderedDispatcher` normalizes them internally (`byte[]` → `ByteBuffer`).
 - **Single SerDe cycle per record.** Deserialize once → chain `UnaryOperator<T>` transforms on the typed object →
   serialize once. Never compose `Function<byte[], byte[]>` chains; that's the "SerDe tax" the typed pipeline was built
   to eliminate.
@@ -113,8 +111,8 @@ Package ownership, as declared by the `exports` clauses in each `module-info.jav
 - `io.github.eschizoid.kpipe.tracing.otel` → `kpipe-tracing-otel`
 - `io.github.eschizoid.kpipe.test` → `kpipe-test`
 
-`kpipe-format-protobuf-confluent` ships the shaded Confluent compiler impl and is an automatic module, so it declares
-no `exports` and does not appear above. `kpipe-bom` publishes no packages.
+`kpipe-format-protobuf-confluent` ships the shaded Confluent compiler impl and is an automatic module, so it declares no
+`exports` and does not appear above. `kpipe-bom` publishes no packages.
 
 **Facade opt-in (1.18.0):** `kpipe-api` `requires static` the JSON/Avro/Protobuf format modules — formats are opt-in, so
 a consumer only pulls the format it actually uses (§19).
@@ -122,11 +120,11 @@ a consumer only pulls the format it actually uses (§19).
 ## §10 OpenTelemetry metrics
 
 `kpipe-metrics` carries no telemetry dependency — `build.gradle.kts` declares nothing beyond test libraries and
-`module-info` has no `requires` clause at all, so it is interfaces plus a no-op default and nothing else. On the
-metrics side `opentelemetry-api` arrives only with `kpipe-metrics-otel`, which brings the API along, so the user
-adds just an SDK (`opentelemetry-sdk`) and an exporter (Prometheus, OTLP, Jaeger). Tracing has its own at
-`kpipe-tracing-otel`. `ConsumerMetrics` / `ProducerMetrics` default to
-`ConsumerMetrics.noop()` / `ProducerMetrics.noop()` (zero cost when not configured) and wire via `.withMetrics(...)`.
+`module-info` has no `requires` clause at all, so it is interfaces plus a no-op default and nothing else. On the metrics
+side `opentelemetry-api` arrives only with `kpipe-metrics-otel`, which brings the API along, so the user adds just an
+SDK (`opentelemetry-sdk`) and an exporter (Prometheus, OTLP, Jaeger). Tracing has its own at `kpipe-tracing-otel`.
+`ConsumerMetrics` / `ProducerMetrics` default to `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` (zero cost when not
+configured) and wire via `.withMetrics(...)`.
 
 | Component         | Instrument                                     | Type      |
 | ----------------- | ---------------------------------------------- | --------- |
@@ -287,15 +285,15 @@ Javadoc, no `since = "..."`.
 "removal in next major" never happens. The PR description mentions the removal explicitly so callers always have a
 working reference.
 
-**This rule expires at 2.0.** It favours the codebase over its users, which is right while the API is still finding
-its shape and wrong once people depend on it. `docs/VERSIONING.md` is the written promise: minors may remove public
-API through 1.x with a migration table in the release notes; 2.0 onward is strict semver with a deprecation cycle.
-That document also fixes the public / SPI / internal boundary. Note what does **not** draw it: every package in every
-module here is exported and there are no qualified exports anywhere, so the `exports` clauses hide nothing and cannot
-be read as the API surface. Package-private is the real internal boundary — which is why types like
-`KeyOrderedDispatcher`, `OffsetLedger` and `PendingOffsetSet` carry no guarantees despite the modules around them
-being fully open. Keep that document current when the surface moves; it is the only page an evaluator reads before
-deciding whether to depend on this.
+**This rule expires at 2.0.** It favours the codebase over its users, which is right while the API is still finding its
+shape and wrong once people depend on it. `docs/VERSIONING.md` is the written promise: minors may remove public API
+through 1.x with a migration table in the release notes; 2.0 onward is strict semver with a deprecation cycle. That
+document also fixes the public / SPI / internal boundary. Note what does **not** draw it: every package in every module
+here is exported and there are no qualified exports anywhere, so the `exports` clauses hide nothing and cannot be read
+as the API surface. Package-private is the real internal boundary — which is why types like `KeyOrderedDispatcher`,
+`OffsetLedger` and `PendingOffsetSet` carry no guarantees despite the modules around them being fully open. Keep that
+document current when the surface moves; it is the only page an evaluator reads before deciding whether to depend on
+this.
 
 ## §17 Core ↔ Facade capability mapping
 
@@ -363,18 +361,17 @@ deliberately escape-hatch-only.
   failure against an unavailable DLQ holds the topic's lock for the batch size times the per-record produce timeout —
   `max.block.ms` or `delivery.timeout.ms` depending on whether DLQ topic metadata is cached, per the refuted-claims
   entry below. An interrupt collapses that: the producer restores the interrupt flag, so every later send in the loop
-  fails on entry and the hold falls to roughly one timeout rather than N. The sink is
-  arbitrary user code of unbounded duration — that, not any assumption that it performs I/O, is why holding the lock
-  across it matters.
+  fails on entry and the hold falls to roughly one timeout rather than N. The sink is arbitrary user code of unbounded
+  duration — that, not any assumption that it performs I/O, is why holding the lock across it matters.
 
   The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
   circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the
   breaker's OPEN → HALF_OPEN transition. Size-triggered flushes run wherever the dispatcher placed the record — a worker
   virtual thread under PARALLEL and KEY_ORDERED, but the **consumer thread itself under SEQUENTIAL**, where a blocking
   sink stalls the poll loop and risks `max.poll.interval.ms` eviction, the same end state the paused loop keeps polling
-  to avoid.
-  Whether one-flush-at-a-time is a guarantee worth keeping or an accident of lock placement is tracked in #313.
-  Constructed in the consumer ctor, started in `start()`, drained in `close()`.
+  to avoid. Whether one-flush-at-a-time is a guarantee worth keeping or an accident of lock placement is tracked in
+  #313. Constructed in the consumer ctor, started in `start()`, drained in `close()`.
+
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
   watermark. The wrapper's `bufferedCount()` is added to `KPipeConsumer.totalInFlight()` to close that gap.
@@ -505,12 +502,12 @@ updated in the same PR per the no-deprecation policy.
   chaining.
 
 **Lock contention — resolved in the v2 dispatcher (2026-07-21).** `benchmarks/KeyOrderedDispatchBenchmark` measures
-KEY*ORDERED vs PARALLEL throughput via MockConsumer (no Docker), parametrized over key cardinality. v1 used a single
+`KEY_ORDERED` vs PARALLEL throughput via MockConsumer (no Docker), parametrized over key cardinality. v1 used a single
 `ReentrantLock` for all LRU + queue mutations and flatlined ~380k ops/s regardless of cardinality; v2 replaced it with
 `ConcurrentHashMap` + one monitor per key queue (eviction via `computeIfPresent` + a `dead` tombstone set atomically
 with removal; a dispatcher holding a stale queue reference observes the tombstone under the monitor and retries).
 Interleaved A/B with the PARALLEL arm as drift canary: **+122% at 10k keys, +112% at 100, +18% at 1, control flat** —
-`benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`. Key insight: LRU \_ordering* was never a correctness
+`benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`. Key insight: LRU _ordering_ was never a correctness
 requirement (only empty+idle queues are ever evicted), so v2 drops the coldest-first preference. Future dispatcher work:
 same rule — re-run the bench and demonstrate a measurable win before landing.
 
@@ -556,6 +553,24 @@ test-classifier jar — it's a runtime tool for users' test suites.
   sink's post-pipeline shape under any mode — computing it from `firstRun.subList` would be wrong under PARALLEL
   (capture order ≠ offset order). A genuinely load-bearing resume-seek assertion (consumer skips `[0,k)` on its own) is
   tracked in the verification epic, #312.
+- **Spotless has three footguns worth knowing before you touch a file.** The Java block sets
+  `ratchetFrom("origin/main")`, so it judges only files a change actually touches — `main` therefore reports clean while
+  individual files still carry violations, and the first edit to such a file drags the whole file's reformatting into
+  your diff. Expect unrelated hunks and a `codecov/patch` drop when that happens. Second, the markdown formatter
+  deliberately does **not** load `prettier-plugin-java`: it reformats Java inside fenced code blocks and disagrees with
+  google-java-format about lambda parameters, writing `(order) ->` where the Java formatter writes `order ->`, which
+  silently rewrote the README quickstart out of step with the compiled `ReadmeQuickstart.java` that
+  `scripts/check-docs.sh` compares line by line.
+- **The prose formatter is not idempotent, and the second run is the one that corrupts.** Given a bare
+  underscore-bearing word followed by an emphasis span in the same block, pass one is clean and pass two destroys the
+  word: `KEY_ORDERED *behind*` becomes `KEY_ORDERED _behind_`, which on the next run becomes `KEY*ORDERED \_behind*` and
+  renders as `KEYORDERED _behind`. So a file can sit in the repo looking right, pass review, pass `spotlessCheck`, and
+  detonate on a later `spotlessApply` — which is how these notes rotted while they were untracked. `spotlessCheck`
+  structurally cannot catch it, because the corrupted form is the formatter's own fixed point. The blast radius is any
+  bare `_`-bearing word before an emphasis span — not just `SNAKE_CASE` — in headings, list items, table cells,
+  blockquotes or link text; `__dunder__` in prose silently becomes bold instead. **Backtick identifiers in prose**; a
+  code span is never re-parsed for emphasis. To check a tree by hand, run `spotlessApply` twice and diff — a non-empty
+  second diff is the bug, and it needs no heuristics to detect.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
@@ -565,20 +580,20 @@ test-classifier jar — it's a runtime tool for users' test suites.
 
 ## Deliberately deferred
 
-Things decided against, with the reason. Re-proposing any of these needs new evidence, not a new argument — the
-argument was already had. Moved here from an untracked roadmap file so the decisions are reviewable; the forward-looking
-roadmap lives in the GitHub epics instead (verification in #312, architecture in #313), where it is visible.
+Things decided against, with the reason. Re-proposing any of these needs new evidence, not a new argument — the argument
+was already had. Moved here from an untracked roadmap file so the decisions are reviewable; the forward-looking roadmap
+lives in the GitHub epics instead (verification in #312, architecture in #313), where it is visible.
 
 - **`Stream.strict()` / `.lenient()` toggle, `KPipe.from(props)` short-form, a `just new-format` scaffold.** Surface
   area without a demonstrated need.
-- **Transient-vs-permanent DLQ-send classification.** A failed DLQ send increments a counter, logs at ERROR, and
-  leaves the offset pending so the record is reprocessed on restart. A down DLQ applies backpressure rather than
-  silently dropping.
+- **Transient-vs-permanent DLQ-send classification.** A failed DLQ send increments a counter, logs at ERROR, and leaves
+  the offset pending so the record is reprocessed on restart. A down DLQ applies backpressure rather than silently
+  dropping.
 - **Extracting a shared DLQ-or-mark helper.** The per-path asymmetries are deliberate, and `DlqTerminalContractTest`
   enforces the lockstep a shared helper would have provided — a 2×3 matrix over both paths, with both production sites
   carrying `LOCKSTEP:` comments naming it.
-- **A unified metrics collector / `MetricsContext` bundle, and a `RegistryModeFormat` base class.** Extract when a
-  third implementation arrives, not before.
+- **A unified metrics collector / `MetricsContext` bundle, and a `RegistryModeFormat` base class.** Extract when a third
+  implementation arrives, not before.
 - **`Tracer.isEnabled()`.** `Tracer.noop()` already makes the guard free, so the method would buy nothing.
 - **Further dispatcher performance work.** Measured in `benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`:
   dispatch is a rounding error at the broker level once per-record work reaches a millisecond, and the v2 broker verify
@@ -600,5 +615,5 @@ classpath, or stay explicit.
 
 **Two standing facts about this repo, recorded because nothing else holds them.** Copilot code review is effectively
 off: adding `copilot-pull-request-reviewer[bot]` as a requested reviewer returns success and attaches nobody, and the
-`reviews` array stays empty, so a Copilot done-signal never arrives and any workflow waiting for one will not
-terminate. Re-enabling it is a repository setting.
+`reviews` array stays empty, so a Copilot done-signal never arrives and any workflow waiting for one will not terminate.
+Re-enabling it is a repository setting.

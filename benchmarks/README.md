@@ -5,20 +5,19 @@ hand-rolled straw man; a competitive suite pits KPipe against the alternatives a
 Share Consumer, Confluent Parallel Consumer, Reactor Kafka, a raw `KafkaConsumer + virtual threads`, and a
 single-threaded consumer); and three micro-benches isolate internals.
 
-**The numbers live in [`results/`](results/), one dated snapshot per capture.** Embedding a single run here is how
-the old README drifted out of sync. Read [`METHODOLOGY.md`](METHODOLOGY.md) before quoting any figure; it explains
-what each bench isolates, why fork count matters, and which comparisons hold up.
+**The numbers live in [`results/`](results/), one dated snapshot per capture.** Embedding a single run here is how the
+old README drifted out of sync. Read [`METHODOLOGY.md`](METHODOLOGY.md) before quoting any figure; it explains what each
+bench isolates, why fork count matters, and which comparisons hold up.
 
 ## Benchmark scenarios
 
 ### Design validation (in-memory, no broker)
 
-These pit KPipe against a straw man to check that the design choices paid off. Don't quote them as competitive
-numbers.
+These pit KPipe against a straw man to check that the design choices paid off. Don't quote them as competitive numbers.
 
-| Bench                   | `@Benchmark` arms                                                      | What it isolates                                                                                          |
-| ----------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `JsonPipelineBenchmark` | `kpipeJsonPipeline`, `manualJsonSingleSerDe`, `manualJsonSerDeChained` | KPipe's single-SerDe-cycle vs a naive byte→object→byte chain that re-serializes between every operator.   |
+| Bench                   | `@Benchmark` arms                                                        | What it isolates                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `JsonPipelineBenchmark` | `kpipeJsonPipeline`, `manualJsonSingleSerDe`, `manualJsonSerDeChained`   | KPipe's single-SerDe-cycle vs a naive byte→object→byte chain that re-serializes between every operator.  |
 | `AvroPipelineBenchmark` | `kpipeAvroMagicPipeline`, `kpipeAvroPipeline`, `manualAvroMagicHandling` | Zero-copy magic-byte offset handling vs stripping the 5-byte Confluent prefix with `Arrays.copyOfRange`. |
 
 ### Competitive suite (Testcontainers `apache/kafka:4.3.0`, Docker required)
@@ -33,17 +32,17 @@ different winners.
 
 **`ParallelProcessingBenchmark` — throughput, 9 arms:**
 
-| Arm                  | Runtime                                                         | Ordering      |
-| -------------------- | -------------------------------------------------------------- | ------------- |
-| `kpipe`              | KPipe `PARALLEL` — virtual-thread-per-record (Loom), no pool   | none          |
-| `kpipeKeyOrdered`    | KPipe `KEY_ORDERED` — per-key serial queues, VT-drained        | per-key       |
-| `share`             | Kafka Share Consumer (KIP-932) + `newVirtualThreadPerTaskExecutor` | none      |
-| `confluent`          | Confluent Parallel Consumer, `ProcessingOrder.UNORDERED` (100-worker pool) | none |
-| `confluentKey`       | Confluent PC, `ProcessingOrder.KEY`                            | per-key       |
-| `confluentPartition` | Confluent PC, `ProcessingOrder.PARTITION`                     | per-partition |
-| `reactor`            | Reactor Kafka, `Flux.parallel(100)`                           | none          |
-| `raw`                | Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor`      | none          |
-| `singleThread`       | Single-threaded `KafkaConsumer`, inline processing (the floor) | per-partition |
+| Arm                  | Runtime                                                                    | Ordering      |
+| -------------------- | -------------------------------------------------------------------------- | ------------- |
+| `kpipe`              | KPipe `PARALLEL` — virtual-thread-per-record (Loom), no pool               | none          |
+| `kpipeKeyOrdered`    | KPipe `KEY_ORDERED` — per-key serial queues, VT-drained                    | per-key       |
+| `share`              | Kafka Share Consumer (KIP-932) + `newVirtualThreadPerTaskExecutor`         | none          |
+| `confluent`          | Confluent Parallel Consumer, `ProcessingOrder.UNORDERED` (100-worker pool) | none          |
+| `confluentKey`       | Confluent PC, `ProcessingOrder.KEY`                                        | per-key       |
+| `confluentPartition` | Confluent PC, `ProcessingOrder.PARTITION`                                  | per-partition |
+| `reactor`            | Reactor Kafka, `Flux.parallel(100)`                                        | none          |
+| `raw`                | Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor`                    | none          |
+| `singleThread`       | Single-threaded `KafkaConsumer`, inline processing (the floor)             | per-partition |
 
 **`ParallelProcessingLatencyBenchmark` — latency, 4 arms** (`kpipe`, `confluent`, `reactor`, `raw`): declares
 `@BenchmarkMode({SampleTime, AverageTime})` and reports p50/p95/p99 of **whole-invocation** completion time (batch
@@ -57,11 +56,11 @@ ingest tens of thousands of externally-measured timestamp pairs. Producer stamps
 
 ### Micro-benchmarks (MockConsumer, no broker)
 
-| Bench                        | Arm / `@Benchmark` | `@Param` sweep                                                | What it isolates                                                                                            |
-| ---------------------------- | ------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `BatchSinkLatencyBenchmark`  | `run`              | `sinkLatencyMicros ∈ {10,100,1000}`, `batchSize ∈ {1,10,100}` | The `Stream.toBatch(...)` amortisation when the destination has a per-call cost (`batchSize=1` is the control). |
-| `KeyOrderedDispatchBenchmark`| `dispatch`         | `mode ∈ {PARALLEL, KEY_ORDERED}`, key cardinality `{1,100,10000}` | Dispatcher overhead of `KEY_ORDERED` vs `PARALLEL`. Arbitrated the v2 rewrite (CHM + per-queue monitors, +122% at 10k keys — `results/2026-07-21-keyordered-dispatch-ab.md`); stays the gate for future dispatcher work. |
-| `OffsetManagerBoxingBenchmark`| `trackAndMark`    | partitions `{8}`                                              | Allocation/boxing cost on the offset-tracking hot path.                                                     |
+| Bench                          | Arm / `@Benchmark` | `@Param` sweep                                                    | What it isolates                                                                                                                                                                                                         |
+| ------------------------------ | ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BatchSinkLatencyBenchmark`    | `run`              | `sinkLatencyMicros ∈ {10,100,1000}`, `batchSize ∈ {1,10,100}`     | The `Stream.toBatch(...)` amortisation when the destination has a per-call cost (`batchSize=1` is the control).                                                                                                          |
+| `KeyOrderedDispatchBenchmark`  | `dispatch`         | `mode ∈ {PARALLEL, KEY_ORDERED}`, key cardinality `{1,100,10000}` | Dispatcher overhead of `KEY_ORDERED` vs `PARALLEL`. Arbitrated the v2 rewrite (CHM + per-queue monitors, +122% at 10k keys — `results/2026-07-21-keyordered-dispatch-ab.md`); stays the gate for future dispatcher work. |
+| `OffsetManagerBoxingBenchmark` | `trackAndMark`     | partitions `{8}`                                                  | Allocation/boxing cost on the offset-tracking hot path.                                                                                                                                                                  |
 
 ## Running benchmarks
 
@@ -107,9 +106,9 @@ All properties are optional (values above are the defaults). Results print as a 
 ## Results
 
 Captured runs live in [`results/`](results/), one dated markdown snapshot (plus raw JSON) per capture — read the most
-recent one. For any capture taken on a shared CI runner, trust the ordering and treat the absolute numbers as
-indicative only. Every snapshot records the box, JDK,
-fork count, and `workMicros` cells per the [publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
+recent one. For any capture taken on a shared CI runner, trust the ordering and treat the absolute numbers as indicative
+only. Every snapshot records the box, JDK, fork count, and `workMicros` cells per the
+[publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
 
 The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run:
 

@@ -84,14 +84,12 @@ spotless {
   format("markdown") {
     target("**/*.md")
     targetExclude("**/build/**", "**/.gradle/**", "**/node_modules/**")
-    prettier(
+    // No prettier-plugin-java here. It reformats Java inside fenced code blocks, and it disagrees
+    // with google-java-format about lambda parameters — it writes `(order) ->` where the Java
+    // formatter writes `order ->`. That silently rewrites the README quickstart so it no longer
+    // matches the compiled ReadmeQuickstart.java, which scripts/check-docs.sh requires.
+    prettier(mapOf("prettier" to "3.8.1")).config(
       mapOf(
-        "prettier" to "3.8.1",
-        "prettier-plugin-java" to "2.8.1",
-      ),
-    ).config(
-      mapOf(
-        "plugins" to listOf("prettier-plugin-java"),
         "printWidth" to 120,
         "proseWrap" to "always",
         "tabWidth" to 2,

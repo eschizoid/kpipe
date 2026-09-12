@@ -7,8 +7,8 @@ final MessageSink<Map<String, Object>> databaseSink = processed -> databaseServi
 ```
 
 On the fluent path you attach a sink with a terminal: `.toConsole()`, `.toCustom(sink)`, `.toMulti(sinks...)`, or
-`.toBatch(sink, policy)` — semantics summarized in [API.md](API.md#terminals--each-returns-sinkt). This page covers
-the sink building blocks themselves. Snippets use placeholder values; they show shape, not a runnable program.
+`.toBatch(sink, policy)` — semantics summarized in [API.md](API.md#terminals--each-returns-sinkt). This page covers the
+sink building blocks themselves. Snippets use placeholder values; they show shape, not a runnable program.
 
 ## Registering sinks in the explicit API
 
@@ -31,8 +31,8 @@ final var pipeline = registry
   .build();
 ```
 
-Wrap user sinks with `MessageProcessorRegistry.withSinkErrorHandling(sink)` when one failing sink must not take down
-the pipeline; the failure is logged and contained at the sink boundary.
+Wrap user sinks with `MessageProcessorRegistry.withSinkErrorHandling(sink)` when one failing sink must not take down the
+pipeline; the failure is logged and contained at the sink boundary.
 
 ## Producing to another Kafka topic
 
@@ -60,15 +60,15 @@ Pass a real `ProducerMetrics` / `Tracer` to count sends and propagate trace cont
 
 `.toMulti(sinkA, sinkB, ...)` (or `new CompositeMessageSink<>(...)` in the explicit API) delivers each record to every
 sink, **best effort**: a sink that throws is logged at WARNING and suppressed, the other sinks still run, the record
-counts as processed, its offset commits, and the DLQ is not involved. This is the right tool for "also mirror to a
-debug sink"; it is the wrong tool when every sink must durably receive every record — for that, produce to a topic and
-let each destination consume it, or use one sink that writes transactionally to both destinations.
+counts as processed, its offset commits, and the DLQ is not involved. This is the right tool for "also mirror to a debug
+sink"; it is the wrong tool when every sink must durably receive every record — for that, produce to a topic and let
+each destination consume it, or use one sink that writes transactionally to both destinations.
 
 ## Batch sinks
 
-Single-record sinks pay the destination's per-call cost on every message. When that cost is non-trivial — a JDBC
-commit, an HTTP POST, an S3 PUT — batching amortizes it. `BatchSink<T>` is a `Function<List<T>, BatchResult>` that
-flushes at a configurable size or age:
+Single-record sinks pay the destination's per-call cost on every message. When that cost is non-trivial — a JDBC commit,
+an HTTP POST, an S3 PUT — batching amortizes it. `BatchSink<T>` is a `Function<List<T>, BatchResult>` that flushes at a
+configurable size or age:
 
 ```java
 KPipe.json("events", kafkaProps)
@@ -79,9 +79,9 @@ KPipe.json("events", kafkaProps)
     .start();
 ```
 
-`BatchSink.ofVoid(...)` wraps a void-style consumer: a normal return means the whole batch succeeded, a throw sends
-the whole batch to the DLQ. For per-record outcomes — a bulk HTTP API that reports which rows failed — implement
-`BatchSink` directly and return a `BatchResult` with the succeeded/failed indexes; only the failures route to the DLQ.
+`BatchSink.ofVoid(...)` wraps a void-style consumer: a normal return means the whole batch succeeded, a throw sends the
+whole batch to the DLQ. For per-record outcomes — a bulk HTTP API that reports which rows failed — implement `BatchSink`
+directly and return a `BatchResult` with the succeeded/failed indexes; only the failures route to the DLQ.
 
 Semantics:
 
@@ -90,8 +90,8 @@ Semantics:
 - **Multi-topic.** Each `KPipe.multi(...)` route can choose `.toBatch(...)` independently.
 - **Coverage contract enforced.** A `BatchResult` that does not account for every position `[0, batchSize)` is treated
   as a contract violation: the unaccounted records are routed to the DLQ rather than silently marked processed.
-- **Shutdown drain.** A final flush runs before the offset manager closes, so partially-filled buffers are delivered
-  and committed on graceful shutdown.
+- **Shutdown drain.** A final flush runs before the offset manager closes, so partially-filled buffers are delivered and
+  committed on graceful shutdown.
 
 Throughput impact is measured by `BatchSinkLatencyBenchmark` — at a 1ms-per-call sink, batch=100 measured roughly 84×
 the per-record control (2026-05 capture; raw JMH JSON in [`benchmarks/results/`](../benchmarks/results/)).
