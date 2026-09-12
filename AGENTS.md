@@ -562,15 +562,24 @@ test-classifier jar — it's a runtime tool for users' test suites.
   silently rewrote the README quickstart out of step with the compiled `ReadmeQuickstart.java` that
   `scripts/check-docs.sh` compares line by line.
 - **The prose formatter is not idempotent, and the second run is the one that corrupts.** Given a bare
-  underscore-bearing word followed by an emphasis span in the same block, pass one is clean and pass two destroys the
-  word: `KEY_ORDERED *behind*` becomes `KEY_ORDERED _behind_`, which on the next run becomes `KEY*ORDERED \_behind*` and
-  renders as `KEYORDERED _behind`. So a file can sit in the repo looking right, pass review, pass `spotlessCheck`, and
-  detonate on a later `spotlessApply` — which is how these notes rotted while they were untracked. `spotlessCheck`
-  structurally cannot catch it, because the corrupted form is the formatter's own fixed point. The blast radius is any
-  bare `_`-bearing word before an emphasis span — not just `SNAKE_CASE` — in headings, list items, table cells,
-  blockquotes or link text; `__dunder__` in prose silently becomes bold instead. **Backtick identifiers in prose**; a
-  code span is never re-parsed for emphasis. To check a tree by hand, run `spotlessApply` twice and diff — a non-empty
-  second diff is the bug, and it needs no heuristics to detect.
+  underscore-bearing word in plain prose, followed anywhere later in the same block by a single-delimiter emphasis span,
+  pass one is clean and pass two destroys the word: `KEY_ORDERED *behind*` becomes `KEY_ORDERED _behind_`, which on the
+  next run becomes `KEY*ORDERED \_behind*` and renders as `KEYORDERED _behind`. Pass three is stable — the corruption
+  escapes the underscores and flips the delimiters, leaving nothing further to pair — so **running `spotlessApply` twice
+  and diffing is a complete check** for any tree, and needs no heuristics.
+- **`spotlessCheck` is the defense against that, which is why CI runs it rather than `spotlessApply`.** The gate passes
+  only when `apply(f) == f`, and a file carrying the latent `KEY_ORDERED _behind_` form is by definition not yet at its
+  fixed point — so the gate fails it and prints the hunk that would corrupt. What the gate cannot see is text that
+  arrives **already** corrupted from outside it, which is how these notes rotted: they lived untracked in `.claude/`,
+  spotless rewrote them on disk across many local runs, and #318 copied the corrupted result into a tracked file. Under
+  the old `spotlessApply` step CI would silently advance a latent file to the corrupted fixed point and discard the
+  result, leaving the bomb in the repo to detonate on somebody's laptop.
+- **Backtick identifiers in prose; escaping them is worse than doing nothing.** A code span is never re-parsed for
+  emphasis, so `` `KEY_ORDERED` `` is inert. A manual backslash escape is not a remedy — `KEY\_ORDERED *behind*`
+  corrupts on pass **one**, a pass earlier than the unescaped form, because the formatter strips the escape and re-pairs
+  in the same run. Underscores are also safe inside link text, autolink URLs, and nested strong or emphasis, and the
+  hazard needs a _single_-delimiter target: `KEY_ORDERED **bold**` is fine. A `__dunder__` in prose is a separate,
+  pass-one effect — it silently becomes bold.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
   Keep every `///` line ≤ ~95 cols; hand-joining a long line is silently reverted on the next `spotlessApply`. This is
