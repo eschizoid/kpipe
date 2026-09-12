@@ -4,6 +4,7 @@ import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
+import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
@@ -11,6 +12,7 @@ import io.github.eschizoid.kpipe.sink.BatchSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
@@ -265,6 +267,51 @@ public interface Stream<T> {
   /// @return a new stream with the poll timeout configured
   /// @throws NullPointerException if `timeout` is null
   Stream<T> withPollTimeout(final Duration timeout);
+
+  /// Returns a new stream that reports consumer metrics periodically through `reporters`.
+  ///
+  /// This is the log-based path for deployments without an OpenTelemetry backend; it is
+  /// independent of [#withMetrics], which wires the OTel instruments. The reporter thread is a
+  /// daemon and does not keep the JVM alive.
+  ///
+  /// @param reporters the reporters to invoke on each interval (must be non-null)
+  /// @return a new stream with periodic reporting configured
+  /// @throws NullPointerException if `reporters` is null
+  Stream<T> withMetricsReporters(final Collection<KPipeMetricsReporter> reporters);
+
+  /// Returns a new stream that reports metrics every `interval` rather than at the default
+  /// cadence. Only meaningful alongside [#withMetricsReporters].
+  ///
+  /// @param interval how often to report (must be non-null and positive)
+  /// @return a new stream with the reporting interval configured
+  /// @throws NullPointerException if `interval` is null
+  Stream<T> withMetricsInterval(final Duration interval);
+
+  /// Returns a new stream that registers a JVM shutdown hook to close the consumer.
+  ///
+  /// A caller using the [Handle] in try-with-resources is already covered on the normal exit
+  /// path; the hook is what covers a SIGTERM, which is how most container runtimes stop a process.
+  ///
+  /// @param useShutdownHook whether to register the hook
+  /// @return a new stream with the shutdown hook configured
+  Stream<T> withShutdownHook(final boolean useShutdownHook);
+
+  /// Returns a new stream that waits at most `timeout` for the consumer thread to terminate
+  /// during shutdown.
+  ///
+  /// @param timeout the thread-join budget (must be non-null and non-negative)
+  /// @return a new stream with the termination timeout configured
+  /// @throws NullPointerException if `timeout` is null
+  Stream<T> withThreadTerminationTimeout(final Duration timeout);
+
+  /// Returns a new stream that waits at most `timeout` for in-flight records to drain during
+  /// shutdown. Distinct from [Handle#shutdownGracefully], which bounds one specific drain call;
+  /// this sets the consumer's own budget.
+  ///
+  /// @param timeout the drain budget (must be non-null and non-negative)
+  /// @return a new stream with the drain timeout configured
+  /// @throws NullPointerException if `timeout` is null
+  Stream<T> withWaitForMessagesTimeout(final Duration timeout);
 
   /// Returns a new stream that skips the first `n` bytes of every payload before deserialization.
   /// Useful for stripping wire-format prefixes — e.g. Confluent Schema Registry's 5-byte envelope

@@ -10,6 +10,7 @@ import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
+import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
@@ -18,7 +19,9 @@ import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -197,6 +200,62 @@ public final class MultiBuilder {
   public MultiBuilder withPollTimeout(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
     consumerConfig = consumerConfig.with(c -> c.pollTimeout = timeout);
+    return this;
+  }
+
+  /// Reports consumer metrics periodically through `reporters`, for deployments without an
+  /// OpenTelemetry backend. Consumer-wide: one reporting thread serves every route.
+  ///
+  /// @param reporters the reporters to invoke on each interval (must be non-null)
+  /// @return this builder
+  /// @throws NullPointerException if `reporters` is null
+  public MultiBuilder withMetricsReporters(final Collection<KPipeMetricsReporter> reporters) {
+    Objects.requireNonNull(reporters, "reporters cannot be null");
+    final var copy = List.copyOf(reporters);
+    consumerConfig = consumerConfig.with(c -> c.metricsReporters = copy);
+    return this;
+  }
+
+  /// Reports metrics every `interval`. Only meaningful alongside [#withMetricsReporters].
+  ///
+  /// @param interval how often to report (must be non-null and positive)
+  /// @return this builder
+  /// @throws NullPointerException if `interval` is null
+  public MultiBuilder withMetricsInterval(final Duration interval) {
+    Objects.requireNonNull(interval, "interval cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.metricsInterval = interval);
+    return this;
+  }
+
+  /// Registers a JVM shutdown hook to close the consumer, covering SIGTERM rather than the
+  /// try-with-resources path a [Handle] already handles.
+  ///
+  /// @param useShutdownHook whether to register the hook
+  /// @return this builder
+  public MultiBuilder withShutdownHook(final boolean useShutdownHook) {
+    consumerConfig = consumerConfig.with(c -> c.shutdownHook = useShutdownHook);
+    return this;
+  }
+
+  /// Waits at most `timeout` for the consumer thread to terminate during shutdown.
+  ///
+  /// @param timeout the thread-join budget (must be non-null and non-negative)
+  /// @return this builder
+  /// @throws NullPointerException if `timeout` is null
+  public MultiBuilder withThreadTerminationTimeout(final Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.threadTerminationTimeout = timeout);
+    return this;
+  }
+
+  /// Waits at most `timeout` for in-flight records to drain during shutdown.
+  ///
+  /// @param timeout the drain budget (must be non-null and non-negative)
+  /// @return this builder
+  /// @throws NullPointerException if `timeout` is null
+  public MultiBuilder withWaitForMessagesTimeout(final Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.waitForMessagesTimeout = timeout);
     return this;
   }
 
