@@ -7,6 +7,7 @@ import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
+import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.Operators;
@@ -229,6 +230,36 @@ record DefaultStream<T>(
   public Stream<T> withPollTimeout(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
     return mutateConfig(c -> c.pollTimeout = timeout);
+  }
+
+  @Override
+  public Stream<T> withMetricsReporters(final Collection<KPipeMetricsReporter> reporters) {
+    Objects.requireNonNull(reporters, "reporters cannot be null");
+    final var copy = List.copyOf(reporters);
+    return mutateConfig(c -> c.metricsReporters = copy);
+  }
+
+  @Override
+  public Stream<T> withMetricsInterval(final Duration interval) {
+    Objects.requireNonNull(interval, "interval cannot be null");
+    return mutateConfig(c -> c.metricsInterval = interval);
+  }
+
+  @Override
+  public Stream<T> withShutdownHook(final boolean useShutdownHook) {
+    return mutateConfig(c -> c.shutdownHook = useShutdownHook);
+  }
+
+  @Override
+  public Stream<T> withThreadTerminationTimeout(final Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    return mutateConfig(c -> c.threadTerminationTimeout = timeout);
+  }
+
+  @Override
+  public Stream<T> withWaitForMessagesTimeout(final Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    return mutateConfig(c -> c.waitForMessagesTimeout = timeout);
   }
 
   @Override
