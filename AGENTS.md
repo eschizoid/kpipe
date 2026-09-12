@@ -561,25 +561,26 @@ test-classifier jar — it's a runtime tool for users' test suites.
   google-java-format about lambda parameters, writing `(order) ->` where the Java formatter writes `order ->`, which
   silently rewrote the README quickstart out of step with the compiled `ReadmeQuickstart.java` that
   `scripts/check-docs.sh` compares line by line.
-- **The prose formatter swallows text between underscores, and one `spotlessApply` does it.** The mechanism is a single
-  rule: a `_` opens if it is not followed by whitespace, the next `_` that is followed by a non-word character closes,
-  and everything between is eaten. `KEY_ORDERED and *behind*` becomes `KEY*ORDERED and \_behind*` — rendering as
-  `KEYORDERED _behind` — because pass one rewrites `*behind*` to `_behind_` and its closing underscore then pairs with
-  the identifier's. A word-final underscore does the same job with no emphasis anywhere: `A_B and C_D_` becomes
-  `A*B and C_D*`. Note who the victim is — `A_B` has no trailing underscore and is destroyed from four words away, and
-  an ordinary English word with a stray underscore (`and_`) is a perfectly good closer. `a_b_c` is safe because no `_`
-  in it is followed by a non-word character. Spotless iterates to a fixed point inside one invocation, so this lands in
-  a single apply and is stable after — **do not check by applying twice and diffing**, the second apply is a no-op and
-  reports clean on the file the first one destroyed.
-- **Enclose the identifier; what follows it is irrelevant.** The scan runs from the opening `_` to the end of the
-  **innermost** thing enclosing it, so a container that merely opens later is no help — `KEY_ORDERED and **a *b* c**`
-  corrupts and takes the bold with it, as does `KEY_ORDERED and [*behind*](url)`. Wrapping the identifier is what
-  protects: `` `KEY_ORDERED` ``, `**KEY_ORDERED**`, `*KEY_ORDERED*` and `[KEY_ORDERED](url)` all survive anything after
-  them. Scope is the **block**, not the line — a bare identifier reaches a closer across a soft wrap — and one shielded
-  identifier does not protect a second bare one later in the same block. `<!-- prettier-ignore -->` and code blocks
-  (fenced or indented) are equally absolute and work where backticks cannot, such as a table row, but each covers
-  exactly one block (`-start` / `-end` for a run), does nothing written as a list item, and freezes that block's
-  wrapping and alignment too.
+- **The prose formatter swallows text between underscores, and one `spotlessApply` does it.** One bounded rule covers
+  every case: the scan runs from an opening `_` to the end of the **innermost** thing enclosing it — code span,
+  emphasis, link text, table cell, list item, otherwise the block — and within that range the first `_` that is followed
+  by a non-word character, **or that ends the block**, closes it. Everything between is eaten. So
+  `KEY_ORDERED and *behind*` becomes `KEY*ORDERED and \_behind*`, rendering as `KEYORDERED _behind`, because pass one
+  rewrites `*behind*` to `_behind_` and supplies the closer. A word-final underscore does the same job with no emphasis
+  present: `A_B and C_D_` becomes `A*B and C_D*` — note that the victim is `A_B`, several words earlier, carrying no
+  trailing underscore of its own, and that an ordinary English word (`and_`) is a perfectly good closer. `a_b_c` is safe
+  because no `_` in it qualifies. Two traps in reading the rule: **assume any `_` can open** — a space after it is no
+  defence, `A_ B_` still corrupts — and "non-word" means ASCII, so a digit does not close (`max_keys_1` is safe) while
+  an accented letter or an em dash does, which matters in a file this full of `—`.
+- **The bound is the shield: enclose the identifier and nothing after it can reach.** `` `KEY_ORDERED` ``,
+  `**KEY_ORDERED**`, `*KEY_ORDERED*` and `[KEY_ORDERED](url)` all survive anything that follows, because the scan stops
+  at the enclosure's end. A container that merely opens _later_ is no help — `KEY_ORDERED and **a *b* c**` corrupts and
+  takes the bold with it, as does `KEY_ORDERED and [*behind*](url)`. Enclosing bounds one scan only: in
+  `**KEY_ORDERED** and max_keys_` the shielded identifier is fine and the bare one still corrupts. With no enclosure the
+  bound is the **block**, not the line, so a bare identifier reaches a closer across a soft wrap.
+  `<!-- prettier-ignore -->` and code blocks (fenced or indented) are equally absolute and work where backticks cannot,
+  such as a table row — but each covers exactly one block (`-start` / `-end` for a run), does nothing written as a list
+  item, and freezes that block's wrapping and alignment too.
 - **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
   hazardous file fails it — which is why CI runs `spotlessCheck` rather than `spotlessApply`. The failure ends with
   `Run './gradlew spotlessApply' to fix all violations`, and following that is what destroys the file. **Never apply to
