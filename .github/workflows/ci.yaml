@@ -114,7 +114,7 @@ jobs:
         # always(), not failure(): a job that exceeds timeout-minutes is CANCELLED rather
         # than failed, and that is precisely the run whose partial report is worth reading.
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           # Unique per run: two workflow runs can share a head SHA, and a second upload under
           # the same artifact name fails the job with a 403 even though every test passed.
