@@ -197,7 +197,7 @@ Patterns that only make sense on the explicit `MessageProcessorRegistry` surface
 registry.registerEnum((Class<Map<String, Object>>) (Class<?>) Map.class, StandardProcessors.class);
 ```
 
-**Conditional processing** — `Operators.when(predicate, ifTrue, ifFalse)` branches inside one pipeline; both branches
+**Conditional processing** — `TypedPipelineBuilder.when(predicate, ifTrue, ifFalse)` branches inside one pipeline; both branches
 are required. For drop-on-condition, use `filter` — a false predicate marks the record `Filtered` (offset still commits,
 sink skipped), which is the deliberate-skip half of the sealed `Result` type. The failure half (`Failed`) routes through
 retry / error handler / DLQ — the two are distinct types precisely so a filter can never mask a bug.
