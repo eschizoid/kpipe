@@ -7,10 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.jupiter.api.Test;
@@ -21,17 +23,14 @@ import org.junit.jupiter.api.Test;
 /// which is why they belong on the 80% path: reaching one used to mean abandoning `KPipe.json(...)`
 /// and rebuilding through `KPipeConsumerBuilder` to obtain something orthogonal to the pipeline.
 ///
-/// **The `applyTo` delegation is covered, via the builder's own preconditions.** An earlier version
-/// of this class claimed it could not be: the builder is final with package-private fields in
-/// another module's package, and this repo does not use reflection in tests. Review refuted that.
-/// Passing an *invalid* value through a facade setter reaches the builder's validation during
-/// `start()`, so a missing `applyTo` line throws nothing and the assertion fails. No broker, no
-/// reflection. Verified by mutation: deleting any of the four validated delegations fails a test
-/// here.
+/// **The `applyTo` delegation is covered, via the builder's own preconditions.** Passing an invalid
+/// value through a facade setter reaches the builder's validation during `start()`, so a missing
+/// delegation line means the value never arrives and nothing throws — which makes the assertion a
+/// test of the delegation rather than of the setter. No broker, no reflection.
 ///
-/// `withShutdownHook` is the exception, and the narrow scope limit that actually holds — `true` and
-/// `false` are both valid, so there is no precondition to trip and no observable to assert without
-/// reaching into the JVM's shutdown-hook registry. Its delegation is covered by inspection alone.
+/// `withShutdownHook` is the exception: `true` and `false` are both valid, so there is no
+/// precondition to trip and nothing observable to assert without reaching into the JVM's
+/// shutdown-hook registry. Its delegation is covered by inspection alone.
 class OperationalSettersTest {
 
   private static Properties props() {
@@ -95,7 +94,7 @@ class OperationalSettersTest {
   @Test
   void reporterCollectionIsCopiedSoLaterCallerMutationCannotLeakIn() {
     final KPipeMetricsReporter reporter = () -> {};
-    final var mutable = new java.util.ArrayList<KPipeMetricsReporter>();
+    final var mutable = new ArrayList<KPipeMetricsReporter>();
     mutable.add(reporter);
     final var s = stream().withMetricsReporters(mutable);
     mutable.clear();
@@ -163,8 +162,9 @@ class OperationalSettersTest {
     // Registering each in CONSUMER_WIDE_SETTINGS is what makes a route-level call an error rather
     // than a silent no-op. Without the descriptor the setting would be accepted on the Stream and
     // then dropped when the routes were folded into one consumer.
-    record Case(String setting, java.util.function.UnaryOperator<Stream<byte[]>> apply) {}
+    record Case(String setting, UnaryOperator<Stream<byte[]>> apply) {}
     final var cases = List.of(
+      new Case("withMetricsReporters", s -> s.withMetricsReporters(List.of(() -> {}))),
       new Case("withMetricsInterval", s -> s.withMetricsInterval(Duration.ofSeconds(1))),
       new Case("withShutdownHook", s -> s.withShutdownHook(true)),
       new Case("withThreadTerminationTimeout", s -> s.withThreadTerminationTimeout(Duration.ofSeconds(1))),

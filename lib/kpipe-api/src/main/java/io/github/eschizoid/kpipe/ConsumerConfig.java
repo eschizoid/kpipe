@@ -16,7 +16,8 @@ import java.util.function.Predicate;
 
 /// Package-private immutable holder for every consumer-wide setting the fluent facade exposes:
 /// retry, backpressure, processing mode, key-ordered cap, metrics, error handler, dead-letter
-/// topic, poll timeout, tracer, and circuit breaker. One `KPipeConsumer` carries one of these,
+/// topic, poll timeout, tracer, circuit breaker, metrics reporters and their interval, the
+/// shutdown hook, and the two shutdown timeouts. One `KPipeConsumer` carries one of these,
 /// whether it was built from a single [Stream] or folded out of N [MultiBuilder] routes.
 ///
 /// This type is the single registration point for a consumer-wide setting. Before it existed the

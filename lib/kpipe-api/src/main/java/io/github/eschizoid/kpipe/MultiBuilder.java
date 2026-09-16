@@ -209,9 +209,9 @@ public final class MultiBuilder {
   /// @param reporters the reporters to invoke on each interval (must be non-null)
   /// @return this builder
   /// @throws NullPointerException if `reporters` is null
-  public MultiBuilder withMetricsReporters(final Collection<KPipeMetricsReporter> reporters) {
+  public MultiBuilder withMetricsReporters(final Collection<? extends KPipeMetricsReporter> reporters) {
     Objects.requireNonNull(reporters, "reporters cannot be null");
-    final var copy = List.copyOf(reporters);
+    final List<KPipeMetricsReporter> copy = List.copyOf(reporters);
     consumerConfig = consumerConfig.with(c -> c.metricsReporters = copy);
     return this;
   }

@@ -233,9 +233,9 @@ record DefaultStream<T>(
   }
 
   @Override
-  public Stream<T> withMetricsReporters(final Collection<KPipeMetricsReporter> reporters) {
+  public Stream<T> withMetricsReporters(final Collection<? extends KPipeMetricsReporter> reporters) {
     Objects.requireNonNull(reporters, "reporters cannot be null");
-    final var copy = List.copyOf(reporters);
+    final List<KPipeMetricsReporter> copy = List.copyOf(reporters);
     return mutateConfig(c -> c.metricsReporters = copy);
   }
 
