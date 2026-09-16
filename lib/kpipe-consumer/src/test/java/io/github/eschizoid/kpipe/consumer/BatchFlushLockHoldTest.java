@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -109,11 +108,11 @@ class BatchFlushLockHoldTest {
       // without being sensitive to how fast the box is.
       assertTrue(
         blockedMs < dispatchBudgetMs / 4,
-        "competing enqueue blocked "
-          + blockedMs
-          + " ms, which is within reach of the "
-          + dispatchBudgetMs
-          + " ms dispatch budget; the outcome dispatch is holding the flush lock again"
+        "competing enqueue blocked " +
+          blockedMs +
+          " ms, which is within reach of the " +
+          dispatchBudgetMs +
+          " ms dispatch budget; the outcome dispatch is holding the flush lock again"
       );
     } finally {
       wrapper.close();

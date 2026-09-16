@@ -161,16 +161,16 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   }
 
   /// Caller must hold `lock`. Snapshots the buffer's values into a single pre-sized list, clears
-  /// the buffer, drives the sink, and returns the per-record outcome dispatch for the caller to run
-  /// **after releasing the lock** (or `null` when there was nothing to flush).
+  /// the buffer, drives the sink, and returns the per-record outcome dispatch for the caller to
+  /// run **after releasing the lock** (or `null` when there was nothing to flush).
   ///
-  /// The split is the point. `sink.apply` runs here, under the lock, because `BatchSink`'s contract
-  /// promises implementers that flushes never overlap and so need not be thread-safe. The outcome
-  /// dispatch carries no such promise and is the expensive half: `onBatchFailure` reaches a
-  /// synchronous DLQ produce that waits for a broker ack, and a whole-batch failure performs one per
-  /// record, serially. Holding the lock across that blocked every other worker enqueueing to this
-  /// topic for the length of the entire dispatch — measured at 221ms for a 20-record batch against a
-  /// 10ms-per-record DLQ, and scaling with batch size times the produce timeout.
+  /// The split is the point. `sink.apply` runs here, under the lock, because `BatchSink`'s
+  /// contract promises implementers that flushes never overlap and so need not be thread-safe.
+  /// The outcome dispatch carries no such promise and is the expensive half: `onBatchFailure`
+  /// reaches a synchronous DLQ produce that waits for a broker ack, and a whole-batch failure
+  /// performs one per record, serially. Holding the lock across that blocked every other worker
+  /// enqueueing to this topic for the whole dispatch — measured at 221ms for a 20-record batch
+  /// against a 10ms-per-record DLQ, and scaling with batch size times the produce timeout.
   ///
   /// `bufferedCount` still comes down only once the dispatch has run, so the gauge keeps counting
   /// records this wrapper still owns rather than dropping them the moment the sink returns.
@@ -329,7 +329,6 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       }
     };
   }
-
 
   private void logOutOfRange(final String kind, final Integer index, final int batchSize) {
     LOGGER.log(

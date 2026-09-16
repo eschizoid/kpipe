@@ -352,7 +352,20 @@ deliberately escape-hatch-only.
   `[0, batchSize)` is a contract violation. `BatchPipelineWrapper` flags missing indexes with a synthetic
   `IllegalStateException` and routes them to the DLQ rather than silently marking them processed (§12). Out-of-range
   indexes are logged at WARNING; a `null` `BatchResult` is treated as whole-batch failure.
-- **`BatchPipelineWrapper` owns buffer + lock + gauge + age-tick.** One wrapper per topic; a single `ReentrantLock` serializes `enqueue` / `tick` / `close` / `flushLocked`, and one flush per topic is in flight at a time. What runs under that lock is now deliberately split. `flushLocked` calls the user's `BatchSink` while holding it and then returns the per-record outcome dispatch to its caller, which runs it **after** releasing the lock. The sink keeps the lock because `BatchSink`'s contract promises implementers that flushes never overlap; it is arbitrary user code of unbounded duration, and that, not any assumption that it performs I/O, is why holding the lock across it matters. The dispatch carries no such promise and used to hold the lock anyway — `markProcessed` reaches a user-supplied `OffsetManager`, possibly Postgres- or Redis-backed, and `onBatchFailure` reaches a synchronous DLQ produce that waits for the broker ack, once per record and serially on the whole-batch failure path. Measured at 221ms of blocked `enqueue` for a 20-record batch against a 10ms-per-record DLQ, going to 0ms once the dispatch moved out; in production the per-record wait is bounded by `max.block.ms` plus `delivery.timeout.ms`, which add, so a 500-record batch against a dead DLQ held the lock for hours. `bufferedCount` still comes down only after the dispatch runs, so the gauge keeps counting records the wrapper still owns. The consequence to know is that dispatches may now overlap each other: the offset ordering and invariant property tests cover that nothing downstream depends on them not doing so.
+- **`BatchPipelineWrapper` owns buffer + lock + gauge + age-tick.** One wrapper per topic; a single `ReentrantLock`
+  serializes `enqueue` / `tick` / `close` / `flushLocked`, and one flush per topic is in flight at a time. What runs
+  under that lock is now deliberately split. `flushLocked` calls the user's `BatchSink` while holding it and then
+  returns the per-record outcome dispatch to its caller, which runs it **after** releasing the lock. The sink keeps the
+  lock because `BatchSink`'s contract promises implementers that flushes never overlap; it is arbitrary user code of
+  unbounded duration, and that, not any assumption that it performs I/O, is why holding the lock across it matters. The
+  dispatch carries no such promise and used to hold the lock anyway — `markProcessed` reaches a user-supplied
+  `OffsetManager`, possibly Postgres- or Redis-backed, and `onBatchFailure` reaches a synchronous DLQ produce that waits
+  for the broker ack, once per record and serially on the whole-batch failure path. Measured at 221ms of blocked
+  `enqueue` for a 20-record batch against a 10ms-per-record DLQ, going to 0ms once the dispatch moved out; in production
+  the per-record wait is bounded by `max.block.ms` plus `delivery.timeout.ms`, which add, so a 500-record batch against
+  a dead DLQ held the lock for hours. `bufferedCount` still comes down only after the dispatch runs, so the gauge keeps
+  counting records the wrapper still owns. The consequence to know is that dispatches may now overlap each other: the
+  offset ordering and invariant property tests cover that nothing downstream depends on them not doing so.
 
   The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
   circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the

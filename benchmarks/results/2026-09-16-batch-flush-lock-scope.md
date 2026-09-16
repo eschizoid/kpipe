@@ -1,8 +1,8 @@
 # Batch flush lock scope — dispatch moved out of the lock (2026-09-16)
 
-The standing rule for lock work in this project is a measured win before landing. This is that record, for #335:
-moving `BatchPipelineWrapper`'s per-record outcome dispatch out of the per-topic flush lock while leaving `sink.apply`
-under it.
+The standing rule for lock work in this project is a measured win before landing. This is that record, for #335: moving
+`BatchPipelineWrapper`'s per-record outcome dispatch out of the per-topic flush lock while leaving `sink.apply` under
+it.
 
 ## Win bar, fixed before anything was measured
 
