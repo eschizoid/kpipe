@@ -105,15 +105,17 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   /// strategy observes the new buffered record on its next check. The matching decrement happens
   /// in [#flushLocked] after the user sink returns.
   void enqueue(final ConsumerRecord<byte[], byte[]> record, final T value) {
+    Runnable dispatch = null;
     lock.lock();
     try {
       if (buffer.isEmpty()) oldestEnqueueNanos = System.nanoTime();
       buffer.add(new Entry<>(record, value));
       bufferedCount.incrementAndGet();
-      if (buffer.size() >= policy.maxSize()) flushLocked();
+      if (buffer.size() >= policy.maxSize()) dispatch = flushLocked();
     } finally {
       lock.unlock();
     }
+    runDispatch(dispatch);
   }
 
   /// Returns the current count of records buffered in this wrapper across both completed and
@@ -124,11 +126,12 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   }
 
   private void tick() {
+    Runnable dispatch = null;
     lock.lock();
     try {
       if (buffer.isEmpty()) return;
       final var ageNanos = System.nanoTime() - oldestEnqueueNanos;
-      if (ageNanos >= policy.maxAge().toNanos()) flushLocked();
+      if (ageNanos >= policy.maxAge().toNanos()) dispatch = flushLocked();
     } catch (final Throwable t) {
       // In practice only an Error reaches here. The RuntimeException paths through flushLocked are
       // closed: the sink call and both callback loops catch Exception, a null BatchResult is
@@ -154,36 +157,65 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     } finally {
       lock.unlock();
     }
+    runDispatch(dispatch);
   }
 
   /// Caller must hold `lock`. Snapshots the buffer's values into a single pre-sized list, clears
-  /// the buffer, then drives the sink + dispatches per-record outcomes off the same snapshot.
-  /// `bufferedCount` is decremented in `finally` by the snapshot size so it tracks records still
-  /// owned by the wrapper even if dispatch throws.
+  /// the buffer, drives the sink, and returns the per-record outcome dispatch for the caller to run
+  /// **after releasing the lock** (or `null` when there was nothing to flush).
+  ///
+  /// The split is the point. `sink.apply` runs here, under the lock, because `BatchSink`'s contract
+  /// promises implementers that flushes never overlap and so need not be thread-safe. The outcome
+  /// dispatch carries no such promise and is the expensive half: `onBatchFailure` reaches a
+  /// synchronous DLQ produce that waits for a broker ack, and a whole-batch failure performs one per
+  /// record, serially. Holding the lock across that blocked every other worker enqueueing to this
+  /// topic for the length of the entire dispatch — measured at 221ms for a 20-record batch against a
+  /// 10ms-per-record DLQ, and scaling with batch size times the produce timeout.
+  ///
+  /// `bufferedCount` still comes down only once the dispatch has run, so the gauge keeps counting
+  /// records this wrapper still owns rather than dropping them the moment the sink returns.
   ///
   /// The buffer itself is reused — `ArrayList.clear()` keeps the backing array, so steady-state
   /// flushes don't reallocate the buffer. Only the per-flush snapshot list (used to walk records
   /// after `flush` has finished iterating values) is allocated fresh per cycle.
-  private void flushLocked() {
+  private Runnable flushLocked() {
     final var size = buffer.size();
-    if (size == 0) return;
+    if (size == 0) return null;
     final var snapshot = new ArrayList<>(buffer);
     final var values = new ArrayList<T>(size);
     for (final var entry : snapshot) values.add(entry.value());
     buffer.clear();
 
+    final Runnable dispatch;
     try {
-      flush(snapshot, values);
-    } finally {
+      dispatch = flush(snapshot, values);
+    } catch (final Throwable t) {
+      // `flush` catches every Exception the sink can raise, so reaching here means an Error. The
+      // records have already left the buffer, so the gauge has to come down even though no dispatch
+      // will run for them.
       bufferedCount.addAndGet(-size);
+      throw t;
     }
+    return () -> {
+      try {
+        dispatch.run();
+      } finally {
+        bufferedCount.addAndGet(-size);
+      }
+    };
   }
 
-  /// All the dispatch lives in one place: call the sink, classify the [BatchResult], log any
-  /// out-of-range indexes, build a synthetic failure for uncovered positions so a misreported
-  /// batch result can't silently mark records processed, then walk the snapshot exactly once.
-  /// Sink-throw and null-result both fall back to whole-batch failure with a clear log line.
-  private void flush(final List<Entry<T>> snapshot, final List<T> values) {
+  /// Runs a dispatch returned by [#flushLocked]. Callers invoke this after releasing `lock`.
+  private void runDispatch(final Runnable dispatch) {
+    if (dispatch != null) dispatch.run();
+  }
+
+  /// Calls the sink and classifies the [BatchResult], then returns the dispatch that will walk the
+  /// snapshot exactly once. Logging any out-of-range indexes and building the synthetic failure for
+  /// uncovered positions happen here, with the sink, because they are pure computation over the
+  /// result — only the callbacks themselves are deferred. Sink-throw and null-result both fall back
+  /// to whole-batch failure with a clear log line.
+  private Runnable flush(final List<Entry<T>> snapshot, final List<T> values) {
     final var size = snapshot.size();
 
     final BatchResult result;
@@ -191,16 +223,14 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       result = sink.apply(values);
     } catch (final Exception e) {
       logBatchFailure("threw", size, e);
-      failAll(snapshot, e);
-      return;
+      return failAll(snapshot, e);
     }
     if (result == null) {
       final var cause = new IllegalStateException(
         "BatchSink returned null BatchResult for topic " + topic + " (" + size + " records)"
       );
       logBatchFailure("returned null", size, cause);
-      failAll(snapshot, cause);
-      return;
+      return failAll(snapshot, cause);
     }
 
     // BitSet is constant-time `set` / `get` on primitive int indexes — no boxing on the hot path,
@@ -216,7 +246,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       if (i == null || i < 0 || i >= size) logOutOfRange("failed", i, size);
     }
 
-    IllegalStateException coverageViolation = null;
+    IllegalStateException violation = null;
     // First pass: count missing indexes without allocating a list. Build the list only on the
     // contract-violation path (rare); the common success path stays allocation-free.
     var missingCount = 0;
@@ -228,7 +258,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       for (int i = 0; i < size; i++) {
         if (!succeeded.get(i) && !failedByIndex.containsKey(i)) missing.add(i);
       }
-      coverageViolation = new IllegalStateException(
+      violation = new IllegalStateException(
         "BatchSink for topic " +
           topic +
           " did not account for indexes " +
@@ -237,63 +267,69 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
           size +
           " — treating as failures to avoid silent data loss"
       );
-      LOGGER.log(Level.WARNING, coverageViolation.getMessage(), coverageViolation);
+      LOGGER.log(Level.WARNING, violation.getMessage(), violation);
     }
+    final var coverageViolation = violation;
 
-    for (int i = 0; i < size; i++) {
-      final var record = snapshot.get(i).record();
-      // Per-iteration guard: a throwing callback (a custom OffsetManager in markProcessed, or a
-      // buggy hook) must not abort the loop and strand the REMAINING records with no outcome at
-      // all — every record in the batch gets its callback attempt. The failing record's own
-      // outcome is lost (logged at ERROR); its offset stays unmarked, so it is reprocessed rather
-      // than dropped.
-      try {
-        if (succeeded.get(i)) {
-          callbacks.markProcessed(record);
-          continue;
+    return () -> {
+      for (int i = 0; i < size; i++) {
+        final var record = snapshot.get(i).record();
+        // Per-iteration guard: a throwing callback (a custom OffsetManager in markProcessed, or a
+        // buggy hook) must not abort the loop and strand the REMAINING records with no outcome at
+        // all — every record in the batch gets its callback attempt. The failing record's own
+        // outcome is lost (logged at ERROR); its offset stays unmarked, so it is reprocessed rather
+        // than dropped.
+        try {
+          if (succeeded.get(i)) {
+            callbacks.markProcessed(record);
+            continue;
+          }
+          final var perRecordCause = failedByIndex.get(i);
+          callbacks.onBatchFailure(
+            record,
+            perRecordCause != null
+              ? perRecordCause
+              : (coverageViolation != null
+                  ? coverageViolation
+                  : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic))
+          );
+        } catch (final Exception callbackEx) {
+          if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
+          LOGGER.log(
+            Level.ERROR,
+            "Batch outcome callback threw for offset " +
+              record.offset() +
+              " on topic " +
+              topic +
+              "; continuing with the remaining records (offset stays unmarked, record will be reprocessed)",
+            callbackEx
+          );
         }
-        final var perRecordCause = failedByIndex.get(i);
-        callbacks.onBatchFailure(
-          record,
-          perRecordCause != null
-            ? perRecordCause
-            : (coverageViolation != null
-                ? coverageViolation
-                : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic))
-        );
-      } catch (final Exception callbackEx) {
-        if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
-        LOGGER.log(
-          Level.ERROR,
-          "Batch outcome callback threw for offset " +
-            record.offset() +
-            " on topic " +
-            topic +
-            "; continuing with the remaining records (offset stays unmarked, record will be reprocessed)",
-          callbackEx
-        );
       }
-    }
+    };
   }
 
-  private void failAll(final List<Entry<T>> snapshot, final Exception cause) {
-    for (final var entry : snapshot) {
-      try {
-        callbacks.onBatchFailure(entry.record(), cause);
-      } catch (final Exception callbackEx) {
-        if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
-        LOGGER.log(
-          Level.ERROR,
-          "Batch failure callback threw for offset " +
-            entry.record().offset() +
-            " on topic " +
-            topic +
-            "; continuing with the remaining records",
-          callbackEx
-        );
+  private Runnable failAll(final List<Entry<T>> snapshot, final Exception cause) {
+    return () -> {
+      for (final var entry : snapshot) {
+        try {
+          callbacks.onBatchFailure(entry.record(), cause);
+        } catch (final Exception callbackEx) {
+          if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
+          LOGGER.log(
+            Level.ERROR,
+            "Batch failure callback threw for offset " +
+              entry.record().offset() +
+              " on topic " +
+              topic +
+              "; continuing with the remaining records",
+            callbackEx
+          );
+        }
       }
-    }
+    };
   }
+
 
   private void logOutOfRange(final String kind, final Integer index, final int batchSize) {
     LOGGER.log(
@@ -320,12 +356,16 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   @Override
   public void close() {
     if (tickFuture != null) tickFuture.cancel(false);
+    Runnable dispatch = null;
     lock.lock();
     try {
-      flushLocked();
+      dispatch = flushLocked();
     } finally {
       lock.unlock();
     }
+    // Runs before close() returns, so shutdown still drains every outcome — it simply no longer
+    // does so while holding the lock that enqueue and tick contend for.
+    runDispatch(dispatch);
   }
 
   record Entry<T>(ConsumerRecord<byte[], byte[]> record, T value) {}
