@@ -29,9 +29,22 @@ import java.util.function.Function;
 /// - If the sink itself throws, the failure falls back to whole-batch behavior — every record
 ///   is sent to the DLQ with the thrown exception as the cause.
 ///
-/// **Threading.** All flushes for a given batch pipeline run sequentially on a shared scheduled
-/// executor. Implementations do not need to be thread-safe themselves but must not block
-/// indefinitely — long flushes delay subsequent batches and stall offset commits.
+/// **Threading.** Flushes for a given batch pipeline run one at a time — the wrapper holds a
+/// per-topic lock across the whole flush — so an implementation does not need to be thread-safe.
+/// That is a contract, not an accident of the current locking: relaxing it would silently break
+/// any sink holding a connection, a file handle or other per-instance state.
+///
+/// Which thread runs a flush depends on what triggered it, and neither is the shared scheduler in
+/// the size case. A size-triggered flush runs inline on whichever thread enqueued the record — a
+/// dispatcher worker under `PARALLEL` and `KEY_ORDERED`, and **the consumer's own poll thread
+/// under `SEQUENTIAL`**, where a slow sink delays the next `poll()` and risks
+/// `max.poll.interval.ms` eviction. Only an age-triggered flush runs on the scheduler, which is a
+/// single thread shared with every other topic's tick and the circuit-breaker probe, so a slow
+/// flush there delays those too.
+///
+/// So: do not block indefinitely. Long flushes delay subsequent batches, stall offset commits,
+/// and — depending on the trigger and the processing mode — either hold up the poll loop or the
+/// one scheduler thread the whole consumer shares.
 ///
 /// **Implementations should:**
 /// - Be idempotent: a failed batch may be retried wholesale by an external orchestrator after
