@@ -24,7 +24,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// the DLQ (or no DLQ is configured); a failed DLQ send leaves it pending for reprocessing.
 ///
 /// **Thread-safety.** A single [ReentrantLock] guards the buffer. `enqueue` may be called from
-/// many virtual-thread workers concurrently (parallel mode) or serialized on the consumer thread
+/// many virtual-thread workers concurrently (parallel and key-ordered modes) or serialized on the
+// consumer thread
 /// (sequential mode); the lock makes both safe. `tick` runs on the shared scheduler; `close`
 /// runs from the shutdown path. All paths serialize through the same lock so mutations to the
 /// buffer, the `oldestEnqueueNanos` timestamp, and the `bufferedCount` are coherent.

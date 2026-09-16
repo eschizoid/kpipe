@@ -29,22 +29,24 @@ import java.util.function.Function;
 /// - If the sink itself throws, the failure falls back to whole-batch behavior — every record
 ///   is sent to the DLQ with the thrown exception as the cause.
 ///
-/// **Threading.** Flushes for a given batch pipeline run one at a time — the wrapper holds a
-/// per-topic lock across the whole flush — so an implementation does not need to be thread-safe.
-/// That is a contract, not an accident of the current locking: relaxing it would silently break
-/// any sink holding a connection, a file handle or other per-instance state.
+/// **Threading.** Flushes for one registered route run one at a time — the wrapper holds a
+/// per-topic lock across the whole flush — so a sink registered on a single topic does not need to
+/// be thread-safe, and the lock's happens-before means per-instance state written in one flush is
+/// visible to the next. Registering the *same sink instance* on two topics is a different matter:
+/// routes have separate wrappers and separate locks, so that sink is called concurrently.
 ///
-/// Which thread runs a flush depends on what triggered it, and neither is the shared scheduler in
-/// the size case. A size-triggered flush runs inline on whichever thread enqueued the record — a
+/// Which thread runs a flush depends on what triggered it, and only one of the three is the shared
+/// scheduler. A **size**-triggered flush runs inline on whichever thread enqueued the record — a
 /// dispatcher worker under `PARALLEL` and `KEY_ORDERED`, and **the consumer's own poll thread
 /// under `SEQUENTIAL`**, where a slow sink delays the next `poll()` and risks
-/// `max.poll.interval.ms` eviction. Only an age-triggered flush runs on the scheduler, which is a
-/// single thread shared with every other topic's tick and the circuit-breaker probe, so a slow
-/// flush there delays those too.
+/// `max.poll.interval.ms` eviction. An **age**-triggered flush runs on the scheduler, a single
+/// thread shared with every other topic's tick and the circuit-breaker probe, so a slow flush
+/// there delays those too. The **shutdown drain** runs on the consumer thread in all three modes.
 ///
-/// So: do not block indefinitely. Long flushes delay subsequent batches, stall offset commits,
-/// and — depending on the trigger and the processing mode — either hold up the poll loop or the
-/// one scheduler thread the whole consumer shares.
+/// So: do not block indefinitely. Long flushes delay subsequent batches and stall offset commits —
+/// the commit frontier is pinned because an offset is tracked at dispatch but only marked
+/// processed after the flush — and, depending on trigger and mode, hold up either the poll loop or
+/// the one scheduler thread the whole consumer shares.
 ///
 /// **Implementations should:**
 /// - Be idempotent: a failed batch may be retried wholesale by an external orchestrator after

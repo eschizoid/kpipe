@@ -64,6 +64,75 @@ class BatchPipelineWrapperConcurrencyTest {
     }
   }
 
+  /// Pins the non-overlap guarantee that [BatchSink]'s javadoc promises implementers: flushes for
+  /// one route never run concurrently, so a sink registered on a single topic need not be
+  /// thread-safe. Without this, moving `sink.apply` outside the wrapper's lock would be a silent
+  /// breaking change for every sink holding a connection, a file handle, or other per-instance
+  /// state — the failure would surface in user code, under load, with nothing here to point at.
+  ///
+  /// The sink sleeps inside the call so any overlap has a wide window to be observed, and the
+  /// gauge is raised before and lowered after, so a concurrent entry is caught even if the two
+  /// calls do not overlap for their whole duration.
+  @Test
+  void flushesForOneRouteNeverOverlap() throws Exception {
+    final var topic = "non-overlap-batch";
+    final var policy = new BatchPolicy(10, Duration.ofMillis(20));
+    final var callbacks = new RecordingCallbacks();
+    final var live = new AtomicInteger();
+    final var maxLive = new AtomicInteger();
+
+    final BatchSink<byte[]> sink = BatchSink.ofVoid(batch -> {
+      final var now = live.incrementAndGet();
+      maxLive.accumulateAndGet(now, Math::max);
+      try {
+        Thread.sleep(5);
+      } catch (final InterruptedException ie) {
+        Thread.currentThread().interrupt();
+      } finally {
+        live.decrementAndGet();
+      }
+    });
+
+    final var wrapper = new BatchPipelineWrapper<>(topic, TestPipelines.identity(), sink, policy, scheduler, callbacks);
+    wrapper.start();
+
+    final var workerCount = 12;
+    final var perWorker = 40;
+    final var startGate = new CountDownLatch(1);
+    final var doneGate = new CountDownLatch(workerCount);
+    final var ids = new AtomicInteger();
+
+    for (int w = 0; w < workerCount; w++) {
+      Thread.ofVirtual()
+        .name("overlap-worker-" + w)
+        .start(() -> {
+          try {
+            startGate.await();
+          } catch (final InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return;
+          }
+          for (int i = 0; i < perWorker; i++) {
+            final var id = ids.getAndIncrement();
+            final var bytes = Integer.toString(id).getBytes(UTF_8);
+            wrapper.enqueue(new ConsumerRecord<>(topic, 0, id, ("id-" + id).getBytes(UTF_8), bytes), bytes);
+          }
+          doneGate.countDown();
+        });
+    }
+
+    startGate.countDown();
+    assertTrue(doneGate.await(30, TimeUnit.SECONDS), "all enqueue workers should finish");
+    wrapper.close();
+
+    assertTrue(maxLive.get() > 0, "the sink should have been called at all");
+    assertEquals(
+      1,
+      maxLive.get(),
+      "flushes for one route must never overlap; observed " + maxLive.get() + " concurrent"
+    );
+  }
+
   @Test
   void concurrentEnqueueFromManyVirtualThreadsLosesNoRecords() throws Exception {
     final var topic = "concurrent-batch";

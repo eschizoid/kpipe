@@ -366,11 +366,15 @@ deliberately escape-hatch-only.
 
   The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
   circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the
-  breaker's OPEN → HALF_OPEN transition. Size-triggered flushes run wherever the dispatcher placed the record — a worker
+  breaker's OPEN → HALF*OPEN transition. Size-triggered flushes run wherever the dispatcher placed the record — a worker
   virtual thread under PARALLEL and KEY_ORDERED, but the **consumer thread itself under SEQUENTIAL**, where a blocking
   sink stalls the poll loop and risks `max.poll.interval.ms` eviction, the same end state the paused loop keeps polling
-  to avoid. Whether one-flush-at-a-time is a guarantee worth keeping or an accident of lock placement is tracked in
-  #313. Constructed in the consumer ctor, started in `start()`, drained in `close()`.
+  to avoid. One-flush-at-a-time per route is a **guarantee**, not an accident of lock placement: `BatchSink`'s javadoc
+  tells implementers their sink need not be thread-safe, so relaxing it would silently break any sink holding
+  per-instance state. `BatchPipelineWrapperConcurrencyTest.flushesForOneRouteNeverOverlap` asserts it — moving
+  `sink.apply` outside the lock fails that test with the observed concurrency. The open question is the lock's \_scope*,
+  not the guarantee: the per-record DLQ produce runs under it too, tracked in #335. Constructed in the consumer ctor,
+  started in `start()`, drained in `close()`.
 
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
