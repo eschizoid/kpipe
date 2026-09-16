@@ -589,12 +589,13 @@ test-classifier jar — it's a runtime tool for users' test suites.
   three are not interchangeable — a table cell takes backticks but cannot hold a code block at all. The hazard is not
   only in the identifiers you write, but in the emphasis you add around them. A single-asterisk span corrupts a bare
   underscore-bearing word _earlier_ in the same block, because the span's own underscores supply the closer that word
-  was missing. Three limits, all measured: the pairing is a matching rather than a multiplier, so one span takes one
-  victim — the **earliest** bare word no earlier span has already swallowed, not the nearest, since everything from it
-  up to the span is absorbed into the emphasis run — and two spans sharing one bare word still take only that one; a
-  span with nothing bare before it is harmless; and `**strong**` is harmless in any position, because the formatter
-  leaves it as asterisks and it never supplies an underscore. The damaged line does show up in `git diff`, but an edit
-  that reflows the paragraph rewrites every line around it, so it arrives buried rather than standing alone.
+  was missing. Three limits, all measured: one span takes at most one victim, and it is the **earliest** bare word still
+  unconsumed rather than the nearest, since everything from it up to the closer is absorbed into the run — but do not
+  count victims per span, because an ordinary word-final underscore closes just as well, and it may take the span's
+  victim first and leave the span harmless, or take one word while the span takes the next; a span with nothing bare
+  before it is harmless; and `**strong**` is harmless in any position, because the formatter leaves it as asterisks and
+  it never supplies an underscore. The damaged line does show up in `git diff`, but an edit that reflows the paragraph
+  rewrites every line around it, so it arrives buried rather than standing alone.
 - **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
   hazardous file fails it — which is why CI runs `spotlessCheck` rather than `spotlessApply`. The failure ends with
   `Run './gradlew spotlessApply' to fix all violations`, and following that is what destroys the file. **Never apply to
