@@ -70,9 +70,9 @@ class BatchPipelineWrapperConcurrencyTest {
   /// breaking change for every sink holding a connection, a file handle, or other per-instance
   /// state — the failure would surface in user code, under load, with nothing here to point at.
   ///
-  /// The sink sleeps inside the call so any overlap has a wide window to be observed, and the
-  /// gauge is raised before and lowered after, so a concurrent entry is caught even if the two
-  /// calls do not overlap for their whole duration.
+  /// Detection is the atomic increment, which catches a concurrent entry with or without a sleep.
+  /// The sleep is what creates the opportunity: it holds one flush open long enough that a second
+  /// can be attempted. Removing it leaves the test green and takes most of its power with it.
   @Test
   void flushesForOneRouteNeverOverlap() throws Exception {
     final var topic = "non-overlap-batch";

@@ -366,13 +366,13 @@ deliberately escape-hatch-only.
 
   The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
   circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the
-  breaker's OPEN → HALF*OPEN transition. Size-triggered flushes run wherever the dispatcher placed the record — a worker
-  virtual thread under PARALLEL and KEY_ORDERED, but the **consumer thread itself under SEQUENTIAL**, where a blocking
-  sink stalls the poll loop and risks `max.poll.interval.ms` eviction, the same end state the paused loop keeps polling
-  to avoid. One-flush-at-a-time per route is a **guarantee**, not an accident of lock placement: `BatchSink`'s javadoc
-  tells implementers their sink need not be thread-safe, so relaxing it would silently break any sink holding
+  breaker's OPEN → `HALF_OPEN` transition. Size-triggered flushes run wherever the dispatcher placed the record — a
+  worker virtual thread under PARALLEL and KEY_ORDERED, but the **consumer thread itself under SEQUENTIAL**, where a
+  blocking sink stalls the poll loop and risks `max.poll.interval.ms` eviction, the same end state the paused loop keeps
+  polling to avoid. One-flush-at-a-time per route is a **guarantee**, not an accident of lock placement: `BatchSink`'s
+  javadoc tells implementers their sink need not be thread-safe, so relaxing it would silently break any sink holding
   per-instance state. `BatchPipelineWrapperConcurrencyTest.flushesForOneRouteNeverOverlap` asserts it — moving
-  `sink.apply` outside the lock fails that test with the observed concurrency. The open question is the lock's \_scope*,
+  `sink.apply` outside the lock fails that test with the observed concurrency. The open question is the lock's scope,
   not the guarantee: the per-record DLQ produce runs under it too, tracked in #335. Constructed in the consumer ctor,
   started in `start()`, drained in `close()`.
 
@@ -586,7 +586,9 @@ test-classifier jar — it's a runtime tool for users' test suites.
   bare identifier reaches a closer across a soft wrap. `<!-- prettier-ignore -->` and code blocks (fenced or indented)
   are equally absolute and work where backticks cannot, such as a table row — but each covers exactly one block
   (`-start` / `-end` for a run), does nothing written as a list item, and freezes that block's wrapping and alignment
-  too.
+  too. The hazard is not only about what you write. Adding an emphasis span anywhere in a block arms every bare
+  underscore-bearing word already in it, including ones you did not touch — an edit that inserts `*scope*` into a
+  paragraph containing a bare `HALF_OPEN` corrupts the identifier, and the diff shows only your sentence.
 - **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
   hazardous file fails it — which is why CI runs `spotlessCheck` rather than `spotlessApply`. The failure ends with
   `Run './gradlew spotlessApply' to fix all violations`, and following that is what destroys the file. **Never apply to
