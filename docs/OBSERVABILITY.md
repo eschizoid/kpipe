@@ -7,8 +7,9 @@ Metrics, pipeline-outcome counters, tracing, and the local dashboard stack. Snip
 `Handle.metrics()` (fluent path) and `KPipeConsumer.getMetrics()` (explicit path) return an unmodifiable
 `Map<String, Long>` snapshot of the consumer counters — received, processed, errors, in-flight, backpressure pauses, and
 friends. For periodic logging without an OTel backend, the log-based reporters in `kpipe-metrics`
-(`ConsumerMetricsReporter`, `EntryMetricsReporter`) can be attached via `KPipeConsumerBuilder.withMetricsReporters(...)`
-— see [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
+(`ConsumerMetricsReporter`, `EntryMetricsReporter`) attach via `Stream.withMetricsReporters(...)` on the fluent path or
+`KPipeConsumerBuilder.withMetricsReporters(...)` on the explicit one, with `withMetricsInterval(...)` setting the
+cadence — see [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
 
 ## OpenTelemetry metrics
 
