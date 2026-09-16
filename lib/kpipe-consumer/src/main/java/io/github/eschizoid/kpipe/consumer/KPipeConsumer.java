@@ -595,13 +595,25 @@ public class KPipeConsumer implements AutoCloseable {
             processCommands();
             health.tickBackpressure(kafkaConsumer);
             if (!isRunning()) break;
+            // Flush whatever the tick above queued so the Kafka-level pause state matches
+            // the
+            // consumer state before the poll below. Both directions need it:
+            // `kafkaConsumer.pause()`
+            // must run before a paused poll, and a queued `Resume` must run before a
+            // running one, or
+            // the poll fetches nothing against partitions Kafka still has paused. This
+            // flush sits
+            // outside the `isPaused()` check because a tick-driven resume has already
+            // left PAUSED by
+            // the time it reaches here, so a check-guarded flush skips exactly the resume
+            // case.
+            processCommands();
             if (isPaused()) {
-              // Flush the Pause command queued by the transition above so
-              // `kafkaConsumer.pause()` executes before the poll below, then defensively
-              // re-pause the full assignment: pause state is per-partition and does not
+              // Defensively re-pause the full assignment: pause state is per-partition
+              // and does not
               // survive a revoke/assign cycle, so a rebalance inside an earlier poll can
-              // hand this consumer new, un-paused partitions.
-              processCommands();
+              // hand this
+              // consumer new, un-paused partitions.
               if (!isRunning() || Thread.interrupted()) break;
               kafkaConsumer.pause(kafkaConsumer.assignment());
             }
