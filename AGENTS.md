@@ -589,13 +589,16 @@ test-classifier jar — it's a runtime tool for users' test suites.
   three are not interchangeable — a table cell takes backticks but cannot hold a code block at all. The hazard is not
   only in the identifiers you write, but in the emphasis you add around them. A single-asterisk span corrupts a bare
   underscore-bearing word _earlier_ in the same block, because the span's own underscores supply the closer that word
-  was missing. Three limits, all measured: one span takes at most one victim, and it is the **earliest** bare word still
-  unconsumed rather than the nearest, since everything from it up to the closer is absorbed into the run — but do not
-  count victims per span, because an ordinary word-final underscore closes just as well, and it may take the span's
-  victim first and leave the span harmless, or take one word while the span takes the next; a span with nothing bare
-  before it is harmless; and `**strong**` is harmless in any position, because the formatter leaves it as asterisks and
-  it never supplies an underscore. The damaged line does show up in `git diff`, but an edit that reflows the paragraph
-  rewrites every line around it, so it arrives buried rather than standing alone.
+  was missing; the victim is the earliest such word still unconsumed rather than the nearest, since everything from it
+  up to the closer is absorbed into the run. Do not try to bound the damage from there. A single span takes two words
+  when its text opens with punctuation, because its own opening underscore then closes a run as well —
+  `A_B and *"q" X_Y bit*` breaks both, and an em dash arms it exactly as a quote does. An ordinary word-final underscore
+  closes just as well and may take the span's victim first, leaving the span harmless; one that finds no closer at all
+  is escaped beyond reach before any converted span can claim it. Two things are reliably harmless: a span with nothing
+  bare before it, and `**strong**` in any position, because the formatter leaves it as asterisks and it never supplies
+  an underscore. Treat any block holding both a bare underscore-bearing word and any closer as hazardous, and enclose
+  the word. The damaged line does show up in `git diff`, but an edit that reflows the paragraph rewrites every line
+  around it, so it arrives buried rather than standing alone.
 - **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
   hazardous file fails it — which is why CI runs `spotlessCheck` rather than `spotlessApply`. The failure ends with
   `Run './gradlew spotlessApply' to fix all violations`, and following that is what destroys the file. **Never apply to
