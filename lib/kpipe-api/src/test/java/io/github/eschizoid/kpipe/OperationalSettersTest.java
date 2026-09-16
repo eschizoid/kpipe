@@ -9,6 +9,8 @@ import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.jupiter.api.Test;
@@ -19,11 +21,17 @@ import org.junit.jupiter.api.Test;
 /// which is why they belong on the 80% path: reaching one used to mean abandoning `KPipe.json(...)`
 /// and rebuilding through `KPipeConsumerBuilder` to obtain something orthogonal to the pipeline.
 ///
-/// **Scope.** Each test asserts the setter reaches the immutable [ConsumerConfig] and that the
-/// per-route guard knows about it. The single `applyTo` delegation to `KPipeConsumerBuilder` is not
-/// executed here: the builder is final with package-private fields in another module's package, so
-/// there is no read-back seam, and this repo does not use reflection in tests. That line is covered
-/// by inspection and by the builder's own tests.
+/// **The `applyTo` delegation is covered, via the builder's own preconditions.** An earlier version
+/// of this class claimed it could not be: the builder is final with package-private fields in
+/// another module's package, and this repo does not use reflection in tests. Review refuted that.
+/// Passing an *invalid* value through a facade setter reaches the builder's validation during
+/// `start()`, so a missing `applyTo` line throws nothing and the assertion fails. No broker, no
+/// reflection. Verified by mutation: deleting any of the four validated delegations fails a test
+/// here.
+///
+/// `withShutdownHook` is the exception, and the narrow scope limit that actually holds — `true` and
+/// `false` are both valid, so there is no precondition to trip and no observable to assert without
+/// reaching into the JVM's shutdown-hook registry. Its delegation is covered by inspection alone.
 class OperationalSettersTest {
 
   private static Properties props() {
@@ -100,6 +108,54 @@ class OperationalSettersTest {
     assertThrows(NullPointerException.class, () -> stream().withMetricsInterval(null));
     assertThrows(NullPointerException.class, () -> stream().withThreadTerminationTimeout(null));
     assertThrows(NullPointerException.class, () -> stream().withWaitForMessagesTimeout(null));
+  }
+
+  @Test
+  void invalidValuesReachTheBuilderAndTripItsPreconditions() {
+    // The seam: applyTo runs before build(), so a value the builder rejects surfaces here. If a
+    // delegation line were missing the value would never arrive and nothing would throw, which is
+    // exactly what makes this a test of the delegation rather than of the setter.
+    final var interval = assertThrows(IllegalArgumentException.class, () ->
+      KPipe.bytes("t", props())
+        .withMetricsInterval(Duration.ZERO)
+        .toCustom(_ -> {})
+        .start()
+    );
+    assertTrue(interval.getMessage().contains("interval"), interval.getMessage());
+
+    final var threadTermination = assertThrows(IllegalArgumentException.class, () ->
+      KPipe.bytes("t", props())
+        .withThreadTerminationTimeout(Duration.ofSeconds(-1))
+        .toCustom(_ -> {})
+        .start()
+    );
+    assertTrue(threadTermination.getMessage().contains("negative"), threadTermination.getMessage());
+
+    final var waitForMessages = assertThrows(IllegalArgumentException.class, () ->
+      KPipe.bytes("t", props())
+        .withWaitForMessagesTimeout(Duration.ofSeconds(-1))
+        .toCustom(_ -> {})
+        .start()
+    );
+    assertTrue(waitForMessages.getMessage().contains("negative"), waitForMessages.getMessage());
+  }
+
+  @Test
+  void reportersActuallyFireAtTheConfiguredInterval() throws Exception {
+    // Covers both reporter settings end to end — facade setter, config, applyTo, build, start, and
+    // the periodic daemon thread the builder wires. A latch rather than a sleep so the assertion
+    // fails fast on a missing delegation instead of passing on a slow machine.
+    final var latch = new CountDownLatch(3);
+    final KPipeMetricsReporter reporter = latch::countDown;
+    try (
+      final var handle = KPipe.bytes("t", props())
+        .withMetricsReporters(List.of(reporter))
+        .withMetricsInterval(Duration.ofMillis(20))
+        .toCustom(_ -> {})
+        .start()
+    ) {
+      assertTrue(latch.await(5, TimeUnit.SECONDS), "reporter should fire repeatedly at a 20ms cadence");
+    }
   }
 
   @Test
