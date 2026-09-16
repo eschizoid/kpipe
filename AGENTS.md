@@ -584,14 +584,16 @@ test-classifier jar — it's a runtime tool for users' test suites.
   `KEY_ORDERED and [*behind*](url)`. Enclosing bounds one scan only: in `**KEY_ORDERED** and max_keys_` the shielded
   identifier is fine and the bare one still corrupts. With no enclosure the bound is the **block**, not the line, so a
   bare identifier reaches a closer across a soft wrap. `<!-- prettier-ignore -->` and code blocks (fenced or indented)
-  are equally absolute and work where backticks cannot, such as a table row — but each covers exactly one block
-  (`-start` / `-end` for a run), does nothing written as a list item, and freezes that block's wrapping and alignment
-  too. The hazard is not only about what you write. A **single**-asterisk emphasis span corrupts the first bare
-  underscore-bearing word _earlier_ in the same block — the span's own underscores supply the closer that word was
-  missing, and the diff shows only your sentence. Three limits, all measured: one span takes exactly one victim, so a
-  second bare word later in the block survives; a span with nothing bare before it is harmless; and `**strong**`
-  emphasis is harmless in any position, because the formatter leaves it as asterisks and it never supplies an
-  underscore.
+  are absolute too, but they cost more and are not interchangeable: each covers exactly one block (`-start` / `-end` for
+  a run), the comment does nothing written as a list item, and it freezes that block's wrapping and alignment. Prefer a
+  code span; a table cell, for instance, takes backticks but cannot hold a code block at all. The hazard is not only in
+  the identifiers you write, it is in the emphasis you add around them. A single-asterisk span corrupts the first bare
+  underscore-bearing word _earlier_ in the same block, because the span's own underscores supply the closer that word
+  was missing. Three limits, all measured: each span takes one victim, so two spans take two and only a bare word with
+  no span after it survives; a span with nothing bare before it is harmless; and `**strong**` is harmless in any
+  position, because the formatter leaves it as asterisks and it never supplies an underscore. The damaged line does show
+  up in `git diff` — but an edit that reflows the paragraph rewrites every line around it, so it arrives buried rather
+  than standing alone.
 - **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
   hazardous file fails it — which is why CI runs `spotlessCheck` rather than `spotlessApply`. The failure ends with
   `Run './gradlew spotlessApply' to fix all violations`, and following that is what destroys the file. **Never apply to
