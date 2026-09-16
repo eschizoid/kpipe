@@ -366,11 +366,15 @@ deliberately escape-hatch-only.
 
   The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
   circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the
-  breaker's OPEN → HALF_OPEN transition. Size-triggered flushes run wherever the dispatcher placed the record — a worker
-  virtual thread under PARALLEL and KEY_ORDERED, but the **consumer thread itself under SEQUENTIAL**, where a blocking
-  sink stalls the poll loop and risks `max.poll.interval.ms` eviction, the same end state the paused loop keeps polling
-  to avoid. Whether one-flush-at-a-time is a guarantee worth keeping or an accident of lock placement is tracked in
-  #313. Constructed in the consumer ctor, started in `start()`, drained in `close()`.
+  breaker's OPEN → `HALF_OPEN` transition. Size-triggered flushes run wherever the dispatcher placed the record — a
+  worker virtual thread under PARALLEL and KEY_ORDERED, but the **consumer thread itself under SEQUENTIAL**, where a
+  blocking sink stalls the poll loop and risks `max.poll.interval.ms` eviction, the same end state the paused loop keeps
+  polling to avoid. One-flush-at-a-time per route is a **guarantee**, not an accident of lock placement: `BatchSink`'s
+  javadoc tells implementers their sink need not be thread-safe, so relaxing it would silently break any sink holding
+  per-instance state. `BatchPipelineWrapperConcurrencyTest.flushesForOneRouteNeverOverlap` asserts it — moving
+  `sink.apply` outside the lock fails that test with the observed concurrency. The open question is the lock's scope,
+  not the guarantee: the per-record DLQ produce runs under it too, tracked in #335. Constructed in the consumer ctor,
+  started in `start()`, drained in `close()`.
 
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
@@ -580,9 +584,22 @@ test-classifier jar — it's a runtime tool for users' test suites.
   `KEY_ORDERED and [*behind*](url)`. Enclosing bounds one scan only: in `**KEY_ORDERED** and max_keys_` the shielded
   identifier is fine and the bare one still corrupts. With no enclosure the bound is the **block**, not the line, so a
   bare identifier reaches a closer across a soft wrap. `<!-- prettier-ignore -->` and code blocks (fenced or indented)
-  are equally absolute and work where backticks cannot, such as a table row — but each covers exactly one block
-  (`-start` / `-end` for a run), does nothing written as a list item, and freezes that block's wrapping and alignment
-  too.
+  are absolute too, but they cost more: each covers exactly one block (`-start` / `-end` for a run), the comment does
+  nothing written as a list item, and it freezes that block's wrapping and alignment. Prefer a code span, and note the
+  three are not interchangeable — a table cell takes backticks but cannot hold a code block at all. The hazard is not
+  only in the identifiers you write, but in the emphasis you add around them. A single-asterisk span corrupts a bare
+  underscore-bearing word _earlier_ in the same block, because the span's own underscores supply the closer that word
+  was missing; the victim is the earliest such word still unconsumed rather than the nearest, since everything from it
+  up to the closer is absorbed into the run. Do not try to bound the damage from there. A single span can take two words
+  when its text opens with punctuation and a bare word sits inside it, because its own opening underscore then closes a
+  run as well — `A_B and *"q" X_Y bit*` breaks both, and an em dash arms it exactly as a quote does. An ordinary
+  word-final underscore closes just as well and may take the span's victim first, leaving the span harmless; one that
+  finds no closer at all is escaped beyond reach before the span's asterisks are rewritten as underscores. Two things
+  are reliably harmless: a span with nothing bare before it, and `**strong**` in any position, because the formatter
+  leaves it as asterisks and it never supplies an underscore. The damaged line does show up in `git diff`, but an edit
+  that reflows the paragraph rewrites every line around it, so it arrives buried rather than standing alone. Treat any
+  block holding both a bare underscore-bearing word and any closer — an underscore ending a word, or an emphasis span —
+  as hazardous, and enclose the word.
 - **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
   hazardous file fails it — which is why CI runs `spotlessCheck` rather than `spotlessApply`. The failure ends with
   `Run './gradlew spotlessApply' to fix all violations`, and following that is what destroys the file. **Never apply to
