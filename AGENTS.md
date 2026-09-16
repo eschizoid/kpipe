@@ -586,9 +586,12 @@ test-classifier jar — it's a runtime tool for users' test suites.
   bare identifier reaches a closer across a soft wrap. `<!-- prettier-ignore -->` and code blocks (fenced or indented)
   are equally absolute and work where backticks cannot, such as a table row — but each covers exactly one block
   (`-start` / `-end` for a run), does nothing written as a list item, and freezes that block's wrapping and alignment
-  too. The hazard is not only about what you write. Adding an emphasis span anywhere in a block arms every bare
-  underscore-bearing word already in it, including ones you did not touch — an edit that inserts `*scope*` into a
-  paragraph containing a bare `HALF_OPEN` corrupts the identifier, and the diff shows only your sentence.
+  too. The hazard is not only about what you write. A **single**-asterisk emphasis span corrupts the first bare
+  underscore-bearing word _earlier_ in the same block — the span's own underscores supply the closer that word was
+  missing, and the diff shows only your sentence. Three limits, all measured: one span takes exactly one victim, so a
+  second bare word later in the block survives; a span with nothing bare before it is harmless; and `**strong**`
+  emphasis is harmless in any position, because the formatter leaves it as asterisks and it never supplies an
+  underscore.
 - **`spotlessCheck` catches this, and its own advice is the weapon.** The gate passes only when `apply(f) == f`, so a
   hazardous file fails it — which is why CI runs `spotlessCheck` rather than `spotlessApply`. The failure ends with
   `Run './gradlew spotlessApply' to fix all violations`, and following that is what destroys the file. **Never apply to
