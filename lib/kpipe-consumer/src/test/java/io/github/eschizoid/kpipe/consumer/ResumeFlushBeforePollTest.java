@@ -7,6 +7,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -31,8 +34,15 @@ import org.junit.jupiter.api.Test;
 ///
 /// The window is observable without reaching into the consumer: a poll that runs while the state
 /// has left PAUSED but the assignment is still paused at the Kafka level is a poll that cannot
-/// fetch. These tests drive the real consumer loop through [MockConsumer] and require that count
-/// to be zero.
+/// fetch. This drives the real consumer loop through [MockConsumer] and requires that count to be
+/// zero.
+///
+/// Only the tick-driven resume is covered, and deliberately so. A manual `resume()` runs on the
+/// caller's thread, and between `internalResume()`'s state flip and its `offer(Resume)` — two
+/// adjacent statements — the state reads RUNNING with no command yet queued. A poll landing in
+/// that window fetches nothing no matter where the flush is placed, so asserting zero bad polls
+/// on that path tests an invariant the consumer does not provide; measured at 7 failures in 12
+/// runs before it was removed.
 class ResumeFlushBeforePollTest {
 
   private static final String TOPIC = "test-topic";
@@ -88,32 +98,76 @@ class ResumeFlushBeforePollTest {
     }
   }
 
-  /// The manual path, which reaches `internalResume()` from the caller's thread rather than from
-  /// the tick. The same flush has to cover it.
+  /// The same flush drains `Close`, and a drained `Close` must stop the iteration rather than fall
+  /// through to the poll. It sets CLOSING, not PAUSED, so `isPaused()` is false and the guard below
+  /// the flush — along with the check inside it — is skipped. Without a check of its own between
+  /// the flush and the poll, this iteration polls a consumer that has been told to stop.
+  ///
+  /// The delivery point is what makes this bite, so the test controls it rather than racing for it.
+  /// A `Close` offered from outside is almost always drained by the flush at the top of the loop,
+  /// where the existing check already catches it. The queue below hands the `Close` to the *second*
+  /// drain instead — the one after the backpressure tick — which is the only site with no check of
+  /// its own. `withCommandQueue` is public, so nothing here reaches into the consumer.
   @Test
-  void manualResumeResumesKafkaBeforeTheNextPoll() throws InterruptedException {
+  void aCloseDrainedByTheSecondFlushStopsTheIteration() throws InterruptedException {
     final var consumerRef = new AtomicReference<KPipeConsumer>();
-    final var pollsUnableToFetch = new AtomicLong();
-    final var mockConsumer = instrumentedConsumer(consumerRef, pollsUnableToFetch);
+    final var polls = new AtomicLong();
+    final var pollsAfterStop = new AtomicLong();
+
+    // Which drain gets the Close decides whether this test means anything, so it is derived from
+    // the loop's own position and never from timing. `processCommands` drains until poll() returns
+    // null, so each null ends one drain, and the counter resets on every consumer poll. Drain 0 is
+    // the flush at the top of the loop; drain 1 is the one after the backpressure tick — the site
+    // with no check of its own. Delivery lands on the very first iteration, before any poll, so
+    // there is no window to arm and nothing to race.
+    final var drainsSincePoll = new AtomicInteger();
+    final var delivered = new AtomicBoolean();
+    final var queue = new ConcurrentLinkedQueue<ConsumerCommand>() {
+      @Override
+      public ConsumerCommand poll() {
+        final var existing = super.poll();
+        if (existing != null) return existing;
+        if (drainsSincePoll.get() == 1 && delivered.compareAndSet(false, true)) {
+          return new ConsumerCommand.Close();
+        }
+        drainsSincePoll.incrementAndGet();
+        return null;
+      }
+    };
+
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+
+      @Override
+      public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
+        final var consumer = consumerRef.get();
+        if (consumer != null && !consumer.isRunning()) pollsAfterStop.incrementAndGet();
+        polls.incrementAndGet();
+        drainsSincePoll.set(0);
+        return super.poll(timeout);
+      }
+    };
+    mockConsumer.assign(List.of(PARTITION));
+    mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
     mockConsumer.updateEndOffsets(Map.of(PARTITION, 0L));
 
     final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
+      .withCommandQueue(queue)
       .withConsumer(() -> mockConsumer)
       .build();
     consumerRef.set(consumer);
 
     try {
       consumer.start();
-      consumer.pause();
-      TestAwaits.pollUntil(() -> !mockConsumer.paused().isEmpty(), AWAIT, "manual pause reaches the Kafka consumer");
-
-      consumer.resume();
-      TestAwaits.pollUntil(() -> mockConsumer.paused().isEmpty(), AWAIT, "manual resume reaches the Kafka consumer");
-
-      assertEquals(0L, pollsUnableToFetch.get(), "A manual resume must also reach Kafka before the next poll");
+      TestAwaits.pollUntil(() -> !consumer.isRunning(), AWAIT, "the queued Close stops the consumer");
+      assertEquals(0L, pollsAfterStop.get(), "no poll may be issued after a drained Close has stopped the consumer");
     } finally {
       consumer.close();
     }

@@ -595,26 +595,28 @@ public class KPipeConsumer implements AutoCloseable {
             processCommands();
             health.tickBackpressure(kafkaConsumer);
             if (!isRunning()) break;
-            // Flush whatever the tick above queued so the Kafka-level pause state matches
-            // the
-            // consumer state before the poll below. Both directions need it:
-            // `kafkaConsumer.pause()`
-            // must run before a paused poll, and a queued `Resume` must run before a
-            // running one, or
-            // the poll fetches nothing against partitions Kafka still has paused. This
-            // flush sits
-            // outside the `isPaused()` check because a tick-driven resume has already
-            // left PAUSED by
-            // the time it reaches here, so a check-guarded flush skips exactly the resume
-            // case.
+            // Flush whatever the tick above queued, so the Kafka-level pause state
+            // matches the consumer state before the poll below. Both directions need
+            // it: pause must reach Kafka before a paused poll, and a queued Resume
+            // must reach it before a running one, or the poll fetches nothing against
+            // partitions Kafka still has paused. This sits outside the `isPaused()`
+            // check because a tick-driven resume has already left PAUSED by the time
+            // it gets here, so a check-guarded flush skips exactly the resume case.
             processCommands();
+            // Recheck after this flush, not only after the one at the top of the loop.
+            // A Close drained just above sets CLOSING, so `isPaused()` is false, the
+            // guard below is skipped, and with it the only other check standing
+            // between here and the poll.
+            if (!isRunning()) break;
             if (isPaused()) {
               // Defensively re-pause the full assignment: pause state is per-partition
-              // and does not
-              // survive a revoke/assign cycle, so a rebalance inside an earlier poll can
-              // hand this
-              // consumer new, un-paused partitions.
-              if (!isRunning() || Thread.interrupted()) break;
+              // and does not survive a revoke/assign cycle, so a rebalance inside an
+              // earlier poll can hand this consumer new, un-paused partitions.
+              //
+              // `Thread.interrupted()` stays on this path alone. It clears the flag,
+              // and running it every iteration would consume an interrupt the paused
+              // path is the only one that acts on.
+              if (Thread.interrupted()) break;
               kafkaConsumer.pause(kafkaConsumer.assignment());
             }
 
