@@ -339,7 +339,7 @@ deliberately escape-hatch-only.
 | Thread/executor termination                    | `kpipe-consumer`                                                                                | `Stream.withThreadTerminationTimeout(Duration)` / `.withWaitForMessagesTimeout(Duration)`, and the `MultiBuilder` mirrors              | `Builder.withThreadTerminationTimeout / withWaitForMessagesTimeout`                                                                 | Shutdown tuning; operational rather than pipeline shape, so it lives on both surfaces. The executor-drain timeout stays non-tunable at `AppConfig.DEFAULT_EXECUTOR_TERMINATION`.                                                                                                                                                                                                         |
 | Periodic metrics reporting + shutdown hook     | `kpipe-consumer`                                                                                | `Stream.withMetricsReporters(...)` / `.withMetricsInterval(...)` / `.withShutdownHook(boolean)`, and the `MultiBuilder` mirrors        | `Builder.withMetricsReporters(...) / withMetricsInterval(...) / withShutdownHook(true)`                                             | The log-based path for deployments without OTel — independent of `withMetrics`, which wires the OTel instruments. Reporter thread is a daemon. The shutdown hook covers SIGTERM, which try-with-resources on `Handle` does not.                                                                                                                                                          |
 | **Health endpoint**                            | `kpipe-consumer`                                                                                | compose it from `Handle`                                                                                                               | `HttpHealthServer.fromEnv(...)`                                                                                                     | Not a facade gap: `fromEnv` takes suppliers and reads host/port/path from the environment, so a facade user wires `HttpHealthServer.fromEnv(handle::isHealthy, () -> handle.metrics().get("inFlight"), () -> !handle.isHealthy(), "app")` alongside the handle. It is a separate process concern, not pipeline configuration.                                                            |
-| In-flight drain                                | `kpipe-consumer`                                                                                | `Handle.shutdownGracefully(Duration)`                                                                                                  | `KPipeConsumer.waitForInFlightDrain(Duration) / shutdownGracefully(Duration)`                                                       | Already on the facade — this row was marked escape-hatch-only in error. Waits on `dispatcher.activeCount()`, not `totalInFlight()`: buffered batch records never flush mid-drain, so waiting on them only burns the timeout; teardown flushes and commits them immediately after.                                                                                                        |
+| In-flight drain                                | `kpipe-consumer`                                                                                | `Handle.shutdownGracefully(Duration)`                                                                                                  | `KPipeConsumer.waitForInFlightDrain(Duration) / shutdownGracefully(Duration)`                                                       | Already on the facade — this row was marked escape-hatch-only in error. Waits on `dispatcher.drainableCount()`, not `KPipeConsumer.backpressureLoad()`, which adds the batch buffers on top: buffered batch records never flush mid-drain, so waiting on them only burns the timeout; teardown flushes and commits them immediately after.                                               |
 | **Custom `MessageProcessorRegistry`**          | `kpipe-core`                                                                                    | —                                                                                                                                      | `new MessageProcessorRegistry()` + `register*(...)` + `pipeline(format)`                                                            | Pre-shared pipelines across consumers, multi-format orchestrators. The registry is format-agnostic — the format is supplied per pipeline call, not on construction.                                                                                                                                                                                                                      |
 
 ## §18 Batch sink architecture (1.12.0)
@@ -374,7 +374,7 @@ deliberately escape-hatch-only.
 
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
-  watermark. The wrapper's `bufferedCount()` is added to `KPipeConsumer.totalInFlight()` to close that gap.
+  watermark. The wrapper's `bufferedCount()` is added to `KPipeConsumer.backpressureLoad()` to close that gap.
 - **Offset commits use `OffsetManager` directly, not the command queue.** The command queue retains its real job:
   serializing Kafka-consumer calls (`pause` / `resume` / `commitSync`) that genuinely need the consumer thread.
   Originally batch-only (1.12.0); the architecture-deepening pass extended this to ALL offset bookkeeping — worker
@@ -460,9 +460,9 @@ cache-coherence concern that would otherwise need TTLs or invalidation protocols
 **Three-way dispatch.** `KPipeConsumer` no longer branches on a `sequentialProcessing` boolean. Instead, a sealed
 `Dispatcher<K>` interface has three implementations selected at construction time from a `ProcessingMode` enum:
 
-- `SequentialDispatcher` — runs each record inline on the consumer thread. `activeCount()` returns 0 or 1 (incremented
-  around the inline `processTask.run()`) so `inFlight` metrics and `shutdownGracefully(timeout)` drain reporting stay
-  accurate. Lag-based backpressure doesn't consult the value.
+- `SequentialDispatcher` — runs each record inline on the consumer thread. `drainableCount()` returns 0 or 1
+  (incremented around the inline `processTask.run()`) so `inFlight` metrics and `shutdownGracefully(timeout)` drain
+  reporting stay accurate. Lag-based backpressure doesn't consult the value.
 - `ParallelDispatcher` — owns the virtual-thread executor and an `AtomicLong` in-flight counter. Submits per-record.
 - `KeyOrderedDispatcher` — LRU map keyed by record key (null → single sentinel). Each key gets its own serial queue
   drained by a virtual-thread worker. Workers exit when the queue empties; new records for the same key start a fresh
@@ -472,11 +472,11 @@ cache-coherence concern that would otherwise need TTLs or invalidation protocols
 
 **In-flight ownership.** Pre-1.15 `KPipeConsumer` held `AtomicLong inFlightCount` directly and called
 `incrementAndGet()` in `processRecords` and `decrementAndGet()` in `processRecord`'s finally. 1.15 moved that ownership
-into each dispatcher: all three now own their own `activeCount()`. `SequentialDispatcher` tracks a 0/1 counter
+into each dispatcher: all three now own their own `drainableCount()`. `SequentialDispatcher` tracks a 0/1 counter
 incremented around the inline `processTask.run()` — lag-based backpressure doesn't read it, but `inFlight` metrics and
 `shutdownGracefully(timeout)` drain reporting do, and a hardcoded 0 would lie to both. `ParallelDispatcher` and
-`KeyOrderedDispatcher` each own a real counter exposed via `activeCount()`. `KPipeConsumer.totalInFlight()` is now
-`dispatcher.activeCount() + Σ batchWrappers.bufferedCount()`.
+`KeyOrderedDispatcher` each own a real counter exposed via `drainableCount()`. `KPipeConsumer.backpressureLoad()` is now
+`dispatcher.drainableCount() + Σ batchWrappers.bufferedCount()`.
 
 **Post-record callback.** `processRecord` used to unpark the consumer thread when backpressure was held. That logic
 moved to `KPipeConsumer.afterRecordComplete()`, which the dispatcher invokes via the `onComplete` argument to
