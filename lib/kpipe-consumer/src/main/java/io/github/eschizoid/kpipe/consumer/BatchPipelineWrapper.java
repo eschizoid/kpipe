@@ -70,10 +70,15 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   private final List<Entry<T>> buffer = new ArrayList<>();
   private final AtomicLong bufferedCount = new AtomicLong(0);
 
-  /// Dispatches handed out by [#flushLocked] that have not finished running. Incremented while the
-  /// flush lock is still held, so a `close()` that arrives after a tick released the lock but
-  /// before its dispatch began still sees the work outstanding. Decremented when the dispatch ends,
-  /// whatever the outcome.
+  /// Dispatches handed out by [#flushLocked] that have not finished running. Decremented when the
+  /// dispatch ends, whatever the outcome.
+  ///
+  /// The increment happens while the flush lock is still held, not when the dispatch starts. That
+  /// is what makes a `close()` arriving after a tick released the lock — but before its dispatch
+  /// began — still see the work outstanding. Moving it into the dispatch itself narrows the window
+  /// rather than closing it, and no test covers the difference: the drain test calls `close()` only
+  /// after a callback has already fired, so it passes either way. This placement rests on the
+  /// argument here, not on a gate.
   private final AtomicInteger dispatchesInFlight = new AtomicInteger();
 
   private final ReentrantLock quiesceLock = new ReentrantLock();
@@ -253,6 +258,15 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       while (dispatchesInFlight.get() > 0) dispatchesQuiesced.await();
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
+      // Returning here leaves callbacks running while the consumer tears down around them, which
+      // is worth a line in the log rather than a silent early return — the dispatcher logs the
+      // same situation the same way.
+      LOGGER.log(
+        Level.WARNING,
+        "Interrupted while draining batch outcome dispatches for topic {0}; {1} still in flight",
+        topic,
+        dispatchesInFlight.get()
+      );
     } finally {
       quiesceLock.unlock();
     }
@@ -400,6 +414,9 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     );
   }
 
+  /// Must not be called from inside an outcome callback. The drain below waits on a counter that
+  /// only the calling dispatch can decrement, so a re-entrant close blocks itself — where the old
+  /// lock-held dispatch would simply have re-entered the reentrant lock on the same thread.
   @Override
   public void close() {
     if (tickFuture != null) tickFuture.cancel(false);

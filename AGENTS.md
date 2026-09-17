@@ -363,9 +363,14 @@ deliberately escape-hatch-only.
   for the broker ack, once per record and serially on the whole-batch failure path. Measured at 221ms of blocked
   `enqueue` for a 20-record batch against a 10ms-per-record DLQ, going to 0ms once the dispatch moved out; in production
   the per-record wait is bounded by `max.block.ms` plus `delivery.timeout.ms`, which add, so a 500-record batch against
-  a dead DLQ held the lock for hours. `bufferedCount` still comes down only after the dispatch runs, so the gauge keeps
-  counting records the wrapper still owns. The consequence to know is that dispatches may now overlap each other: the
-  offset ordering and invariant property tests cover that nothing downstream depends on them not doing so.
+  a dead DLQ held the lock for hours — less once something interrupts, since the producer restores the interrupt flag
+  and every later send then fails on entry. `bufferedCount` still comes down only after the dispatch runs, so the gauge
+  keeps counting records the wrapper still owns. The consequence to know is that dispatches may now overlap each other,
+  and nothing downstream depends on them not doing so: two dispatches share no mutable wrapper state beyond the gauge,
+  the commit frontier is a pure function of a set and a max, and `OffsetLedger.markProcessed` is per-partition atomic,
+  so concurrent marks linearize to some sequential order and any sequential order is safe. `OffsetInvariantPropertyTest`
+  shuffles marking order and `OffsetConcurrencyStressTest` marks concurrently; the offset _ordering_ property tests say
+  nothing about this, being single-threaded by their own header.
 
   The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
   circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the

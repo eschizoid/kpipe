@@ -8,8 +8,8 @@ it.
 
 - Gating cell: the longest lock hold — a whole-batch failure against a DLQ that will not ack promptly.
 - Bar: a large, unambiguous reduction in how long a competing `enqueue` on the same topic blocks.
-- No regression in the consumer suite, in particular the offset ordering and invariant property tests, since letting
-  dispatches overlap is the one real semantic change.
+- No regression in the consumer suite. Dispatch overlap is the one real semantic change, so the tests that bear on it
+  are the ones exercising out-of-order and concurrent offset marking, not the single-threaded ordering properties.
 - If the bar is not cleared, #335 closes with the measurement and no code change.
 
 ## Method — and why this is not a JMH benchmark
@@ -58,9 +58,24 @@ A second guard covers shutdown. `close()` runs its own flush's dispatch, but the
 so `close()` stopped waiting for it — `tickFuture.cancel(false)` does not stop a tick already running. `close()` now
 waits for dispatch quiescence, and `BatchCloseDrainsDispatchTest` fails without that wait.
 
+## Dispatch overlap
+
+The one real semantic change is that dispatches may now overlap each other. Nothing downstream depends on them not doing
+so, and the argument is structural rather than incidental: two dispatches share no mutable wrapper state beyond the
+gauge, the commit frontier is a pure function of a set and a max, and `OffsetLedger.markProcessed` is per-partition
+atomic, so concurrent marks linearize to some sequential order and any sequential order is safe.
+`OffsetInvariantPropertyTest` exercises shuffled marking order and `OffsetConcurrencyStressTest` marks concurrently. The
+offset _ordering_ property tests do not apply — their own header states they are single-threaded and constrain ordering
+rather than concurrency, so citing them here would be citing single-threaded evidence for a concurrency property.
+
+## What is still unmeasured
+
+Whether this translates into facade-level throughput. What is measured here is the lock hold and nothing else; no
+end-to-end number backs a throughput claim and none should be read into one. The JMH attempt that would have produced
+such a number is the one described above as unusable.
+
 ## Suite
 
 435 tests in `:lib:kpipe-consumer`, green. Four integration tests (`ChaosRebalance`, `ExternalOffset`,
 `CrashRestartReprocessing`, `KPipeProducer`) fail locally with `DockerClientProviderStrategy` errors — no Docker on this
-box — and fail identically on `main`, so they are environmental. The offset ordering and invariant property tests pass,
-which is the result that matters here: dispatches may now overlap, and nothing downstream depends on them not doing so.
+box — and fail identically on `main`, so they are environmental.
