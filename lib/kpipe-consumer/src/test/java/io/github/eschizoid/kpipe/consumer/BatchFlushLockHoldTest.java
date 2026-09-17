@@ -120,6 +120,43 @@ class BatchFlushLockHoldTest {
     }
   }
 
+  /// The in-flight gauge must come down exactly once per flushed batch, including when no dispatch
+  /// ever runs for it. The records leave the buffer before the sink is called, so an `Error` out of
+  /// the sink — the one throwable `flush` does not catch — would otherwise strand their count in
+  /// the gauge forever, and the gauge feeds the consumer's backpressure watermark.
+  @Test
+  void anErrorFromTheSinkStillClearsTheInFlightGauge() throws Exception {
+    final var scheduler = Executors.newSingleThreadScheduledExecutor();
+    final BatchSink<byte[]> erroringSink = BatchSink.ofVoid(batch -> {
+      throw new StackOverflowError("an Error, which flush() deliberately does not catch");
+    });
+    final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
+      @Override
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
+
+      @Override
+      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {}
+    };
+    final var wrapper = new BatchPipelineWrapper<byte[]>(
+      TOPIC,
+      TestPipelines.identity(),
+      erroringSink,
+      new BatchPolicy(BATCH, Duration.ofMinutes(1)),
+      scheduler,
+      callbacks
+    );
+
+    try {
+      wrapper.start();
+      assertThrows(StackOverflowError.class, () -> {
+        for (int i = 0; i < BATCH; i++) wrapper.enqueue(record(i), new byte[] { (byte) i });
+      });
+      assertEquals(0L, wrapper.bufferedCount(), "the flushed batch must leave the gauge at zero, not stranded");
+    } finally {
+      scheduler.shutdownNow();
+    }
+  }
+
   private static ConsumerRecord<byte[], byte[]> record(final int offset) {
     return new ConsumerRecord<>(TOPIC, 0, offset, new byte[0], new byte[0]);
   }

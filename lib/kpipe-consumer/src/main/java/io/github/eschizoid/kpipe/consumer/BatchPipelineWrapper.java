@@ -126,12 +126,20 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   }
 
   private void tick() {
-    Runnable dispatch = null;
-    lock.lock();
     try {
-      if (buffer.isEmpty()) return;
-      final var ageNanos = System.nanoTime() - oldestEnqueueNanos;
-      if (ageNanos >= policy.maxAge().toNanos()) dispatch = flushLocked();
+      Runnable dispatch = null;
+      lock.lock();
+      try {
+        if (buffer.isEmpty()) return;
+        final var ageNanos = System.nanoTime() - oldestEnqueueNanos;
+        if (ageNanos >= policy.maxAge().toNanos()) dispatch = flushLocked();
+      } finally {
+        lock.unlock();
+      }
+      // Outside the lock, but inside this try: an Error escaping the dispatch has to reach the
+      // log below just as one from the flush does, or the operator loses the only line that
+      // says this topic stopped age-flushing.
+      runDispatch(dispatch);
     } catch (final Throwable t) {
       // In practice only an Error reaches here. The RuntimeException paths through flushLocked are
       // closed: the sink call and both callback loops catch Exception, a null BatchResult is
@@ -154,10 +162,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       // it is worse than letting a low-volume topic miss its age deadline.
       LOGGER.log(Level.ERROR, "Batch tick failed for topic {0}: {1}", topic, t.getMessage(), t);
       throw t;
-    } finally {
-      lock.unlock();
     }
-    runDispatch(dispatch);
   }
 
   /// Caller must hold `lock`. Snapshots the buffer's values into a single pre-sized list, clears
