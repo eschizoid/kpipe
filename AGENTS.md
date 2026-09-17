@@ -368,9 +368,10 @@ deliberately escape-hatch-only.
   keeps counting records the wrapper still owns. The consequence to know is that dispatches may now overlap each other,
   and nothing downstream depends on them not doing so: two dispatches share no mutable wrapper state beyond the gauge,
   the commit frontier is a pure function of a set and a max, and `OffsetLedger.markProcessed` is per-partition atomic,
-  so concurrent marks linearize to some sequential order and any sequential order is safe. `OffsetInvariantPropertyTest`
-  shuffles marking order and `OffsetConcurrencyStressTest` marks concurrently; the offset _ordering_ property tests say
-  nothing about this, being single-threaded by their own header.
+  so concurrent marks linearize to some sequential order and any sequential order is safe. Those are two claims needing
+  two instruments: `OffsetConcurrencyStressTest` marks concurrently and covers the linearizing half, while
+  `OffsetOrderingPropertyTest`'s full-shuffle property covers the any-order half — being single-threaded is what makes
+  it the right instrument there, not a disqualification.
 
   The age tick adds a second dimension: the scheduler is a **single** thread shared by every topic's tick and by the
   circuit-breaker probe, so an age-triggered flush that blocks also delays age flushes on every other topic and the

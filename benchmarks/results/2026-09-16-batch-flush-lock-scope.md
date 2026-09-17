@@ -64,9 +64,9 @@ The one real semantic change is that dispatches may now overlap each other. Noth
 so, and the argument is structural rather than incidental: two dispatches share no mutable wrapper state beyond the
 gauge, the commit frontier is a pure function of a set and a max, and `OffsetLedger.markProcessed` is per-partition
 atomic, so concurrent marks linearize to some sequential order and any sequential order is safe.
-`OffsetInvariantPropertyTest` exercises shuffled marking order and `OffsetConcurrencyStressTest` marks concurrently. The
-offset _ordering_ property tests do not apply — their own header states they are single-threaded and constrain ordering
-rather than concurrency, so citing them here would be citing single-threaded evidence for a concurrency property.
+`OffsetConcurrencyStressTest` marks concurrently, covering the linearizing half. `OffsetOrderingPropertyTest`'s
+full-shuffle property covers the other half — that any sequential order is safe — and being single-threaded is exactly
+what makes it the right instrument for that, rather than a disqualification.
 
 ## What is still unmeasured
 
