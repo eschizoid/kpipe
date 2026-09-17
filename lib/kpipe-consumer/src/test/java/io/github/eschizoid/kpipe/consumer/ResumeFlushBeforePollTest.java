@@ -116,7 +116,6 @@ class ResumeFlushBeforePollTest {
   @Test
   void aCloseDrainedByTheSecondFlushStopsTheIteration() throws InterruptedException {
     final var consumerRef = new AtomicReference<KPipeConsumer>();
-    final var polls = new AtomicLong();
     final var pollsAfterStop = new AtomicLong();
 
     // Which drain gets the Close decides whether this test means anything, so it is derived from
@@ -151,7 +150,6 @@ class ResumeFlushBeforePollTest {
       public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
         final var consumer = consumerRef.get();
         if (consumer != null && !consumer.isRunning()) pollsAfterStop.incrementAndGet();
-        polls.incrementAndGet();
         drainsSincePoll.set(0);
         return super.poll(timeout);
       }

@@ -595,15 +595,14 @@ public class KPipeConsumer implements AutoCloseable {
             processCommands();
             health.tickBackpressure(kafkaConsumer);
             if (!isRunning()) break;
-            // Flush the command queue — including whatever the tick above queued —
-            // so the Kafka-level pause
-            // state matches the consumer state before the poll below. Both
-            // directions need it: pause must reach Kafka before a paused poll,
-            // and a queued Resume before a running one, or the poll fetches
-            // nothing from partitions Kafka still has paused. This sits outside
-            // the `isPaused()` check because a tick-driven resume has already
-            // left PAUSED by the time it gets here, so a guarded flush would
-            // skip exactly the resume case.
+            // Flush the command queue — including whatever the tick above queued — so
+            // the Kafka-level pause state matches the consumer state before the poll
+            // below. Both directions need it: pause must reach Kafka before a paused
+            // poll, and a queued Resume before a running one, or the poll fetches
+            // nothing from partitions Kafka still has paused. This sits outside the
+            // `isPaused()` check because a tick-driven resume has already left PAUSED
+            // by the time it gets here, so a guarded flush would skip exactly the
+            // resume case.
             processCommands();
             // Recheck after this flush too, not only after the one at the top of
             // the loop. A Close drained just above sets CLOSING, so `isPaused()`
