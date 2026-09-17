@@ -40,8 +40,11 @@ class BatchFlushLockHoldTest {
     final var dispatchStarted = new CountDownLatch(1);
     final var dispatched = new AtomicLong();
 
+    // `ofVoid` converts a thrown exception into `BatchResult.allFailed`, so this drives the
+    // per-record failure loop rather than the wrapper's own whole-batch catch. Either way every
+    // record gets an `onBatchFailure`, which is what the timing here depends on.
     final BatchSink<byte[]> failingSink = BatchSink.ofVoid(batch -> {
-      throw new IllegalStateException("forcing the whole-batch failure path");
+      throw new IllegalStateException("every record fails, so every one takes the DLQ path");
     });
 
     final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
