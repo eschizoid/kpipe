@@ -595,7 +595,8 @@ public class KPipeConsumer implements AutoCloseable {
             processCommands();
             health.tickBackpressure(kafkaConsumer);
             if (!isRunning()) break;
-            // Flush whatever the tick above queued, so the Kafka-level pause
+            // Flush the command queue — including whatever the tick above queued —
+            // so the Kafka-level pause
             // state matches the consumer state before the poll below. Both
             // directions need it: pause must reach Kafka before a paused poll,
             // and a queued Resume before a running one, or the poll fetches
@@ -615,10 +616,10 @@ public class KPipeConsumer implements AutoCloseable {
               // rebalance inside an earlier poll can hand this consumer new,
               // un-paused partitions.
               //
-              // Left as it was before the flush moved. `Thread.interrupted()`
-              // clears the flag, so running it every iteration would consume an
-              // interrupt only this path acts on; the `isRunning()` arm is now
-              // redundant with the check above and kept so the line is unchanged.
+              // `Thread.interrupted()` clears the flag, so it stays on this path
+              // alone: running it every iteration would consume an interrupt only
+              // the paused path acts on. The `isRunning()` arm catches a close()
+              // landing between the recheck above and this line.
               if (!isRunning() || Thread.interrupted()) break;
               kafkaConsumer.pause(kafkaConsumer.assignment());
             }

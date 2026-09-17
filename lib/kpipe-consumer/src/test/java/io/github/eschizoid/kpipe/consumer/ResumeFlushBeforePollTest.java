@@ -41,11 +41,8 @@ import org.junit.jupiter.api.Test;
 /// caller's thread, and between `internalResume()`'s state flip and its `offer(Resume)` — two
 /// adjacent statements — the state reads RUNNING with no command yet queued. A poll landing in
 /// that window fetches nothing no matter where the flush is placed, so asserting zero bad polls
-/// on that path tests an invariant the consumer does not provide; measured at 7 failures in 12
-/// runs before it was removed.
+/// on that path would test an invariant the consumer does not provide.
 class ResumeFlushBeforePollTest {
-
-  static final java.util.List<String> TRACE = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
   private static final String TOPIC = "test-topic";
   private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
@@ -110,6 +107,12 @@ class ResumeFlushBeforePollTest {
   /// where the existing check already catches it. The queue below hands the `Close` to the *second*
   /// drain instead — the one after the backpressure tick — which is the only site with no check of
   /// its own. `withCommandQueue` is public, so nothing here reaches into the consumer.
+  ///
+  /// The wait is on `awaitShutdown`, not on the state flag. `isRunning()` goes false the moment the
+  /// command is applied, several steps before the poll it guards, so a test resuming there reads
+  /// the counter while the consumer thread is still on its way to that poll. The shutdown latch is
+  /// released in the consumer thread's own teardown, after the loop has exited, so the counter is
+  /// final by the time it returns.
   @Test
   void aCloseDrainedByTheSecondFlushStopsTheIteration() throws InterruptedException {
     final var consumerRef = new AtomicReference<KPipeConsumer>();
@@ -128,15 +131,10 @@ class ResumeFlushBeforePollTest {
       @Override
       public ConsumerCommand poll() {
         final var existing = super.poll();
-        if (existing != null) {
-          TRACE.add("qpoll real=" + existing.getClass().getSimpleName() + " ctr=" + drainsSincePoll.get());
-          return existing;
-        }
+        if (existing != null) return existing;
         if (drainsSincePoll.get() == 1 && delivered.compareAndSet(false, true)) {
-          TRACE.add("qpoll DELIVER_CLOSE ctr=1");
           return new ConsumerCommand.Close();
         }
-        TRACE.add("qpoll null ctr=" + drainsSincePoll.get() + "->" + (drainsSincePoll.get() + 1));
         drainsSincePoll.incrementAndGet();
         return null;
       }
@@ -152,12 +150,6 @@ class ResumeFlushBeforePollTest {
       @Override
       public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
         final var consumer = consumerRef.get();
-        TRACE.add(
-          "MOCKPOLL running=" +
-            (consumer == null ? "null" : String.valueOf(consumer.isRunning())) +
-            " ctr=" +
-            drainsSincePoll.get()
-        );
         if (consumer != null && !consumer.isRunning()) pollsAfterStop.incrementAndGet();
         polls.incrementAndGet();
         drainsSincePoll.set(0);
@@ -179,11 +171,7 @@ class ResumeFlushBeforePollTest {
 
     try {
       consumer.start();
-      TestAwaits.pollUntil(() -> !consumer.isRunning(), AWAIT, "the queued Close stops the consumer");
-      Thread.sleep(0);
-      System.out.println(
-        "TRACEDUMP polls=" + polls.get() + " pollsAfterStop=" + pollsAfterStop.get() + " events=" + TRACE
-      );
+      assertTrue(consumer.awaitShutdown(AWAIT), "the queued Close shuts the consumer down");
       assertEquals(0L, pollsAfterStop.get(), "no poll may be issued after a drained Close has stopped the consumer");
     } finally {
       consumer.close();
