@@ -45,6 +45,8 @@ import org.junit.jupiter.api.Test;
 /// runs before it was removed.
 class ResumeFlushBeforePollTest {
 
+  static final java.util.List<String> TRACE = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
   private static final String TOPIC = "test-topic";
   private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
   private static final Duration AWAIT = Duration.ofSeconds(5);
@@ -126,10 +128,15 @@ class ResumeFlushBeforePollTest {
       @Override
       public ConsumerCommand poll() {
         final var existing = super.poll();
-        if (existing != null) return existing;
+        if (existing != null) {
+          TRACE.add("qpoll real=" + existing.getClass().getSimpleName() + " ctr=" + drainsSincePoll.get());
+          return existing;
+        }
         if (drainsSincePoll.get() == 1 && delivered.compareAndSet(false, true)) {
+          TRACE.add("qpoll DELIVER_CLOSE ctr=1");
           return new ConsumerCommand.Close();
         }
+        TRACE.add("qpoll null ctr=" + drainsSincePoll.get() + "->" + (drainsSincePoll.get() + 1));
         drainsSincePoll.incrementAndGet();
         return null;
       }
@@ -145,6 +152,12 @@ class ResumeFlushBeforePollTest {
       @Override
       public synchronized ConsumerRecords<byte[], byte[]> poll(final Duration timeout) {
         final var consumer = consumerRef.get();
+        TRACE.add(
+          "MOCKPOLL running=" +
+            (consumer == null ? "null" : String.valueOf(consumer.isRunning())) +
+            " ctr=" +
+            drainsSincePoll.get()
+        );
         if (consumer != null && !consumer.isRunning()) pollsAfterStop.incrementAndGet();
         polls.incrementAndGet();
         drainsSincePoll.set(0);
@@ -167,6 +180,10 @@ class ResumeFlushBeforePollTest {
     try {
       consumer.start();
       TestAwaits.pollUntil(() -> !consumer.isRunning(), AWAIT, "the queued Close stops the consumer");
+      Thread.sleep(0);
+      System.out.println(
+        "TRACEDUMP polls=" + polls.get() + " pollsAfterStop=" + pollsAfterStop.get() + " events=" + TRACE
+      );
       assertEquals(0L, pollsAfterStop.get(), "no poll may be issued after a drained Close has stopped the consumer");
     } finally {
       consumer.close();
