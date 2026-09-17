@@ -35,11 +35,14 @@ record, standing in for a broker ack.
 
 | arm                                   | competing `enqueue` blocked |
 | ------------------------------------- | --------------------------: |
-| dispatch inside the lock (before)     |                  **221 ms** |
+| dispatch inside the lock (before)     |      **150-220 ms** (noisy) |
 | dispatch outside the lock (candidate) |                    **0 ms** |
 
-Dispatch budget in both arms: 20 records × 10 ms = 200 ms. The before-arm blocks for the entire dispatch and then some,
-because the competitor also waits out the sink call ahead of it.
+Dispatch budget in both arms: 20 records × 10 ms = 200 ms. The before-arm blocks for essentially the whole dispatch;
+individual samples ranged 150-220 ms across runs, and the high end exceeds the budget because the competitor also waits
+out the sink call ahead of it. Only the assertion threshold is pinned — the test requires the block to stay under a
+quarter of the budget, which sits about 3x below the lowest before-arm sample and cannot drift the way a quoted figure
+does.
 
 The 10ms stand-in is what makes this a lower bound rather than the real cost. In production the per-record wait is
 bounded by `max.block.ms` plus `delivery.timeout.ms`, which add; at the 120s default and a 500-record batch the hold is
@@ -48,12 +51,16 @@ lock.
 
 ## Regression guard
 
-The measurement is the test. Reverting the production change and re-running it reports 166 ms blocked and fails the
-assertion, so the guard discriminates the change rather than merely passing alongside it.
+The measurement is the test. Reverting the production change makes it fail on every run, so the guard discriminates the
+change rather than merely passing alongside it.
+
+A second guard covers shutdown. `close()` runs its own flush's dispatch, but the age tick's runs outside the flush lock,
+so `close()` stopped waiting for it — `tickFuture.cancel(false)` does not stop a tick already running. `close()` now
+waits for dispatch quiescence, and `BatchCloseDrainsDispatchTest` fails without that wait.
 
 ## Suite
 
-429 tests in `:lib:kpipe-consumer`, green. Four integration tests (`ChaosRebalance`, `ExternalOffset`,
+435 tests in `:lib:kpipe-consumer`, green. Four integration tests (`ChaosRebalance`, `ExternalOffset`,
 `CrashRestartReprocessing`, `KPipeProducer`) fail locally with `DockerClientProviderStrategy` errors — no Docker on this
 box — and fail identically on `main`, so they are environmental. The offset ordering and invariant property tests pass,
 which is the result that matters here: dispatches may now overlap, and nothing downstream depends on them not doing so.

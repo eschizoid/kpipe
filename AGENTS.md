@@ -375,9 +375,10 @@ deliberately escape-hatch-only.
   polling to avoid. One-flush-at-a-time per route is a **guarantee**, not an accident of lock placement: `BatchSink`'s
   javadoc tells implementers their sink need not be thread-safe, so relaxing it would silently break any sink holding
   per-instance state. `BatchPipelineWrapperConcurrencyTest.flushesForOneRouteNeverOverlap` asserts it — moving
-  `sink.apply` outside the lock fails that test with the observed concurrency. The open question is the lock's scope,
-  not the guarantee: the per-record DLQ produce runs under it too, tracked in #335. Constructed in the consumer ctor,
-  started in `start()`, drained in `close()`.
+  `sink.apply` outside the lock fails that test with the observed concurrency. The scope question that used to sit here
+  is settled: the per-record outcome dispatch no longer runs under the lock, only the sink does. Constructed in the
+  consumer ctor, started in `start()`, drained in `close()` — and the drain now waits on a dispatch the age tick
+  started, since the lock alone stopped holding `close()` back once the dispatch moved out of it.
 
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight

@@ -12,7 +12,9 @@ import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
@@ -67,6 +69,15 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   private final ReentrantLock lock = new ReentrantLock();
   private final List<Entry<T>> buffer = new ArrayList<>();
   private final AtomicLong bufferedCount = new AtomicLong(0);
+
+  /// Dispatches handed out by [#flushLocked] that have not finished running. Incremented while the
+  /// flush lock is still held, so a `close()` that arrives after a tick released the lock but
+  /// before its dispatch began still sees the work outstanding. Decremented when the dispatch ends,
+  /// whatever the outcome.
+  private final AtomicInteger dispatchesInFlight = new AtomicInteger();
+
+  private final ReentrantLock quiesceLock = new ReentrantLock();
+  private final Condition dispatchesQuiesced = quiesceLock.newCondition();
   private long oldestEnqueueNanos;
   private ScheduledFuture<?> tickFuture;
 
@@ -201,11 +212,13 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       bufferedCount.addAndGet(-size);
       throw t;
     }
+    dispatchesInFlight.incrementAndGet();
     return () -> {
       try {
         dispatch.run();
       } finally {
         bufferedCount.addAndGet(-size);
+        dispatchFinished();
       }
     };
   }
@@ -213,6 +226,36 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   /// Runs a dispatch returned by [#flushLocked]. Callers invoke this after releasing `lock`.
   private void runDispatch(final Runnable dispatch) {
     if (dispatch != null) dispatch.run();
+  }
+
+  private void dispatchFinished() {
+    if (dispatchesInFlight.decrementAndGet() > 0) return;
+    quiesceLock.lock();
+    try {
+      dispatchesQuiesced.signalAll();
+    } finally {
+      quiesceLock.unlock();
+    }
+  }
+
+  /// Blocks until no dispatch is running. Only `close()` calls this, and only after running its own
+  /// flush, so what it waits for is a dispatch started by the age tick — `tickFuture.cancel(false)`
+  /// does not stop a tick already in progress, and the tick releases the flush lock before running
+  /// its dispatch, so the lock alone no longer holds `close()` back the way it did when the
+  /// dispatch ran inside it.
+  ///
+  /// The wait is unbounded, which is what it was before the dispatch moved out of the lock: back
+  /// then `close()` blocked on `lock.lock()` for as long as the dispatch took. It is interruptible
+  /// now, which that version was not.
+  private void awaitDispatchesQuiesced() {
+    quiesceLock.lock();
+    try {
+      while (dispatchesInFlight.get() > 0) dispatchesQuiesced.await();
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    } finally {
+      quiesceLock.unlock();
+    }
   }
 
   /// Calls the sink and classifies the [BatchResult], then returns the dispatch that will walk the
@@ -367,9 +410,10 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     } finally {
       lock.unlock();
     }
-    // Runs before close() returns, so shutdown still drains every outcome — it simply no longer
-    // does so while holding the lock that enqueue and tick contend for.
+    // Both lines matter for the drain. The first runs this flush's own dispatch; the second waits
+    // out any dispatch the age tick started, which the flush lock no longer holds close() back for.
     runDispatch(dispatch);
+    awaitDispatchesQuiesced();
   }
 
   record Entry<T>(ConsumerRecord<byte[], byte[]> record, T value) {}
