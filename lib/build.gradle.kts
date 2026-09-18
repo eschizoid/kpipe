@@ -217,6 +217,21 @@ jreleaser {
       changelog {
         formatted.set(ALWAYS)
         preset.set("conventional-commits")
+        contributors {
+          // The link is a mustache section rather than a bare placeholder, so a contributor
+          // whose username does not resolve renders as their name alone instead of an empty
+          // entry.
+          format.set(
+            "- {{contributorName}}" +
+              "{{#contributorUsernameAsLink}} ({{.}}){{/contributorUsernameAsLink}}",
+          )
+        }
+        hide {
+          // Matched with `String.contains`, so `[bot]` covers every bot account and needs no
+          // entry per bot. `GitHub` is the committer a squash merge performed through the web
+          // UI is attributed to, which is a route rather than a person.
+          contributors.set(listOf("GitHub", "[bot]"))
+        }
       }
     }
   }
