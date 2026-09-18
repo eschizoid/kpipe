@@ -74,11 +74,10 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   /// dispatch ends, whatever the outcome.
   ///
   /// The increment happens while the flush lock is still held, not when the dispatch starts. That
-  /// is what makes a `close()` arriving after a tick released the lock — but before its dispatch
-  /// began — still see the work outstanding. Moving it into the dispatch itself narrows the window
-  /// rather than closing it, and no test covers the difference: the drain test calls `close()` only
-  /// after a callback has already fired, so it passes either way. This placement rests on the
-  /// argument here, not on a gate.
+  /// is what makes a `close()` arriving after a flush released the lock — but before that flush's
+  /// dispatch began — still see the work outstanding. Moving it into the dispatch narrows the
+  /// window rather than closing it, and the window is too narrow for a racing test to enter
+  /// reliably: `BatchCloseDrainFrayTest` gates it under Fray's controlled scheduler instead.
   private final AtomicInteger dispatchesInFlight = new AtomicInteger();
 
   private final ReentrantLock quiesceLock = new ReentrantLock();
