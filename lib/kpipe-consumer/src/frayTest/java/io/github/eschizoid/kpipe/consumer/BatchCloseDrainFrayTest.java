@@ -65,8 +65,8 @@ class BatchCloseDrainFrayTest {
 
     assertFalse(
       callbackRanAfterClose.get(),
-      "an outcome callback ran after close() returned; the consumer tears the offset manager and "
-        + "DLQ producer down around it"
+      "an outcome callback ran after close() returned; the consumer tears the offset manager and " +
+        "DLQ producer down around it"
     );
   }
 
