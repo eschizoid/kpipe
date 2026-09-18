@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
@@ -11,6 +12,7 @@ import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,8 +52,14 @@ class BatchCloseDrainFrayTest {
   void noOutcomeCallbackRunsAfterCloseReturns() {
     final var closeReturned = new AtomicBoolean();
     final var callbackRanAfterClose = new AtomicBoolean();
+    final var callbacksRan = new AtomicInteger();
 
-    final var wrapper = newWrapper(new BatchPolicy(2, Duration.ofMinutes(1)), closeReturned, callbackRanAfterClose);
+    final var wrapper = newWrapper(
+      new BatchPolicy(2, Duration.ofMinutes(1)),
+      closeReturned,
+      callbackRanAfterClose,
+      callbacksRan
+    );
     // One short of the threshold, so the racing enqueue below is what trips the flush.
     wrapper.enqueue(record(0L), record(0L).value());
 
@@ -63,6 +71,11 @@ class BatchCloseDrainFrayTest {
       }
     );
 
+    // One record is buffered before the race starts and close() flushes whatever it finds, so
+    // every schedule runs at least one outcome callback. A zero here means the flush path never
+    // ran and the ordering assertion below holds vacuously.
+    assertTrue(callbacksRan.get() > 0, "no outcome callback ran, so the ordering assertion proves nothing");
+
     assertFalse(
       callbackRanAfterClose.get(),
       "an outcome callback ran after close() returned; the consumer tears the offset manager and " +
@@ -73,16 +86,22 @@ class BatchCloseDrainFrayTest {
   private static BatchPipelineWrapper<byte[]> newWrapper(
     final BatchPolicy policy,
     final AtomicBoolean closeReturned,
-    final AtomicBoolean callbackRanAfterClose
+    final AtomicBoolean callbackRanAfterClose,
+    final AtomicInteger callbacksRan
   ) {
     final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
       @Override
       public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
-        if (closeReturned.get()) callbackRanAfterClose.set(true);
+        observe();
       }
 
       @Override
       public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+        observe();
+      }
+
+      private void observe() {
+        callbacksRan.incrementAndGet();
         if (closeReturned.get()) callbackRanAfterClose.set(true);
       }
     };
