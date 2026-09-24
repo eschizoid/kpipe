@@ -162,18 +162,18 @@ Log-based fallback for users who don't run OTel: `ConsumerMetricsReporter` (cons
   no-DLQ-configured path still marks (log-and-advance is the caller's explicit opt-in).
 - **Shutdown guarantee.** `state.set(CLOSED)` lives in a nested `finally` inside the consumer thread's outer `finally`.
   Even if `kafkaConsumer.close()` throws, the consumer always reaches terminal state.
-- **Paused = keep polling (rewritten with the lag-park-forever fix, PR #233; previously LockSupport.park).** A paused
-  consumer no longer parks: each iteration flushes commands, defensively re-issues `pause(assignment())` (per-partition
-  pause doesn't survive revoke/assign, and this closes the state-flipped-before-command-queued race), then polls
-  normally. Paused partitions fetch nothing, but the poll (a) keeps group membership alive — Kafka's pause+poll
-  contract, which kills the silent `max.poll.interval.ms` eviction for ALL pause sources, and (b) bounds the iteration
-  to `pollTimeout` so `tickBackpressure` re-evaluates on a fixed cadence (external lag drops — reassignment, retention
-  truncation, offset reset — now resume the consumer). Records slipping through a mid-poll rebalance are processed,
-  never dropped (positions already advanced; dropping would lose data on commit). Resume latency is ≤ `pollTimeout`
-  (100ms default) rather than an instant unpark; the remaining unparks (`internalResume`, `close`,
-  `afterRecordComplete`) are best-effort latency nudges for the teardown-drain `parkNanos` path only. History: the old
-  indefinite `park()` deadlocked forever under the lag strategy (SEQUENTIAL has no async completions to unpark it, and
-  lag is monotonically non-decreasing while parked) and got the consumer evicted from the group after 5 minutes.
+- **Paused = keep polling.** A paused consumer does not park: each iteration flushes commands, defensively re-issues
+  `pause(assignment())` (per-partition pause doesn't survive revoke/assign, and this closes the
+  state-flipped-before-command-queued race), then polls normally. Paused partitions fetch nothing, but the poll (a)
+  keeps group membership alive — Kafka's pause+poll contract, which kills the silent `max.poll.interval.ms` eviction for
+  ALL pause sources, and (b) bounds the iteration to `pollTimeout` so `tickBackpressure` re-evaluates on a fixed cadence
+  (external lag drops — reassignment, retention truncation, offset reset — now resume the consumer). Records slipping
+  through a mid-poll rebalance are processed, never dropped (positions already advanced; dropping would lose data on
+  commit). Resume latency is ≤ `pollTimeout` (100ms default) rather than an instant unpark; the remaining unparks
+  (`internalResume`, `close`, `afterRecordComplete`) are best-effort latency nudges for the teardown-drain `parkNanos`
+  path only. History: the old indefinite `park()` deadlocked forever under the lag strategy (SEQUENTIAL has no async
+  completions to unpark it, and lag is monotonically non-decreasing while parked) and got the consumer evicted from the
+  group after 5 minutes.
 - **Pipeline null handling.** Null record value and null deserialization throw specific `IllegalStateException` messages
   (retryable). Null `process()` result is intentional filtering — mark offset processed, count as success, no error.
 - **Metrics immutability.** `getMetrics()` returns `Collections.unmodifiableMap()`.
@@ -358,18 +358,18 @@ deliberately escape-hatch-only.
   returns the per-record outcome dispatch to its caller, which runs it **after** releasing the lock. The sink keeps the
   lock because `BatchSink`'s contract promises implementers that flushes never overlap; it is arbitrary user code of
   unbounded duration, and that, not any assumption that it performs I/O, is why holding the lock across it matters. The
-  dispatch carries no such promise and used to hold the lock anyway — `markProcessed` reaches a user-supplied
-  `OffsetManager`, possibly Postgres- or Redis-backed, and `onBatchFailure` reaches a synchronous DLQ produce that waits
-  for the broker ack, once per record and serially on the whole-batch failure path. Measured at 221ms of blocked
-  `enqueue` for a 20-record batch against a 10ms-per-record DLQ, going to 0ms once the dispatch moved out; in production
-  the per-record wait is bounded by `max.block.ms` plus `delivery.timeout.ms`, which add, so a 500-record batch against
-  a dead DLQ held the lock for hours — less once something interrupts, since the producer restores the interrupt flag
-  and every later send then fails on entry. `bufferedCount` still comes down only after the dispatch runs, so the gauge
-  keeps counting records the wrapper still owns. The consequence to know is that dispatches may now overlap each other,
-  and nothing downstream depends on them not doing so: two dispatches share no mutable wrapper state beyond the gauge,
-  the commit frontier is a pure function of a set and a max, and `OffsetLedger.markProcessed` is per-partition atomic,
-  so concurrent marks linearize to some sequential order and any sequential order is safe. Those are two claims needing
-  two instruments: `OffsetConcurrencyStressTest` marks concurrently and covers the linearizing half, while
+  dispatch carries no such promise and runs outside the lock — `markProcessed` reaches a user-supplied `OffsetManager`,
+  possibly Postgres- or Redis-backed, and `onBatchFailure` reaches a synchronous DLQ produce that waits for the broker
+  ack, once per record and serially on the whole-batch failure path. `BatchFlushLockHoldTest` holds the line: a
+  competing `enqueue` must block for under a quarter of the dispatch budget. In production the per-record wait is
+  bounded by `max.block.ms` plus `delivery.timeout.ms`, which add, so a 500-record batch against a dead DLQ held the
+  lock for hours — less once something interrupts, since the producer restores the interrupt flag and every later send
+  then fails on entry. `bufferedCount` still comes down only after the dispatch runs, so the gauge keeps counting
+  records the wrapper still owns. The consequence to know is that dispatches may now overlap each other, and nothing
+  downstream depends on them not doing so: two dispatches share no mutable wrapper state beyond the gauge, the commit
+  frontier is a pure function of a set and a max, and `OffsetLedger.markProcessed` is per-partition atomic, so
+  concurrent marks linearize to some sequential order and any sequential order is safe. Those are two claims needing two
+  instruments: `OffsetConcurrencyStressTest` marks concurrently and covers the linearizing half, while
   `OffsetOrderingPropertyTest`'s full-shuffle property covers the any-order half — being single-threaded is what makes
   it the right instrument there, not a disqualification.
 
@@ -381,10 +381,9 @@ deliberately escape-hatch-only.
   polling to avoid. One-flush-at-a-time per route is a **guarantee**, not an accident of lock placement: `BatchSink`'s
   javadoc tells implementers their sink need not be thread-safe, so relaxing it would silently break any sink holding
   per-instance state. `BatchPipelineWrapperConcurrencyTest.flushesForOneRouteNeverOverlap` asserts it — moving
-  `sink.apply` outside the lock fails that test with the observed concurrency. The scope question that used to sit here
-  is settled: the per-record outcome dispatch no longer runs under the lock, only the sink does. Constructed in the
-  consumer ctor, started in `start()`, drained in `close()` — and the drain now waits on a dispatch the age tick
-  started, since the lock alone stopped holding `close()` back once the dispatch moved out of it.
+  `sink.apply` outside the lock fails that test with the observed concurrency. Only the sink runs under the lock; the
+  per-record outcome dispatch does not. Constructed in the consumer ctor, started in `start()`, drained in `close()` —
+  and the drain also waits on a dispatch the age tick started, which the flush lock alone does not cover.
 
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
@@ -471,8 +470,8 @@ cache-coherence concern that would otherwise need TTLs or invalidation protocols
 
 ## §20 Dispatcher abstraction (1.15.0)
 
-**Three-way dispatch.** `KPipeConsumer` no longer branches on a `sequentialProcessing` boolean. Instead, a sealed
-`Dispatcher<K>` interface has three implementations selected at construction time from a `ProcessingMode` enum:
+**Three-way dispatch.** `KPipeConsumer` does not branch on a `sequentialProcessing` boolean. A sealed `Dispatcher<K>`
+interface has three implementations selected at construction time from a `ProcessingMode` enum:
 
 - `SequentialDispatcher` — runs each record inline on the consumer thread. `drainableCount()` returns 0 or 1
   (incremented around the inline `processTask.run()`) so `inFlight` metrics and `shutdownGracefully(timeout)` drain
@@ -492,11 +491,10 @@ incremented around the inline `processTask.run()` — lag-based backpressure doe
 `KeyOrderedDispatcher` each own a real counter exposed via `drainableCount()`. `KPipeConsumer.backpressureLoad()` is now
 `dispatcher.drainableCount() + Σ batchWrappers.bufferedCount()`.
 
-**Post-record callback.** `processRecord` used to unpark the consumer thread when backpressure was held. That logic
-moved to `KPipeConsumer.afterRecordComplete()`, which the dispatcher invokes via the `onComplete` argument to
-`dispatch()`. This makes the dispatcher mode-agnostic about the consumer's internal state. (Since PR #233 the paused
-consumer keeps polling rather than parking — see §11 — so the unpark-on-completion is a best-effort latency nudge, no
-longer a liveness invariant.)
+**Post-record callback.** The unpark that backpressure needs lives in `KPipeConsumer.afterRecordComplete()`, which the
+dispatcher invokes via the `onComplete` argument to `dispatch()`. This makes the dispatcher mode-agnostic about the
+consumer's internal state. (A paused consumer keeps polling rather than parking — see §11 — so the unpark-on-completion
+is a best-effort latency nudge, not a liveness invariant.)
 
 **Migration (§16 delete + migrate).** `withSequentialProcessing(boolean)` deleted from both `KPipeConsumerBuilder` and
 the fluent `Stream` facade. Callers migrate to `withProcessingMode(ProcessingMode.SEQUENTIAL)` /
@@ -537,9 +535,9 @@ test-classifier jar — it's a runtime tool for users' test suites.
 - **Drive model: real consumer, mock transport.** `TestStream` builds a real `KPipeConsumer<String>` over a seeded
   `MockConsumer` (subscribe stubbed to a no-op so the manual `assign` survives — same pattern as
   `ProcessingModeSinkDlqMatrixTest` and the JMH harness). Chosen over direct pipeline invocation so tests exercise the
-  production dispatcher / offset / sink code paths and stay in sync as the consumer evolves (~5–20ms/test vs ~1ms).
-  Default mode is SEQUENTIAL so capture order equals send order; `withProcessingMode` opts into PARALLEL / KEY_ORDERED
-  (assertions must then be order-insensitive).
+  production dispatcher / offset / sink code paths and stay in sync as the consumer evolves, at roughly an order of
+  magnitude more time per test than direct pipeline invocation. Default mode is SEQUENTIAL so capture order equals send
+  order; `withProcessingMode` opts into PARALLEL / KEY_ORDERED (assertions must then be order-insensitive).
 - **Deterministic `flush()` contract.** Returns only when every sent record is (1) polled (`messagesReceived` ≥ sent),
   (2) accounted for (`messagesProcessed + processingErrors + inFlight` ≥ sent), and (3) drained (`waitForInFlightDrain`,
   then a re-read of (1)+(2)). Records move strictly forward (unpolled → in-flight → buffered/terminal), so this check
@@ -563,10 +561,10 @@ test-classifier jar — it's a runtime tool for users' test suites.
   no-commit-ahead) stay covered by the offset Fray/property suites and the broker E2E
   `CrashRestartReprocessingIntegrationTest`. **No-op offset manager on purpose:** a deterministic uncommitted tail
   requires controlling the commit point out-of-band; a real-manager partial commit is the mid-processing timing race
-  #220 tripped on. `uncommittedTail()` applies the operators to the seeded `[k,P)` (filter-aware) so it matches the
-  sink's post-pipeline shape under any mode — computing it from `firstRun.subList` would be wrong under PARALLEL
-  (capture order ≠ offset order). A genuinely load-bearing resume-seek assertion (consumer skips `[0,k)` on its own) is
-  tracked in the verification epic, #312.
+  this guards. `uncommittedTail()` applies the operators to the seeded `[k,P)` (filter-aware) so it matches the sink's
+  post-pipeline shape under any mode — computing it from `firstRun.subList` would be wrong under PARALLEL (capture order
+  ≠ offset order). A genuinely load-bearing resume-seek assertion (consumer skips `[0,k)` on its own) is tracked in the
+  verification epic, #312.
 - **Spotless has three footguns worth knowing before you touch a file.** The Java block sets
   `ratchetFrom("origin/main")`, so it judges only files a change actually touches — `main` therefore reports clean while
   individual files still carry violations, and the first edit to such a file drags the whole file's reformatting into
@@ -619,7 +617,7 @@ test-classifier jar — it's a runtime tool for users' test suites.
   among reflowed text, and harmless violations look identical. If an apply has already happened, find it in the result
   instead — `grep -nE '\\_|[A-Za-z0-9]\*[A-Za-z0-9]'` over the tracked `.md` files. The gate is blind only to text
   arriving already corrupted from outside it, which is how these notes rotted: untracked in `.claude/`, rewritten across
-  many local runs, then copied into a tracked file by #318. Unrelated: `__dunder__` becomes `**dunder**`, which renders
+  many local runs, then copied into a tracked file. Unrelated: `__dunder__` becomes `**dunder**`, which renders
   identically since GFM bolds both, but the source loses its underscores.
 - **`///` Javadoc + google-java-format footgun.** spotless (google-java-format) wraps any `///` doc line **>100
   columns** into a `//` continuation — which the IDE then flags as _dangling Javadoc_ (a real, recurring paper-cut).
