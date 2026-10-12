@@ -17,6 +17,7 @@ dependencies {
   // kafka-clients:3.9.1 but the new binary works when Gradle conflict-resolves the classpath
   // to our 4.3.0. No `exclude` needed; conflict resolution picks the higher version.
   implementation(libs.reactorKafka)
+  implementation(libs.atleonKafka)
   implementation(libs.avro)
 
   // Logging for JMH forks

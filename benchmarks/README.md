@@ -2,7 +2,7 @@
 
 JMH benchmarks (plus one non-JMH latency harness) for KPipe. Two design-validation benches pit KPipe against a
 hand-rolled straw man; a competitive suite pits KPipe against the alternatives a JVM team would actually pick (Kafka
-Share Consumer, Confluent Parallel Consumer, Reactor Kafka, a raw `KafkaConsumer + virtual threads`, and a
+Share Consumer, Confluent Parallel Consumer, Reactor Kafka, Atleon, a raw `KafkaConsumer + virtual threads`, and a
 single-threaded consumer); and three micro-benches isolate internals.
 
 **The numbers live in [`results/`](results/), one dated snapshot per capture.** Embedding a single run here is how the
@@ -30,7 +30,7 @@ from pure framework overhead (0 µs) through local enrichment to multi-ms I/O ho
 "who has the lowest per-record overhead?"; in the 10–100 ms regime it's "who schedules blocking work best?" — usually
 different winners.
 
-**`ParallelProcessingBenchmark` — throughput, 9 arms:**
+**`ParallelProcessingBenchmark` — throughput, 12 arms:**
 
 | Arm                  | Runtime                                                                    | Ordering      |
 | -------------------- | -------------------------------------------------------------------------- | ------------- |
@@ -41,18 +41,43 @@ different winners.
 | `confluentKey`       | Confluent PC, `ProcessingOrder.KEY`                                        | per-key       |
 | `confluentPartition` | Confluent PC, `ProcessingOrder.PARTITION`                                  | per-partition |
 | `reactor`            | Reactor Kafka, `Flux.parallel(100)`                                        | none          |
+| `atleonPartition`    | Atleon Alo API, `groupBy(ConsumerRecord::partition, Integer.MAX_VALUE)`    | per-partition |
+| `atleonParallel`     | Atleon Alo API, `flatMap` with `Integer.MAX_VALUE` concurrency             | none          |
+| `atleonKey`          | Atleon Alo API, `groupByWithAutoComplete`, serial within each key          | per-key       |
 | `raw`                | Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor`                    | none          |
 | `singleThread`       | Single-threaded `KafkaConsumer`, inline processing (the floor)             | per-partition |
 
-**`ParallelProcessingLatencyBenchmark` — latency, 4 arms** (`kpipe`, `confluent`, `reactor`, `raw`): declares
-`@BenchmarkMode({SampleTime, AverageTime})` and reports p50/p95/p99 of **whole-invocation** completion time (batch
-amortized — divide by `TARGET_MESSAGES` for a rough per-record figure).
+**`ParallelProcessingLatencyBenchmark` — latency, 7 arms** (`kpipe`, `confluent`, `reactor`, `atleonPartition`,
+`atleonParallel`, `atleonKey`, `raw`): declares `@BenchmarkMode({SampleTime, AverageTime})`. `SampleTime` reports
+p50/p95/p99 and `AverageTime` reports the mean. Every arm uses `@OperationsPerInvocation(TARGET_MESSAGES)`, so JMH
+already divides batch completion time by 25,000 and reports amortized **ms/record**. Multiply by `TARGET_MESSAGES` to
+recover batch-drain time. These measurements describe complete batches, not individual record latency.
 
 **`PerRecordLatencyHarness` — true per-record tail latency (NOT JMH).** A plain `main()` harness, because JMH can't
 ingest tens of thousands of externally-measured timestamp pairs. Producer stamps each record's intended send slot
 (coordinated-omission corrected); the sink measures `now − stamp` after the simulated work, retains every sample in a
 `long[]`, and sorts once for exact p50/p95/p99/max. Arms: `kpipeParallel`, `kpipeKeyOrdered`, `confluentUnordered`,
 `rawVirtualThreads`. See [Running](#running-benchmarks) below.
+
+All Atleon contexts use low-level `KafkaReceiver.receiveManual` and convert records with
+`.as(AloFlux.wrapper(KafkaReceiverRecord::toAloConsumerRecord))`. Schedulers are created with
+`Schedulers.fromExecutorService(Executors.newVirtualThreadPerTaskExecutor())`. `atleonParallel` uses `flatMap` with
+`Integer.MAX_VALUE` concurrency. `atleonKey` uses `groupByWithAutoComplete(..., Integer.MAX_VALUE)` and
+`ByteBuffer.wrap(record.key())` for byte-content key equality. `atleonPartition` uses
+`groupBy(ConsumerRecord::partition, Integer.MAX_VALUE)`. Both grouped arms use `innerPublishOn`, `innerConsume`, and
+`flatMapAlo` to consume each group serially while allowing groups to run concurrently. The topic has eight partitions,
+so the partition arm can run up to eight partition workers concurrently. The broker-backed `atleonPartition` receiver
+sets `max.poll.records=50` and `PollStrategyFactory.greatestBatchLag()`. The parallel and key-ordered receivers use the
+defaults for these settings. Both grouped arms use the default `innerPublishOn` prefetch.
+
+Broker-backed Atleon receivers allow up to 25,000 active in-flight records and use the invocation's unique group ID as
+their client ID. Completion counters measure processing callbacks; they do not wait for final acknowledgments or
+commits. Atleon teardown cancels the subscription and immediately disposes its scheduler, so a final key-group
+completion racing with disposal can log `RejectedExecutionException` through Reactor's `onErrorDropped` hook.
+
+The KPipe-only MockConsumer key-dispatch benchmark compares `PARALLEL` and `KEY_ORDERED`. Its `dispatch` arm processes
+10,000 records in one partition and requires no Docker. KPipe has no `PARTITION` mode; compare `atleonPartition` to
+`confluentPartition` in the broker-backed suite.
 
 ### Micro-benchmarks (MockConsumer, no broker)
 

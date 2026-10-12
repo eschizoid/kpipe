@@ -7,33 +7,37 @@ import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 
-/// Competitive parallel-consumer throughput benchmark. Nine runtimes consume the same seeded
+/// Competitive parallel-consumer throughput benchmark. Twelve arms consume the same seeded
 /// topic from the same Testcontainers-managed Kafka broker:
 ///
 ///   * **Single-threaded `KafkaConsumer`** — poll loop with inline processing, no fan-out. The
 ///     default pattern most teams ship with; the floor that motivates the rest.
 ///   * **KPipe (PARALLEL)** — virtual-thread-per-record on Loom. Unordered.
-///   * **KPipe (KEY_ORDERED)** — per-key serial queues on virtual threads. Rival: `confluentKey`.
+///   * **KPipe (KEY_ORDERED)** — per-key serial queues on virtual threads. Rivals: `atleonKey`
+///     and `confluentKey`.
 ///   * **Kafka Share Consumer (KIP-932)** — one share consumer + virtual-thread fan-out, the
 ///     controlled apples-to-apples rival of KPipe PARALLEL. Unordered.
 ///   * **Confluent Parallel Consumer (UNORDERED)** — `ProcessingOrder.UNORDERED`.
 ///   * **Confluent Parallel Consumer (KEY)** — `ProcessingOrder.KEY`, per-key FIFO.
 ///   * **Confluent Parallel Consumer (PARTITION)** — `ProcessingOrder.PARTITION`.
 ///   * **Reactor Kafka** — `Flux<ReceiverRecord>` on the Reactor `parallel` scheduler with a
-///     matching concurrency limit. Re-enabled after Reactor Kafka 1.3.25 (Nov 2025), the first
+///     100 rails. Re-enabled after Reactor Kafka 1.3.25 (Nov 2025), the first
 ///     release to drop the deprecated `ConsumerRecord` ctor that was removed in
 ///     `kafka-clients:4.x`. The dependency's POM still pins `kafka-clients:3.9.1` but the new
 ///     binary works when Gradle conflict-resolves to our 4.3.0.
+///   * **Atleon** — `atleonPartition`, `atleonParallel`, and `atleonKey` use Alo processing
+///     with virtual-thread schedulers; grouped modes consume each group serially.
 ///   * **Raw `KafkaConsumer` + virtual threads** — hand-rolled loop with VT fan-out. The
 ///     Loom-only floor; what you get without a framework but with Loom.
 ///
 /// Each invocation processes [ParallelProcessingBenchmarkInfrastructure#TARGET_MESSAGES] records.
 /// The `workMicros` `@Param` injects per-record simulated work via `LockSupport.parkNanos` so
-/// the bench covers three workload regimes:
+/// the bench covers the following workload regimes:
 ///
 ///   * `0 µs` — pure framework overhead (no work per record).
 ///   * `100 µs` — typical local enrichment (in-memory transform, no I/O).
 ///   * `1000 µs` — typical blocking I/O (HTTP / JDBC / S3 round trip).
+///   * `10000`, `35000`, `50000`, and `100000 µs` — longer blocking I/O waits.
 ///
 /// Run every runtime across the parameter sweep:
 ///
@@ -69,6 +73,29 @@ public class ParallelProcessingBenchmark {
 
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)
+  public void atleonPartition(
+    final ParallelProcessingBenchmarkInfrastructure.AtleonPartitionInvocationContext context
+  ) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("atleon-partition", context.processedCount());
+  }
+
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void atleonParallel(final ParallelProcessingBenchmarkInfrastructure.AtleonParallelInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("atleon-parallel", context.processedCount());
+  }
+
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void atleonKey(final ParallelProcessingBenchmarkInfrastructure.AtleonKeyOrderedInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("atleon-key", context.processedCount());
+  }
+
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
   public void raw(final ParallelProcessingBenchmarkInfrastructure.RawInvocationContext context) {
     context.start();
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("raw", context.processedCount());
@@ -84,8 +111,8 @@ public class ParallelProcessingBenchmark {
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("share", context.processedCount());
   }
 
-  /// KPipe in KEY_ORDERED mode — per-key FIFO guarantee. Rival: `confluentKey`. Read the gap
-  /// versus the unordered arms as the cost of ordering, NOT as a head-to-head loss against any
+  /// KPipe in KEY_ORDERED mode — per-key FIFO guarantee. Rivals: `atleonKey` and `confluentKey`.
+  /// Read the gap versus unordered arms as the cost of ordering, not a head-to-head loss against
   /// unordered runtime.
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)
