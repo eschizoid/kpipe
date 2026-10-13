@@ -70,10 +70,12 @@ so the partition arm can run up to eight partition workers concurrently. The bro
 sets `max.poll.records=50` and `PollStrategyFactory.greatestBatchLag()`. The parallel and key-ordered receivers use the
 defaults for these settings. Both grouped arms use the default `innerPublishOn` prefetch.
 
-Broker-backed Atleon receivers allow up to 25,000 active in-flight records and use the invocation's unique group ID as
-their client ID. Completion counters measure processing callbacks; they do not wait for final acknowledgments or
-commits. Atleon teardown cancels the subscription and immediately disposes its scheduler, so a final key-group
-completion racing with disposal can log `RejectedExecutionException` through Reactor's `onErrorDropped` hook.
+Broker-backed Atleon receivers use a 10,000-record active in-flight limit, matching KPipe's default high watermark, and
+the receiver's default `AcknowledgementQueueMode.STRICT`. This mode executes acknowledgments in order and replenishes
+upstream demand as contiguous completed acknowledgments drain. Receivers use the invocation's unique group ID as their
+client ID. Completion counters measure processing callbacks; they do not wait for final acknowledgments or commits.
+Atleon teardown cancels the subscription and immediately disposes its scheduler, so a final key-group completion racing
+with disposal can log `RejectedExecutionException` through Reactor's `onErrorDropped` hook.
 
 The KPipe-only MockConsumer key-dispatch benchmark compares `PARALLEL` and `KEY_ORDERED`. Its `dispatch` arm processes
 10,000 records in one partition and requires no Docker. KPipe has no `PARTITION` mode; compare `atleonPartition` to

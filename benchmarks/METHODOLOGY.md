@@ -34,7 +34,7 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 | **Confluent Parallel Consumer (KEY)**       | Same pool, `ProcessingOrder.KEY`                                                            | **per-key**       | `maxConcurrency=100`; at most one in-flight per key                                   |
 | **Confluent Parallel Consumer (PARTITION)** | Same pool, `ProcessingOrder.PARTITION`                                                      | **per-partition** | `maxConcurrency=100`; capped at partition count (8)                                   |
 | **Reactor Kafka**                           | Reactor `parallel` scheduler via `Flux.parallel(N)`                                         | none              | `parallel(100)` to match Confluent's pool size                                        |
-| **Atleon (PARALLEL)**                       | Alo `flatMap` on a virtual-thread-per-task scheduler                                        | none              | `Integer.MAX_VALUE` concurrency; 25,000-record in-flight limit                        |
+| **Atleon (PARALLEL)**                       | Alo `flatMap` on a virtual-thread-per-task scheduler                                        | none              | `Integer.MAX_VALUE` concurrency; 10,000-record in-flight limit (matches KPipe)        |
 | **Atleon (KEY_ORDERED)**                    | Alo `groupByWithAutoComplete` with groups on a virtual-thread scheduler                     | **per-key**       | `Integer.MAX_VALUE` group concurrency; serial within a key                            |
 | **Atleon (PARTITION)**                      | Alo `groupBy(ConsumerRecord::partition, Integer.MAX_VALUE)` with a virtual-thread scheduler | **per-partition** | Up to 8 partition workers; serial within a partition                                  |
 | **Raw `KafkaConsumer` + virtual threads**   | `Executors.newVirtualThreadPerTaskExecutor()` driven from a platform-thread poll loop       | none              | Unbounded virtual threads                                                             |
@@ -56,8 +56,10 @@ two questions often have different winners.
 
 Atleon's broker-backed partition arm sets `max.poll.records=50` and uses greatest-batch-lag polling. The parallel and
 key-ordered arms use the receiver defaults for these settings. Both grouped arms use the default `innerPublishOn`
-prefetch. All three use a 25,000-record in-flight limit. Account for these configuration differences when interpreting
-runtime comparisons.
+prefetch. All three use a 10,000-record active in-flight limit, matching KPipe's default high watermark, and the
+receiver's default `AcknowledgementQueueMode.STRICT`. This mode executes acknowledgments in order and replenishes
+upstream demand as contiguous completed acknowledgments drain. Historical captures may use different receiver settings;
+consult each capture's configuration notes when interpreting runtime comparisons.
 
 ### Apples-to-apples — read these comparisons honestly
 

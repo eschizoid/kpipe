@@ -7,6 +7,7 @@ import io.atleon.kafka.KafkaReceiverRecord;
 import io.atleon.kafka.PollStrategyFactory;
 import io.confluent.parallelconsumer.ParallelConsumerOptions;
 import io.confluent.parallelconsumer.ParallelStreamProcessor;
+import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
@@ -69,8 +70,8 @@ import reactor.kafka.receiver.ReceiverOptions;
 ///
 /// Each runtime simulates a per-record workload of `workMicros` microseconds via
 /// `LockSupport.parkNanos`. Setting `workMicros=0` reduces the bench to a pure framework-overhead
-/// comparison; non-zero values expose how each runtime schedules blocking work. All arms except
-/// KEY_ORDERED are unordered — read KEY_ORDERED's gap as the cost of per-key ordering.
+/// comparison; non-zero values expose how each runtime schedules blocking work. Compare arms
+/// with matching ordering guarantees: unordered, per-key, or per-partition processing.
 public final class ParallelProcessingBenchmarkInfrastructure {
 
   static final String TOPIC = "benchmark-topic";
@@ -599,7 +600,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       return KafkaReceiverOptions.<byte[], byte[]>newBuilder()
         .consumerProperties(consumerPropertiesMap)
         .consumerProperty(ConsumerConfig.CLIENT_ID_CONFIG, consumerProps.getProperty(ConsumerConfig.GROUP_ID_CONFIG))
-        .maxActiveInFlight(TARGET_MESSAGES);
+        .maxActiveInFlight(BackpressureController.DEFAULT_HIGH_WATERMARK); // Match KPipe default for max comparability
     }
 
     protected abstract AloFlux<Void> applyProcessing(final AloFlux<ConsumerRecord<byte[], byte[]>> records);

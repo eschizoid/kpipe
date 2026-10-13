@@ -1,8 +1,13 @@
-# Benchmark snapshot — 2026-10-12-full-suite
+# Benchmark snapshot — 2026-10-12-full-suite (Atleon updated 2026-10-13)
 
 All JMH benchmarks with the runtime workload restricted to `workMicros=0,100,1000`: throughput, average-time and
 sample-time latency, JSON/Avro design validation, batch sink, MockConsumer dispatch, and offset tracking. The 10–100 ms
 workload sweep and the non-JMH `PerRecordLatencyHarness` are outside this capture.
+
+Updated 2026-10-13: the 27 Atleon runtime results now use the 10,000-record in-flight cap and default `STRICT`
+acknowledgement queue mode. Parallel and partition results come from the first STRICT rerun; key-ordered results come
+from the later STRICT repeat. The other 73 results remain from the 2026-10-12 capture. Comparisons therefore span
+separate captures on the same host; COMPACT_EAGER results are excluded.
 
 ## Environment
 
@@ -22,6 +27,15 @@ workload sweep and the non-JMH `PerRecordLatencyHarness` are outside this captur
 | Reactor Kafka                 | 1.3.25                                                                                                                                                                                          |
 | Resumed jar SHA-256           | `9845bcfd0e60c2d8143d8bd61ab7c704c5893602e571f388ed5647a32c15f2b5`                                                                                                                              |
 | Source diff at resume SHA-256 | `1e59ec1d0f31f15d56a990c3e976919b78a2eb3f3e8a9656319b22e6f74799e8`                                                                                                                              |
+| Atleon STRICT rerun           | 2026-10-13 10:01–11:20 CDT; all 27 Atleon cases                                                                                                                                                 |
+| Atleon STRICT key repeat      | 2026-10-13 12:41–13:03 CDT; replaces the nine key-ordered cases                                                                                                                                 |
+| Atleon rerun KPipe tree       | `dcbcdd42d1a2914fc47d1634870c50a87aae3f87` plus receiver-cap and documentation changes                                                                                                          |
+| Atleon rerun Docker           | 29.8.2; 16 CPUs; approximately 15.7 GiB available to Docker                                                                                                                                     |
+
+The original environment rows describe the October 12 capture. The Atleon reruns used the same hardware, OS, JDK, Kafka,
+and library versions; their Docker version and source revision are listed separately. Executable and source-diff
+checksums for both STRICT segments are recorded in
+[the Atleon capture metadata](2026-10-13-atleon-in-flight-10000.metadata.json).
 
 The machine was not independently verified to be quiesced. Docker and benchmark forks share host CPU resources. Results
 characterize this working tree and machine, rather than a released KPipe artifact.
@@ -59,60 +73,68 @@ sink sweeps `sinkLatencyMicros=10,100,1000` × `batchSize=1,10,100`; dispatch sw
 `distinctKeys=1,100,10000`; offset tracking uses eight partitions.
 
 Atleon uses `KafkaReceiver.receiveManual` adapted through `AloFlux.wrapper(KafkaReceiverRecord::toAloConsumerRecord)`,
-virtual-thread schedulers, and a 25,000-record in-flight limit. Parallel uses `flatMap` with `Integer.MAX_VALUE`
-concurrency. Key-ordered uses `groupByWithAutoComplete` with the same maximum concurrency. Partition-ordered uses
+virtual-thread schedulers, and `.maxActiveInFlight(BackpressureController.DEFAULT_HIGH_WATERMARK)` (10,000 records). The
+receiver retains its default `AcknowledgementQueueMode.STRICT`: acknowledgments execute in order, and upstream demand is
+replenished as contiguous completed acknowledgments drain. Parallel uses `flatMap` with `Integer.MAX_VALUE` concurrency.
+Key-ordered uses `groupByWithAutoComplete` with the same maximum concurrency. Partition-ordered uses
 `groupBy(ConsumerRecord::partition, Integer.MAX_VALUE)`, `max.poll.records=50`, and greatest-batch-lag polling. Parallel
-and key-ordered retain receiver defaults. Grouped arms use default `innerPublishOn` prefetch. KPipe has no
-partition-ordered arm. KPipe retains its default in-flight backpressure watermarks (10,000 high / 7,000 low). Confluent
-uses `maxConcurrency=100`; partition ordering limits active processing to the eight partitions. Reactor uses 100 rails
-on `Schedulers.parallel()`. These settings compare the configured implementations, rather than normalizing all
-concurrency and polling controls. The broker topic has eight partitions and 1,000 distinct keys.
+and key-ordered retain defaults for polling strategy and `max.poll.records`. Grouped arms use default `innerPublishOn`
+prefetch. KPipe has no partition-ordered arm. KPipe retains its default in-flight backpressure watermarks (10,000 high /
+7,000 low). Confluent uses `maxConcurrency=100`; partition ordering limits active processing to the eight partitions.
+Reactor uses 100 rails on `Schedulers.parallel()`. These settings compare the configured implementations, rather than
+normalizing all concurrency and polling controls. The broker topic has eight partitions and 1,000 distinct keys.
 
 ## Throughput — ParallelProcessingBenchmark
 
 Records/s, higher is better. JMH normalizes by `@OperationsPerInvocation(25_000)`. `workMicros` is synthetic blocking
 delay via `LockSupport.parkNanos`, rather than CPU work or measured external I/O.
 
-| Runtime arm          | Ordering        | 0 µs             | 100 µs           | 1000 µs          |
-| -------------------- | --------------- | ---------------- | ---------------- | ---------------- |
-| `kpipe`              | Unordered       | 574,267 ± 8.2%   | 235,673 ± 25.0%  | 230,360 ± 22.7%  |
-| `atleonParallel`     | Unordered       | 608,344 ± 4.5%   | 851,872 ± 4.2%   | 1,018,327 ± 4.4% |
-| `kpipeKeyOrdered`    | Per key         | 384,765 ± 3.9%   | 208,753 ± 20.5%  | 91,925 ± 0.8%    |
-| `atleonKey`          | Per key         | 1,657,807 ± 1.5% | 1,186,732 ± 1.3% | 575,752 ± 1.4%   |
-| `confluent`          | Unordered       | 104,485 ± 4.8%   | 107,559 ± 4.4%   | 68,111 ± 0.5%    |
-| `confluentKey`       | Per key         | 103,644 ± 1.2%   | 101,820 ± 1.1%   | 64,536 ± 0.6%    |
-| `confluentPartition` | Per partition   | 1,962 ± 10.3%    | 1,915 ± 9.9%     | 1,401 ± 8.1%     |
-| `atleonPartition`    | Per partition   | 1,036,177 ± 6.9% | 32,145 ± 0.5%    | 3,191 ± 6.7%     |
-| `reactor`            | Unordered       | 363,691 ± 1.3%   | 99,960 ± 0.3%    | 10,201 ± 6.6%    |
-| `raw`                | Unordered       | 547,456 ± 4.7%   | 576,470 ± 4.4%   | 540,629 ± 4.5%   |
-| `share`              | Unordered       | 4,806 ± 0.2%     | 4,809 ± 0.1%     | 4,791 ± 0.1%     |
-| `singleThread`       | Globally serial | 1,710,374 ± 3.3% | 6,200 ± 1.8%     | 760 ± 5.4%       |
+| Runtime arm          | Ordering        | 0 µs             | 100 µs           | 1000 µs         |
+| -------------------- | --------------- | ---------------- | ---------------- | --------------- |
+| `kpipe`              | Unordered       | 574,267 ± 8.2%   | 235,673 ± 25.0%  | 230,360 ± 22.7% |
+| `atleonParallel`     | Unordered       | 613,902 ± 3.0%   | 866,523 ± 3.6%   | 937,623 ± 3.7%  |
+| `kpipeKeyOrdered`    | Per key         | 384,765 ± 3.9%   | 208,753 ± 20.5%  | 91,925 ± 0.8%   |
+| `atleonKey`          | Per key         | 1,544,744 ± 2.9% | 1,120,818 ± 3.4% | 392,184 ± 1.6%  |
+| `confluent`          | Unordered       | 104,485 ± 4.8%   | 107,559 ± 4.4%   | 68,111 ± 0.5%   |
+| `confluentKey`       | Per key         | 103,644 ± 1.2%   | 101,820 ± 1.1%   | 64,536 ± 0.6%   |
+| `confluentPartition` | Per partition   | 1,962 ± 10.3%    | 1,915 ± 9.9%     | 1,401 ± 8.1%    |
+| `atleonPartition`    | Per partition   | 1,063,460 ± 8.8% | 31,920 ± 0.3%    | 2,961 ± 0.3%    |
+| `reactor`            | Unordered       | 363,691 ± 1.3%   | 99,960 ± 0.3%    | 10,201 ± 6.6%   |
+| `raw`                | Unordered       | 547,456 ± 4.7%   | 576,470 ± 4.4%   | 540,629 ± 4.5%  |
+| `share`              | Unordered       | 4,806 ± 0.2%     | 4,809 ± 0.1%     | 4,791 ± 0.1%    |
+| `singleThread`       | Globally serial | 1,710,374 ± 3.3% | 6,200 ± 1.8%     | 760 ± 5.4%      |
 
 ### Matched ordering comparisons
 
 | Ordering      | Work (µs) | Comparison                               | Sample-mean ratio |
 | ------------- | --------- | ---------------------------------------- | ----------------- |
-| Parallel      | 0         | `atleonParallel` / `kpipe`               | 1.06×             |
-| Parallel      | 100       | `atleonParallel` / `kpipe`               | 3.61×             |
-| Parallel      | 1000      | `atleonParallel` / `kpipe`               | 4.42×             |
-| Per key       | 0         | `atleonKey` / `kpipeKeyOrdered`          | 4.31×             |
-| Per key       | 100       | `atleonKey` / `kpipeKeyOrdered`          | 5.68×             |
-| Per key       | 1000      | `atleonKey` / `kpipeKeyOrdered`          | 6.26×             |
-| Per partition | 0         | `atleonPartition` / `confluentPartition` | 528.11×           |
-| Per partition | 100       | `atleonPartition` / `confluentPartition` | 16.78×            |
-| Per partition | 1000      | `atleonPartition` / `confluentPartition` | 2.28×             |
+| Parallel      | 0         | `atleonParallel` / `kpipe`               | 1.07×             |
+| Parallel      | 100       | `atleonParallel` / `kpipe`               | 3.68×             |
+| Parallel      | 1000      | `atleonParallel` / `kpipe`               | 4.07×             |
+| Parallel      | 0         | `atleonParallel` / `reactor`             | 1.69×             |
+| Parallel      | 100       | `atleonParallel` / `reactor`             | 8.67×             |
+| Parallel      | 1000      | `atleonParallel` / `reactor`             | 91.91×            |
+| Per key       | 0         | `atleonKey` / `kpipeKeyOrdered`          | 4.01×             |
+| Per key       | 100       | `atleonKey` / `kpipeKeyOrdered`          | 5.37×             |
+| Per key       | 1000      | `atleonKey` / `kpipeKeyOrdered`          | 4.27×             |
+| Per key       | 0         | `atleonKey` / `confluentKey`             | 14.90×            |
+| Per key       | 100       | `atleonKey` / `confluentKey`             | 11.01×            |
+| Per key       | 1000      | `atleonKey` / `confluentKey`             | 6.08×             |
+| Per partition | 0         | `atleonPartition` / `confluentPartition` | 542.02×           |
+| Per partition | 100       | `atleonPartition` / `confluentPartition` | 16.67×            |
+| Per partition | 1000      | `atleonPartition` / `confluentPartition` | 2.11×             |
 
 Ratios compare means; they are not confidence intervals for the ratio. Compare matching ordering guarantees. The raw
 virtual-thread arm lacks equivalent offset/commit guarantees.
 
 ### Observations
 
-The zero-work parallel throughput scores have overlapping error bands. Atleon leads KPipe by 3.61×–4.42× with the
-simulated blocking delays and by 4.31×–6.26× in the matching per-key throughput cases. KPipe parallel has wide error
+The zero-work parallel throughput scores have overlapping error bands. Atleon leads KPipe by 3.68×–4.07× with the
+simulated blocking delays and by 4.01×–5.37× in the matching per-key throughput cases. KPipe parallel has wide error
 bands at nonzero delays, so the exact ratios remain uncertain. These results apply to the configured receiver and
 concurrency settings above.
 
-Atleon leads Confluent in partition mode by 16.78× at 100 µs and 2.28× at 1 ms. The 528× no-work ratio suggests
+Atleon leads Confluent in partition mode by 16.67× at 100 µs and 2.11× at 1 ms. The 542× no-work ratio suggests
 polling/dispatch behavior deserves investigation before drawing a general production conclusion.
 
 ## Latency — ParallelProcessingLatencyBenchmark
@@ -126,15 +148,15 @@ sample-time values come from separate trials.
 | `kpipe`           | 0         | 0.001391 ± 6.0%             | 0.001399 ± 4.1%                 | 0.001412 | 0.001707 | 0.002155 |
 | `kpipe`           | 100       | 0.004169 ± 17.1%            | 0.004152 ± 16.1%                | 0.005472 | 0.006302 | 0.009880 |
 | `kpipe`           | 1000      | 0.004070 ± 24.1%            | 0.004836 ± 17.1%                | 0.005688 | 0.009904 | 0.010397 |
-| `atleonParallel`  | 0         | 0.001551 ± 2.8%             | 0.001620 ± 1.4%                 | 0.001585 | 0.002116 | 0.002571 |
-| `atleonParallel`  | 100       | 0.001105 ± 4.6%             | 0.001128 ± 2.2%                 | 0.000992 | 0.002048 | 0.002375 |
-| `atleonParallel`  | 1000      | 0.000938 ± 4.3%             | 0.000943 ± 1.8%                 | 0.000879 | 0.001640 | 0.002125 |
-| `atleonKey`       | 0         | 0.000593 ± 2.5%             | 0.000597 ± 0.9%                 | 0.000575 | 0.000736 | 0.000993 |
-| `atleonKey`       | 100       | 0.000812 ± 2.5%             | 0.000866 ± 0.9%                 | 0.000839 | 0.001074 | 0.001351 |
-| `atleonKey`       | 1000      | 0.001724 ± 1.4%             | 0.001733 ± 0.7%                 | 0.001712 | 0.001928 | 0.002565 |
-| `atleonPartition` | 0         | 0.001047 ± 8.5%             | 0.001037 ± 7.2%                 | 0.000647 | 0.004656 | 0.004822 |
-| `atleonPartition` | 100       | 0.031428 ± 1.1%             | 0.031999 ± 1.6%                 | 0.031632 | 0.033786 | 0.042844 |
-| `atleonPartition` | 1000      | 0.283571 ± 0.2%             | 0.336876 ± 0.5%                 | 0.337920 | 0.338944 | 0.338944 |
+| `atleonParallel`  | 0         | 0.001640 ± 3.4%             | 0.001599 ± 1.3%                 | 0.001560 | 0.002114 | 0.002499 |
+| `atleonParallel`  | 100       | 0.001170 ± 3.7%             | 0.001142 ± 2.4%                 | 0.001040 | 0.001934 | 0.002516 |
+| `atleonParallel`  | 1000      | 0.001062 ± 3.7%             | 0.000995 ± 2.2%                 | 0.000954 | 0.001307 | 0.001922 |
+| `atleonKey`       | 0         | 0.000628 ± 3.0%             | 0.000638 ± 1.8%                 | 0.000608 | 0.000774 | 0.000989 |
+| `atleonKey`       | 100       | 0.000899 ± 4.4%             | 0.000899 ± 2.9%                 | 0.000831 | 0.001056 | 0.004756 |
+| `atleonKey`       | 1000      | 0.002877 ± 2.1%             | 0.002873 ± 1.1%                 | 0.002836 | 0.003177 | 0.003722 |
+| `atleonPartition` | 0         | 0.000963 ± 6.7%             | 0.000903 ± 6.7%                 | 0.000595 | 0.004584 | 0.004765 |
+| `atleonPartition` | 100       | 0.036400 ± 0.8%             | 0.036282 ± 0.3%                 | 0.036224 | 0.036864 | 0.037309 |
+| `atleonPartition` | 1000      | 0.337885 ± 0.2%             | 0.338964 ± 0.3%                 | 0.338432 | 0.341350 | 0.341504 |
 | `confluent`       | 0         | 0.008575 ± 0.8%             | 0.008556 ± 0.8%                 | 0.008544 | 0.008983 | 0.009753 |
 | `confluent`       | 100       | 0.008788 ± 0.7%             | 0.008739 ± 0.7%                 | 0.008720 | 0.009120 | 0.009366 |
 | `confluent`       | 1000      | 0.014533 ± 0.4%             | 0.016579 ± 0.4%                 | 0.016560 | 0.017056 | 0.017263 |
@@ -146,9 +168,11 @@ sample-time values come from separate trials.
 | `raw`             | 1000      | 0.001817 ± 4.2%             | 0.001837 ± 4.3%                 | 0.001833 | 0.002334 | 0.002647 |
 
 The zero-work parallel average-time trial favors KPipe slightly, reversing the small throughput lead; the blocking-work
-advantage for Atleon persists. Separate trials can differ even with narrow individual error bands: Atleon partition at 1
-ms measured 0.283571 ms/record in average-time mode and 0.336876 in sample-time mode. Treat within-trial confidence
-intervals separately from across-trial reproducibility.
+advantage for Atleon persists. Atleon partition at 1 ms measured 0.337885 ms/record in average-time mode and 0.338964 in
+sample-time mode. Separate trials can still differ beyond their individual error bands: key-ordered 1 ms throughput was
+344,822 records/s in the first STRICT rerun and 392,184 in the later repeat, despite unchanged receiver settings. This
+report uses the requested latest key repeat, without averaging the two captures. Treat within-trial confidence intervals
+separately from across-trial reproducibility.
 
 ## Allocation profile
 
@@ -159,13 +183,13 @@ path or establish the cause of performance differences.
 | Arm                  | B/record |
 | -------------------- | -------- |
 | `kpipe`              | 1,856.5  |
-| `atleonParallel`     | 1,036.3  |
+| `atleonParallel`     | 1,056.3  |
 | `kpipeKeyOrdered`    | 908.1    |
-| `atleonKey`          | 667.2    |
+| `atleonKey`          | 714.1    |
 | `confluent`          | 120.0    |
 | `confluentKey`       | 213.8    |
 | `confluentPartition` | 163.7    |
-| `atleonPartition`    | 684.3    |
+| `atleonPartition`    | 686.2    |
 | `reactor`            | 155.5    |
 | `raw`                | 448.2    |
 | `share`              | 424.8    |
@@ -224,12 +248,18 @@ the code now uses the restored original KPipe fixture.
 
 ## Raw output and completeness
 
-[2026-10-12-full-suite.json](2026-10-12-full-suite.json) contains unchanged native JMH result objects, including
-secondary GC metrics, per-fork samples, and sample-time histograms. No samples within retained cases were discarded or
-scores recomputed.
+[2026-10-12-full-suite.json](2026-10-12-full-suite.json) contains 100 native JMH result objects: 73 retained from the
+original full capture and 27 replaced with the latest STRICT Atleon results. Each retains secondary GC metrics, per-fork
+samples, and sample-time histograms. No samples within retained cases were discarded or scores recomputed.
 
-The capture completed 106 cases without failures. This report and JSON retain the 100 cases matching the current
-benchmark set; the six removed Atleon mock-consumer cases are saved with their implementation in a Git stash.
+The replacement objects also appear in [the STRICT Atleon JSON](2026-10-13-atleon-in-flight-10000.json). Its
+[capture metadata](2026-10-13-atleon-in-flight-10000.metadata.json) records settings, environment, checksums, and which
+STRICT segment supplied each case. [The full-suite provenance](2026-10-12-full-suite.metadata.json) identifies the
+replacement set and the 73 retained cases. The separate COMPACT_EAGER experiment is not used in this report.
+
+The original capture completed 106 cases without failures; the six removed Atleon mock-consumer cases are saved with
+their implementation in a Git stash. The later STRICT capture completed 27 cases and the STRICT key repeat completed
+nine, both without JMH failures. The current report and JSON contain 100 cases with 2,500 measured iteration entries.
 
 ### Capture interruption
 
