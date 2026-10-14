@@ -7,7 +7,7 @@ import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 
-/// Latency-mode companion to [ParallelProcessingBenchmark]. Same four runtimes, same seeded
+/// Latency-mode companion to [ParallelProcessingBenchmark]. Seven arms, same seeded
 /// topic, but reports the **distribution** of "time to drain N records" rather than steady-state
 /// throughput.
 ///
@@ -22,9 +22,10 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 /// ./gradlew :benchmarks:jmh -Pjmh.includes='ParallelProcessingLatencyBenchmark'
 /// ```
 ///
-/// The reported time-per-op is "time to process [#TARGET_MESSAGES] records", not per-record
-/// latency. Divide by `TARGET_MESSAGES` for the per-record figure; the percentile *shape* (mean
-/// vs p99) is the headline, not the absolute number.
+/// Every arm uses `@OperationsPerInvocation(TARGET_MESSAGES)`, so JMH already divides batch
+/// completion time by the record count and reports amortized milliseconds per record. Multiply
+/// the reported value by `TARGET_MESSAGES` to recover batch-drain time. The samples describe
+/// batches, not individual record latency; [PerRecordLatencyHarness] measures the latter.
 @BenchmarkMode({ Mode.SampleTime, Mode.AverageTime })
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ParallelProcessingLatencyBenchmark {
@@ -50,6 +51,29 @@ public class ParallelProcessingLatencyBenchmark {
   public void reactor(final ParallelProcessingBenchmarkInfrastructure.ReactorInvocationContext context) {
     context.start();
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("reactor", context.processedCount());
+  }
+
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void atleonPartition(
+    final ParallelProcessingBenchmarkInfrastructure.AtleonPartitionInvocationContext context
+  ) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("atleon-partition", context.processedCount());
+  }
+
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void atleonParallel(final ParallelProcessingBenchmarkInfrastructure.AtleonParallelInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("atleon-parallel", context.processedCount());
+  }
+
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void atleonKey(final ParallelProcessingBenchmarkInfrastructure.AtleonKeyOrderedInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("atleon-key", context.processedCount());
   }
 
   @Benchmark

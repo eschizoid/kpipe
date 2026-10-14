@@ -1,11 +1,18 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
+import io.atleon.core.AloFlux;
+import io.atleon.kafka.KafkaReceiver;
+import io.atleon.kafka.KafkaReceiverOptions;
+import io.atleon.kafka.KafkaReceiverRecord;
+import io.atleon.kafka.PollStrategyFactory;
 import io.confluent.parallelconsumer.ParallelConsumerOptions;
 import io.confluent.parallelconsumer.ParallelStreamProcessor;
+import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
@@ -20,11 +27,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.KafkaShareConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -41,7 +50,10 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
-import reactor.kafka.receiver.KafkaReceiver;
+import reactor.core.Disposable;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.ReceiverOptions;
 
 /// Shared infrastructure for the parallel-consumer competitive benchmarks.
@@ -52,13 +64,14 @@ import reactor.kafka.receiver.ReceiverOptions;
 ///   * KPipe PARALLEL (virtual-thread-per-record) and KEY_ORDERED (per-key serial queues)
 ///   * Kafka Share Consumer (KIP-932) — single consumer + virtual-thread fan-out
 ///   * Confluent Parallel Consumer (`ProcessingOrder.UNORDERED`, configurable max concurrency)
+///   * Atleon (Alo processing in partition, parallel, and key-ordered modes)
 ///   * Reactor Kafka (`Flux<ReceiverRecord>` on the Reactor `parallel` scheduler)
 ///   * Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor` (the hand-rolled baseline)
 ///
 /// Each runtime simulates a per-record workload of `workMicros` microseconds via
 /// `LockSupport.parkNanos`. Setting `workMicros=0` reduces the bench to a pure framework-overhead
-/// comparison; non-zero values expose how each runtime schedules blocking work. All arms except
-/// KEY_ORDERED are unordered — read KEY_ORDERED's gap as the cost of per-key ordering.
+/// comparison; non-zero values expose how each runtime schedules blocking work. Compare arms
+/// with matching ordering guarantees: unordered, per-key, or per-partition processing.
 public final class ParallelProcessingBenchmarkInfrastructure {
 
   static final String TOPIC = "benchmark-topic";
@@ -316,10 +329,9 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
   /// KPipe in KEY_ORDERED mode: same single consumer + virtual threads as the PARALLEL arm, but
   /// records are dispatched to per-key serial queues so processing within a key is strictly
-  /// ordered. This is the ONLY arm in the suite that provides an ordering guarantee — it exists
-  /// to quantify the per-key ordering tax relative to the unordered runtimes (PARALLEL, share,
-  /// Confluent, Reactor, raw). It is NOT a like-for-like rival of the ShareConsumer arm, which
-  /// offers no ordering at all; read the gap as "cost of ordering," not "X beats Y".
+  /// ordered. Compare this arm with Confluent KEY and Atleon `atleonKey` for the same per-key
+  /// guarantee. Comparing it with the unordered arms measures the cost of ordering as well as
+  /// implementation differences; partition-ordered arms provide a different guarantee.
   @State(Scope.Thread)
   public static class KpipeKeyOrderedInvocationContext {
 
@@ -505,7 +517,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   public static class ReactorInvocationContext {
 
     private AtomicInteger processedCount;
-    private reactor.core.Disposable subscription;
+    private Disposable subscription;
     private int workMicros;
 
     @Setup(Level.Invocation)
@@ -517,16 +529,16 @@ public final class ParallelProcessingBenchmarkInfrastructure {
         Collections.singletonList(TOPIC)
       );
       subscription = null;
-      this.receiver = KafkaReceiver.create(receiverOptions);
+      this.receiver = reactor.kafka.receiver.KafkaReceiver.create(receiverOptions);
     }
 
-    private KafkaReceiver<byte[], byte[]> receiver;
+    private reactor.kafka.receiver.KafkaReceiver<byte[], byte[]> receiver;
 
     void start() {
       subscription = receiver
         .receive()
         .parallel(CONFLUENT_MAX_CONCURRENCY)
-        .runOn(reactor.core.scheduler.Schedulers.parallel())
+        .runOn(Schedulers.parallel())
         .doOnNext(record -> {
           simulateWork(workMicros);
           processedCount.incrementAndGet();
@@ -543,6 +555,118 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
     AtomicInteger processedCount() {
       return processedCount;
+    }
+  }
+
+  public abstract static class AtleonInvocationContext {
+
+    private AtomicInteger processedCount;
+    private Disposable subscription;
+    protected Scheduler scheduler;
+    private KafkaReceiverOptions<byte[], byte[]> options;
+    private int workMicros;
+
+    @Setup(Level.Invocation)
+    public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
+      scheduler = Schedulers.fromExecutorService(Executors.newVirtualThreadPerTaskExecutor());
+      processedCount = new AtomicInteger(0);
+      workMicros = params.workMicros;
+      options = newOptionsBuilder(kafkaContext.consumerProps("atleon-group")).build();
+      subscription = null;
+    }
+
+    @TearDown(Level.Invocation)
+    public void tearDown() {
+      try {
+        if (subscription != null && !subscription.isDisposed()) subscription.dispose();
+      } finally {
+        if (scheduler != null) scheduler.dispose();
+      }
+    }
+
+    void start() {
+      subscription = KafkaReceiver.create(options)
+        .receiveManual(List.of(TOPIC))
+        .as(AloFlux.wrapper(KafkaReceiverRecord::toAloConsumerRecord))
+        .transform(this::applyProcessing)
+        .subscribe();
+    }
+
+    protected KafkaReceiverOptions.Builder<byte[], byte[]> newOptionsBuilder(Properties consumerProps) {
+      Map<String, Object> consumerPropertiesMap = consumerProps
+        .entrySet()
+        .stream()
+        .collect(Collectors.toMap(it -> it.getKey().toString(), Map.Entry::getValue));
+      return KafkaReceiverOptions.<byte[], byte[]>newBuilder()
+        .consumerProperties(consumerPropertiesMap)
+        .consumerProperty(ConsumerConfig.CLIENT_ID_CONFIG, consumerProps.getProperty(ConsumerConfig.GROUP_ID_CONFIG))
+        .maxActiveInFlight(BackpressureController.DEFAULT_HIGH_WATERMARK); // Match KPipe default for max comparability
+    }
+
+    protected abstract AloFlux<Void> applyProcessing(final AloFlux<ConsumerRecord<byte[], byte[]>> records);
+
+    void simulateProcessing() {
+      simulateWork(workMicros);
+      processedCount.incrementAndGet();
+    }
+
+    AtomicInteger processedCount() {
+      return processedCount;
+    }
+  }
+
+  /// Persistent per-partition groups; each partition is serial, partitions run concurrently.
+  /// Each run/subscription is backed by a single consumer instance, and under lag, a consumer
+  /// instance is prone to polling+draining that lag one partition at a time. This can effectively
+  /// result in single concurrency when grouping by partition, so we customize the receiver to poll
+  /// whichever partition has the greatest lag in terms of the number of records that may be polled
+  /// per poll invocation, and reduce that "batch" size for more efficient polling distribution.
+  @State(Scope.Thread)
+  public static class AtleonPartitionInvocationContext extends AtleonInvocationContext {
+
+    @Override
+    protected KafkaReceiverOptions.Builder<byte[], byte[]> newOptionsBuilder(Properties consumerProps) {
+      return super
+        .newOptionsBuilder(consumerProps)
+        .consumerProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 50)
+        .pollStrategyFactory(PollStrategyFactory.greatestBatchLag());
+    }
+
+    @Override
+    protected AloFlux<Void> applyProcessing(final AloFlux<ConsumerRecord<byte[], byte[]>> records) {
+      return records
+        .groupBy(ConsumerRecord::partition, Integer.MAX_VALUE)
+        .innerPublishOn(scheduler)
+        .innerConsume(_ -> simulateProcessing())
+        .flatMapAlo();
+    }
+  }
+
+  /// Process all records in parallel, no ordering
+  @State(Scope.Thread)
+  public static class AtleonParallelInvocationContext extends AtleonInvocationContext {
+
+    @Override
+    protected AloFlux<Void> applyProcessing(final AloFlux<ConsumerRecord<byte[], byte[]>> records) {
+      return records.flatMap(_ -> wrapAsMono(this::simulateProcessing), Integer.MAX_VALUE);
+    }
+
+    private Mono<Void> wrapAsMono(Runnable runnable) {
+      return Mono.<Void>fromRunnable(runnable).subscribeOn(scheduler);
+    }
+  }
+
+  /// Auto-completing per-key groups, consumed serially and concurrently across keys.
+  @State(Scope.Thread)
+  public static class AtleonKeyOrderedInvocationContext extends AtleonInvocationContext {
+
+    @Override
+    protected AloFlux<Void> applyProcessing(final AloFlux<ConsumerRecord<byte[], byte[]>> records) {
+      return records
+        .groupByWithAutoComplete(it -> ByteBuffer.wrap(it.key()), Integer.MAX_VALUE)
+        .innerPublishOn(scheduler)
+        .innerConsume(_ -> simulateProcessing())
+        .flatMapAlo();
     }
   }
 
