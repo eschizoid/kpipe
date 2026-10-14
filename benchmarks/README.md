@@ -139,7 +139,14 @@ only. Every snapshot records the box, JDK, fork count, and `workMicros` cells pe
 
 The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run:
 
-![KPipe vs Confluent Parallel Benchmark](graphs/parallel_processing_gc_comparison.svg)
+![ParallelProcessingBenchmark: KPipe vs Atleon, Confluent Parallel Consumer, Reactor Kafka, the Share Consumer and raw virtual threads](graphs/parallel_processing_gc_comparison.svg)
+
+Regenerate it from a new capture with the standard-library script next to it:
+
+```bash
+python3 benchmarks/graphs/render_parallel_processing_graph.py benchmarks/results/<capture>.json \
+  --host "<machine>" --capture "<date>"
+```
 
 ## Profiling (parallel suite)
 
