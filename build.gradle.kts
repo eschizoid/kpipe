@@ -52,15 +52,10 @@ allprojects {
 
   repositories {
     mavenCentral()
-    maven {
-      credentials {
-        username = System.getenv("JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME")
-          ?: project.properties["mavencentralSonatypeUsername"]?.toString()
-        password = System.getenv("JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD")
-          ?: project.properties["mavencentralSonatypePassword"]?.toString()
-      }
-      url = uri("https://central.sonatype.com/")
-    }
+    // Confluent's serializers and schema-registry client are published only here, not to Maven
+    // Central. Publishing goes through jreleaser's own deployer, so no publishing endpoint belongs
+    // in this resolution list: a credentialed repository with no credentials set is an error rather
+    // than a miss as of Gradle 9.8.1, and it stops resolution before this repository is reached.
     maven { url = uri("https://packages.confluent.io/maven/") }
   }
 
