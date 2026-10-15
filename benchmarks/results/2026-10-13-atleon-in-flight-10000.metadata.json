@@ -1,0 +1,283 @@
+{
+  "result_file": "2026-10-13-atleon-in-flight-10000.json",
+  "result_sha256": "32b34fd8a8d53095e01880fb9796a7955224773b7652f9e43e25823bb221ea61",
+  "acknowledgement_queue_mode": "STRICT",
+  "max_active_in_flight": 10000,
+  "case_count": 27,
+  "measured_iteration_entries": 675,
+  "historical_report_unchanged": true,
+  "captures": {
+    "strict_initial": {
+      "start_utc": "2026-10-13T15:01:21.613669+00:00",
+      "end_utc": "2026-10-13T16:20:15.798721+00:00",
+      "settings": {
+        "forks": 5,
+        "warmup_iterations": 3,
+        "warmup_seconds": 2,
+        "measurement_iterations": 5,
+        "measurement_seconds": 3,
+        "threads": 1,
+        "profiler": "gc",
+        "force_gc": true,
+        "max_active_in_flight": 10000,
+        "acknowledgement_queue_mode": "STRICT"
+      },
+      "git_head": "dcbcdd42d1a2914fc47d1634870c50a87aae3f87",
+      "jar_sha256": "1f25882c313154a38b648a1a8ae03e8388afaf0f588fcf905cfe0897c7194b72",
+      "source_diff_sha256": "a447d5da73437d7a962d8d7dabf43f0b34125f0ec332168ee144800ae5b28bd7",
+      "java": "openjdk version \"25.0.2\" 2026-01-20 LTS\nOpenJDK Runtime Environment Zulu25.32+21-CA (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Zulu25.32+21-CA (build 25.0.2+10-LTS, mixed mode, sharing)",
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+      "hardware": "Apple M3 Max\n16\n16\n68719476736",
+      "docker_version": "29.8.2",
+      "docker_resources": "CPUs=16 Memory=16817954816",
+      "case_count": 27,
+      "measured_iteration_entries": 675
+    },
+    "strict_key_repeat": {
+      "start_utc": "2026-10-13T17:41:03.789820+00:00",
+      "end_utc": "2026-10-13T18:03:13.832157+00:00",
+      "settings": {
+        "forks": 5,
+        "warmup_iterations": 3,
+        "warmup_seconds": 2,
+        "measurement_iterations": 5,
+        "measurement_seconds": 3,
+        "threads": 1,
+        "profiler": "gc",
+        "force_gc": true,
+        "max_active_in_flight": 10000,
+        "acknowledgement_queue_mode": "STRICT"
+      },
+      "git_head": "dcbcdd42d1a2914fc47d1634870c50a87aae3f87",
+      "jar_sha256": "60c6af72dd7ca0603a1e071fed117c3447ccacaa8faced22e3367b04f3e07706",
+      "source_diff_sha256": "2e252b13e138058eba77f2b0caff331d0174d500fcf5b4477118db58c711ad24",
+      "java": "openjdk version \"25.0.2\" 2026-01-20 LTS\nOpenJDK Runtime Environment Zulu25.32+21-CA (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Zulu25.32+21-CA (build 25.0.2+10-LTS, mixed mode, sharing)",
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+      "hardware": "Apple M3 Max\n16\n16\n68719476736",
+      "docker_version": "29.8.2",
+      "docker_resources": "CPUs=16 Memory=16817954816",
+      "case_count": 9,
+      "measured_iteration_entries": 225
+    }
+  },
+  "entries": [
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_initial"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_key_repeat"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "capture": "strict_initial"
+    }
+  ],
+  "replacement_note": "The nine atleonKey entries replace the initial STRICT capture; the other 18 entries are preserved.",
+  "initial_strict_result_sha256": "c96229784d360858f1fdd2d9ce666e55a479d36a0f09859243196446178a7799"
+}
