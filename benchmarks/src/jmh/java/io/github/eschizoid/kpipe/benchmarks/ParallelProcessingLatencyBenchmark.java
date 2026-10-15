@@ -8,8 +8,7 @@ import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 
 /// Latency-mode companion to [ParallelProcessingBenchmark]. Same seeded topic, but reports the
-// **distribution** of "time to drain N records" rather than steady-state
-/// throughput.
+/// **distribution** of "time to drain N records" rather than steady-state throughput.
 ///
 /// JMH `SampleTime` mode publishes the percentile histogram per benchmark — `p(0.50)`, `p(0.95)`,
 /// `p(0.99)`, `p(0.999)`, `p(1.00)` — which are the numbers competitive evaluators actually want
