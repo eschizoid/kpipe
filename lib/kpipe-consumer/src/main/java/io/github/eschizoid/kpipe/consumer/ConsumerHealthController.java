@@ -71,9 +71,9 @@ final class ConsumerHealthController {
   /// the AtomicLong metrics map plus the OTel `ConsumerMetrics`. These callbacks observe health
   /// transitions — they never touch Kafka consumer state (that is [PauseLifecycleHook]'s job).
   ///
-  /// Because it is a pure observer, a caller (or a test) that doesn't record metrics can substitute
-  /// [#NOOP] and pair it with a real [PauseLifecycleHook] — the point of keeping the two concerns as
-  /// separate interfaces rather than one 7-method hook.
+  /// Because it is a pure observer, a caller (or a test) that doesn't record metrics can
+  /// substitute [#NOOP] and pair it with a real [PauseLifecycleHook] — the point of keeping the
+  /// two concerns as separate interfaces rather than one 7-method hook.
   interface HealthMetricsObserver {
     /// A no-op observer: drops every event. For callers wiring pause arbitration without metrics.
     HealthMetricsObserver NOOP = new HealthMetricsObserver() {
@@ -282,6 +282,24 @@ final class ConsumerHealthController {
         currentSources()
       );
     }
+  }
+
+  /// Whether backpressure holds the pause on the in-flight strategy. Only then can a record
+  /// completion on another thread move the metric that decides the release.
+  boolean heldByInFlightBackpressure() {
+    return (
+      backpressure != null &&
+      BackpressureController.IN_FLIGHT_METRIC_NAME.equals(backpressure.getMetricName()) &&
+      isHeldBy(Source.BACKPRESSURE)
+    );
+  }
+
+  /// Whether an in-flight backpressure hold has drained to the low watermark, so the next
+  /// [#tickBackpressure] releases it. Safe on any thread: the in-flight strategy reads a counter
+  /// and never touches the Kafka consumer. The lag strategy is excluded because its metric is a
+  /// broker round trip that only the consumer thread may make.
+  boolean inFlightBackpressureDrained() {
+    return heldByInFlightBackpressure() && backpressure.getMetric(null) <= backpressure.lowWatermark();
   }
 
   String backpressureMetricName() {

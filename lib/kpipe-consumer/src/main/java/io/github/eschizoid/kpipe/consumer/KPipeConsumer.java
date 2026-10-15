@@ -636,7 +636,9 @@ public class KPipeConsumer implements AutoCloseable {
             // rebalance assigns new partitions after the re-pause above ran; the fetch
             // has already advanced the positions past them, so dropping them would lose
             // data — process them normally.
-            final var records = pollRecords();
+            final var records = health.heldByInFlightBackpressure()
+              ? pollAfterBackpressureWait()
+              : pollRecords(pollTimeout);
             if (records != null && !records.isEmpty()) processRecords(records);
           }
         } catch (final Exception e) {
@@ -1099,19 +1101,35 @@ public class KPipeConsumer implements AutoCloseable {
   }
 
   /// Runs after every record finishes (on whichever thread executed it). Unparks the consumer
-  /// thread when backpressure is currently holding it — a record completion may have dropped
-  /// the in-flight count below the low watermark. This is a best-effort latency nudge, not a
-  /// liveness requirement: the paused loop no longer parks indefinitely (it keeps polling paused
-  /// partitions on a `pollTimeout` cadence and re-evaluates backpressure at the top of every
-  /// iteration), so the unpark only shortens the bounded `parkNanos` waits on the teardown drain
-  /// path and is a no-op while the consumer thread is blocked inside `poll()`. Previously inlined
-  /// into `processRecord`'s finally block; moved here so the dispatcher owns the post-record
-  /// callback uniformly across modes.
+  /// thread once an in-flight backpressure hold has drained to the low watermark, which ends the
+  /// wait in [#pollAfterBackpressureWait] so the consumer resumes without idling out a poll
+  /// timeout. Completions above the low watermark leave the thread parked, because waking it
+  /// would only re-check a hold that cannot release yet. The unpark is a permit, so one that
+  /// lands before the consumer thread parks still ends that park.
   private void afterRecordComplete() {
-    if (health.isHeldBy(ConsumerHealthController.Source.BACKPRESSURE)) {
+    if (health.inFlightBackpressureDrained()) {
       final var thread = consumerThread.get();
       if (thread != null) LockSupport.unpark(thread);
     }
+  }
+
+  /// Waits out an in-flight backpressure hold, then polls without blocking.
+  ///
+  /// A paused `poll(timeout)` cannot be cut short by a record completion: the client waits in its
+  /// network selector, which `LockSupport.unpark` does not reach, so the consumer would sit idle
+  /// for the whole poll timeout after the in-flight count had already drained. Parking instead
+  /// lets [#afterRecordComplete] end the wait the moment the hold can release. The park is still
+  /// bounded by `pollTimeout`, and the zero-timeout poll after it keeps the group membership alive
+  /// and runs any rebalance callbacks once per iteration, the same cadence as a blocking poll.
+  ///
+  /// The drained check before parking pairs with the unpark in [#afterRecordComplete]: the hold
+  /// is already published when it runs, so a completion that drains the count after this read
+  /// observes the hold and leaves a permit that ends the park at once.
+  ///
+  /// @return the records fetched, or `null` when the poll was woken or failed
+  private ConsumerRecords<byte[], byte[]> pollAfterBackpressureWait() {
+    if (!health.inFlightBackpressureDrained()) LockSupport.parkNanos(pollTimeout.toNanos());
+    return pollRecords(Duration.ZERO);
   }
 
   /// Processes a single Kafka consumer record by delegating to the [RecordProcessor] engine:
@@ -1133,9 +1151,9 @@ public class KPipeConsumer implements AutoCloseable {
     return total;
   }
 
-  private ConsumerRecords<byte[], byte[]> pollRecords() {
+  private ConsumerRecords<byte[], byte[]> pollRecords(final Duration timeout) {
     try {
-      return kafkaConsumer.poll(pollTimeout);
+      return kafkaConsumer.poll(timeout);
     } catch (final WakeupException e) {
       // Expected during shutdown, no need to log
       return null;
