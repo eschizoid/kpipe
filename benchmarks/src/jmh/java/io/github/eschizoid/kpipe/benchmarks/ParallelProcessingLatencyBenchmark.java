@@ -7,8 +7,8 @@ import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OperationsPerInvocation;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
 
-/// Latency-mode companion to [ParallelProcessingBenchmark]. Seven arms, same seeded
-/// topic, but reports the **distribution** of "time to drain N records" rather than steady-state
+/// Latency-mode companion to [ParallelProcessingBenchmark]. Same seeded topic, but reports the
+// **distribution** of "time to drain N records" rather than steady-state
 /// throughput.
 ///
 /// JMH `SampleTime` mode publishes the percentile histogram per benchmark — `p(0.50)`, `p(0.95)`,
@@ -74,6 +74,25 @@ public class ParallelProcessingLatencyBenchmark {
   public void atleonKey(final ParallelProcessingBenchmarkInfrastructure.AtleonKeyOrderedInvocationContext context) {
     context.start();
     ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("atleon-key", context.processedCount());
+  }
+
+  /// KPipe in KEY_ORDERED mode. Its per-key rivals are `atleonKey` and `confluentKey`.
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void kpipeKeyOrdered(
+    final ParallelProcessingBenchmarkInfrastructure.KpipeKeyOrderedInvocationContext context
+  ) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("kpipe-key-ordered", context.processedCount());
+  }
+
+  /// Confluent Parallel Consumer with `ProcessingOrder.KEY`, the per-key rival of
+  // `kpipeKeyOrdered`.
+  @Benchmark
+  @OperationsPerInvocation(TARGET_MESSAGES)
+  public void confluentKey(final ParallelProcessingBenchmarkInfrastructure.ConfluentKeyInvocationContext context) {
+    context.start();
+    ParallelProcessingBenchmarkInfrastructure.awaitProcessedMessages("confluent-key", context.processedCount());
   }
 
   @Benchmark

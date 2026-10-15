@@ -47,11 +47,12 @@ different winners.
 | `raw`                | Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor`                    | none          |
 | `singleThread`       | Single-threaded `KafkaConsumer`, inline processing (the floor)             | per-partition |
 
-**`ParallelProcessingLatencyBenchmark` — latency, 7 arms** (`kpipe`, `confluent`, `reactor`, `atleonPartition`,
-`atleonParallel`, `atleonKey`, `raw`): declares `@BenchmarkMode({SampleTime, AverageTime})`. `SampleTime` reports
-p50/p95/p99 and `AverageTime` reports the mean. Every arm uses `@OperationsPerInvocation(TARGET_MESSAGES)`, so JMH
-already divides batch completion time by 25,000 and reports amortized **ms/record**. Multiply by `TARGET_MESSAGES` to
-recover batch-drain time. These measurements describe complete batches, not individual record latency.
+**`ParallelProcessingLatencyBenchmark` — latency** (`kpipe`, `kpipeKeyOrdered`, `confluent`, `confluentKey`, `reactor`,
+`atleonPartition`, `atleonParallel`, `atleonKey`, `raw`): declares `@BenchmarkMode({SampleTime, AverageTime})`.
+`SampleTime` reports p50/p95/p99 and `AverageTime` reports the mean. Every arm uses
+`@OperationsPerInvocation(TARGET_MESSAGES)`, so JMH already divides batch completion time by 25,000 and reports
+amortized **ms/record**. Multiply by `TARGET_MESSAGES` to recover batch-drain time. These measurements describe complete
+batches, not individual record latency.
 
 **`PerRecordLatencyHarness` — true per-record tail latency (NOT JMH).** A plain `main()` harness, because JMH can't
 ingest tens of thousands of externally-measured timestamp pairs. Producer stamps each record's intended send slot
