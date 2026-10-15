@@ -1,0 +1,825 @@
+{
+  "result_file": "2026-10-12-full-suite.json",
+  "result_sha256": "02cf6f18b411d78528290500d465bb1a708dc4dbbba2b8fe637e6848d21c750e",
+  "case_count": 100,
+  "measured_iteration_entries": 2500,
+  "updated_date": "2026-10-13",
+  "original_capture": {
+    "date": "2026-10-12",
+    "result_sha256_before_atleon_update": "480a1d741ab51d8f34f62163c5d9b6a3e0262dd17bad26a93c2ca607e1915972",
+    "retained_cases": 73
+  },
+  "atleon_update": {
+    "result_file": "2026-10-13-atleon-in-flight-10000.json",
+    "metadata_file": "2026-10-13-atleon-in-flight-10000.metadata.json",
+    "result_sha256": "32b34fd8a8d53095e01880fb9796a7955224773b7652f9e43e25823bb221ea61",
+    "acknowledgement_queue_mode": "STRICT",
+    "max_active_in_flight": 10000,
+    "replaced_cases": 27
+  },
+  "entries": [
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluent",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluentKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluentPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.reactor",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.singleThread",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluent",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluentKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluentPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.reactor",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.singleThread",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluent",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluentKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.confluentPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonPartition",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.reactor",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.singleThread",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.kpipe",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.confluent",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.reactor",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.raw",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.kpipe",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.confluent",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.reactor",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.raw",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.kpipe",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.confluent",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.reactor",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.raw",
+      "mode": "avgt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.kpipe",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.confluent",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.reactor",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.raw",
+      "mode": "sample",
+      "params": {
+        "workMicros": "0"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.kpipe",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.confluent",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.reactor",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.raw",
+      "mode": "sample",
+      "params": {
+        "workMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.kpipe",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonParallel",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonKey",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.atleonPartition",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-13-atleon-in-flight-10000.json"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.confluent",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.reactor",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingLatencyBenchmark.raw",
+      "mode": "sample",
+      "params": {
+        "workMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.JsonPipelineBenchmark.kpipeJsonPipeline",
+      "mode": "thrpt",
+      "params": {},
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.JsonPipelineBenchmark.manualJsonSingleSerDe",
+      "mode": "thrpt",
+      "params": {},
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.JsonPipelineBenchmark.manualJsonSerDeChained",
+      "mode": "thrpt",
+      "params": {},
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.AvroPipelineBenchmark.kpipeAvroMagicPipeline",
+      "mode": "thrpt",
+      "params": {},
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.AvroPipelineBenchmark.kpipeAvroPipeline",
+      "mode": "thrpt",
+      "params": {},
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.AvroPipelineBenchmark.manualAvroMagicHandling",
+      "mode": "thrpt",
+      "params": {},
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "1",
+        "sinkLatencyMicros": "10"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "10",
+        "sinkLatencyMicros": "10"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "100",
+        "sinkLatencyMicros": "10"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "1",
+        "sinkLatencyMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "10",
+        "sinkLatencyMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "100",
+        "sinkLatencyMicros": "100"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "1",
+        "sinkLatencyMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "10",
+        "sinkLatencyMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.BatchSinkLatencyBenchmark.run",
+      "mode": "thrpt",
+      "params": {
+        "batchSize": "100",
+        "sinkLatencyMicros": "1000"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.KeyOrderedDispatchBenchmark.dispatch",
+      "mode": "thrpt",
+      "params": {
+        "distinctKeys": "1",
+        "mode": "PARALLEL"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.KeyOrderedDispatchBenchmark.dispatch",
+      "mode": "thrpt",
+      "params": {
+        "distinctKeys": "100",
+        "mode": "PARALLEL"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.KeyOrderedDispatchBenchmark.dispatch",
+      "mode": "thrpt",
+      "params": {
+        "distinctKeys": "10000",
+        "mode": "PARALLEL"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.KeyOrderedDispatchBenchmark.dispatch",
+      "mode": "thrpt",
+      "params": {
+        "distinctKeys": "1",
+        "mode": "KEY_ORDERED"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.KeyOrderedDispatchBenchmark.dispatch",
+      "mode": "thrpt",
+      "params": {
+        "distinctKeys": "100",
+        "mode": "KEY_ORDERED"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.KeyOrderedDispatchBenchmark.dispatch",
+      "mode": "thrpt",
+      "params": {
+        "distinctKeys": "10000",
+        "mode": "KEY_ORDERED"
+      },
+      "source": "2026-10-12-original-capture"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.OffsetManagerBoxingBenchmark.trackAndMark",
+      "mode": "thrpt",
+      "params": {
+        "partitions": "8"
+      },
+      "source": "2026-10-12-original-capture"
+    }
+  ]
+}
