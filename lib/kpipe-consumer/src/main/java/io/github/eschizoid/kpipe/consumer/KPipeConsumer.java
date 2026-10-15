@@ -1120,7 +1120,11 @@ public class KPipeConsumer implements AutoCloseable {
   /// for the whole poll timeout after the in-flight count had already drained. Parking instead
   /// lets [#afterRecordComplete] end the wait the moment the hold can release. The park is still
   /// bounded by `pollTimeout`, and the zero-timeout poll after it keeps the group membership alive
-  /// and runs any rebalance callbacks once per iteration, the same cadence as a blocking poll.
+  /// and runs any rebalance callbacks.
+  ///
+  /// A zero-timeout poll advances a classic-protocol join or sync by one step, where a blocking
+  /// poll completes it within one call. A rebalance that starts during the hold therefore takes up
+  /// to a few extra poll timeouts to finish while the hold lasts.
   ///
   /// The drained check before parking pairs with the unpark in [#afterRecordComplete]: the hold
   /// is already published when it runs, so a completion that drains the count after this read
