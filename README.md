@@ -164,7 +164,10 @@ tracking the machine's capacity where a fixed worker pool is bounded by `workers
 The [2026-10-15 capture](benchmarks/results/2026-10-15-ci-parallel.md) adds Atleon and runs every arm in one job on a
 4-vCPU GitHub runner, at 0, 100 and 1000µs of work per record. KPipe `PARALLEL` ran at 1.45×, 1.14× and 1.12× Atleon's
 unordered throughput and at 0.90×, 0.86× and 0.82× the raw loop. KPipe `KEY_ORDERED` ran at 1.12×, 1.06× and 0.92×
-Atleon's key-ordered arm, so Atleon still leads per-key ordering at 1000µs.
+Atleon's key-ordered arm, so Atleon still leads per-key ordering at 1000µs. In the same capture's batch latency runs,
+KPipe drained a 25,000-record batch faster than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In
+key-ordered mode the averages were level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was
+faster on average at 1000µs.
 
 The costs, measured in the same captures: KPipe allocates more per record than any alternative tested (~1.7 KB/op vs ~35
 B/op for CPC); at sub-millisecond workloads the `KEY_ORDERED` mode's advantage over CPC's equivalent is
