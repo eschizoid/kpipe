@@ -137,7 +137,8 @@ recent one. For any capture taken on a shared CI runner, trust the ordering and 
 only. Every snapshot records the box, JDK, fork count, and `workMicros` cells per the
 [publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
 
-The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run:
+The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run, the
+[2026-10-15 CI capture](results/2026-10-15-ci-parallel.md):
 
 ![ParallelProcessingBenchmark: KPipe vs Atleon, Confluent Parallel Consumer, Reactor Kafka, the Share Consumer and raw virtual threads](graphs/parallel_processing_gc_comparison.svg)
 
