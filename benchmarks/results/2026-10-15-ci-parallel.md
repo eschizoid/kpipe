@@ -86,6 +86,64 @@ Compare these with each other. Per-key ordering is a stronger guarantee than the
   earlier captures.
 - The Share Consumer arm stays near 4.7k records per second at every work level, as in earlier captures.
 
+## Batch drain time — ParallelProcessingLatencyBenchmark
+
+Milliseconds to drain one batch of 25,000 records, lower is better. JMH reports these as amortized milliseconds per
+record because every arm uses `@OperationsPerInvocation`; the values below multiply them back by 25,000. The samples
+describe whole batches, not the latency of individual records, which `PerRecordLatencyHarness` measures.
+
+Captured in [run 38741641109](https://github.com/eschizoid/kpipe/actions/runs/38741641109) on `main` at `c4a660d7`, on
+the same kind of runner as the throughput capture, with 2 forks, 2 warmup and 4 measurement iterations. The first
+attempt at 3 forks and 5 iterations hit the 180-minute job limit. Raw output:
+[`2026-10-15-ci-latency.json`](2026-10-15-ci-latency.json).
+
+### workMicros=0
+
+| Runtime                                 |     Average |   p50 |   p95 |   p99 |
+| --------------------------------------- | ----------: | ----: | ----: | ----: |
+| Raw `KafkaConsumer` + virtual threads   |  29.6 ± 5.5 |  28.6 |  39.4 |  50.2 |
+| KPipe `PARALLEL`                        |  31.1 ± 6.3 |  31.6 |  45.6 |  53.3 |
+| Atleon key-ordered                      |  36.4 ± 5.9 |  33.3 |  58.5 |  76.8 |
+| Atleon parallel                         |  42.9 ± 5.7 |  40.8 |  64.2 |  83.1 |
+| Reactor Kafka                           |  54.0 ± 3.4 |  54.3 |  80.9 |  92.3 |
+| Atleon per-partition                    |  75.8 ± 8.7 |  38.9 | 227.6 | 334.8 |
+| Confluent Parallel Consumer `UNORDERED` | 210.7 ± 7.2 | 212.8 | 233.5 | 256.6 |
+
+### workMicros=100
+
+| Runtime                                 |        Average |     p50 |     p95 |     p99 |
+| --------------------------------------- | -------------: | ------: | ------: | ------: |
+| Raw `KafkaConsumer` + virtual threads   |     42.4 ± 8.9 |    43.8 |    59.5 |    69.4 |
+| KPipe `PARALLEL`                        |     42.5 ± 6.1 |    43.6 |    54.8 |    60.2 |
+| Atleon key-ordered                      |     50.6 ± 9.3 |    47.1 |    69.3 |    88.4 |
+| Atleon parallel                         |     51.8 ± 6.6 |    48.9 |    72.0 |    86.9 |
+| Confluent Parallel Consumer `UNORDERED` |    221.0 ± 7.8 |   217.4 |   237.3 |   249.3 |
+| Atleon per-partition                    | 1,027.0 ± 16.4 | 1,019.2 | 1,044.5 | 1,113.6 |
+| Reactor Kafka                           | 1,058.8 ± 11.9 | 1,057.6 | 1,078.2 | 1,081.6 |
+
+### workMicros=1000
+
+| Runtime                                 |        Average |     p50 |     p95 |     p99 |
+| --------------------------------------- | -------------: | ------: | ------: | ------: |
+| Raw `KafkaConsumer` + virtual threads   |     42.5 ± 4.8 |    42.0 |    59.3 |    64.1 |
+| KPipe `PARALLEL`                        |     45.4 ± 6.1 |    46.3 |    61.0 |    69.3 |
+| Atleon parallel                         |     51.8 ± 5.2 |    49.7 |    70.8 |    82.5 |
+| Atleon key-ordered                      |     70.4 ± 3.6 |    68.9 |    86.7 |   102.7 |
+| Confluent Parallel Consumer `UNORDERED` |    346.3 ± 4.8 |   345.2 |   364.3 |   371.4 |
+| Atleon per-partition                    | 6,100.8 ± 23.9 | 6,105.6 | 6,195.2 | 6,195.2 |
+| Reactor Kafka                           | 6,698.4 ± 24.5 | 6,681.6 | 6,681.6 | 6,681.6 |
+
+### Observations
+
+- KPipe `PARALLEL` drains a batch faster than Atleon parallel at every work level, and its p99 is 13 to 30 ms lower. The
+  error bands of the averages overlap at all three levels, narrowly at 0 µs.
+- KPipe's average stays within about 3 ms of the raw loop at every work level.
+- The benchmark has no KPipe `KEY_ORDERED` arm, so it gives no per-key latency comparison. Atleon key-ordered is listed
+  for reference only.
+- Reactor Kafka and Atleon per-partition take about 1 second per batch at 100 µs and 6 to 7 seconds at 1000 µs. Atleon
+  per-partition processes each partition's records in order. Reactor runs `Flux.parallel(100)` with no ordering, and
+  this capture does not show why it slows down as the work grows.
+
 ## Allocation (gc profiler)
 
 `gc.alloc.rate.norm`, bytes per record at workMicros=0, lower is better.
