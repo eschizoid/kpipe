@@ -180,30 +180,24 @@ hbar_panel(30 + pw + 20, 848, pw, 230, "gc.count", "GC events in the measurement
 hbar_panel(30 + 2 * (pw + 20), 848, pw, 230, "gc.time (ms)", "GC time in the measurement window", "time", gc_arms)
 
 r = lambda a, w: res[(a, w)]["score"]
-idle = [r(a, 0) for a in ("kpipe", "raw", "atleonParallel")]
-idle_spread = (max(idle) / min(idle) - 1) * 100
-kpipe_band = max(res[("kpipe", w)]["err"] / r("kpipe", w) * 100 for w in (100, 1000))
 
 
-def ratio_phrase(a, b, label_a, label_b):
-    """'A leads B by lo to hi' with the direction and range taken from the data, never assumed."""
-    ratios = [r(a, w) / r(b, w) for w in WORK]
-    lo, hi = min(ratios), max(ratios)
-    if lo >= 1:
-        return f"{label_a} leads {label_b} by {lo:.1f}x to {hi:.1f}x"
-    if hi <= 1:
-        return f"{label_b} leads {label_a} by {1 / hi:.1f}x to {1 / lo:.1f}x"
-    return f"{label_a} ranges from {lo:.1f}x to {hi:.1f}x of {label_b}"
+def per_work(a, b):
+    """The ratio a/b at each workMicros, in WORK order, e.g. '1.20x / 0.95x / 1.10x'."""
+    return " / ".join(f"{r(a, w) / r(b, w):.2f}x" for w in WORK)
 
 
+def scores(a):
+    return " / ".join(fmt(r(a, w)) for w in WORK)
+
+
+work_label = " / ".join(str(w) for w in WORK)
 notes = [
-    f"• Unordered, no work: KPipe {fmt(r('kpipe', 0))}, raw {fmt(r('raw', 0))} and Atleon {fmt(r('atleonParallel', 0))} "
-    f"are within about {idle_spread:.0f}% of each other.",
-    f"• Unordered, blocking work: Atleon {fmt(r('atleonParallel', 100))} to {fmt(r('atleonParallel', 1000))}, raw "
-    f"{fmt(r('raw', 100))} to {fmt(r('raw', 1000))}, KPipe {fmt(r('kpipe', 100))} to {fmt(r('kpipe', 1000))} "
-    f"with error bands of about ±{kpipe_band:.0f}%.",
-    f"• Per key: {ratio_phrase('atleonKey', 'kpipeKeyOrdered', 'Atleon', 'KPipe')}, and "
-    f"{ratio_phrase('kpipeKeyOrdered', 'confluentKey', 'KPipe', 'Confluent KEY')}.",
+    f"• Unordered, records/s at workMicros {work_label}: KPipe {scores('kpipe')}, Atleon {scores('atleonParallel')}, "
+    f"raw {scores('raw')}.",
+    f"• KPipe ÷ Atleon: {per_work('kpipe', 'atleonParallel')} unordered, {per_work('kpipeKeyOrdered', 'atleonKey')} "
+    f"per key. KPipe ÷ raw: {per_work('kpipe', 'raw')}.",
+    f"• KPipe KEY_ORDERED ÷ Confluent PC KEY: {per_work('kpipeKeyOrdered', 'confluentKey')}.",
     "• gc.count and gc.time are totals for the measurement window, so faster arms run more invocations and collect more.",
     "  Per-partition arms and the single-threaded baseline are omitted: different guarantee. "
     f"Full table: benchmarks/results/{os.path.splitext(os.path.basename(SRC))[0]}.md",

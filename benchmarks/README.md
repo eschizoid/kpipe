@@ -47,11 +47,12 @@ different winners.
 | `raw`                | Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor`                    | none          |
 | `singleThread`       | Single-threaded `KafkaConsumer`, inline processing (the floor)             | per-partition |
 
-**`ParallelProcessingLatencyBenchmark` — latency, 7 arms** (`kpipe`, `confluent`, `reactor`, `atleonPartition`,
-`atleonParallel`, `atleonKey`, `raw`): declares `@BenchmarkMode({SampleTime, AverageTime})`. `SampleTime` reports
-p50/p95/p99 and `AverageTime` reports the mean. Every arm uses `@OperationsPerInvocation(TARGET_MESSAGES)`, so JMH
-already divides batch completion time by 25,000 and reports amortized **ms/record**. Multiply by `TARGET_MESSAGES` to
-recover batch-drain time. These measurements describe complete batches, not individual record latency.
+**`ParallelProcessingLatencyBenchmark` — latency** (`kpipe`, `kpipeKeyOrdered`, `confluent`, `confluentKey`, `reactor`,
+`atleonPartition`, `atleonParallel`, `atleonKey`, `raw`): declares `@BenchmarkMode({SampleTime, AverageTime})`.
+`SampleTime` reports p50/p95/p99 and `AverageTime` reports the mean. Every arm uses
+`@OperationsPerInvocation(TARGET_MESSAGES)`, so JMH already divides batch completion time by 25,000 and reports
+amortized **ms/record**. Multiply by `TARGET_MESSAGES` to recover batch-drain time. These measurements describe complete
+batches, not individual record latency.
 
 **`PerRecordLatencyHarness` — true per-record tail latency (NOT JMH).** A plain `main()` harness, because JMH can't
 ingest tens of thousands of externally-measured timestamp pairs. Producer stamps each record's intended send slot
@@ -142,7 +143,8 @@ recent one. For any capture taken on a shared CI runner, trust the ordering and 
 only. Every snapshot records the box, JDK, fork count, and `workMicros` cells per the
 [publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
 
-The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run:
+The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run, the
+[2026-10-15 CI capture](results/2026-10-15-ci-parallel.md):
 
 ![ParallelProcessingBenchmark: KPipe vs Atleon, Confluent Parallel Consumer, Reactor Kafka, the Share Consumer and raw virtual threads](graphs/parallel_processing_gc_comparison.svg)
 
