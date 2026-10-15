@@ -138,11 +138,46 @@ attempt at 3 forks and 5 iterations hit the 180-minute job limit. Raw output:
 - KPipe `PARALLEL` drains a batch faster than Atleon parallel at every work level, and its p99 is 13 to 30 ms lower. The
   error bands of the averages overlap at all three levels, narrowly at 0 µs.
 - KPipe's average stays within about 3 ms of the raw loop at every work level.
-- The benchmark has no KPipe `KEY_ORDERED` arm, so it gives no per-key latency comparison. Atleon key-ordered is listed
-  for reference only.
 - Reactor Kafka and Atleon per-partition take about 1 second per batch at 100 µs and 6 to 7 seconds at 1000 µs. Atleon
   per-partition processes each partition's records in order. Reactor runs `Flux.parallel(100)` with no ordering, and
   this capture does not show why it slows down as the work grows.
+
+### Per-key ordered arms
+
+The per-key arms ran together in a separate job,
+[run 38763745698](https://github.com/eschizoid/kpipe/actions/runs/38763745698), on the same kind of runner and with the
+same settings, after `kpipeKeyOrdered` and `confluentKey` were added to the latency benchmark. Raw output:
+[`2026-10-15-ci-latency-key.json`](2026-10-15-ci-latency-key.json).
+
+#### workMicros=0
+
+| Runtime                           |      Average |   p50 |   p95 |   p99 |
+| --------------------------------- | -----------: | ----: | ----: | ----: |
+| KPipe `KEY_ORDERED`               |   34.1 ± 6.2 |  35.3 |  49.0 |  51.7 |
+| Atleon key-ordered                |   35.3 ± 8.2 |  31.7 |  60.5 | 108.5 |
+| Confluent Parallel Consumer `KEY` | 237.9 ± 10.7 | 242.2 | 267.0 | 290.7 |
+
+#### workMicros=100
+
+| Runtime                           |      Average |   p50 |   p95 |   p99 |
+| --------------------------------- | -----------: | ----: | ----: | ----: |
+| KPipe `KEY_ORDERED`               |   47.8 ± 6.6 |  46.5 |  63.7 |  71.1 |
+| Atleon key-ordered                |  52.4 ± 10.0 |  47.5 |  73.9 | 109.4 |
+| Confluent Parallel Consumer `KEY` | 278.8 ± 14.3 | 281.6 | 318.0 | 324.1 |
+
+#### workMicros=1000
+
+| Runtime                           |     Average |   p50 |   p95 |   p99 |
+| --------------------------------- | ----------: | ----: | ----: | ----: |
+| Atleon key-ordered                |  74.8 ± 5.2 |  72.6 |  93.7 | 114.0 |
+| KPipe `KEY_ORDERED`               |  83.1 ± 8.7 |  81.1 | 100.7 | 110.2 |
+| Confluent Parallel Consumer `KEY` | 396.5 ± 9.6 | 400.0 | 428.8 | 436.8 |
+
+- The averages of KPipe `KEY_ORDERED` and Atleon key-ordered are level at 0 and 100 µs. At 1000 µs Atleon is faster on
+  average, 74.8 ms against 83.1 ms, and the error bands overlap slightly.
+- KPipe's p99 is about half of Atleon's at 0 and 100 µs, 51.7 ms against 108.5 ms and 71.1 ms against 109.4 ms. At 1000
+  µs the two are level.
+- Confluent `KEY` takes 5 to 7 times as long per batch as either.
 
 ## Allocation (gc profiler)
 
