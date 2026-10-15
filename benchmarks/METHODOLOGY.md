@@ -57,9 +57,10 @@ two questions often have different winners.
 Atleon's broker-backed partition arm sets `max.poll.records=50` and uses greatest-batch-lag polling. The parallel and
 key-ordered arms use the receiver defaults for these settings. Both grouped arms use the default `innerPublishOn`
 prefetch. All three use a 10,000-record active in-flight limit, matching KPipe's default high watermark, and the
-receiver's default `AcknowledgementQueueMode.STRICT`. This mode executes acknowledgments in order and replenishes
-upstream demand as contiguous completed acknowledgments drain. Historical captures may use different receiver settings;
-consult each capture's configuration notes when interpreting runtime comparisons.
+explicit `AcknowledgementQueueMode.COMPACT_EAGER`. This mode compacts contiguous completed acknowledgments and
+replenishes upstream demand when each record completes. KPipe releases processing capacity independently of ordered
+offset advancement too, but retains high/low watermark hysteresis (10,000/7,000). Historical captures may use different
+receiver settings; consult each capture's configuration notes when interpreting runtime comparisons.
 
 ### Apples-to-apples — read these comparisons honestly
 
