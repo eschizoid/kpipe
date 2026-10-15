@@ -169,12 +169,12 @@ KPipe drained a 25,000-record batch faster than Atleon on average in unordered m
 key-ordered mode the averages were level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was
 faster on average at 1000µs.
 
-The costs, measured in the same captures: KPipe allocates more per record than any alternative tested (~1.7 KB/op vs ~35
-B/op for CPC); at sub-millisecond workloads the `KEY_ORDERED` mode's advantage over CPC's equivalent is
-machine-dependent (it loses on one of our two test machines); the virtual-thread-per-record advantage shrinks as
-per-record work approaches zero or becomes CPU-bound (there is nothing to overlap); and the raw-loop baseline is faster
-than KPipe at every measured cell — it omits rebalance-safe offset tracking, so it is not comparable on delivery
-guarantees.
+The costs, measured in the 2026-07 reference captures: KPipe allocates more per record than any alternative tested (~1.7
+KB/op vs ~35 B/op for CPC, and 1,046 B/op vs 52 to 57 B/op in the 2026-10-15 capture); at sub-millisecond workloads the
+`KEY_ORDERED` mode's advantage over CPC's equivalent is machine-dependent (it loses on one of our two test machines);
+the virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes CPU-bound (there is
+nothing to overlap); and the raw-loop baseline is faster than KPipe at every measured cell — it omits rebalance-safe
+offset tracking, so it is not comparable on delivery guarantees.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks/).
