@@ -183,7 +183,7 @@ r = lambda a, w: res[(a, w)]["score"]
 
 
 def per_work(a, b):
-    """'1.45x / 1.14x / 1.12x': the ratio a/b at each workMicros, in WORK order."""
+    """The ratio a/b at each workMicros, in WORK order, e.g. '1.20x / 0.95x / 1.10x'."""
     return " / ".join(f"{r(a, w) / r(b, w):.2f}x" for w in WORK)
 
 

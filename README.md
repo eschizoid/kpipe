@@ -166,12 +166,12 @@ The [2026-10-15 capture](benchmarks/results/2026-10-15-ci-parallel.md) adds Atle
 unordered throughput and at 0.90×, 0.86× and 0.82× the raw loop. KPipe `KEY_ORDERED` ran at 1.12×, 1.06× and 0.92×
 Atleon's key-ordered arm, so Atleon still leads per-key ordering at 1000µs.
 
-The costs, measured in the same captures: KPipe allocates more per record than any alternative tested (~1.7 KB/op,
-mostly the per-record virtual thread, vs ~35 B/op for CPC); at sub-millisecond workloads the `KEY_ORDERED` mode's
-advantage over CPC's equivalent is machine-dependent (it loses on one of our two test machines); the
-virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes CPU-bound (there is nothing to
-overlap); and the raw-loop baseline is faster than KPipe at every measured cell — it omits rebalance-safe offset
-tracking, so it is not comparable on delivery guarantees.
+The costs, measured in the same captures: KPipe allocates more per record than any alternative tested (~1.7 KB/op vs ~35
+B/op for CPC); at sub-millisecond workloads the `KEY_ORDERED` mode's advantage over CPC's equivalent is
+machine-dependent (it loses on one of our two test machines); the virtual-thread-per-record advantage shrinks as
+per-record work approaches zero or becomes CPU-bound (there is nothing to overlap); and the raw-loop baseline is faster
+than KPipe at every measured cell — it omits rebalance-safe offset tracking, so it is not comparable on delivery
+guarantees.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks/).

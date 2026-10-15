@@ -10,7 +10,7 @@ in #357. All arms ran in one job on one machine, so every ratio below compares a
 | Date (UTC)                  | 2026-10-15 08:12 → 10:15                                                   |
 | Hardware                    | GitHub-hosted runner, standard public-repository size (4 vCPU)             |
 | OS                          | Ubuntu 24.04 (runner image 20261012.334.1)                                 |
-| JDK                         | 25.0.4 (Java HotSpot(TM) 64-Bit Server VM)                                 |
+| JDK                         | Oracle GraalVM 25.0.4+7-LTS (jvmci-b01)                                    |
 | Kafka                       | 4.3.0 in a Testcontainers container (`apache/kafka:4.3.0`)                 |
 | KPipe                       | `c4a660d7`                                                                 |
 | Atleon                      | 0.47.1                                                                     |
@@ -75,15 +75,15 @@ Compare these with each other. Per-key ordering is a stronger guarantee than the
 
 ### Observations
 
-- KPipe `PARALLEL` leads Atleon parallel at every work level. The error bands are apart at 0 µs and overlap slightly at
-  100 and 1000 µs, where the lead is 12 to 14%.
+- KPipe `PARALLEL` leads Atleon parallel at every work level. The error bands are apart at 0 µs and overlap at 100 and
+  1000 µs, where the lead is 12 to 14%.
 - Atleon key-ordered leads KPipe `KEY_ORDERED` at 1000 µs, 352k ± 12k against 325k ± 13k, and the error bands are apart.
   At 0 and 100 µs KPipe is ahead, but the error bands overlap.
 - The raw loop is still the fastest unordered arm. It tracks no offsets and makes no delivery guarantee, so it is a
   ceiling rather than a competitor.
 - Before #357, KPipe paused for a full 100 ms poll timeout each time in-flight backpressure engaged, which held it to
-  about 0.21x of the raw loop at 100 and 1000 µs on the same kind of runner. That is the main change from earlier
-  captures.
+  about 0.21x to 0.24x of the raw loop at 100 and 1000 µs on the same kind of runner. That is the main change from
+  earlier captures.
 - The Share Consumer arm stays near 4.7k records per second at every work level, as in earlier captures.
 
 ## Allocation (gc profiler)
