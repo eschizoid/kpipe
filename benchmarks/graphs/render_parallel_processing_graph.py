@@ -47,13 +47,15 @@ for e in data:
         continue
     arm = e["benchmark"].rsplit(".", 1)[1]
     w = int(e["params"]["workMicros"])
-    pm, sm = e["primaryMetric"], e["secondaryMetrics"]
+    pm = e["primaryMetric"]
+    # JMH 1.37 dropped the leading "·" from profiler metric names; read captures from either version.
+    sm = {k.lstrip("·"): v for k, v in e["secondaryMetrics"].items()}
     res[(arm, w)] = {
         "score": pm["score"],
         "err": pm["scoreError"] if isinstance(pm["scoreError"], (int, float)) else 0.0,
-        "alloc": sm.get("·gc.alloc.rate.norm", {}).get("score"),
-        "count": sm.get("·gc.count", {}).get("score"),
-        "time": sm.get("·gc.time", {}).get("score"),
+        "alloc": sm.get("gc.alloc.rate.norm", {}).get("score"),
+        "count": sm.get("gc.count", {}).get("score"),
+        "time": sm.get("gc.time", {}).get("score"),
     }
 missing = [(a, w) for a in UNORDERED + PER_KEY for w in WORK if (a, w) not in res]
 assert not missing, f"missing results: {missing}"
