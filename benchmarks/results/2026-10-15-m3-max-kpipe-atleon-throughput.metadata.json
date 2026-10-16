@@ -1,6 +1,6 @@
 {
   "status": "complete",
-  "result_file": "2026-10-15-kpipe-atleon-throughput.json",
+  "result_file": "2026-10-15-m3-max-kpipe-atleon-throughput.json",
   "result_sha256": "44bbefb19df9f025f6755c233dae8c389264323e7a0ee9bc9d6f6857433e1963",
   "case_count": 30,
   "measured_iteration_entries": 750,
@@ -1013,6 +1013,6 @@
     "previous_artifacts_unchanged": true,
     "report_links_verified": true
   },
-  "report_file": "2026-10-15-kpipe-atleon-throughput.md",
-  "report_sha256": "36dbca4242377bba1f9608dcb899bf32b9a5ce367dde544a2308272ad575a605"
+  "report_file": "2026-10-15-m3-max-kpipe-atleon-throughput.md",
+  "report_sha256": "67c72dc1c85c1338efbef7e8cc04b34cc1ccc107da8eb27d53547ee6a54d7120"
 }

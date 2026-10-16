@@ -1,4 +1,4 @@
-# KPipe versus Atleon throughput — 2026-10-15
+# KPipe versus Atleon throughput — M3 Max capture (2026-10-15)
 
 Full JMH throughput comparison of parallel/unordered and per-key processing at 0 µs, 100 µs, 1 ms, 10 ms, and 100 ms.
 The raw virtual-thread consumer and Kafka Share Consumer provide additional unordered baselines. This is a new capture
@@ -24,7 +24,7 @@ does not reuse results from earlier reports.
 
 The machine was not independently verified to be quiesced. Docker and consumer JVMs share host CPU resources. Both
 phases use the identical frozen JAR. Full environment details, source-diff checksums, actual commands, case order, and
-timestamps are in the [capture metadata](2026-10-15-kpipe-atleon-throughput.metadata.json).
+timestamps are in the [capture metadata](2026-10-15-m3-max-kpipe-atleon-throughput.metadata.json).
 
 ## JMH settings and scope
 
@@ -256,8 +256,8 @@ java -jar <frozen-benchmark.jar> \
   -rf json -rff <case-output.json>
 ```
 
-[Raw JMH JSON](2026-10-15-kpipe-atleon-throughput.json) retains 30 native result objects and all 750 measured iteration
-entries, including GC metrics. [Capture metadata](2026-10-15-kpipe-atleon-throughput.metadata.json) records both phases,
-provenance, and settings. The frozen executable, source snapshots, runner scripts, and per-case logs are retained
-locally under `/private/tmp/kpipe-atleon-throughput-2026-10-15/`. Earlier published reports and preliminary captures
-were not modified.
+[Raw JMH JSON](2026-10-15-m3-max-kpipe-atleon-throughput.json) retains 30 native result objects and all 750 measured
+iteration entries, including GC metrics. [Capture metadata](2026-10-15-m3-max-kpipe-atleon-throughput.metadata.json)
+records both phases, provenance, and settings. The frozen executable, source snapshots, runner scripts, and per-case
+logs are retained locally under `/private/tmp/kpipe-atleon-throughput-2026-10-15/`. Earlier published reports and
+preliminary captures were not modified.

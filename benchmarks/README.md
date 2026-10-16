@@ -134,9 +134,9 @@ All properties are optional (values above are the defaults). Results print as a 
 
 ## Results
 
-The [October 15 throughput comparison](results/2026-10-15-kpipe-atleon-throughput.md) covers KPipe and Atleon in
-parallel and per-key modes, with raw virtual-thread and share-consumer baselines, at delays from 0 µs to 100 ms. It
-includes KPipe's backpressure-release fix and Atleon's explicit `COMPACT_EAGER` mode.
+The [October 15 M3 Max throughput comparison](results/2026-10-15-m3-max-kpipe-atleon-throughput.md) covers KPipe and
+Atleon in parallel and per-key modes, with raw virtual-thread and share-consumer baselines, at delays from 0 µs to 100
+ms. It includes KPipe's backpressure-release fix and Atleon's explicit `COMPACT_EAGER` mode.
 
 Captured runs live in [`results/`](results/), one dated markdown snapshot (plus raw JSON) per capture — read the most
 recent one. For any capture taken on a shared CI runner, trust the ordering and treat the absolute numbers as indicative
