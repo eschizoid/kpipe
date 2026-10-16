@@ -55,6 +55,12 @@ jmh {
     ?.filter(String::isNotEmpty)
     ?.takeIf { it.isNotEmpty() }
 
+  // JMH 1.37's gc profiler reads the JVM-wide allocation counter. Earlier versions sum per-thread
+  // counters over the threads alive at each snapshot, which drops everything allocated by a thread
+  // that exits mid-iteration, such as a poll loop started and stopped on every invocation, so arms
+  // that poll on short-lived platform threads under-report gc.alloc.rate.norm.
+  jmhVersion = "1.37"
+
   warmupIterations = intProp("jmh.warmupIterations", 3)
   iterations = intProp("jmh.iterations", 5)
   fork = intProp("jmh.fork", 1)
