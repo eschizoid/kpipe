@@ -1,0 +1,1018 @@
+{
+  "status": "complete",
+  "result_file": "2026-10-15-m3-max-kpipe-atleon-throughput.json",
+  "result_sha256": "44bbefb19df9f025f6755c233dae8c389264323e7a0ee9bc9d6f6857433e1963",
+  "case_count": 30,
+  "measured_iteration_entries": 750,
+  "start_utc": "2026-10-15T15:12:14.269376+00:00",
+  "end_utc": "2026-10-15T16:46:04.948514+00:00",
+  "settings": {
+    "forks": 5,
+    "warmup_iterations": 3,
+    "warmup_seconds": 2,
+    "measurement_iterations": 5,
+    "measurement_seconds": 3,
+    "threads": 1,
+    "profiler": "gc",
+    "force_gc": true,
+    "max_active_in_flight": 10000,
+    "acknowledgement_queue_mode": "COMPACT_EAGER"
+  },
+  "work_micros": [
+    0,
+    100,
+    1000,
+    10000,
+    100000
+  ],
+  "acknowledgement_queue_mode": "COMPACT_EAGER",
+  "max_active_in_flight": 10000,
+  "git_head": "f823a526b0784aef7f6192e82a3b6a6f0305e7b7",
+  "jar_sha256": "6b9438f2e8d442305f558602be9161212383edc9b0cae3d2aca0e0c378c70f2c",
+  "kpipe_backpressure_fix": "c4a660d715f7b5a46b3de14e3537404a0a3f0de7",
+  "phases": {
+    "matched_libraries": {
+      "status": "complete",
+      "start_utc": "2026-10-15T15:12:14.269376+00:00",
+      "plan": [
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "0"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "0"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "0"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "0"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "1000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "1000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "1000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "1000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "10000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "10000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "10000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "10000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100000"
+          }
+        }
+      ],
+      "finished": [
+        {
+          "index": 1,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "0"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 162.6894944999367,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/001-ParallelProcessingBenchmark.kpipe-thrpt-work0.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/001-ParallelProcessingBenchmark.kpipe-thrpt-work0.log"
+        },
+        {
+          "index": 2,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "0"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 147.26864416711032,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/002-ParallelProcessingBenchmark.atleonParallel-thrpt-work0.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/002-ParallelProcessingBenchmark.atleonParallel-thrpt-work0.log"
+        },
+        {
+          "index": 3,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "0"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 168.037502292078,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/003-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work0.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/003-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work0.log"
+        },
+        {
+          "index": 4,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "0"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 147.03926295880228,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/004-ParallelProcessingBenchmark.atleonKey-thrpt-work0.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/004-ParallelProcessingBenchmark.atleonKey-thrpt-work0.log"
+        },
+        {
+          "index": 5,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 146.78924179216847,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/005-ParallelProcessingBenchmark.atleonParallel-thrpt-work100.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/005-ParallelProcessingBenchmark.atleonParallel-thrpt-work100.log"
+        },
+        {
+          "index": 6,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 164.19765325030312,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/006-ParallelProcessingBenchmark.kpipe-thrpt-work100.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/006-ParallelProcessingBenchmark.kpipe-thrpt-work100.log"
+        },
+        {
+          "index": 7,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 146.5812897500582,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/007-ParallelProcessingBenchmark.atleonKey-thrpt-work100.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/007-ParallelProcessingBenchmark.atleonKey-thrpt-work100.log"
+        },
+        {
+          "index": 8,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 162.44704674975947,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/008-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work100.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/008-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work100.log"
+        },
+        {
+          "index": 9,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "1000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 164.4187886249274,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/009-ParallelProcessingBenchmark.kpipe-thrpt-work1000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/009-ParallelProcessingBenchmark.kpipe-thrpt-work1000.log"
+        },
+        {
+          "index": 10,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "1000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 147.28816391713917,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/010-ParallelProcessingBenchmark.atleonParallel-thrpt-work1000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/010-ParallelProcessingBenchmark.atleonParallel-thrpt-work1000.log"
+        },
+        {
+          "index": 11,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "1000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 167.58200112544,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/011-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work1000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/011-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work1000.log"
+        },
+        {
+          "index": 12,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "1000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 147.6917435838841,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/012-ParallelProcessingBenchmark.atleonKey-thrpt-work1000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/012-ParallelProcessingBenchmark.atleonKey-thrpt-work1000.log"
+        },
+        {
+          "index": 13,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "10000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 147.36853945814073,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/013-ParallelProcessingBenchmark.atleonParallel-thrpt-work10000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/013-ParallelProcessingBenchmark.atleonParallel-thrpt-work10000.log"
+        },
+        {
+          "index": 14,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "10000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 165.05044404231012,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/014-ParallelProcessingBenchmark.kpipe-thrpt-work10000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/014-ParallelProcessingBenchmark.kpipe-thrpt-work10000.log"
+        },
+        {
+          "index": 15,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "10000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 158.75027604214847,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/015-ParallelProcessingBenchmark.atleonKey-thrpt-work10000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/015-ParallelProcessingBenchmark.atleonKey-thrpt-work10000.log"
+        },
+        {
+          "index": 16,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "10000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 170.7977943336591,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/016-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work10000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/016-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work10000.log"
+        },
+        {
+          "index": 17,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 156.5392194581218,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/017-ParallelProcessingBenchmark.kpipe-thrpt-work100000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/017-ParallelProcessingBenchmark.kpipe-thrpt-work100000.log"
+        },
+        {
+          "index": 18,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 150.52516516670585,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/018-ParallelProcessingBenchmark.atleonParallel-thrpt-work100000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/018-ParallelProcessingBenchmark.atleonParallel-thrpt-work100000.log"
+        },
+        {
+          "index": 19,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 257.49635695805773,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/019-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work100000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/019-ParallelProcessingBenchmark.kpipeKeyOrdered-thrpt-work100000.log"
+        },
+        {
+          "index": 20,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 223.20095604192466,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/020-ParallelProcessingBenchmark.atleonKey-thrpt-work100000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/020-ParallelProcessingBenchmark.atleonKey-thrpt-work100000.log"
+        }
+      ],
+      "failures": [],
+      "active_case": null,
+      "settings": {
+        "forks": 5,
+        "warmup_iterations": 3,
+        "warmup_seconds": 2,
+        "measurement_iterations": 5,
+        "measurement_seconds": 3,
+        "threads": 1,
+        "profiler": "gc",
+        "force_gc": true,
+        "max_active_in_flight": 10000,
+        "acknowledgement_queue_mode": "COMPACT_EAGER"
+      },
+      "git_head": "f823a526b0784aef7f6192e82a3b6a6f0305e7b7",
+      "git_status": "M benchmarks/METHODOLOGY.md\n M benchmarks/README.md\n M benchmarks/src/jmh/java/io/github/eschizoid/kpipe/benchmarks/ParallelProcessingBenchmarkInfrastructure.java\n?? .idea/\n?? benchmarks/results/2026-10-15-kpipe-atleon-backpressure-preliminary.json\n?? benchmarks/results/2026-10-15-kpipe-atleon-backpressure-preliminary.metadata.json\n?? benchmarks/results/2026-10-15-kpipe-atleon-backpressure-strict-preliminary.json\n?? benchmarks/results/2026-10-15-kpipe-atleon-backpressure-strict-preliminary.metadata.json",
+      "jar_sha256": "6b9438f2e8d442305f558602be9161212383edc9b0cae3d2aca0e0c378c70f2c",
+      "java": "openjdk version \"25.0.2\" 2026-01-20 LTS\nOpenJDK Runtime Environment Zulu25.32+21-CA (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Zulu25.32+21-CA (build 25.0.2+10-LTS, mixed mode, sharing)",
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+      "hardware": "Apple M3 Max\n16\n16\n68719476736",
+      "docker_version": "29.8.2",
+      "docker_resources": "CPUs=16 Memory=16817954816",
+      "protected_artifacts": {
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-12-full-suite.md": "1d5149b58bcf8b7d505eb99bddfa4a1e18a6638202d71e95effc5be7c494cda4",
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-12-full-suite.json": "02cf6f18b411d78528290500d465bb1a708dc4dbbba2b8fe637e6848d21c750e",
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-13-atleon-in-flight-10000.json": "32b34fd8a8d53095e01880fb9796a7955224773b7652f9e43e25823bb221ea61",
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-15-kpipe-atleon-backpressure-preliminary.json": "6a94718d72066dcfcee3bcedb58149483c308fb453d84642644d16e6e91a1650",
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-15-kpipe-atleon-backpressure-strict-preliminary.json": "f129cc3a3ff5accf6668ad0a71e528c0eb707198d6ca234c7e88941195284946"
+      },
+      "source_diff_sha256": "123c8af1811a6cb0456decf66ec20c4eed8bd20cc488bf1feaba182daac0aa8a",
+      "work_micros": [
+        0,
+        100,
+        1000,
+        10000,
+        100000
+      ],
+      "acknowledgement_queue_mode_explicit": true,
+      "kpipe_backpressure_fix": "c4a660d715f7b5a46b3de14e3537404a0a3f0de7",
+      "case_order": "Matched libraries adjacent; library order reversed on alternating workloads",
+      "versions_toml": "[versions]\nkafka = \"4.3.1\"\notel = \"1.67.0\"\navro = \"1.12.2\"\nprotobuf = \"4.36.2\"\nfastjson2 = \"2.0.65\"\nslf4j = \"2.0.20\"\njunit = \"6.1.3\"\nmockito = \"5.24.0\"\ntestcontainers = \"2.0.5\"\npostgresql = \"42.7.14\"\nparallelConsumer = \"0.5.3.3\"\nreactorKafka = \"1.3.25\"\natleon = \"0.47.1\"\nspotless = \"8.10.4\"\naxion = \"1.18.7\"\nshadow = \"9.6.1\"\njmh = \"0.7.3\"\njreleaser = \"1.19.0\"\njgit = \"6.10.0.202406032230-r\"\njqwik = \"1.10.2\"\nfray = \"0.9.0\"\nconfluentSchemaRegistry = \"8.3.0\"\n\n[libraries]\nkafkaClients = { module = \"org.apache.kafka:kafka-clients\", version.ref = \"kafka\" }\nopentelemetryApi = { module = \"io.opentelemetry:opentelemetry-api\", version.ref = \"otel\" }\nopentelemetrySdk = { module = \"io.opentelemetry:opentelemetry-sdk\", version.ref = \"otel\" }\nopentelemetrySdkTesting = { module = \"io.opentelemetry:opentelemetry-sdk-testing\", version.ref = \"otel\" }\nopentelemetryExporterOtlp = { module = \"io.opentelemetry:opentelemetry-exporter-otlp\", version.ref = \"otel\" }\nopentelemetryAutoconfigure = { module = \"io.opentelemetry:opentelemetry-sdk-extension-autoconfigure\", version.ref = \"otel\" }\n\navro = { module = \"org.apache.avro:avro\", version.ref = \"avro\" }\nprotobufJava = { module = \"com.google.protobuf:protobuf-java\", version.ref = \"protobuf\" }\nprotobufUtil = { module = \"com.google.protobuf:protobuf-java-util\", version.ref = \"protobuf\" }\nfastjson2 = { module = \"com.alibaba.fastjson2:fastjson2\", version.ref = \"fastjson2\" }\n\nslf4jSimple = { module = \"org.slf4j:slf4j-simple\", version.ref = \"slf4j\" }\n\njunitBom = { module = \"org.junit:junit-bom\", version.ref = \"junit\" }\njunitJupiter = { module = \"org.junit.jupiter:junit-jupiter\", version.ref = \"junit\" }\njunitJupiterApi = { module = \"org.junit.jupiter:junit-jupiter-api\", version.ref = \"junit\" }\njunitPlatformLauncher = { module = \"org.junit.platform:junit-platform-launcher\", version.ref = \"junit\" }\n\nmockitoCore = { module = \"org.mockito:mockito-core\", version.ref = \"mockito\" }\nmockitoJunitJupiter = { module = \"org.mockito:mockito-junit-jupiter\", version.ref = \"mockito\" }\n\ntestcontainers = { module = \"org.testcontainers:testcontainers\", version.ref = \"testcontainers\" }\ntestcontainersJunitJupiter = { module = \"org.testcontainers:testcontainers-junit-jupiter\", version.ref = \"testcontainers\" }\ntestcontainersPostgresql = { module = \"org.testcontainers:testcontainers-postgresql\", version.ref = \"testcontainers\" }\ntestcontainersKafka = { module = \"org.testcontainers:testcontainers-kafka\", version.ref = \"testcontainers\" }\npostgresql = { module = \"org.postgresql:postgresql\", version.ref = \"postgresql\" }\nparallelConsumerCore = { module = \"io.confluent.parallelconsumer:parallel-consumer-core\", version.ref = \"parallelConsumer\" }\nreactorKafka = { module = \"io.projectreactor.kafka:reactor-kafka\", version.ref = \"reactorKafka\" }\natleonKafka = { module = \"io.atleon:atleon-kafka\", version.ref = \"atleon\" }\njgit = { module = \"org.eclipse.jgit:org.eclipse.jgit\", version.ref = \"jgit\" }\njgitGpgBc = { module = \"org.eclipse.jgit:org.eclipse.jgit.gpg.bc\", version.ref = \"jgit\" }\n\njqwik = { module = \"net.jqwik:jqwik\", version.ref = \"jqwik\" }\n\nkafkaProtobufProvider = { module = \"io.confluent:kafka-protobuf-provider\", version.ref = \"confluentSchemaRegistry\" }\nkafkaProtobufSerializer = { module = \"io.confluent:kafka-protobuf-serializer\", version.ref = \"confluentSchemaRegistry\" }\n\n[plugins]\nspotless = { id = \"com.diffplug.spotless\", version.ref = \"spotless\" }\naxion = { id = \"pl.allegro.tech.build.axion-release\", version.ref = \"axion\" }\nshadow = { id = \"com.gradleup.shadow\", version.ref = \"shadow\" }\njmh = { id = \"me.champeau.jmh\", version.ref = \"jmh\" }\nfray = { id = \"org.pastalab.fray.gradle\", version.ref = \"fray\" }\njreleaser = { id = \"org.jreleaser\", version.ref = \"jreleaser\" }",
+      "end_utc": "2026-10-15T16:07:16.746730+00:00",
+      "original_artifacts_unchanged": true
+    },
+    "raw_share_baselines": {
+      "status": "complete",
+      "start_utc": "2026-10-15T16:08:54.438441+00:00",
+      "plan": [
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "0"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "0"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "1000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "1000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "10000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "10000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100000"
+          }
+        },
+        {
+          "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+          "mode": "thrpt",
+          "params": {
+            "workMicros": "100000"
+          }
+        }
+      ],
+      "finished": [
+        {
+          "index": 1,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "0"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 161.34858629200608,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/001-ParallelProcessingBenchmark.raw-thrpt-work0.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/001-ParallelProcessingBenchmark.raw-thrpt-work0.log"
+        },
+        {
+          "index": 2,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "0"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 255.05558174988255,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/002-ParallelProcessingBenchmark.share-thrpt-work0.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/002-ParallelProcessingBenchmark.share-thrpt-work0.log"
+        },
+        {
+          "index": 3,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 255.54192291712388,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/003-ParallelProcessingBenchmark.share-thrpt-work100.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/003-ParallelProcessingBenchmark.share-thrpt-work100.log"
+        },
+        {
+          "index": 4,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 161.3320802920498,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/004-ParallelProcessingBenchmark.raw-thrpt-work100.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/004-ParallelProcessingBenchmark.raw-thrpt-work100.log"
+        },
+        {
+          "index": 5,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "1000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 161.12822558404878,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/005-ParallelProcessingBenchmark.raw-thrpt-work1000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/005-ParallelProcessingBenchmark.raw-thrpt-work1000.log"
+        },
+        {
+          "index": 6,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "1000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 256.66113329073414,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/006-ParallelProcessingBenchmark.share-thrpt-work1000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/006-ParallelProcessingBenchmark.share-thrpt-work1000.log"
+        },
+        {
+          "index": 7,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "10000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 274.0517471251078,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/007-ParallelProcessingBenchmark.share-thrpt-work10000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/007-ParallelProcessingBenchmark.share-thrpt-work10000.log"
+        },
+        {
+          "index": 8,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "10000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 161.99134416598827,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/008-ParallelProcessingBenchmark.raw-thrpt-work10000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/008-ParallelProcessingBenchmark.raw-thrpt-work10000.log"
+        },
+        {
+          "index": 9,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 162.34591974969953,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/009-ParallelProcessingBenchmark.raw-thrpt-work100000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/009-ParallelProcessingBenchmark.raw-thrpt-work100000.log"
+        },
+        {
+          "index": 10,
+          "case": {
+            "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+            "mode": "thrpt",
+            "params": {
+              "workMicros": "100000"
+            }
+          },
+          "exit_code": 0,
+          "elapsed_seconds": 380.78037374978885,
+          "result": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/010-ParallelProcessingBenchmark.share-thrpt-work100000.json",
+          "log": "/private/tmp/kpipe-atleon-throughput-2026-10-15/baselines/010-ParallelProcessingBenchmark.share-thrpt-work100000.log"
+        }
+      ],
+      "failures": [],
+      "active_case": null,
+      "settings": {
+        "forks": 5,
+        "warmup_iterations": 3,
+        "warmup_seconds": 2,
+        "measurement_iterations": 5,
+        "measurement_seconds": 3,
+        "threads": 1,
+        "profiler": "gc",
+        "force_gc": true,
+        "max_active_in_flight": 10000,
+        "acknowledgement_queue_mode": "COMPACT_EAGER"
+      },
+      "git_head": "f823a526b0784aef7f6192e82a3b6a6f0305e7b7",
+      "git_status": "M benchmarks/METHODOLOGY.md\n M benchmarks/README.md\n M benchmarks/src/jmh/java/io/github/eschizoid/kpipe/benchmarks/ParallelProcessingBenchmarkInfrastructure.java\n?? .idea/\n?? benchmarks/results/2026-10-15-kpipe-atleon-backpressure-preliminary.json\n?? benchmarks/results/2026-10-15-kpipe-atleon-backpressure-preliminary.metadata.json\n?? benchmarks/results/2026-10-15-kpipe-atleon-backpressure-strict-preliminary.json\n?? benchmarks/results/2026-10-15-kpipe-atleon-backpressure-strict-preliminary.metadata.json\n?? benchmarks/results/2026-10-15-kpipe-atleon-throughput.json\n?? benchmarks/results/2026-10-15-kpipe-atleon-throughput.metadata.json",
+      "jar_sha256": "6b9438f2e8d442305f558602be9161212383edc9b0cae3d2aca0e0c378c70f2c",
+      "java": "openjdk version \"25.0.2\" 2026-01-20 LTS\nOpenJDK Runtime Environment Zulu25.32+21-CA (build 25.0.2+10-LTS)\nOpenJDK 64-Bit Server VM Zulu25.32+21-CA (build 25.0.2+10-LTS, mixed mode, sharing)",
+      "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+      "hardware": "Apple M3 Max\n16\n16\n68719476736",
+      "docker_version": "29.8.2",
+      "docker_resources": "CPUs=16 Memory=16817954816",
+      "protected_artifacts": {
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-12-full-suite.md": "1d5149b58bcf8b7d505eb99bddfa4a1e18a6638202d71e95effc5be7c494cda4",
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-12-full-suite.json": "02cf6f18b411d78528290500d465bb1a708dc4dbbba2b8fe637e6848d21c750e",
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-13-atleon-in-flight-10000.json": "32b34fd8a8d53095e01880fb9796a7955224773b7652f9e43e25823bb221ea61",
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-15-kpipe-atleon-backpressure-preliminary.json": "6a94718d72066dcfcee3bcedb58149483c308fb453d84642644d16e6e91a1650",
+        "/Users/spierce/Workspace/kpipe/benchmarks/results/2026-10-15-kpipe-atleon-backpressure-strict-preliminary.json": "f129cc3a3ff5accf6668ad0a71e528c0eb707198d6ca234c7e88941195284946"
+      },
+      "source_diff_sha256": "df6fb9b487c0ecfeceb5bda385e68e6dea97f927c3c5e571b6b11d5cd76d232b",
+      "work_micros": [
+        0,
+        100,
+        1000,
+        10000,
+        100000
+      ],
+      "acknowledgement_queue_mode_explicit": true,
+      "kpipe_backpressure_fix": "c4a660d715f7b5a46b3de14e3537404a0a3f0de7",
+      "case_order": "Raw/share baseline phase after the matched KPipe/Atleon phase; order reversed on alternating workloads",
+      "versions_toml": "[versions]\nkafka = \"4.3.1\"\notel = \"1.67.0\"\navro = \"1.12.2\"\nprotobuf = \"4.36.2\"\nfastjson2 = \"2.0.65\"\nslf4j = \"2.0.20\"\njunit = \"6.1.3\"\nmockito = \"5.24.0\"\ntestcontainers = \"2.0.5\"\npostgresql = \"42.7.14\"\nparallelConsumer = \"0.5.3.3\"\nreactorKafka = \"1.3.25\"\natleon = \"0.47.1\"\nspotless = \"8.10.4\"\naxion = \"1.18.7\"\nshadow = \"9.6.1\"\njmh = \"0.7.3\"\njreleaser = \"1.19.0\"\njgit = \"6.10.0.202406032230-r\"\njqwik = \"1.10.2\"\nfray = \"0.9.0\"\nconfluentSchemaRegistry = \"8.3.0\"\n\n[libraries]\nkafkaClients = { module = \"org.apache.kafka:kafka-clients\", version.ref = \"kafka\" }\nopentelemetryApi = { module = \"io.opentelemetry:opentelemetry-api\", version.ref = \"otel\" }\nopentelemetrySdk = { module = \"io.opentelemetry:opentelemetry-sdk\", version.ref = \"otel\" }\nopentelemetrySdkTesting = { module = \"io.opentelemetry:opentelemetry-sdk-testing\", version.ref = \"otel\" }\nopentelemetryExporterOtlp = { module = \"io.opentelemetry:opentelemetry-exporter-otlp\", version.ref = \"otel\" }\nopentelemetryAutoconfigure = { module = \"io.opentelemetry:opentelemetry-sdk-extension-autoconfigure\", version.ref = \"otel\" }\n\navro = { module = \"org.apache.avro:avro\", version.ref = \"avro\" }\nprotobufJava = { module = \"com.google.protobuf:protobuf-java\", version.ref = \"protobuf\" }\nprotobufUtil = { module = \"com.google.protobuf:protobuf-java-util\", version.ref = \"protobuf\" }\nfastjson2 = { module = \"com.alibaba.fastjson2:fastjson2\", version.ref = \"fastjson2\" }\n\nslf4jSimple = { module = \"org.slf4j:slf4j-simple\", version.ref = \"slf4j\" }\n\njunitBom = { module = \"org.junit:junit-bom\", version.ref = \"junit\" }\njunitJupiter = { module = \"org.junit.jupiter:junit-jupiter\", version.ref = \"junit\" }\njunitJupiterApi = { module = \"org.junit.jupiter:junit-jupiter-api\", version.ref = \"junit\" }\njunitPlatformLauncher = { module = \"org.junit.platform:junit-platform-launcher\", version.ref = \"junit\" }\n\nmockitoCore = { module = \"org.mockito:mockito-core\", version.ref = \"mockito\" }\nmockitoJunitJupiter = { module = \"org.mockito:mockito-junit-jupiter\", version.ref = \"mockito\" }\n\ntestcontainers = { module = \"org.testcontainers:testcontainers\", version.ref = \"testcontainers\" }\ntestcontainersJunitJupiter = { module = \"org.testcontainers:testcontainers-junit-jupiter\", version.ref = \"testcontainers\" }\ntestcontainersPostgresql = { module = \"org.testcontainers:testcontainers-postgresql\", version.ref = \"testcontainers\" }\ntestcontainersKafka = { module = \"org.testcontainers:testcontainers-kafka\", version.ref = \"testcontainers\" }\npostgresql = { module = \"org.postgresql:postgresql\", version.ref = \"postgresql\" }\nparallelConsumerCore = { module = \"io.confluent.parallelconsumer:parallel-consumer-core\", version.ref = \"parallelConsumer\" }\nreactorKafka = { module = \"io.projectreactor.kafka:reactor-kafka\", version.ref = \"reactorKafka\" }\natleonKafka = { module = \"io.atleon:atleon-kafka\", version.ref = \"atleon\" }\njgit = { module = \"org.eclipse.jgit:org.eclipse.jgit\", version.ref = \"jgit\" }\njgitGpgBc = { module = \"org.eclipse.jgit:org.eclipse.jgit.gpg.bc\", version.ref = \"jgit\" }\n\njqwik = { module = \"net.jqwik:jqwik\", version.ref = \"jqwik\" }\n\nkafkaProtobufProvider = { module = \"io.confluent:kafka-protobuf-provider\", version.ref = \"confluentSchemaRegistry\" }\nkafkaProtobufSerializer = { module = \"io.confluent:kafka-protobuf-serializer\", version.ref = \"confluentSchemaRegistry\" }\n\n[plugins]\nspotless = { id = \"com.diffplug.spotless\", version.ref = \"spotless\" }\naxion = { id = \"pl.allegro.tech.build.axion-release\", version.ref = \"axion\" }\nshadow = { id = \"com.gradleup.shadow\", version.ref = \"shadow\" }\njmh = { id = \"me.champeau.jmh\", version.ref = \"jmh\" }\nfray = { id = \"org.pastalab.fray.gradle\", version.ref = \"fray\" }\njreleaser = { id = \"org.jreleaser\", version.ref = \"jreleaser\" }",
+      "end_utc": "2026-10-15T16:46:04.948514+00:00",
+      "original_artifacts_unchanged": true
+    }
+  },
+  "entries": [
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "10000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "10000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "10000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "10000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipe",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonParallel",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.kpipeKeyOrdered",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.atleonKey",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100000"
+      },
+      "phase": "matched_libraries"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "0"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "1000"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "10000"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "10000"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.raw",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100000"
+      },
+      "phase": "raw_share_baselines"
+    },
+    {
+      "benchmark": "io.github.eschizoid.kpipe.benchmarks.ParallelProcessingBenchmark.share",
+      "mode": "thrpt",
+      "params": {
+        "workMicros": "100000"
+      },
+      "phase": "raw_share_baselines"
+    }
+  ],
+  "validation": {
+    "numeric_table_checks": 270,
+    "native_case_objects_verified": 30,
+    "measured_iteration_entries_verified": 750,
+    "previous_artifacts_unchanged": true,
+    "report_links_verified": true
+  },
+  "report_file": "2026-10-15-m3-max-kpipe-atleon-throughput.md",
+  "report_sha256": "67c72dc1c85c1338efbef7e8cc04b34cc1ccc107da8eb27d53547ee6a54d7120"
+}

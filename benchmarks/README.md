@@ -72,11 +72,12 @@ sets `max.poll.records=50` and `PollStrategyFactory.greatestBatchLag()`. The par
 defaults for these settings. Both grouped arms use the default `innerPublishOn` prefetch.
 
 Broker-backed Atleon receivers use a 10,000-record active in-flight limit, matching KPipe's default high watermark, and
-the receiver's default `AcknowledgementQueueMode.STRICT`. This mode executes acknowledgments in order and replenishes
-upstream demand as contiguous completed acknowledgments drain. Receivers use the invocation's unique group ID as their
-client ID. Completion counters measure processing callbacks; they do not wait for final acknowledgments or commits.
-Atleon teardown cancels the subscription and immediately disposes its scheduler, so a final key-group completion racing
-with disposal can log `RejectedExecutionException` through Reactor's `onErrorDropped` hook.
+explicit `AcknowledgementQueueMode.COMPACT_EAGER`. This mode compacts contiguous completed acknowledgments and
+replenishes upstream demand when each record completes, independently of ordered acknowledgement advancement. Receivers
+use the invocation's unique group ID as their client ID. Completion counters measure processing callbacks; they do not
+wait for final acknowledgments or commits. Atleon teardown cancels the subscription and immediately disposes its
+scheduler, so a final key-group completion racing with disposal can log `RejectedExecutionException` through Reactor's
+`onErrorDropped` hook.
 
 The KPipe-only MockConsumer key-dispatch benchmark compares `PARALLEL` and `KEY_ORDERED`. Its `dispatch` arm processes
 10,000 records in one partition and requires no Docker. KPipe has no `PARTITION` mode; compare `atleonPartition` to
@@ -132,6 +133,10 @@ All properties are optional (values above are the defaults). Results print as a 
 `benchmarks/build/results/per-record-latency/results.json`.
 
 ## Results
+
+The [October 15 M3 Max throughput comparison](results/2026-10-15-m3-max-kpipe-atleon-throughput.md) covers KPipe and
+Atleon in parallel and per-key modes, with raw virtual-thread and share-consumer baselines, at delays from 0 µs to 100
+ms. It includes KPipe's backpressure-release fix and Atleon's explicit `COMPACT_EAGER` mode.
 
 Captured runs live in [`results/`](results/), one dated markdown snapshot (plus raw JSON) per capture — read the most
 recent one. For any capture taken on a shared CI runner, trust the ordering and treat the absolute numbers as indicative
