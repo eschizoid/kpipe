@@ -139,9 +139,9 @@ Atleon in parallel and per-key modes, with raw virtual-thread and share-consumer
 ms. It includes KPipe's backpressure-release fix and Atleon's explicit `COMPACT_EAGER` mode.
 
 The M3 Max capture and the CI captures disagree. On the M3 Max, Atleon parallel ran at 1.86× to 2.05× KPipe at 100 µs
-and 1 ms, while on the 4-vCPU CI runner KPipe ran at 1.02× to 1.14× Atleon at those delays. A run on an Intel Mac with
-Docker Desktop matched the CI result, so the difference appears to come from the hardware, but the cause is not known
-yet. The CI captures are the reference for the numbers we report; see
+and 1 ms, while on the 4-vCPU CI runner, with the same `COMPACT_EAGER` setting, KPipe ran at 1.09× and 1.04× Atleon at
+those delays ([capture](results/2026-10-16-ci-compact-eager.md)). The cause is not known yet. The CI captures are the
+reference for the numbers we report; see
 [Which capture is the reference](METHODOLOGY.md#which-capture-is-the-reference).
 
 Captured runs live in [`results/`](results/), one dated markdown snapshot (plus raw JSON) per capture — read the most

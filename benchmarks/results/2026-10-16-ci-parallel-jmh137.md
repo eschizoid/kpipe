@@ -14,17 +14,17 @@ have exited.
 
 ## Environment
 
-| Field        | Value                                                                      |
-| ------------ | -------------------------------------------------------------------------- |
-| Date (UTC)   | 2026-10-16 12:34 → 14:37                                                   |
-| Hardware     | GitHub-hosted runner, standard public-repository size (4 vCPU)             |
-| OS           | Ubuntu 24.04                                                               |
-| JDK          | 25.0.4                                                                     |
-| JMH          | 1.37                                                                       |
-| Kafka        | 4.3.0 in a Testcontainers container (`apache/kafka:4.3.0`)                 |
-| KPipe        | `61e4e611` (main at `f30657cf` plus the JMH 1.37 change)                   |
-| Atleon       | 0.47.1, `AcknowledgementQueueMode.STRICT`                                  |
-| Workflow run | [38901510755](https://github.com/eschizoid/kpipe/actions/runs/38901510755) |
+| Field        | Value                                                                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Date (UTC)   | 2026-10-16 12:34 → 14:37                                                                                                                                                        |
+| Hardware     | GitHub-hosted runner, standard public-repository size (4 vCPU)                                                                                                                  |
+| OS           | Ubuntu 24.04                                                                                                                                                                    |
+| JDK          | 25.0.4                                                                                                                                                                          |
+| JMH          | 1.37                                                                                                                                                                            |
+| Kafka        | 4.3.0 in a Testcontainers container (`apache/kafka:4.3.0`)                                                                                                                      |
+| KPipe        | `main` at `f30657cf` plus the JMH 1.37 change in #364. The workflow ran it as commit `61e4e611`, which a later rebase replaced. It predates #361, so Atleon runs with `STRICT`. |
+| Atleon       | 0.47.1, `AcknowledgementQueueMode.STRICT`                                                                                                                                       |
+| Workflow run | [38901510755](https://github.com/eschizoid/kpipe/actions/runs/38901510755)                                                                                                      |
 
 JMH ran with 3 forks, 3 warmup iterations, 5 measurement iterations, and the `gc` profiler.
 
@@ -46,8 +46,23 @@ capture.
 | Confluent Parallel Consumer `KEY`       |       52 |    3,742 |
 
 KPipe's figures moved by less than 7% between the two versions, while every other arm rose, some by a factor of 20 or
-more. KPipe `PARALLEL` allocates about 4% more per record than the raw loop, and less than Atleon or Confluent Parallel
-Consumer.
+more. At 0 µs, KPipe `PARALLEL` allocates about 4% more per record than the raw loop, and at 100 and 1000 µs about 16%
+more. At every delay, each KPipe mode allocates less than the Atleon arm with the same ordering and less than Confluent
+Parallel Consumer, as the table below shows.
+
+JMH 1.37, bytes per record at each delay:
+
+| Runtime                                 | workMicros=0 | workMicros=100 | workMicros=1000 |
+| --------------------------------------- | -----------: | -------------: | --------------: |
+| Raw `KafkaConsumer` + virtual threads   |        1,001 |          1,429 |           1,428 |
+| KPipe `PARALLEL`                        |        1,044 |          1,666 |           1,650 |
+| Atleon parallel                         |        1,701 |          2,281 |           2,346 |
+| Confluent Parallel Consumer `UNORDERED` |        3,445 |          3,339 |           3,231 |
+| Reactor Kafka                           |          887 |            800 |             828 |
+| Kafka Share Consumer                    |        1,678 |          1,893 |           1,871 |
+| KPipe `KEY_ORDERED`                     |        1,027 |            904 |             902 |
+| Atleon key-ordered                      |        1,465 |          1,509 |           1,512 |
+| Confluent Parallel Consumer `KEY`       |        3,742 |          3,628 |           3,612 |
 
 ## Throughput — unordered arms
 
@@ -80,8 +95,9 @@ Records per second, higher is better, with the JMH 99.9% error.
 | KPipe `KEY_ORDERED` ÷ Atleon key-ordered, this run |         0.98 |           1.06 |            0.89 |
 
 The 2026-10-15 run used the same code and the same Atleon settings on the same kind of runner, and differed only in the
-JMH version. Its KPipe ÷ Atleon ratios were up to 0.30 higher. Ratios on shared CI runners therefore move between runs,
-and a difference smaller than that is not evidence that one library is faster.
+JMH version. Its KPipe ÷ Atleon ratios were up to 0.30 higher, and every throughput figure in this run was higher than
+in that one, Atleon parallel's by the most. Whether the JMH version or the runner caused the shift is not yet known, so
+neither run alone settles a lead of that size.
 
 ## Raw output
 

@@ -111,12 +111,14 @@ Per-benchmark overrides:
 
 ### Recommended publishing run
 
-This is the full publishing capture: every arm, each benchmark's full `workMicros` sweep (no override — including the
-10–100ms regime where most real consumers live), latency percentiles included, on a quiesced box (no browser, no IDE
-indexing, mains power). Plan for a weekend, not an overnight: the single-threaded arm is the long pole — 25k records ×
-100ms ≈ 42 min per iteration at the top cell, which at fork=5 is a multi-day tail (and why this run cannot fit CI's
-6-hour cap). To fit an actual overnight window, exclude the serial arm's pathological cells with the include-regex trick
-from the CI section and capture `singleThread` separately at lower fork counts.
+A full local capture covers what the CI job cannot: every arm, each benchmark's full `workMicros` sweep (no override —
+including the 10–100ms regime where most real consumers live), latency percentiles included, on a quiesced box (no
+browser, no IDE indexing, mains power). Plan for a weekend, not an overnight: the single-threaded arm is the long pole —
+25k records × 100ms ≈ 42 min per iteration at the top cell, which at fork=5 is a multi-day tail (and why this run cannot
+fit CI's 6-hour cap). To fit an actual overnight window, exclude the serial arm's pathological cells with the
+include-regex trick from the CI section and capture `singleThread` separately at lower fork counts. Publish a local
+capture as a supplement labeled with its machine; the numbers KPipe reports come from CI captures (see
+[Which capture is the reference](#which-capture-is-the-reference)).
 
 ```bash
 ./gradlew :benchmarks:jmh \
@@ -245,15 +247,17 @@ Reading the numbers:
 
 The numbers KPipe reports in the README, the comparison graph and release notes come from captures run by the Benchmarks
 workflow on a GitHub-hosted runner. Anyone can rerun the workflow on the same kind of machine, and every arm in a
-capture runs in one job, so each ratio compares arms under the same conditions. Captures from other machines stay in
-`results/` with the machine in the file name, and the README links them and states when they disagree with the CI
-captures.
+capture runs in one job, so each ratio compares arms under the same conditions. New captures from other machines go in
+`results/` with the machine in the file name (older captures name the machine in their environment table), and the
+README links them and states when they disagree with the CI captures.
 
 Because the runner is shared, two rules apply to anything reported from it:
 
 1. Report ratios between arms of the same run, not absolute records/s compared across runs.
-2. Two CI runs of the same code have produced KPipe ÷ Atleon ratios up to 0.3 apart. Before claiming that one library
-   leads, check that the two arms' 99.9% error bands do not overlap, or that the lead holds in at least two runs.
+2. Two CI runs a day apart, which differed only in JMH version (1.36, then 1.37), gave KPipe ÷ Atleon ratios up to 0.3
+   apart, and every throughput figure was higher in the second run. Whether the JMH version or the runner caused that is
+   not yet known. Before claiming that one library leads, check that the two arms' 99.9% error bands do not overlap, or
+   that the lead holds in at least two runs on the same JMH version.
 
 ## What to write down with every published number
 

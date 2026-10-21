@@ -156,31 +156,35 @@ producing to another topic: [docs/API.md](docs/API.md) and [docs/SINKS.md](docs/
 ## Performance
 
 Benchmarked against Confluent Parallel Consumer, Reactor Kafka, the KIP-932 share consumer, a raw `KafkaConsumer` +
-virtual-threads loop, and a single-threaded baseline — same broker, same workload, JMH with published raw JSON. Summary
-of the 2026-07 reference capture (one 6-core machine; read ratios, not absolutes): with 10–100ms of real work per
-record, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel Consumer's throughput at 10ms and 41× at 100ms,
-tracking the machine's capacity where a fixed worker pool is bounded by `workers ÷ work-time`.
+virtual-threads loop, and a single-threaded baseline — same broker, same workload, JMH with published raw JSON. The
+reference numbers come from CI captures on a GitHub runner, described below. An earlier 2026-07 capture on one 6-core
+local machine is still the only one that compares KPipe with Confluent Parallel Consumer at 10 to 100ms of work per
+record: with that much work, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel Consumer's throughput at 10ms
+and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by `workers ÷ work-time`.
 
 The [2026-10-15](benchmarks/results/2026-10-15-ci-parallel.md) and
 [2026-10-16](benchmarks/results/2026-10-16-ci-parallel-jmh137.md) captures add Atleon and run every arm in one job on a
 4-vCPU GitHub runner, at 0, 100 and 1000µs of work per record. Across the two runs, KPipe `PARALLEL` ran at 1.15× to
-1.45× Atleon's unordered throughput at 0µs, at 1.02× to 1.14× at 100 and 1000µs, and at 0.82× to 0.90× the raw loop.
-Both runs used the same code, so ratio differences of up to about 0.3 are run-to-run noise on this runner. KPipe
-`KEY_ORDERED` ran at 0.89× to 1.12× Atleon's key-ordered arm, and Atleon led per-key ordering at 1000µs in both runs. In
-the 2026-10-15 batch latency runs, KPipe drained a 25,000-record batch faster than Atleon on average in unordered mode,
-with a p99 13 to 30 ms lower. In key-ordered mode the averages were level at 0 and 100µs, KPipe's p99 was about half of
-Atleon's there, and Atleon was faster on average at 1000µs.
+1.45× Atleon's unordered throughput at 0µs, at 1.02× to 1.14× at 100 and 1000µs, and at 0.82× to 0.90× the raw loop. The
+two runs differed only in JMH version, and every throughput figure was higher in the second, so these ranges mix
+run-to-run variation with whatever the JMH change did. A third run with Atleon's `COMPACT_EAGER` mode, now the
+benchmark's setting, gave KPipe ÷ Atleon of 1.21× at 0µs and 1.04× to 1.09× at 100 and 1000µs
+([capture](benchmarks/results/2026-10-16-ci-compact-eager.md)). KPipe `KEY_ORDERED` ran at 0.89× to 1.12× Atleon's
+key-ordered arm, and Atleon led per-key ordering at 1000µs in both runs. In the 2026-10-15 batch latency runs, KPipe
+drained a 25,000-record batch faster than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In
+key-ordered mode the averages were level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was
+faster on average at 1000µs.
 
 The costs: in the 2026-10-16 capture, which measures allocation with JMH 1.37, KPipe `PARALLEL` allocates about 1,044
-B/op, slightly more than the raw loop's 1,001 and less than Atleon (1,465 to 1,701) or CPC (3,445 to 3,742). Earlier
-captures used JMH 1.36, which under-counts allocation for any arm whose consumer runs on threads that exit during the
-measurement, so their allocation comparisons, including the 2026-07 ones, overstate KPipe's cost relative to the others.
-In the 2026-07 captures, the `KEY_ORDERED` mode's advantage over CPC's equivalent at sub-millisecond workloads was
-machine-dependent (it lost on one of our two test machines), and the virtual-thread-per-record advantage shrinks as
-per-record work approaches zero or becomes CPU-bound, because there is nothing to overlap. The raw loop is faster than
-KPipe at every cell of the CI captures. It has no in-flight limit and no backpressure, and neither it nor the
-benchmark's KPipe arms track or commit offsets, so the gap measures KPipe's dispatch and backpressure, not its offset
-tracking.
+B/op at 0µs and about 1,650 at 100 and 1000µs, 4% to 17% more than the raw loop. At every delay, each KPipe mode
+allocates less than Atleon's arm with the same ordering, and less than CPC. Earlier captures used JMH 1.36, which
+under-counts allocation for any arm whose consumer runs on threads that exit during the measurement, so their allocation
+comparisons, including the 2026-07 ones, overstate KPipe's cost relative to the others. In the 2026-07 captures, the
+`KEY_ORDERED` mode's advantage over CPC's equivalent at sub-millisecond workloads was machine-dependent (it lost on one
+of our two test machines), and the virtual-thread-per-record advantage shrinks as per-record work approaches zero or
+becomes CPU-bound, because there is nothing to overlap. The raw loop is faster than KPipe at every cell of the CI
+captures. It has no in-flight limit and no backpressure, and neither it nor the benchmark's KPipe arms track or commit
+offsets, so the gap measures KPipe's dispatch and backpressure, not its offset tracking.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks/).
