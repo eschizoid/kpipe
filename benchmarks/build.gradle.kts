@@ -32,6 +32,14 @@ dependencies {
   implementation(libs.junitJupiterApi)
 }
 
+// Parallel Consumer 0.5.3.3, its latest release, processes no records on kafka-clients 4.4.0: it is assigned its
+// partitions, resets their offsets and then never hands a record to the user function, with nothing logged. Every
+// arm resolves kafka-clients 4.3.0 so the comparison runs on one client version that all of them support. Remove
+// the pin once a Parallel Consumer release works on the version the libraries build against.
+configurations.configureEach {
+  resolutionStrategy.force("org.apache.kafka:kafka-clients:4.3.0")
+}
+
 jmh {
   fun intProp(
     name: String,
