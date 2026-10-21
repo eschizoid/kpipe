@@ -187,7 +187,8 @@ same run rather than absolute records/s. Two things bound what's runnable:
 ```
 
 Arms and cells that do not fit the job limit, such as `singleThread` across the full sweep, can still be captured
-locally. Label such captures by machine, as described in the next section.
+locally. Label such captures by machine, as described in
+[Which capture is the reference](#which-capture-is-the-reference).
 
 ### Latency percentiles
 
