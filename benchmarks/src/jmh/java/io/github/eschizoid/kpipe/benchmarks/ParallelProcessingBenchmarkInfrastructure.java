@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
+import io.atleon.core.AcknowledgementQueueMode;
 import io.atleon.core.AloFlux;
 import io.atleon.kafka.KafkaReceiver;
 import io.atleon.kafka.KafkaReceiverOptions;
@@ -600,7 +601,8 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       return KafkaReceiverOptions.<byte[], byte[]>newBuilder()
         .consumerProperties(consumerPropertiesMap)
         .consumerProperty(ConsumerConfig.CLIENT_ID_CONFIG, consumerProps.getProperty(ConsumerConfig.GROUP_ID_CONFIG))
-        .maxActiveInFlight(BackpressureController.DEFAULT_HIGH_WATERMARK); // Match KPipe default for max comparability
+        .maxActiveInFlight(BackpressureController.DEFAULT_HIGH_WATERMARK) // Match KPipe default for max comparability
+        .acknowledgementQueueMode(AcknowledgementQueueMode.COMPACT_EAGER); // Match KPipe behavior for max comparability
     }
 
     protected abstract AloFlux<Void> applyProcessing(final AloFlux<ConsumerRecord<byte[], byte[]>> records);
