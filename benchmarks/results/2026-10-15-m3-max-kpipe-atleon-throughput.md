@@ -145,6 +145,11 @@ controlled estimates of either the fix or the queue-mode effect.
 Profiler-reported allocated bytes per record from the throughput trials. Fixture allocations can be included even when
 setup/teardown is excluded from the benchmark timer; these figures do not isolate allocations in the processing path.
 
+These figures were measured with JMH 1.36, whose `gc` profiler drops allocation made by threads that exit during an
+iteration. The raw, Atleon and share arms run their consumers on such threads, so their figures here are under-counted,
+while KPipe's are close to correct. The [2026-10-16 capture](2026-10-16-ci-parallel-jmh137.md) repeats the measurement
+with JMH 1.37.
+
 | Arm               | 0 µs    | 100 µs  | 1 ms    | 10 ms   | 100 ms  |
 | ----------------- | ------- | ------- | ------- | ------- | ------- |
 | `kpipe`           | 1,092.6 | 1,885.5 | 1,971.4 | 1,944.7 | 1,739.2 |

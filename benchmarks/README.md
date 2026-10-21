@@ -138,6 +138,12 @@ The [October 15 M3 Max throughput comparison](results/2026-10-15-m3-max-kpipe-at
 Atleon in parallel and per-key modes, with raw virtual-thread and share-consumer baselines, at delays from 0 µs to 100
 ms. It includes KPipe's backpressure-release fix and Atleon's explicit `COMPACT_EAGER` mode.
 
+The M3 Max capture and the CI captures disagree. On the M3 Max, Atleon parallel ran at 1.86× to 2.05× KPipe at 100 µs
+and 1 ms, while on the 4-vCPU CI runner KPipe ran at 1.02× to 1.14× Atleon at those delays. A run on an Intel Mac with
+Docker Desktop matched the CI result, so the difference appears to come from the hardware, but the cause is not known
+yet. The CI captures are the reference for the numbers we report; see
+[Which capture is the reference](METHODOLOGY.md#which-capture-is-the-reference).
+
 Captured runs live in [`results/`](results/), one dated markdown snapshot (plus raw JSON) per capture — read the most
 recent one. For any capture taken on a shared CI runner, trust the ordering and treat the absolute numbers as indicative
 only. Every snapshot records the box, JDK, fork count, and `workMicros` cells per the
