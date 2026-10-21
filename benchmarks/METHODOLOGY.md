@@ -130,11 +130,13 @@ capture as a supplement labeled with its machine; the numbers KPipe reports come
   -Pjmh.resultFormat=JSON
 ```
 
-Five forks, not two: the 2026-06-20 CI capture at fork=2 produced 25%+ error bars and two cells where JMH could not
-compute a stable cross-fork stddev at all (`NaN` score-error) — fork=2 is the floor for _running_, not for _publishing_.
-The `gc` profiler adds allocation rate and GC count per benchmark — required input to the "throughput vs
-allocation-cost" trade-off. Afterwards, copy `build/results/jmh/results.json` into `results/` alongside a dated markdown
-snapshot per [What to write down with every published number](#what-to-write-down-with-every-published-number).
+Use five forks wherever the run fits. The 2026-06-20 CI capture at fork=2 produced 25%+ error bars and two cells where
+JMH could not compute a stable cross-fork stddev at all (`NaN` score-error). The CI job's 180-minute limit currently
+fits three forks for the nine throughput arms at 0, 100 and 1000µs and two forks for the latency benchmark, so CI
+reference captures use those counts and state them in their summaries. The `gc` profiler adds allocation rate and GC
+count per benchmark — required input to the "throughput vs allocation-cost" trade-off. Afterwards, copy
+`build/results/jmh/results.json` into `results/` alongside a dated markdown snapshot per
+[What to write down with every published number](#what-to-write-down-with-every-published-number).
 
 ### Quick smoke run (for local sanity-check)
 
@@ -201,7 +203,8 @@ annotation drives the mode:
   -Pjmh.workMicros='100'
 ```
 
-(fork=2 here is the quick spot-check; percentiles you intend to publish belong in the fork=5 publishing run above.)
+(fork=2 is also what fits the CI job for the latency benchmark today, so published CI percentiles carry the wider error
+bands of a two-fork run, and their summaries say so.)
 
 ### Per-record latency harness (true tail latency)
 
@@ -300,8 +303,10 @@ pattern that produces good average throughput but occasional stragglers.
 
 The default `forks=1` means all iterations share the same JVM process. Cross-fork variance (JIT warmup differences, GC
 profile differences across forks) doesn't get exposed. `forks=2` is the minimum that exposes cross-fork variance at all;
-for published numbers use `forks=5` (see [Recommended publishing run](#recommended-publishing-run) — the 2026-06-20
-fork=2 capture produced 25%+ error bars and NaN score-errors).
+use five forks for published numbers wherever the run fits, and state the fork count where it does not (see
+[Recommended publishing run](#recommended-publishing-run) and
+[Which capture is the reference](#which-capture-is-the-reference); the 2026-06-20 fork=2 capture produced 25%+ error
+bars and NaN score-errors).
 
 ## Caveats
 

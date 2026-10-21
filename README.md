@@ -157,10 +157,11 @@ producing to another topic: [docs/API.md](docs/API.md) and [docs/SINKS.md](docs/
 
 Benchmarked against Confluent Parallel Consumer, Reactor Kafka, the KIP-932 share consumer, a raw `KafkaConsumer` +
 virtual-threads loop, and a single-threaded baseline — same broker, same workload, JMH with published raw JSON. The
-reference numbers come from CI captures on a GitHub runner, described below. An earlier 2026-07 capture on one 6-core
-local machine is still the only one that compares KPipe with Confluent Parallel Consumer at 10 to 100ms of work per
-record: with that much work, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel Consumer's throughput at 10ms
-and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by `workers ÷ work-time`.
+reference numbers come from CI captures on a GitHub runner, described below. The CI captures do not yet compare KPipe
+with Confluent Parallel Consumer at 10 to 100ms of work per record, but earlier local captures do. In the 2026-07
+capture on one 6-core machine, with that much work, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel
+Consumer's throughput at 10ms and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by
+`workers ÷ work-time`.
 
 The [2026-10-15](benchmarks/results/2026-10-15-ci-parallel.md) and
 [2026-10-16](benchmarks/results/2026-10-16-ci-parallel-jmh137.md) captures add Atleon and run every arm in one job on a
@@ -170,10 +171,10 @@ two runs differed only in JMH version, and every throughput figure was higher in
 run-to-run variation with whatever the JMH change did. A third run with Atleon's `COMPACT_EAGER` mode, now the
 benchmark's setting, gave KPipe ÷ Atleon of 1.21× at 0µs and 1.04× to 1.09× at 100 and 1000µs
 ([capture](benchmarks/results/2026-10-16-ci-compact-eager.md)). KPipe `KEY_ORDERED` ran at 0.89× to 1.12× Atleon's
-key-ordered arm, and Atleon led per-key ordering at 1000µs in both runs. In the 2026-10-15 batch latency runs, KPipe
-drained a 25,000-record batch faster than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In
-key-ordered mode the averages were level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was
-faster on average at 1000µs.
+key-ordered arm, and Atleon led per-key ordering at 1000µs in both nine-arm runs. In the `COMPACT_EAGER` run Atleon was
+ahead there by 6%, within the error bands. In the 2026-10-15 batch latency runs, KPipe drained a 25,000-record batch
+faster than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode the averages were
+level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was faster on average at 1000µs.
 
 The costs: in the 2026-10-16 capture, which measures allocation with JMH 1.37, KPipe `PARALLEL` allocates about 1,044
 B/op at 0µs and about 1,650 at 100 and 1000µs, 4% to 17% more than the raw loop. At every delay, each KPipe mode
