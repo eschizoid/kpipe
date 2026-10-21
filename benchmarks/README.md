@@ -144,7 +144,7 @@ only. Every snapshot records the box, JDK, fork count, and `workMicros` cells pe
 [publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
 
 The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run, the
-[2026-10-15 CI capture](results/2026-10-15-ci-parallel.md):
+[2026-10-16 CI capture](results/2026-10-16-ci-parallel-jmh137.md), which measures allocation with JMH 1.37:
 
 ![ParallelProcessingBenchmark: KPipe vs Atleon, Confluent Parallel Consumer, Reactor Kafka, the Share Consumer and raw virtual threads](graphs/parallel_processing_gc_comparison.svg)
 

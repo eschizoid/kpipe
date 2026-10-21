@@ -14,7 +14,7 @@
 </style></defs>
 <rect width="1180" height="1250" class="bg"/>
 <text x="30.0" y="40.0" class="title" text-anchor="start">ParallelProcessingBenchmark: competitive throughput and GC</text>
-<text x="30.0" y="64.0" class="subtitle" text-anchor="start">JMH throughput + gc profiler · 25,000 records · 8 partitions · 1,000 keys · forks=3 · iter=5 · Testcontainers Kafka 4.3.0 · GitHub ubuntu-24.04 (4 vCPU) · JDK 25.0.4 · capture 2026-10-15</text>
+<text x="30.0" y="64.0" class="subtitle" text-anchor="start">JMH throughput + gc profiler · 25,000 records · 8 partitions · 1,000 keys · forks=3 · iter=5 · Testcontainers Kafka 4.3.0 · GitHub ubuntu-24.04 (4 vCPU) · JDK 25.0.4 · capture 2026-10-16, JMH 1.37</text>
 <rect x="50" y="90" width="14" height="14" rx="3" fill="#14b8a6"/>
 <text x="70.0" y="102.0" class="label" text-anchor="start">Raw KafkaConsumer + VT</text>
 <rect x="240.4" y="90" width="14" height="14" rx="3" fill="#22c55e"/>
@@ -33,90 +33,90 @@
 <line x1="90" y1="394.0" x2="1130" y2="394.0" class="grid"/>
 <text x="82.0" y="398.0" class="small" text-anchor="end">0</text>
 <line x1="90" y1="342.0" x2="1130" y2="342.0" class="grid"/>
-<text x="82.0" y="346.0" class="small" text-anchor="end">250k</text>
+<text x="82.0" y="346.0" class="small" text-anchor="end">500k</text>
 <line x1="90" y1="290.0" x2="1130" y2="290.0" class="grid"/>
-<text x="82.0" y="294.0" class="small" text-anchor="end">500k</text>
+<text x="82.0" y="294.0" class="small" text-anchor="end">1.00M</text>
 <line x1="90" y1="238.0" x2="1130" y2="238.0" class="grid"/>
-<text x="82.0" y="242.0" class="small" text-anchor="end">750k</text>
+<text x="82.0" y="242.0" class="small" text-anchor="end">1.50M</text>
 <line x1="90" y1="186.0" x2="1130" y2="186.0" class="grid"/>
-<text x="82.0" y="190.0" class="small" text-anchor="end">1.00M</text>
+<text x="82.0" y="190.0" class="small" text-anchor="end">2.00M</text>
 <line x1="90" y1="394" x2="1130" y2="394" class="axis"/>
-<rect x="128.3" y="206.5" width="40.0" height="187.5" fill="#14b8a6" rx="3"/>
-<line x1="148.3" y1="226.9" x2="148.3" y2="186.0" class="whisker"/>
-<line x1="143.3" y1="186.0" x2="153.3" y2="186.0" class="whisker"/>
-<text x="148.3" y="180.0" class="value" text-anchor="middle">902k</text>
-<rect x="174.3" y="224.7" width="40.0" height="169.3" fill="#22c55e" rx="3"/>
-<line x1="194.3" y1="242.7" x2="194.3" y2="206.6" class="whisker"/>
-<line x1="189.3" y1="206.6" x2="199.3" y2="206.6" class="whisker"/>
-<text x="194.3" y="200.6" class="value" text-anchor="middle">814k</text>
-<rect x="220.3" y="277.2" width="40.0" height="116.8" fill="#f59e0b" rx="3"/>
-<line x1="240.3" y1="283.2" x2="240.3" y2="271.2" class="whisker"/>
-<line x1="235.3" y1="271.2" x2="245.3" y2="271.2" class="whisker"/>
-<text x="240.3" y="265.2" class="value" text-anchor="middle">561k</text>
-<rect x="266.3" y="370.0" width="40.0" height="24.0" fill="#3b82f6" rx="3"/>
-<line x1="286.3" y1="370.5" x2="286.3" y2="369.5" class="whisker"/>
-<line x1="281.3" y1="369.5" x2="291.3" y2="369.5" class="whisker"/>
-<text x="286.3" y="363.5" class="value" text-anchor="middle">116k</text>
-<rect x="312.3" y="303.2" width="40.0" height="90.8" fill="#8b5cf6" rx="3"/>
-<line x1="332.3" y1="306.3" x2="332.3" y2="300.2" class="whisker"/>
-<line x1="327.3" y1="300.2" x2="337.3" y2="300.2" class="whisker"/>
-<text x="332.3" y="294.2" class="value" text-anchor="middle">436k</text>
-<rect x="358.3" y="393.0" width="40.0" height="1.0" fill="#64748b" rx="3"/>
-<line x1="378.3" y1="393.0" x2="378.3" y2="393.0" class="whisker"/>
-<line x1="373.3" y1="393.0" x2="383.3" y2="393.0" class="whisker"/>
-<text x="378.3" y="387.0" class="value" text-anchor="middle">4.7k</text>
+<rect x="128.3" y="282.8" width="40.0" height="111.2" fill="#14b8a6" rx="3"/>
+<line x1="148.3" y1="296.5" x2="148.3" y2="269.1" class="whisker"/>
+<line x1="143.3" y1="269.1" x2="153.3" y2="269.1" class="whisker"/>
+<text x="148.3" y="263.1" class="value" text-anchor="middle">1.07M</text>
+<rect x="174.3" y="298.7" width="40.0" height="95.3" fill="#22c55e" rx="3"/>
+<line x1="194.3" y1="307.8" x2="194.3" y2="289.6" class="whisker"/>
+<line x1="189.3" y1="289.6" x2="199.3" y2="289.6" class="whisker"/>
+<text x="194.3" y="283.6" class="value" text-anchor="middle">916k</text>
+<rect x="220.3" y="311.1" width="40.0" height="82.9" fill="#f59e0b" rx="3"/>
+<line x1="240.3" y1="316.0" x2="240.3" y2="306.2" class="whisker"/>
+<line x1="235.3" y1="306.2" x2="245.3" y2="306.2" class="whisker"/>
+<text x="240.3" y="300.2" class="value" text-anchor="middle">797k</text>
+<rect x="266.3" y="380.9" width="40.0" height="13.1" fill="#3b82f6" rx="3"/>
+<line x1="286.3" y1="381.3" x2="286.3" y2="380.5" class="whisker"/>
+<line x1="281.3" y1="380.5" x2="291.3" y2="380.5" class="whisker"/>
+<text x="286.3" y="374.5" class="value" text-anchor="middle">126k</text>
+<rect x="312.3" y="347.2" width="40.0" height="46.8" fill="#8b5cf6" rx="3"/>
+<line x1="332.3" y1="348.7" x2="332.3" y2="345.6" class="whisker"/>
+<line x1="327.3" y1="345.6" x2="337.3" y2="345.6" class="whisker"/>
+<text x="332.3" y="339.6" class="value" text-anchor="middle">450k</text>
+<rect x="358.3" y="393.5" width="40.0" height="0.5" fill="#64748b" rx="3"/>
+<line x1="378.3" y1="393.5" x2="378.3" y2="393.5" class="whisker"/>
+<line x1="373.3" y1="393.5" x2="383.3" y2="393.5" class="whisker"/>
+<text x="378.3" y="387.5" class="value" text-anchor="middle">4.8k</text>
 <text x="263.3" y="414.0" class="label" text-anchor="middle">workMicros = 0</text>
 <text x="263.3" y="430.0" class="small" text-anchor="middle">pure framework overhead</text>
-<rect x="475.0" y="265.6" width="40.0" height="128.4" fill="#14b8a6" rx="3"/>
-<line x1="495.0" y1="275.9" x2="495.0" y2="255.3" class="whisker"/>
-<line x1="490.0" y1="255.3" x2="500.0" y2="255.3" class="whisker"/>
-<text x="495.0" y="249.3" class="value" text-anchor="middle">617k</text>
-<rect x="521.0" y="283.1" width="40.0" height="110.9" fill="#22c55e" rx="3"/>
-<line x1="541.0" y1="292.4" x2="541.0" y2="273.9" class="whisker"/>
-<line x1="536.0" y1="273.9" x2="546.0" y2="273.9" class="whisker"/>
-<text x="541.0" y="267.9" class="value" text-anchor="middle">533k</text>
-<rect x="567.0" y="296.8" width="40.0" height="97.2" fill="#f59e0b" rx="3"/>
-<line x1="587.0" y1="301.8" x2="587.0" y2="291.9" class="whisker"/>
-<line x1="582.0" y1="291.9" x2="592.0" y2="291.9" class="whisker"/>
-<text x="587.0" y="285.9" class="value" text-anchor="middle">467k</text>
-<rect x="613.0" y="370.9" width="40.0" height="23.1" fill="#3b82f6" rx="3"/>
-<line x1="633.0" y1="371.6" x2="633.0" y2="370.3" class="whisker"/>
-<line x1="628.0" y1="370.3" x2="638.0" y2="370.3" class="whisker"/>
-<text x="633.0" y="364.3" class="value" text-anchor="middle">111k</text>
-<rect x="659.0" y="389.1" width="40.0" height="4.9" fill="#8b5cf6" rx="3"/>
-<line x1="679.0" y1="389.1" x2="679.0" y2="389.1" class="whisker"/>
-<line x1="674.0" y1="389.1" x2="684.0" y2="389.1" class="whisker"/>
-<text x="679.0" y="383.1" class="value" text-anchor="middle">23k</text>
-<rect x="705.0" y="393.0" width="40.0" height="1.0" fill="#64748b" rx="3"/>
-<line x1="725.0" y1="393.0" x2="725.0" y2="393.0" class="whisker"/>
-<line x1="720.0" y1="393.0" x2="730.0" y2="393.0" class="whisker"/>
-<text x="725.0" y="387.0" class="value" text-anchor="middle">4.7k</text>
+<rect x="475.0" y="312.9" width="40.0" height="81.1" fill="#14b8a6" rx="3"/>
+<line x1="495.0" y1="320.7" x2="495.0" y2="305.1" class="whisker"/>
+<line x1="490.0" y1="305.1" x2="500.0" y2="305.1" class="whisker"/>
+<text x="495.0" y="299.1" class="value" text-anchor="middle">780k</text>
+<rect x="521.0" y="325.5" width="40.0" height="68.5" fill="#22c55e" rx="3"/>
+<line x1="541.0" y1="332.7" x2="541.0" y2="318.3" class="whisker"/>
+<line x1="536.0" y1="318.3" x2="546.0" y2="318.3" class="whisker"/>
+<text x="541.0" y="312.3" class="value" text-anchor="middle">658k</text>
+<rect x="567.0" y="326.9" width="40.0" height="67.1" fill="#f59e0b" rx="3"/>
+<line x1="587.0" y1="330.0" x2="587.0" y2="323.7" class="whisker"/>
+<line x1="582.0" y1="323.7" x2="592.0" y2="323.7" class="whisker"/>
+<text x="587.0" y="317.7" class="value" text-anchor="middle">646k</text>
+<rect x="613.0" y="381.8" width="40.0" height="12.2" fill="#3b82f6" rx="3"/>
+<line x1="633.0" y1="382.1" x2="633.0" y2="381.5" class="whisker"/>
+<line x1="628.0" y1="381.5" x2="638.0" y2="381.5" class="whisker"/>
+<text x="633.0" y="375.5" class="value" text-anchor="middle">118k</text>
+<rect x="659.0" y="391.5" width="40.0" height="2.5" fill="#8b5cf6" rx="3"/>
+<line x1="679.0" y1="391.5" x2="679.0" y2="391.5" class="whisker"/>
+<line x1="674.0" y1="391.5" x2="684.0" y2="391.5" class="whisker"/>
+<text x="679.0" y="385.5" class="value" text-anchor="middle">24k</text>
+<rect x="705.0" y="393.5" width="40.0" height="0.5" fill="#64748b" rx="3"/>
+<line x1="725.0" y1="393.5" x2="725.0" y2="393.5" class="whisker"/>
+<line x1="720.0" y1="393.5" x2="730.0" y2="393.5" class="whisker"/>
+<text x="725.0" y="387.5" class="value" text-anchor="middle">4.8k</text>
 <text x="610.0" y="414.0" class="label" text-anchor="middle">workMicros = 100</text>
 <text x="610.0" y="430.0" class="small" text-anchor="middle">local enrichment</text>
-<rect x="821.7" y="263.8" width="40.0" height="130.2" fill="#14b8a6" rx="3"/>
-<line x1="841.7" y1="273.2" x2="841.7" y2="254.3" class="whisker"/>
-<line x1="836.7" y1="254.3" x2="846.7" y2="254.3" class="whisker"/>
-<text x="841.7" y="248.3" class="value" text-anchor="middle">626k</text>
-<rect x="867.7" y="286.7" width="40.0" height="107.3" fill="#22c55e" rx="3"/>
-<line x1="887.7" y1="296.4" x2="887.7" y2="277.0" class="whisker"/>
-<line x1="882.7" y1="277.0" x2="892.7" y2="277.0" class="whisker"/>
-<text x="887.7" y="271.0" class="value" text-anchor="middle">516k</text>
-<rect x="913.7" y="298.2" width="40.0" height="95.8" fill="#f59e0b" rx="3"/>
-<line x1="933.7" y1="303.7" x2="933.7" y2="292.7" class="whisker"/>
-<line x1="928.7" y1="292.7" x2="938.7" y2="292.7" class="whisker"/>
-<text x="933.7" y="286.7" class="value" text-anchor="middle">461k</text>
-<rect x="959.7" y="379.2" width="40.0" height="14.8" fill="#3b82f6" rx="3"/>
-<line x1="979.7" y1="379.4" x2="979.7" y2="379.1" class="whisker"/>
-<line x1="974.7" y1="379.1" x2="984.7" y2="379.1" class="whisker"/>
-<text x="979.7" y="373.1" class="value" text-anchor="middle">71k</text>
-<rect x="1005.7" y="393.2" width="40.0" height="0.8" fill="#8b5cf6" rx="3"/>
-<line x1="1025.7" y1="393.2" x2="1025.7" y2="393.2" class="whisker"/>
-<line x1="1020.7" y1="393.2" x2="1030.7" y2="393.2" class="whisker"/>
-<text x="1025.7" y="387.2" class="value" text-anchor="middle">3.7k</text>
-<rect x="1051.7" y="393.0" width="40.0" height="1.0" fill="#64748b" rx="3"/>
-<line x1="1071.7" y1="393.0" x2="1071.7" y2="393.0" class="whisker"/>
-<line x1="1066.7" y1="393.0" x2="1076.7" y2="393.0" class="whisker"/>
-<text x="1071.7" y="387.0" class="value" text-anchor="middle">4.7k</text>
+<rect x="821.7" y="313.6" width="40.0" height="80.4" fill="#14b8a6" rx="3"/>
+<line x1="841.7" y1="321.3" x2="841.7" y2="306.0" class="whisker"/>
+<line x1="836.7" y1="306.0" x2="846.7" y2="306.0" class="whisker"/>
+<text x="841.7" y="300.0" class="value" text-anchor="middle">773k</text>
+<rect x="867.7" y="327.0" width="40.0" height="67.0" fill="#22c55e" rx="3"/>
+<line x1="887.7" y1="335.5" x2="887.7" y2="318.5" class="whisker"/>
+<line x1="882.7" y1="318.5" x2="892.7" y2="318.5" class="whisker"/>
+<text x="887.7" y="312.5" class="value" text-anchor="middle">644k</text>
+<rect x="913.7" y="328.3" width="40.0" height="65.7" fill="#f59e0b" rx="3"/>
+<line x1="933.7" y1="331.8" x2="933.7" y2="324.9" class="whisker"/>
+<line x1="928.7" y1="324.9" x2="938.7" y2="324.9" class="whisker"/>
+<text x="933.7" y="318.9" class="value" text-anchor="middle">631k</text>
+<rect x="959.7" y="386.3" width="40.0" height="7.7" fill="#3b82f6" rx="3"/>
+<line x1="979.7" y1="386.4" x2="979.7" y2="386.2" class="whisker"/>
+<line x1="974.7" y1="386.2" x2="984.7" y2="386.2" class="whisker"/>
+<text x="979.7" y="380.2" class="value" text-anchor="middle">74k</text>
+<rect x="1005.7" y="393.6" width="40.0" height="0.4" fill="#8b5cf6" rx="3"/>
+<line x1="1025.7" y1="393.6" x2="1025.7" y2="393.6" class="whisker"/>
+<line x1="1020.7" y1="393.6" x2="1030.7" y2="393.6" class="whisker"/>
+<text x="1025.7" y="387.6" class="value" text-anchor="middle">3.7k</text>
+<rect x="1051.7" y="393.5" width="40.0" height="0.5" fill="#64748b" rx="3"/>
+<line x1="1071.7" y1="393.5" x2="1071.7" y2="393.5" class="whisker"/>
+<line x1="1066.7" y1="393.5" x2="1076.7" y2="393.5" class="whisker"/>
+<text x="1071.7" y="387.5" class="value" text-anchor="middle">4.7k</text>
 <text x="956.7" y="414.0" class="label" text-anchor="middle">workMicros = 1000</text>
 <text x="956.7" y="430.0" class="small" text-anchor="middle">blocking I/O round trip</text>
 <rect x="50" y="472" width="14" height="14" rx="3" fill="#22c55e"/>
@@ -139,142 +139,142 @@
 <line x1="90" y1="568.0" x2="1130" y2="568.0" class="grid"/>
 <text x="82.0" y="572.0" class="small" text-anchor="end">1.00M</text>
 <line x1="90" y1="746" x2="1130" y2="746" class="axis"/>
-<rect x="197.3" y="612.6" width="40.0" height="133.4" fill="#22c55e" rx="3"/>
-<line x1="217.3" y1="627.9" x2="217.3" y2="597.3" class="whisker"/>
-<line x1="212.3" y1="597.3" x2="222.3" y2="597.3" class="whisker"/>
-<text x="217.3" y="591.3" class="value" text-anchor="middle">749k</text>
-<rect x="243.3" y="626.7" width="40.0" height="119.3" fill="#f59e0b" rx="3"/>
-<line x1="263.3" y1="632.5" x2="263.3" y2="620.8" class="whisker"/>
-<line x1="258.3" y1="620.8" x2="268.3" y2="620.8" class="whisker"/>
-<text x="263.3" y="614.8" class="value" text-anchor="middle">670k</text>
-<rect x="289.3" y="727.9" width="40.0" height="18.1" fill="#3b82f6" rx="3"/>
-<line x1="309.3" y1="728.4" x2="309.3" y2="727.4" class="whisker"/>
-<line x1="304.3" y1="727.4" x2="314.3" y2="727.4" class="whisker"/>
-<text x="309.3" y="721.4" class="value" text-anchor="middle">102k</text>
+<rect x="197.3" y="601.5" width="40.0" height="144.5" fill="#22c55e" rx="3"/>
+<line x1="217.3" y1="618.1" x2="217.3" y2="584.8" class="whisker"/>
+<line x1="212.3" y1="584.8" x2="222.3" y2="584.8" class="whisker"/>
+<text x="217.3" y="578.8" class="value" text-anchor="middle">812k</text>
+<rect x="243.3" y="598.8" width="40.0" height="147.2" fill="#f59e0b" rx="3"/>
+<line x1="263.3" y1="607.3" x2="263.3" y2="590.2" class="whisker"/>
+<line x1="258.3" y1="590.2" x2="268.3" y2="590.2" class="whisker"/>
+<text x="263.3" y="584.2" class="value" text-anchor="middle">827k</text>
+<rect x="289.3" y="725.7" width="40.0" height="20.3" fill="#3b82f6" rx="3"/>
+<line x1="309.3" y1="726.2" x2="309.3" y2="725.2" class="whisker"/>
+<line x1="304.3" y1="725.2" x2="314.3" y2="725.2" class="whisker"/>
+<text x="309.3" y="719.2" class="value" text-anchor="middle">114k</text>
 <text x="263.3" y="766.0" class="label" text-anchor="middle">workMicros = 0</text>
 <text x="263.3" y="782.0" class="small" text-anchor="middle">pure framework overhead</text>
-<rect x="544.0" y="652.9" width="40.0" height="93.1" fill="#22c55e" rx="3"/>
-<line x1="564.0" y1="660.2" x2="564.0" y2="645.6" class="whisker"/>
-<line x1="559.0" y1="645.6" x2="569.0" y2="645.6" class="whisker"/>
-<text x="564.0" y="639.6" class="value" text-anchor="middle">523k</text>
-<rect x="590.0" y="658.3" width="40.0" height="87.7" fill="#f59e0b" rx="3"/>
-<line x1="610.0" y1="663.4" x2="610.0" y2="653.2" class="whisker"/>
-<line x1="605.0" y1="653.2" x2="615.0" y2="653.2" class="whisker"/>
-<text x="610.0" y="647.2" class="value" text-anchor="middle">493k</text>
-<rect x="636.0" y="728.3" width="40.0" height="17.7" fill="#3b82f6" rx="3"/>
-<line x1="656.0" y1="728.7" x2="656.0" y2="727.9" class="whisker"/>
-<line x1="651.0" y1="727.9" x2="661.0" y2="727.9" class="whisker"/>
-<text x="656.0" y="721.9" class="value" text-anchor="middle">99k</text>
+<rect x="544.0" y="636.4" width="40.0" height="109.6" fill="#22c55e" rx="3"/>
+<line x1="564.0" y1="649.4" x2="564.0" y2="623.3" class="whisker"/>
+<line x1="559.0" y1="623.3" x2="569.0" y2="623.3" class="whisker"/>
+<text x="564.0" y="617.3" class="value" text-anchor="middle">616k</text>
+<rect x="590.0" y="643.0" width="40.0" height="103.0" fill="#f59e0b" rx="3"/>
+<line x1="610.0" y1="648.8" x2="610.0" y2="637.3" class="whisker"/>
+<line x1="605.0" y1="637.3" x2="615.0" y2="637.3" class="whisker"/>
+<text x="610.0" y="631.3" class="value" text-anchor="middle">579k</text>
+<rect x="636.0" y="726.7" width="40.0" height="19.3" fill="#3b82f6" rx="3"/>
+<line x1="656.0" y1="727.0" x2="656.0" y2="726.4" class="whisker"/>
+<line x1="651.0" y1="726.4" x2="661.0" y2="726.4" class="whisker"/>
+<text x="656.0" y="720.4" class="value" text-anchor="middle">108k</text>
 <text x="610.0" y="766.0" class="label" text-anchor="middle">workMicros = 100</text>
 <text x="610.0" y="782.0" class="small" text-anchor="middle">local enrichment</text>
-<rect x="890.7" y="688.2" width="40.0" height="57.8" fill="#22c55e" rx="3"/>
-<line x1="910.7" y1="690.5" x2="910.7" y2="685.9" class="whisker"/>
-<line x1="905.7" y1="685.9" x2="915.7" y2="685.9" class="whisker"/>
-<text x="910.7" y="679.9" class="value" text-anchor="middle">325k</text>
-<rect x="936.7" y="683.3" width="40.0" height="62.7" fill="#f59e0b" rx="3"/>
-<line x1="956.7" y1="685.4" x2="956.7" y2="681.1" class="whisker"/>
-<line x1="951.7" y1="681.1" x2="961.7" y2="681.1" class="whisker"/>
-<text x="956.7" y="675.1" class="value" text-anchor="middle">352k</text>
-<rect x="982.7" y="734.7" width="40.0" height="11.3" fill="#3b82f6" rx="3"/>
-<line x1="1002.7" y1="734.8" x2="1002.7" y2="734.5" class="whisker"/>
-<line x1="997.7" y1="734.5" x2="1007.7" y2="734.5" class="whisker"/>
-<text x="1002.7" y="728.5" class="value" text-anchor="middle">64k</text>
+<rect x="890.7" y="686.8" width="40.0" height="59.2" fill="#22c55e" rx="3"/>
+<line x1="910.7" y1="690.6" x2="910.7" y2="682.9" class="whisker"/>
+<line x1="905.7" y1="682.9" x2="915.7" y2="682.9" class="whisker"/>
+<text x="910.7" y="676.9" class="value" text-anchor="middle">333k</text>
+<rect x="936.7" y="679.7" width="40.0" height="66.3" fill="#f59e0b" rx="3"/>
+<line x1="956.7" y1="681.8" x2="956.7" y2="677.7" class="whisker"/>
+<line x1="951.7" y1="677.7" x2="961.7" y2="677.7" class="whisker"/>
+<text x="956.7" y="671.7" class="value" text-anchor="middle">372k</text>
+<rect x="982.7" y="733.9" width="40.0" height="12.1" fill="#3b82f6" rx="3"/>
+<line x1="1002.7" y1="734.0" x2="1002.7" y2="733.7" class="whisker"/>
+<line x1="997.7" y1="733.7" x2="1007.7" y2="733.7" class="whisker"/>
+<text x="1002.7" y="727.7" class="value" text-anchor="middle">68k</text>
 <text x="956.7" y="766.0" class="label" text-anchor="middle">workMicros = 1000</text>
 <text x="956.7" y="782.0" class="small" text-anchor="middle">blocking I/O round trip</text>
 <text x="30.0" y="834.0" class="h2" text-anchor="start">Cost profile at workMicros = 0</text>
 <rect x="30" y="848" width="360.0" height="230" rx="10" class="panel"/>
 <text x="46.0" y="872.0" class="h3" text-anchor="start">gc.alloc.rate.norm (B/op)</text>
 <text x="46.0" y="888.0" class="small" text-anchor="start">bytes allocated per record · lower is better</text>
-<text x="158.0" y="915.4" class="small" text-anchor="end">Share</text>
-<rect x="166" y="905.0" width="5.3" height="12.9" rx="2" fill="#64748b"/>
-<text x="177.3" y="915.4" class="value" text-anchor="start">34</text>
-<text x="158.0" y="934.3" class="small" text-anchor="end">Confl. (KEY)</text>
-<rect x="166" y="923.9" width="8.1" height="12.9" rx="2" fill="#3b82f6"/>
-<text x="180.1" y="934.3" class="value" text-anchor="start">52</text>
-<text x="158.0" y="953.2" class="small" text-anchor="end">Raw + VT</text>
-<rect x="166" y="942.8" width="8.4" height="12.9" rx="2" fill="#14b8a6"/>
-<text x="180.4" y="953.2" class="value" text-anchor="start">53</text>
-<text x="158.0" y="972.1" class="small" text-anchor="end">Confl. (UNORDERED)</text>
-<rect x="166" y="961.7" width="9.0" height="12.9" rx="2" fill="#3b82f6"/>
-<text x="181.0" y="972.1" class="value" text-anchor="start">57</text>
-<text x="158.0" y="991.0" class="small" text-anchor="end">Reactor Kafka</text>
-<rect x="166" y="980.6" width="19.4" height="12.9" rx="2" fill="#8b5cf6"/>
-<text x="191.4" y="991.0" class="value" text-anchor="start">124</text>
-<text x="158.0" y="1009.9" class="small" text-anchor="end">Atleon parallel</text>
-<rect x="166" y="999.4" width="48.7" height="12.9" rx="2" fill="#f59e0b"/>
-<text x="220.7" y="1009.9" class="value" text-anchor="start">311</text>
-<text x="158.0" y="1028.8" class="small" text-anchor="end">Atleon key-ordered</text>
-<rect x="166" y="1018.3" width="97.3" height="12.9" rx="2" fill="#f59e0b"/>
-<text x="269.3" y="1028.8" class="value" text-anchor="start">621</text>
-<text x="158.0" y="1047.7" class="small" text-anchor="end">KPipe KEY_ORDERED</text>
-<rect x="166" y="1037.2" width="151.1" height="12.9" rx="2" fill="#22c55e"/>
-<text x="323.1" y="1047.7" class="value" text-anchor="start">964</text>
-<text x="158.0" y="1066.6" class="small" text-anchor="end">KPipe PARALLEL</text>
-<rect x="166" y="1056.1" width="164.0" height="12.9" rx="2" fill="#22c55e"/>
-<text x="336.0" y="1066.6" class="value" text-anchor="start">1,046</text>
+<text x="158.0" y="915.4" class="small" text-anchor="end">Reactor Kafka</text>
+<rect x="166" y="905.0" width="38.9" height="12.9" rx="2" fill="#8b5cf6"/>
+<text x="210.9" y="915.4" class="value" text-anchor="start">887</text>
+<text x="158.0" y="934.3" class="small" text-anchor="end">Raw + VT</text>
+<rect x="166" y="923.9" width="43.9" height="12.9" rx="2" fill="#14b8a6"/>
+<text x="215.9" y="934.3" class="value" text-anchor="start">1,001</text>
+<text x="158.0" y="953.2" class="small" text-anchor="end">KPipe KEY_ORDERED</text>
+<rect x="166" y="942.8" width="45.0" height="12.9" rx="2" fill="#22c55e"/>
+<text x="217.0" y="953.2" class="value" text-anchor="start">1,027</text>
+<text x="158.0" y="972.1" class="small" text-anchor="end">KPipe PARALLEL</text>
+<rect x="166" y="961.7" width="45.8" height="12.9" rx="2" fill="#22c55e"/>
+<text x="217.8" y="972.1" class="value" text-anchor="start">1,044</text>
+<text x="158.0" y="991.0" class="small" text-anchor="end">Atleon key-ordered</text>
+<rect x="166" y="980.6" width="64.2" height="12.9" rx="2" fill="#f59e0b"/>
+<text x="236.2" y="991.0" class="value" text-anchor="start">1,465</text>
+<text x="158.0" y="1009.9" class="small" text-anchor="end">Share</text>
+<rect x="166" y="999.4" width="73.5" height="12.9" rx="2" fill="#64748b"/>
+<text x="245.5" y="1009.9" class="value" text-anchor="start">1,678</text>
+<text x="158.0" y="1028.8" class="small" text-anchor="end">Atleon parallel</text>
+<rect x="166" y="1018.3" width="74.5" height="12.9" rx="2" fill="#f59e0b"/>
+<text x="246.5" y="1028.8" class="value" text-anchor="start">1,701</text>
+<text x="158.0" y="1047.7" class="small" text-anchor="end">Confl. (UNORDERED)</text>
+<rect x="166" y="1037.2" width="151.0" height="12.9" rx="2" fill="#3b82f6"/>
+<text x="323.0" y="1047.7" class="value" text-anchor="start">3,445</text>
+<text x="158.0" y="1066.6" class="small" text-anchor="end">Confl. (KEY)</text>
+<rect x="166" y="1056.1" width="164.0" height="12.9" rx="2" fill="#3b82f6"/>
+<text x="336.0" y="1066.6" class="value" text-anchor="start">3,742</text>
 <rect x="410.0" y="848" width="360.0" height="230" rx="10" class="panel"/>
 <text x="426.0" y="872.0" class="h3" text-anchor="start">gc.count</text>
 <text x="426.0" y="888.0" class="small" text-anchor="start">GC events in the measurement window</text>
 <text x="538.0" y="915.4" class="small" text-anchor="end">Share</text>
-<rect x="546.0" y="905.0" width="17.2" height="12.9" rx="2" fill="#64748b"/>
-<text x="569.2" y="915.4" class="value" text-anchor="start">30</text>
-<text x="538.0" y="934.3" class="small" text-anchor="end">KPipe PARALLEL</text>
-<rect x="546.0" y="923.9" width="72.3" height="12.9" rx="2" fill="#22c55e"/>
-<text x="624.3" y="934.3" class="value" text-anchor="start">126</text>
-<text x="538.0" y="953.2" class="small" text-anchor="end">Raw + VT</text>
-<rect x="546.0" y="942.8" width="95.2" height="12.9" rx="2" fill="#14b8a6"/>
-<text x="647.2" y="953.2" class="value" text-anchor="start">166</text>
+<rect x="546.0" y="905.0" width="11.9" height="12.9" rx="2" fill="#64748b"/>
+<text x="563.9" y="915.4" class="value" text-anchor="start">31</text>
+<text x="538.0" y="934.3" class="small" text-anchor="end">Raw + VT</text>
+<rect x="546.0" y="923.9" width="73.0" height="12.9" rx="2" fill="#14b8a6"/>
+<text x="625.0" y="934.3" class="value" text-anchor="start">190</text>
+<text x="538.0" y="953.2" class="small" text-anchor="end">KPipe PARALLEL</text>
+<rect x="546.0" y="942.8" width="92.2" height="12.9" rx="2" fill="#22c55e"/>
+<text x="644.2" y="953.2" class="value" text-anchor="start">240</text>
 <text x="538.0" y="972.1" class="small" text-anchor="end">Confl. (KEY)</text>
-<rect x="546.0" y="961.7" width="103.8" height="12.9" rx="2" fill="#3b82f6"/>
-<text x="655.8" y="972.1" class="value" text-anchor="start">181</text>
-<text x="538.0" y="991.0" class="small" text-anchor="end">KPipe KEY_ORDERED</text>
-<rect x="546.0" y="980.6" width="106.7" height="12.9" rx="2" fill="#22c55e"/>
-<text x="658.7" y="991.0" class="value" text-anchor="start">186</text>
-<text x="538.0" y="1009.9" class="small" text-anchor="end">Atleon key-ordered</text>
-<rect x="546.0" y="999.4" width="122.1" height="12.9" rx="2" fill="#f59e0b"/>
-<text x="674.1" y="1009.9" class="value" text-anchor="start">213</text>
-<text x="538.0" y="1028.8" class="small" text-anchor="end">Atleon parallel</text>
-<rect x="546.0" y="1018.3" width="128.4" height="12.9" rx="2" fill="#f59e0b"/>
-<text x="680.4" y="1028.8" class="value" text-anchor="start">224</text>
-<text x="538.0" y="1047.7" class="small" text-anchor="end">Confl. (UNORDERED)</text>
-<rect x="546.0" y="1037.2" width="134.8" height="12.9" rx="2" fill="#3b82f6"/>
-<text x="686.8" y="1047.7" class="value" text-anchor="start">235</text>
-<text x="538.0" y="1066.6" class="small" text-anchor="end">Reactor Kafka</text>
-<rect x="546.0" y="1056.1" width="164.0" height="12.9" rx="2" fill="#8b5cf6"/>
-<text x="716.0" y="1066.6" class="value" text-anchor="start">286</text>
+<rect x="546.0" y="961.7" width="95.6" height="12.9" rx="2" fill="#3b82f6"/>
+<text x="647.6" y="972.1" class="value" text-anchor="start">249</text>
+<text x="538.0" y="991.0" class="small" text-anchor="end">Atleon key-ordered</text>
+<rect x="546.0" y="980.6" width="99.5" height="12.9" rx="2" fill="#f59e0b"/>
+<text x="651.5" y="991.0" class="value" text-anchor="start">259</text>
+<text x="538.0" y="1009.9" class="small" text-anchor="end">Atleon parallel</text>
+<rect x="546.0" y="999.4" width="105.2" height="12.9" rx="2" fill="#f59e0b"/>
+<text x="657.2" y="1009.9" class="value" text-anchor="start">274</text>
+<text x="538.0" y="1028.8" class="small" text-anchor="end">KPipe KEY_ORDERED</text>
+<rect x="546.0" y="1018.3" width="109.5" height="12.9" rx="2" fill="#22c55e"/>
+<text x="661.5" y="1028.8" class="value" text-anchor="start">285</text>
+<text x="538.0" y="1047.7" class="small" text-anchor="end">Reactor Kafka</text>
+<rect x="546.0" y="1037.2" width="117.1" height="12.9" rx="2" fill="#8b5cf6"/>
+<text x="669.1" y="1047.7" class="value" text-anchor="start">305</text>
+<text x="538.0" y="1066.6" class="small" text-anchor="end">Confl. (UNORDERED)</text>
+<rect x="546.0" y="1056.1" width="164.0" height="12.9" rx="2" fill="#3b82f6"/>
+<text x="716.0" y="1066.6" class="value" text-anchor="start">427</text>
 <rect x="790.0" y="848" width="360.0" height="230" rx="10" class="panel"/>
 <text x="806.0" y="872.0" class="h3" text-anchor="start">gc.time (ms)</text>
 <text x="806.0" y="888.0" class="small" text-anchor="start">GC time in the measurement window</text>
 <text x="918.0" y="915.4" class="small" text-anchor="end">Share</text>
-<rect x="926.0" y="905.0" width="2.4" height="12.9" rx="2" fill="#64748b"/>
-<text x="934.4" y="915.4" class="value" text-anchor="start">83</text>
+<rect x="926.0" y="905.0" width="2.3" height="12.9" rx="2" fill="#64748b"/>
+<text x="934.3" y="915.4" class="value" text-anchor="start">80</text>
 <text x="918.0" y="934.3" class="small" text-anchor="end">Raw + VT</text>
-<rect x="926.0" y="923.9" width="7.4" height="12.9" rx="2" fill="#14b8a6"/>
-<text x="939.4" y="934.3" class="value" text-anchor="start">251</text>
+<rect x="926.0" y="923.9" width="6.1" height="12.9" rx="2" fill="#14b8a6"/>
+<text x="938.1" y="934.3" class="value" text-anchor="start">217</text>
 <text x="918.0" y="953.2" class="small" text-anchor="end">KPipe PARALLEL</text>
-<rect x="926.0" y="942.8" width="7.4" height="12.9" rx="2" fill="#22c55e"/>
-<text x="939.4" y="953.2" class="value" text-anchor="start">252</text>
+<rect x="926.0" y="942.8" width="8.5" height="12.9" rx="2" fill="#22c55e"/>
+<text x="940.5" y="953.2" class="value" text-anchor="start">301</text>
 <text x="918.0" y="972.1" class="small" text-anchor="end">KPipe KEY_ORDERED</text>
-<rect x="926.0" y="961.7" width="8.0" height="12.9" rx="2" fill="#22c55e"/>
-<text x="940.0" y="972.1" class="value" text-anchor="start">272</text>
+<rect x="926.0" y="961.7" width="10.2" height="12.9" rx="2" fill="#22c55e"/>
+<text x="942.2" y="972.1" class="value" text-anchor="start">360</text>
 <text x="918.0" y="991.0" class="small" text-anchor="end">Confl. (UNORDERED)</text>
-<rect x="926.0" y="980.6" width="18.7" height="12.9" rx="2" fill="#3b82f6"/>
-<text x="950.7" y="991.0" class="value" text-anchor="start">638</text>
+<rect x="926.0" y="980.6" width="19.1" height="12.9" rx="2" fill="#3b82f6"/>
+<text x="951.1" y="991.0" class="value" text-anchor="start">678</text>
 <text x="918.0" y="1009.9" class="small" text-anchor="end">Confl. (KEY)</text>
-<rect x="926.0" y="999.4" width="22.4" height="12.9" rx="2" fill="#3b82f6"/>
-<text x="954.4" y="1009.9" class="value" text-anchor="start">762</text>
+<rect x="926.0" y="999.4" width="20.0" height="12.9" rx="2" fill="#3b82f6"/>
+<text x="952.0" y="1009.9" class="value" text-anchor="start">708</text>
 <text x="918.0" y="1028.8" class="small" text-anchor="end">Reactor Kafka</text>
-<rect x="926.0" y="1018.3" width="35.8" height="12.9" rx="2" fill="#8b5cf6"/>
-<text x="967.8" y="1028.8" class="value" text-anchor="start">1,220</text>
-<text x="918.0" y="1047.7" class="small" text-anchor="end">Atleon parallel</text>
-<rect x="926.0" y="1037.2" width="145.3" height="12.9" rx="2" fill="#f59e0b"/>
-<text x="1077.3" y="1047.7" class="value" text-anchor="start">4,944</text>
-<text x="918.0" y="1066.6" class="small" text-anchor="end">Atleon key-ordered</text>
+<rect x="926.0" y="1018.3" width="31.6" height="12.9" rx="2" fill="#8b5cf6"/>
+<text x="963.6" y="1028.8" class="value" text-anchor="start">1,119</text>
+<text x="918.0" y="1047.7" class="small" text-anchor="end">Atleon key-ordered</text>
+<rect x="926.0" y="1037.2" width="161.4" height="12.9" rx="2" fill="#f59e0b"/>
+<text x="1093.4" y="1047.7" class="value" text-anchor="start">5,719</text>
+<text x="918.0" y="1066.6" class="small" text-anchor="end">Atleon parallel</text>
 <rect x="926.0" y="1056.1" width="164.0" height="12.9" rx="2" fill="#f59e0b"/>
-<text x="1096.0" y="1066.6" class="value" text-anchor="start">5,582</text>
-<text x="30.0" y="1110.0" class="note" text-anchor="start">• Unordered, records/s at workMicros 0 / 100 / 1000: KPipe 814k / 533k / 516k, Atleon 561k / 467k / 461k, raw 902k / 617k / 626k.</text>
-<text x="30.0" y="1130.0" class="note" text-anchor="start">• KPipe ÷ Atleon: 1.45x / 1.14x / 1.12x unordered, 1.12x / 1.06x / 0.92x per key. KPipe ÷ raw: 0.90x / 0.86x / 0.82x.</text>
-<text x="30.0" y="1150.0" class="note" text-anchor="start">• KPipe KEY_ORDERED ÷ Confluent PC KEY: 7.36x / 5.26x / 5.10x.</text>
+<text x="1096.0" y="1066.6" class="value" text-anchor="start">5,812</text>
+<text x="30.0" y="1110.0" class="note" text-anchor="start">• Unordered, records/s at workMicros 0 / 100 / 1000: KPipe 916k / 658k / 644k, Atleon 797k / 646k / 631k, raw 1.07M / 780k / 773k.</text>
+<text x="30.0" y="1130.0" class="note" text-anchor="start">• KPipe ÷ Atleon: 1.15x / 1.02x / 1.02x unordered, 0.98x / 1.06x / 0.89x per key. KPipe ÷ raw: 0.86x / 0.84x / 0.83x.</text>
+<text x="30.0" y="1150.0" class="note" text-anchor="start">• KPipe KEY_ORDERED ÷ Confluent PC KEY: 7.12x / 5.68x / 4.89x.</text>
 <text x="30.0" y="1170.0" class="note" text-anchor="start">• gc.count and gc.time are totals for the measurement window, so faster arms run more invocations and collect more.</text>
-<text x="30.0" y="1190.0" class="note" text-anchor="start">  Per-partition arms and the single-threaded baseline are omitted: different guarantee. Full table: benchmarks/results/2026-10-15-ci-parallel.md</text>
+<text x="30.0" y="1190.0" class="note" text-anchor="start">  Per-partition arms and the single-threaded baseline are omitted: different guarantee. Full table: benchmarks/results/2026-10-16-ci-parallel-jmh137.md</text>
 </svg>

@@ -181,7 +181,15 @@ same settings, after `kpipeKeyOrdered` and `confluentKey` were added to the late
 
 ## Allocation (gc profiler)
 
-`gc.alloc.rate.norm`, bytes per record at workMicros=0, lower is better.
+Only the two KPipe figures here are close to correct, within 7%, and the table should not be used to compare libraries.
+JMH 1.36's `gc` profiler sums per-thread allocation counters over the threads alive at each snapshot, so it drops
+everything allocated by a thread that exits during the iteration. The other arms run their consumers on threads that are
+created and stopped on every invocation, so their allocation was under-counted, while KPipe's virtual-thread poll loop
+was counted fully. The [2026-10-16 capture](2026-10-16-ci-parallel-jmh137.md) repeats the measurement with JMH 1.37,
+which counts every thread. There, KPipe `PARALLEL` allocates about 1,044 bytes per record, against 1,001 for the raw
+loop and 1,701 for Atleon parallel.
+
+`gc.alloc.rate.norm` as JMH 1.36 reported it, bytes per record at workMicros=0:
 
 | Runtime                                 | B/record |
 | --------------------------------------- | -------: |
@@ -194,9 +202,6 @@ same settings, after `kpipeKeyOrdered` and `confluentKey` were added to the late
 | Atleon key-ordered                      |      621 |
 | KPipe `KEY_ORDERED`                     |      964 |
 | KPipe `PARALLEL`                        |    1,046 |
-
-KPipe allocates the most per record of any arm. The raw loop also starts a virtual thread per record and allocates 53
-bytes, so the thread alone does not explain the difference.
 
 ## Pitfalls in this run
 
