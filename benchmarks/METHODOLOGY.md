@@ -152,8 +152,9 @@ all configured `workMicros` cells of the included arm. Swap `kpipe` for any othe
 
 ### Running in GitHub CI (what fits, what doesn't)
 
-The Benchmarks workflow runs on a shared 4-vCPU runner — read the **ordering**, never the absolutes (see
-[`results/2026-06-20.md`](results/2026-06-20.md) for the first CI capture). Two things bound what's runnable:
+The Benchmarks workflow runs on a shared 4-vCPU GitHub-hosted runner, and its captures are the reference for the numbers
+KPipe reports (see [Which capture is the reference](#which-capture-is-the-reference)). Read ratios between arms of the
+same run rather than absolute records/s. Two things bound what's runnable:
 
 1. **`workMicros` is now overridable** via `-Pjmh.workMicros=<csv>` (wired to JMH `benchmarkParameters`). Empty = the
    benchmark's full `@Param` sweep (an overnight run); pass a subset for CI.
@@ -181,8 +182,8 @@ The Benchmarks workflow runs on a shared 4-vCPU runner — read the **ordering**
   -Pjmh.workMicros='10000,35000,50000,100000'
 ```
 
-The complete picture — every arm including `singleThread` across the full sweep — stays a **local overnight run** on a
-quiesced box. CI gives the competitive ordering for the cells that fit; it does not replace the reference local run.
+Arms and cells that do not fit the job limit, such as `singleThread` across the full sweep, can still be captured
+locally. Label such captures by machine, as described in the next section.
 
 ### Latency percentiles
 
@@ -239,6 +240,20 @@ Reading the numbers:
   measured ceilings). Above saturation, percentiles measure backlog depth, not the framework. Sanity-check any raised
   rate/work against the throughput suite first.
 - Warmup records (group join, first poll, JIT) are excluded from the distribution via a phase marker in the payload.
+
+## Which capture is the reference
+
+The numbers KPipe reports in the README, the comparison graph and release notes come from captures run by the Benchmarks
+workflow on a GitHub-hosted runner. Anyone can rerun the workflow on the same kind of machine, and every arm in a
+capture runs in one job, so each ratio compares arms under the same conditions. Captures from other machines stay in
+`results/` with the machine in the file name, and the README links them and states when they disagree with the CI
+captures.
+
+Because the runner is shared, two rules apply to anything reported from it:
+
+1. Report ratios between arms of the same run, not absolute records/s compared across runs.
+2. Two CI runs of the same code have produced KPipe ÷ Atleon ratios up to 0.3 apart. Before claiming that one library
+   leads, check that the two arms' 99.9% error bands do not overlap, or that the lead holds in at least two runs.
 
 ## What to write down with every published number
 
