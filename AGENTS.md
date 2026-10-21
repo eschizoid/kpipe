@@ -519,9 +519,9 @@ updated in the same PR per the no-deprecation policy.
 `ConcurrentHashMap` + one monitor per key queue (eviction via `computeIfPresent` + a `dead` tombstone set atomically
 with removal; a dispatcher holding a stale queue reference observes the tombstone under the monitor and retries).
 Interleaved A/B with the PARALLEL arm as drift canary: **+122% at 10k keys, +112% at 100, +18% at 1, control flat** —
-`benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`. Key insight: LRU _ordering_ was never a correctness
-requirement (only empty+idle queues are ever evicted), so v2 drops the coldest-first preference. Future dispatcher work:
-same rule — re-run the bench and demonstrate a measurable win before landing.
+`benchmarks/results/2026-07-21/2026-07-21-keyordered-dispatch-ab.md`. Key insight: LRU _ordering_ was never a
+correctness requirement (only empty+idle queues are ever evicted), so v2 drops the coldest-first preference. Future
+dispatcher work: same rule — re-run the bench and demonstrate a measurable win before landing.
 
 **Generalizable rule:** when adding a third mode to a binary switch, do the rename in the same PR. Trying to keep the
 old boolean alongside a new enum creates "which one wins?" footguns that always come back as bugs.
@@ -643,10 +643,10 @@ lives in the GitHub epics instead (verification in #312, architecture in #313), 
 - **A unified metrics collector / `MetricsContext` bundle, and a `RegistryModeFormat` base class.** Extract when a third
   implementation arrives, not before.
 - **`Tracer.isEnabled()`.** `Tracer.noop()` already makes the guard free, so the method would buy nothing.
-- **Further dispatcher performance work.** Measured in `benchmarks/results/2026-07-21-keyordered-dispatch-ab.md`:
-  dispatch is a rounding error at the broker level once per-record work reaches a millisecond, and the v2 broker verify
-  came back flat. Re-open only with evidence of a dispatch-bound production workload, and re-run
-  `KeyOrderedDispatchBenchmark` before landing anything.
+- **Further dispatcher performance work.** Measured in
+  `benchmarks/results/2026-07-21/2026-07-21-keyordered-dispatch-ab.md`: dispatch is a rounding error at the broker level
+  once per-record work reaches a millisecond, and the v2 broker verify came back flat. Re-open only with evidence of a
+  dispatch-bound production workload, and re-run `KeyOrderedDispatchBenchmark` before landing anything.
 - **Three refuted audit claims.** `send()` cannot hang forever — both of its phases are bounded, and they add rather
   than substitute; the javadoc on `KPipeProducer.send` carries which knob governs which phase. There is no `Pattern`
   subscription, so no per-topic cardinality bomb. Protobuf message-index over-allocation is rejected before the

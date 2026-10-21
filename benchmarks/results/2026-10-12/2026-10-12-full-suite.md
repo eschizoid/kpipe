@@ -35,7 +35,7 @@ separate captures on the same host; COMPACT_EAGER results are excluded.
 The original environment rows describe the October 12 capture. The Atleon reruns used the same hardware, OS, JDK, Kafka,
 and library versions; their Docker version and source revision are listed separately. Executable and source-diff
 checksums for both STRICT segments are recorded in
-[the Atleon capture metadata](2026-10-13-atleon-in-flight-10000.metadata.json).
+[the Atleon capture metadata](../2026-10-13/2026-10-13-atleon-in-flight-10000.metadata.json).
 
 The machine was not independently verified to be quiesced. Docker and benchmark forks share host CPU resources. Results
 characterize this working tree and machine, rather than a released KPipe artifact.
@@ -252,10 +252,11 @@ the code now uses the restored original KPipe fixture.
 original full capture and 27 replaced with the latest STRICT Atleon results. Each retains secondary GC metrics, per-fork
 samples, and sample-time histograms. No samples within retained cases were discarded or scores recomputed.
 
-The replacement objects also appear in [the STRICT Atleon JSON](2026-10-13-atleon-in-flight-10000.json). Its
-[capture metadata](2026-10-13-atleon-in-flight-10000.metadata.json) records settings, environment, checksums, and which
-STRICT segment supplied each case. [The full-suite provenance](2026-10-12-full-suite.metadata.json) identifies the
-replacement set and the 73 retained cases. The separate COMPACT_EAGER experiment is not used in this report.
+The replacement objects also appear in [the STRICT Atleon JSON](../2026-10-13/2026-10-13-atleon-in-flight-10000.json).
+Its [capture metadata](../2026-10-13/2026-10-13-atleon-in-flight-10000.metadata.json) records settings, environment,
+checksums, and which STRICT segment supplied each case. [The full-suite provenance](2026-10-12-full-suite.metadata.json)
+identifies the replacement set and the 73 retained cases. The separate COMPACT_EAGER experiment is not used in this
+report.
 
 The original capture completed 106 cases without failures; the six removed Atleon mock-consumer cases are saved with
 their implementation in a Git stash. The later STRICT capture completed 27 cases and the STRICT key repeat completed

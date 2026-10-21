@@ -163,18 +163,19 @@ capture on one 6-core machine, with that much work, KPipe `PARALLEL` sustained r
 Consumer's throughput at 10ms and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by
 `workers ÷ work-time`.
 
-The [2026-10-15](benchmarks/results/2026-10-15-ci-parallel.md) and
-[2026-10-16](benchmarks/results/2026-10-16-ci-parallel-jmh137.md) captures add Atleon and run every arm in one job on a
-4-vCPU GitHub runner, at 0, 100 and 1000µs of work per record. Across the two runs, KPipe `PARALLEL` ran at 1.15× to
-1.45× Atleon's unordered throughput at 0µs, at 1.02× to 1.14× at 100 and 1000µs, and at 0.82× to 0.90× the raw loop. The
-two runs differed only in JMH version, and every throughput figure was higher in the second, so these ranges mix
-run-to-run variation with whatever the JMH change did. A third run with Atleon's `COMPACT_EAGER` mode, now the
+The [2026-10-15](benchmarks/results/2026-10-15/2026-10-15-ci-parallel.md) and
+[2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) captures add Atleon and run every arm in
+one job on a 4-vCPU GitHub runner, at 0, 100 and 1000µs of work per record. Across the two runs, KPipe `PARALLEL` ran at
+1.15× to 1.45× Atleon's unordered throughput at 0µs, at 1.02× to 1.14× at 100 and 1000µs, and at 0.82× to 0.90× the raw
+loop. The two runs differed only in JMH version, and every throughput figure was higher in the second, so these ranges
+mix run-to-run variation with whatever the JMH change did. A third run with Atleon's `COMPACT_EAGER` mode, now the
 benchmark's setting, gave KPipe ÷ Atleon of 1.21× at 0µs and 1.04× to 1.09× at 100 and 1000µs
-([capture](benchmarks/results/2026-10-16-ci-compact-eager.md)). KPipe `KEY_ORDERED` ran at 0.89× to 1.12× Atleon's
-key-ordered arm, and Atleon led per-key ordering at 1000µs in both nine-arm runs. In the `COMPACT_EAGER` run Atleon was
-ahead there by 6%, within the error bands. In the 2026-10-15 batch latency runs, KPipe drained a 25,000-record batch
-faster than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode the averages were
-level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was faster on average at 1000µs.
+([capture](benchmarks/results/2026-10-16/2026-10-16-ci-compact-eager.md)). KPipe `KEY_ORDERED` ran at 0.89× to 1.12×
+Atleon's key-ordered arm, and Atleon led per-key ordering at 1000µs in both nine-arm runs. In the `COMPACT_EAGER` run
+Atleon was ahead there by 6%, within the error bands. In the 2026-10-15 batch latency runs, KPipe drained a
+25,000-record batch faster than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode
+the averages were level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was faster on average
+at 1000µs.
 
 The costs: in the 2026-10-16 capture, which measures allocation with JMH 1.37, KPipe `PARALLEL` allocates about 1,044
 B/op at 0µs and about 1,650 at 100 and 1000µs, 4% to 17% more than the raw loop. At every delay, each KPipe mode
@@ -188,7 +189,7 @@ captures. It has no in-flight limit and no backpressure, and neither it nor the 
 offsets, so the gap measures KPipe's dispatch and backpressure, not its offset tracking.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
-[`benchmarks/`](benchmarks/).
+[`benchmarks/`](benchmarks).
 
 The at-least-once claim is itself under test: every CI run gates on 13 [Fray](https://github.com/cmu-pasta/fray)
 controlled-concurrency classes plus jqwik property suites over the offset lifecycle and chaos-rebalance/crash-restart
@@ -266,9 +267,9 @@ a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-test")`; t
 | [docs/ESCAPE-HATCHES.md](docs/ESCAPE-HATCHES.md)       | The explicit builder API: custom offset managers, reporters, seams                        |
 | [docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md) | The machine-checked offset invariants                                                     |
 | [docs/VERSIONING.md](docs/VERSIONING.md)               | What breaks in a minor, what counts as public API, and when the rule changes              |
-| [docs/adr/](docs/adr/)                                 | Architecture decision records — why the concurrency tooling is what it is                 |
-| [benchmarks/](benchmarks/)                             | Methodology, raw results, dated capture snapshots                                         |
-| [examples/](examples/)                                 | Runnable apps per format + a full demo with observability stack (`./scripts/run-demo.sh`) |
+| [docs/adr/](docs/adr)                                  | Architecture decision records — why the concurrency tooling is what it is                 |
+| [benchmarks/](benchmarks)                              | Methodology, raw results, dated capture snapshots                                         |
+| [examples/](examples)                                  | Runnable apps per format + a full demo with observability stack (`./scripts/run-demo.sh`) |
 
 ## Requirements
 

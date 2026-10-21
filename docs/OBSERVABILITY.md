@@ -89,7 +89,7 @@ KPipe.json("events", kafkaProps)
 
 ## Local dashboard
 
-A local observability stack under [`infra/observability/`](../infra/observability/) runs via Docker Compose: OTel
+A local observability stack under [`infra/observability/`](../infra/observability) runs via Docker Compose: OTel
 Collector → Prometheus → Grafana, with a pre-provisioned "KPipe Overview" dashboard. The demo
-([`examples/demo`](../examples/demo/)) wires a multi-format consumer into it end-to-end; `./scripts/run-demo.sh` brings
+([`examples/demo`](../examples/demo)) wires a multi-format consumer into it end-to-end; `./scripts/run-demo.sh` brings
 the whole thing up with seeded data.

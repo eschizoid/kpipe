@@ -2,7 +2,7 @@
 """Render the competitive ParallelProcessingBenchmark graph from a gc-profiled JMH results JSON.
 
     python3 benchmarks/graphs/render_parallel_processing_graph.py \
-      benchmarks/results/2026-10-12-full-suite.json \
+      benchmarks/results/2026-10-12/2026-10-12-full-suite.json \
       --host "Apple M3 Max" --capture "2026-10-12 (Atleon rerun 2026-10-13)"
 
 Standard library only. JDK, forks and iterations come from the JSON; the host and capture label
@@ -23,6 +23,8 @@ ap.add_argument("--capture", required=True, help='capture date label, e.g. "2026
 ap.add_argument("--kafka", default="4.3.0", help="broker version used by Testcontainers")
 args = ap.parse_args()
 SRC, OUT = args.results, args.out
+# The summary markdown sits next to the results JSON; the note names it relative to the repository root.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 data = json.load(open(SRC))
 
 ARMS = {  # arm -> (label, css class, color)
@@ -202,7 +204,7 @@ notes = [
     f"• KPipe KEY_ORDERED ÷ Confluent PC KEY: {per_work('kpipeKeyOrdered', 'confluentKey')}.",
     "• gc.count and gc.time are totals for the measurement window, so faster arms run more invocations and collect more.",
     "  Per-partition arms and the single-threaded baseline are omitted: different guarantee. "
-    f"Full table: benchmarks/results/{os.path.splitext(os.path.basename(SRC))[0]}.md",
+    f"Full table: {os.path.relpath(os.path.splitext(os.path.abspath(SRC))[0] + '.md', REPO_ROOT)}",
 ]
 for i, n in enumerate(notes):
     text(30, 1110 + i * 20, n, "note")

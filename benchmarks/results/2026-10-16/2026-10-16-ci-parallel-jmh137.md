@@ -5,12 +5,12 @@ profiler counts allocation on every thread. Every ratio below compares arms from
 
 ## Why this capture exists
 
-The [2026-10-15 capture](2026-10-15-ci-parallel.md) used JMH 1.36. Its `gc` profiler sums per-thread allocation counters
-over the threads that are alive at each snapshot, so it drops everything allocated by a thread that exits during the
-iteration. The other arms run their consumers on threads that are created and stopped on every invocation, so their
-allocation was under-counted. KPipe polls on a virtual thread, which keeps its allocation on long-lived carrier threads,
-so KPipe was counted fully. JMH 1.37 reads the JVM-wide counter instead, which includes virtual threads and threads that
-have exited.
+The [2026-10-15 capture](../2026-10-15/2026-10-15-ci-parallel.md) used JMH 1.36. Its `gc` profiler sums per-thread
+allocation counters over the threads that are alive at each snapshot, so it drops everything allocated by a thread that
+exits during the iteration. The other arms run their consumers on threads that are created and stopped on every
+invocation, so their allocation was under-counted. KPipe polls on a virtual thread, which keeps its allocation on
+long-lived carrier threads, so KPipe was counted fully. JMH 1.37 reads the JVM-wide counter instead, which includes
+virtual threads and threads that have exited.
 
 ## Environment
 

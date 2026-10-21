@@ -135,8 +135,8 @@ JMH could not compute a stable cross-fork stddev at all (`NaN` score-error). The
 fits three forks for the nine throughput arms at 0, 100 and 1000µs and two forks for the latency benchmark, so CI
 reference captures use those counts and state them in their summaries. The `gc` profiler adds allocation rate and GC
 count per benchmark — required input to the "throughput vs allocation-cost" trade-off. Afterwards, copy
-`build/results/jmh/results.json` into `results/` alongside a dated markdown snapshot per
-[What to write down with every published number](#what-to-write-down-with-every-published-number).
+`build/results/jmh/results.json` into a folder for the capture's date, `results/YYYY-MM-DD/`, alongside a dated markdown
+snapshot per [What to write down with every published number](#what-to-write-down-with-every-published-number).
 
 ### Quick smoke run (for local sanity-check)
 
@@ -210,9 +210,9 @@ run, and their summaries state the fork count.)
 ### Per-record latency harness (true tail latency)
 
 The JMH latency bench above divides whole-batch completion time by `@OperationsPerInvocation` — a batch-amortized
-figure, not a per-record distribution (see the methodological note in `results/2026-07-09.md`). For honest per-record
-p50/p95/p99/max, use `PerRecordLatencyHarness` — a plain `main()` harness, not JMH, because JMH cannot ingest tens of
-thousands of externally-measured timestamp pairs into its `SampleTime` histogram:
+figure, not a per-record distribution (see the methodological note in `results/2026-07-09/2026-07-09.md`). For honest
+per-record p50/p95/p99/max, use `PerRecordLatencyHarness` — a plain `main()` harness, not JMH, because JMH cannot ingest
+tens of thousands of externally-measured timestamp pairs into its `SampleTime` histogram:
 
 ```bash
 ./gradlew :benchmarks:perRecordLatency \
@@ -332,11 +332,11 @@ A few things to keep in mind whenever you quote a number from this suite:
   time the bench out). A smoke run confirmed the group forms, assigns all 8 partitions, and consumes the seeded records.
   If a future run regresses and the `share` cell times out, check those two things first: broker share coordinator logs,
   and whether `share.auto.offset.reset` took.
-- **The `share` arm looks protocol-bound, not work-bound.** In the publishing runs (see `results/2026-05-29.md` and
-  `results/2026-05-30.md`) its throughput is roughly flat across `workMicros` — the share-acquire/ack path (and
-  `__share_group_state` writes per ack batch) dominates, not the per-record work. Tune poll batch size / ack batching
-  and re-measure before quoting share numbers, and never read the share ↔ KEY_ORDERED gap as an ordering verdict — they
-  are not rivals.
+- **The `share` arm looks protocol-bound, not work-bound.** In the publishing runs (see
+  `results/2026-05-29/2026-05-29.md` and `results/2026-05-30/2026-05-30.md`) its throughput is roughly flat across
+  `workMicros` — the share-acquire/ack path (and `__share_group_state` writes per ack batch) dominates, not the
+  per-record work. Tune poll batch size / ack batching and re-measure before quoting share numbers, and never read the
+  share ↔ KEY_ORDERED gap as an ordering verdict — they are not rivals.
 
 ## When the numbers should change
 

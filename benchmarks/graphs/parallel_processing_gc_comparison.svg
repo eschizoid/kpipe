@@ -276,5 +276,5 @@
 <text x="30.0" y="1130.0" class="note" text-anchor="start">• KPipe ÷ Atleon: 1.15x / 1.02x / 1.02x unordered, 0.98x / 1.06x / 0.89x per key. KPipe ÷ raw: 0.86x / 0.84x / 0.83x.</text>
 <text x="30.0" y="1150.0" class="note" text-anchor="start">• KPipe KEY_ORDERED ÷ Confluent PC KEY: 7.12x / 5.68x / 4.89x.</text>
 <text x="30.0" y="1170.0" class="note" text-anchor="start">• gc.count and gc.time are totals for the measurement window, so faster arms run more invocations and collect more.</text>
-<text x="30.0" y="1190.0" class="note" text-anchor="start">  Per-partition arms and the single-threaded baseline are omitted: different guarantee. Full table: benchmarks/results/2026-10-16-ci-parallel-jmh137.md</text>
+<text x="30.0" y="1190.0" class="note" text-anchor="start">  Per-partition arms and the single-threaded baseline are omitted: different guarantee. Full table: benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md</text>
 </svg>
