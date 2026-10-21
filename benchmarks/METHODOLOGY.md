@@ -203,8 +203,8 @@ annotation drives the mode:
   -Pjmh.workMicros='100'
 ```
 
-(fork=2 is also what fits the CI job for the latency benchmark today, so published CI percentiles carry the wider error
-bands of a two-fork run, and their summaries say so.)
+(fork=2 is also what fits the CI job for the latency benchmark today, so published CI percentiles come from a two-fork
+run, and their summaries state the fork count.)
 
 ### Per-record latency harness (true tail latency)
 
