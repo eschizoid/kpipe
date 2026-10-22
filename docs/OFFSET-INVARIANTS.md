@@ -112,11 +112,11 @@ queue rewriting involved).
 
 ## I5 — rebalance-safe (mark after revoke is a clean no-op)
 
-`markOffsetProcessed` (or `trackOffset`) for a partition that was already revoked/cleared is a clean no-op: no
-exception, and it does not resurrect cleared partition state in a way that produces a bogus commit point.
+`markOffsetProcessed` for a partition that was already revoked/cleared is a clean no-op: no exception, and no partition
+state comes back. A mark counts only for an offset that is still pending, so it cannot recreate a cleared partition.
+`trackOffset` after a revoke does start a new pending window; that is how a reassigned partition resumes.
 
 **Assertable property.** Given a partition whose state was cleared by `onPartitionsRevoked`, a subsequent
 `markOffsetProcessed` for that partition completes without throwing and leaves the partition with no commit point
-(`nextOffsetToCommit == -1`). A mark counts only for an offset that is still pending, so a record that finishes after
-its partition was revoked cannot recreate the partition, and the member never commits an offset for a partition another
-member now owns.
+(`nextOffsetToCommit == -1`). A record that finishes after its partition was revoked therefore cannot recreate the
+partition, and the member does not commit an offset for it again.

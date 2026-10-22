@@ -193,6 +193,10 @@ public class KafkaOffsetManager implements OffsetManager {
   /// The +1 adjustment ensures that when this record's offset is committed, Kafka will begin
   /// delivering messages from the next offset after this one.
   ///
+  /// A mark counts only for an offset that was tracked with [#trackOffset] and is still pending.
+  /// Marking an offset that was never tracked, or whose partition has since been revoked, changes
+  /// nothing.
+  ///
   /// @param record The consumer record that was processed
   @Override
   public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
