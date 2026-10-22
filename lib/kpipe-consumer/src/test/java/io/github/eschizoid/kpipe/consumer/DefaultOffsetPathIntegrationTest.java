@@ -82,10 +82,9 @@ class DefaultOffsetPathIntegrationTest {
             try {
               neverReleased.await();
             } catch (final InterruptedException e) {
-              // The interrupt must stay in the cause chain: an interruption is not a
-              // processing
-              // failure, so the record stays unmarked instead of being logged and
-              // committed past.
+              // The interrupt must stay in the cause chain: an interruption is not
+              // a processing failure, so the record stays unmarked instead of being
+              // logged and committed past.
               Thread.currentThread().interrupt();
               throw new IllegalStateException("interrupted at shutdown", e);
             }

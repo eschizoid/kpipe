@@ -31,8 +31,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
-/// Crash-restart reprocessing integration test — end-to-end at-least-once across a hard
-/// consumer crash against a real broker.
+/// Crash-restart reprocessing integration test — end-to-end at-least-once across a consumer
+/// crash against a real broker.
 ///
 /// This is the sibling of `ChaosRebalanceIntegrationTest`. That test proves the no-loss /
 /// no-commit-ahead contract holds when a partition is handed off via a live rebalance (both
@@ -74,9 +74,8 @@ class CrashRestartReprocessingIntegrationTest {
   // A single partition makes the A→B handoff deterministic: there is no rebalance-split ambiguity
   // about which member ends up reading the partition that holds the uncommitted tail. B inherits
   // the one partition and resumes from the manually-committed prefix, so the re-delivery overlap is
-  // deterministic. No-loss/no-commit-ahead don't
-  // depend on the partition count; the rebalance-handoff angle is covered by
-  // ChaosRebalanceIntegrationTest.
+  // deterministic. No-loss/no-commit-ahead don't depend on the partition count; the
+  // rebalance-handoff angle is covered by ChaosRebalanceIntegrationTest.
   private static final int PARTITIONS = 1;
   // Enough records that sequential processing (5ms/record) is still mid-stream when we crash A,
   // so a genuine processed-but-uncommitted tail exists rather than A having drained everything.
@@ -319,10 +318,8 @@ class CrashRestartReprocessingIntegrationTest {
       final var manager = KafkaOffsetManager.builder(consumer)
         .withCommitExecutor(builder.getCommitExecutor())
         // Very long commit interval: the test drives the single commit manually, so the
-        // commit
-        // point is deterministic and everything processed after it is a guaranteed
-        // uncommitted
-        // tail.
+        // commit point is deterministic and everything processed after it is a
+        // guaranteed uncommitted tail.
         .withCommitInterval(Duration.ofHours(1))
         .build();
       offsetManagerRef.set(manager);
