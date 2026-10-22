@@ -513,9 +513,9 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
   /// Reactor Kafka runtime. `KafkaReceiver.receive()` produces a `Flux<ReceiverRecord>` split into
   /// [#CONFLUENT_MAX_CONCURRENCY] rails, the same bound as Confluent Parallel Consumer, and the
-  /// rails run on a virtual-thread scheduler like the Atleon arms. The per-record work blocks, so it
-  /// must not run on Reactor's `parallel` scheduler: that scheduler has one thread per CPU, which
-  /// would cap concurrency at the CPU count however many rails there are.
+  /// rails run on a virtual-thread scheduler like the Atleon arms. The per-record work blocks, so
+  /// it must not run on Reactor's `parallel` scheduler: that scheduler has one thread per CPU,
+  /// which would cap concurrency at the CPU count however many rails there are.
   @State(Scope.Thread)
   public static class ReactorInvocationContext {
 
