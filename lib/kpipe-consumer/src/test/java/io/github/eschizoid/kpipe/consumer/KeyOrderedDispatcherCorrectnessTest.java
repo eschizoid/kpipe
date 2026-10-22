@@ -29,10 +29,9 @@ import org.junit.jupiter.api.Test;
 ///   2. records sharing a key are processed in submission (offset) order.
 ///
 /// It also stresses the idle-queue-eviction and stall-at-cap backpressure paths under saturation
-// churn,
-/// and the null-key sentinel's serialization + non-starvation. Detection is active, not passive:
-/// each per-key task flips an `AtomicBoolean` on entry and clears it on exit, and any observed
-/// overlap or out-of-order arrival is recorded as a violation the assertions fail on.
+/// churn, and the null-key sentinel's serialization + non-starvation. Detection is active, not
+/// passive: each per-key task flips an `AtomicBoolean` on entry and clears it on exit, and any
+/// observed overlap or out-of-order arrival is recorded as a violation the assertions fail on.
 ///
 /// Workers are real virtual threads (the dispatcher spawns `Thread.ofVirtual()` per key); the
 /// test's own concurrent producers also use `Thread.ofVirtual()` with a [CyclicBarrier] /

@@ -22,8 +22,7 @@ import org.apache.kafka.common.TopicPartition;
 /// into one function ([#frontierOf]).
 ///
 /// **Ownership boundary.** The ledger owns everything keyed by partition. It knows nothing about
-// the
-/// consumer lifecycle (start/stop/close), the commit I/O (the [CommitExecutor] seam), or
+/// the consumer lifecycle (start/stop/close), the commit I/O (the [CommitExecutor] seam), or
 /// rebalance orchestration — those stay on [KafkaOffsetManager], which injects the two fields it
 /// owns ([OffsetState], pending-commit count) into the reporting projections. The ledger's only
 /// role in a commit is being read: [#committableOffsets] is the executor's offsets supplier.
@@ -53,9 +52,9 @@ final class OffsetLedger {
   /// The `add` must happen INSIDE the bucket-locked `compute`, not as a trailing `.add()` on the
   /// value `computeIfAbsent` returns. Otherwise the add races [#markProcessed]'s remove-if-empty:
   /// that path can empty the set and atomically drop the key, leaving a trailing `.add()` to land
-  // on
-  /// an orphaned set no longer in the map — silently losing a pending offset and letting the commit
-  /// point advance past an in-flight record. `compute()` holds the bucket lock across the add.
+  /// on an orphaned set no longer in the map — silently losing a pending offset and letting the
+  /// commit point advance past an in-flight record. `compute()` holds the bucket lock across the
+  /// add.
   ///
   /// @param topic     the record's topic
   /// @param partition the record's partition
@@ -158,8 +157,7 @@ final class OffsetLedger {
   }
 
   /// A typed snapshot of one partition's offset-tracking state. Reads the pending window once so
-  // the
-  /// frontier and the pending-window fields come from a single consistent snapshot.
+  /// the frontier and the pending-window fields come from a single consistent snapshot.
   ///
   /// @param partition     the partition to snapshot
   /// @param lifecycleState the offset manager's lifecycle state
@@ -230,10 +228,10 @@ final class OffsetLedger {
   }
 
   /// Evicts the cached [TopicPartition] for a revoked partition. `computeIfPresent` bucket-locks
-  // the
-  /// inner-map removal and the outer-map cleanup together, so a concurrent [#cachedTopicPartition]
-  /// for a different partition under the same topic can't see a transient empty inner map and
-  /// double-allocate. Drops the outer entry when the last partition for a topic leaves.
+  /// the inner-map removal and the outer-map cleanup together, so a concurrent
+  /// [#cachedTopicPartition] for a different partition under the same topic can't see a transient
+  /// empty inner map and double-allocate. Drops the outer entry when the last partition for a topic
+  /// leaves.
   private void evictCachedTopicPartition(final TopicPartition partition) {
     topicPartitionCache.computeIfPresent(partition.topic(), (_, inner) -> {
       inner.remove(partition.partition());

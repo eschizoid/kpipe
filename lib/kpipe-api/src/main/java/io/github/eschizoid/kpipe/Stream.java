@@ -275,9 +275,8 @@ public interface Stream<T> {
   /// daemon and does not keep the JVM alive.
   ///
   /// @param reporters the reporters to invoke on each interval (must be non-null); the collection
-  // is
-  ///     copied, and a `List<ConsumerMetricsReporter>` is accepted as well as a
-  // `List<KPipeMetricsReporter>`
+  ///     is copied, and a `List<ConsumerMetricsReporter>` is accepted as well as a
+  ///     `List<KPipeMetricsReporter>`
   /// @return a new stream with periodic reporting configured
   /// @throws NullPointerException if `reporters` is null
   Stream<T> withMetricsReporters(final Collection<? extends KPipeMetricsReporter> reporters);
