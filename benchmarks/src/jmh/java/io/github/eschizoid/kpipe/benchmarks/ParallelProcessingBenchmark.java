@@ -20,8 +20,8 @@ import org.openjdk.jmh.annotations.OutputTimeUnit;
 ///   * **Confluent Parallel Consumer (UNORDERED)** — `ProcessingOrder.UNORDERED`.
 ///   * **Confluent Parallel Consumer (KEY)** — `ProcessingOrder.KEY`, per-key FIFO.
 ///   * **Confluent Parallel Consumer (PARTITION)** — `ProcessingOrder.PARTITION`.
-///   * **Reactor Kafka** — `Flux<ReceiverRecord>` on the Reactor `parallel` scheduler with a
-///     100 rails. Re-enabled after Reactor Kafka 1.3.25 (Nov 2025), the first
+///   * **Reactor Kafka** — `Flux<ReceiverRecord>` split into 100 rails on a virtual-thread
+///     scheduler. Re-enabled after Reactor Kafka 1.3.25 (Nov 2025), the first
 ///     release to drop the deprecated `ConsumerRecord` ctor that was removed in
 ///     `kafka-clients:4.x`. The dependency's POM still pins `kafka-clients:3.9.1` but the new
 ///     binary works when Gradle conflict-resolves to our 4.3.0.
