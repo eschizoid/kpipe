@@ -44,10 +44,10 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 /// JMH's `SampleTime` mode samples the duration of `@Benchmark` invocations. Our invocation is
 /// "drain N records", so dividing by `@OperationsPerInvocation(N)` yields whole-batch completion
 /// time amortized per record — a throughput number in latency clothing (see the methodological
-/// note in `results/2026-07-09/2026-07-09.md`). A per-record distribution needs one timestamp pair
-// *per
-/// record*: stamp at produce, observe at the sink. JMH has no way to feed 20k externally-measured
-/// samples into its `SampleTime` histogram, so this harness measures and reports them itself:
+/// note in `results/2026-07-09/2026-07-09.md`). A per-record distribution needs one timestamp
+/// pair *per record*: stamp at produce, observe at the sink. JMH has no way to feed 20k
+/// externally-measured samples into its `SampleTime` histogram, so this harness measures and
+/// reports them itself:
 /// exact percentiles from full sample retention (every latency kept in a preallocated `long[]`,
 /// sorted once at the end — no histogram binning error, trivially affordable at these counts).
 ///
