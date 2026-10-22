@@ -420,8 +420,8 @@ final class ConsumerHealthController {
   /// Each `record` claims a unique slot via `head.getAndIncrement`, then atomically swaps the
   /// slot. Counters are kept in sync by decrementing the evicted outcome and incrementing the new
   /// one, so `failureRate()` is `O(1)` regardless of window size.
-  // Package-private (not private) so the jcstress harness can drive the real window directly
-  // rather than a replica — same approach as the other package-private internals under test.
+  // Package-private (not private) so the Fray suite drives the real window directly rather than
+  // a replica — same approach as the other package-private internals under test.
   static final class SlidingWindow {
 
     private static final long EMPTY = 0L;
