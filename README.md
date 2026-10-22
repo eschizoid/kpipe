@@ -163,30 +163,30 @@ capture on one 6-core machine, with that much work, KPipe `PARALLEL` sustained r
 Consumer's throughput at 10ms and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by
 `workers ÷ work-time`.
 
-The [2026-10-15](benchmarks/results/2026-10-15/2026-10-15-ci-parallel.md) and
-[2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) captures add Atleon and run every arm in
-one job on a 4-vCPU GitHub runner, at 0, 100 and 1000µs of work per record. Across the two runs, KPipe `PARALLEL` ran at
-1.15× to 1.45× Atleon's unordered throughput at 0µs, at 1.02× to 1.14× at 100 and 1000µs, and at 0.82× to 0.90× the raw
-loop. The two runs differed only in JMH version, and every throughput figure was higher in the second, so these ranges
-mix run-to-run variation with whatever the JMH change did. A third run with Atleon's `COMPACT_EAGER` mode, now the
-benchmark's setting, gave KPipe ÷ Atleon of 1.21× at 0µs and 1.04× to 1.09× at 100 and 1000µs
-([capture](benchmarks/results/2026-10-16/2026-10-16-ci-compact-eager.md)). KPipe `KEY_ORDERED` ran at 0.89× to 1.12×
-Atleon's key-ordered arm, and Atleon led per-key ordering at 1000µs in both nine-arm runs. In the `COMPACT_EAGER` run
-Atleon was ahead there by 6%, within the error bands. In the 2026-10-15 batch latency runs, KPipe drained a
-25,000-record batch faster than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode
-the averages were level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was faster on average
-at 1000µs.
+The [2026-10-21 capture](benchmarks/results/2026-10-21/2026-10-21-ci-parallel.md) is the reference. It runs all nine
+arms, including Atleon in its `COMPACT_EAGER` acknowledgement mode, in one job on a 4-vCPU GitHub runner at 0, 100 and
+1000µs of work per record, and it measures allocation with JMH 1.37. In it, KPipe `PARALLEL` ran at 1.31× Atleon's
+unordered throughput at 0µs with the error bands apart, and at 1.15× and 1.08× at 100 and 1000µs, within the error
+bands. KPipe `KEY_ORDERED` ran at 1.01×, 1.13× and 0.95× Atleon's key-ordered arm, all within the error bands. KPipe ran
+at 6.6× to 8.7× Confluent Parallel Consumer's unordered throughput and at 5.0× to 7.4× its per-key throughput, and KPipe
+`PARALLEL` ran at 0.82× to 0.89× the raw loop. An earlier `COMPACT_EAGER` run on JMH 1.36 put KPipe and Atleon in the
+same places ([capture](benchmarks/results/2026-10-16/2026-10-16-ci-compact-eager.md)). The
+[2026-10-15](benchmarks/results/2026-10-15/2026-10-15-ci-parallel.md) and
+[2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) nine-arm captures ran Atleon in `STRICT`
+mode and stay in the results folder. In the 2026-10-15 batch latency runs, KPipe drained a 25,000-record batch faster
+than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode the averages were level at 0
+and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was faster on average at 1000µs.
 
-The costs: in the 2026-10-16 capture, which measures allocation with JMH 1.37, KPipe `PARALLEL` allocates about 1,044
-B/op at 0µs and about 1,650 at 100 and 1000µs, 4% to 17% more than the raw loop. At every delay, each KPipe mode
-allocates less than Atleon's arm with the same ordering, and less than CPC. Earlier captures used JMH 1.36, which
-under-counts allocation for any arm whose consumer runs on threads that exit during the measurement, so their allocation
-comparisons, including the 2026-07 ones, overstate KPipe's cost relative to the others. In the 2026-07 captures, the
-`KEY_ORDERED` mode's advantage over CPC's equivalent at sub-millisecond workloads was machine-dependent (it lost on one
-of our two test machines), and the virtual-thread-per-record advantage shrinks as per-record work approaches zero or
-becomes CPU-bound, because there is nothing to overlap. The raw loop is faster than KPipe at every cell of the CI
-captures. It has no in-flight limit and no backpressure, and neither it nor the benchmark's KPipe arms track or commit
-offsets, so the gap measures KPipe's dispatch and backpressure, not its offset tracking.
+The costs: in the 2026-10-21 capture, KPipe `PARALLEL` allocates about 1,046 B/op at 0µs and about 1,590 to 1,650 at 100
+and 1000µs, 4% to 17% more than the raw loop. At every delay, each KPipe mode allocates less than Atleon's arm with the
+same ordering, and less than CPC. Captures that used JMH 1.36 under-count allocation for any arm whose consumer runs on
+threads that exit during the measurement, so their allocation comparisons, including the 2026-07 ones, overstate KPipe's
+cost relative to the others. In the 2026-07 captures, the `KEY_ORDERED` mode's advantage over CPC's equivalent at
+sub-millisecond workloads was machine-dependent (it lost on one of our two test machines), and the
+virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes CPU-bound, because there is
+nothing to overlap. The raw loop is faster than KPipe at every cell of the CI captures. It has no in-flight limit and no
+backpressure, and neither it nor the benchmark's KPipe arms track or commit offsets, so the gap measures KPipe's
+dispatch and backpressure, not its offset tracking.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks).
@@ -215,9 +215,11 @@ versions you run — these projects evolve):
 | Stateful processing (joins, windows, stores) | **Not supported**                                   | Not built-in                                                                                      | Core feature                         | Not built-in                    |
 | Ecosystem & maturity                         | Young, small API surface                            | Large ecosystem, long history                                                                     | Large ecosystem, long history        | Established in reactive stacks  |
 
-Benchmarked/tested against: Confluent Parallel Consumer 0.5.3.3, Reactor Kafka 1.3.25, kafka-clients 4.3.1 (pinned in
-[`gradle/libs.versions.toml`](gradle/libs.versions.toml)); the Spring Kafka and Kafka Streams columns describe
-documented behavior, not versions we test.
+Benchmarked against Atleon 0.47.1, Confluent Parallel Consumer 0.5.3.3 and Reactor Kafka 1.3.25 on kafka-clients 4.3.0,
+which [`benchmarks/build.gradle.kts`](benchmarks/build.gradle.kts) forces because Parallel Consumer processes no records
+on 4.4.0. The libraries build and test against the kafka-clients version in
+[`gradle/libs.versions.toml`](gradle/libs.versions.toml). The Spring Kafka and Kafka Streams columns describe documented
+behavior, not versions we test.
 
 Choose Spring Kafka when you live in the Spring ecosystem or need transactions; Kafka Streams when you need stateful
 processing; Reactor Kafka when your service is already reactive. KPipe's case is the plain-JVM consumer service doing

@@ -139,9 +139,10 @@ KPipe and Atleon in parallel and per-key modes, with raw virtual-thread and shar
 µs to 100 ms. It includes KPipe's backpressure-release fix and Atleon's explicit `COMPACT_EAGER` mode.
 
 The M3 Max capture and the CI captures disagree. On the M3 Max, Atleon parallel ran at 1.86× to 2.05× KPipe at 100 µs
-and 1 ms, while on the 4-vCPU CI runner, with the same `COMPACT_EAGER` setting, KPipe ran at 1.09× and 1.04× Atleon at
-those delays ([capture](results/2026-10-16/2026-10-16-ci-compact-eager.md)). The cause is not known yet. The CI captures
-are the reference for the numbers we report; see
+and 1 ms, while on the 4-vCPU CI runner, with the same `COMPACT_EAGER` setting, KPipe ran at 1.15× and 1.08× Atleon at
+those delays ([capture](results/2026-10-21/2026-10-21-ci-parallel.md)), and at 1.09× and 1.04× in an earlier run
+([capture](results/2026-10-16/2026-10-16-ci-compact-eager.md)). The cause is not known yet. The CI captures are the
+reference for the numbers we report; see
 [Which capture is the reference](METHODOLOGY.md#which-capture-is-the-reference).
 
 Captured runs live in [`results/`](results), grouped into one folder per day (`results/YYYY-MM-DD/`), with one dated
@@ -150,7 +151,8 @@ trust the ordering and treat the absolute numbers as indicative only. Every snap
 and `workMicros` cells per the [publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
 
 The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run, the
-[2026-10-16 CI capture](results/2026-10-16/2026-10-16-ci-parallel-jmh137.md), which measures allocation with JMH 1.37:
+[2026-10-21 CI capture](results/2026-10-21/2026-10-21-ci-parallel.md), which runs Atleon in `COMPACT_EAGER` mode and
+measures allocation with JMH 1.37:
 
 ![ParallelProcessingBenchmark: KPipe vs Atleon, Confluent Parallel Consumer, Reactor Kafka, the Share Consumer and raw virtual threads](graphs/parallel_processing_gc_comparison.svg)
 
