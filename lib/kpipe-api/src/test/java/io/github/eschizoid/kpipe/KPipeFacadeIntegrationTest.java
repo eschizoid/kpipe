@@ -138,6 +138,15 @@ class KPipeFacadeIntegrationTest {
         .map(p -> new TopicPartition(topic, p.partition()))
         .collect(Collectors.toMap(tp -> tp, _ -> OffsetSpec.latest()));
       final var endOffsets = admin.listOffsets(partitions).all().get();
+      assertEquals(
+        20L,
+        endOffsets
+          .values()
+          .stream()
+          .mapToLong(o -> o.offset())
+          .sum(),
+        "the topic must hold exactly the 20 produced records"
+      );
       for (final var entry : endOffsets.entrySet()) {
         final var partitionCommit = committed.get(entry.getKey());
         assertNotNull(partitionCommit, "No offset committed for " + entry.getKey());
