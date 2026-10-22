@@ -135,15 +135,20 @@ Across these six overlapping cases, Atleon's mean percentage throughput change i
 over KPipe changes from **274%** to **119%**. These arithmetic averages give each case equal weight; they are not ratios
 of summed throughput or confidence intervals.
 
-The baseline is the [previous full-suite report](2026-10-12-full-suite.md), including its October 13 STRICT Atleon
-refresh. Its KPipe results predate the backpressure fix. The current Atleon configuration uses COMPACT_EAGER. Only 0 µs,
-100 µs, and 1 ms overlap; the old report has no 10 ms or 100 ms cases. These are cross-capture comparisons, not
-controlled estimates of either the fix or the queue-mode effect.
+The baseline is the [previous full-suite report](../2026-10-12/2026-10-12-full-suite.md), including its October 13
+STRICT Atleon refresh. Its KPipe results predate the backpressure fix. The current Atleon configuration uses
+COMPACT_EAGER. Only 0 µs, 100 µs, and 1 ms overlap; the old report has no 10 ms or 100 ms cases. These are cross-capture
+comparisons, not controlled estimates of either the fix or the queue-mode effect.
 
 ## Allocation and garbage collection
 
 Profiler-reported allocated bytes per record from the throughput trials. Fixture allocations can be included even when
 setup/teardown is excluded from the benchmark timer; these figures do not isolate allocations in the processing path.
+
+These figures were measured with JMH 1.36, whose `gc` profiler drops allocation made by threads that exit during an
+iteration. The raw, Atleon and share arms run their consumers on such threads, so their figures here are under-counted,
+while KPipe's are close to correct. The [2026-10-16 capture](../2026-10-16/2026-10-16-ci-parallel-jmh137.md) repeats the
+measurement with JMH 1.37.
 
 | Arm               | 0 µs    | 100 µs  | 1 ms    | 10 ms   | 100 ms  |
 | ----------------- | ------- | ------- | ------- | ------- | ------- |

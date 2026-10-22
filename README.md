@@ -156,28 +156,40 @@ producing to another topic: [docs/API.md](docs/API.md) and [docs/SINKS.md](docs/
 ## Performance
 
 Benchmarked against Confluent Parallel Consumer, Reactor Kafka, the KIP-932 share consumer, a raw `KafkaConsumer` +
-virtual-threads loop, and a single-threaded baseline — same broker, same workload, JMH with published raw JSON. Summary
-of the 2026-07 reference capture (one 6-core machine; read ratios, not absolutes): with 10–100ms of real work per
-record, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel Consumer's throughput at 10ms and 41× at 100ms,
-tracking the machine's capacity where a fixed worker pool is bounded by `workers ÷ work-time`.
+virtual-threads loop, and a single-threaded baseline — same broker, same workload, JMH with published raw JSON. The
+reference numbers come from CI captures on a GitHub runner, described below. The CI captures do not yet compare KPipe
+with Confluent Parallel Consumer at 10 to 100ms of work per record, but earlier local captures do. In the 2026-07
+capture on one 6-core machine, with that much work, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel
+Consumer's throughput at 10ms and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by
+`workers ÷ work-time`.
 
-The [2026-10-15 capture](benchmarks/results/2026-10-15-ci-parallel.md) adds Atleon and runs every arm in one job on a
-4-vCPU GitHub runner, at 0, 100 and 1000µs of work per record. KPipe `PARALLEL` ran at 1.45×, 1.14× and 1.12× Atleon's
-unordered throughput and at 0.90×, 0.86× and 0.82× the raw loop. KPipe `KEY_ORDERED` ran at 1.12×, 1.06× and 0.92×
-Atleon's key-ordered arm, so Atleon still leads per-key ordering at 1000µs. In the same capture's batch latency runs,
-KPipe drained a 25,000-record batch faster than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In
-key-ordered mode the averages were level at 0 and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was
-faster on average at 1000µs.
+The [2026-10-21 capture](benchmarks/results/2026-10-21/2026-10-21-ci-parallel.md) is the reference. It runs all nine
+arms, including Atleon in its `COMPACT_EAGER` acknowledgement mode, in one job on a 4-vCPU GitHub runner at 0, 100 and
+1000µs of work per record, and it measures allocation with JMH 1.37. In it, KPipe `PARALLEL` ran at 1.31× Atleon's
+unordered throughput at 0µs with the error bands apart, and at 1.15× and 1.08× at 100 and 1000µs, within the error
+bands. KPipe `KEY_ORDERED` ran at 1.01×, 1.13× and 0.95× Atleon's key-ordered arm, all within the error bands. KPipe ran
+at 6.6× to 8.7× Confluent Parallel Consumer's unordered throughput and at 5.0× to 7.4× its per-key throughput, and KPipe
+`PARALLEL` ran at 0.82× to 0.89× the raw loop. An earlier `COMPACT_EAGER` run on JMH 1.36 put KPipe and Atleon in the
+same places ([capture](benchmarks/results/2026-10-16/2026-10-16-ci-compact-eager.md)). The
+[2026-10-15](benchmarks/results/2026-10-15/2026-10-15-ci-parallel.md) and
+[2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) nine-arm captures ran Atleon in `STRICT`
+mode and stay in the results folder. In the 2026-10-15 batch latency runs, KPipe drained a 25,000-record batch faster
+than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode the averages were level at 0
+and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was faster on average at 1000µs.
 
-The costs, measured in the 2026-07 reference captures: KPipe allocates more per record than any alternative tested (~1.7
-KB/op vs ~35 B/op for CPC, and 1,046 B/op vs 52 to 57 B/op in the 2026-10-15 capture); at sub-millisecond workloads the
-`KEY_ORDERED` mode's advantage over CPC's equivalent is machine-dependent (it loses on one of our two test machines);
-the virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes CPU-bound (there is
-nothing to overlap); and the raw-loop baseline is faster than KPipe at every measured cell — it omits rebalance-safe
-offset tracking, so it is not comparable on delivery guarantees.
+The costs: in the 2026-10-21 capture, KPipe `PARALLEL` allocates about 1,046 B/op at 0µs and about 1,590 to 1,650 at 100
+and 1000µs, 4% to 17% more than the raw loop. At every delay, each KPipe mode allocates less than Atleon's arm with the
+same ordering, and less than CPC. Captures that used JMH 1.36 under-count allocation for any arm whose consumer runs on
+threads that exit during the measurement, so their allocation comparisons, including the 2026-07 ones, overstate KPipe's
+cost relative to the others. In the 2026-07 captures, the `KEY_ORDERED` mode's advantage over CPC's equivalent at
+sub-millisecond workloads was machine-dependent (it lost on one of our two test machines), and the
+virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes CPU-bound, because there is
+nothing to overlap. The raw loop is faster than KPipe at every cell of the CI captures. It has no in-flight limit and no
+backpressure, and neither it nor the benchmark's KPipe arms track or commit offsets, so the gap measures KPipe's
+dispatch and backpressure, not its offset tracking.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
-[`benchmarks/`](benchmarks/).
+[`benchmarks/`](benchmarks).
 
 The at-least-once claim is itself under test: every CI run gates on 13 [Fray](https://github.com/cmu-pasta/fray)
 controlled-concurrency classes plus jqwik property suites over the offset lifecycle and chaos-rebalance/crash-restart
@@ -203,9 +215,12 @@ versions you run — these projects evolve):
 | Stateful processing (joins, windows, stores) | **Not supported**                                   | Not built-in                                                                                      | Core feature                         | Not built-in                    |
 | Ecosystem & maturity                         | Young, small API surface                            | Large ecosystem, long history                                                                     | Large ecosystem, long history        | Established in reactive stacks  |
 
-Benchmarked/tested against: Confluent Parallel Consumer 0.5.3.3, Reactor Kafka 1.3.25, kafka-clients 4.3.1 (pinned in
-[`gradle/libs.versions.toml`](gradle/libs.versions.toml)); the Spring Kafka and Kafka Streams columns describe
-documented behavior, not versions we test.
+Benchmarked against Atleon 0.47.1, Confluent Parallel Consumer 0.5.3.3 and Reactor Kafka 1.3.25. The 2026-10-21 capture
+ran on kafka-clients 4.3.0, which [`benchmarks/build.gradle.kts`](benchmarks/build.gradle.kts) forces because Parallel
+Consumer processes no records on 4.4.0, and earlier captures ran on the kafka-clients version the libraries used at the
+time. The libraries build and test against the kafka-clients version in
+[`gradle/libs.versions.toml`](gradle/libs.versions.toml). The Spring Kafka and Kafka Streams columns describe documented
+behavior, not versions we test.
 
 Choose Spring Kafka when you live in the Spring ecosystem or need transactions; Kafka Streams when you need stateful
 processing; Reactor Kafka when your service is already reactive. KPipe's case is the plain-JVM consumer service doing
@@ -255,9 +270,9 @@ a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-test")`; t
 | [docs/ESCAPE-HATCHES.md](docs/ESCAPE-HATCHES.md)       | The explicit builder API: custom offset managers, reporters, seams                        |
 | [docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md) | The machine-checked offset invariants                                                     |
 | [docs/VERSIONING.md](docs/VERSIONING.md)               | What breaks in a minor, what counts as public API, and when the rule changes              |
-| [docs/adr/](docs/adr/)                                 | Architecture decision records — why the concurrency tooling is what it is                 |
-| [benchmarks/](benchmarks/)                             | Methodology, raw results, dated capture snapshots                                         |
-| [examples/](examples/)                                 | Runnable apps per format + a full demo with observability stack (`./scripts/run-demo.sh`) |
+| [docs/adr/](docs/adr)                                  | Architecture decision records — why the concurrency tooling is what it is                 |
+| [benchmarks/](benchmarks)                              | Methodology, raw results, dated capture snapshots                                         |
+| [examples/](examples)                                  | Runnable apps per format + a full demo with observability stack (`./scripts/run-demo.sh`) |
 
 ## Requirements
 

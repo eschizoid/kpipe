@@ -32,6 +32,14 @@ dependencies {
   implementation(libs.junitJupiterApi)
 }
 
+// Parallel Consumer 0.5.3.3, its latest release, processes no records on kafka-clients 4.4.0: it is assigned its
+// partitions, resets their offsets and then never hands a record to the user function, with nothing logged. Every
+// arm resolves kafka-clients 4.3.0 so the comparison runs on one client version that all of them support. Remove
+// the pin once a Parallel Consumer release works on the version the libraries build against.
+configurations.configureEach {
+  resolutionStrategy.force("org.apache.kafka:kafka-clients:4.3.0")
+}
+
 jmh {
   fun intProp(
     name: String,
@@ -54,6 +62,12 @@ jmh {
     ?.map(String::trim)
     ?.filter(String::isNotEmpty)
     ?.takeIf { it.isNotEmpty() }
+
+  // JMH 1.37's gc profiler reads the JVM-wide allocation counter. Earlier versions sum per-thread
+  // counters over the threads alive at each snapshot, which drops everything allocated by a thread
+  // that exits mid-iteration, such as a poll loop started and stopped on every invocation, so arms
+  // that poll on short-lived platform threads under-report gc.alloc.rate.norm.
+  jmhVersion = "1.37"
 
   warmupIterations = intProp("jmh.warmupIterations", 3)
   iterations = intProp("jmh.iterations", 5)

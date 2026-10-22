@@ -5,9 +5,9 @@ hand-rolled straw man; a competitive suite pits KPipe against the alternatives a
 Share Consumer, Confluent Parallel Consumer, Reactor Kafka, Atleon, a raw `KafkaConsumer + virtual threads`, and a
 single-threaded consumer); and three micro-benches isolate internals.
 
-**The numbers live in [`results/`](results/), one dated snapshot per capture.** Embedding a single run here is how the
-old README drifted out of sync. Read [`METHODOLOGY.md`](METHODOLOGY.md) before quoting any figure; it explains what each
-bench isolates, why fork count matters, and which comparisons hold up.
+**The numbers live in [`results/`](results), in one folder per day, with one dated snapshot per capture.** Embedding a
+single run here is how the old README drifted out of sync. Read [`METHODOLOGY.md`](METHODOLOGY.md) before quoting any
+figure; it explains what each bench isolates, why fork count matters, and which comparisons hold up.
 
 ## Benchmark scenarios
 
@@ -85,11 +85,11 @@ The KPipe-only MockConsumer key-dispatch benchmark compares `PARALLEL` and `KEY_
 
 ### Micro-benchmarks (MockConsumer, no broker)
 
-| Bench                          | Arm / `@Benchmark` | `@Param` sweep                                                    | What it isolates                                                                                                                                                                                                         |
-| ------------------------------ | ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `BatchSinkLatencyBenchmark`    | `run`              | `sinkLatencyMicros ∈ {10,100,1000}`, `batchSize ∈ {1,10,100}`     | The `Stream.toBatch(...)` amortisation when the destination has a per-call cost (`batchSize=1` is the control).                                                                                                          |
-| `KeyOrderedDispatchBenchmark`  | `dispatch`         | `mode ∈ {PARALLEL, KEY_ORDERED}`, key cardinality `{1,100,10000}` | Dispatcher overhead of `KEY_ORDERED` vs `PARALLEL`. Arbitrated the v2 rewrite (CHM + per-queue monitors, +122% at 10k keys — `results/2026-07-21-keyordered-dispatch-ab.md`); stays the gate for future dispatcher work. |
-| `OffsetManagerBoxingBenchmark` | `trackAndMark`     | partitions `{8}`                                                  | Allocation/boxing cost on the offset-tracking hot path.                                                                                                                                                                  |
+| Bench                          | Arm / `@Benchmark` | `@Param` sweep                                                    | What it isolates                                                                                                                                                                                                                    |
+| ------------------------------ | ------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BatchSinkLatencyBenchmark`    | `run`              | `sinkLatencyMicros ∈ {10,100,1000}`, `batchSize ∈ {1,10,100}`     | The `Stream.toBatch(...)` amortisation when the destination has a per-call cost (`batchSize=1` is the control).                                                                                                                     |
+| `KeyOrderedDispatchBenchmark`  | `dispatch`         | `mode ∈ {PARALLEL, KEY_ORDERED}`, key cardinality `{1,100,10000}` | Dispatcher overhead of `KEY_ORDERED` vs `PARALLEL`. Arbitrated the v2 rewrite (CHM + per-queue monitors, +122% at 10k keys — `results/2026-07-21/2026-07-21-keyordered-dispatch-ab.md`); stays the gate for future dispatcher work. |
+| `OffsetManagerBoxingBenchmark` | `trackAndMark`     | partitions `{8}`                                                  | Allocation/boxing cost on the offset-tracking hot path.                                                                                                                                                                             |
 
 ## Running benchmarks
 
@@ -134,24 +134,32 @@ All properties are optional (values above are the defaults). Results print as a 
 
 ## Results
 
-The [October 15 M3 Max throughput comparison](results/2026-10-15-m3-max-kpipe-atleon-throughput.md) covers KPipe and
-Atleon in parallel and per-key modes, with raw virtual-thread and share-consumer baselines, at delays from 0 µs to 100
-ms. It includes KPipe's backpressure-release fix and Atleon's explicit `COMPACT_EAGER` mode.
+The [October 15 M3 Max throughput comparison](results/2026-10-15/2026-10-15-m3-max-kpipe-atleon-throughput.md) covers
+KPipe and Atleon in parallel and per-key modes, with raw virtual-thread and share-consumer baselines, at delays from 0
+µs to 100 ms. It includes KPipe's backpressure-release fix and Atleon's explicit `COMPACT_EAGER` mode.
 
-Captured runs live in [`results/`](results/), one dated markdown snapshot (plus raw JSON) per capture — read the most
-recent one. For any capture taken on a shared CI runner, trust the ordering and treat the absolute numbers as indicative
-only. Every snapshot records the box, JDK, fork count, and `workMicros` cells per the
-[publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
+The M3 Max capture and the CI captures disagree. On the M3 Max, Atleon parallel ran at 1.86× to 2.05× KPipe at 100 µs
+and 1 ms, while on the 4-vCPU CI runner, with the same `COMPACT_EAGER` setting, KPipe ran at 1.15× and 1.08× Atleon at
+those delays ([capture](results/2026-10-21/2026-10-21-ci-parallel.md)), and at 1.09× and 1.04× in an earlier run
+([capture](results/2026-10-16/2026-10-16-ci-compact-eager.md)). The cause is not known yet. The CI captures are the
+reference for the numbers we report; see
+[Which capture is the reference](METHODOLOGY.md#which-capture-is-the-reference).
+
+Captured runs live in [`results/`](results), grouped into one folder per day (`results/YYYY-MM-DD/`), with one dated
+markdown snapshot (plus raw JSON) per capture — read the most recent one. For any capture taken on a shared CI runner,
+trust the ordering and treat the absolute numbers as indicative only. Every snapshot records the box, JDK, fork count,
+and `workMicros` cells per the [publishing checklist](METHODOLOGY.md#what-to-write-down-with-every-published-number).
 
 The latest KPipe-vs-alternatives visual is regenerated from a `gc`-profiled `ParallelProcessingBenchmark` run, the
-[2026-10-15 CI capture](results/2026-10-15-ci-parallel.md):
+[2026-10-21 CI capture](results/2026-10-21/2026-10-21-ci-parallel.md), which runs Atleon in `COMPACT_EAGER` mode and
+measures allocation with JMH 1.37:
 
 ![ParallelProcessingBenchmark: KPipe vs Atleon, Confluent Parallel Consumer, Reactor Kafka, the Share Consumer and raw virtual threads](graphs/parallel_processing_gc_comparison.svg)
 
 Regenerate it from a new capture with the standard-library script next to it:
 
 ```bash
-python3 benchmarks/graphs/render_parallel_processing_graph.py benchmarks/results/<capture>.json \
+python3 benchmarks/graphs/render_parallel_processing_graph.py benchmarks/results/<date>/<capture>.json \
   --host "<machine>" --capture "<date>"
 ```
 

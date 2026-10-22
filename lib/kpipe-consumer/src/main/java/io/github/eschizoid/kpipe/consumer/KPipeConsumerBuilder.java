@@ -20,8 +20,7 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
 /// Builder for creating and configuring [KPipeConsumer] instances. Extracted from the former nested
 /// `KPipeConsumer.Builder` so `KPipeConsumer` stays navigable; the consumer's constructor reads
-// this
-/// builder's package-private fields to assemble the running consumer.
+/// this builder's package-private fields to assemble the running consumer.
 public final class KPipeConsumerBuilder {
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumerBuilder.class.getName());

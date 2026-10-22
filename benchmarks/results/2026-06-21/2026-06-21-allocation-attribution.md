@@ -1,8 +1,8 @@
 # Allocation attribution — 2026-06-21
 
-Follow-up to [`2026-06-20.md`](2026-06-20.md), which flagged KPipe (PARALLEL) at **1,628 B/op** — the highest per-record
-allocation in the competitive suite (vs Confluent PC's 33). This note attributes that number to specific paths so the
-optimization effort targets the right thing instead of guessing.
+Follow-up to [`2026-06-20.md`](../2026-06-20/2026-06-20.md), which flagged KPipe (PARALLEL) at **1,628 B/op** — the
+highest per-record allocation in the competitive suite (vs Confluent PC's 33). This note attributes that number to
+specific paths so the optimization effort targets the right thing instead of guessing.
 
 ## Method
 

@@ -15,9 +15,8 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 /// Send failures are reported via the producer's async callback at WARNING level so they don't
 /// disappear silently, and each outcome increments the configured [ProducerMetrics]
 /// (`recordMessageSent` / `recordMessageFailed`) so sends through this sink are counted the same
-// way
-/// as `KPipeProducer`'s. The Kafka `Future<RecordMetadata>` is otherwise discarded — callers who
-/// need synchronous send semantics or precise failure handling per record should use
+/// way as `KPipeProducer`'s. The Kafka `Future<RecordMetadata>` is otherwise discarded — callers
+/// who need synchronous send semantics or precise failure handling per record should use
 /// `KPipeProducer.send` / `sendAsync` directly rather than wiring this sink.
 ///
 /// **Trace propagation.** A non-null `tracer` injects the active span's context (W3C `traceparent`

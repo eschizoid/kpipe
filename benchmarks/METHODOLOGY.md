@@ -111,12 +111,14 @@ Per-benchmark overrides:
 
 ### Recommended publishing run
 
-This is the full publishing capture: every arm, each benchmark's full `workMicros` sweep (no override — including the
-10–100ms regime where most real consumers live), latency percentiles included, on a quiesced box (no browser, no IDE
-indexing, mains power). Plan for a weekend, not an overnight: the single-threaded arm is the long pole — 25k records ×
-100ms ≈ 42 min per iteration at the top cell, which at fork=5 is a multi-day tail (and why this run cannot fit CI's
-6-hour cap). To fit an actual overnight window, exclude the serial arm's pathological cells with the include-regex trick
-from the CI section and capture `singleThread` separately at lower fork counts.
+A full local capture covers what the CI job cannot: every arm, each benchmark's full `workMicros` sweep (no override —
+including the 10–100ms regime where most real consumers live), latency percentiles included, on a quiesced box (no
+browser, no IDE indexing, mains power). Plan for a weekend, not an overnight: the single-threaded arm is the long pole —
+25k records × 100ms ≈ 42 min per iteration at the top cell, which at fork=5 is a multi-day tail (and why this run cannot
+fit CI's 6-hour cap). To fit an actual overnight window, exclude the serial arm's pathological cells with the
+include-regex trick from the CI section and capture `singleThread` separately at lower fork counts. Publish a local
+capture as a supplement labeled with its machine; the numbers KPipe reports come from CI captures (see
+[Which capture is the reference](#which-capture-is-the-reference)).
 
 ```bash
 ./gradlew :benchmarks:jmh \
@@ -128,10 +130,12 @@ from the CI section and capture `singleThread` separately at lower fork counts.
   -Pjmh.resultFormat=JSON
 ```
 
-Five forks, not two: the 2026-06-20 CI capture at fork=2 produced 25%+ error bars and two cells where JMH could not
-compute a stable cross-fork stddev at all (`NaN` score-error) — fork=2 is the floor for _running_, not for _publishing_.
-The `gc` profiler adds allocation rate and GC count per benchmark — required input to the "throughput vs
-allocation-cost" trade-off. Afterwards, copy `build/results/jmh/results.json` into `results/` alongside a dated markdown
+Use five forks wherever the run fits. The 2026-06-20 CI capture at fork=2 produced 25%+ error bars and two cells where
+JMH could not compute a stable cross-fork stddev at all (`NaN` score-error). The CI job's 180-minute limit currently
+fits three forks for the nine throughput arms at 0, 100 and 1000µs and two forks for the latency benchmark, so CI
+reference captures use those counts and state them in their summaries. The `gc` profiler adds allocation rate and GC
+count per benchmark — required input to the "throughput vs allocation-cost" trade-off. Afterwards, copy
+`build/results/jmh/results.json` into a folder for the capture's date, `results/YYYY-MM-DD/`, alongside a dated markdown
 snapshot per [What to write down with every published number](#what-to-write-down-with-every-published-number).
 
 ### Quick smoke run (for local sanity-check)
@@ -152,8 +156,9 @@ all configured `workMicros` cells of the included arm. Swap `kpipe` for any othe
 
 ### Running in GitHub CI (what fits, what doesn't)
 
-The Benchmarks workflow runs on a shared 4-vCPU runner — read the **ordering**, never the absolutes (see
-[`results/2026-06-20.md`](results/2026-06-20.md) for the first CI capture). Two things bound what's runnable:
+The Benchmarks workflow runs on a shared 4-vCPU GitHub-hosted runner, and its captures are the reference for the numbers
+KPipe reports (see [Which capture is the reference](#which-capture-is-the-reference)). Read ratios between arms of the
+same run rather than absolute records/s. Two things bound what's runnable:
 
 1. **`workMicros` is now overridable** via `-Pjmh.workMicros=<csv>` (wired to JMH `benchmarkParameters`). Empty = the
    benchmark's full `@Param` sweep (an overnight run); pass a subset for CI.
@@ -181,8 +186,9 @@ The Benchmarks workflow runs on a shared 4-vCPU runner — read the **ordering**
   -Pjmh.workMicros='10000,35000,50000,100000'
 ```
 
-The complete picture — every arm including `singleThread` across the full sweep — stays a **local overnight run** on a
-quiesced box. CI gives the competitive ordering for the cells that fit; it does not replace the reference local run.
+Arms and cells that do not fit the job limit, such as `singleThread` across the full sweep, can still be captured
+locally. Label such captures by machine, as described in
+[Which capture is the reference](#which-capture-is-the-reference).
 
 ### Latency percentiles
 
@@ -198,14 +204,15 @@ annotation drives the mode:
   -Pjmh.workMicros='100'
 ```
 
-(fork=2 here is the quick spot-check; percentiles you intend to publish belong in the fork=5 publishing run above.)
+(fork=2 is also what fits the CI job for the latency benchmark today, so published CI percentiles come from a two-fork
+run, and their summaries state the fork count.)
 
 ### Per-record latency harness (true tail latency)
 
 The JMH latency bench above divides whole-batch completion time by `@OperationsPerInvocation` — a batch-amortized
-figure, not a per-record distribution (see the methodological note in `results/2026-07-09.md`). For honest per-record
-p50/p95/p99/max, use `PerRecordLatencyHarness` — a plain `main()` harness, not JMH, because JMH cannot ingest tens of
-thousands of externally-measured timestamp pairs into its `SampleTime` histogram:
+figure, not a per-record distribution (see the methodological note in `results/2026-07-09/2026-07-09.md`). For honest
+per-record p50/p95/p99/max, use `PerRecordLatencyHarness` — a plain `main()` harness, not JMH, because JMH cannot ingest
+tens of thousands of externally-measured timestamp pairs into its `SampleTime` histogram:
 
 ```bash
 ./gradlew :benchmarks:perRecordLatency \
@@ -239,6 +246,22 @@ Reading the numbers:
   measured ceilings). Above saturation, percentiles measure backlog depth, not the framework. Sanity-check any raised
   rate/work against the throughput suite first.
 - Warmup records (group join, first poll, JIT) are excluded from the distribution via a phase marker in the payload.
+
+## Which capture is the reference
+
+The numbers KPipe reports in the README, the comparison graph and release notes come from captures run by the Benchmarks
+workflow on a GitHub-hosted runner. Anyone can rerun the workflow on the same kind of machine, and every arm in a
+capture runs in one job, so each ratio compares arms under the same conditions. New captures from other machines go in
+`results/` with the machine in the file name (older captures name the machine in their environment table), and the
+README links them and states when they disagree with the CI captures.
+
+Because the runner is shared, two rules apply to anything reported from it:
+
+1. Report ratios between arms of the same run, not absolute records/s compared across runs.
+2. Two CI runs a day apart, which differed only in JMH version (1.36, then 1.37), gave KPipe ÷ Atleon ratios up to 0.3
+   apart, and every throughput figure was higher in the second run. Whether the JMH version or the runner caused that is
+   not yet known. Before claiming that one library leads, check that the two arms' 99.9% error bands do not overlap, or
+   that the lead holds in at least two runs on the same JMH version.
 
 ## What to write down with every published number
 
@@ -281,8 +304,10 @@ pattern that produces good average throughput but occasional stragglers.
 
 The default `forks=1` means all iterations share the same JVM process. Cross-fork variance (JIT warmup differences, GC
 profile differences across forks) doesn't get exposed. `forks=2` is the minimum that exposes cross-fork variance at all;
-for published numbers use `forks=5` (see [Recommended publishing run](#recommended-publishing-run) — the 2026-06-20
-fork=2 capture produced 25%+ error bars and NaN score-errors).
+use five forks for published numbers wherever the run fits, and state the fork count where it does not (see
+[Recommended publishing run](#recommended-publishing-run) and
+[Which capture is the reference](#which-capture-is-the-reference); the 2026-06-20 fork=2 capture produced 25%+ error
+bars and NaN score-errors).
 
 ## Caveats
 
@@ -307,11 +332,11 @@ A few things to keep in mind whenever you quote a number from this suite:
   time the bench out). A smoke run confirmed the group forms, assigns all 8 partitions, and consumes the seeded records.
   If a future run regresses and the `share` cell times out, check those two things first: broker share coordinator logs,
   and whether `share.auto.offset.reset` took.
-- **The `share` arm looks protocol-bound, not work-bound.** In the publishing runs (see `results/2026-05-29.md` and
-  `results/2026-05-30.md`) its throughput is roughly flat across `workMicros` — the share-acquire/ack path (and
-  `__share_group_state` writes per ack batch) dominates, not the per-record work. Tune poll batch size / ack batching
-  and re-measure before quoting share numbers, and never read the share ↔ KEY_ORDERED gap as an ordering verdict — they
-  are not rivals.
+- **The `share` arm looks protocol-bound, not work-bound.** In the publishing runs (see
+  `results/2026-05-29/2026-05-29.md` and `results/2026-05-30/2026-05-30.md`) its throughput is roughly flat across
+  `workMicros` — the share-acquire/ack path (and `__share_group_state` writes per ack batch) dominates, not the
+  per-record work. Tune poll batch size / ack batching and re-measure before quoting share numbers, and never read the
+  share ↔ KEY_ORDERED gap as an ordering verdict — they are not rivals.
 
 ## When the numbers should change
 

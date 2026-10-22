@@ -86,7 +86,7 @@ public class ParallelProcessingLatencyBenchmark {
   }
 
   /// Confluent Parallel Consumer with `ProcessingOrder.KEY`, the per-key rival of
-  // `kpipeKeyOrdered`.
+  /// `kpipeKeyOrdered`.
   @Benchmark
   @OperationsPerInvocation(TARGET_MESSAGES)
   public void confluentKey(final ParallelProcessingBenchmarkInfrastructure.ConfluentKeyInvocationContext context) {

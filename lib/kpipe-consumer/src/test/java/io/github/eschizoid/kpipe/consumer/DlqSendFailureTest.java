@@ -218,8 +218,7 @@ class DlqSendFailureTest {
   /// the pipeline throws, the DLQ send then fails, so `handleProcessingError` must leave the offset
   /// pending. Sibling to `failedDlqSendDoesNotMarkOffset` (which drives `processRecord` directly)
   /// and to the batch-path started-consumer test above — this closes the per-record
-  // started-consumer
-  /// cell end to end: poll → dispatch → error → failed DLQ → offset held.
+  /// started-consumer cell end to end: poll → dispatch → error → failed DLQ → offset held.
   @Test
   @SuppressWarnings("unchecked")
   void failedDlqSendThroughStartedConsumerLeavesOffsetPending() throws Exception {

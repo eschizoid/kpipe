@@ -28,8 +28,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v6.4.0
 
       - name: Documentation consistency
-        # Relative links resolve, one kpipe version across install snippets, and the README
-        # quickstart matches the compiled ReadmeQuickstart.java it claims to be.
+        # Relative links resolve, one kpipe version across install snippets, the README
+        # quickstart matches the compiled ReadmeQuickstart.java it claims to be, and no `///` doc
+        # comment has a line split onto a plain `//` line.
         run: ./scripts/check-docs.sh
 
       - name: Test with Gradle

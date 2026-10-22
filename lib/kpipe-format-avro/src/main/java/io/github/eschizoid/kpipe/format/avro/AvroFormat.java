@@ -46,9 +46,8 @@ import org.apache.avro.io.EncoderFactory;
 /// ```
 ///
 /// Schema-Registry mode replaces the manual `KPipe.avro(topic, props,
-// format).skipBytes(5).pipe(...)` pattern.
-/// Do **not** combine `withRegistry(...)` with `skipBytes(5)` — the format already consumes
-/// the envelope.
+/// format).skipBytes(5).pipe(...)` pattern. Do **not** combine `withRegistry(...)` with
+/// `skipBytes(5)` — the format already consumes the envelope.
 public final class AvroFormat implements MessageFormat<GenericRecord> {
 
   private final Schema staticSchema;

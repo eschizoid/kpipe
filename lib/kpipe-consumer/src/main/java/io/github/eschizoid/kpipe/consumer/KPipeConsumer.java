@@ -113,9 +113,9 @@ public class KPipeConsumer implements AutoCloseable {
   /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. The
   /// underlying decision modules ([BackpressureController], [CircuitBreakerController]) remain
   /// public + testable on their own; this controller owns the side-effect choreography and
-  /// dispatches pause transitions through a PauseLifecycleHook that points back at `internalPause`
-  // /
-  /// `internalResume`, and metric events through a HealthMetricsObserver bound to the counters.
+  /// dispatches pause transitions through a PauseLifecycleHook that points back at
+  /// `internalPause` / `internalResume`, and metric events through a HealthMetricsObserver bound
+  /// to the counters.
   private final ConsumerHealthController health;
 
   private final KPipeProducer<byte[], byte[]> kpipeProducer;

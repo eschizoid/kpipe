@@ -94,4 +94,4 @@ Semantics:
   committed on graceful shutdown.
 
 Throughput impact is measured by `BatchSinkLatencyBenchmark` — at a 1ms-per-call sink, batch=100 measured roughly 84×
-the per-record control (2026-05 capture; raw JMH JSON in [`benchmarks/results/`](../benchmarks/results/)).
+the per-record control (2026-05 capture; raw JMH JSON in [`benchmarks/results/`](../benchmarks/results)).

@@ -7,6 +7,7 @@
 #     same version string (no half-bumped install snippets after a release).
 #  3. The README's thirty-second example has not drifted from the compiled class it claims to be
 #     (every code line of the README block must appear in ReadmeQuickstart.java).
+#  4. No `///` doc comment has a line split onto a plain `//` line.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 fail=0
@@ -70,6 +71,28 @@ else
       fail=1
     fi
   done < "$quickstart"
+fi
+
+# --- 4. no doc-comment line split onto a plain // line -------------------------------------
+# google-java-format wraps a `///` line longer than 100 columns by moving the overflow onto a new
+# `//` line, which cuts the doc comment mid-sentence. A lone `//` line directly after a `///` line
+# is that split; a `//` comment of two or more lines after a doc comment is left alone.
+splits=$(git ls-files '*.java' | xargs awk '
+  FNR == 1 { if (held != "") print held; held = ""; prev = "" }
+  {
+    line = $0
+    sub(/^[ \t]+/, "", line)
+    plain = (line ~ /^\/\// && line !~ /^\/\/\//)
+    if (held != "" && !plain) print held
+    held = ""
+    if (plain && prev ~ /^\/\/\//) held = FILENAME ":" FNR ": " line
+    prev = line
+  }
+  END { if (held != "") print held }')
+if [ -n "$splits" ]; then
+  echo "SPLIT DOC COMMENT (keep /// lines within 100 columns and rejoin the fragment):"
+  echo "$splits"
+  fail=1
 fi
 
 if [ "$fail" -ne 0 ]; then
