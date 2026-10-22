@@ -183,6 +183,26 @@ class KafkaOffsetManagerTest {
   @Nested
   class RebalanceTests {
 
+    /// Records still in flight when their partition is revoked finish on their workers afterwards.
+    /// Their marks must not put the partition back, or the next commit would write an offset for a
+    /// partition another member owns, past offset 100, which never finished.
+    @Test
+    void recordsFinishingAfterRevokeDoNotRecreateThePartition() {
+      for (long offset = 100L; offset <= 102L; offset++) {
+        offsetManager.trackOffset(new ConsumerRecord<>(TOPIC, 0, offset, "key".getBytes(UTF_8), "value".getBytes()));
+      }
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      offsetManager.markOffsetProcessed(new ConsumerRecord<>(TOPIC, 0, 101L, "key".getBytes(UTF_8), "value".getBytes()));
+      offsetManager.markOffsetProcessed(new ConsumerRecord<>(TOPIC, 0, 102L, "key".getBytes(UTF_8), "value".getBytes()));
+
+      assertEquals(
+        -1L,
+        offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
+        "a revoked partition must have nothing to commit, however many of its records finish later"
+      );
+    }
+
     @Test
     void shouldHandleRebalances() {
       // Init with first record
@@ -455,6 +475,7 @@ class KafkaOffsetManagerTest {
     void shouldHandleConsumerClosedDuringOperation() throws Exception {
       // Track and process an offset
       var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key".getBytes(UTF_8), "value".getBytes());
+      offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
       // Act - initiate commit

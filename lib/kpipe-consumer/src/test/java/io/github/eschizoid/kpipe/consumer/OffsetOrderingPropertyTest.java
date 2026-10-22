@@ -244,10 +244,10 @@ class OffsetOrderingPropertyTest {
           manager.trackOffset(record(op.partition(), op.offset()));
           pending.add(op.offset());
         } else {
-          // An unmarked offset is part of pending; marking is what makes it terminal/eligible.
+          // An unmarked offset is part of pending; marking is what makes it terminal/eligible. Marking
+          // an offset that is not pending changes nothing.
           manager.markOffsetProcessed(record(op.partition(), op.offset()));
-          pending.remove(op.offset());
-          highestMarkedByPartition.merge(op.partition(), op.offset(), Math::max);
+          if (pending.remove(op.offset())) highestMarkedByPartition.merge(op.partition(), op.offset(), Math::max);
         }
 
         // Every partition we have ever touched must still report its own correct commit point —

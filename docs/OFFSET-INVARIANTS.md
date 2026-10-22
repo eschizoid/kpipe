@@ -116,7 +116,7 @@ queue rewriting involved).
 exception, and it does not resurrect cleared partition state in a way that produces a bogus commit point.
 
 **Assertable property.** Given a partition whose state was cleared by `onPartitionsRevoked`, a subsequent
-`markOffsetProcessed` for that partition completes without throwing. (Note: because the manager keys state by
-`TopicPartition` and re-creates entries lazily, a post-revoke mark may re-create a `highestProcessedOffset` entry; the
-invariant the harness checks is the _no-exception, no-corruption_ property — a re-created entry still obeys I1–I3 for
-whatever is tracked after the revoke. It must never produce a commit point that skips a still-pending offset.)
+`markOffsetProcessed` for that partition completes without throwing and leaves the partition with no commit point
+(`nextOffsetToCommit == -1`). A mark counts only for an offset that is still pending, so a record that finishes after
+its partition was revoked cannot recreate the partition, and the member never commits an offset for a partition another
+member now owns.
