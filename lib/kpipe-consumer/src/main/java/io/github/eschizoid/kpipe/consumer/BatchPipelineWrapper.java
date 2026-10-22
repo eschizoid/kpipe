@@ -226,10 +226,23 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
         dispatch.run();
       } finally {
         bufferedCount.addAndGet(-size);
-        callbacks.onBufferReleased();
-        dispatchFinished();
+        releaseBuffer();
       }
     };
+  }
+
+  /// Reports the lowered `bufferedCount` and then marks the dispatch finished. The callback is
+  /// guarded: if it threw, `dispatchesInFlight` would never return to zero and `close()` would
+  /// wait in [#awaitDispatchesQuiesced] forever, and the exception would escape `enqueue` on a
+  /// worker or cancel the age tick on the scheduler.
+  private void releaseBuffer() {
+    try {
+      callbacks.onBufferReleased();
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.WARNING, "onBufferReleased threw after a flush of topic " + topic, e);
+    } finally {
+      dispatchFinished();
+    }
   }
 
   /// Runs a dispatch returned by [#flushLocked]. Callers invoke this after releasing `lock`.
