@@ -68,17 +68,23 @@ final class OffsetLedger {
     });
   }
 
-  /// Marks an offset as successfully processed: bumps the partition's highest-processed mark and
-  /// drops the offset from the pending window (removing the key when the window empties).
+  /// Marks an offset as successfully processed: drops it from the pending window (removing the key
+  /// when the window empties) and bumps the partition's highest-processed mark.
+  ///
+  /// Only an offset that is still pending counts. A record can finish after its partition was
+  /// revoked and its state dropped; marking it then must not recreate the partition, or the next
+  /// commit would write an offset for a partition another member now owns, past records this member
+  /// never finished. The highest-processed mark is written only inside the pending window's bucket
+  /// lock while that window exists, and [#removePartitions] drops the window before the mark, so a
+  /// mark that races the removal either lands first and is dropped with it, or finds no window.
   ///
   /// @param topic     the record's topic
   /// @param partition the record's partition
   /// @param offset    the record's offset
   void markProcessed(final String topic, final int partition, final long offset) {
     final var tp = cachedTopicPartition(topic, partition);
-    highestProcessedOffsets.compute(tp, (_, v) -> v == null ? offset : Math.max(v, offset));
     pendingOffsets.computeIfPresent(tp, (_, set) -> {
-      set.remove(offset);
+      if (set.remove(offset)) highestProcessedOffsets.merge(tp, offset, Math::max);
       return set.isEmpty() ? null : set;
     });
   }
@@ -119,6 +125,8 @@ final class OffsetLedger {
   /// @param partitions the partitions to forget
   void removePartitions(final Collection<TopicPartition> partitions) {
     partitions.forEach(partition -> {
+      // Pending first: markProcessed writes the highest-processed mark only while the pending
+      // window exists, so removing the window first means no mark can land after the cleanup.
       pendingOffsets.remove(partition);
       highestProcessedOffsets.remove(partition);
       evictCachedTopicPartition(partition);

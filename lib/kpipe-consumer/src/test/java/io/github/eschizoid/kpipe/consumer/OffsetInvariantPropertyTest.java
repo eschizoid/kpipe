@@ -60,9 +60,9 @@ class OffsetInvariantPropertyTest {
           manager.trackOffset(record);
           pending.add(op.offset());
         } else {
+          // Marking an offset that is not pending changes nothing.
           manager.markOffsetProcessed(record);
-          pending.remove(op.offset());
-          highestMarked = Math.max(highestMarked, op.offset());
+          if (pending.remove(op.offset())) highestMarked = Math.max(highestMarked, op.offset());
         }
 
         final var commitPoint = (long) manager.getPartitionState(PARTITION).nextOffsetToCommit();

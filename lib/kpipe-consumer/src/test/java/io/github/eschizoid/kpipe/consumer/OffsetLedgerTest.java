@@ -71,6 +71,21 @@ class OffsetLedgerTest {
   }
 
   @Test
+  void markingAnOffsetThatIsNotPendingChangesNothing() {
+    final var ledger = new OffsetLedger();
+    ledger.track("topic", 0, 100L);
+    ledger.track("topic", 0, 101L);
+    ledger.track("topic", 0, 102L);
+    ledger.removePartitions(List.of(P0));
+
+    ledger.markProcessed("topic", 0, 101L);
+    ledger.markProcessed("topic", 0, 102L);
+
+    assertEquals(OptionalLong.empty(), ledger.frontier(P0));
+    assertTrue(ledger.committableOffsets().isEmpty(), "a dropped partition must not come back through a late mark");
+  }
+
+  @Test
   void committableOffsetsSpansEveryTrackedPartition() {
     final var ledger = new OffsetLedger();
     ledger.track("topic", 0, 100L); // still pending -> frontier 100
@@ -158,7 +173,11 @@ class OffsetLedgerTest {
   void cachedTopicPartitionInternsTheSameInstance() {
     final var ledger = new OffsetLedger();
     final var first = ledger.cachedTopicPartition("topic", 0);
-    assertSame(first, ledger.cachedTopicPartition("topic", 0), "the same (topic, partition) reuses the cached instance");
+    assertSame(
+      first,
+      ledger.cachedTopicPartition("topic", 0),
+      "the same (topic, partition) reuses the cached instance"
+    );
   }
 
   @Test

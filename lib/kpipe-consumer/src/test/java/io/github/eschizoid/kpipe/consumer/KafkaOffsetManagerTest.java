@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -182,6 +183,28 @@ class KafkaOffsetManagerTest {
 
   @Nested
   class RebalanceTests {
+
+    /// Records still in flight when their partition is revoked finish on their workers afterwards.
+    /// Their marks must not put the partition back, or the next commit would write an offset for a
+    /// partition another member owns, past offset 100, which never finished.
+    @Test
+    void recordsFinishingAfterRevokeDoNotRecreateThePartition() {
+      final var records = new ArrayList<ConsumerRecord<byte[], byte[]>>();
+      for (long offset = 100L; offset <= 102L; offset++) {
+        records.add(new ConsumerRecord<>(TOPIC, 0, offset, "key".getBytes(UTF_8), "value".getBytes()));
+      }
+      records.forEach(offsetManager::trackOffset);
+      offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
+
+      offsetManager.markOffsetProcessed(records.get(1));
+      offsetManager.markOffsetProcessed(records.get(2));
+
+      assertEquals(
+        -1L,
+        offsetManager.getPartitionState(PARTITION).nextOffsetToCommit(),
+        "a revoked partition must have nothing to commit, however many of its records finish later"
+      );
+    }
 
     @Test
     void shouldHandleRebalances() {
@@ -455,6 +478,7 @@ class KafkaOffsetManagerTest {
     void shouldHandleConsumerClosedDuringOperation() throws Exception {
       // Track and process an offset
       var record = new ConsumerRecord<>(TOPIC, 0, 101L, "key".getBytes(UTF_8), "value".getBytes());
+      offsetManager.trackOffset(record);
       offsetManager.markOffsetProcessed(record);
 
       // Act - initiate commit

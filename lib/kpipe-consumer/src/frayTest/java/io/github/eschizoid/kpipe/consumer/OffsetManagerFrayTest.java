@@ -83,39 +83,38 @@ class OffsetManagerFrayTest {
     assertGapHolds(102L, 103L);
   }
 
-  /// A partition revoke races a worker still tracking and retiring offsets on that partition.
+  /// A partition revoke races a worker that finishes a record from that partition. Offsets 100 and
+  /// 101 are in flight when the revoke starts; the worker marks 101, and 100 never finishes.
   ///
-  /// Three end states are legitimate, depending on where the revoke lands: the worker's track
-  /// survives and pins the commit point at 100; the revoke clears everything and leaves the
-  /// nothing-tracked sentinel; or the revoke clears the pending window after the worker's mark,
-  /// leaving the retired offset's successor. The forbidden shape is a commit point that advanced
-  /// past an offset still counted as pending — that combination means a record in flight during a
-  /// rebalance was committed away.
+  /// Once the revoke has run, this member no longer owns the partition and must have nothing to
+  /// commit for it, whichever side of the revoke the mark lands on. A mark before the revoke is
+  /// cleared with the rest of the partition; a mark after it must not bring the partition back,
+  /// or the next commit would write 102 for a partition another member owns, past offset 100. This
+  /// also depends on the revoke dropping the pending window before the highest-processed mark: a
+  /// mark landing between the two in the other order would leave 102 behind.
   @FrayTest(iterations = 500)
-  void revokeNeverCommitsPastAStillPendingOffset() {
+  void lateMarkAfterRevokeLeavesNothingToCommit() {
     final var manager = newManager();
     final var rebalanceListener = manager.createRebalanceListener();
     manager.trackOffset(record(100L));
+    manager.trackOffset(record(101L));
 
     FrayScenarios.runConcurrently(
       () -> rebalanceListener.onPartitionsRevoked(List.of(PARTITION)),
-      () -> {
-        manager.trackOffset(record(100L));
-        manager.markOffsetProcessed(record(101L));
-      }
+      () -> manager.markOffsetProcessed(record(101L))
     );
 
     final var state = manager.getPartitionState(PARTITION);
     final var seen = state.nextOffsetToCommit();
     final var pending = state.pendingCount() > 0;
     assertTrue(
-      (seen == 100L && pending) || (seen == -1L && !pending) || (seen == 102L && !pending),
+      seen == -1L && !pending,
       () ->
         "revoke left commit point " +
         seen +
         " with pending=" +
         pending +
-        "; a commit point past a still-pending offset would drop an in-flight record"
+        "; a revoked partition must have nothing to commit, or a late mark resurrected it"
     );
   }
 
