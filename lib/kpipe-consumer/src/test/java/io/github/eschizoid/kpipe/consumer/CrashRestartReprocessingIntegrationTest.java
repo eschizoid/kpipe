@@ -14,6 +14,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -30,12 +31,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
-/// Crash-restart reprocessing integration test — end-to-end at-least-once across a hard
-/// consumer crash against a real broker.
+/// Crash-restart reprocessing integration test — end-to-end at-least-once across a consumer
+/// crash against a real broker.
 ///
 /// This is the sibling of `ChaosRebalanceIntegrationTest`. That test proves the no-loss /
 /// no-commit-ahead contract holds when a partition is handed off via a live rebalance (both
-/// members stay up). This test proves the same contract holds across a *hard restart*: a fresh
+/// members stay up). This test proves the same contract holds across a crash and restart: a fresh
 /// consumer instance in the same group resumes from the committed offset and re-delivers the
 /// uncommitted tail that the crashed instance had already processed but never committed. It is
 /// the premise the whole at-least-once claim rests on — an uncommitted offset is reprocessed
@@ -48,42 +49,33 @@ import org.testcontainers.utility.DockerImageName;
 ///     committed offset advance past a record that A tracked but never marked terminal, so on
 ///     restart B re-fetches the unprocessed (and processed-but-uncommitted) tail rather than
 ///     silently skipping it.
-///   * **Re-delivery of the uncommitted tail (logged, not asserted).** The harness provably builds
-///     a bounded committed prefix + an uncommitted tail (asserted in the body), but the B-side
-///     re-read overlap would not assert reliably in this single-broker container, so it is logged.
-///     The reprocessing property is proven deterministically by the offset jcstress/property/stress
-///     suites and DlqSendFailureTest; this E2E test's hard gates are no-loss + no-commit-ahead.
+///   * **Re-delivery of the uncommitted tail.** Every record A processed past the committed prefix
+///     before the crash was never committed, so B must process it again.
 ///   * **No commit-ahead — a sanity bound.** The final committed offset for each partition never
 ///     exceeds the log end. This is `<=`, NOT `==`: at-least-once permits a processed-but-not-yet-
 ///     committed tail (reprocessed on restart), so requiring the commit to reach exactly the log
 ///     end would assert a complete-drain / exactly-once property kpipe does not claim.
 ///
 /// Crash simulation: consumer A runs in SEQUENTIAL mode with a manual-commit `KafkaOffsetManager`
-/// on a deliberately long auto-commit interval, so the ONLY commit is a single manual one the test
+/// on a deliberately long commit interval, so the ONLY commit is a single manual one the test
 /// drives after A has processed a small prefix. Everything A processes after that commit therefore
 /// stays uncommitted — a deterministic processed-but-uncommitted tail, with no dependence on
-/// commit-timing (a short auto-commit interval would race the crash and commit the whole stream,
-/// leaving no tail). The crash is then induced WITHOUT a graceful drain: the offset manager is
-/// stopped (halting further commits and turning `markOffsetProcessed` into a no-op so no final
-/// commit fires) and A's consumer thread is interrupted and abandoned —
-/// `shutdownGracefully` / `close` are never called on A. This mirrors a hard process kill that
-/// leaves the records A processed after its last commit uncommitted.
+/// commit timing. The crash stops the offset manager, which turns its close, its rebalance
+/// listener and `markOffsetProcessed` into no-ops, and then closes A. A leaves the group without
+/// committing anything past the prefix, as a killed process would.
 ///
 /// CI-RUN-REQUIRED: this is a Testcontainers test (needs a Docker daemon to start the Kafka
 /// broker). It compiles locally but cannot run where Docker is unavailable; it runs in CI.
 @Testcontainers
 class CrashRestartReprocessingIntegrationTest {
 
-  private static final System.Logger LOGGER = System.getLogger(CrashRestartReprocessingIntegrationTest.class.getName());
-
   private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
 
   // A single partition makes the A→B handoff deterministic: there is no rebalance-split ambiguity
   // about which member ends up reading the partition that holds the uncommitted tail. B inherits
   // the one partition and resumes from the manually-committed prefix, so the re-delivery overlap is
-  // deterministic (multi-partition rebalance timing made it flaky). No-loss/no-commit-ahead don't
-  // depend on the partition count; the rebalance-handoff angle is covered by
-  // ChaosRebalanceIntegrationTest.
+  // deterministic. No-loss/no-commit-ahead don't depend on the partition count; the
+  // rebalance-handoff angle is covered by ChaosRebalanceIntegrationTest.
   private static final int PARTITIONS = 1;
   // Enough records that sequential processing (5ms/record) is still mid-stream when we crash A,
   // so a genuine processed-but-uncommitted tail exists rather than A having drained everything.
@@ -98,12 +90,10 @@ class CrashRestartReprocessingIntegrationTest {
   private static final int TAIL_MARGIN = 50;
 
   @Container
-  static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
-  );
+  static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)));
 
   @Test
-  void atLeastOnceSurvivesHardCrashRestart() throws Exception {
+  void atLeastOnceSurvivesCrashRestart() throws Exception {
     final var topic = "crash-input-" + System.nanoTime();
     final var groupId = "crash-group-" + System.nanoTime();
 
@@ -121,12 +111,11 @@ class CrashRestartReprocessingIntegrationTest {
     final var offsetManagerA = new AtomicReference<KafkaOffsetManager>();
 
     final var consumerA = buildConsumerWithManagedOffsets(topic, groupId, observedA, observedTotalA, offsetManagerA);
-    final var threadA = Thread.ofVirtual().name("crash-consumer-A").start(consumerA::start);
+    consumerA.start();
 
-    // Deterministically build a processed-but-uncommitted tail. A's manager uses a very long
-    // auto-commit interval, so the ONLY commit is the single manual one here — everything A
-    // processes afterward stays uncommitted. (The earlier 1s auto-commit kept committing the whole
-    // stream, leaving no tail for B and making the re-delivery overlap flaky.)
+    // Deterministically build a processed-but-uncommitted tail. A's manager has a very long commit
+    // interval, so the ONLY commit is the single manual one here — everything A processes
+    // afterward stays uncommitted.
     awaitObservedGrowth(observedA, COMMIT_PREFIX, Duration.ofSeconds(40));
     assertTrue(
       offsetManagerA.get().commitSyncAndWait(Duration.ofSeconds(10)),
@@ -151,18 +140,18 @@ class CrashRestartReprocessingIntegrationTest {
     );
     final var observedByABeforeCrash = Set.copyOf(observedA);
 
-    // CRASH: stop the manager (no further commit; markOffsetProcessed becomes a no-op) and
-    // abandon A's consumer thread without a graceful drain (no shutdownGracefully()). On
-    // interrupt, A's loop closes its Kafka consumer in the finally, which leaves the group
-    // promptly; B then inherits the partition and resumes from the manually-committed prefix.
+    // CRASH: stop the manager, then close A. A stopped manager commits nothing more — its
+    // close(), its rebalance listener and markOffsetProcessed all become no-ops — so closing A
+    // leaves the group without any commit past the manual prefix, which is what a killed process
+    // leaves behind. B then inherits the partition and resumes from that prefix.
     offsetManagerA.get().stop();
-    threadA.interrupt();
+    consumerA.close();
 
     // Consumer B: fresh instance, SAME group, resumes from the committed offset.
     final var observedTotalB = new AtomicInteger(0);
     final var offsetManagerB = new AtomicReference<KafkaOffsetManager>();
     final var consumerB = buildConsumerWithManagedOffsets(topic, groupId, observedB, observedTotalB, offsetManagerB);
-    final var threadB = Thread.ofVirtual().name("crash-consumer-B").start(consumerB::start);
+    consumerB.start();
 
     try {
       // No loss: A ∪ B observes every produced value at least once.
@@ -189,31 +178,25 @@ class CrashRestartReprocessingIntegrationTest {
         "Union of A and B observations must exactly cover the produced set (no loss)."
       );
 
-      // Re-delivery of the uncommitted tail — LOGGED, not a hard gate. The harness provably builds
-      // the tail (the assertion above confirms A processed past the bounded committed prefix), but
-      // the B-side overlap could not be made to assert reliably in this single-broker container
-      // across many CI runs — B's observed set came up disjoint from A's pre-crash set for a
-      // real-broker reason not reproducible without Docker. No-loss (above) + no-commit-ahead
-      // (below) are the hard at-least-once gates; the "uncommitted offset is reprocessed on
-      // restart"
-      // property itself is proven deterministically by RemoveIfEmptyJCStressTest, the offset
-      // property/stress suites, and DlqSendFailureTest. The overlap is logged for diagnostics.
-      final var redelivered = new HashSet<>(observedByABeforeCrash);
-      redelivered.retainAll(observedB);
-      LOGGER.log(
-        System.Logger.Level.INFO,
-        () ->
-          "crash-restart re-delivery overlap: " +
-          redelivered.size() +
-          " (A=" +
-          observedByABeforeCrash.size() +
-          " B=" +
-          observedB.size() +
-          ")"
+      // Re-delivery of the uncommitted tail: every record A processed past the committed prefix
+      // before the crash was never committed, so B must process it again.
+      final var committedPrefix = committedAtCrash.values().stream().mapToLong(OffsetAndMetadata::offset).sum();
+      final var uncommittedTail = observedByABeforeCrash
+        .stream()
+        .filter(value -> Long.parseLong(value.substring("val-".length())) >= committedPrefix)
+        .collect(Collectors.toSet());
+      assertFalse(uncommittedTail.isEmpty(), "A must have processed records past the committed prefix");
+      final var notRedelivered = new HashSet<>(uncommittedTail);
+      notRedelivered.removeAll(observedB);
+      assertTrue(
+        notRedelivered.isEmpty(),
+        "B must re-deliver the %d records A processed past the committed prefix; missing %d".formatted(
+          uncommittedTail.size(),
+          notRedelivered.size()
+        )
       );
     } finally {
       consumerB.close();
-      threadB.join(5000);
     }
 
     // No commit-ahead: the final committed offset for each partition never exceeds the log end.
@@ -296,7 +279,7 @@ class CrashRestartReprocessingIntegrationTest {
     return Set.copyOf(values);
   }
 
-  /// Builds a SEQUENTIAL consumer with a manual-commit `KafkaOffsetManager` on a long auto-commit
+  /// Builds a SEQUENTIAL consumer with a manual-commit `KafkaOffsetManager` on a long commit
   /// interval, captured into `offsetManagerRef` so the test commits a prefix manually and stops it
   /// to simulate a crash. The only commit is the manual one; everything A processes afterward stays
   /// uncommitted, forming the deterministic tail B re-delivers.
@@ -314,7 +297,8 @@ class CrashRestartReprocessingIntegrationTest {
       // contiguous range, and combined with the small max.poll.records (see
       // consumerProperties) the consumer drains the command queue between small batches so
       // the manual commit lands as a bounded prefix. At-least-once is mode-independent; the
-      // PARALLEL path is covered by the offset property/stress/jcstress suites.
+      // PARALLEL path is covered by the offset property and Fray suites and by
+      // DefaultOffsetPathIntegrationTest.
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(value -> {
@@ -333,10 +317,9 @@ class CrashRestartReprocessingIntegrationTest {
     builder.withOffsetManagerProvider(consumer -> {
       final var manager = KafkaOffsetManager.builder(consumer)
         .withCommitExecutor(builder.getCommitExecutor())
-        // Very long auto-commit interval: the test drives the single commit manually so
-        // the commit
-        // point is deterministic and everything processed after it is a guaranteed
-        // uncommitted tail.
+        // Very long commit interval: the test drives the single commit manually, so the
+        // commit point is deterministic and everything processed after it is a
+        // guaranteed uncommitted tail.
         .withCommitInterval(Duration.ofHours(1))
         .build();
       offsetManagerRef.set(manager);
@@ -412,8 +395,8 @@ class CrashRestartReprocessingIntegrationTest {
     props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
     props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-    // Short session timeout so that when A's thread is abandoned (heartbeats stop), the broker
-    // evicts A quickly and B deterministically inherits its partitions well within the test window.
+    // Short session timeout, so a member that stops heartbeating is evicted quickly and B inherits
+    // its partition well within the test window.
     props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
     props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "3000");
     // Small poll batches so SEQUENTIAL inline processing drains the command queue frequently. The

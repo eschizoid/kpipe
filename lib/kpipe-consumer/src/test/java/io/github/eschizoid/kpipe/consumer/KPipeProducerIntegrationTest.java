@@ -24,9 +24,7 @@ class KPipeProducerIntegrationTest {
   private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
 
   @Container
-  static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
-  );
+  static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)));
 
   @Test
   void shouldSendToDlqOnFailure() throws Exception {
