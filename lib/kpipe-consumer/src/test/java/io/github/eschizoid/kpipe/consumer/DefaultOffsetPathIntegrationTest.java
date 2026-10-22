@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
@@ -19,6 +20,7 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
@@ -31,10 +33,10 @@ import org.testcontainers.utility.DockerImageName;
 /// with the consumer properties left at Kafka's defaults, which turn auto-commit on.
 ///
 /// Consumer A works in PARALLEL mode and some of its records never finish. It shuts down while
-/// they are still in flight. Consumer B then joins the same group, and every record A never
-/// finished must reach B. Kafka's auto-commit would have committed the polled offsets past the
-/// unfinished records, so B would start after them and they would be lost; the commit must
-/// instead stop at the first record A did not finish.
+/// they are still in flight. A's commit must stop at the first record it did not finish, and
+/// consumer B, joining the same group afterwards, must receive every record A never finished.
+/// Kafka's auto-commit would have committed the polled offsets past the unfinished records, so B
+/// would start after them and they would be lost.
 ///
 /// CI-RUN-REQUIRED: this is a Testcontainers test (needs a Docker daemon to start the Kafka
 /// broker).
@@ -43,8 +45,10 @@ class DefaultOffsetPathIntegrationTest {
 
   private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
   private static final int RECORD_COUNT = 200;
-  /// Every record whose index is a multiple of this never finishes on consumer A.
+  /// Records at these offsets mod 10 never finish on consumer A. The first is offset 5, so the
+  /// frontier A commits is 5, which a consumer starting from the beginning would not reach.
   private static final int STUCK_EVERY = 10;
+  private static final int FIRST_STUCK = 5;
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)));
@@ -57,7 +61,7 @@ class DefaultOffsetPathIntegrationTest {
     produceRecords(topic);
 
     final var stuck = IntStream.range(0, RECORD_COUNT)
-      .filter(i -> i % STUCK_EVERY == 0)
+      .filter(i -> i % STUCK_EVERY == FIRST_STUCK)
       .mapToObj(i -> "val-" + i)
       .collect(Collectors.toUnmodifiableSet());
     final var finishedByA = ConcurrentHashMap.<String>newKeySet();
@@ -78,6 +82,10 @@ class DefaultOffsetPathIntegrationTest {
             try {
               neverReleased.await();
             } catch (final InterruptedException e) {
+              // The interrupt must stay in the cause chain: an interruption is not a
+              // processing
+              // failure, so the record stays unmarked instead of being logged and
+              // committed past.
               Thread.currentThread().interrupt();
               throw new IllegalStateException("interrupted at shutdown", e);
             }
@@ -91,9 +99,17 @@ class DefaultOffsetPathIntegrationTest {
     consumerA.start();
     awaitSize(finishedByA, RECORD_COUNT - stuck.size(), Duration.ofSeconds(60));
     assertEquals(RECORD_COUNT - stuck.size(), finishedByA.size(), "A must finish every record that is not stuck");
-    // Give Kafka's auto-commit, if it were on, time to commit the polled positions.
-    TimeUnit.MILLISECONDS.sleep(500);
     consumerA.close();
+
+    try (final var admin = Admin.create(adminProperties())) {
+      final var committed = admin
+        .listConsumerGroupOffsets(groupId)
+        .partitionsToOffsetAndMetadata()
+        .get(15, TimeUnit.SECONDS)
+        .get(new TopicPartition(topic, 0));
+      assertNotNull(committed, "A must commit the frontier at shutdown");
+      assertEquals(FIRST_STUCK, committed.offset(), "A's commit must stop at the first record it did not finish");
+    }
 
     final var seenByB = ConcurrentHashMap.<String>newKeySet();
     final var consumerB = KPipeConsumer.builder()

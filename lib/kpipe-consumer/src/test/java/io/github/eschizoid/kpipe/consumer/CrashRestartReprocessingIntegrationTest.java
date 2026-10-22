@@ -36,7 +36,7 @@ import org.testcontainers.utility.DockerImageName;
 ///
 /// This is the sibling of `ChaosRebalanceIntegrationTest`. That test proves the no-loss /
 /// no-commit-ahead contract holds when a partition is handed off via a live rebalance (both
-/// members stay up). This test proves the same contract holds across a *hard restart*: a fresh
+/// members stay up). This test proves the same contract holds across a crash and restart: a fresh
 /// consumer instance in the same group resumes from the committed offset and re-delivers the
 /// uncommitted tail that the crashed instance had already processed but never committed. It is
 /// the premise the whole at-least-once claim rests on — an uncommitted offset is reprocessed
@@ -74,7 +74,7 @@ class CrashRestartReprocessingIntegrationTest {
   // A single partition makes the A→B handoff deterministic: there is no rebalance-split ambiguity
   // about which member ends up reading the partition that holds the uncommitted tail. B inherits
   // the one partition and resumes from the manually-committed prefix, so the re-delivery overlap is
-  // deterministic (multi-partition rebalance timing made it flaky). No-loss/no-commit-ahead don't
+  // deterministic. No-loss/no-commit-ahead don't
   // depend on the partition count; the rebalance-handoff angle is covered by
   // ChaosRebalanceIntegrationTest.
   private static final int PARTITIONS = 1;
@@ -94,7 +94,7 @@ class CrashRestartReprocessingIntegrationTest {
   static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)));
 
   @Test
-  void atLeastOnceSurvivesHardCrashRestart() throws Exception {
+  void atLeastOnceSurvivesCrashRestart() throws Exception {
     final var topic = "crash-input-" + System.nanoTime();
     final var groupId = "crash-group-" + System.nanoTime();
 
@@ -114,10 +114,9 @@ class CrashRestartReprocessingIntegrationTest {
     final var consumerA = buildConsumerWithManagedOffsets(topic, groupId, observedA, observedTotalA, offsetManagerA);
     consumerA.start();
 
-    // Deterministically build a processed-but-uncommitted tail. A's manager uses a very long
-    // auto-commit interval, so the ONLY commit is the single manual one here — everything A
-    // processes afterward stays uncommitted. (The earlier 1s auto-commit kept committing the whole
-    // stream, leaving no tail for B and making the re-delivery overlap flaky.)
+    // Deterministically build a processed-but-uncommitted tail. A's manager has a very long commit
+    // interval, so the ONLY commit is the single manual one here — everything A processes
+    // afterward stays uncommitted.
     awaitObservedGrowth(observedA, COMMIT_PREFIX, Duration.ofSeconds(40));
     assertTrue(
       offsetManagerA.get().commitSyncAndWait(Duration.ofSeconds(10)),
@@ -281,7 +280,7 @@ class CrashRestartReprocessingIntegrationTest {
     return Set.copyOf(values);
   }
 
-  /// Builds a SEQUENTIAL consumer with a manual-commit `KafkaOffsetManager` on a long auto-commit
+  /// Builds a SEQUENTIAL consumer with a manual-commit `KafkaOffsetManager` on a long commit
   /// interval, captured into `offsetManagerRef` so the test commits a prefix manually and stops it
   /// to simulate a crash. The only commit is the manual one; everything A processes afterward stays
   /// uncommitted, forming the deterministic tail B re-delivers.
@@ -299,7 +298,8 @@ class CrashRestartReprocessingIntegrationTest {
       // contiguous range, and combined with the small max.poll.records (see
       // consumerProperties) the consumer drains the command queue between small batches so
       // the manual commit lands as a bounded prefix. At-least-once is mode-independent; the
-      // PARALLEL path is covered by the offset property/stress/jcstress suites.
+      // PARALLEL path is covered by the offset property and Fray suites and by
+      // DefaultOffsetPathIntegrationTest.
       .withProcessingMode(ProcessingMode.SEQUENTIAL)
       .withPipeline(
         TestPipelines.sideEffect(value -> {
@@ -318,10 +318,11 @@ class CrashRestartReprocessingIntegrationTest {
     builder.withOffsetManagerProvider(consumer -> {
       final var manager = KafkaOffsetManager.builder(consumer)
         .withCommitExecutor(builder.getCommitExecutor())
-        // Very long auto-commit interval: the test drives the single commit manually so
-        // the commit
+        // Very long commit interval: the test drives the single commit manually, so the
+        // commit
         // point is deterministic and everything processed after it is a guaranteed
-        // uncommitted tail.
+        // uncommitted
+        // tail.
         .withCommitInterval(Duration.ofHours(1))
         .build();
       offsetManagerRef.set(manager);
@@ -397,8 +398,8 @@ class CrashRestartReprocessingIntegrationTest {
     props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
     props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-    // Short session timeout so that when A's thread is abandoned (heartbeats stop), the broker
-    // evicts A quickly and B deterministically inherits its partitions well within the test window.
+    // Short session timeout, so a member that stops heartbeating is evicted quickly and B inherits
+    // its partition well within the test window.
     props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "10000");
     props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "3000");
     // Small poll batches so SEQUENTIAL inline processing drains the command queue frequently. The
