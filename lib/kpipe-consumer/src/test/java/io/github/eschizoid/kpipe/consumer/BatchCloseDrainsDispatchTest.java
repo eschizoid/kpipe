@@ -74,4 +74,46 @@ class BatchCloseDrainsDispatchTest {
       scheduler.shutdownNow();
     }
   }
+
+  /// A throwing `onBufferReleased` must not strand the dispatch count: `close()` still returns,
+  /// and the flush that called it still finishes for the enqueuing worker.
+  @Test
+  void closeReturnsWhenTheBufferReleasedCallbackThrows() throws Exception {
+    final var scheduler = Executors.newSingleThreadScheduledExecutor();
+    final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
+      @Override
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
+
+      @Override
+      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {}
+
+      @Override
+      public void onBufferReleased() {
+        throw new IllegalStateException("wake hook failed");
+      }
+    };
+
+    // A size cap of one, so enqueue flushes on the calling thread and runs the callback there.
+    final var wrapper = new BatchPipelineWrapper<byte[]>(
+      TOPIC,
+      TestPipelines.identity(),
+      BatchSink.<byte[]>ofVoid(_ -> {}),
+      new BatchPolicy(1, Duration.ofMinutes(1)),
+      scheduler,
+      callbacks
+    );
+
+    try {
+      wrapper.start();
+      assertDoesNotThrow(() ->
+        wrapper.enqueue(new ConsumerRecord<>(TOPIC, 0, 0L, new byte[0], new byte[0]), new byte[] { 1 })
+      );
+      assertEquals(0L, wrapper.bufferedCount(), "the flush must still lower the buffered count");
+
+      final var closer = Executors.newVirtualThreadPerTaskExecutor().submit(wrapper::close);
+      assertDoesNotThrow(() -> closer.get(5, TimeUnit.SECONDS), "close() must return");
+    } finally {
+      scheduler.shutdownNow();
+    }
+  }
 }

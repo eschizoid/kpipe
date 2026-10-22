@@ -170,10 +170,10 @@ Log-based fallback for users who don't run OTel: `ConsumerMetricsReporter` (cons
   (external lag drops — reassignment, retention truncation, offset reset — now resume the consumer). Records slipping
   through a mid-poll rebalance are processed, never dropped (positions already advanced; dropping would lose data on
   commit). Resume latency is ≤ `pollTimeout` (100ms default) rather than an instant unpark; the remaining unparks
-  (`internalResume`, `close`, `afterRecordComplete`) are best-effort latency nudges for the teardown-drain `parkNanos`
-  path only. History: the old indefinite `park()` deadlocked forever under the lag strategy (SEQUENTIAL has no async
-  completions to unpark it, and lag is monotonically non-decreasing while parked) and got the consumer evicted from the
-  group after 5 minutes.
+  (`internalResume`, `close`) are best-effort latency nudges for the teardown-drain `parkNanos` path, and
+  `wakeIfBackpressureDrained` ends an in-flight backpressure wait early (see the load-drop callback below). History: the
+  old indefinite `park()` deadlocked forever under the lag strategy (SEQUENTIAL has no async completions to unpark it,
+  and lag is monotonically non-decreasing while parked) and got the consumer evicted from the group after 5 minutes.
 - **Pipeline null handling.** Null record value and null deserialization throw specific `IllegalStateException` messages
   (retryable). Null `process()` result is intentional filtering — mark offset processed, count as success, no error.
 - **Metrics immutability.** `getMetrics()` returns `Collections.unmodifiableMap()`.
@@ -491,10 +491,13 @@ incremented around the inline `processTask.run()` — lag-based backpressure doe
 `KeyOrderedDispatcher` each own a real counter exposed via `drainableCount()`. `KPipeConsumer.backpressureLoad()` is now
 `dispatcher.drainableCount() + Σ batchWrappers.bufferedCount()`.
 
-**Post-record callback.** The unpark that backpressure needs lives in `KPipeConsumer.afterRecordComplete()`, which the
-dispatcher invokes via the `onComplete` argument to `dispatch()`. This makes the dispatcher mode-agnostic about the
-consumer's internal state. (A paused consumer keeps polling rather than parking — see §11 — so the unpark-on-completion
-is a best-effort latency nudge, not a liveness invariant.)
+**Load-drop callback.** The unpark that backpressure needs lives in `KPipeConsumer.wakeIfBackpressureDrained()`. The
+dispatcher invokes it through the `onComplete` argument to `dispatch()`, and each batch wrapper invokes it through
+`BatchCallbacks.onBufferReleased()` after a flush lowers its buffered count, because a batch route's records finish as
+soon as they are buffered. This keeps the dispatcher mode-agnostic about the consumer's internal state. During an
+in-flight backpressure hold the consumer parks for up to one poll timeout instead of running a paused poll, and the
+unpark ends that park once the load reaches the low watermark. The park is bounded, so the unpark sets resume latency;
+it is not a liveness invariant.
 
 **Migration (§16 delete + migrate).** `withSequentialProcessing(boolean)` deleted from both `KPipeConsumerBuilder` and
 the fluent `Stream` facade. Callers migrate to `withProcessingMode(ProcessingMode.SEQUENTIAL)` /

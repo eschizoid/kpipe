@@ -223,22 +223,20 @@ final class ConsumerHealthController {
         backpressurePauseStartNanos = System.nanoTime();
         if (requestPause(Source.BACKPRESSURE)) pauseHook.onPause();
         // Lost-wakeup guard. The PAUSE decision above came from a metric read taken BEFORE
-        // `requestPause` published the BACKPRESSURE bit, but record completions only unpark the
-        // consumer thread when they observe that bit after decrementing the in-flight count.
-        // Every record that completed inside that window skipped the unpark — and when the
-        // count drains all the way down in there (routine for PARALLEL mode with fast records:
-        // 10k in-flight at ~100µs each finish in a few milliseconds, faster than the log + hook
-        // calls above), no completion ever arrives to nudge the consumer, which then sits paused
-        // with nothing in flight until its next poll-cadence re-check (and, before the paused
-        // loop kept polling, parked forever). Re-checking with the bit visible closes the window:
-        // either the metric is already at/below the low watermark (release right now), or at
-        // least one record was still in flight at this read and its completion is guaranteed to
-        // see the bit and unpark. Both reads and the bit are volatile, so the total order of
-        // the flag/count accesses makes this Dekker-style handshake sound. The re-check below is
-        // gated by ConsumerHealthControllerTest's drain-inside-the-pause-window case. What is
-        // ungated is the mutually-blind interleaving: it needs both reads to precede both writes,
-        // which is a cycle in any interleaving, so only a tool modelling reordering could produce
-        // it and the suite has none since the publication test was retired.
+        // `requestPause` published the BACKPRESSURE bit, but a load drop only unparks the consumer
+        // thread when it observes that bit after lowering the load. Load drops are record
+        // completions and batch flushes, which lower a buffered count. Every drop inside that
+        // window skipped the unpark, and when the load drains all the way down in there (routine
+        // for PARALLEL mode with fast records), no later drop arrives to wake the consumer, which
+        // then waits out a full poll timeout with nothing in flight. Re-checking with the bit
+        // visible closes the window: either the metric is already at or below the low watermark
+        // (release now), or some load was still outstanding at this read and the drop that removes
+        // it is guaranteed to see the bit and unpark. Both reads and the bit are volatile, so the
+        // total order of the flag and count accesses makes this Dekker-style handshake sound.
+        // ConsumerHealthControllerTest's drain-inside-the-pause-window case is the gate on this
+        // re-check. The mutually blind interleaving, where both reads precede both writes, is a
+        // cycle in any interleaving, so no test can produce it without a tool that models
+        // reordering.
         //
         // Gated to the in-flight strategy: the lag metric only moves when the consumer thread
         // itself advances positions, so it cannot drop concurrently inside this window (there

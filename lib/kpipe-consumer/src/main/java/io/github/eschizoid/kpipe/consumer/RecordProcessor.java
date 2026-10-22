@@ -65,6 +65,8 @@ final class RecordProcessor {
   /// Snapshot of the owning consumer's running state, used only by [#handleParallelRejection]
   /// to stay silent on rejections that are part of an orderly shutdown.
   private final BooleanSupplier consumerActive;
+  /// Wakes the consumer thread when a batch flush may have drained an in-flight backpressure hold.
+  private final Runnable loadReleased;
 
   /// One deserialize + process attempt for a record. Returns the record's terminal-success flag
   /// (the same meaning as [#tryProcessRecord]'s return value); throws to request another
@@ -88,7 +90,8 @@ final class RecordProcessor {
     final Tracer tracer,
     final int maxRetries,
     final Duration retryBackoff,
-    final BooleanSupplier consumerActive
+    final BooleanSupplier consumerActive,
+    final Runnable loadReleased
   ) {
     this.pipelines = pipelines;
     this.offsetManager = offsetManager;
@@ -102,6 +105,7 @@ final class RecordProcessor {
     this.maxRetries = maxRetries;
     this.retryBackoff = retryBackoff;
     this.consumerActive = consumerActive;
+    this.loadReleased = loadReleased;
     if (batchSpecs.isEmpty()) {
       this.batchWrappers = Map.of();
     } else {
@@ -137,6 +141,11 @@ final class RecordProcessor {
         // window would see only failures and trip spuriously.
         health.recordOutcome(true);
         if (offsetManager != null) offsetManager.markOffsetProcessed(record);
+      }
+
+      @Override
+      public void onBufferReleased() {
+        loadReleased.run();
       }
 
       @Override
@@ -229,7 +238,7 @@ final class RecordProcessor {
         LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw", traceEx);
       }
       // In-flight count + backpressure-unpark handled by the dispatcher's `onComplete`
-      // callback (`afterRecordComplete`). See `KPipeConsumer.processRecords`.
+      // callback (`wakeIfBackpressureDrained`). See `KPipeConsumer.processRecords`.
     }
   }
 

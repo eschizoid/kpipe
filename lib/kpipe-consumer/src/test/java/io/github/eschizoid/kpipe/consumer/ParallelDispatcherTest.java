@@ -104,9 +104,9 @@ class ParallelDispatcherTest {
 
   @Test
   void throwingOnCompleteIsGuardedAndInFlightStillDrains() throws InterruptedException {
-    // onComplete is the consumer's afterRecordComplete hook. A bug making it throw must be caught
-    // (logged at WARNING), never escape into the discarded Future, and never strand the in-flight
-    // counter — the decrement runs before onComplete in the finally.
+    // onComplete is the consumer's wakeIfBackpressureDrained hook. A bug making it throw must be
+    // caught (logged at WARNING), never escape into the discarded Future, and never strand the
+    // in-flight counter — the decrement runs before onComplete in the finally.
     final var capture = captureLogs(Level.WARNING);
     final var dispatcher = newDispatcher(new AtomicInteger(0));
     final var ran = new CountDownLatch(1);
