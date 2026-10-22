@@ -288,8 +288,8 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Sets a function to create a custom OffsetManager once the consumer is available. This
-  /// automatically disables auto-commit.
+  /// Sets a function to create a custom OffsetManager once the consumer is available, in place of
+  /// the default [KafkaOffsetManager].
   ///
   /// @param provider A function that creates an OffsetManager given the consumer instance
   /// @return This builder instance for method chaining
@@ -305,8 +305,7 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Enables offset management with a custom offset manager implementation. This
-  /// automatically disables auto-commit.
+  /// Replaces the default [KafkaOffsetManager] with a custom offset manager implementation.
   ///
   /// @param manager The custom offset manager to use
   /// @return This builder instance for method chaining
@@ -588,7 +587,12 @@ public final class KPipeConsumerBuilder {
     if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
       "Poll timeout must be positive, got " + pollTimeout
     );
-    if (offsetManager != null || offsetManagerProvider != null) kafkaProps.setProperty("enable.auto.commit", "false");
+    // Without an offset manager nothing commits the frontier: with enable.auto.commit=false no
+    // offset is ever committed, and Kafka's auto-commit commits polled offsets before their records
+    // finish. Every consumer gets a KafkaOffsetManager unless the caller supplies its own.
+    if (offsetManager == null && offsetManagerProvider == null) offsetManagerProvider = consumer ->
+      KafkaOffsetManager.builder(consumer).withCommitExecutor(getCommitExecutor()).build();
+    kafkaProps.setProperty("enable.auto.commit", "false");
     forceByteArrayKeyDeserializer(kafkaProps);
     if (backpressureController != null && processingMode == ProcessingMode.SEQUENTIAL) {
       LOGGER.log(
