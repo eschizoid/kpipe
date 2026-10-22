@@ -12,6 +12,7 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.WakeupException;
 
 /// Manages Kafka consumer offsets for parallel processing scenarios.
 ///
@@ -77,6 +78,7 @@ public class KafkaOffsetManager implements OffsetManager {
   /// keyed by partition (see [OffsetLedger]).
   private final OffsetLedger ledger = new OffsetLedger();
 
+  private static final Duration FINAL_COMMIT_TIMEOUT = Duration.ofSeconds(5);
   private final Duration commitInterval;
   private volatile ScheduledExecutorService scheduler;
   private volatile ScheduledFuture<?> scheduledCommitTask;
@@ -333,7 +335,7 @@ public class KafkaOffsetManager implements OffsetManager {
       stopScheduler();
       try {
         final var offsetsToCommit = ledger.committableOffsets();
-        if (!offsetsToCommit.isEmpty()) kafkaConsumer.commitSync(offsetsToCommit, Duration.ofSeconds(5));
+        if (!offsetsToCommit.isEmpty()) commitFinalOffsets(offsetsToCommit);
       } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Error during final offset commit", e);
       }
@@ -387,6 +389,18 @@ public class KafkaOffsetManager implements OffsetManager {
         onPartitionsRevoked(partitions);
       }
     };
+  }
+
+  /// Commits the final frontier, retrying once after a [WakeupException]. `KPipeConsumer.close()`
+  /// wakes the consumer to break a blocking poll; when the consumer thread is already past its
+  /// last poll, that wakeup stays pending and fires in the next blocking call, which is this
+  /// commit. The throw consumes the wakeup, so the retry runs normally.
+  private void commitFinalOffsets(final Map<TopicPartition, OffsetAndMetadata> offsets) {
+    try {
+      kafkaConsumer.commitSync(offsets, FINAL_COMMIT_TIMEOUT);
+    } catch (final WakeupException e) {
+      kafkaConsumer.commitSync(offsets, FINAL_COMMIT_TIMEOUT);
+    }
   }
 
   /// Cleans up resources.
