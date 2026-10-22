@@ -268,6 +268,15 @@ public interface Stream<T> {
   /// @throws NullPointerException if `timeout` is null
   Stream<T> withPollTimeout(final Duration timeout);
 
+  /// Returns a new stream that commits the offset frontier at this interval. The default is 30
+  /// seconds. Offsets are also committed on rebalance and at shutdown; a shorter interval narrows
+  /// how many records are reprocessed after a crash, at the cost of more commit requests.
+  ///
+  /// @param interval the time between periodic commits (must be non-null and positive)
+  /// @return a new stream with the commit interval configured
+  /// @throws NullPointerException if `interval` is null
+  Stream<T> withCommitInterval(final Duration interval);
+
   /// Returns a new stream that reports consumer metrics periodically through `reporters`.
   ///
   /// This is the log-based path for deployments without an OpenTelemetry backend; it is

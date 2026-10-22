@@ -48,7 +48,8 @@ record ConsumerConfig(
   Duration metricsInterval,
   Boolean shutdownHook,
   Duration threadTerminationTimeout,
-  Duration waitForMessagesTimeout
+  Duration waitForMessagesTimeout,
+  Duration commitInterval
 ) {
   /// The all-unset configuration: no retry, no backpressure, parallel mode with the default
   /// key-ordered cap, and every optional component `null`.
@@ -60,6 +61,7 @@ record ConsumerConfig(
       null,
       ProcessingMode.PARALLEL,
       ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS,
+      null,
       null,
       null,
       null,
@@ -103,6 +105,7 @@ record ConsumerConfig(
     if (shutdownHook != null) builder.withShutdownHook(shutdownHook);
     if (threadTerminationTimeout != null) builder.withThreadTerminationTimeout(threadTerminationTimeout);
     if (waitForMessagesTimeout != null) builder.withWaitForMessagesTimeout(waitForMessagesTimeout);
+    if (commitInterval != null) builder.withCommitInterval(commitInterval);
   }
 
   /// One consumer-wide setting as seen by the [MultiBuilder] per-route guard: the `Stream.with*`
@@ -151,7 +154,8 @@ record ConsumerConfig(
     mirrored("withMetricsInterval", c -> c.metricsInterval() != null),
     mirrored("withShutdownHook", c -> c.shutdownHook() != null),
     mirrored("withThreadTerminationTimeout", c -> c.threadTerminationTimeout() != null),
-    mirrored("withWaitForMessagesTimeout", c -> c.waitForMessagesTimeout() != null)
+    mirrored("withWaitForMessagesTimeout", c -> c.waitForMessagesTimeout() != null),
+    mirrored("withCommitInterval", c -> c.commitInterval() != null)
   );
 
   /// Descriptor for the common case: a setting whose rejection message points at the
@@ -188,6 +192,7 @@ record ConsumerConfig(
     Boolean shutdownHook;
     Duration threadTerminationTimeout;
     Duration waitForMessagesTimeout;
+    Duration commitInterval;
 
     static Mut from(final ConsumerConfig c) {
       final var m = new Mut();
@@ -208,6 +213,7 @@ record ConsumerConfig(
       m.shutdownHook = c.shutdownHook;
       m.threadTerminationTimeout = c.threadTerminationTimeout;
       m.waitForMessagesTimeout = c.waitForMessagesTimeout;
+      m.commitInterval = c.commitInterval;
       return m;
     }
 
@@ -229,7 +235,8 @@ record ConsumerConfig(
         metricsInterval,
         shutdownHook,
         threadTerminationTimeout,
-        waitForMessagesTimeout
+        waitForMessagesTimeout,
+        commitInterval
       );
     }
   }

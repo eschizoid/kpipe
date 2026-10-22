@@ -57,6 +57,10 @@ public final class KPipeConsumerBuilder {
   final Duration executorTerminationTimeout = ConsumerDefaults.EXECUTOR_TERMINATION;
   OffsetManager offsetManager;
   Function<Consumer<byte[], byte[]>, OffsetManager> offsetManagerProvider;
+  Duration commitInterval;
+  /// The provider `build()` installed for the default offset manager, so a second `build()` on
+  /// the same builder does not mistake it for one the caller supplied.
+  private Function<Consumer<byte[], byte[]>, OffsetManager> defaultOffsetManagerProvider;
   Supplier<Consumer<byte[], byte[]>> consumerProvider;
   Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
   ConsumerRebalanceListener rebalanceListener;
@@ -263,6 +267,24 @@ public final class KPipeConsumerBuilder {
   public KPipeConsumerBuilder withKeyOrderedMaxKeys(final int maxKeys) {
     if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
     this.keyOrderedMaxKeys = maxKeys;
+    return this;
+  }
+
+  /// Sets how often the default [KafkaOffsetManager] commits the offset frontier. It also commits
+  /// on rebalance and at shutdown. The default is 30 seconds. A shorter interval narrows how many
+  /// records are reprocessed after a crash, at the cost of more commit requests.
+  ///
+  /// Only the default offset manager uses this; `build()` rejects it alongside a custom
+  /// [OffsetManager], which sets its own commit cadence.
+  ///
+  /// @param interval the time between periodic commits (must be positive)
+  /// @return This builder instance for method chaining
+  public KPipeConsumerBuilder withCommitInterval(final Duration interval) {
+    Objects.requireNonNull(interval, "interval cannot be null");
+    if (interval.isNegative() || interval.isZero()) throw new IllegalArgumentException(
+      "Commit interval must be positive, got " + interval
+    );
+    this.commitInterval = interval;
     return this;
   }
 
@@ -592,8 +614,20 @@ public final class KPipeConsumerBuilder {
     // Without an offset manager nothing commits the frontier: with enable.auto.commit=false no
     // offset is ever committed, and Kafka's auto-commit commits polled offsets before their records
     // finish. Every consumer gets a KafkaOffsetManager unless the caller supplies its own.
-    if (offsetManager == null && offsetManagerProvider == null) offsetManagerProvider = consumer ->
-      KafkaOffsetManager.builder(consumer).withCommitExecutor(getCommitExecutor()).build();
+    final var customOffsetManager =
+      offsetManager != null || (offsetManagerProvider != null && offsetManagerProvider != defaultOffsetManagerProvider);
+    if (customOffsetManager && commitInterval != null) throw new IllegalArgumentException(
+      "withCommitInterval configures the default KafkaOffsetManager; a custom OffsetManager sets its own commit interval"
+    );
+    if (!customOffsetManager) {
+      final var interval = commitInterval;
+      offsetManagerProvider = consumer -> {
+        final var manager = KafkaOffsetManager.builder(consumer).withCommitExecutor(getCommitExecutor());
+        if (interval != null) manager.withCommitInterval(interval);
+        return manager.build();
+      };
+      defaultOffsetManagerProvider = offsetManagerProvider;
+    }
     disableAutoCommit(kafkaProps);
     forceByteArrayKeyDeserializer(kafkaProps);
     if (backpressureController != null && processingMode == ProcessingMode.SEQUENTIAL) {
