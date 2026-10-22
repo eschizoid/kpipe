@@ -272,7 +272,7 @@ public interface Stream<T> {
   /// seconds. Offsets are also committed on rebalance and at shutdown; a shorter interval narrows
   /// how many records are reprocessed after a crash, at the cost of more commit requests.
   ///
-  /// @param interval the time between periodic commits (must be non-null and positive)
+  /// @param interval the time between periodic commits (non-null, at least 1 millisecond)
   /// @return a new stream with the commit interval configured
   /// @throws NullPointerException if `interval` is null
   Stream<T> withCommitInterval(final Duration interval);

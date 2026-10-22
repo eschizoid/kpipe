@@ -17,7 +17,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.jupiter.api.Test;
 
-/// Pins the five operational settings that moved from the explicit builder onto the fluent facade.
+/// Pins the operational settings that the fluent facade exposes alongside the explicit builder.
 ///
 /// These configure how a consumer behaves in a deployment rather than how records are processed,
 /// which is why they belong on the 80% path: reaching one used to mean abandoning `KPipe.json(...)`
@@ -147,7 +147,7 @@ class OperationalSettersTest {
         .toCustom(_ -> {})
         .start()
     );
-    assertTrue(commitInterval.getMessage().contains("positive"), commitInterval.getMessage());
+    assertTrue(commitInterval.getMessage().contains("1ms"), commitInterval.getMessage());
   }
 
   @Test

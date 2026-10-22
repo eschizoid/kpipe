@@ -277,13 +277,16 @@ public final class KPipeConsumerBuilder {
   /// Only the default offset manager uses this; `build()` rejects it alongside a custom
   /// [OffsetManager], which sets its own commit cadence.
   ///
-  /// @param interval the time between periodic commits (must be positive)
+  /// @param interval the time between periodic commits (at least 1 millisecond)
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withCommitInterval(final Duration interval) {
     Objects.requireNonNull(interval, "interval cannot be null");
-    if (interval.isNegative() || interval.isZero()) throw new IllegalArgumentException(
-      "Commit interval must be positive, got " + interval
-    );
+    // The offset manager schedules in whole milliseconds, so the interval must convert to at
+    // least one and must not overflow the conversion; otherwise it fails only once the consumer
+    // starts.
+    if (
+      interval.compareTo(Duration.ofMillis(1)) < 0 || interval.compareTo(Duration.ofMillis(Long.MAX_VALUE)) > 0
+    ) throw new IllegalArgumentException("Commit interval must be between 1ms and Long.MAX_VALUE ms, got " + interval);
     this.commitInterval = interval;
     return this;
   }

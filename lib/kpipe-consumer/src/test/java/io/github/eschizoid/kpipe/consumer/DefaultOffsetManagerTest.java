@@ -151,6 +151,33 @@ class DefaultOffsetManagerTest {
     assertTrue(ex.getMessage().contains("withCommitInterval"), ex.getMessage());
   }
 
+  @Test
+  void commitIntervalIsRejectedAlongsideACustomOffsetManagerProvider() {
+    final var builder = KPipeConsumer.builder()
+      .withProperties(properties("false"))
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withCommitInterval(Duration.ofSeconds(1))
+      .withOffsetManagerProvider(_ -> mock(OffsetManager.class))
+      .withConsumer(() -> new MockConsumer<byte[], byte[]>("earliest"));
+
+    final var ex = assertThrows(IllegalArgumentException.class, builder::build);
+    assertTrue(ex.getMessage().contains("withCommitInterval"), ex.getMessage());
+  }
+
+  /// Intervals the offset manager cannot schedule in whole milliseconds are rejected when set,
+  /// not when the consumer starts.
+  @Test
+  void commitIntervalOutsideTheSchedulableRangeIsRejectedWhenSet() {
+    assertThrows(IllegalArgumentException.class, () -> KPipeConsumer.builder().withCommitInterval(Duration.ZERO));
+    assertThrows(IllegalArgumentException.class, () ->
+      KPipeConsumer.builder().withCommitInterval(Duration.ofNanos(500_000))
+    );
+    assertThrows(IllegalArgumentException.class, () ->
+      KPipeConsumer.builder().withCommitInterval(Duration.ofSeconds(Long.MAX_VALUE))
+    );
+  }
+
   /// The default offset manager `build()` installs must not count as a caller-supplied one, or a
   /// second `build()` on the same builder would reject its own commit interval.
   @Test
