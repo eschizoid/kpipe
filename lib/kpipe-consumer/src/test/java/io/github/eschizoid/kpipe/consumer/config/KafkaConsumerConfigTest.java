@@ -19,7 +19,7 @@ class KafkaConsumerConfigTest {
     assertEquals(GROUP_ID, props.get("group.id"));
     assertEquals("org.apache.kafka.common.serialization.ByteArrayDeserializer", props.get("key.deserializer"));
     assertEquals("org.apache.kafka.common.serialization.ByteArrayDeserializer", props.get("value.deserializer"));
-    assertEquals("true", props.get("enable.auto.commit"));
+    assertEquals("false", props.get("enable.auto.commit"));
   }
 
   @Test

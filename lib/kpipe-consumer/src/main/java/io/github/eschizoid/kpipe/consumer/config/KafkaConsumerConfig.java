@@ -92,7 +92,9 @@ public final class KafkaConsumerConfig {
     props.put(GROUP_ID, groupId);
     props.put(KEY_DESERIALIZER, ByteArrayDeserializer.class.getName());
     props.put(VALUE_DESERIALIZER, ByteArrayDeserializer.class.getName());
-    props.put(ENABLE_AUTO_COMMIT, "true");
+    // KPipe commits offsets through its OffsetManager and disables Kafka's auto-commit on every
+    // consumer it builds, so the default matches what the consumer will run with.
+    props.put(ENABLE_AUTO_COMMIT, "false");
 
     return customizer != null ? customizer.apply(props) : props;
   }
@@ -267,7 +269,9 @@ public final class KafkaConsumerConfig {
       return this;
     }
 
-    /// Sets whether auto-commit should be enabled.
+    /// Sets whether auto-commit should be enabled. A KPipe consumer always runs with auto-commit
+    /// disabled and commits through its OffsetManager, so `true` only matters for properties
+    /// handed to a plain Kafka consumer.
     ///
     /// @param enable True to enable auto-commit, false to disable
     /// @return This builder for chaining
