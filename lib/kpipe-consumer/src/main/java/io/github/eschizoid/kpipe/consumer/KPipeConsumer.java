@@ -357,7 +357,8 @@ public class KPipeConsumer implements AutoCloseable {
         tracer,
         builder.maxRetries,
         builder.retryBackoff,
-        this::isRunning
+        this::isRunning,
+        this::wakeIfBackpressureDrained
       );
       this.batchWrappers = recordProcessor.batchWrappers();
     } catch (final Throwable t) {
@@ -1086,7 +1087,7 @@ public class KPipeConsumer implements AutoCloseable {
   protected void processRecords(final ConsumerRecords<byte[], byte[]> records) {
     for (final var record : records) {
       if (offsetManager != null) offsetManager.trackOffset(record);
-      dispatcher.dispatch(record, () -> processRecord(record), this::afterRecordComplete);
+      dispatcher.dispatch(record, () -> processRecord(record), this::wakeIfBackpressureDrained);
     }
   }
 
@@ -1100,13 +1101,15 @@ public class KPipeConsumer implements AutoCloseable {
     recordProcessor.handleParallelRejection(record, e);
   }
 
-  /// Runs after every record finishes (on whichever thread executed it). Unparks the consumer
-  /// thread once an in-flight backpressure hold has drained to the low watermark, which ends the
-  /// wait in [#pollAfterBackpressureWait] so the consumer resumes without idling out a poll
-  /// timeout. Completions above the low watermark leave the thread parked, because waking it
-  /// would only re-check a hold that cannot release yet. The unpark is a permit, so one that
-  /// lands before the consumer thread parks still ends that park.
-  private void afterRecordComplete() {
+  /// Runs whenever the in-flight load drops: after every record finishes, and after every batch
+  /// flush, on whichever thread did the work. A batch route's records finish as soon as they are
+  /// buffered, so for those the flush is what drains the load. Unparks the consumer thread once an
+  /// in-flight backpressure hold has drained to the low watermark, which ends the wait in
+  /// [#pollAfterBackpressureWait] so the consumer resumes without idling out a poll timeout. Calls
+  /// above the low watermark leave the thread parked, because waking it would only re-check a hold
+  /// that cannot release yet. The unpark is a permit, so one that lands before the consumer thread
+  /// parks still ends that park.
+  private void wakeIfBackpressureDrained() {
     if (health.inFlightBackpressureDrained()) {
       final var thread = consumerThread.get();
       if (thread != null) LockSupport.unpark(thread);
@@ -1118,17 +1121,17 @@ public class KPipeConsumer implements AutoCloseable {
   /// A paused `poll(timeout)` cannot be cut short by a record completion: the client waits in its
   /// network selector, which `LockSupport.unpark` does not reach, so the consumer would sit idle
   /// for the whole poll timeout after the in-flight count had already drained. Parking instead
-  /// lets [#afterRecordComplete] end the wait the moment the hold can release. The park is still
-  /// bounded by `pollTimeout`, and the zero-timeout poll after it keeps the group membership alive
-  /// and runs any rebalance callbacks.
+  /// lets [#wakeIfBackpressureDrained] end the wait the moment the hold can release. The park is
+  /// still bounded by `pollTimeout`, and the zero-timeout poll after it keeps the group membership
+  /// alive and runs any rebalance callbacks.
   ///
   /// A zero-timeout poll advances a classic-protocol join or sync by one step, where a blocking
   /// poll completes it within one call. A rebalance that starts during the hold therefore takes up
   /// to a few extra poll timeouts to finish while the hold lasts.
   ///
-  /// The drained check before parking pairs with the unpark in [#afterRecordComplete]: the hold
-  /// is already published when it runs, so a completion that drains the count after this read
-  /// observes the hold and leaves a permit that ends the park at once.
+  /// The drained check before parking pairs with the unpark in [#wakeIfBackpressureDrained]: the
+  /// hold is already published when it runs, so a completion that drains the count after this
+  /// read observes the hold and leaves a permit that ends the park at once.
   ///
   /// @return the records fetched, or `null` when the poll was woken or failed
   private ConsumerRecords<byte[], byte[]> pollAfterBackpressureWait() {

@@ -57,6 +57,10 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     /// configured (log-and-advance). A failed DLQ send leaves the offset pending so the record is
     /// reprocessed on restart rather than silently dropped.
     void onBatchFailure(ConsumerRecord<byte[], byte[]> record, Exception cause);
+
+    /// Called after a flush's dispatch has lowered [#bufferedCount], on the thread that ran the
+    /// flush. The owning consumer uses it to end an in-flight backpressure wait the flush drained.
+    default void onBufferReleased() {}
   }
 
   private final String topic;
@@ -222,6 +226,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
         dispatch.run();
       } finally {
         bufferedCount.addAndGet(-size);
+        callbacks.onBufferReleased();
         dispatchFinished();
       }
     };
