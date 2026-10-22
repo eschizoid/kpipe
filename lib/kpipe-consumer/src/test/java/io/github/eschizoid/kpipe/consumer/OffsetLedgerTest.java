@@ -173,7 +173,11 @@ class OffsetLedgerTest {
   void cachedTopicPartitionInternsTheSameInstance() {
     final var ledger = new OffsetLedger();
     final var first = ledger.cachedTopicPartition("topic", 0);
-    assertSame(first, ledger.cachedTopicPartition("topic", 0), "the same (topic, partition) reuses the cached instance");
+    assertSame(
+      first,
+      ledger.cachedTopicPartition("topic", 0),
+      "the same (topic, partition) reuses the cached instance"
+    );
   }
 
   @Test

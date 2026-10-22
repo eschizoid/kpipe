@@ -244,8 +244,8 @@ class OffsetOrderingPropertyTest {
           manager.trackOffset(record(op.partition(), op.offset()));
           pending.add(op.offset());
         } else {
-          // An unmarked offset is part of pending; marking is what makes it terminal/eligible. Marking
-          // an offset that is not pending changes nothing.
+          // An unmarked offset is part of pending; marking is what makes it terminal/eligible.
+          // Marking an offset that is not pending changes nothing.
           manager.markOffsetProcessed(record(op.partition(), op.offset()));
           if (pending.remove(op.offset())) highestMarkedByPartition.merge(op.partition(), op.offset(), Math::max);
         }
