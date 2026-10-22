@@ -43,8 +43,9 @@ forces 4.3.0 for every arm.
 | Confluent Parallel Consumer `KEY`       |        3,540 |          3,620 |           3,531 |
 
 KPipe `PARALLEL` allocates 4% more per record than the raw loop at 0 µs, 12% more at 100 µs and 17% more at 1000 µs. At
-every delay, each KPipe mode allocates less than the Atleon arm with the same ordering and about a third or less of what
-Confluent Parallel Consumer allocates.
+every delay, each KPipe mode allocates less than the Atleon arm with the same ordering and less than Confluent Parallel
+Consumer: KPipe `PARALLEL` allocates 0.31 to 0.51 times what Confluent `UNORDERED` does, and KPipe `KEY_ORDERED` 0.25 to
+0.29 times what Confluent `KEY` does.
 
 ## Throughput — unordered arms
 
@@ -84,8 +85,8 @@ Records per second, higher is better, with the JMH 99.9% error.
 
 The [2026-10-16 `COMPACT_EAGER` capture](../2026-10-16/2026-10-16-ci-compact-eager.md), which used JMH 1.36 and
 kafka-clients 4.3.1, gave KPipe `PARALLEL` ÷ Atleon parallel of 1.21, 1.09 and 1.04 and KPipe `KEY_ORDERED` ÷ Atleon
-key-ordered of 0.99, 1.11 and 0.94 at the same three delays. Both runs put KPipe ahead of Atleon at 0 µs with the error
-bands apart, and within the error bands at 100 and 1000 µs.
+key-ordered of 0.99, 1.11 and 0.94 at the same three delays. At these three delays, both runs put KPipe `PARALLEL` ahead
+of Atleon parallel at 0 µs with the error bands apart, and every other KPipe ÷ Atleon comparison within the error bands.
 
 ## Raw output
 

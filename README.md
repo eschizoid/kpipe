@@ -215,9 +215,10 @@ versions you run — these projects evolve):
 | Stateful processing (joins, windows, stores) | **Not supported**                                   | Not built-in                                                                                      | Core feature                         | Not built-in                    |
 | Ecosystem & maturity                         | Young, small API surface                            | Large ecosystem, long history                                                                     | Large ecosystem, long history        | Established in reactive stacks  |
 
-Benchmarked against Atleon 0.47.1, Confluent Parallel Consumer 0.5.3.3 and Reactor Kafka 1.3.25 on kafka-clients 4.3.0,
-which [`benchmarks/build.gradle.kts`](benchmarks/build.gradle.kts) forces because Parallel Consumer processes no records
-on 4.4.0. The libraries build and test against the kafka-clients version in
+Benchmarked against Atleon 0.47.1, Confluent Parallel Consumer 0.5.3.3 and Reactor Kafka 1.3.25. The 2026-10-21 capture
+ran on kafka-clients 4.3.0, which [`benchmarks/build.gradle.kts`](benchmarks/build.gradle.kts) forces because Parallel
+Consumer processes no records on 4.4.0, and earlier captures ran on the kafka-clients version the libraries used at the
+time. The libraries build and test against the kafka-clients version in
 [`gradle/libs.versions.toml`](gradle/libs.versions.toml). The Spring Kafka and Kafka Streams columns describe documented
 behavior, not versions we test.
 
