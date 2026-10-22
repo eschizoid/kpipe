@@ -131,12 +131,13 @@ capture as a supplement labeled with its machine; the numbers KPipe reports come
 ```
 
 Use five forks wherever the run fits. The 2026-06-20 CI capture at fork=2 produced 25%+ error bars and two cells where
-JMH could not compute a stable cross-fork stddev at all (`NaN` score-error). The CI job's 180-minute limit currently
-fits three forks for the nine throughput arms at 0, 100 and 1000µs and two forks for the latency benchmark, so CI
-reference captures use those counts and state them in their summaries. The `gc` profiler adds allocation rate and GC
-count per benchmark — required input to the "throughput vs allocation-cost" trade-off. Afterwards, copy
-`build/results/jmh/results.json` into a folder for the capture's date, `results/YYYY-MM-DD/`, alongside a dated markdown
-snapshot per [What to write down with every published number](#what-to-write-down-with-every-published-number).
+JMH could not compute a stable cross-fork stddev at all (`NaN` score-error). The CI job's limit is 360 minutes, the most
+a GitHub-hosted job can run, which fits five forks of the throughput arms at 0, 100 and 1000µs. Captures taken under the
+earlier 180-minute limit used three forks for throughput and two for the latency benchmark. Every capture states its
+fork count in its summary. The `gc` profiler adds allocation rate and GC count per benchmark — required input to the
+"throughput vs allocation-cost" trade-off. Afterwards, copy `build/results/jmh/results.json` into a folder for the
+capture's date, `results/YYYY-MM-DD/`, alongside a dated markdown snapshot per
+[What to write down with every published number](#what-to-write-down-with-every-published-number).
 
 ### Quick smoke run (for local sanity-check)
 

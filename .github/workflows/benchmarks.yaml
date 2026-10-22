@@ -43,20 +43,21 @@ on:
     # Mondays 06:00 UTC — weekly bench-rot smoke of the Docker-free benches.
     - cron: "0 6 * * 1"
 
-# A long benchmark run shouldn't pile up; cancel an in-progress run when a newer one starts.
+# A scheduled smoke run cancels the previous one still in progress on the same ref. Each dispatched
+# run gets a group of its own, so two captures dispatched on one ref both run to completion.
 concurrency:
-  group: benchmarks-${{ github.ref }}
+  group: benchmarks-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'schedule' }}
   cancel-in-progress: true
 
 jobs:
   jmh:
     runs-on: ubuntu-latest
-    # Generous ceiling: a competitive ParallelProcessing capture (fork=2, gc profiler, the
-    # publishable workMicros=0,100,1000 subset, Testcontainers Kafka boot per arm) runs ~30-50 min.
-    # The Docker-free smoke schedule finishes well under this. A FULL workMicros sweep does NOT fit
-    # here — the single-threaded arm at 100ms/record is ~5.6h for one cell — pass a workMicros
-    # subset for any ParallelProcessing run in CI.
-    timeout-minutes: 180
+    # GitHub-hosted jobs stop at 6 hours, so this is the most a single capture can use. A
+    # ParallelProcessing capture of every competitive arm at workMicros=0,100,1000 takes about 40
+    # minutes per fork with the gc profiler, so five forks fit. A full workMicros sweep does not
+    # fit: the single-threaded arm at 100 ms per record takes about 5.6 hours for one cell, so pass
+    # a workMicros subset for any ParallelProcessing run in CI.
+    timeout-minutes: 360
 
     steps:
       - uses: actions/checkout@v7
