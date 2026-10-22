@@ -233,6 +233,12 @@ record DefaultStream<T>(
   }
 
   @Override
+  public Stream<T> withCommitInterval(final Duration interval) {
+    Objects.requireNonNull(interval, "interval cannot be null");
+    return mutateConfig(c -> c.commitInterval = interval);
+  }
+
+  @Override
   public Stream<T> withMetricsReporters(final Collection<? extends KPipeMetricsReporter> reporters) {
     Objects.requireNonNull(reporters, "reporters cannot be null");
     final List<KPipeMetricsReporter> copy = List.copyOf(reporters);

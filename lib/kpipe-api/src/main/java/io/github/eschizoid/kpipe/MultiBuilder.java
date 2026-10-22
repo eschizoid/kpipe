@@ -203,6 +203,17 @@ public final class MultiBuilder {
     return this;
   }
 
+  /// Sets how often the underlying consumer commits the offset frontier. Consumer-wide (one offset
+  /// manager), mirror of `Stream.withCommitInterval(Duration)`; default 30 seconds.
+  ///
+  /// @param interval the time between periodic commits (must be non-null)
+  /// @return this builder
+  public MultiBuilder withCommitInterval(final Duration interval) {
+    Objects.requireNonNull(interval, "interval cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.commitInterval = interval);
+    return this;
+  }
+
   /// Reports consumer metrics periodically through `reporters`, for deployments without an
   /// OpenTelemetry backend. Consumer-wide: one reporting thread serves every route.
   ///

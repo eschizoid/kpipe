@@ -3,6 +3,9 @@ package io.github.eschizoid.kpipe.consumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -16,6 +19,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -32,33 +36,7 @@ class DefaultOffsetManagerTest {
   @EnumSource(ProcessingMode.class)
   void defaultConsumerCommitsEveryFinishedRecordOnClose(final ProcessingMode mode) throws InterruptedException {
     final var commits = new ConcurrentHashMap<TopicPartition, OffsetAndMetadata>();
-    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
-      @Override
-      public synchronized void commitSync(final Map<TopicPartition, OffsetAndMetadata> offsets) {
-        super.commitSync(offsets);
-        commits.putAll(offsets);
-      }
-
-      @Override
-      public synchronized void commitSync(
-        final Map<TopicPartition, OffsetAndMetadata> offsets,
-        final Duration timeout
-      ) {
-        super.commitSync(offsets, timeout);
-        commits.putAll(offsets);
-      }
-
-      @Override
-      public synchronized void subscribe(final Collection<String> topics) {}
-
-      @Override
-      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
-    };
-    mockConsumer.assign(List.of(PARTITION));
-    mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
-    for (int i = 0; i < RECORDS; i++) {
-      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), "v".getBytes(UTF_8)));
-    }
+    final var mockConsumer = recordingConsumer(commits);
 
     final var processed = new AtomicInteger();
     final var consumer = KPipeConsumer.builder()
@@ -97,6 +75,122 @@ class DefaultOffsetManagerTest {
 
     try (final var _ = builder.build()) {
       assertEquals("false", builder.kafkaProps.get("enable.auto.commit"));
+    }
+  }
+
+  /// A consumer pre-assigned [#PARTITION] with [#RECORDS] records that records every commit,
+  /// because a closed `MockConsumer` no longer answers `committed()`.
+  private static MockConsumer<byte[], byte[]> recordingConsumer(final Map<TopicPartition, OffsetAndMetadata> commits) {
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void commitSync(final Map<TopicPartition, OffsetAndMetadata> offsets) {
+        super.commitSync(offsets);
+        commits.putAll(offsets);
+      }
+
+      @Override
+      public synchronized void commitSync(
+        final Map<TopicPartition, OffsetAndMetadata> offsets,
+        final Duration timeout
+      ) {
+        super.commitSync(offsets, timeout);
+        commits.putAll(offsets);
+      }
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
+    };
+    mockConsumer.assign(List.of(PARTITION));
+    mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
+    for (int i = 0; i < RECORDS; i++) {
+      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), "v".getBytes(UTF_8)));
+    }
+    return mockConsumer;
+  }
+
+  /// The periodic commit runs at the configured interval while the consumer is still running, not
+  /// only at shutdown.
+  @Test
+  void periodicCommitRunsAtTheConfiguredInterval() throws InterruptedException {
+    final var commits = new ConcurrentHashMap<TopicPartition, OffsetAndMetadata>();
+    final var mockConsumer = recordingConsumer(commits);
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties("false"))
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withCommitInterval(Duration.ofMillis(100))
+      .withConsumer(() -> mockConsumer)
+      .build();
+
+    try {
+      consumer.start();
+      TestAwaits.pollUntil(
+        () -> commits.containsKey(PARTITION) && commits.get(PARTITION).offset() == RECORDS,
+        Duration.ofSeconds(5),
+        "a periodic commit reaches every finished record before shutdown"
+      );
+    } finally {
+      consumer.close();
+    }
+  }
+
+  @Test
+  void commitIntervalIsRejectedAlongsideACustomOffsetManager() {
+    final var builder = KPipeConsumer.builder()
+      .withProperties(properties("false"))
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withCommitInterval(Duration.ofSeconds(1))
+      .withOffsetManager(mock(OffsetManager.class))
+      .withConsumer(() -> new MockConsumer<byte[], byte[]>("earliest"));
+
+    final var ex = assertThrows(IllegalArgumentException.class, builder::build);
+    assertTrue(ex.getMessage().contains("withCommitInterval"), ex.getMessage());
+  }
+
+  @Test
+  void commitIntervalIsRejectedAlongsideACustomOffsetManagerProvider() {
+    final var builder = KPipeConsumer.builder()
+      .withProperties(properties("false"))
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withCommitInterval(Duration.ofSeconds(1))
+      .withOffsetManagerProvider(_ -> mock(OffsetManager.class))
+      .withConsumer(() -> new MockConsumer<byte[], byte[]>("earliest"));
+
+    final var ex = assertThrows(IllegalArgumentException.class, builder::build);
+    assertTrue(ex.getMessage().contains("withCommitInterval"), ex.getMessage());
+  }
+
+  /// Intervals the offset manager cannot schedule in whole milliseconds are rejected when set,
+  /// not when the consumer starts.
+  @Test
+  void commitIntervalOutsideTheSchedulableRangeIsRejectedWhenSet() {
+    assertThrows(IllegalArgumentException.class, () -> KPipeConsumer.builder().withCommitInterval(Duration.ZERO));
+    assertThrows(IllegalArgumentException.class, () ->
+      KPipeConsumer.builder().withCommitInterval(Duration.ofNanos(500_000))
+    );
+    assertThrows(IllegalArgumentException.class, () ->
+      KPipeConsumer.builder().withCommitInterval(Duration.ofSeconds(Long.MAX_VALUE))
+    );
+  }
+
+  /// The default offset manager `build()` installs must not count as a caller-supplied one, or a
+  /// second `build()` on the same builder would reject its own commit interval.
+  @Test
+  void buildingTwiceKeepsTheDefaultOffsetManager() {
+    final var builder = KPipeConsumer.builder()
+      .withProperties(properties("false"))
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withCommitInterval(Duration.ofSeconds(1))
+      .withConsumer(() -> new MockConsumer<byte[], byte[]>("earliest"));
+
+    try (final var _ = builder.build(); final var _ = builder.build()) {
+      assertNotNull(builder.offsetManagerProvider);
     }
   }
 

@@ -17,7 +17,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.jupiter.api.Test;
 
-/// Pins the five operational settings that moved from the explicit builder onto the fluent facade.
+/// Pins the operational settings that the fluent facade exposes alongside the explicit builder.
 ///
 /// These configure how a consumer behaves in a deployment rather than how records are processed,
 /// which is why they belong on the 80% path: reaching one used to mean abandoning `KPipe.json(...)`
@@ -67,6 +67,7 @@ class OperationalSettersTest {
       Duration.ofSeconds(9),
       configOf(stream().withWaitForMessagesTimeout(Duration.ofSeconds(9))).waitForMessagesTimeout()
     );
+    assertEquals(Duration.ofSeconds(5), configOf(stream().withCommitInterval(Duration.ofSeconds(5))).commitInterval());
   }
 
   @Test
@@ -80,6 +81,7 @@ class OperationalSettersTest {
     assertNull(c.shutdownHook());
     assertNull(c.threadTerminationTimeout());
     assertNull(c.waitForMessagesTimeout());
+    assertNull(c.commitInterval());
   }
 
   @Test
@@ -107,6 +109,7 @@ class OperationalSettersTest {
     assertThrows(NullPointerException.class, () -> stream().withMetricsInterval(null));
     assertThrows(NullPointerException.class, () -> stream().withThreadTerminationTimeout(null));
     assertThrows(NullPointerException.class, () -> stream().withWaitForMessagesTimeout(null));
+    assertThrows(NullPointerException.class, () -> stream().withCommitInterval(null));
   }
 
   @Test
@@ -137,6 +140,14 @@ class OperationalSettersTest {
         .start()
     );
     assertTrue(waitForMessages.getMessage().contains("negative"), waitForMessages.getMessage());
+
+    final var commitInterval = assertThrows(IllegalArgumentException.class, () ->
+      KPipe.bytes("t", props())
+        .withCommitInterval(Duration.ZERO)
+        .toCustom(_ -> {})
+        .start()
+    );
+    assertTrue(commitInterval.getMessage().contains("1ms"), commitInterval.getMessage());
   }
 
   @Test
@@ -168,7 +179,8 @@ class OperationalSettersTest {
       new Case("withMetricsInterval", s -> s.withMetricsInterval(Duration.ofSeconds(1))),
       new Case("withShutdownHook", s -> s.withShutdownHook(true)),
       new Case("withThreadTerminationTimeout", s -> s.withThreadTerminationTimeout(Duration.ofSeconds(1))),
-      new Case("withWaitForMessagesTimeout", s -> s.withWaitForMessagesTimeout(Duration.ofSeconds(1)))
+      new Case("withWaitForMessagesTimeout", s -> s.withWaitForMessagesTimeout(Duration.ofSeconds(1))),
+      new Case("withCommitInterval", s -> s.withCommitInterval(Duration.ofSeconds(1)))
     );
     for (final var c : cases) {
       final var multi = KPipe.multi(props()).bytes("topic-a", s ->
@@ -198,6 +210,7 @@ class OperationalSettersTest {
       .withShutdownHook(true)
       .withThreadTerminationTimeout(Duration.ofSeconds(7))
       .withWaitForMessagesTimeout(Duration.ofSeconds(9))
+      .withCommitInterval(Duration.ofSeconds(5))
       .bytes("topic-a", s -> s.toCustom(_ -> {}));
   }
 }

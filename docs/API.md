@@ -61,6 +61,7 @@ swallowed.
 | `withErrorHandler(Consumer<KPipeConsumer.ProcessingError>)`        | Invoked once per record after retries are exhausted. `ProcessingError` carries the raw `ConsumerRecord<byte[], byte[]>`, the exception, and the retry count.                                                                                                                                             |
 | `withMetrics(ConsumerMetrics)`                                     | Default is `ConsumerMetrics.noop()`.                                                                                                                                                                                                                                                                     |
 | `withPollTimeout(Duration)`                                        | Kafka poll timeout, default 100ms.                                                                                                                                                                                                                                                                       |
+| `withCommitInterval(Duration)`                                     | How often the offset frontier is committed, default 30 seconds. Offsets are also committed on rebalance and at shutdown; a shorter interval narrows what a crash reprocesses.                                                                                                                            |
 | `withMetricsReporters(Collection<? extends KPipeMetricsReporter>)` | Periodic log-based reporting for deployments without an OTel backend; independent of `withMetrics`. The collection is copied, and the reporter thread is a daemon.                                                                                                                                       |
 | `withMetricsInterval(Duration)`                                    | How often the reporters run. Only meaningful alongside `withMetricsReporters`; with no reporters the thread is never started.                                                                                                                                                                            |
 | `withShutdownHook(boolean)`                                        | Registers a JVM shutdown hook to close the consumer. Try-with-resources on `Handle` already covers the normal exit; the hook covers SIGTERM.                                                                                                                                                             |
@@ -116,9 +117,9 @@ KPipe.multi(kafkaProps)
 - Consumer-wide settings (`withRetry`, `withBackpressure`, `withProcessingMode`, `withKeyOrderedMaxKeys`, `withMetrics`,
   `withTracer`, `withCircuitBreaker(CircuitBreakerController)`, `withDeadLetterTopic`, `withErrorHandler`,
   `withPollTimeout`, `withMetricsReporters`, `withMetricsInterval`, `withShutdownHook`, `withThreadTerminationTimeout`,
-  `withWaitForMessagesTimeout`) live on the builder. Setting one inside a route configurator throws
-  `IllegalArgumentException` pointing you at the builder-level mirror — per-route values would silently fight over one
-  consumer otherwise.
+  `withWaitForMessagesTimeout`, `withCommitInterval`) live on the builder. Setting one inside a route configurator
+  throws `IllegalArgumentException` pointing you at the builder-level mirror — per-route values would silently fight
+  over one consumer otherwise.
 - The circuit breaker observes outcomes across **all** routes; one trip pauses the whole consumer.
 - Records for topics with no registered route are dropped at WARNING and their offsets are committed (a config error
   must not wedge the consumer into infinite refetch).

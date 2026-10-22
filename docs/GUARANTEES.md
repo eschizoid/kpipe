@@ -26,9 +26,9 @@ Terminology used below:
 1. On poll, each record's offset is **tracked** before it is dispatched to a worker.
 2. The worker runs deserialize → operators → sink as one unit. Only when that unit completes (or the record is filtered,
    or a DLQ send succeeds) is the offset **marked** processed.
-3. A scheduler enqueues a commit every 30 seconds (default). The commit computes the frontier per partition — the lowest
-   still-pending offset, or highest-processed + 1 when nothing is pending — and executes `commitSync` on the consumer
-   thread. Rebalance revocation and shutdown also commit synchronously.
+3. A scheduler enqueues a commit every 30 seconds by default (`withCommitInterval`). The commit computes the frontier
+   per partition — the lowest still-pending offset, or highest-processed + 1 when nothing is pending — and executes
+   `commitSync` on the consumer thread. Rebalance revocation and shutdown also commit synchronously.
 4. A failed commit is logged at WARNING and the ledger is untouched; the next interval (or the shutdown path) retries.
    Nothing is marked lost on a commit failure — the worst case is a wider reprocessing window.
 
@@ -49,7 +49,7 @@ order**, not side-effect order (see [Ordering](#ordering)).
 | No DLQ configured, retries exhausted                                | The error handler is the terminal step; the offset is then marked processed (log-and-advance is the explicit opt-in of not configuring a DLQ).                                                                                  | No                                          |
 | Error handler itself throws                                         | Caught, logged; it cannot crash the worker, leak in-flight counts, or skip offset marking.                                                                                                                                      | Per the underlying outcome                  |
 | Record filtered (`filter` false / operator returns null)            | Counts as success: offset marked, sink skipped, `onFiltered` fires.                                                                                                                                                             | No                                          |
-| Sink succeeded, crash before commit                                 | The offset was marked but not yet committed — the record is **reprocessed** after restart. This is the at-least-once window; size it with the 30s commit interval in mind.                                                      | Yes                                         |
+| Sink succeeded, crash before commit                                 | The offset was marked but not yet committed — the record is **reprocessed** after restart. This is the at-least-once window; its size is the commit interval, 30s by default (`withCommitInterval`).                            | Yes                                         |
 | Rebalance revokes partitions                                        | Revocation commits the current frontier synchronously; in-flight records for revoked partitions may still complete, and any not-yet-committed work is redelivered to the new assignee.                                          | Possibly (standard at-least-once)           |
 | Graceful shutdown                                                   | In-flight records get a bounded drain (default 5s via `Handle.close()`); buffered batch sinks flush; a final synchronous commit runs before the consumer closes. Records that do not finish within the budget stay uncommitted. | Only those that missed the drain            |
 | Shutdown timeout exceeded                                           | Remaining workers are interrupted; their offsets stay uncommitted.                                                                                                                                                              | Yes                                         |
