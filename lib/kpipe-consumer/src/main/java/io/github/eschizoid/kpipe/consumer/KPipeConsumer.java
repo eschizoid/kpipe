@@ -857,7 +857,7 @@ public class KPipeConsumer implements AutoCloseable {
 
   /// The single-read compare-and-set that backs [#transitionToClosing], lifted to a static method
   /// over the supplied reference so the exact discipline (read once into a local, verify the state
-  /// is active, then CAS to CLOSING) can be exercised under jcstress without constructing a full
+  /// is active, then CAS to CLOSING) can be exercised under Fray without constructing a full
   /// consumer. Two threads racing this must yield exactly one winner; the loser sees CLOSING and
   /// returns false. Package-private for that test only.
   ///
