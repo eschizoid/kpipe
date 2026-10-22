@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -188,13 +189,15 @@ class KafkaOffsetManagerTest {
     /// partition another member owns, past offset 100, which never finished.
     @Test
     void recordsFinishingAfterRevokeDoNotRecreateThePartition() {
+      final var records = new ArrayList<ConsumerRecord<byte[], byte[]>>();
       for (long offset = 100L; offset <= 102L; offset++) {
-        offsetManager.trackOffset(new ConsumerRecord<>(TOPIC, 0, offset, "key".getBytes(UTF_8), "value".getBytes()));
+        records.add(new ConsumerRecord<>(TOPIC, 0, offset, "key".getBytes(UTF_8), "value".getBytes()));
       }
+      records.forEach(offsetManager::trackOffset);
       offsetManager.createRebalanceListener().onPartitionsRevoked(List.of(PARTITION));
 
-      offsetManager.markOffsetProcessed(new ConsumerRecord<>(TOPIC, 0, 101L, "key".getBytes(UTF_8), "value".getBytes()));
-      offsetManager.markOffsetProcessed(new ConsumerRecord<>(TOPIC, 0, 102L, "key".getBytes(UTF_8), "value".getBytes()));
+      offsetManager.markOffsetProcessed(records.get(1));
+      offsetManager.markOffsetProcessed(records.get(2));
 
       assertEquals(
         -1L,
