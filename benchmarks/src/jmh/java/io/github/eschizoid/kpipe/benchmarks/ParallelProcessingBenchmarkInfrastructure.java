@@ -66,7 +66,7 @@ import reactor.kafka.receiver.ReceiverOptions;
 ///   * Kafka Share Consumer (KIP-932) — single consumer + virtual-thread fan-out
 ///   * Confluent Parallel Consumer (`ProcessingOrder.UNORDERED`, configurable max concurrency)
 ///   * Atleon (Alo processing in partition, parallel, and key-ordered modes)
-///   * Reactor Kafka (`Flux<ReceiverRecord>` on the Reactor `parallel` scheduler)
+///   * Reactor Kafka (`Flux<ReceiverRecord>` rails on a virtual-thread scheduler)
 ///   * Raw `KafkaConsumer` + `newVirtualThreadPerTaskExecutor` (the hand-rolled baseline)
 ///
 /// Each runtime simulates a per-record workload of `workMicros` microseconds via
@@ -511,20 +511,24 @@ public final class ParallelProcessingBenchmarkInfrastructure {
     }
   }
 
-  /// Reactor Kafka runtime. `KafkaReceiver.receive()` produces a `Flux<ReceiverRecord>`; per-record
-  /// work runs on Reactor's `parallel` scheduler via `flatMap`. Concurrency is bounded by the
-  /// flatMap's `Queues.SMALL_BUFFER_SIZE` plus the scheduler's worker count.
+  /// Reactor Kafka runtime. `KafkaReceiver.receive()` produces a `Flux<ReceiverRecord>` split into
+  /// [#CONFLUENT_MAX_CONCURRENCY] rails, the same bound as Confluent Parallel Consumer, and the rails
+  /// run on a virtual-thread scheduler like the Atleon arms. The per-record work blocks, so it must
+  /// not run on Reactor's `parallel` scheduler: that scheduler has one thread per CPU, which would
+  /// cap concurrency at the CPU count however many rails there are.
   @State(Scope.Thread)
   public static class ReactorInvocationContext {
 
     private AtomicInteger processedCount;
     private Disposable subscription;
+    private Scheduler scheduler;
     private int workMicros;
 
     @Setup(Level.Invocation)
     public void setup(final KafkaContext kafkaContext, final WorkloadParams params) {
       processedCount = new AtomicInteger(0);
       workMicros = params.workMicros;
+      scheduler = Schedulers.fromExecutorService(Executors.newVirtualThreadPerTaskExecutor());
       final var props = kafkaContext.consumerProps("reactor-group");
       final var receiverOptions = ReceiverOptions.<byte[], byte[]>create(props).subscription(
         Collections.singletonList(TOPIC)
@@ -539,7 +543,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       subscription = receiver
         .receive()
         .parallel(CONFLUENT_MAX_CONCURRENCY)
-        .runOn(Schedulers.parallel())
+        .runOn(scheduler)
         .doOnNext(record -> {
           simulateWork(workMicros);
           processedCount.incrementAndGet();
@@ -551,7 +555,11 @@ public final class ParallelProcessingBenchmarkInfrastructure {
 
     @TearDown(Level.Invocation)
     public void tearDown() {
-      if (subscription != null && !subscription.isDisposed()) subscription.dispose();
+      try {
+        if (subscription != null && !subscription.isDisposed()) subscription.dispose();
+      } finally {
+        if (scheduler != null) scheduler.dispose();
+      }
     }
 
     AtomicInteger processedCount() {
