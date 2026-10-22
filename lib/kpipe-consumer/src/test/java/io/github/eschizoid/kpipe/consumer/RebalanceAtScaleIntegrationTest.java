@@ -77,9 +77,7 @@ class RebalanceAtScaleIntegrationTest {
   // within delivery.timeout.ms and failed at the produce step during setup. A fresh broker per
   // method keeps each test isolated. Do not make this static.
   @Container
-  final KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
-  );
+  final KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)));
 
   /// Cooperative-sticky (incremental) rebalance: a second member joins mid-stream and Kafka
   /// revokes only a *subset* of the incumbent's partitions instead of a stop-the-world

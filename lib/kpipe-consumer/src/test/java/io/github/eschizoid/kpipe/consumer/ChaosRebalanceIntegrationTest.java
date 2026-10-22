@@ -64,9 +64,7 @@ class ChaosRebalanceIntegrationTest {
   private static final int RECORD_COUNT = 400;
 
   @Container
-  static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
-  );
+  static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)));
 
   @Test
   void atLeastOnceSurvivesRebalanceMidStream() throws Exception {

@@ -70,7 +70,7 @@ class KPipeRealBrokerBackpressureIntegrationTest {
 
   @Container
   static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
+    DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION))
   ).withStartupAttempts(3);
 
   @Test

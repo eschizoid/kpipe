@@ -53,23 +53,21 @@ class AppIntegrationTest {
   private static final Network NETWORK = Network.newNetwork();
 
   @Container
-  static KafkaContainer kafka = new KafkaContainer(
-    DockerImageName.parse("soldevelo/kafka:%s".formatted(KAFKA_VERSION)).asCompatibleSubstituteFor("apache/kafka")
-  )
+  static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)))
     .withNetwork(NETWORK)
     .withListener("kafka:19092")
     .withStartupAttempts(3);
 
   @Container
   static GenericContainer<?> schemaRegistry = new GenericContainer<>(
-    DockerImageName.parse("soldevelo/schema-registry:%s".formatted(CONFLUENT_VERSION))
+    DockerImageName.parse("confluentinc/cp-schema-registry:%s".formatted(CONFLUENT_VERSION))
   )
     .withNetwork(NETWORK)
     .withNetworkAliases("schema-registry")
     .withExposedPorts(8081)
-    .withEnv("SCHEMA_REGISTRY_ADVERTISED_HOSTNAME", "schema-registry")
+    .withEnv("SCHEMA_REGISTRY_HOST_NAME", "schema-registry")
     .withEnv("SCHEMA_REGISTRY_LISTENERS", "http://0.0.0.0:8081")
-    .withEnv("SCHEMA_REGISTRY_KAFKA_BROKERS", "PLAINTEXT://kafka:19092")
+    .withEnv("SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS", "PLAINTEXT://kafka:19092")
     .withEnv("SCHEMA_REGISTRY_KAFKASTORE_TOPIC", "_schemas")
     .dependsOn(kafka)
     .waitingFor(Wait.forHttp("/subjects").forStatusCode(200))
