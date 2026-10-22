@@ -70,7 +70,9 @@ public final class KPipeConsumerBuilder {
   Duration metricsReporterInterval = Duration.ofMinutes(1);
   boolean useShutdownHook = false;
 
-  /// Sets the properties for the Kafka consumer.
+  /// Sets the properties for the Kafka consumer. `build()` always sets `enable.auto.commit` to
+  /// `false`, because offsets are committed by the consumer's [OffsetManager], and always pins the
+  /// key deserializer to `ByteArrayDeserializer`.
   ///
   /// @param props The Kafka consumer properties
   /// @return This builder instance for method chaining
@@ -288,8 +290,8 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Sets a function to create a custom OffsetManager once the consumer is available. This
-  /// automatically disables auto-commit.
+  /// Sets a function to create a custom OffsetManager once the consumer is available, in place of
+  /// the default [KafkaOffsetManager].
   ///
   /// @param provider A function that creates an OffsetManager given the consumer instance
   /// @return This builder instance for method chaining
@@ -305,8 +307,7 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Enables offset management with a custom offset manager implementation. This
-  /// automatically disables auto-commit.
+  /// Replaces the default [KafkaOffsetManager] with a custom offset manager implementation.
   ///
   /// @param manager The custom offset manager to use
   /// @return This builder instance for method chaining
@@ -588,7 +589,12 @@ public final class KPipeConsumerBuilder {
     if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
       "Poll timeout must be positive, got " + pollTimeout
     );
-    if (offsetManager != null || offsetManagerProvider != null) kafkaProps.setProperty("enable.auto.commit", "false");
+    // Without an offset manager nothing commits the frontier: with enable.auto.commit=false no
+    // offset is ever committed, and Kafka's auto-commit commits polled offsets before their records
+    // finish. Every consumer gets a KafkaOffsetManager unless the caller supplies its own.
+    if (offsetManager == null && offsetManagerProvider == null) offsetManagerProvider = consumer ->
+      KafkaOffsetManager.builder(consumer).withCommitExecutor(getCommitExecutor()).build();
+    disableAutoCommit(kafkaProps);
     forceByteArrayKeyDeserializer(kafkaProps);
     if (backpressureController != null && processingMode == ProcessingMode.SEQUENTIAL) {
       LOGGER.log(
@@ -613,6 +619,18 @@ public final class KPipeConsumerBuilder {
   /// user-supplied deserializer could disagree, producing a `ClassCastException` deep inside
   /// record processing; pinning the deserializer here removes that failure mode entirely. A
   /// conflicting user-supplied value is logged at INFO before being overridden.
+  private static void disableAutoCommit(final Properties props) {
+    final var existing = props.get("enable.auto.commit");
+    if (existing != null && !"false".equalsIgnoreCase(existing.toString().trim())) {
+      LOGGER.log(
+        Level.INFO,
+        "Ignoring enable.auto.commit={0} from the supplied properties — KPipe commits offsets through its OffsetManager",
+        existing
+      );
+    }
+    props.put("enable.auto.commit", "false");
+  }
+
   private static void forceByteArrayKeyDeserializer(final Properties props) {
     final var pinned = ByteArrayDeserializer.class.getName();
     final var existing = props.get("key.deserializer");

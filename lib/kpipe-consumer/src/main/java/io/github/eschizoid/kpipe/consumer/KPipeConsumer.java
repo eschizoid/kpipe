@@ -42,8 +42,9 @@ import org.apache.kafka.common.errors.WakeupException;
 /// * Prevents data loss during parallel processing
 /// * Handles non-sequential offset completion safely
 ///
-/// When using an KafkaOffsetManager, auto-commit is automatically disabled since offset commits are
-/// managed explicitly.
+/// Offset commits belong to an [OffsetManager]: a [KafkaOffsetManager] by default, or the one
+/// supplied to the builder. Kafka's auto-commit is always disabled, because it would commit polled
+/// offsets before their records finish.
 ///
 /// Example usage:
 ///

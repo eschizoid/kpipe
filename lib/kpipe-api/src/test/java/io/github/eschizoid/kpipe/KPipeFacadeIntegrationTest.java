@@ -18,10 +18,15 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
@@ -98,6 +103,55 @@ class KPipeFacadeIntegrationTest {
     } finally {
       // Idempotent close on failure paths — runner.shutdownGracefully is safe to call twice.
       handle.shutdownGracefully(Duration.ofSeconds(2));
+    }
+  }
+
+  /// The README's quickstart properties set `enable.auto.commit=false`. The default stream must
+  /// still commit through the offset manager, so after a graceful shutdown every partition's
+  /// committed offset reaches its end offset.
+  @Test
+  void endToEndCommitsProcessedOffsetsWithAutoCommitDisabled() throws Exception {
+    final var topic = "kpipe-facade-commit-test-" + UUID.randomUUID();
+    final var groupId = "kpipe-facade-commit-group-" + UUID.randomUUID();
+    final var captured = new CopyOnWriteArrayList<Map<String, Object>>();
+    final MessageSink<Map<String, Object>> captureSink = captured::add;
+
+    final var handle = KPipe.json(topic, consumerProps(groupId)).toCustom(captureSink).start();
+    try {
+      produceUntilConsumed(topic, 20, captured, Duration.ofSeconds(20));
+      assertTrue(handle.shutdownGracefully(Duration.ofSeconds(10)), "shutdownGracefully should complete");
+    } finally {
+      handle.shutdownGracefully(Duration.ofSeconds(2));
+    }
+
+    final var adminProps = new Properties();
+    adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+    try (final var admin = Admin.create(adminProps)) {
+      final var committed = admin.listConsumerGroupOffsets(groupId).partitionsToOffsetAndMetadata().get();
+      final var partitions = admin
+        .describeTopics(List.of(topic))
+        .allTopicNames()
+        .get()
+        .get(topic)
+        .partitions()
+        .stream()
+        .map(p -> new TopicPartition(topic, p.partition()))
+        .collect(Collectors.toMap(tp -> tp, _ -> OffsetSpec.latest()));
+      final var endOffsets = admin.listOffsets(partitions).all().get();
+      assertEquals(
+        20L,
+        endOffsets
+          .values()
+          .stream()
+          .mapToLong(o -> o.offset())
+          .sum(),
+        "the topic must hold exactly the 20 produced records"
+      );
+      for (final var entry : endOffsets.entrySet()) {
+        final var partitionCommit = committed.get(entry.getKey());
+        assertNotNull(partitionCommit, "No offset committed for " + entry.getKey());
+        assertEquals(entry.getValue().offset(), partitionCommit.offset(), "Committed offset for " + entry.getKey());
+      }
     }
   }
 
