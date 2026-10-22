@@ -26,20 +26,23 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 ///     });
 ///
 /// // Using transformers
-/// final var noAutoCommitConsumer = KafkaConsumerConfig.createConsumerConfig(
+/// final var tunedConsumer = KafkaConsumerConfig.createConsumerConfig(
 ///     "localhost:9092",
 ///     "my-consumer-group",
-///     KafkaConsumerConfig.withAutoCommitDisabled());
+///     KafkaConsumerConfig.withProperty("max.poll.records", "100"));
 ///
 /// // Using builder pattern
 /// final var builderProps = KafkaConsumerConfig.consumerBuilder()
 ///     .withBootstrapServers("localhost:9092")
 ///     .withGroupId("my-consumer-group")
 ///     .withByteArrayDeserializers()
-///     .withAutoCommit(false)
 ///     .withProperty("max.poll.records", "100")
 ///     .build();
 /// ```
+///
+/// Both entry points default `enable.auto.commit` to `false`, which is what a KPipe consumer runs
+/// with: it commits offsets through its OffsetManager. Properties handed to a plain Kafka consumer
+/// that should auto-commit need `withProperty("enable.auto.commit", "true")`.
 public final class KafkaConsumerConfig {
 
   // The Kafka property keys this class writes, named once. The deserializer default is derived
@@ -72,8 +75,10 @@ public final class KafkaConsumerConfig {
   /// final var props = KafkaConsumerConfig.createConsumerConfig(
   ///     "localhost:9092",
   ///     "my-consumer-group",
-  ///     KafkaConsumerConfig.withAutoCommitDisabled());
+  ///     KafkaConsumerConfig.withProperty("max.poll.records", "100"));
   /// ```
+  ///
+  /// The properties carry byte-array deserializers and `enable.auto.commit=false`.
   ///
   /// @param bootstrapServers Comma-separated list of host:port pairs for establishing the initial
   ///     connection to the Kafka cluster
@@ -146,16 +151,12 @@ public final class KafkaConsumerConfig {
     };
   }
 
-  /// Creates a transformer that disables auto-commit for a consumer.
+  /// Creates a transformer that disables auto-commit, for properties that had it enabled.
   ///
   /// Example usage:
   ///
   /// ```java
-  /// // Use directly with createConsumerConfig
-  /// final var props = KafkaConsumerConfig.createConsumerConfig(
-  ///     "localhost:9092",
-  ///     "my-consumer-group",
-  ///     KafkaConsumerConfig.withAutoCommitDisabled());
+  /// final var props = KafkaConsumerConfig.withAutoCommitDisabled().apply(existingProps);
   /// ```
   ///
   /// @return A function that disables auto-commit in the properties
@@ -236,7 +237,9 @@ public final class KafkaConsumerConfig {
 
   public static class ConsumerConfigBuilder {
 
-    private ConsumerConfigBuilder() {}
+    private ConsumerConfigBuilder() {
+      props.put(ENABLE_AUTO_COMMIT, "false");
+    }
 
     private final Properties props = new Properties();
 

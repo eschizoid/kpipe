@@ -57,11 +57,12 @@ class KafkaConsumerConfigTest {
   @Test
   void shouldDisableAutoCommit() {
     // Act
-    final var props = KafkaConsumerConfig.createConsumerConfig(
-      BOOTSTRAP_SERVERS,
-      GROUP_ID,
-      KafkaConsumerConfig.withAutoCommitDisabled()
-    );
+    final var enabled = KafkaConsumerConfig.consumerBuilder()
+      .withBootstrapServers(BOOTSTRAP_SERVERS)
+      .withGroupId(GROUP_ID)
+      .withAutoCommit(true)
+      .build();
+    final var props = KafkaConsumerConfig.withAutoCommitDisabled().apply(enabled);
 
     // Assert
     assertEquals("false", props.get("enable.auto.commit"));
