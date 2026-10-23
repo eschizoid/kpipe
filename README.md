@@ -155,22 +155,23 @@ producing to another topic: [docs/API.md](docs/API.md) and [docs/SINKS.md](docs/
 
 ## Performance
 
-Benchmarked against Confluent Parallel Consumer, Reactor Kafka, the KIP-932 share consumer, a raw `KafkaConsumer` +
-virtual-threads loop, and a single-threaded baseline — same broker, same workload, JMH with published raw JSON. The
-reference numbers come from CI captures on a GitHub runner, described below. The CI captures do not yet compare KPipe
-with Confluent Parallel Consumer at 10 to 100ms of work per record, but earlier local captures do. In the 2026-07
-capture on one 6-core machine, with that much work, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel
-Consumer's throughput at 10ms and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by
-`workers ÷ work-time`.
+Benchmarked against Atleon, Confluent Parallel Consumer, Reactor Kafka, the KIP-932 share consumer, and a raw
+`KafkaConsumer` + virtual-threads loop — same broker, same workload, JMH with published raw JSON. The reference numbers
+come from CI captures on a GitHub runner, described below. The CI captures do not yet compare KPipe with Confluent
+Parallel Consumer at 10 to 100ms of work per record, but earlier local captures do. In the 2026-07 capture on one 6-core
+machine, with that much work, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel Consumer's throughput at 10ms
+and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by `workers ÷ work-time`.
 
 The [2026-10-22 capture](benchmarks/results/2026-10-22/2026-10-22-ci-parallel.md) is the reference. It runs all nine
 arms in one job on a 4-vCPU GitHub runner at 0, 100 and 1000µs of work per record, with five forks and JMH 1.37
-allocation accounting, and every framework arm tracks its offsets: KPipe commits through its `KafkaOffsetManager`, and
-Atleon acknowledges every record in `COMPACT_EAGER` mode. KPipe `PARALLEL` and Atleon parallel are within each other's
-error bands at every delay (1.09×, 0.95× and 1.04×). In key-ordered mode Atleon leads at 0µs, where KPipe runs at 0.85×
-with the error bands apart, and the two are within the error bands at 100 and 1000µs. KPipe ran at 5.4× to 7.8×
-Confluent Parallel Consumer's unordered throughput and at 5.1× to 6.2× its per-key throughput. Reactor Kafka ran at
-1.21× KPipe at 0µs and at 0.67× and 0.16× at 100 and 1000µs, because its 100 rails cap the records in flight at 100. The
+allocation accounting, and KPipe tracks every record for its offset manager, as Atleon does for its acknowledgements in
+`COMPACT_EAGER` mode. KPipe `PARALLEL` and Atleon parallel are within each other's error bands at every delay (1.09×,
+0.95× and 1.04×). In key-ordered mode Atleon leads at 0µs, where KPipe runs at 0.85× with the error bands apart, and the
+two are within the error bands at 100 and 1000µs. KPipe ran at 5.4× to 7.8× Confluent Parallel Consumer's unordered
+throughput and at 5.1× to 6.2× its per-key throughput. Reactor Kafka ran at 1.21× KPipe at 0µs and at 0.67× and 0.16× at
+100 and 1000µs, because its 100 rails process at most 100 records at a time. Reactor also commits the latest
+acknowledged offset per partition rather than a lowest-pending frontier, which is cheaper and does not hold
+at-least-once when records finish out of order. The
 [2026-10-21](benchmarks/results/2026-10-21/2026-10-21-ci-parallel.md),
 [2026-10-15](benchmarks/results/2026-10-15/2026-10-15-ci-parallel.md) and
 [2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) captures ran KPipe without offset tracking
@@ -179,16 +180,18 @@ batch latency runs also predate offset tracking. In them, KPipe drained a 25,000
 average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode the averages were level at 0 and 100µs,
 KPipe's p99 was about half of Atleon's there, and Atleon was faster on average at 1000µs.
 
-The costs: KPipe `PARALLEL` ran at 0.71× to 0.79× the raw loop. Against the 2026-10-21 capture, its throughput fell 12%
-to 22% while the raw loop and Atleon fell 4% to 8%, so tracking each record and committing the frontier costs KPipe
-roughly 10% to 15% of its throughput at 0 and 100µs. It allocates about 1,128 B/op at 0µs and 1,770 to 1,820 at 100 and
-1000µs, 13% to 28% more than the raw loop, and still less than Atleon's arm with the same ordering and less than CPC at
-every delay. Captures that used JMH 1.36 under-count allocation for any arm whose consumer runs on threads that exit
-during the measurement, so their allocation comparisons, including the 2026-07 ones, overstate KPipe's cost relative to
-the others. In the 2026-07 captures, the `KEY_ORDERED` mode's advantage over CPC's equivalent at sub-millisecond
-workloads was machine-dependent (it lost on one of our two test machines), and the virtual-thread-per-record advantage
-shrinks as per-record work approaches zero or becomes CPU-bound, because there is nothing to overlap. The raw loop has
-no in-flight limit, no backpressure and no offset tracking, so the gap to it measures all three.
+The costs: KPipe `PARALLEL` ran at 0.71× to 0.79× the raw loop. Against the 2026-10-21 capture, its throughput fell 22%
+at 0µs while the raw loop and Atleon fell 4% to 6%, so tracking each record costs KPipe `PARALLEL` roughly 15% to 20% at
+0µs; at 100 and 1000µs the change between the two runs is within their error bands. No commit falls inside the measured
+window, which is shorter than the 30-second commit interval, so this is the cost of tracking, not of committing. It
+allocates about 1,128 B/op at 0µs and 1,770 to 1,820 at 100 and 1000µs, 13% to 28% more than the raw loop, and still
+less than Atleon's arm with the same ordering and less than CPC at every delay. Captures that used JMH 1.36 under-count
+allocation for any arm whose consumer runs on threads that exit during the measurement, so their allocation comparisons,
+including the 2026-07 ones, overstate KPipe's cost relative to the others. In the 2026-07 captures, the `KEY_ORDERED`
+mode's advantage over CPC's equivalent at sub-millisecond workloads was machine-dependent (it lost on one of our two
+test machines), and the virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes
+CPU-bound, because there is nothing to overlap. The raw loop has no in-flight limit, no backpressure and no offset
+tracking, so the gap to it measures all three.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks).

@@ -47,10 +47,10 @@ The last one is KPipe alone, parameterised across batch size and sink latency.
 > returns zero results on Maven Central. The benchmarks therefore still depend on the deprecated
 > `io.confluent.parallelconsumer:parallel-consumer-core:0.5.3.3`. Swap when Stubbs publishes a release.
 
-Two axes worth attention. **Threading model**: Loom-based (KPipe `PARALLEL`/`KEY_ORDERED`, Atleon, share, raw) vs
-platform-threaded (single-threaded, Confluent's three modes, Reactor) — Loom absorbs blocking work; platform pools
-don't. **Ordering coordination**: light (UNORDERED, KEY across many keys) vs heavy (CPC PARTITION's per-partition
-locks); the gap between CPC KEY and CPC PARTITION makes this visible even though both have the same 100-worker pool. At
+Two axes worth attention. **Threading model**: Loom-based (KPipe `PARALLEL`/`KEY_ORDERED`, Atleon, Reactor, share, raw)
+vs platform-threaded (single-threaded, Confluent's three modes) — Loom absorbs blocking work; platform pools don't.
+**Ordering coordination**: light (UNORDERED, KEY across many keys) vs heavy (CPC PARTITION's per-partition locks); the
+gap between CPC KEY and CPC PARTITION makes this visible even though both have the same 100-worker pool. At
 `workMicros=0` the suite measures framework overhead; at `workMicros=1000` it measures blocking-work scheduling. Those
 two questions often have different winners.
 
@@ -64,15 +64,15 @@ receiver settings; consult each capture's configuration notes when interpreting 
 
 ### Which arms track and commit offsets
 
-| Arm                                   | Offset tracking                                                                                                                                     |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| KPipe `PARALLEL` and `KEY_ORDERED`    | Track every record and commit the lowest-pending frontier through the default `KafkaOffsetManager`: every 30 seconds, on rebalance, and at shutdown |
-| Atleon                                | Acknowledge every record (`receiveManual` with Alo acknowledgement); the receiver commits acknowledged offsets                                      |
-| Reactor Kafka                         | Acknowledges every record through `ReceiverOffset.acknowledge()`; the receiver commits periodically                                                 |
-| Confluent Parallel Consumer           | Tracks its own offsets and commits them with its default commit mode                                                                                |
-| Kafka Share Consumer                  | Acknowledges each batch implicitly on the next `poll()`                                                                                             |
-| Single-threaded `KafkaConsumer`       | `commitSync()` after each batch                                                                                                                     |
-| Raw `KafkaConsumer` + virtual threads | Never commits                                                                                                                                       |
+| Arm                                   | Offset tracking                                                                                                                                                                                                            |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| KPipe `PARALLEL` and `KEY_ORDERED`    | Track every record and commit the lowest-pending frontier through the default `KafkaOffsetManager`: every 30 seconds, on rebalance, and at shutdown                                                                        |
+| Atleon                                | Acknowledges every record (`receiveManual` with Alo acknowledgement); the receiver commits acknowledged offsets in offset order every 5 seconds                                                                            |
+| Reactor Kafka                         | Acknowledges every record through `ReceiverOffset.acknowledge()`; with `maxDeferredCommits` at 0 the receiver commits the latest acknowledged offset per partition every 5 seconds, which is not a lowest-pending frontier |
+| Confluent Parallel Consumer           | Tracks its own offsets and commits them with its default `PERIODIC_CONSUMER_ASYNCHRONOUS` mode every 5 seconds                                                                                                             |
+| Kafka Share Consumer                  | Acknowledges each batch implicitly on the next `poll()`                                                                                                                                                                    |
+| Single-threaded `KafkaConsumer`       | `commitSync()` after each batch                                                                                                                                                                                            |
+| Raw `KafkaConsumer` + virtual threads | Never commits                                                                                                                                                                                                              |
 
 Captures before 2026-10-22 ran KPipe without offset tracking: until #366, a KPipe consumer built without an explicit
 `OffsetManager` neither tracked nor committed offsets, so those captures leave out a cost every other framework arm

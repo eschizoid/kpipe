@@ -93,17 +93,23 @@ Records per second, higher is better, with the JMH 99.9% error.
 
 Against the 2026-10-21 capture, KPipe `PARALLEL`'s throughput fell 22%, 22% and 12% at the three delays, and KPipe
 `KEY_ORDERED`'s fell 18%, 17% and 3%. The raw loop and Atleon parallel, which did not change between the two runs, fell
-4 to 8%, which is the run-to-run variation on this runner. The rest, roughly 10 to 15% of KPipe's throughput at 0 and
-100 µs, is the cost of tracking each record and committing the frontier. With commits on, KPipe and Atleon, which
-acknowledges every record, are within each other's error bands at every delay in unordered mode. In key-ordered mode
-Atleon leads at 0 µs and the two are within the error bands at 100 and 1000 µs.
+4 to 6% at 0 and 100 µs, but Confluent `KEY`, which did not change either, fell 11% at 100 µs, so run-to-run variation
+on this runner can reach about 10%. At 0 µs, where the two runs' error bands for KPipe `PARALLEL` are apart, tracking
+each record costs it roughly 15 to 20%; at 100 µs the two runs' bands overlap, so the change there is not resolved. Each
+invocation drains 25,000 records in about 35 to 50 ms, well inside KPipe's 30-second commit interval, and the commit at
+shutdown runs in the untimed teardown, so this is the cost of tracking, not of committing; the same holds for the other
+arms, whose commit intervals are 5 seconds. With commits on, KPipe and Atleon, which acknowledges every record, are
+within each other's error bands at every delay in unordered mode. In key-ordered mode Atleon leads at 0 µs and the two
+are within the error bands at 100 and 1000 µs.
 
 ## Reactor
 
 With its rails on a virtual-thread scheduler, Reactor ran at 2.0, 15.4 and 22.7 times its 2026-10-21 throughput. It is
 the fastest framework arm at 0 µs, at 1.21 times KPipe, and falls behind once records carry work, at 0.67 and 0.16 times
-KPipe at 100 and 1000 µs: its 100 rails bound the work in flight to 100 records, while KPipe runs one virtual thread per
-record up to its backpressure watermark.
+KPipe at 100 and 1000 µs: its 100 rails process at most 100 records at a time, while KPipe runs one virtual thread per
+record up to its backpressure watermark. Reactor also commits the latest acknowledged offset per partition
+(`maxDeferredCommits` is 0), not a lowest-pending frontier, which is cheaper than KPipe's and Atleon's tracking and does
+not hold at-least-once when records finish out of order.
 
 ## Raw output
 
