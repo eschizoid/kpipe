@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -179,7 +181,11 @@ class KPipeConsumerMockingTest {
 
     // Verify
     verify(mockConsumer).wakeup();
-    verify(mockConsumer, times(1)).close();
+    verify(mockConsumer, times(1)).close(
+      ArgumentMatchers.<CloseOptions>argThat(options ->
+        options.timeout().equals(Optional.of(ConsumerDefaults.KAFKA_CLIENT_CLOSE))
+      )
+    );
     assertFalse(functionalConsumer.isRunning());
   }
 

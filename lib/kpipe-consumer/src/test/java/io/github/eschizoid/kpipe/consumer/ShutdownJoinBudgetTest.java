@@ -14,6 +14,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.apache.kafka.clients.consumer.CloseOptions;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -21,6 +23,8 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /// With the default timeouts, `close()` must wait long enough for the consumer thread's teardown
 /// to reach the final commit, even when a record is stuck and the dispatcher waits its full
@@ -104,10 +108,82 @@ class ShutdownJoinBudgetTest {
     assertEquals(STUCK_OFFSET, committed.offset(), "the commit stops at the stuck record");
   }
 
+  /// A Kafka client that cannot reach the broker waits out its whole close timeout, and nothing
+  /// cuts that wait short. The consumer bounds it inside the join budget, so by the time `close()`
+  /// returns the client has closed, rather than a consumer thread still tearing down behind it.
+  @ParameterizedTest
+  @EnumSource(ProcessingMode.class)
+  void kafkaClientCloseFinishesBeforeCloseReturnsWhenTheBrokerIsUnreachable(final ProcessingMode mode)
+    throws InterruptedException {
+    final var kafkaDefaultClose = Duration.ofSeconds(30);
+    final var requestedTimeout = new AtomicReference<Duration>();
+    final var kafkaClosed = new CountDownLatch(1);
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
+
+      @Override
+      public void close() {
+        blockFor(kafkaDefaultClose);
+      }
+
+      @Override
+      public void close(final Duration timeout) {
+        blockFor(timeout);
+      }
+
+      @Override
+      public void close(final CloseOptions options) {
+        blockFor(options.timeout().orElse(kafkaDefaultClose));
+      }
+
+      private void blockFor(final Duration timeout) {
+        requestedTimeout.set(timeout);
+        final var deadline = System.nanoTime() + timeout.toNanos();
+        var interrupted = false;
+        while (System.nanoTime() < deadline) {
+          try {
+            TimeUnit.NANOSECONDS.sleep(deadline - System.nanoTime());
+          } catch (final InterruptedException e) {
+            interrupted = true;
+          }
+        }
+        kafkaClosed.countDown();
+        if (interrupted) Thread.currentThread().interrupt();
+      }
+    };
+    mockConsumer.assign(List.of(PARTITION));
+    mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
+
+    final var properties = new Properties();
+    properties.put("bootstrap.servers", "localhost:9092");
+    properties.put("group.id", "join-budget-kafka-close-" + mode);
+    properties.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    properties.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessingMode(mode)
+      .withPipeline(TestPipelines.sideEffect(value -> value))
+      .withConsumer(() -> mockConsumer)
+      .build();
+
+    consumer.start();
+    consumer.close();
+
+    assertEquals(0, kafkaClosed.getCount(), "the Kafka client must have closed by the time close() returns");
+    assertEquals(ConsumerDefaults.KAFKA_CLIENT_CLOSE, requestedTimeout.get(), "the Kafka client close is bounded");
+  }
+
   /// Each mode's default budget covers exactly the waits that mode's teardown runs.
   @Test
   void defaultJoinBudgetCoversEachModesTeardown() {
-    final var afterDispatch = ConsumerDefaults.COMMIT_SCHEDULER_STOP.plus(ConsumerDefaults.FINAL_COMMIT);
+    final var afterDispatch = ConsumerDefaults.COMMIT_SCHEDULER_STOP.plus(ConsumerDefaults.FINAL_COMMIT).plus(
+      ConsumerDefaults.KAFKA_CLIENT_CLOSE
+    );
     assertEquals(afterDispatch, ConsumerDefaults.threadTermination(ProcessingMode.SEQUENTIAL));
     assertEquals(
       ConsumerDefaults.WAIT_FOR_MESSAGES.plus(ConsumerDefaults.EXECUTOR_TERMINATION).plus(afterDispatch),
@@ -168,10 +244,12 @@ class ShutdownJoinBudgetTest {
       final long begin = System.nanoTime();
       consumer.close();
       final var elapsed = Duration.ofNanos(System.nanoTime() - begin);
-      // The teardown a SEQUENTIAL consumer runs once its loop exits: the scheduler stop and the
-      // final commit. Computed here rather than read from threadTermination, so a wrong budget
-      // there cannot also move the bound this test checks.
-      final var budget = ConsumerDefaults.COMMIT_SCHEDULER_STOP.plus(ConsumerDefaults.FINAL_COMMIT);
+      // The teardown a SEQUENTIAL consumer runs once its loop exits: the scheduler stop, the final
+      // commit and the Kafka client's close. Computed here rather than read from threadTermination,
+      // so a wrong budget there cannot also move the bound this test checks.
+      final var budget = ConsumerDefaults.COMMIT_SCHEDULER_STOP.plus(ConsumerDefaults.FINAL_COMMIT).plus(
+        ConsumerDefaults.KAFKA_CLIENT_CLOSE
+      );
       assertTrue(
         elapsed.compareTo(budget.plusSeconds(3)) < 0,
         "close() must give up after the SEQUENTIAL budget of " + budget + "; took " + elapsed

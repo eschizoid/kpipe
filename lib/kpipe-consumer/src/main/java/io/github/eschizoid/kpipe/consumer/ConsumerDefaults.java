@@ -31,11 +31,17 @@ final class ConsumerDefaults {
   /// Max time the key-ordered dispatcher waits for its per-key queues to drain at shutdown.
   static final Duration KEY_ORDERED_CLOSE_DRAIN = Duration.ofMillis(5000);
 
-  /// Default max time `close()` waits for the consumer thread to join before interrupting it, for
-  /// a consumer in `mode`. It covers each wait that mode's teardown can run before the final commit
-  /// completes, so a stuck record does not get the thread interrupted mid-commit, and no wait the
-  /// mode never runs. `close()` first waits up to [#WAIT_FOR_MESSAGES] on its own thread, so its
-  /// worst case is that plus this budget.
+  /// Timeout of the Kafka client's own close at shutdown, which leaves the group and closes its
+  /// connections. Kafka's default is 30 seconds, and a broker that cannot be reached makes the
+  /// close wait that long, past any join budget.
+  static final Duration KAFKA_CLIENT_CLOSE = Duration.ofMillis(5000);
+
+  /// Default max time `close()` waits for the consumer thread to join before interrupting it,
+  /// for a consumer in `mode`. It covers each wait that mode's teardown can run, through the
+  /// final commit and the Kafka client's close, so a stuck record or an unreachable broker
+  /// does not get the thread interrupted mid-teardown, and no wait the mode never runs.
+  /// `close()` first waits up to [#WAIT_FOR_MESSAGES] on its own thread, so its worst case
+  /// is that plus this budget.
   ///
   /// SEQUENTIAL runs each record on the consumer thread, so by the time its loop exits nothing is
   /// in flight and no dispatcher waits; a record hung on that thread keeps the loop from exiting
@@ -44,7 +50,7 @@ final class ConsumerDefaults {
   /// @param mode the consumer's processing mode
   /// @return the default join budget for that mode
   static Duration threadTermination(final ProcessingMode mode) {
-    final var afterDispatch = COMMIT_SCHEDULER_STOP.plus(FINAL_COMMIT);
+    final var afterDispatch = COMMIT_SCHEDULER_STOP.plus(FINAL_COMMIT).plus(KAFKA_CLIENT_CLOSE);
     return switch (mode) {
       case SEQUENTIAL -> afterDispatch;
       case PARALLEL -> WAIT_FOR_MESSAGES.plus(EXECUTOR_TERMINATION).plus(afterDispatch);
