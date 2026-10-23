@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -18,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,6 +29,9 @@ import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerInterceptor;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -45,14 +50,18 @@ import org.testcontainers.toxiproxy.ToxiproxyContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /// The at-least-once guarantee under a broker that misbehaves: every connection the consumer makes
-/// goes through Toxiproxy, which cuts, stalls, slows or resets it mid-run. The checks themselves
-/// reach the broker on its own listener, so a fault never hides what they read.
+/// goes through Toxiproxy, which cuts, stalls, slows or resets it mid-run. The checks reach the
+/// broker on its own listener, so a fault never hides what they read.
 ///
 /// The property under test is the one the commit frontier exists for: no committed offset ever
-/// passes a record that has not completed. A sampler reads the group's committed offsets
-/// throughout each run and checks every one against the set of completed records. Some records
-/// are held until the fault has healed, so a commit that skipped past an unfinished record would
-/// show up as a committed offset above a held one.
+/// passes a record that has not completed. Two checks enforce it. A [ConsumerInterceptor] sees
+/// every commit the consumer has acknowledged, and a sampler reads the group's committed offsets on
+/// the broker, which also catches a commit that landed but whose response the fault dropped.
+///
+/// Records are held so the frontier has somewhere it must stop. One record per partition is
+/// released while the fault is in effect, so the frontier wants to advance while commits cannot
+/// get through, and a later one is released only after the link has been healthy for a while, so
+/// the resumed commits must stop below it.
 ///
 /// CI-RUN-REQUIRED: Testcontainers starts a Kafka broker and a Toxiproxy container (needs a Docker
 /// daemon).
@@ -65,21 +74,23 @@ class BrokerFaultInjectionIntegrationTest {
 
   private static final int PARTITIONS = 3;
   private static final int RECORD_COUNT = 300;
-  /// Records at these offsets mod 50, in every partition, stay unfinished until the fault has
-  /// healed and the link has stayed healthy for [#HEALTHY_WINDOW].
-  private static final int HELD_EVERY = 50;
-  private static final int HELD_AT = 7;
-  /// A `SEQUENTIAL` consumer runs records on its own thread, so holding one would stop its polls
-  // and
-  /// commits for the whole fault. Each record takes this long instead, which keeps it mid-stream.
+  /// Keys repeat, so in `KEY_ORDERED` the records behind a held one wait for it.
+  private static final int KEYS = 30;
+  /// Held in every partition and released while the fault is in effect.
+  private static final long RELEASED_DURING_FAULT = 7;
+  /// Held in every partition and released once the link has been healthy for [#HEALTHY_WINDOW].
+  private static final long RELEASED_AFTER_HEAL = 57;
+
+  /// A `SEQUENTIAL` consumer runs records on its own thread, so holding one stops its polls and
+  /// commits. In the fault scenarios each record takes this long instead.
   private static final Duration SEQUENTIAL_RECORD_TIME = Duration.ofMillis(20);
+  private static final Duration COMMIT_INTERVAL = Duration.ofMillis(200);
+  /// Several commit intervals, so commits land while held records are outstanding.
+  private static final Duration HEALTHY_WINDOW = COMMIT_INTERVAL.multipliedBy(5);
   private static final Duration FAULT_WINDOW = Duration.ofSeconds(5);
   private static final Duration SLOW_LINK_LATENCY = Duration.ofSeconds(1);
-  private static final Duration COMMIT_INTERVAL = Duration.ofMillis(200);
-  /// How long the link stays healthy with held records outstanding, before the fault and again
-  // after
-  /// it heals: several commit intervals, so commits land while the frontier has to stop below them.
-  private static final Duration HEALTHY_WINDOW = COMMIT_INTERVAL.multipliedBy(5);
+
+  private static final Map<String, Run> RUNS_BY_GROUP = new ConcurrentHashMap<>();
 
   private static Network network;
   private static ToxiproxyContainer toxiproxy;
@@ -119,25 +130,25 @@ class BrokerFaultInjectionIntegrationTest {
     Fault.heal();
   }
 
-  /// A broker fault applied to every connection the consumer has, and how to tell it took effect.
+  /// A broker fault applied to every connection the consumer has.
   enum Fault {
     /// Connections are refused: the broker is unreachable.
-    UNREACHABLE {
+    UNREACHABLE(true) {
       @Override
       void apply() throws IOException {
         proxy.disable();
       }
     },
     /// Connections stay open but nothing comes back, so a commit request can reach the broker and
-    /// still time out on the client.
-    BLACK_HOLE {
+    /// still never be acknowledged.
+    BLACK_HOLE(true) {
       @Override
       void apply() throws IOException {
         proxy.toxics().timeout("black-hole", ToxicDirection.DOWNSTREAM, 0);
       }
     },
-    /// Every response is delayed.
-    SLOW_LINK {
+    /// Every response is delayed, so commits are acknowledged late.
+    SLOW_LINK(false) {
       @Override
       void apply() throws IOException {
         proxy.toxics().latency("slow-link", ToxicDirection.DOWNSTREAM, SLOW_LINK_LATENCY.toMillis());
@@ -152,12 +163,19 @@ class BrokerFaultInjectionIntegrationTest {
       }
     },
     /// Every connection is reset as soon as data arrives.
-    CONNECTION_RESET {
+    CONNECTION_RESET(true) {
       @Override
       void apply() throws IOException {
         proxy.toxics().resetPeer("connection-reset", ToxicDirection.DOWNSTREAM, 0);
       }
     };
+
+    /// Whether no commit can be acknowledged while the fault is in effect.
+    final boolean blocksAcknowledgements;
+
+    Fault(final boolean blocksAcknowledgements) {
+      this.blocksAcknowledgements = blocksAcknowledgements;
+    }
 
     abstract void apply() throws IOException;
 
@@ -185,28 +203,43 @@ class BrokerFaultInjectionIntegrationTest {
   @MethodSource("faultsByMode")
   void noCommitPassesAnUnfinishedRecordWhileTheBrokerMisbehaves(final ProcessingMode mode, final Fault fault)
     throws Exception {
-    final var run = new Run(mode);
-    try (final var sampler = new CommitSampler(run)) {
+    // A held SEQUENTIAL record would stop the consumer's commits, leaving nothing for the fault to
+    // break, so that mode runs every record slowly and holds none.
+    final var holds =
+      mode == ProcessingMode.SEQUENTIAL ? Set.<Long>of() : Set.of(RELEASED_DURING_FAULT, RELEASED_AFTER_HEAL);
+    try (final var run = new Run(mode, holds)) {
       final var consumer = run.consumer();
-      consumer.start();
-      try {
-        run.awaitCompleted(5, Duration.ofSeconds(60));
-        TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
-        fault.apply();
-        fault.assertEngaged();
-        TimeUnit.MILLISECONDS.sleep(FAULT_WINDOW.toMillis());
-        Fault.heal();
-        TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
-        run.releaseHeld();
-        run.awaitCompleted(RECORD_COUNT, Duration.ofSeconds(120));
-        run.awaitCommittedToLogEnd(Duration.ofSeconds(30));
-      } finally {
-        run.releaseHeld();
-        consumer.close();
+      try (final var sampler = new CommitSampler(run)) {
+        consumer.start();
+        try {
+          run.awaitCompleted(5, Duration.ofSeconds(60));
+          TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
+          fault.apply();
+          fault.assertEngaged();
+          run.faultInEffect.set(true);
+          run.release(RELEASED_DURING_FAULT);
+          TimeUnit.MILLISECONDS.sleep(FAULT_WINDOW.toMillis());
+          run.faultInEffect.set(false);
+          Fault.heal();
+          TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
+          if (!holds.isEmpty()) run.awaitCommittedAt(RELEASED_AFTER_HEAL, Duration.ofSeconds(20));
+          run.release(RELEASED_AFTER_HEAL);
+          run.awaitCompleted(RECORD_COUNT, Duration.ofSeconds(120));
+          run.awaitCommittedToLogEnd(Duration.ofSeconds(30));
+        } finally {
+          run.releaseAll();
+          consumer.close();
+        }
+        sampler.assertNoViolation();
       }
-      sampler.assertNoViolation();
+      run.assertNoAcknowledgedViolation();
+      if (fault.blocksAcknowledgements) {
+        assertEquals(0, run.acknowledgedDuringFault.get(), fault + " must stop every commit acknowledgement");
+      } else {
+        assertTrue(run.acknowledgedDuringFault.get() > 0, "commits keep landing over the slow link");
+      }
+      assertEquals(RECORD_COUNT, run.completed.size(), "every record completes once the fault heals");
     }
-    assertEquals(RECORD_COUNT, run.completed.size(), "every record completes once the fault heals");
   }
 
   /// When the broker comes back relative to a `close()` that started while it was unreachable.
@@ -232,68 +265,109 @@ class BrokerFaultInjectionIntegrationTest {
     final ProcessingMode mode,
     final Return brokerReturns
   ) throws Exception {
-    final var run = new Run(mode);
-    try (final var sampler = new CommitSampler(run)) {
+    try (final var run = new Run(mode, Set.of(RELEASED_AFTER_HEAL))) {
       final var first = run.consumer();
-      first.start();
-      run.awaitCompleted(20, Duration.ofSeconds(60));
-      TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
-      Fault.UNREACHABLE.apply();
-      Fault.UNREACHABLE.assertEngaged();
-      // The held records are interrupted by the shutdown and stay unfinished.
-      final var closing = CompletableFuture.runAsync(first::close);
-      if (brokerReturns == Return.DURING_CLOSE) {
+      final Set<String> finishedByFirst;
+      try (final var sampler = new CommitSampler(run)) {
+        first.start();
+        run.awaitCompleted(20, Duration.ofSeconds(60));
         TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
+        Fault.UNREACHABLE.apply();
+        Fault.UNREACHABLE.assertEngaged();
+        // The held records are interrupted by the shutdown and stay unfinished.
+        final var closing = CompletableFuture.runAsync(first::close);
+        if (brokerReturns == Return.DURING_CLOSE) {
+          TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
+          Fault.heal();
+        }
+        closing.get(90, TimeUnit.SECONDS);
         Fault.heal();
-      }
-      closing.get(90, TimeUnit.SECONDS);
-      Fault.heal();
-      assertTrue(run.completed.size() < RECORD_COUNT, "the first consumer must stop with records unfinished");
+        finishedByFirst = Set.copyOf(run.completed);
+        assertTrue(finishedByFirst.size() < RECORD_COUNT, "the first consumer must stop with records unfinished");
 
-      run.releaseHeld();
-      final var second = run.consumer();
-      try {
-        second.start();
-        run.awaitCompleted(RECORD_COUNT, Duration.ofSeconds(120));
-        run.awaitCommittedToLogEnd(Duration.ofSeconds(30));
-      } finally {
-        second.close();
+        run.releaseAll();
+        final var second = run.consumer();
+        try {
+          second.start();
+          run.awaitCompletedBy(second, missingFrom(run, finishedByFirst), Duration.ofSeconds(120));
+          run.awaitCommittedToLogEnd(Duration.ofSeconds(30));
+        } finally {
+          second.close();
+        }
+        sampler.assertNoViolation();
       }
-      sampler.assertNoViolation();
+      run.assertNoAcknowledgedViolation();
     }
-    assertEquals(RECORD_COUNT, run.completed.size(), "the next consumer receives every record left unfinished");
+  }
+
+  private static Set<String> missingFrom(final Run run, final Set<String> finished) {
+    final var missing = new HashSet<>(run.partitionOf.keySet());
+    missing.removeAll(finished);
+    return Set.copyOf(missing);
+  }
+
+  /// Sees every commit a consumer in this test has had acknowledged. Kafka creates it from the
+  /// consumer's configuration, so it finds its scenario through the group id.
+  public static final class CommitRecorder implements ConsumerInterceptor<byte[], byte[]> {
+
+    private Run run;
+
+    @Override
+    public void configure(final Map<String, ?> configs) {
+      run = RUNS_BY_GROUP.get((String) configs.get(ConsumerConfig.GROUP_ID_CONFIG));
+    }
+
+    @Override
+    public ConsumerRecords<byte[], byte[]> onConsume(final ConsumerRecords<byte[], byte[]> records) {
+      return records;
+    }
+
+    @Override
+    public void onCommit(final Map<TopicPartition, OffsetAndMetadata> offsets) {
+      if (run != null) run.onAcknowledgedCommit(offsets);
+    }
+
+    @Override
+    public void close() {}
   }
 
   /// One scenario's topic, group and record bookkeeping.
-  private static final class Run {
+  private static final class Run implements AutoCloseable {
 
     private final ProcessingMode mode;
     private final String topic = "fault-" + System.nanoTime();
     private final String groupId = "fault-group-" + System.nanoTime();
-    /// Where each produced value landed, so a committed offset can be checked record by record.
-    private final Map<String, RecordMetadata> positions;
-    private final Set<String> held;
+    /// The partition and offset each produced value landed at.
+    private final Map<String, TopicPartition> partitionOf = new HashMap<>();
+    private final Map<String, Long> offsetOf = new HashMap<>();
+    /// The offset each held value is released with, keyed by value.
+    private final Map<String, Long> heldUntil = new HashMap<>();
+    private final Map<Long, CountDownLatch> releases = new HashMap<>();
+    /// Values completed by any consumer of this scenario, and by each consumer separately.
     private final Set<String> completed = ConcurrentHashMap.newKeySet();
-    private final CountDownLatch release = new CountDownLatch(1);
+    private final Map<KPipeConsumer, Set<String>> completedBy = new ConcurrentHashMap<>();
+    private final List<String> acknowledgedViolations = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean faultInEffect = new AtomicBoolean();
+    private final AtomicInteger acknowledgedDuringFault = new AtomicInteger();
 
-    Run(final ProcessingMode mode) throws Exception {
+    Run(final ProcessingMode mode, final Set<Long> heldOffsets) throws Exception {
       this.mode = mode;
+      for (final var offset : heldOffsets) releases.put(offset, new CountDownLatch(1));
       try (final var admin = Admin.create(directAdminProperties())) {
         admin.createTopics(List.of(new NewTopic(topic, PARTITIONS, (short) 1))).all().get(30, TimeUnit.SECONDS);
       }
-      positions = produce();
-      held =
-        mode == ProcessingMode.SEQUENTIAL
-          ? Set.of()
-          : positions
-              .keySet()
-              .stream()
-              .filter(value -> positions.get(value).offset() % HELD_EVERY == HELD_AT)
-              .collect(Collectors.toUnmodifiableSet());
+      produce();
+      for (final var value : offsetOf.keySet()) {
+        final var offset = offsetOf.get(value);
+        if (releases.containsKey(offset)) heldUntil.put(value, offset);
+      }
+      assertEquals(PARTITIONS * heldOffsets.size(), heldUntil.size(), "every partition holds each held offset");
+      RUNS_BY_GROUP.put(groupId, this);
     }
 
     KPipeConsumer consumer() {
-      return KPipeConsumer.builder()
+      final var finished = ConcurrentHashMap.<String>newKeySet();
+      final var consumer = KPipeConsumer.builder()
         .withProperties(proxiedConsumerProperties(groupId))
         .withTopic(topic)
         .withProcessingMode(mode)
@@ -302,30 +376,90 @@ class BrokerFaultInjectionIntegrationTest {
           TestPipelines.sideEffect(value -> {
             final var text = new String(value);
             try {
-              if (held.contains(text)) release.await();
-              if (mode == ProcessingMode.SEQUENTIAL) TimeUnit.MILLISECONDS.sleep(SEQUENTIAL_RECORD_TIME.toMillis());
+              final var heldOffset = heldUntil.get(text);
+              if (heldOffset != null) releases.get(heldOffset).await();
+              if (mode == ProcessingMode.SEQUENTIAL && heldUntil.isEmpty()) {
+                TimeUnit.MILLISECONDS.sleep(SEQUENTIAL_RECORD_TIME.toMillis());
+              }
             } catch (final InterruptedException e) {
-              // Keep the interruption in the cause chain, so the record is abandoned at
-              // shutdown
-              // rather than failed and committed past.
-              Thread.currentThread().interrupt();
+              // The flag stays cleared, so only the interruption in the cause chain
+              // tells the
+              // consumer the record was cut short at shutdown rather than failed.
               throw new IllegalStateException("interrupted at shutdown", e);
             }
             completed.add(text);
+            finished.add(text);
             return value;
           })
         )
         .build();
+      completedBy.put(consumer, finished);
+      return consumer;
     }
 
-    void releaseHeld() {
-      release.countDown();
+    void release(final long heldOffset) {
+      final var latch = releases.get(heldOffset);
+      if (latch != null) latch.countDown();
+    }
+
+    void releaseAll() {
+      releases.values().forEach(CountDownLatch::countDown);
+    }
+
+    void onAcknowledgedCommit(final Map<TopicPartition, OffsetAndMetadata> offsets) {
+      if (faultInEffect.get()) acknowledgedDuringFault.incrementAndGet();
+      for (final var entry : offsets.entrySet()) {
+        final var unfinished = unfinishedBelow(entry.getKey(), entry.getValue().offset());
+        if (!unfinished.isEmpty()) {
+          acknowledgedViolations.add(
+            entry.getKey() + " acknowledged at " + entry.getValue().offset() + " past " + unfinished
+          );
+        }
+      }
+    }
+
+    void assertNoAcknowledgedViolation() {
+      assertTrue(
+        acknowledgedViolations.isEmpty(),
+        "acknowledged commits passed unfinished records: " + acknowledgedViolations
+      );
     }
 
     void awaitCompleted(final int target, final Duration timeout) throws InterruptedException {
       final var deadline = System.nanoTime() + timeout.toNanos();
       while (completed.size() < target && System.nanoTime() < deadline) TimeUnit.MILLISECONDS.sleep(50);
       assertTrue(completed.size() >= target, "completed " + completed.size() + " of the " + target + " awaited");
+    }
+
+    /// Waits until `consumer` itself has completed every value in `expected`. Counting only that
+    /// consumer's completions means a record still finishing on a consumer that was closed before
+    /// cannot stand in for one that was redelivered.
+    void awaitCompletedBy(final KPipeConsumer consumer, final Set<String> expected, final Duration timeout)
+      throws InterruptedException {
+      final var finished = completedBy.get(consumer);
+      final var deadline = System.nanoTime() + timeout.toNanos();
+      while (!finished.containsAll(expected) && System.nanoTime() < deadline) TimeUnit.MILLISECONDS.sleep(50);
+      final var missing = expected
+        .stream()
+        .filter(value -> !finished.contains(value))
+        .sorted()
+        .toList();
+      assertTrue(missing.isEmpty(), "the next consumer must receive every unfinished record; missing " + missing);
+    }
+
+    /// Waits for every partition's committed offset to reach `heldOffset`: commits
+    /// resumed after the fault and stopped at the record still held there. The
+    /// interceptor and the sampler fail the test if any commit passes it meanwhile.
+    void awaitCommittedAt(final long heldOffset, final Duration timeout) throws Exception {
+      final var expected = new HashMap<TopicPartition, Long>();
+      for (int p = 0; p < PARTITIONS; p++) expected.put(new TopicPartition(topic, p), heldOffset);
+      final var deadline = System.nanoTime() + timeout.toNanos();
+      var committed = committedOffsets();
+      while (!committed.equals(expected) && System.nanoTime() < deadline) {
+        TimeUnit.MILLISECONDS.sleep(100);
+        committed = committedOffsets();
+      }
+      assertEquals(expected, committed, "commits resume and stop at the held records");
     }
 
     /// Waits for the running consumer's periodic commits to reach the end of every partition, which
@@ -369,35 +503,46 @@ class BrokerFaultInjectionIntegrationTest {
       }
     }
 
-    /// Records whose partition is `partition` and whose offset is below `committed` but which have
-    /// not completed: each one is a commit that passed an unfinished record.
+    /// Values in `partition` below `committed` that have not completed: each one is a commit that
+    /// passed an unfinished record.
     List<String> unfinishedBelow(final TopicPartition partition, final long committed) {
-      return positions
+      return partitionOf
         .entrySet()
         .stream()
-        .filter(entry -> entry.getValue().partition() == partition.partition())
-        .filter(entry -> entry.getValue().offset() < committed)
+        .filter(entry -> entry.getValue().equals(partition))
         .map(Map.Entry::getKey)
+        .filter(value -> offsetOf.get(value) < committed)
         .filter(value -> !completed.contains(value))
         .sorted()
         .toList();
     }
 
-    private Map<String, RecordMetadata> produce() throws Exception {
+    /// Writes each partition's records in order, keys spread so each key stays in one partition.
+    private void produce() throws Exception {
       final var props = new Properties();
       props.put("bootstrap.servers", kafka.getBootstrapServers());
       props.put("acks", "all");
-      final var sends = new HashMap<String, java.util.concurrent.Future<RecordMetadata>>();
+      final var sends = new HashMap<String, Future<RecordMetadata>>();
       try (final var producer = new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer())) {
         for (int i = 0; i < RECORD_COUNT; i++) {
           final var value = "val-" + i;
-          sends.put(value, producer.send(new ProducerRecord<>(topic, ("key-" + i).getBytes(), value.getBytes())));
+          final var key = i % KEYS;
+          final var record = new ProducerRecord<>(topic, key % PARTITIONS, ("key-" + key).getBytes(), value.getBytes());
+          sends.put(value, producer.send(record));
         }
         producer.flush();
       }
-      final var landed = new HashMap<String, RecordMetadata>();
-      for (final var send : sends.entrySet()) landed.put(send.getKey(), send.getValue().get(30, TimeUnit.SECONDS));
-      return Map.copyOf(landed);
+      for (final var send : sends.entrySet()) {
+        final var metadata = send.getValue().get(30, TimeUnit.SECONDS);
+        partitionOf.put(send.getKey(), new TopicPartition(topic, metadata.partition()));
+        offsetOf.put(send.getKey(), metadata.offset());
+      }
+    }
+
+    @Override
+    public void close() {
+      releaseAll();
+      RUNS_BY_GROUP.remove(groupId);
     }
   }
 
@@ -484,6 +629,7 @@ class BrokerFaultInjectionIntegrationTest {
     props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
     props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     props.put(ConsumerConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "5000");
+    props.put(ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG, CommitRecorder.class.getName());
     props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     return props;
