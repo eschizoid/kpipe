@@ -22,6 +22,16 @@ phrased as a property a test can assert.
   jcstress suite it replaced did not cover that either in practice: its one memory-model test forbids only an outcome
   that x86 cannot produce, and CI has only ever run x86.
 
+- **Toxiproxy** sits between a Testcontainers broker and the consumer in `BrokerFaultInjectionIntegrationTest`, which
+  checks I1 to I3 end to end while the broker is unreachable, drops responses, answers slowly or resets connections, in
+  every processing mode. A sampler reads the group's committed offsets every 100 ms on the broker's own listener and
+  fails the test if any passes a record that has not completed; some records stay unfinished across each fault so the
+  check has something to catch. It also closes a consumer while the broker is unreachable, with the broker returning
+  after or during the close, and requires the next consumer to receive every record the first left unfinished. Making
+  the frontier skip pending offsets fails every `PARALLEL` and `KEY_ORDERED` scenario, and treating an interruption at
+  shutdown as a failure fails the cases where the broker returns during the close. In `SEQUENTIAL` only one record is in
+  flight, so neither change alters what it commits.
+
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass
   throws `Unsupported class file major version 69` while retransforming classpath classes, which crashes the test JVM.
