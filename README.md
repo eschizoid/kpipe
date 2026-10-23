@@ -163,30 +163,32 @@ capture on one 6-core machine, with that much work, KPipe `PARALLEL` sustained r
 Consumer's throughput at 10ms and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by
 `workers ÷ work-time`.
 
-The [2026-10-21 capture](benchmarks/results/2026-10-21/2026-10-21-ci-parallel.md) is the reference. It runs all nine
-arms, including Atleon in its `COMPACT_EAGER` acknowledgement mode, in one job on a 4-vCPU GitHub runner at 0, 100 and
-1000µs of work per record, and it measures allocation with JMH 1.37. In it, KPipe `PARALLEL` ran at 1.31× Atleon's
-unordered throughput at 0µs with the error bands apart, and at 1.15× and 1.08× at 100 and 1000µs, within the error
-bands. KPipe `KEY_ORDERED` ran at 1.01×, 1.13× and 0.95× Atleon's key-ordered arm, all within the error bands. KPipe ran
-at 6.6× to 8.7× Confluent Parallel Consumer's unordered throughput and at 5.0× to 7.4× its per-key throughput, and KPipe
-`PARALLEL` ran at 0.82× to 0.89× the raw loop. An earlier `COMPACT_EAGER` run on JMH 1.36 put KPipe and Atleon in the
-same places ([capture](benchmarks/results/2026-10-16/2026-10-16-ci-compact-eager.md)). The
+The [2026-10-22 capture](benchmarks/results/2026-10-22/2026-10-22-ci-parallel.md) is the reference. It runs all nine
+arms in one job on a 4-vCPU GitHub runner at 0, 100 and 1000µs of work per record, with five forks and JMH 1.37
+allocation accounting, and every framework arm tracks its offsets: KPipe commits through its `KafkaOffsetManager`, and
+Atleon acknowledges every record in `COMPACT_EAGER` mode. KPipe `PARALLEL` and Atleon parallel are within each other's
+error bands at every delay (1.09×, 0.95× and 1.04×). In key-ordered mode Atleon leads at 0µs, where KPipe runs at 0.85×
+with the error bands apart, and the two are within the error bands at 100 and 1000µs. KPipe ran at 5.4× to 7.8×
+Confluent Parallel Consumer's unordered throughput and at 5.1× to 6.2× its per-key throughput. Reactor Kafka ran at
+1.21× KPipe at 0µs and at 0.67× and 0.16× at 100 and 1000µs, because its 100 rails cap the records in flight at 100. The
+[2026-10-21](benchmarks/results/2026-10-21/2026-10-21-ci-parallel.md),
 [2026-10-15](benchmarks/results/2026-10-15/2026-10-15-ci-parallel.md) and
-[2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) nine-arm captures ran Atleon in `STRICT`
-mode and stay in the results folder. In the 2026-10-15 batch latency runs, KPipe drained a 25,000-record batch faster
-than Atleon on average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode the averages were level at 0
-and 100µs, KPipe's p99 was about half of Atleon's there, and Atleon was faster on average at 1000µs.
+[2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) captures ran KPipe without offset tracking
+and Reactor on a one-thread-per-CPU scheduler, so they flatter KPipe; they stay in the results folder. The 2026-10-15
+batch latency runs also predate offset tracking. In them, KPipe drained a 25,000-record batch faster than Atleon on
+average in unordered mode, with a p99 13 to 30 ms lower. In key-ordered mode the averages were level at 0 and 100µs,
+KPipe's p99 was about half of Atleon's there, and Atleon was faster on average at 1000µs.
 
-The costs: in the 2026-10-21 capture, KPipe `PARALLEL` allocates about 1,046 B/op at 0µs and about 1,590 to 1,650 at 100
-and 1000µs, 4% to 17% more than the raw loop. At every delay, each KPipe mode allocates less than Atleon's arm with the
-same ordering, and less than CPC. Captures that used JMH 1.36 under-count allocation for any arm whose consumer runs on
-threads that exit during the measurement, so their allocation comparisons, including the 2026-07 ones, overstate KPipe's
-cost relative to the others. In the 2026-07 captures, the `KEY_ORDERED` mode's advantage over CPC's equivalent at
-sub-millisecond workloads was machine-dependent (it lost on one of our two test machines), and the
-virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes CPU-bound, because there is
-nothing to overlap. The raw loop is faster than KPipe at every cell of the CI captures. It has no in-flight limit and no
-backpressure, and neither it nor the benchmark's KPipe arms track or commit offsets, so the gap measures KPipe's
-dispatch and backpressure, not its offset tracking.
+The costs: KPipe `PARALLEL` ran at 0.71× to 0.79× the raw loop. Against the 2026-10-21 capture, its throughput fell 12%
+to 22% while the raw loop and Atleon fell 4% to 8%, so tracking each record and committing the frontier costs KPipe
+roughly 10% to 15% of its throughput at 0 and 100µs. It allocates about 1,128 B/op at 0µs and 1,770 to 1,820 at 100 and
+1000µs, 13% to 28% more than the raw loop, and still less than Atleon's arm with the same ordering and less than CPC at
+every delay. Captures that used JMH 1.36 under-count allocation for any arm whose consumer runs on threads that exit
+during the measurement, so their allocation comparisons, including the 2026-07 ones, overstate KPipe's cost relative to
+the others. In the 2026-07 captures, the `KEY_ORDERED` mode's advantage over CPC's equivalent at sub-millisecond
+workloads was machine-dependent (it lost on one of our two test machines), and the virtual-thread-per-record advantage
+shrinks as per-record work approaches zero or becomes CPU-bound, because there is nothing to overlap. The raw loop has
+no in-flight limit, no backpressure and no offset tracking, so the gap to it measures all three.
 
 Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
 [`benchmarks/`](benchmarks).
@@ -215,7 +217,7 @@ versions you run — these projects evolve):
 | Stateful processing (joins, windows, stores) | **Not supported**                                   | Not built-in                                                                                      | Core feature                         | Not built-in                    |
 | Ecosystem & maturity                         | Young, small API surface                            | Large ecosystem, long history                                                                     | Large ecosystem, long history        | Established in reactive stacks  |
 
-Benchmarked against Atleon 0.47.1, Confluent Parallel Consumer 0.5.3.3 and Reactor Kafka 1.3.25. The 2026-10-21 capture
+Benchmarked against Atleon 0.47.1, Confluent Parallel Consumer 0.5.3.3 and Reactor Kafka 1.3.25. The 2026-10-22 capture
 ran on kafka-clients 4.3.0, which [`benchmarks/build.gradle.kts`](benchmarks/build.gradle.kts) forces because Parallel
 Consumer processes no records on 4.4.0, and earlier captures ran on the kafka-clients version the libraries used at the
 time. The libraries build and test against the kafka-clients version in
