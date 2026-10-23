@@ -23,13 +23,20 @@ final class ConsumerDefaults {
   /// Timeout of the offset manager's final commit at shutdown.
   static final Duration FINAL_COMMIT = Duration.ofMillis(5000);
 
-  /// Max time `close()` waits for the consumer thread to join before interrupting it. It covers the
-  /// whole teardown the thread runs: the in-flight drain, the dispatcher's termination wait and the
-  /// final commit, plus a margin. A shorter budget interrupts the thread while a stuck record holds
-  /// the dispatcher, and the interrupted final commit then throws before its result is known.
+  /// Max time the offset manager waits for its periodic-commit scheduler to stop at shutdown. A
+  /// periodic commit that fires during teardown waits on a command queue nobody serves anymore, so
+  /// this wait can run in full.
+  static final Duration COMMIT_SCHEDULER_STOP = Duration.ofMillis(5000);
+
+  /// Max time `close()` waits for the consumer thread to join before interrupting it. It covers
+  /// each wait the thread's teardown can run before the final commit completes: the in-flight
+  /// drain, the dispatcher's termination wait, the commit scheduler's stop and the final commit. A
+  /// shorter budget interrupts the thread while a stuck record holds the dispatcher, and the
+  /// interrupted final commit then throws before its result is known. `close()` first waits up to
+  /// [#WAIT_FOR_MESSAGES] on its own thread, so its worst case is that plus this budget.
   static final Duration THREAD_TERMINATION = WAIT_FOR_MESSAGES.plus(EXECUTOR_TERMINATION)
-    .plus(FINAL_COMMIT)
-    .plus(Duration.ofMillis(5000));
+    .plus(COMMIT_SCHEDULER_STOP)
+    .plus(FINAL_COMMIT);
 
   private ConsumerDefaults() {}
 }
