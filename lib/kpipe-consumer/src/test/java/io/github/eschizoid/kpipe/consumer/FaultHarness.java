@@ -113,7 +113,7 @@ final class FaultHarness {
     final Cluster cluster;
     final ProcessingMode mode;
     final String topic = "fault-" + System.nanoTime();
-    final String groupId = "fault-group-" + System.nanoTime();
+    final String groupId;
     /// The partition and offset each produced value landed at.
     final Map<String, TopicPartition> partitionOf = new HashMap<>();
     final Map<String, Long> offsetOf = new HashMap<>();
@@ -135,6 +135,19 @@ final class FaultHarness {
 
     Run(final Cluster cluster, final ProcessingMode mode, final Set<Long> heldOffsets, final Set<Long> failingOffsets)
       throws Exception {
+      this(cluster, mode, heldOffsets, failingOffsets, "fault-group-" + System.nanoTime());
+    }
+
+    /// A scenario whose consumers join `groupId`, for a test that needs the group's coordinator to
+    /// be a particular broker.
+    Run(
+      final Cluster cluster,
+      final ProcessingMode mode,
+      final Set<Long> heldOffsets,
+      final Set<Long> failingOffsets,
+      final String groupId
+    ) throws Exception {
+      this.groupId = groupId;
       this.cluster = cluster;
       this.mode = mode;
       for (final var offset : heldOffsets) releases.put(offset, new CountDownLatch(1));
