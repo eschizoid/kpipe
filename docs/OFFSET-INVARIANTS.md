@@ -6,7 +6,10 @@ phrased as a property a test can assert.
 ## Toolchain status
 
 - **jqwik** (Java-native property testing) is wired and green. `OffsetInvariantPropertyTest` generates randomized
-  track/mark sequences and asserts I1 on a single partition. This is the active sequence-property layer.
+  track/mark sequences and asserts I1 on a single partition. `OffsetOrderingPropertyTest` extends this to several
+  partitions and to sequences that interleave tracks and marks with revokes, losses and assignments, checking I1, I2,
+  I4's commit-and-clear and I5 against an independent model after every step, including that a partition this member no
+  longer owns never has a commit point. This is the active sequence-property layer.
 - **Fray** (CMU PASTA controlled-concurrency checker) is wired and green on JDK 25 via a per-module `frayTest` source
   set, and is the CI concurrency gate. It explores thread schedules under its own scheduler and replays a failing one
   deterministically, rather than running racy code many times and hoping the bad interleaving appears.
@@ -31,10 +34,11 @@ phrased as a property a test can assert.
   monitor-synchronized sorted primitive-`long` window; previously `ConcurrentSkipListSet<Long>`, replaced to eliminate
   per-record boxing and skiplist-node churn). Marks "this offset has started processing."
 - **mark**: `markOffsetProcessed(record)` — removes `record.offset()` from the pending set and bumps the per-partition
-  `highestProcessedOffset`. Marks "this offset reached a terminal state."
+  `highestProcessedOffset`. Marks "this offset reached a terminal state." A mark counts only for an offset that is still
+  pending; marking any other offset changes nothing.
 - **commit point**: the offset the manager would commit to Kafka right now for a partition. In Kafka's "next offset"
   model this is the offset of the next record expected, so a partition that has fully processed offset `N` commits
-  `N + 1`. Observable per-partition through `getPartitionState(partition).get("nextOffsetToCommit")`:
+  `N + 1`. Observable per-partition through `getPartitionState(partition).nextOffsetToCommit()`:
   - if any offset is still pending → the lowest pending offset (commit cannot pass it);
   - else if anything was processed → `highestProcessedOffset + 1`;
   - else → `-1` (nothing tracked).
