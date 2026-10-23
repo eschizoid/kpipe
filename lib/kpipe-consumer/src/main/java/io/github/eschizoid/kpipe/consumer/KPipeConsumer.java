@@ -655,12 +655,17 @@ public class KPipeConsumer implements AutoCloseable {
             // Release ctor resources before closing the consumer (see method docs).
             releaseConstructedResources();
           } finally {
+            // Closing leaves the consumer group; on an interrupted thread Kafka refuses
+            // to, so the
+            // group would wait out the session timeout before rebalancing.
+            final var interruptedBeforeClose = Thread.interrupted();
             try {
               kafkaConsumer.close();
               LOGGER.log(Level.INFO, "Consumer closed for topics {0}", topics);
             } catch (final Exception e) {
               LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
             } finally {
+              if (interruptedBeforeClose) Thread.currentThread().interrupt();
               state.set(ConsumerState.CLOSED);
               shutdownLatch.countDown();
             }
@@ -1033,27 +1038,37 @@ public class KPipeConsumer implements AutoCloseable {
       LOGGER.log(Level.WARNING, "Error cancelling the circuit-breaker probe timer during shutdown", e);
     }
     if (scheduler != null) scheduler.shutdownNow();
-    if (offsetManager != null) {
-      try {
-        offsetManager.close();
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Error closing offset manager", e);
+    // A pending interrupt, from close() giving up on the join or restored by a stuck record or an
+    // interrupted batch flush, has already broken the wait it was meant for. The final offset
+    // commit is bounded by its own timeout, but Kafka refuses to run it on an interrupted thread,
+    // so clear the flag for it and restore it once teardown ends. The batch flushes above keep the
+    // flag: a sink can block without bound, and an interrupt is the only thing that ends it.
+    final var interrupted = Thread.interrupted();
+    try {
+      if (offsetManager != null) {
+        try {
+          offsetManager.close();
+        } catch (final Exception e) {
+          LOGGER.log(Level.WARNING, "Error closing offset manager", e);
+        }
       }
-    }
-    if (kpipeProducer != null) {
-      try {
-        kpipeProducer.close();
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Error closing producer during shutdown", e);
+      if (kpipeProducer != null) {
+        try {
+          kpipeProducer.close();
+        } catch (final Exception e) {
+          LOGGER.log(Level.WARNING, "Error closing producer during shutdown", e);
+        }
       }
+      // Deregister the JVM shutdown hook last. It's registered in the ctor (when
+      // useShutdownHook=true), so it exists even for a never-started consumer and a
+      // self-terminating consumer thread. Doing it here — inside the CAS-guarded release — means
+      // every terminal path removes it; otherwise a self-terminated thread (which sets
+      // state=CLOSED, making a later close() a no-op at transitionToClosing) would leave the
+      // hook registered for the JVM's lifetime, pinning this consumer in memory.
+      tryRemoveShutdownHook();
+    } finally {
+      if (interrupted) Thread.currentThread().interrupt();
     }
-    // Deregister the JVM shutdown hook last. It's registered in the ctor (when
-    // useShutdownHook=true), so it exists even for a never-started consumer and a
-    // self-terminating consumer thread. Doing it here — inside the CAS-guarded release — means
-    // every terminal path removes it; otherwise a self-terminated thread (which sets
-    // state=CLOSED, making a later close() a no-op at transitionToClosing) would leave the
-    // hook registered for the JVM's lifetime, pinning this consumer in memory.
-    tryRemoveShutdownHook();
   }
 
   /// Closes `kafkaConsumer`, swallowing+logging any error. Used only on the never-started fast
