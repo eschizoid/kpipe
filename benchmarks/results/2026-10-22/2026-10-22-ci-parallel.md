@@ -94,13 +94,14 @@ Records per second, higher is better, with the JMH 99.9% error.
 Against the 2026-10-21 capture, KPipe `PARALLEL`'s throughput fell 22%, 22% and 12% at the three delays, and KPipe
 `KEY_ORDERED`'s fell 18%, 17% and 3%. The raw loop and Atleon parallel, which did not change between the two runs, fell
 4 to 6% at 0 and 100 µs, but Confluent `KEY`, which did not change either, fell 11% at 100 µs, so run-to-run variation
-on this runner can reach about 10%. At 0 µs, where the two runs' error bands for KPipe `PARALLEL` are apart, tracking
+on this runner can reach about 11%. At 0 µs, where the two runs' error bands for KPipe `PARALLEL` are apart, tracking
 each record costs it roughly 15 to 20%; at 100 µs the two runs' bands overlap, so the change there is not resolved. Each
-invocation drains 25,000 records in about 35 to 50 ms, well inside KPipe's 30-second commit interval, and the commit at
-shutdown runs in the untimed teardown, so this is the cost of tracking, not of committing; the same holds for the other
-arms, whose commit intervals are 5 seconds. With commits on, KPipe and Atleon, which acknowledges every record, are
-within each other's error bands at every delay in unordered mode. In key-ordered mode Atleon leads at 0 µs and the two
-are within the error bands at 100 and 1000 µs.
+KPipe invocation drains 25,000 records in about 35 to 80 ms, well inside its 30-second commit interval, and the commit
+at shutdown runs in the untimed teardown, so this is the cost of tracking, not of committing. Atleon and Reactor also
+commit outside the timed window, after a first 5-second delay. Confluent Parallel Consumer commits once as soon as its
+first record completes, inside each invocation, and the share consumer acknowledges on every poll. With commits on,
+KPipe and Atleon, which acknowledges every record, are within each other's error bands at every delay in unordered mode.
+In key-ordered mode Atleon leads at 0 µs and the two are within the error bands at 100 and 1000 µs.
 
 ## Reactor
 
