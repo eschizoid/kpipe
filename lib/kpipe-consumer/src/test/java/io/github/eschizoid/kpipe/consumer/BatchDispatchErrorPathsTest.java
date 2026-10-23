@@ -134,6 +134,23 @@ class BatchDispatchErrorPathsTest {
     assertEquals(List.of(), outcomes.failed());
   }
 
+  /// A sink that restores the interrupt flag and returns no result at all is treated the same way:
+  /// with its thread interrupted, none of its records count as failures.
+  @Test
+  void aSinkThatRestoresTheFlagAndReturnsNoResultLeavesItsRecordsUnmarked() {
+    final var outcomes = new OutcomeCallbacks(true);
+    final BatchSink<byte[]> interrupted = _ -> {
+      Thread.currentThread().interrupt();
+      return null;
+    };
+
+    run(interrupted, outcomes);
+
+    assertTrue(Thread.interrupted(), "the flag the sink set must still be set");
+    assertEquals(List.of(), outcomes.marked());
+    assertEquals(List.of(), outcomes.failed());
+  }
+
   /// A record the sink reported as succeeded before the interruption was delivered and is marked;
   /// every record it did not report as succeeded stays unmarked.
   @Test
