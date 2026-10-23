@@ -78,7 +78,8 @@ public class KafkaOffsetManager implements OffsetManager {
   /// keyed by partition (see [OffsetLedger]).
   private final OffsetLedger ledger = new OffsetLedger();
 
-  private static final Duration FINAL_COMMIT_TIMEOUT = Duration.ofSeconds(5);
+  private static final Duration FINAL_COMMIT_TIMEOUT = ConsumerDefaults.FINAL_COMMIT;
+  private static final Duration COMMIT_SCHEDULER_STOP = ConsumerDefaults.COMMIT_SCHEDULER_STOP;
   private final Duration commitInterval;
   private volatile ScheduledExecutorService scheduler;
   private volatile ScheduledFuture<?> scheduledCommitTask;
@@ -247,7 +248,9 @@ public class KafkaOffsetManager implements OffsetManager {
     if (scheduler != null) {
       scheduler.shutdown();
       try {
-        if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) scheduler.shutdownNow();
+        if (
+          !scheduler.awaitTermination(COMMIT_SCHEDULER_STOP.toMillis(), TimeUnit.MILLISECONDS)
+        ) scheduler.shutdownNow();
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
         scheduler.shutdownNow();
