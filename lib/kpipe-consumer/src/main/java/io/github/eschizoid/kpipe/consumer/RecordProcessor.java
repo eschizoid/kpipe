@@ -143,6 +143,11 @@ final class RecordProcessor {
       }
 
       @Override
+      public boolean consumerClosing() {
+        return !consumerActive.getAsBoolean();
+      }
+
+      @Override
       public void onBufferReleased() {
         loadReleased.run();
       }

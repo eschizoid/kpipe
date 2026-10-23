@@ -652,12 +652,17 @@ public class KPipeConsumer implements AutoCloseable {
             // Release ctor resources before closing the consumer (see method docs).
             releaseConstructedResources();
           } finally {
+            // Closing leaves the consumer group; on an interrupted thread Kafka refuses
+            // to, so the
+            // group would wait out the session timeout before rebalancing.
+            final var interruptedBeforeClose = Thread.interrupted();
             try {
               kafkaConsumer.close();
               LOGGER.log(Level.INFO, "Consumer closed for topics {0}", topics);
             } catch (final Exception e) {
               LOGGER.log(Level.WARNING, "Error closing Kafka consumer", e);
             } finally {
+              if (interruptedBeforeClose) Thread.currentThread().interrupt();
               state.set(ConsumerState.CLOSED);
               shutdownLatch.countDown();
             }
@@ -1010,7 +1015,13 @@ public class KPipeConsumer implements AutoCloseable {
     } catch (final Exception e) {
       LOGGER.log(Level.WARNING, "Error closing dispatcher during shutdown", e);
     }
+    // A pending interrupt, from close() giving up on the join or restored by a stuck record or an
+    // interrupted batch flush, has already broken the wait it was meant for. Clear it before each
+    // step that still has to finish, each batch route's final flush and the final offset commit,
+    // whose Kafka call refuses to run on an interrupted thread, and restore it once teardown ends.
+    var interrupted = false;
     for (final var wrapper : batchWrappers.values()) {
+      interrupted |= Thread.interrupted();
       try {
         wrapper.close();
       } catch (final Exception e) {
@@ -1023,6 +1034,7 @@ public class KPipeConsumer implements AutoCloseable {
       LOGGER.log(Level.WARNING, "Error cancelling the circuit-breaker probe timer during shutdown", e);
     }
     if (scheduler != null) scheduler.shutdownNow();
+    interrupted |= Thread.interrupted();
     if (offsetManager != null) {
       try {
         offsetManager.close();
@@ -1044,6 +1056,7 @@ public class KPipeConsumer implements AutoCloseable {
     // state=CLOSED, making a later close() a no-op at transitionToClosing) would leave the
     // hook registered for the JVM's lifetime, pinning this consumer in memory.
     tryRemoveShutdownHook();
+    if (interrupted) Thread.currentThread().interrupt();
   }
 
   /// Closes `kafkaConsumer`, swallowing+logging any error. Used only on the never-started fast

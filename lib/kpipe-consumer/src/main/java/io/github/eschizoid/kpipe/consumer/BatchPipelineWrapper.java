@@ -61,6 +61,13 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     /// Called after a flush's dispatch has lowered [#bufferedCount], on the thread that ran the
     /// flush. The owning consumer uses it to end an in-flight backpressure wait the flush drained.
     default void onBufferReleased() {}
+
+    /// Whether the owning consumer has begun shutting down. An interruption seen in a sink's
+    /// exception while the consumer is running came from the sink's own machinery, not from
+    /// shutdown, and is an ordinary failure.
+    default boolean consumerClosing() {
+      return false;
+    }
   }
 
   private final String topic;
@@ -301,11 +308,12 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     try {
       result = sink.apply(values);
     } catch (final Exception e) {
-      if (Interruptions.isInterruptionRelated(e)) return leaveUnmarked(size);
+      if (interruptedFlush(e)) return leaveUnmarked(snapshot, e);
       logBatchFailure("threw", size, e);
       return failAll(snapshot, e);
     }
     if (result == null) {
+      if (interruptedFlush(null)) return leaveUnmarked(snapshot, null);
       final var cause = new IllegalStateException(
         "BatchSink returned null BatchResult for topic " + topic + " (" + size + " records)"
       );
@@ -350,8 +358,9 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       LOGGER.log(Level.WARNING, violation.getMessage(), violation);
     }
     final var coverageViolation = violation;
-    final var anyInterrupted = failedByIndex.values().stream().anyMatch(Interruptions::isInterruptionRelated);
-    if (anyInterrupted) logInterrupted(size);
+    final var interruption = failedByIndex.values().stream().filter(Interruptions::isInterruptionRelated).findFirst();
+    final var interrupted = interruptedFlush(interruption.orElse(null));
+    if (interrupted) logInterrupted(snapshot, interruption.orElse(null));
 
     return () -> {
       for (int i = 0; i < size; i++) {
@@ -366,9 +375,10 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
             callbacks.markProcessed(record);
             continue;
           }
+          // An interrupted flush did not finish, so a record it did not report as succeeded may
+          // never have reached the sink; it stays unmarked and is redelivered.
+          if (interrupted) continue;
           final var perRecordCause = failedByIndex.get(i);
-          // Interrupted, not failed: the record never reached the sink, so it stays unmarked.
-          if (perRecordCause != null && Interruptions.isInterruptionRelated(perRecordCause)) continue;
           callbacks.onBatchFailure(
             record,
             perRecordCause != null
@@ -390,24 +400,44 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
           );
         }
       }
-      if (anyInterrupted) Thread.currentThread().interrupt();
+      if (interrupted) Thread.currentThread().interrupt();
     };
   }
 
-  /// The dispatch for a flush the sink abandoned because its thread was interrupted. Every record
-  /// stays unmarked, so it is redelivered instead of being failed and, with no DLQ, committed. The
-  /// interrupt is restored for the thread running the dispatch.
-  private Runnable leaveUnmarked(final int size) {
-    logInterrupted(size);
+  /// Whether a flush ended because its thread was interrupted: the thread's interrupt flag is
+  /// set, as the usual idiom leaves it, or the consumer is shutting down and `cause` comes from an
+  /// interruption. Outside shutdown, an interruption buried in a sink's exception is an ordinary
+  /// failure, because the consumer thread itself was not interrupted.
+  private boolean interruptedFlush(final Throwable cause) {
+    if (Thread.currentThread().isInterrupted()) return true;
+    return cause != null && callbacks.consumerClosing() && Interruptions.isInterruptionRelated(cause);
+  }
+
+  /// The dispatch for a flush its thread's interruption cut short. Every record stays unmarked, so
+  /// it is redelivered instead of being failed and, with no DLQ, committed. The interrupt is
+  /// restored for the thread running the dispatch.
+  private Runnable leaveUnmarked(final List<Entry<T>> snapshot, final Throwable cause) {
+    logInterrupted(snapshot, cause);
     return () -> Thread.currentThread().interrupt();
   }
 
-  private void logInterrupted(final int size) {
+  private void logInterrupted(final List<Entry<T>> snapshot, final Throwable cause) {
+    final var first = snapshot.getFirst().record();
+    final var last = snapshot.getLast().record();
     LOGGER.log(
       Level.WARNING,
-      "Batch flush for topic {0} was interrupted; its interrupted records ({1} in the batch) stay unmarked and will be redelivered",
-      topic,
-      size
+      "Batch flush for topic " +
+        topic +
+        " was interrupted; the records it did not report as succeeded, between partition " +
+        first.partition() +
+        " offset " +
+        first.offset() +
+        " and partition " +
+        last.partition() +
+        " offset " +
+        last.offset() +
+        ", stay unmarked and will be redelivered",
+      cause
     );
   }
 
