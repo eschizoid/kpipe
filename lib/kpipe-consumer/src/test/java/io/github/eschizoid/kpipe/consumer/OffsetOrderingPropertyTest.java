@@ -24,7 +24,9 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.common.TopicPartition;
 
 /// Property-based coverage for the offset-lifecycle ordering invariants — lowest-pending commits,
-/// no commit-ahead, and no-loss across interleaved track/mark sequences.
+/// no commit-ahead, and no-loss across interleaved track/mark sequences, and the revoke and
+/// late-mark rules across sequences that also move partitions in and out of this member's
+/// ownership.
 ///
 /// Where `OffsetInvariantPropertyTest` is the single-partition smoke proving the toolchain, this
 /// suite exercises the combinatorial ordering space that property testing is built for: random
@@ -319,6 +321,137 @@ class OffsetOrderingPropertyTest {
             cp <= lowestUnmarked,
             "commit point %d counted an unmarked offset (lowest unmarked %d)".formatted(cp, lowestUnmarked)
           );
+        }
+      }
+    } finally {
+      manager.close();
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Rebalance: ownership, the revoke commit, and records that finish after their partition left.
+  // ---------------------------------------------------------------------------------------------
+
+  private enum RebalanceKind {
+    TRACK,
+    MARK,
+    REVOKE,
+    LOST,
+    ASSIGN,
+  }
+
+  /// One generated step. `offset` is ignored by the ownership steps.
+  private record RebalanceOp(RebalanceKind kind, int partition, long offset) {}
+
+  @Provide
+  Arbitrary<List<RebalanceOp>> rebalanceSequences() {
+    final var kinds = Arbitraries.of(RebalanceKind.class);
+    final var partitions = Arbitraries.integers().between(0, 2);
+    final var offsets = Arbitraries.longs().between(0L, 12L);
+    final Arbitrary<RebalanceOp> ops = Combinators.combine(kinds, partitions, offsets).as(RebalanceOp::new);
+    return ops.list().ofMinSize(1).ofMaxSize(100);
+  }
+
+  /// Tracks, marks, revokes, losses and assignments interleaved across partitions, checked against
+  /// an independent model after every step.
+  ///
+  /// The model follows the consumer's rules. Only an owned partition gets new records tracked,
+  /// because a consumer only polls what it is assigned. A mark can arrive at any time, including
+  /// after its partition was revoked, because a worker finishes a record on its own schedule; it
+  /// counts only for an offset that is still pending. A revoke or a loss commits the partition's
+  /// frontier and forgets the partition, and an assignment starts it from scratch.
+  ///
+  /// Three things must hold. The revoke commits exactly the model's frontier. Every partition's
+  /// commit point matches the model. And a partition this member does not own has no commit point
+  /// at all, however many of its records finish late, so no commit can reach a partition another
+  /// member owns.
+  @Property(tries = 500)
+  void rebalancesNeverLeaveACommitPointOnAPartitionThisMemberDoesNotOwn(
+    @ForAll("rebalanceSequences") final List<RebalanceOp> ops
+  ) {
+    final var lastCommit = new HashMap<TopicPartition, Long>();
+    final var consumer = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void commitSync(
+        final java.util.Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsets
+      ) {
+        super.commitSync(offsets);
+        offsets.forEach((tp, meta) -> lastCommit.put(tp, meta.offset()));
+      }
+    };
+    final var manager = KafkaOffsetManager.builder(consumer).withCommitExecutor(TestCommitExecutors.unwired()).build();
+    manager.start();
+    final var listener = manager.createRebalanceListener();
+    try {
+      final var owned = new TreeSet<Integer>(List.of(0, 1, 2));
+      final var pendingByPartition = new HashMap<Integer, Set<Long>>();
+      final var highestMarkedByPartition = new HashMap<Integer, Long>();
+      for (var p = 0; p < 3; p++) {
+        pendingByPartition.put(p, new TreeSet<>());
+        highestMarkedByPartition.put(p, -1L);
+      }
+
+      for (final var op : ops) {
+        final var p = op.partition();
+        final var tp = new TopicPartition(TOPIC, p);
+        final var pending = pendingByPartition.get(p);
+        switch (op.kind()) {
+          case TRACK -> {
+            if (!owned.contains(p)) continue;
+            manager.trackOffset(record(p, op.offset()));
+            pending.add(op.offset());
+          }
+          case MARK -> {
+            manager.markOffsetProcessed(record(p, op.offset()));
+            if (pending.remove(op.offset())) highestMarkedByPartition.merge(p, op.offset(), Math::max);
+          }
+          case REVOKE, LOST -> {
+            if (!owned.contains(p)) continue;
+            final var frontier = expectedCommitPoint(pending, highestMarkedByPartition.get(p));
+            lastCommit.remove(tp);
+            if (op.kind() == RebalanceKind.REVOKE) listener.onPartitionsRevoked(List.of(tp));
+            else listener.onPartitionsLost(List.of(tp));
+            if (frontier >= 0) {
+              assertEquals(
+                frontier,
+                lastCommit.get(tp),
+                "%s of partition %d must commit its frontier".formatted(op.kind(), p)
+              );
+            } else {
+              assertFalse(
+                lastCommit.containsKey(tp),
+                "%s of an untouched partition %d must commit nothing".formatted(op.kind(), p)
+              );
+            }
+            owned.remove(p);
+            pending.clear();
+            highestMarkedByPartition.put(p, -1L);
+          }
+          case ASSIGN -> {
+            if (owned.contains(p)) continue;
+            listener.onPartitionsAssigned(List.of(tp));
+            owned.add(p);
+          }
+        }
+
+        for (var partition = 0; partition < 3; partition++) {
+          final var partitionTp = new TopicPartition(TOPIC, partition);
+          final var expected = expectedCommitPoint(
+            pendingByPartition.get(partition),
+            highestMarkedByPartition.get(partition)
+          );
+          assertEquals(
+            expected,
+            commitPoint(manager, partitionTp),
+            "partition %d commit point diverged from the model after %s".formatted(partition, op)
+          );
+          if (!owned.contains(partition)) {
+            assertEquals(
+              -1L,
+              commitPoint(manager, partitionTp),
+              "partition %d is not owned but has a commit point after %s".formatted(partition, op)
+            );
+          }
         }
       }
     } finally {
