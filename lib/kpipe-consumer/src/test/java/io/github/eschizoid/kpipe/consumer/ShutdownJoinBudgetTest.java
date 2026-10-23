@@ -1,0 +1,104 @@
+package io.github.eschizoid.kpipe.consumer;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+import java.time.Duration;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.MockConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InterruptException;
+import org.junit.jupiter.api.Test;
+
+/// With the default timeouts, `close()` must wait long enough for the consumer thread's teardown
+/// to reach the final commit, even when a record is stuck and the dispatcher waits its full
+/// termination timeout. Interrupting the thread first would make the final commit throw, as a real
+/// Kafka consumer does when its thread is interrupted, so the commit would never be confirmed.
+class ShutdownJoinBudgetTest {
+
+  private static final String TOPIC = "join-budget";
+  private static final TopicPartition PARTITION = new TopicPartition(TOPIC, 0);
+  private static final int RECORDS = 10;
+  private static final int STUCK_OFFSET = 4;
+
+  @Test
+  void defaultJoinBudgetLetsTheFinalCommitRunWithAStuckRecord() throws InterruptedException {
+    final var commits = new ConcurrentHashMap<TopicPartition, OffsetAndMetadata>();
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void commitSync(
+        final Map<TopicPartition, OffsetAndMetadata> offsets,
+        final Duration timeout
+      ) {
+        // A real KafkaConsumer refuses to block on an interrupted thread.
+        if (Thread.interrupted()) throw new InterruptException(new InterruptedException());
+        super.commitSync(offsets, timeout);
+        commits.putAll(offsets);
+      }
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
+    };
+    mockConsumer.assign(List.of(PARTITION));
+    mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
+    for (int i = 0; i < RECORDS; i++) {
+      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes(UTF_8)));
+    }
+
+    final var finished = new AtomicInteger();
+    final var neverReleased = new CountDownLatch(1);
+    final var properties = new Properties();
+    properties.put("bootstrap.servers", "localhost:9092");
+    properties.put("group.id", "join-budget-group");
+    properties.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    properties.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessingMode(ProcessingMode.PARALLEL)
+      // Only the drain wait is shortened, to keep the test quick; the join budget and the
+      // dispatcher's termination wait keep their defaults.
+      .withWaitForMessagesTimeout(Duration.ofMillis(200))
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          if (new String(value, UTF_8).equals("v" + STUCK_OFFSET)) {
+            try {
+              neverReleased.await();
+            } catch (final InterruptedException e) {
+              Thread.currentThread().interrupt();
+              throw new IllegalStateException("interrupted at shutdown", e);
+            }
+          }
+          finished.incrementAndGet();
+          return value;
+        })
+      )
+      .withConsumer(() -> mockConsumer)
+      .build();
+
+    try {
+      consumer.start();
+      TestAwaits.pollUntil(() -> finished.get() == RECORDS - 1, Duration.ofSeconds(10), "every other record finishes");
+      consumer.close();
+    } finally {
+      neverReleased.countDown();
+    }
+
+    final var committed = commits.get(PARTITION);
+    assertNotNull(committed, "the final commit must run once the stuck record is abandoned");
+    assertEquals(STUCK_OFFSET, committed.offset(), "the commit stops at the stuck record");
+  }
+}
