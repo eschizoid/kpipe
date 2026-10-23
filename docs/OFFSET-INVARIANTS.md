@@ -22,6 +22,21 @@ phrased as a property a test can assert.
   jcstress suite it replaced did not cover that either in practice: its one memory-model test forbids only an outcome
   that x86 cannot produce, and CI has only ever run x86.
 
+- **Toxiproxy** sits between a Testcontainers broker and the consumer in `BrokerFaultInjectionIntegrationTest`, which
+  checks I1 to I3 end to end while the broker is unreachable, drops responses, answers slowly or resets connections.
+  Every commit the consumer has acknowledged is checked through a `ConsumerInterceptor`, and a sampler reads the
+  committed offsets on the broker's own listener, which also catches a commit that landed but whose response was
+  dropped; neither may pass a record that has not completed. In `PARALLEL` and `KEY_ORDERED`, one record per partition
+  is released while the fault is in effect, so the frontier has to advance while commits cannot get through, and another
+  only after the link has recovered, so the resumed commits must stop below it. `SEQUENTIAL` runs a record on the
+  consumer thread, where holding one would stop commits altogether, so in that mode the fault scenarios check only that
+  commits resume and nothing is lost. The test also closes a consumer while the broker is unreachable, with the broker
+  returning after or during the close, and requires the next consumer to receive every record the first left unfinished.
+  Making the frontier skip pending offsets fails every `PARALLEL` and `KEY_ORDERED` case, and treating an interruption
+  at shutdown as a failure fails the cases where the broker returns during the close, in every mode, and the
+  `SEQUENTIAL` case where it returns after: a consumer thread `close()` had to interrupt is still tearing down when the
+  broker comes back, so its commit lands.
+
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass
   throws `Unsupported class file major version 69` while retransforming classpath classes, which crashes the test JVM.
@@ -73,7 +88,9 @@ when the pending set is empty (no unmarked offset is holding the line lower).
 may legitimately trail the log end by a processed-but-not-yet-committed tail — those records are simply reprocessed on
 restart, which is the definition of at-least-once tolerance. Requiring the commit to reach exactly the log end at
 shutdown would be an exactly-once / complete-drain property kpipe does not claim. End-to-end tests therefore assert
-no-loss (every record observed) plus this `<=` bound, never `committed == logEnd`.
+no-loss (every record observed) plus this `<=` bound, never `committed == logEnd` after a close. A running consumer's
+periodic commits reaching the log end once every record has completed is a different property, liveness, and a test may
+assert it before closing.
 
 ## I3 — no loss (commit advances only over contiguous completed offsets)
 
