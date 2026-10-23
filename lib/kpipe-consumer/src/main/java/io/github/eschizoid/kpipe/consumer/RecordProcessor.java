@@ -269,9 +269,9 @@ final class RecordProcessor {
   }
 
   /// The shared attempt loop behind both route shapes: run `attempt`, and on a thrown exception
-  /// back off and re-run up to `maxRetries` times. Interruption (of the backoff sleep, or an
-  /// interruption-related failure from the attempt itself) restores the flag and aborts without
-  /// retrying and without invoking the error path — teardown recovery is re-fetch on restart.
+  /// back off and re-run up to `maxRetries` times. Interruption (of the backoff sleep, or a failure
+  /// [#interruptedBy] recognises) restores the flag and aborts without retrying and without
+  /// invoking the error path — teardown recovery is re-fetch on restart.
   /// Once attempts are exhausted the failure goes terminal through [#handleProcessingError]
   /// with `retryCount` equal to the retries actually performed.
   private boolean runWithRetries(
@@ -300,7 +300,7 @@ final class RecordProcessor {
       try {
         return attemptBody.run(attempt);
       } catch (final Exception e) {
-        if (Interruptions.isInterruptionRelated(e)) {
+        if (interruptedBy(e)) {
           Thread.currentThread().interrupt();
           return false;
         }
@@ -356,7 +356,7 @@ final class RecordProcessor {
     try {
       wrapper.enqueue(record, value);
     } catch (final Exception e) {
-      if (Interruptions.isInterruptionRelated(e)) {
+      if (interruptedBy(e)) {
         Thread.currentThread().interrupt();
         return false;
       }
@@ -458,6 +458,16 @@ final class RecordProcessor {
         ex
       );
     }
+  }
+
+  /// Whether a failure is an interruption to abandon the record for, rather than a failure to
+  /// retry and then fail: this thread's interrupt flag is set, or the consumer is shutting down
+  /// and the failure came from an interruption. While the consumer runs, an interruption inside a
+  /// pipeline's exception came from the pipeline's own machinery, not from shutdown; abandoning the
+  /// record for it would leave it unmarked and set a fake interrupt on the processing thread.
+  private boolean interruptedBy(final Exception failure) {
+    if (Thread.currentThread().isInterrupted()) return true;
+    return !consumerActive.getAsBoolean() && Interruptions.isInterruptionRelated(failure);
   }
 
   /// Surfaces a rejection from `ParallelDispatcher`'s executor (typically during shutdown)
