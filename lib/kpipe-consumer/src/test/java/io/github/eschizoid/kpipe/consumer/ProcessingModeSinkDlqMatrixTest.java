@@ -375,6 +375,7 @@ class ProcessingModeSinkDlqMatrixTest {
     // dispatcher. RECORDS=12 with size 5 gives batches [5, 5, 2] — the trailing 2 are a genuine
     // partial batch that only flushes at teardown, so this also exercises the close()-drain path.
     final var sinkSaw = new CopyOnWriteArrayList<Long>();
+    final var buffered = new AtomicInteger();
     final var dlqOffsets = new CopyOnWriteArrayList<Long>();
     final var manager = new MarkRecordingOffsetManager();
     final var mock = seeded(RECORDS);
@@ -397,7 +398,15 @@ class ProcessingModeSinkDlqMatrixTest {
 
     final var consumer = KPipeConsumer.builder()
       .withProperties(props())
-      .withBatchPipeline(TOPIC, TestPipelines.sideEffect(v -> v), batchSink, BatchPolicy.ofSize(5))
+      .withBatchPipeline(
+        TOPIC,
+        TestPipelines.sideEffect(v -> {
+          buffered.incrementAndGet();
+          return v;
+        }),
+        batchSink,
+        BatchPolicy.ofSize(5)
+      )
       .withProcessingMode(mode)
       .withDeadLetterTopic(DLQ_TOPIC)
       .withKafkaProducer(dlqProducer)
@@ -411,9 +420,10 @@ class ProcessingModeSinkDlqMatrixTest {
       final var expectedSuccess = RECORDS / 2;
       final var expectedDlq = RECORDS - expectedSuccess;
       // Two batches flush on size(5) (10 records); the trailing partial batch of 2 flushes at
-      // teardown — so we close() to force the final flush, then assert. Wait for the size-triggered
-      // flushes first to avoid racing the close.
-      awaitCondition(() -> sinkSaw.size() + dlqOffsets.size() >= 10, 10_000);
+      // teardown, so wait until every record is buffered and the size-triggered flushes are done,
+      // then close() to force the final flush. A SEQUENTIAL consumer stops picking up records once
+      // close() begins, so closing earlier would leave the tail unprocessed.
+      awaitCondition(() -> buffered.get() >= RECORDS && sinkSaw.size() + dlqOffsets.size() >= 10, 10_000);
     } finally {
       consumer.close();
     }
