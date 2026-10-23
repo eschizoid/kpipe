@@ -422,21 +422,20 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   }
 
   private void logInterrupted(final List<Entry<T>> snapshot, final Throwable cause) {
-    final var first = snapshot.getFirst().record();
-    final var last = snapshot.getLast().record();
+    final var lowestOffsetByPartition = new java.util.TreeMap<Integer, Long>();
+    for (final var entry : snapshot) {
+      lowestOffsetByPartition.merge(entry.record().partition(), entry.record().offset(), Math::min);
+    }
     LOGGER.log(
       Level.WARNING,
-      "Batch flush for topic " +
+      "Batch flush of " +
+        snapshot.size() +
+        " records for topic " +
         topic +
-        " was interrupted; the records it did not report as succeeded, between partition " +
-        first.partition() +
-        " offset " +
-        first.offset() +
-        " and partition " +
-        last.partition() +
-        " offset " +
-        last.offset() +
-        ", stay unmarked and will be redelivered",
+        " was interrupted; the records it did not report as succeeded stay unmarked and will be" +
+        " redelivered (lowest offset per partition: " +
+        lowestOffsetByPartition +
+        ")",
       cause
     );
   }
