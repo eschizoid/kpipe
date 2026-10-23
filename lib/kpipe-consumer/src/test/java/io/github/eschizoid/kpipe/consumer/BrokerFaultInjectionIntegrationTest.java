@@ -244,7 +244,9 @@ class BrokerFaultInjectionIntegrationTest {
 
   /// When the broker comes back relative to a `close()` that started while it was unreachable.
   enum Return {
-    /// After `close()` has returned, so the final commit fails.
+    /// After `close()` has returned. The final commit fails, unless `close()` had to interrupt
+    /// the consumer thread: that thread is still tearing down and commits once the broker is
+    /// back, as a `SEQUENTIAL` consumer held by a record does.
     AFTER_CLOSE,
     /// While `close()` is still draining, so the final commit lands and has to stop below every
     /// record the shutdown abandoned.
@@ -314,7 +316,11 @@ class BrokerFaultInjectionIntegrationTest {
 
     @Override
     public void configure(final Map<String, ?> configs) {
-      run = RUNS_BY_GROUP.get((String) configs.get(ConsumerConfig.GROUP_ID_CONFIG));
+      final var groupId = (String) configs.get(ConsumerConfig.GROUP_ID_CONFIG);
+      run = RUNS_BY_GROUP.get(groupId);
+      // Without its scenario the recorder would check nothing, and every assertion built on it
+      // would pass vacuously.
+      if (run == null) throw new IllegalStateException("no scenario registered for group " + groupId);
     }
 
     @Override
@@ -368,7 +374,7 @@ class BrokerFaultInjectionIntegrationTest {
     KPipeConsumer consumer() {
       final var finished = ConcurrentHashMap.<String>newKeySet();
       final var consumer = KPipeConsumer.builder()
-        .withProperties(proxiedConsumerProperties(groupId))
+        .withProperties(proxiedConsumerProperties(groupId, mode))
         .withTopic(topic)
         .withProcessingMode(mode)
         .withCommitInterval(COMMIT_INTERVAL)
@@ -382,9 +388,8 @@ class BrokerFaultInjectionIntegrationTest {
                 TimeUnit.MILLISECONDS.sleep(SEQUENTIAL_RECORD_TIME.toMillis());
               }
             } catch (final InterruptedException e) {
-              // The flag stays cleared, so only the interruption in the cause chain
-              // tells the
-              // consumer the record was cut short at shutdown rather than failed.
+              // The flag stays cleared, so only the interruption in the cause
+              // chain tells the consumer the record was cut short at shutdown.
               throw new IllegalStateException("interrupted at shutdown", e);
             }
             completed.add(text);
@@ -622,14 +627,16 @@ class BrokerFaultInjectionIntegrationTest {
   }
 
   /// A client API call gives up after five seconds, so a commit stalled by a fault fails within the
-  /// fault window instead of outlasting the test.
-  private static Properties proxiedConsumerProperties(final String groupId) {
+  /// fault window instead of outlasting the test. A `SEQUENTIAL` consumer commits only between
+  /// polls, so it fetches a few records at a time and keeps committing through the fault.
+  private static Properties proxiedConsumerProperties(final String groupId, final ProcessingMode mode) {
     final var props = new Properties();
     props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, proxiedBootstrap);
     props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
     props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     props.put(ConsumerConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "5000");
     props.put(ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG, CommitRecorder.class.getName());
+    if (mode == ProcessingMode.SEQUENTIAL) props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "20");
     props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
     return props;

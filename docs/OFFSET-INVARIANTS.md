@@ -33,7 +33,9 @@ phrased as a property a test can assert.
   commits resume and nothing is lost. The test also closes a consumer while the broker is unreachable, with the broker
   returning after or during the close, and requires the next consumer to receive every record the first left unfinished.
   Making the frontier skip pending offsets fails every `PARALLEL` and `KEY_ORDERED` case, and treating an interruption
-  at shutdown as a failure fails the cases where the broker returns during the close, in every mode.
+  at shutdown as a failure fails the cases where the broker returns during the close, in every mode, and the
+  `SEQUENTIAL` case where it returns after: a consumer thread `close()` had to interrupt is still tearing down when the
+  broker comes back, so its commit lands.
 
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass
