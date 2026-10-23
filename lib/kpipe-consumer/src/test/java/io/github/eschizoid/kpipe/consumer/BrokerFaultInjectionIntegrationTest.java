@@ -35,6 +35,7 @@ import org.apache.kafka.clients.consumer.ConsumerInterceptor;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -335,7 +336,11 @@ class BrokerFaultInjectionIntegrationTest {
       try (final var sampler = new CommitSampler(run)) {
         dlqProxy.disable();
         assertTrue(!probeReachesBroker(dlqBootstrap, Duration.ofSeconds(3)), "the DLQ must be unreachable");
-        final var first = run.consumer(dlqTopic, dlqProducer());
+        final var unreachableDlq = dlqProducer(run, true);
+        final var first = run.consumer(
+          dlqTopic,
+          KPipeProducer.<byte[], byte[]>builder().withProducer(unreachableDlq).build()
+        );
         first.start();
         try {
           run.awaitCompleted(RECORD_COUNT - run.failing.size(), Duration.ofSeconds(120));
@@ -352,18 +357,21 @@ class BrokerFaultInjectionIntegrationTest {
           run.awaitCommittedAt(RELEASED_DURING_FAULT, Duration.ofSeconds(1));
         } finally {
           first.close();
+          unreachableDlq.close(Duration.ZERO);
         }
         Fault.heal();
 
-        // The failing records finish only by reaching the DLQ; the check after this test asserts
-        // they did, so from here commits may pass them.
-        run.completed.addAll(run.failing);
-        final var second = run.consumer(dlqTopic, dlqProducer());
+        final var reachableDlq = dlqProducer(run, false);
+        final var second = run.consumer(
+          dlqTopic,
+          KPipeProducer.<byte[], byte[]>builder().withProducer(reachableDlq).build()
+        );
         try {
           second.start();
           run.awaitCommittedToLogEnd(Duration.ofSeconds(60));
         } finally {
           second.close();
+          reachableDlq.close();
         }
         sampler.assertNoViolation();
       }
@@ -381,17 +389,30 @@ class BrokerFaultInjectionIntegrationTest {
     return consumer.getMetrics().getOrDefault(ConsumerMetricKeys.DLQ_FAILED, 0L);
   }
 
-  /// A dead-letter producer on the DLQ's own proxy. A send that cannot reach the broker fails in
-  /// about three seconds rather than Kafka's default two minutes.
-  private static KPipeProducer<byte[], byte[]> dlqProducer() {
+  /// A dead-letter producer on the DLQ's own proxy. A failing record counts as completed only once
+  /// the broker has acknowledged it in the DLQ: Kafka runs a send's callback before the send's
+  /// future completes, so a commit can pass the record only after it is parked. With
+  /// `failFast`, a send that cannot reach the broker gives up within about two seconds rather
+  /// than Kafka's default of a minute.
+  private static KafkaProducer<byte[], byte[]> dlqProducer(final Run run, final boolean failFast) {
     final var props = new Properties();
     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, dlqBootstrap);
     props.put(ProducerConfig.ACKS_CONFIG, "all");
-    props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, "2000");
-    props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "1000");
-    props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, "3000");
-    final var producer = new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer());
-    return KPipeProducer.<byte[], byte[]>builder().withProducer(producer).build();
+    if (failFast) {
+      props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, "2000");
+      props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "1000");
+      props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, "3000");
+    }
+    return new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer()) {
+      @Override
+      public Future<RecordMetadata> send(final ProducerRecord<byte[], byte[]> record, final Callback callback) {
+        final var value = new String(record.value());
+        return super.send(record, (metadata, exception) -> {
+          if (exception == null) run.completed.add(value);
+          if (callback != null) callback.onCompletion(metadata, exception);
+        });
+      }
+    };
   }
 
   /// The values in `dlqTopic`, read on the broker's own listener until `expected` have arrived.
