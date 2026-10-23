@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import net.jqwik.api.Arbitraries;
 import net.jqwik.api.Arbitrary;
@@ -18,6 +19,7 @@ import net.jqwik.api.Combinators;
 import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
 import net.jqwik.api.Provide;
+import net.jqwik.api.Tuple;
 import net.jqwik.api.constraints.IntRange;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -345,11 +347,19 @@ class OffsetOrderingPropertyTest {
 
   @Provide
   Arbitrary<List<RebalanceOp>> rebalanceSequences() {
-    final var kinds = Arbitraries.of(RebalanceKind.class);
+    // Tracks and marks dominate and the offset range is small, so marks often hit offsets that
+    // were pending when their partition was revoked, the case a late mark has to get right.
+    final var kinds = Arbitraries.frequencyOf(
+      Tuple.of(4, Arbitraries.just(RebalanceKind.TRACK)),
+      Tuple.of(4, Arbitraries.just(RebalanceKind.MARK)),
+      Tuple.of(1, Arbitraries.just(RebalanceKind.REVOKE)),
+      Tuple.of(1, Arbitraries.just(RebalanceKind.LOST)),
+      Tuple.of(2, Arbitraries.just(RebalanceKind.ASSIGN))
+    );
     final var partitions = Arbitraries.integers().between(0, 2);
-    final var offsets = Arbitraries.longs().between(0L, 12L);
+    final var offsets = Arbitraries.longs().between(0L, 5L);
     final Arbitrary<RebalanceOp> ops = Combinators.combine(kinds, partitions, offsets).as(RebalanceOp::new);
-    return ops.list().ofMinSize(1).ofMaxSize(100);
+    return ops.list().ofMinSize(20).ofMaxSize(100);
   }
 
   /// Tracks, marks, revokes, losses and assignments interleaved across partitions, checked against
@@ -361,14 +371,15 @@ class OffsetOrderingPropertyTest {
   /// counts only for an offset that is still pending. A revoke or a loss commits the partition's
   /// frontier and forgets the partition, and an assignment starts it from scratch.
   ///
-  /// Three things must hold. The revoke commits exactly the model's frontier. Every partition's
+  /// Three things must hold. A revoke commits exactly the model's frontier. Every partition's
   /// commit point matches the model. And a partition this member does not own has no commit point
-  /// at all, however many of its records finish late, so no commit can reach a partition another
-  /// member owns.
+  /// at all, however many of its records finish late, and never appears in what a commit would
+  /// send, so no later commit can reach a partition another member owns. A loss is not required to
+  /// commit: Kafka advises against committing for lost partitions, so only its clearing is checked.
   @Property(tries = 500)
   void rebalancesNeverLeaveACommitPointOnAPartitionThisMemberDoesNotOwn(
     @ForAll("rebalanceSequences") final List<RebalanceOp> ops
-  ) {
+  ) throws InterruptedException {
     final var lastCommit = new HashMap<TopicPartition, Long>();
     final var consumer = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
@@ -379,7 +390,14 @@ class OffsetOrderingPropertyTest {
         offsets.forEach((tp, meta) -> lastCommit.put(tp, meta.offset()));
       }
     };
-    final var manager = KafkaOffsetManager.builder(consumer).withCommitExecutor(TestCommitExecutors.unwired()).build();
+    // Captures what each commit request would send, and completes it at once.
+    final var requested = new HashMap<TopicPartition, Long>();
+    final CommitExecutor capturing = offsets -> {
+      requested.clear();
+      offsets.get().forEach((tp, meta) -> requested.put(tp, meta.offset()));
+      return CompletableFuture.completedFuture(true);
+    };
+    final var manager = KafkaOffsetManager.builder(consumer).withCommitExecutor(capturing).build();
     manager.start();
     final var listener = manager.createRebalanceListener();
     try {
@@ -411,17 +429,19 @@ class OffsetOrderingPropertyTest {
             lastCommit.remove(tp);
             if (op.kind() == RebalanceKind.REVOKE) listener.onPartitionsRevoked(List.of(tp));
             else listener.onPartitionsLost(List.of(tp));
-            if (frontier >= 0) {
-              assertEquals(
-                frontier,
-                lastCommit.get(tp),
-                "%s of partition %d must commit its frontier".formatted(op.kind(), p)
-              );
-            } else {
-              assertFalse(
-                lastCommit.containsKey(tp),
-                "%s of an untouched partition %d must commit nothing".formatted(op.kind(), p)
-              );
+            if (op.kind() == RebalanceKind.REVOKE) {
+              if (frontier >= 0) {
+                assertEquals(
+                  frontier,
+                  lastCommit.get(tp),
+                  "revoke of partition %d must commit its frontier".formatted(p)
+                );
+              } else {
+                assertFalse(
+                  lastCommit.containsKey(tp),
+                  "revoke of an untouched partition %d must commit nothing".formatted(p)
+                );
+              }
             }
             owned.remove(p);
             pending.clear();
@@ -432,6 +452,21 @@ class OffsetOrderingPropertyTest {
             listener.onPartitionsAssigned(List.of(tp));
             owned.add(p);
           }
+        }
+
+        requested.clear();
+        assertTrue(manager.commitSyncAndWait(java.time.Duration.ofSeconds(1)), "a captured commit completes at once");
+        for (final var entry : requested.entrySet()) {
+          final var partition = entry.getKey().partition();
+          assertTrue(
+            owned.contains(partition),
+            "a commit after %s would send partition %d, which is not owned".formatted(op, partition)
+          );
+          assertEquals(
+            expectedCommitPoint(pendingByPartition.get(partition), highestMarkedByPartition.get(partition)),
+            entry.getValue(),
+            "a commit after %s would send the wrong offset for partition %d".formatted(op, partition)
+          );
         }
 
         for (var partition = 0; partition < 3; partition++) {

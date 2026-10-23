@@ -7,9 +7,9 @@ phrased as a property a test can assert.
 
 - **jqwik** (Java-native property testing) is wired and green. `OffsetInvariantPropertyTest` generates randomized
   track/mark sequences and asserts I1 on a single partition. `OffsetOrderingPropertyTest` extends this to several
-  partitions and to sequences that interleave tracks and marks with revokes, losses and assignments, checking I1 to I5
-  against an independent model after every step, including that a partition this member no longer owns never has a
-  commit point. This is the active sequence-property layer.
+  partitions and to sequences that interleave tracks and marks with revokes, losses and assignments, checking I1, I2,
+  I4's commit-and-clear and I5 against an independent model after every step, including that a partition this member no
+  longer owns never has a commit point. This is the active sequence-property layer.
 - **Fray** (CMU PASTA controlled-concurrency checker) is wired and green on JDK 25 via a per-module `frayTest` source
   set, and is the CI concurrency gate. It explores thread schedules under its own scheduler and replays a failing one
   deterministically, rather than running racy code many times and hoping the bad interleaving appears.
