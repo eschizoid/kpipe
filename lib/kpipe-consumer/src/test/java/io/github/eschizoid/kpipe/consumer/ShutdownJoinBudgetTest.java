@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.consumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -11,6 +12,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -100,5 +102,152 @@ class ShutdownJoinBudgetTest {
     final var committed = commits.get(PARTITION);
     assertNotNull(committed, "the final commit must run once the stuck record is abandoned");
     assertEquals(STUCK_OFFSET, committed.offset(), "the commit stops at the stuck record");
+  }
+
+  /// Each mode's default budget covers exactly the waits that mode's teardown runs.
+  @Test
+  void defaultJoinBudgetCoversEachModesTeardown() {
+    final var afterDispatch = ConsumerDefaults.COMMIT_SCHEDULER_STOP.plus(ConsumerDefaults.FINAL_COMMIT);
+    assertEquals(afterDispatch, ConsumerDefaults.threadTermination(ProcessingMode.SEQUENTIAL));
+    assertEquals(
+      ConsumerDefaults.WAIT_FOR_MESSAGES.plus(ConsumerDefaults.EXECUTOR_TERMINATION).plus(afterDispatch),
+      ConsumerDefaults.threadTermination(ProcessingMode.PARALLEL)
+    );
+    assertEquals(
+      ConsumerDefaults.WAIT_FOR_MESSAGES.plus(ConsumerDefaults.KEY_ORDERED_CLOSE_DRAIN).plus(afterDispatch),
+      ConsumerDefaults.threadTermination(ProcessingMode.KEY_ORDERED)
+    );
+  }
+
+  /// A record hung on a SEQUENTIAL consumer's own thread keeps its loop from ever reaching
+  /// teardown, so waiting longer cannot help; `close()` must not hold for the dispatcher wait
+  /// that only PARALLEL runs.
+  @Test
+  void hungSequentialRecordDoesNotHoldCloseForAParallelBudget() throws InterruptedException {
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
+    };
+    mockConsumer.assign(List.of(PARTITION));
+    mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
+    mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
+
+    final var started = new CountDownLatch(1);
+    final var neverReleased = new CountDownLatch(1);
+    final var properties = new Properties();
+    properties.put("bootstrap.servers", "localhost:9092");
+    properties.put("group.id", "join-budget-sequential");
+    properties.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    properties.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .withWaitForMessagesTimeout(Duration.ofMillis(200))
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          started.countDown();
+          try {
+            neverReleased.await();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted at shutdown", e);
+          }
+          return value;
+        })
+      )
+      .withConsumer(() -> mockConsumer)
+      .build();
+
+    try {
+      consumer.start();
+      assertTrue(started.await(10, TimeUnit.SECONDS), "the record should start");
+      final long begin = System.nanoTime();
+      consumer.close();
+      final var elapsed = Duration.ofNanos(System.nanoTime() - begin);
+      // The teardown a SEQUENTIAL consumer runs once its loop exits: the scheduler stop and the
+      // final commit. Computed here rather than read from threadTermination, so a wrong budget
+      // there cannot also move the bound this test checks.
+      final var budget = ConsumerDefaults.COMMIT_SCHEDULER_STOP.plus(ConsumerDefaults.FINAL_COMMIT);
+      assertTrue(
+        elapsed.compareTo(budget.plusSeconds(3)) < 0,
+        "close() must give up after the SEQUENTIAL budget of " + budget + "; took " + elapsed
+      );
+    } finally {
+      neverReleased.countDown();
+    }
+  }
+
+  /// A slow but healthy SEQUENTIAL consumer stops between records once `close()` begins, so its
+  /// teardown fits the SEQUENTIAL budget and the final commit lands at the last record it
+  /// processed. Finishing the whole polled batch first would run past the budget and lose the
+  /// commit to the interrupt.
+  @Test
+  void slowSequentialConsumerStopsBetweenRecordsAndCommitsWhatItProcessed() throws InterruptedException {
+    final var commits = new ConcurrentHashMap<TopicPartition, OffsetAndMetadata>();
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void commitSync(
+        final Map<TopicPartition, OffsetAndMetadata> offsets,
+        final Duration timeout
+      ) {
+        if (Thread.interrupted()) throw new InterruptException(new InterruptedException());
+        super.commitSync(offsets, timeout);
+        commits.putAll(offsets);
+      }
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
+    };
+    mockConsumer.assign(List.of(PARTITION));
+    mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
+    // 400 records at 50 ms each is 20 s of work in one poll, twice the SEQUENTIAL budget.
+    for (int i = 0; i < 400; i++) {
+      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), "v".getBytes(UTF_8)));
+    }
+
+    final var processed = new AtomicInteger();
+    final var properties = new Properties();
+    properties.put("bootstrap.servers", "localhost:9092");
+    properties.put("group.id", "join-budget-slow-sequential");
+    properties.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    properties.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .withWaitForMessagesTimeout(Duration.ofMillis(200))
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          try {
+            Thread.sleep(50);
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted at shutdown", e);
+          }
+          processed.incrementAndGet();
+          return value;
+        })
+      )
+      .withConsumer(() -> mockConsumer)
+      .build();
+
+    consumer.start();
+    TestAwaits.pollUntil(() -> processed.get() >= 1, Duration.ofSeconds(10), "the first record finishes");
+    consumer.close();
+
+    final var committed = commits.get(PARTITION);
+    assertNotNull(committed, "the final commit must land, not be lost to an interrupt");
+    assertEquals(processed.get(), committed.offset(), "the commit stops at the last record processed");
+    assertTrue(
+      processed.get() < 400,
+      "close() must stop the batch rather than finish it; processed " + processed.get()
+    );
   }
 }

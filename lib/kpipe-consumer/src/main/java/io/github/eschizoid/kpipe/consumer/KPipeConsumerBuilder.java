@@ -53,7 +53,8 @@ public final class KPipeConsumerBuilder {
   ProcessingMode processingMode = ProcessingMode.PARALLEL;
   int keyOrderedMaxKeys = KeyOrderedDispatcher.DEFAULT_MAX_KEYS;
   Duration waitForMessagesTimeout = ConsumerDefaults.WAIT_FOR_MESSAGES;
-  Duration threadTerminationTimeout = ConsumerDefaults.THREAD_TERMINATION;
+  /// Unset means the default for the processing mode, [ConsumerDefaults#threadTermination].
+  Duration threadTerminationTimeout;
   final Duration executorTerminationTimeout = ConsumerDefaults.EXECUTOR_TERMINATION;
   OffsetManager offsetManager;
   Function<Consumer<byte[], byte[]>, OffsetManager> offsetManagerProvider;
@@ -303,7 +304,9 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Sets the timeout for waiting for the consumer thread to terminate during shutdown.
+  /// Sets the timeout for waiting for the consumer thread to terminate during shutdown. Unset, it
+  /// defaults per processing mode to cover that mode's teardown; see
+  /// [ConsumerDefaults#threadTermination].
   ///
   /// @param timeout Maximum time to wait for the consumer thread to finish
   /// @return This builder instance for method chaining
