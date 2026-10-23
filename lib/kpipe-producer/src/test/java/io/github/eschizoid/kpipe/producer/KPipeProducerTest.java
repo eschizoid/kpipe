@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import io.github.eschizoid.kpipe.tracing.Tracer;
+import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -248,6 +249,19 @@ class KPipeProducerTest {
   void shouldNotCloseUnderlyingProducerWhenNotOwned() {
     new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).close();
     verify(mockProducer, never()).close();
+  }
+
+  @Test
+  void shouldCloseOwnedProducerWithinTheGivenTimeout() {
+    new KPipeProducer<>(mockProducer, true, null, Tracer.noop()).close(Duration.ofSeconds(5));
+    verify(mockProducer).close(Duration.ofSeconds(5));
+    verify(mockProducer, never()).close();
+  }
+
+  @Test
+  void shouldNotCloseUnownedProducerWithATimeout() {
+    new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).close(Duration.ofSeconds(5));
+    verify(mockProducer, never()).close(any(Duration.class));
   }
 
   @Test

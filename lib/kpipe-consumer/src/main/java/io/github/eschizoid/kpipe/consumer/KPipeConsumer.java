@@ -205,7 +205,10 @@ public class KPipeConsumer implements AutoCloseable {
       this.threadTerminationTimeout =
         builder.threadTerminationTimeout != null
           ? builder.threadTerminationTimeout
-          : ConsumerDefaults.threadTermination(builder.processingMode);
+          : ConsumerDefaults.threadTermination(
+              builder.processingMode,
+              builder.kpipeProducer != null || builder.deadLetterTopic != null
+            );
       this.dispatcher = switch (this.processingMode) {
         case SEQUENTIAL -> new SequentialDispatcher();
         case PARALLEL -> new ParallelDispatcher(this::handleParallelRejection, builder.executorTerminationTimeout);
@@ -405,7 +408,7 @@ public class KPipeConsumer implements AutoCloseable {
     }
     if (kpipeProducer != null) {
       try {
-        kpipeProducer.close();
+        kpipeProducer.close(ConsumerDefaults.PRODUCER_CLOSE);
       } catch (final Exception e) {
         original.addSuppressed(e);
       }
@@ -655,9 +658,8 @@ public class KPipeConsumer implements AutoCloseable {
             // Release ctor resources before closing the consumer (see method docs).
             releaseConstructedResources();
           } finally {
-            // Closing leaves the consumer group; on an interrupted thread Kafka refuses
-            // to,
-            // so the group would wait out the session timeout before rebalancing.
+            // Closing leaves the consumer group. On an interrupted thread Kafka cuts the
+            // close short, and the group waits out the session timeout to rebalance.
             final var interruptedBeforeClose = Thread.interrupted();
             try {
               kafkaConsumer.close(CloseOptions.timeout(ConsumerDefaults.KAFKA_CLIENT_CLOSE));
@@ -1054,7 +1056,7 @@ public class KPipeConsumer implements AutoCloseable {
       }
       if (kpipeProducer != null) {
         try {
-          kpipeProducer.close();
+          kpipeProducer.close(ConsumerDefaults.PRODUCER_CLOSE);
         } catch (final Exception e) {
           LOGGER.log(Level.WARNING, "Error closing producer during shutdown", e);
         }

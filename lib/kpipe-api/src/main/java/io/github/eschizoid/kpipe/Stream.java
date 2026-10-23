@@ -309,7 +309,7 @@ public interface Stream<T> {
 
   /// Returns a new stream that waits at most `timeout` for the consumer thread to terminate
   /// during shutdown. Unset, the wait defaults per processing mode: 30 seconds for `PARALLEL`, 25
-  /// for `KEY_ORDERED`, 15 for `SEQUENTIAL`.
+  /// for `KEY_ORDERED`, 15 for `SEQUENTIAL`, and 5 more with a dead-letter queue or Kafka sink.
   ///
   /// @param timeout the thread-join budget (must be non-null and non-negative)
   /// @return a new stream with the termination timeout configured

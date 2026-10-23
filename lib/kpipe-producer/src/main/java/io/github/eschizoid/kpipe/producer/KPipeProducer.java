@@ -4,6 +4,7 @@ import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
@@ -266,6 +267,21 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     if (ownProducer) {
       try {
         producer.close();
+      } catch (final Exception e) {
+        LOGGER.log(Level.WARNING, "Error closing Kafka producer", e);
+      }
+    }
+  }
+
+  /// Closes the producer if this wrapper owns it, waiting at most `timeout` for sends still in
+  /// flight. Sends the broker has not acknowledged by then fail rather than hold the close.
+  ///
+  /// @param timeout the most the close waits
+  public void close(final Duration timeout) {
+    Objects.requireNonNull(timeout, "timeout cannot be null");
+    if (ownProducer) {
+      try {
+        producer.close(timeout);
       } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Error closing Kafka producer", e);
       }
