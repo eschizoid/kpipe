@@ -833,6 +833,13 @@ public class KPipeConsumer implements AutoCloseable {
     return s == ConsumerState.RUNNING || s == ConsumerState.PAUSED;
   }
 
+  /// Whether `close()` has begun or finished. Not the same as `!isRunning()`, which is also true
+  /// before `start()`.
+  private boolean closingStarted() {
+    final var s = state.get();
+    return s == ConsumerState.CLOSING || s == ConsumerState.CLOSED;
+  }
+
   /// Point-in-time health snapshot: running/paused state, active pause sources, circuit-breaker
   /// state, and in-flight count. This is the source of truth for liveness probes — see
   /// [HealthSnapshot#healthy()] for why `isRunning()` alone is the wrong probe signal (a
@@ -1090,6 +1097,11 @@ public class KPipeConsumer implements AutoCloseable {
   /// @param records the batch of records to process
   protected void processRecords(final ConsumerRecords<byte[], byte[]> records) {
     for (final var record : records) {
+      // SEQUENTIAL runs each record on this thread, so once close() has begun, finishing the rest
+      // of the batch only delays shutdown past its join budget. A record never tracked is never
+      // committed past: the frontier stops at the last one processed, and the rest are fetched
+      // again on restart.
+      if (processingMode == ProcessingMode.SEQUENTIAL && closingStarted()) return;
       if (offsetManager != null) offsetManager.trackOffset(record);
       dispatcher.dispatch(record, () -> processRecord(record), this::wakeIfBackpressureDrained);
     }

@@ -308,7 +308,8 @@ public interface Stream<T> {
   Stream<T> withShutdownHook(final boolean useShutdownHook);
 
   /// Returns a new stream that waits at most `timeout` for the consumer thread to terminate
-  /// during shutdown.
+  /// during shutdown. Unset, the wait defaults per processing mode: 25 seconds for `PARALLEL`, 20
+  /// for `KEY_ORDERED`, 10 for `SEQUENTIAL`.
   ///
   /// @param timeout the thread-join budget (must be non-null and non-negative)
   /// @return a new stream with the termination timeout configured

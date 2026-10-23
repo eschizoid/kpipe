@@ -180,4 +180,74 @@ class ShutdownJoinBudgetTest {
       neverReleased.countDown();
     }
   }
+
+  /// A slow but healthy SEQUENTIAL consumer stops between records once `close()` begins, so its
+  /// teardown fits the SEQUENTIAL budget and the final commit lands at the last record it
+  /// processed. Finishing the whole polled batch first would run past the budget and lose the
+  /// commit to the interrupt.
+  @Test
+  void slowSequentialConsumerStopsBetweenRecordsAndCommitsWhatItProcessed() throws InterruptedException {
+    final var commits = new ConcurrentHashMap<TopicPartition, OffsetAndMetadata>();
+    final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void commitSync(
+        final Map<TopicPartition, OffsetAndMetadata> offsets,
+        final Duration timeout
+      ) {
+        if (Thread.interrupted()) throw new InterruptException(new InterruptedException());
+        super.commitSync(offsets, timeout);
+        commits.putAll(offsets);
+      }
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener callback) {}
+    };
+    mockConsumer.assign(List.of(PARTITION));
+    mockConsumer.updateBeginningOffsets(Map.of(PARTITION, 0L));
+    // 400 records at 50 ms each is 20 s of work in one poll, twice the SEQUENTIAL budget.
+    for (int i = 0; i < 400; i++) {
+      mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), "v".getBytes(UTF_8)));
+    }
+
+    final var processed = new AtomicInteger();
+    final var properties = new Properties();
+    properties.put("bootstrap.servers", "localhost:9092");
+    properties.put("group.id", "join-budget-slow-sequential");
+    properties.put("key.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    properties.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .withWaitForMessagesTimeout(Duration.ofMillis(200))
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          try {
+            Thread.sleep(50);
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted at shutdown", e);
+          }
+          processed.incrementAndGet();
+          return value;
+        })
+      )
+      .withConsumer(() -> mockConsumer)
+      .build();
+
+    consumer.start();
+    TestAwaits.pollUntil(() -> processed.get() >= 1, Duration.ofSeconds(10), "the first record finishes");
+    consumer.close();
+
+    final var committed = commits.get(PARTITION);
+    assertNotNull(committed, "the final commit must land, not be lost to an interrupt");
+    assertEquals(processed.get(), committed.offset(), "the commit stops at the last record processed");
+    assertTrue(
+      processed.get() < 400,
+      "close() must stop the batch rather than finish it; processed " + processed.get()
+    );
+  }
 }

@@ -304,7 +304,9 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Sets the timeout for waiting for the consumer thread to terminate during shutdown.
+  /// Sets the timeout for waiting for the consumer thread to terminate during shutdown. Unset, it
+  /// defaults per processing mode to cover that mode's teardown; see
+  /// [ConsumerDefaults#threadTermination].
   ///
   /// @param timeout Maximum time to wait for the consumer thread to finish
   /// @return This builder instance for method chaining
