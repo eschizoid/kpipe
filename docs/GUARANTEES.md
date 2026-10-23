@@ -87,6 +87,12 @@ consumer **keeps polling**: paused partitions fetch nothing, but the poll keeps 
 (no `max.poll.interval.ms` eviction) and keeps the pause/resume decision on a fixed cadence. The monitored metric is
 in-flight records for `PARALLEL`/`KEY_ORDERED` and consumer lag for `SEQUENTIAL` (where in-flight is always ≤ 1).
 
+During an in-flight hold (`PARALLEL`/`KEY_ORDERED`) the consumer polls with a zero timeout, so it can resume the moment
+the in-flight count drains. With the classic group protocol, a zero-timeout poll advances a rebalance one step, where a
+blocking poll finishes it in one call, so a rebalance that starts during a hold takes a few extra poll timeouts to
+complete: about 100 to 200 ms at the default 100 ms poll timeout. The consumer group protocol
+(`group.protocol=consumer`) runs the rebalance on the broker and is unaffected.
+
 ## What actually limits scale
 
 A virtual thread per record removes the worker pool, not the physics. The resources that bound a KPipe consumer in
