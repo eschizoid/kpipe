@@ -84,6 +84,113 @@ class BatchDispatchErrorPathsTest {
     assertEquals(List.of(0L, 2L, 3L), failures, "a throwing callback does not abort the whole-batch failure loop");
   }
 
+  /// A sink interrupted at shutdown has not delivered its batch, so its records are not failures:
+  /// with no DLQ a failure is logged and committed, which would commit records that never reached
+  /// the destination. They stay unmarked, to be redelivered, and the interrupt is restored.
+  @Test
+  void aSinkInterruptedAtShutdownLeavesItsRecordsUnmarked() {
+    final var outcomes = new OutcomeCallbacks(true);
+    final BatchSink<byte[]> interrupted = _ -> {
+      throw new IllegalStateException("write aborted", new InterruptedException());
+    };
+
+    run(interrupted, outcomes);
+
+    assertTrue(Thread.interrupted(), "the interrupt must be restored for the caller");
+    assertEquals(List.of(), outcomes.marked(), "an interrupted flush must not mark its records");
+    assertEquals(List.of(), outcomes.failed(), "an interrupted flush must not fail its records");
+  }
+
+  /// The same when the sink reports the interruption as a failed result rather than throwing, which
+  /// is what `BatchSink.ofVoid` does with any exception its consumer throws.
+  @Test
+  void aSinkReportingAnInterruptionAtShutdownAsAFailedResultLeavesItsRecordsUnmarked() {
+    final var outcomes = new OutcomeCallbacks(true);
+    final BatchSink<byte[]> interrupted = BatchSink.ofVoid(_ -> {
+      throw new IllegalStateException("write aborted", new InterruptedException());
+    });
+
+    run(interrupted, outcomes);
+
+    assertTrue(Thread.interrupted(), "the interrupt must be restored for the caller");
+    assertEquals(List.of(), outcomes.marked());
+    assertEquals(List.of(), outcomes.failed());
+  }
+
+  /// The common idiom: the sink restores the interrupt flag and throws without chaining the
+  /// `InterruptedException`. The set flag is what marks the flush as interrupted.
+  @Test
+  void aSinkThatRestoresTheFlagAndThrowsLeavesItsRecordsUnmarked() {
+    final var outcomes = new OutcomeCallbacks(true);
+    final BatchSink<byte[]> interrupted = _ -> {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("aborted");
+    };
+
+    run(interrupted, outcomes);
+
+    assertTrue(Thread.interrupted(), "the flag the sink set must still be set");
+    assertEquals(List.of(), outcomes.marked());
+    assertEquals(List.of(), outcomes.failed());
+  }
+
+  /// A sink that restores the interrupt flag and returns no result at all is treated the same way:
+  /// with its thread interrupted, none of its records count as failures.
+  @Test
+  void aSinkThatRestoresTheFlagAndReturnsNoResultLeavesItsRecordsUnmarked() {
+    final var outcomes = new OutcomeCallbacks(true);
+    final BatchSink<byte[]> interrupted = _ -> {
+      Thread.currentThread().interrupt();
+      return null;
+    };
+
+    run(interrupted, outcomes);
+
+    assertTrue(Thread.interrupted(), "the flag the sink set must still be set");
+    assertEquals(List.of(), outcomes.marked());
+    assertEquals(List.of(), outcomes.failed());
+  }
+
+  /// A record the sink reported as succeeded before the interruption was delivered and is marked;
+  /// every record it did not report as succeeded stays unmarked.
+  @Test
+  void anInterruptedFlushStillMarksTheRecordsItReportedAsSucceeded() {
+    final var outcomes = new OutcomeCallbacks(true);
+    final BatchSink<byte[]> partlyDelivered = _ ->
+      new BatchResult(
+        List.of(0),
+        Map.of(
+          1,
+          new IllegalStateException("aborted", new InterruptedException()),
+          2,
+          new IllegalStateException("bad row")
+        )
+      );
+
+    run(partlyDelivered, outcomes);
+
+    assertTrue(Thread.interrupted(), "the interrupt must be restored for the caller");
+    assertEquals(List.of(0L), outcomes.marked(), "only the succeeded record is marked");
+    assertEquals(List.of(), outcomes.failed(), "nothing from an interrupted flush is failed");
+  }
+
+  /// While the consumer is running its thread was not interrupted, so an `InterruptedException`
+  /// inside the sink's exception came from the sink's own machinery, such as a helper pool shut
+  /// down under it. That is an ordinary failure; treating it as an interruption would fake an
+  /// interrupt on the consumer thread and leave the batch pending.
+  @Test
+  void anInterruptionInsideTheSinksExceptionWhileRunningIsAnOrdinaryFailure() {
+    final var outcomes = new OutcomeCallbacks(false);
+    final BatchSink<byte[]> helperPoolFailed = _ -> {
+      throw new IllegalStateException("helper pool shut down", new InterruptedException());
+    };
+
+    run(helperPoolFailed, outcomes);
+
+    assertFalse(Thread.interrupted(), "no interrupt may be invented for a running consumer");
+    assertEquals(List.of(0L, 1L, 2L, 3L), outcomes.failed(), "every record takes the failure path");
+  }
+
   private void run(final BatchSink<byte[]> sink, final BatchPipelineWrapper.BatchCallbacks callbacks) {
     final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     final var wrapper = new BatchPipelineWrapper<byte[]>(
@@ -120,6 +227,32 @@ class BatchDispatchErrorPathsTest {
         throw new IllegalStateException("callback failure for offset " + record.offset());
       }
       failures.add(record.offset());
+    }
+  }
+
+  /// Records which offsets were marked and which were failed, and reports a fixed closing state.
+  private record OutcomeCallbacks(
+    List<Long> marked,
+    List<Long> failed,
+    boolean closing
+  ) implements BatchPipelineWrapper.BatchCallbacks {
+    OutcomeCallbacks(final boolean closing) {
+      this(new ArrayList<>(), new ArrayList<>(), closing);
+    }
+
+    @Override
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
+      marked.add(record.offset());
+    }
+
+    @Override
+    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+      failed.add(record.offset());
+    }
+
+    @Override
+    public boolean consumerClosing() {
+      return closing;
     }
   }
 }
