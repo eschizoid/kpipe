@@ -37,6 +37,15 @@ phrased as a property a test can assert.
   `SEQUENTIAL` case where it returns after: a consumer thread `close()` had to interrupt is still tearing down when the
   broker comes back, so its commit lands.
 
+- **A three-broker cluster** runs in `MultiBrokerFaultIntegrationTest`, with every partition replicated on all three
+  brokers and two in-sync replicas required, as `__consumer_offsets` requires them. A fault pauses broker containers
+  mid-run: the leader of every partition, a follower, the group coordinator, or both followers. The same two commit
+  checks run throughout, in every mode, with records held across the fault. With both followers paused the brokers
+  refuse every commit, so none may be acknowledged; with one broker paused, commits must resume on the others before the
+  fault ends. How soon they resume after losing the group coordinator depends on the client's `request.timeout.ms`: the
+  client looks for a new coordinator only once its request to the silent one times out, 30 seconds by default, and until
+  then commits stall without losing anything. The test sets it to five seconds.
+
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass
   throws `Unsupported class file major version 69` while retransforming classpath classes, which crashes the test JVM.
