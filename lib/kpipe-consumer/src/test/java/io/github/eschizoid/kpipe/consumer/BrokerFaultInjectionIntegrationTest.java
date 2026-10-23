@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
+import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
+import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -31,8 +33,11 @@ import org.apache.kafka.clients.admin.OffsetSpec;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerInterceptor;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -71,6 +76,10 @@ class BrokerFaultInjectionIntegrationTest {
   private static final String TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
   private static final int PROXY_PORT = 8666;
   private static final String PROXIED_LISTENER = "kafka:19092";
+  /// The dead-letter producer reaches the broker on a listener of its own, behind its own proxy,
+  /// so the DLQ can be cut off while the consumer's own connections stay healthy.
+  private static final int DLQ_PROXY_PORT = 8667;
+  private static final String DLQ_LISTENER = "kafka:19093";
 
   private static final int PARTITIONS = 3;
   private static final int RECORD_COUNT = 300;
@@ -97,6 +106,8 @@ class BrokerFaultInjectionIntegrationTest {
   private static KafkaContainer kafka;
   private static Proxy proxy;
   private static String proxiedBootstrap;
+  private static Proxy dlqProxy;
+  private static String dlqBootstrap;
 
   @BeforeAll
   static void startBroker() throws IOException {
@@ -106,16 +117,16 @@ class BrokerFaultInjectionIntegrationTest {
     // The broker advertises the proxy's host address on this listener, so after bootstrap every
     // connection the client opens still goes through the proxy rather than straight to the broker.
     proxiedBootstrap = toxiproxy.getHost() + ":" + toxiproxy.getMappedPort(PROXY_PORT);
+    dlqBootstrap = toxiproxy.getHost() + ":" + toxiproxy.getMappedPort(DLQ_PROXY_PORT);
     kafka = new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)))
       .withNetwork(network)
       .withNetworkAliases("kafka")
-      .withListener(PROXIED_LISTENER, () -> proxiedBootstrap);
+      .withListener(PROXIED_LISTENER, () -> proxiedBootstrap)
+      .withListener(DLQ_LISTENER, () -> dlqBootstrap);
     kafka.start();
-    proxy = new ToxiproxyClient(toxiproxy.getHost(), toxiproxy.getControlPort()).createProxy(
-      "kafka",
-      "0.0.0.0:" + PROXY_PORT,
-      PROXIED_LISTENER
-    );
+    final var client = new ToxiproxyClient(toxiproxy.getHost(), toxiproxy.getControlPort());
+    proxy = client.createProxy("kafka", "0.0.0.0:" + PROXY_PORT, PROXIED_LISTENER);
+    dlqProxy = client.createProxy("kafka-dlq", "0.0.0.0:" + DLQ_PROXY_PORT, DLQ_LISTENER);
   }
 
   @AfterAll
@@ -157,7 +168,10 @@ class BrokerFaultInjectionIntegrationTest {
       @Override
       void assertEngaged() {
         final var started = System.nanoTime();
-        assertTrue(probeReachesBroker(Duration.ofSeconds(20)), "the slow link still reaches the broker");
+        assertTrue(
+          probeReachesBroker(proxiedBootstrap, Duration.ofSeconds(20)),
+          "the slow link still reaches the broker"
+        );
         final var elapsed = Duration.ofNanos(System.nanoTime() - started);
         assertTrue(elapsed.compareTo(SLOW_LINK_LATENCY) >= 0, "a request through the slow link took " + elapsed);
       }
@@ -182,12 +196,16 @@ class BrokerFaultInjectionIntegrationTest {
     /// Fails the test if the fault is not in effect, so a scenario cannot pass against a link that
     /// was never actually broken.
     void assertEngaged() {
-      assertTrue(!probeReachesBroker(Duration.ofSeconds(3)), name() + " must stop requests reaching the broker");
+      assertTrue(
+        !probeReachesBroker(proxiedBootstrap, Duration.ofSeconds(3)),
+        name() + " must stop requests reaching the broker"
+      );
     }
 
     static void heal() throws IOException {
       proxy.enable();
       for (final var toxic : proxy.toxics().getAll()) toxic.remove();
+      dlqProxy.enable();
     }
   }
 
@@ -302,6 +320,120 @@ class BrokerFaultInjectionIntegrationTest {
     }
   }
 
+  /// A record that cannot be processed finishes only once it is in the dead-letter topic. While
+  /// that topic cannot be reached, the record stays pending and pins the commit, the consumer goes
+  /// on processing everything else, and the failed send is counted. Once the topic can be reached,
+  /// the next consumer receives the record again and parks it there.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("modes")
+  void aRecordWhoseDeadLetterSendFailsHoldsTheCommitUntilItIsParked(final ProcessingMode mode) throws Exception {
+    final var failingOffsets = Set.of(RELEASED_DURING_FAULT, RELEASED_AFTER_HEAL);
+    try (final var run = new Run(mode, Set.of(), failingOffsets)) {
+      final var dlqTopic = run.topic + "-dlq";
+      try (final var admin = Admin.create(directAdminProperties())) {
+        admin.createTopics(List.of(new NewTopic(dlqTopic, 1, (short) 1))).all().get(30, TimeUnit.SECONDS);
+      }
+      try (final var sampler = new CommitSampler(run)) {
+        dlqProxy.disable();
+        assertTrue(!probeReachesBroker(dlqBootstrap, Duration.ofSeconds(3)), "the DLQ must be unreachable");
+        final var unreachableDlq = dlqProducer(run, true);
+        final var first = run.consumer(
+          dlqTopic,
+          KPipeProducer.<byte[], byte[]>builder().withProducer(unreachableDlq).build()
+        );
+        first.start();
+        try {
+          run.awaitCompleted(RECORD_COUNT - run.failing.size(), Duration.ofSeconds(120));
+          final var deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+          while (dlqFailed(first) < run.failing.size() && System.nanoTime() < deadline) {
+            TimeUnit.MILLISECONDS.sleep(100);
+          }
+          assertTrue(
+            dlqFailed(first) >= run.failing.size(),
+            "every failed DLQ send is counted, got " + dlqFailed(first)
+          );
+          run.awaitCommittedAt(RELEASED_DURING_FAULT, Duration.ofSeconds(20));
+          TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
+          run.awaitCommittedAt(RELEASED_DURING_FAULT, Duration.ofSeconds(1));
+        } finally {
+          first.close();
+          unreachableDlq.close(Duration.ZERO);
+        }
+        Fault.heal();
+
+        final var reachableDlq = dlqProducer(run, false);
+        final var second = run.consumer(
+          dlqTopic,
+          KPipeProducer.<byte[], byte[]>builder().withProducer(reachableDlq).build()
+        );
+        try {
+          second.start();
+          run.awaitCommittedToLogEnd(Duration.ofSeconds(60));
+        } finally {
+          second.close();
+          reachableDlq.close();
+        }
+        sampler.assertNoViolation();
+      }
+      run.assertNoAcknowledgedViolation();
+      final var parked = dlqValues(dlqTopic, run.failing.size(), Duration.ofSeconds(30));
+      assertTrue(parked.containsAll(run.failing), "every failing record is parked in the DLQ; parked " + parked);
+    }
+  }
+
+  static List<ProcessingMode> modes() {
+    return List.of(ProcessingMode.values());
+  }
+
+  private static long dlqFailed(final KPipeConsumer consumer) {
+    return consumer.getMetrics().getOrDefault(ConsumerMetricKeys.DLQ_FAILED, 0L);
+  }
+
+  /// A dead-letter producer on the DLQ's own proxy. A failing record counts as completed only once
+  /// the broker has acknowledged it in the DLQ: Kafka runs a send's callback before the send's
+  /// future completes, so a commit can pass the record only after it is parked. With
+  /// `failFast`, a send that cannot reach the broker gives up within about two seconds rather
+  /// than Kafka's default of a minute.
+  private static KafkaProducer<byte[], byte[]> dlqProducer(final Run run, final boolean failFast) {
+    final var props = new Properties();
+    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, dlqBootstrap);
+    props.put(ProducerConfig.ACKS_CONFIG, "all");
+    if (failFast) {
+      props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, "2000");
+      props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "1000");
+      props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, "3000");
+    }
+    return new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer()) {
+      @Override
+      public Future<RecordMetadata> send(final ProducerRecord<byte[], byte[]> record, final Callback callback) {
+        final var value = new String(record.value());
+        return super.send(record, (metadata, exception) -> {
+          if (exception == null) run.completed.add(value);
+          if (callback != null) callback.onCompletion(metadata, exception);
+        });
+      }
+    };
+  }
+
+  /// The values in `dlqTopic`, read on the broker's own listener until `expected` have arrived.
+  private static Set<String> dlqValues(final String dlqTopic, final int expected, final Duration timeout) {
+    final var props = new Properties();
+    props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+    props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+    props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+    final var values = new HashSet<String>();
+    try (final var reader = new KafkaConsumer<byte[], byte[]>(props)) {
+      final var partition = new TopicPartition(dlqTopic, 0);
+      reader.assign(List.of(partition));
+      reader.seekToBeginning(List.of(partition));
+      final var deadline = System.nanoTime() + timeout.toNanos();
+      while (values.size() < expected && System.nanoTime() < deadline) {
+        for (final var record : reader.poll(Duration.ofMillis(200))) values.add(new String(record.value()));
+      }
+    }
+    return values;
+  }
+
   private static Set<String> missingFrom(final Run run, final Set<String> finished) {
     final var missing = new HashSet<>(run.partitionOf.keySet());
     missing.removeAll(finished);
@@ -349,6 +481,8 @@ class BrokerFaultInjectionIntegrationTest {
     /// The offset each held value is released with, keyed by value.
     private final Map<String, Long> heldUntil = new HashMap<>();
     private final Map<Long, CountDownLatch> releases = new HashMap<>();
+    /// Values whose processing always throws, so they can finish only in the dead-letter topic.
+    private final Set<String> failing = new HashSet<>();
     /// Values completed by any consumer of this scenario, and by each consumer separately.
     private final Set<String> completed = ConcurrentHashMap.newKeySet();
     private final Map<KPipeConsumer, Set<String>> completedBy = new ConcurrentHashMap<>();
@@ -357,6 +491,10 @@ class BrokerFaultInjectionIntegrationTest {
     private final AtomicInteger acknowledgedDuringFault = new AtomicInteger();
 
     Run(final ProcessingMode mode, final Set<Long> heldOffsets) throws Exception {
+      this(mode, heldOffsets, Set.of());
+    }
+
+    Run(final ProcessingMode mode, final Set<Long> heldOffsets, final Set<Long> failingOffsets) throws Exception {
       this.mode = mode;
       for (final var offset : heldOffsets) releases.put(offset, new CountDownLatch(1));
       try (final var admin = Admin.create(directAdminProperties())) {
@@ -368,12 +506,22 @@ class BrokerFaultInjectionIntegrationTest {
         if (releases.containsKey(offset)) heldUntil.put(value, offset);
       }
       assertEquals(PARTITIONS * heldOffsets.size(), heldUntil.size(), "every partition holds each held offset");
+      for (final var value : offsetOf.keySet()) {
+        if (failingOffsets.contains(offsetOf.get(value))) failing.add(value);
+      }
+      assertEquals(PARTITIONS * failingOffsets.size(), failing.size(), "every partition has each failing offset");
       RUNS_BY_GROUP.put(groupId, this);
     }
 
     KPipeConsumer consumer() {
+      return consumer(null, null);
+    }
+
+    /// A consumer that sends records it cannot process to `dlqTopic` through `dlqProducer`, or
+    /// that has no dead-letter queue when they are null.
+    KPipeConsumer consumer(final String dlqTopic, final KPipeProducer<byte[], byte[]> dlqProducer) {
       final var finished = ConcurrentHashMap.<String>newKeySet();
-      final var consumer = KPipeConsumer.builder()
+      final var builder = KPipeConsumer.builder()
         .withProperties(proxiedConsumerProperties(groupId, mode))
         .withTopic(topic)
         .withProcessingMode(mode)
@@ -392,12 +540,14 @@ class BrokerFaultInjectionIntegrationTest {
               // chain tells the consumer the record was cut short at shutdown.
               throw new IllegalStateException("interrupted at shutdown", e);
             }
+            if (failing.contains(text)) throw new IllegalStateException("fails on purpose: " + text);
             completed.add(text);
             finished.add(text);
             return value;
           })
-        )
-        .build();
+        );
+      if (dlqTopic != null) builder.withDeadLetterQueue(dlqTopic, dlqProducer);
+      final var consumer = builder.build();
       completedBy.put(consumer, finished);
       return consumer;
     }
@@ -606,10 +756,10 @@ class BrokerFaultInjectionIntegrationTest {
     }
   }
 
-  /// Whether a fresh client can reach the broker through the proxy within `timeout`.
-  private static boolean probeReachesBroker(final Duration timeout) {
+  /// Whether a fresh client can reach the broker through `bootstrap` within `timeout`.
+  private static boolean probeReachesBroker(final String bootstrap, final Duration timeout) {
     final var props = new Properties();
-    props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, proxiedBootstrap);
+    props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
     props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, (int) timeout.toMillis());
     props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, (int) timeout.toMillis());
     try (final var admin = Admin.create(props)) {
