@@ -179,7 +179,7 @@ and Reactor on a one-thread-per-CPU scheduler, so they flatter KPipe; they stay 
 [2026-10-23 latency capture](benchmarks/results/2026-10-23/2026-10-23-ci-latency.md), five forks with offset tracking
 on, times how long each arm takes to drain a 25,000-record batch. In unordered mode KPipe and Atleon are within each
 other's error bands on average at every delay, and KPipe's p99 is 8 to 18 ms lower. In key-ordered mode Atleon is faster
-on average at 0 and 1000µs, while KPipe's p99.9 is lower at every delay. Confluent Parallel Consumer takes 3 to 8 times
+on average at 0 and 1000µs, while KPipe's p99.9 is lower at every delay. Confluent Parallel Consumer takes 5 to 8 times
 as long as KPipe in both modes.
 
 The costs: KPipe `PARALLEL` ran at 0.71× to 0.79× the raw loop. Against the 2026-10-21 capture, its throughput fell 22%

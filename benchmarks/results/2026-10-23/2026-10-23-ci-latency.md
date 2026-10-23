@@ -61,9 +61,9 @@ Percentiles from `SampleTime`, pooled across the five forks:
 
 KPipe `PARALLEL` and Atleon parallel are within each other's error bands on average at every delay, and KPipe's p99 is
 lower at every delay (63.8 against 76.3 ms at 0µs, 69.9 against 87.4 at 100µs, 77.8 against 85.8 at 1000µs). Both stay
-within about 10 ms of the raw loop on average once records carry work. Reactor is the fastest framework arm at 0µs and
-falls behind as work grows, because its 100 rails process at most 100 records at a time. Confluent Parallel Consumer
-takes 5 to 8 times as long as KPipe.
+within 14 ms of the raw loop on average once records carry work. Reactor has the lowest framework average at 0µs, though
+its error band touches KPipe's, and falls behind as work grows, because its 100 rails process at most 100 records at a
+time. Confluent Parallel Consumer takes 5 to 8 times as long as KPipe.
 
 ## Per-key ordered arms
 
@@ -91,9 +91,9 @@ Percentiles from `SampleTime`, pooled across the five forks:
 
 Atleon key-ordered is faster on average at 0µs (25.9 against 34.2 ms, error bands apart) and at 1000µs (66.6 against
 74.2, apart); the two are level at 100µs. KPipe's p99 is lower at 0 and 100µs (49.3 against 60.5, 66.8 against 71.9) and
-higher at 1000µs (95.8 against 91.4), and its p99.9 is lower at every delay. KPipe takes 3 to 6 times less time than
-Confluent Parallel Consumer's per-key mode. The 0µs gap matches the throughput capture of 2026-10-22, where Atleon also
-leads KPipe `KEY_ORDERED` at 0µs; its cause is not yet measured and is tracked in #376.
+higher at 1000µs (95.8 against 91.4), and its p99.9 is lower at every delay. Confluent Parallel Consumer's per-key mode
+takes 5 to 6 times as long as KPipe. The 0µs gap matches the throughput capture of 2026-10-22, where Atleon also leads
+KPipe `KEY_ORDERED` at 0µs; its cause is not yet measured and is tracked in #376.
 
 ## Raw output
 
