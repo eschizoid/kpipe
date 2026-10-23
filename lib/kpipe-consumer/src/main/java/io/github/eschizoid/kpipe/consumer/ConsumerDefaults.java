@@ -31,20 +31,33 @@ final class ConsumerDefaults {
   /// Max time the key-ordered dispatcher waits for its per-key queues to drain at shutdown.
   static final Duration KEY_ORDERED_CLOSE_DRAIN = Duration.ofMillis(5000);
 
-  /// Default max time `close()` waits for the consumer thread to join before interrupting it, for
-  /// a consumer in `mode`. It covers each wait that mode's teardown can run before the final commit
-  /// completes, so a stuck record does not get the thread interrupted mid-commit, and no wait the
-  /// mode never runs. `close()` first waits up to [#WAIT_FOR_MESSAGES] on its own thread, so its
-  /// worst case is that plus this budget.
+  /// Timeout of the Kafka client's own close at shutdown, which leaves the group and closes its
+  /// connections. Kafka's default is 30 seconds, and a broker that cannot be reached makes the
+  /// close wait that long, past any join budget.
+  static final Duration KAFKA_CLIENT_CLOSE = Duration.ofMillis(5000);
+
+  /// Timeout of the producer's close at shutdown, for a consumer with a producer for its
+  /// dead-letter queue or Kafka sinks. A producer closed without one waits up to its
+  /// `delivery.timeout.ms`, two minutes by default, for sends a broker cannot acknowledge.
+  static final Duration PRODUCER_CLOSE = Duration.ofMillis(5000);
+
+  /// Default max time `close()` waits for the consumer thread to join before interrupting it,
+  /// for a consumer in `mode`. It covers each wait that mode's teardown can run, through the
+  /// final commit and the Kafka clients' closes, so a stuck record or an unreachable broker
+  /// does not get the thread interrupted mid-teardown, and no wait the mode never runs.
+  /// `close()` first waits up to [#WAIT_FOR_MESSAGES] on its own thread, so its worst case
+  /// is that plus this budget.
   ///
   /// SEQUENTIAL runs each record on the consumer thread, so by the time its loop exits nothing is
   /// in flight and no dispatcher waits; a record hung on that thread keeps the loop from exiting
   /// at all, and no budget changes that.
   ///
-  /// @param mode the consumer's processing mode
-  /// @return the default join budget for that mode
-  static Duration threadTermination(final ProcessingMode mode) {
-    final var afterDispatch = COMMIT_SCHEDULER_STOP.plus(FINAL_COMMIT);
+  /// @param mode        the consumer's processing mode
+  /// @param hasProducer whether the consumer closes a producer for a dead-letter queue or sinks
+  /// @return the default join budget for that consumer
+  static Duration threadTermination(final ProcessingMode mode, final boolean hasProducer) {
+    final var clientCloses = hasProducer ? KAFKA_CLIENT_CLOSE.plus(PRODUCER_CLOSE) : KAFKA_CLIENT_CLOSE;
+    final var afterDispatch = COMMIT_SCHEDULER_STOP.plus(FINAL_COMMIT).plus(clientCloses);
     return switch (mode) {
       case SEQUENTIAL -> afterDispatch;
       case PARALLEL -> WAIT_FOR_MESSAGES.plus(EXECUTOR_TERMINATION).plus(afterDispatch);
