@@ -4,18 +4,22 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.Headers;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -132,8 +136,28 @@ class PipelineInterruptionWhileRunningTest {
 
     final var processed = new AtomicInteger();
     final var errors = new AtomicInteger();
-    final var aborted = new java.util.concurrent.CountDownLatch(1);
-    final var neverReleased = new java.util.concurrent.CountDownLatch(1);
+    final var aborted = new CountDownLatch(1);
+    // The record's span closes after its whole outcome path, error handler included, has run, so
+    // waiting on it is a complete signal rather than a guess at how long that path takes.
+    final var stuckRecordDone = new CountDownLatch(1);
+    final var tracer = new Tracer() {
+      @Override
+      public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
+        return new SpanScope() {
+          @Override
+          public void recordException(final Throwable t) {}
+
+          @Override
+          public void close() {
+            if (record.offset() == FAILING_OFFSET) stuckRecordDone.countDown();
+          }
+        };
+      }
+
+      @Override
+      public void injectContextInto(final Headers headers) {}
+    };
+    final var neverReleased = new CountDownLatch(1);
     final var properties = new Properties();
     properties.put("bootstrap.servers", "localhost:9092");
     properties.put("group.id", "pipeline-interrupt-shutdown-group");
@@ -145,6 +169,7 @@ class PipelineInterruptionWhileRunningTest {
       .withProcessingMode(ProcessingMode.PARALLEL)
       .withWaitForMessagesTimeout(Duration.ofMillis(200))
       .withErrorHandler(_ -> errors.incrementAndGet())
+      .withTracer(tracer)
       .withPipeline(
         TestPipelines.sideEffect(value -> {
           if (new String(value, UTF_8).equals("v" + FAILING_OFFSET)) {
@@ -167,9 +192,8 @@ class PipelineInterruptionWhileRunningTest {
       consumer.start();
       TestAwaits.pollUntil(() -> processed.get() == RECORDS - 1, Duration.ofSeconds(10), "every other record finishes");
       consumer.close();
-      assertTrue(aborted.await(5, java.util.concurrent.TimeUnit.SECONDS), "shutdown interrupts the stuck record");
-      // Give the abandoned record's error path time to run, if it were wrongly taken.
-      Thread.sleep(500);
+      assertTrue(aborted.await(5, TimeUnit.SECONDS), "shutdown interrupts the stuck record");
+      assertTrue(stuckRecordDone.await(5, TimeUnit.SECONDS), "the stuck record's outcome path finishes");
     } finally {
       neverReleased.countDown();
     }

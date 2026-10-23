@@ -96,12 +96,15 @@ class KPipeInterruptTest {
   }
 
   @Test
-  void interruptionRelatedExceptionShouldNotMarkOffsetAsProcessed() throws Exception {
+  void interruptionRelatedExceptionAtShutdownShouldNotMarkOffsetAsProcessed() throws Exception {
     final var topic = "test-topic";
     final var value = "value".getBytes();
     final var record = new ConsumerRecord<>(topic, 0, 456L, "key".getBytes(UTF_8), value);
     final var commandQueue = new LinkedBlockingQueue<ConsumerCommand>();
     final var consumer = createConsumer(commandQueue, 0, Duration.ofMillis(1));
+    // An interruption buried in a failure counts only once the consumer is shutting down; while
+    // it runs, the same failure is ordinary (PipelineInterruptionWhileRunningTest covers that).
+    consumer.close();
 
     when(processor.apply(value)).thenThrow(new RuntimeException(new InterruptedException("interrupted")));
 
