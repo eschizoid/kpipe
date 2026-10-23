@@ -20,6 +20,7 @@ import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.ListTopicsOptions;
 import org.apache.kafka.common.ElectionType;
+import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.kafka.common.config.ConfigResource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -321,9 +322,7 @@ class MultiBrokerFaultIntegrationTest {
         .get(15, TimeUnit.SECONDS)
         .get("__consumer_offsets")
         .partitions();
-      final var hash = groupId.hashCode();
-      final var index = (hash == Integer.MIN_VALUE ? 0 : Math.abs(hash)) % partitions.size();
-      return partitions.get(index).leader().id();
+      return offsetsPartitionOf(groupId, partitions).leader().id();
     }
   }
 
@@ -339,8 +338,7 @@ class MultiBrokerFaultIntegrationTest {
         .get(15, TimeUnit.SECONDS)
         .get("__consumer_offsets")
         .partitions();
-      final var hash = groupId.hashCode();
-      final var partition = partitions.get((hash == Integer.MIN_VALUE ? 0 : Math.abs(hash)) % partitions.size());
+      final var partition = offsetsPartitionOf(groupId, partitions);
       assertEquals(
         1,
         partition.isr().size(),
@@ -356,6 +354,21 @@ class MultiBrokerFaultIntegrationTest {
         .value();
       assertEquals("2", minIsr, "__consumer_offsets requires two in-sync replicas");
     }
+  }
+
+  /// The `__consumer_offsets` partition Kafka places `groupId` on: `abs(groupId.hashCode())` modulo
+  /// the partition count, with `Integer.MIN_VALUE` mapped to zero.
+  private static TopicPartitionInfo offsetsPartitionOf(
+    final String groupId,
+    final List<TopicPartitionInfo> partitions
+  ) {
+    final var hash = groupId.hashCode();
+    final var id = (hash == Integer.MIN_VALUE ? 0 : Math.abs(hash)) % partitions.size();
+    return partitions
+      .stream()
+      .filter(partition -> partition.partition() == id)
+      .findFirst()
+      .orElseThrow();
   }
 
   /// The broker coordinating `groupId`, as Kafka reports it once the group has members.
