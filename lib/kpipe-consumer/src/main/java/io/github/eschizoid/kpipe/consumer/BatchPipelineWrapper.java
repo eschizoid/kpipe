@@ -301,6 +301,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     try {
       result = sink.apply(values);
     } catch (final Exception e) {
+      if (Interruptions.isInterruptionRelated(e)) return leaveUnmarked(size);
       logBatchFailure("threw", size, e);
       return failAll(snapshot, e);
     }
@@ -349,6 +350,8 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
       LOGGER.log(Level.WARNING, violation.getMessage(), violation);
     }
     final var coverageViolation = violation;
+    final var anyInterrupted = failedByIndex.values().stream().anyMatch(Interruptions::isInterruptionRelated);
+    if (anyInterrupted) logInterrupted(size);
 
     return () -> {
       for (int i = 0; i < size; i++) {
@@ -364,6 +367,8 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
             continue;
           }
           final var perRecordCause = failedByIndex.get(i);
+          // Interrupted, not failed: the record never reached the sink, so it stays unmarked.
+          if (perRecordCause != null && Interruptions.isInterruptionRelated(perRecordCause)) continue;
           callbacks.onBatchFailure(
             record,
             perRecordCause != null
@@ -385,7 +390,25 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
           );
         }
       }
+      if (anyInterrupted) Thread.currentThread().interrupt();
     };
+  }
+
+  /// The dispatch for a flush the sink abandoned because its thread was interrupted. Every record
+  /// stays unmarked, so it is redelivered instead of being failed and, with no DLQ, committed. The
+  /// interrupt is restored for the thread running the dispatch.
+  private Runnable leaveUnmarked(final int size) {
+    logInterrupted(size);
+    return () -> Thread.currentThread().interrupt();
+  }
+
+  private void logInterrupted(final int size) {
+    LOGGER.log(
+      Level.WARNING,
+      "Batch flush for topic {0} was interrupted; its interrupted records ({1} in the batch) stay unmarked and will be redelivered",
+      topic,
+      size
+    );
   }
 
   private Runnable failAll(final List<Entry<T>> snapshot, final Exception cause) {

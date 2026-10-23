@@ -91,7 +91,10 @@ Semantics:
 - **Coverage contract enforced.** A `BatchResult` that does not account for every position `[0, batchSize)` is treated
   as a contract violation: the unaccounted records are routed to the DLQ rather than silently marked processed.
 - **Shutdown drain.** A final flush runs before the offset manager closes, so partially-filled buffers are delivered and
-  committed on graceful shutdown.
+  committed on graceful shutdown. The flush calls your sink on the consumer thread and shutdown waits for it, so a slow
+  sink holds shutdown until the thread-join budget runs out and `close()` interrupts the thread. A sink interrupted that
+  way has not delivered its batch: its records stay unmarked and are redelivered after restart, rather than being
+  treated as failures, which with no DLQ would be logged and committed.
 
 Throughput impact is measured by `BatchSinkLatencyBenchmark` — at a 1ms-per-call sink, batch=100 measured roughly 84×
 the per-record control (2026-05 capture; raw JMH JSON in [`benchmarks/results/`](../benchmarks/results)).

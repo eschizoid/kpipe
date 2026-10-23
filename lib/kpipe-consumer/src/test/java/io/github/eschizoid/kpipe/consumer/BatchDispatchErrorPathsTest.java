@@ -84,6 +84,37 @@ class BatchDispatchErrorPathsTest {
     assertEquals(List.of(0L, 2L, 3L), failures, "a throwing callback does not abort the whole-batch failure loop");
   }
 
+  /// A sink interrupted at shutdown has not delivered its batch, so its records are not failures:
+  /// with no DLQ a failure is logged and committed, which would commit records that never reached
+  /// the destination. They stay unmarked, to be redelivered, and the interrupt is restored.
+  @Test
+  void aSinkInterruptedMidFlushLeavesItsRecordsUnmarked() {
+    final var failures = new ArrayList<Long>();
+    final BatchSink<byte[]> interrupted = _ -> {
+      throw new IllegalStateException("write aborted", new InterruptedException());
+    };
+
+    run(interrupted, new RecordingCallbacks(failures, null));
+
+    assertTrue(Thread.interrupted(), "the interrupt must be restored for the caller");
+    assertEquals(List.of(), failures, "an interrupted flush must not turn its records into failures");
+  }
+
+  /// The same when the sink reports the interruption as a failed result rather than throwing, which
+  /// is what `BatchSink.ofVoid` does with any exception its consumer throws.
+  @Test
+  void aSinkReportingAnInterruptionAsAFailedResultLeavesItsRecordsUnmarked() {
+    final var failures = new ArrayList<Long>();
+    final BatchSink<byte[]> interrupted = BatchSink.ofVoid(_ -> {
+      throw new IllegalStateException("write aborted", new InterruptedException());
+    });
+
+    run(interrupted, new RecordingCallbacks(failures, null));
+
+    assertTrue(Thread.interrupted(), "the interrupt must be restored for the caller");
+    assertEquals(List.of(), failures, "an interrupted flush must not turn its records into failures");
+  }
+
   private void run(final BatchSink<byte[]> sink, final BatchPipelineWrapper.BatchCallbacks callbacks) {
     final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     final var wrapper = new BatchPipelineWrapper<byte[]>(

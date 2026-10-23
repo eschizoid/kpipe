@@ -8,7 +8,6 @@ import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
-import java.nio.channels.ClosedByInterruptException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -296,7 +295,7 @@ final class RecordProcessor {
       try {
         return attemptBody.run(attempt);
       } catch (final Exception e) {
-        if (isInterruptionRelated(e)) {
+        if (Interruptions.isInterruptionRelated(e)) {
           Thread.currentThread().interrupt();
           return false;
         }
@@ -352,7 +351,7 @@ final class RecordProcessor {
     try {
       wrapper.enqueue(record, value);
     } catch (final Exception e) {
-      if (isInterruptionRelated(e)) {
+      if (Interruptions.isInterruptionRelated(e)) {
         Thread.currentThread().interrupt();
         return false;
       }
@@ -474,12 +473,5 @@ final class RecordProcessor {
         ex
       );
     }
-  }
-
-  private static boolean isInterruptionRelated(final Throwable error) {
-    for (Throwable current = error; current != null; current = current.getCause()) {
-      if (current instanceof InterruptedException || current instanceof ClosedByInterruptException) return true;
-    }
-    return false;
   }
 }
