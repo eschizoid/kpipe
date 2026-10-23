@@ -53,7 +53,8 @@ public final class KPipeConsumerBuilder {
   ProcessingMode processingMode = ProcessingMode.PARALLEL;
   int keyOrderedMaxKeys = KeyOrderedDispatcher.DEFAULT_MAX_KEYS;
   Duration waitForMessagesTimeout = ConsumerDefaults.WAIT_FOR_MESSAGES;
-  Duration threadTerminationTimeout = ConsumerDefaults.THREAD_TERMINATION;
+  /// Unset means the default for the processing mode, [ConsumerDefaults#threadTermination].
+  Duration threadTerminationTimeout;
   final Duration executorTerminationTimeout = ConsumerDefaults.EXECUTOR_TERMINATION;
   OffsetManager offsetManager;
   Function<Consumer<byte[], byte[]>, OffsetManager> offsetManagerProvider;

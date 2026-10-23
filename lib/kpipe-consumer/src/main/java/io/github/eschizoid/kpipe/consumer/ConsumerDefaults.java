@@ -28,15 +28,29 @@ final class ConsumerDefaults {
   /// this wait can run in full.
   static final Duration COMMIT_SCHEDULER_STOP = Duration.ofMillis(5000);
 
-  /// Max time `close()` waits for the consumer thread to join before interrupting it. It covers
-  /// each wait the thread's teardown can run before the final commit completes: the in-flight
-  /// drain, the dispatcher's termination wait, the commit scheduler's stop and the final commit. A
-  /// shorter budget interrupts the thread while a stuck record holds the dispatcher, and the
-  /// interrupted final commit then throws before its result is known. `close()` first waits up to
-  /// [#WAIT_FOR_MESSAGES] on its own thread, so its worst case is that plus this budget.
-  static final Duration THREAD_TERMINATION = WAIT_FOR_MESSAGES.plus(EXECUTOR_TERMINATION)
-    .plus(COMMIT_SCHEDULER_STOP)
-    .plus(FINAL_COMMIT);
+  /// Max time the key-ordered dispatcher waits for its per-key queues to drain at shutdown.
+  static final Duration KEY_ORDERED_CLOSE_DRAIN = Duration.ofMillis(5000);
+
+  /// Default max time `close()` waits for the consumer thread to join before interrupting it, for
+  /// a consumer in `mode`. It covers each wait that mode's teardown can run before the final commit
+  /// completes, so a stuck record does not get the thread interrupted mid-commit, and no wait the
+  /// mode never runs. `close()` first waits up to [#WAIT_FOR_MESSAGES] on its own thread, so its
+  /// worst case is that plus this budget.
+  ///
+  /// SEQUENTIAL runs each record on the consumer thread, so by the time its loop exits nothing is
+  /// in flight and no dispatcher waits; a record hung on that thread keeps the loop from exiting
+  /// at all, and no budget changes that.
+  ///
+  /// @param mode the consumer's processing mode
+  /// @return the default join budget for that mode
+  static Duration threadTermination(final ProcessingMode mode) {
+    final var afterDispatch = COMMIT_SCHEDULER_STOP.plus(FINAL_COMMIT);
+    return switch (mode) {
+      case SEQUENTIAL -> afterDispatch;
+      case PARALLEL -> WAIT_FOR_MESSAGES.plus(EXECUTOR_TERMINATION).plus(afterDispatch);
+      case KEY_ORDERED -> WAIT_FOR_MESSAGES.plus(KEY_ORDERED_CLOSE_DRAIN).plus(afterDispatch);
+    };
+  }
 
   private ConsumerDefaults() {}
 }

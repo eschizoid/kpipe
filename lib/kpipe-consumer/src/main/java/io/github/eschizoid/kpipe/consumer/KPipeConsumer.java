@@ -202,7 +202,10 @@ public class KPipeConsumer implements AutoCloseable {
       this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
       this.processingMode = builder.processingMode;
       this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
-      this.threadTerminationTimeout = builder.threadTerminationTimeout;
+      this.threadTerminationTimeout =
+        builder.threadTerminationTimeout != null
+          ? builder.threadTerminationTimeout
+          : ConsumerDefaults.threadTermination(builder.processingMode);
       this.dispatcher = switch (this.processingMode) {
         case SEQUENTIAL -> new SequentialDispatcher();
         case PARALLEL -> new ParallelDispatcher(this::handleParallelRejection, builder.executorTerminationTimeout);

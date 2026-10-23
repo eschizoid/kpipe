@@ -77,7 +77,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
   /// through this single queue. Distinct by identity from any user-supplied key.
   private static final Object NULL_KEY = new Object();
 
-  private static final Duration CLOSE_DRAIN_TIMEOUT = Duration.ofSeconds(5);
+  private static final Duration CLOSE_DRAIN_TIMEOUT = ConsumerDefaults.KEY_ORDERED_CLOSE_DRAIN;
 
   private final int maxKeys;
   /// Active key queues. Concurrent map so workers, diagnostics, and (in tests) concurrent
