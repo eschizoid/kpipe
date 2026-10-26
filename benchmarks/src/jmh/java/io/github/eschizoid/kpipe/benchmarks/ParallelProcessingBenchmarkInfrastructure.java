@@ -530,9 +530,9 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       workMicros = params.workMicros;
       scheduler = Schedulers.fromExecutorService(Executors.newVirtualThreadPerTaskExecutor());
       final var props = kafkaContext.consumerProps("reactor-group");
-      final var receiverOptions = ReceiverOptions.<byte[], byte[]>create(props).subscription(
-        Collections.singletonList(TOPIC)
-      );
+      final var receiverOptions = ReceiverOptions.<byte[], byte[]>create(props)
+        .maxDeferredCommits(Math.toIntExact(BackpressureController.DEFAULT_HIGH_WATERMARK))
+        .subscription(Collections.singletonList(TOPIC));
       subscription = null;
       this.receiver = reactor.kafka.receiver.KafkaReceiver.create(receiverOptions);
     }
