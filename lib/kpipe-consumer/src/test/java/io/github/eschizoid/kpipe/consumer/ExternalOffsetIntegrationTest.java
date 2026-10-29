@@ -253,4 +253,107 @@ class ExternalOffsetIntegrationTest {
 
     consumer.close();
   }
+
+  /// PARALLEL finishes records out of order. A manager that stores each finished record's offset
+  /// stores offset 9 while offset 5 is still running; when the process stops before 5 finishes,
+  /// the restarted consumer seeks past 5 and never processes it. Restarting from a stored offset
+  /// must reprocess every record that did not finish.
+  @Test
+  void restartReprocessesARecordThatWasStillRunningWhenALaterOneFinished() throws Exception {
+    final var firstRun = new MockConsumer<byte[], byte[]>("earliest");
+    firstRun.updateBeginningOffsets(Map.of(PARTITION, 0L));
+    final var othersStored = new CountDownLatch(8);
+    final var firstManager = new PostgresOffsetManager(
+      firstRun,
+      postgres.getJdbcUrl(),
+      postgres.getUsername(),
+      postgres.getPassword()
+    ) {
+      @Override
+      public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
+        super.markOffsetProcessed(record);
+        if (record.offset() != 9L) othersStored.countDown();
+      }
+    };
+    final var neverReleased = new CountDownLatch(1);
+    final var first = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withConsumer(() -> firstRun)
+      .withOffsetManager(firstManager)
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          final var text = new String(value, UTF_8);
+          try {
+            if ("v5".equals(text)) neverReleased.await();
+            if ("v9".equals(text)) othersStored.await();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+          }
+          return value;
+        })
+      )
+      .withProcessingMode(ProcessingMode.PARALLEL)
+      .withWaitForMessagesTimeout(java.time.Duration.ofMillis(500))
+      .build();
+    first.start();
+    firstRun.rebalance(List.of(PARTITION));
+    for (int i = 0; i < 10; i++) {
+      firstRun.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes(UTF_8)));
+    }
+    final var storedWhileV5Running = awaitStoredOffset(firstManager, 9L);
+    assertEquals(9L, storedWhileV5Running, "offset 9 is stored last while v5 is still running");
+    first.close();
+
+    final var secondRun = new MockConsumer<byte[], byte[]>("earliest");
+    secondRun.updateBeginningOffsets(Map.of(PARTITION, 0L));
+    final var secondManager = new PostgresOffsetManager(
+      secondRun,
+      postgres.getJdbcUrl(),
+      postgres.getUsername(),
+      postgres.getPassword()
+    );
+    final var reprocessed = ConcurrentHashMap.<String>newKeySet();
+    final var second = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withConsumer(() -> secondRun)
+      .withOffsetManager(secondManager)
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          reprocessed.add(new String(value, UTF_8));
+          return value;
+        })
+      )
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .build();
+    second.start();
+    secondRun.rebalance(List.of(PARTITION));
+    for (int i = 0; i < 10; i++) {
+      secondRun.addRecord(new ConsumerRecord<>(TOPIC, 0, i, ("k" + i).getBytes(UTF_8), ("v" + i).getBytes(UTF_8)));
+    }
+    final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (!reprocessed.contains("v5") && System.nanoTime() < deadline) Thread.sleep(100);
+    second.close();
+
+    assertTrue(
+      reprocessed.contains("v5"),
+      "v5 never finished in the first run, so the restart must process it; stored offset was %d, reprocessed %s".formatted(
+        storedWhileV5Running,
+        new TreeSet<>(reprocessed)
+      )
+    );
+  }
+
+  private static long awaitStoredOffset(final PostgresOffsetManager manager, final long expected) throws Exception {
+    Long stored = null;
+    final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+    while (System.nanoTime() < deadline) {
+      stored = manager.getOffsetFromDb(PARTITION);
+      if (stored != null && stored == expected) return stored;
+      Thread.sleep(100);
+    }
+    return stored == null ? -1L : stored;
+  }
 }
