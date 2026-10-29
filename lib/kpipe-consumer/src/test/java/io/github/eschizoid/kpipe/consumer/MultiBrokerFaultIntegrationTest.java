@@ -9,15 +9,12 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntPredicate;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.AlterConfigOp;
-import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.ListTopicsOptions;
 import org.apache.kafka.common.ElectionType;
 import org.apache.kafka.common.TopicPartitionInfo;
@@ -93,29 +90,16 @@ class MultiBrokerFaultIntegrationTest {
     }
     bootstrap = String.join(",", addresses);
     broker1 = addresses.get(0);
+    // The controller's `min.insync.replicas` becomes the cluster-wide default and overrides the
+    // brokers' own, so it is set here as well.
     controller = kafkaNode(CONTROLLER_ID, "controller")
+      .withEnv("KAFKA_MIN_INSYNC_REPLICAS", "2")
       .withEnv("KAFKA_PROCESS_ROLES", "controller")
       .withEnv("KAFKA_LISTENERS", "CONTROLLER://:9093")
       .withEnv("KAFKA_LISTENER_SECURITY_PROTOCOL_MAP", "CONTROLLER:PLAINTEXT");
     final var nodes = new ArrayList<GenericContainer<?>>(brokers);
     nodes.add(controller);
     Startables.deepStart(nodes).join();
-    requireTwoInSyncOffsetReplicas();
-  }
-
-  /// Sets `min.insync.replicas` to two on `__consumer_offsets` itself. In this cluster the topic
-  /// otherwise comes up requiring one in-sync replica, and a commit is then held to the leader's
-  /// copy alone, so a fault could never leave the commits below their minimum.
-  private static void requireTwoInSyncOffsetReplicas() {
-    try (final var admin = Admin.create(directAdminProperties(bootstrap))) {
-      // Looking up a group's offsets makes the brokers create `__consumer_offsets`.
-      admin.listConsumerGroupOffsets("bootstrap").partitionsToOffsetAndMetadata().get(60, TimeUnit.SECONDS);
-      final var resource = new ConfigResource(ConfigResource.Type.TOPIC, "__consumer_offsets");
-      final var minIsr = new AlterConfigOp(new ConfigEntry("min.insync.replicas", "2"), AlterConfigOp.OpType.SET);
-      admin.incrementalAlterConfigs(Map.of(resource, List.of(minIsr))).all().get(30, TimeUnit.SECONDS);
-    } catch (final Exception e) {
-      throw new IllegalStateException("could not require two in-sync replicas on __consumer_offsets", e);
-    }
   }
 
   private static GenericContainer<?> broker(final int id, final String external) {

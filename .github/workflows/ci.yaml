@@ -44,6 +44,11 @@ jobs:
           ./gradlew spotlessCheck
           ./gradlew build test --stacktrace --no-daemon --max-workers=2
 
+      # A Testcontainers class marked disabledWithoutDocker is skipped, not failed, when Docker is
+      # unavailable, so the build would stay green with those tests never run.
+      - name: Docker-backed tests ran
+        run: ./scripts/check-docker-tests.sh
+
       - name: Jacoco
         run: |
           # jacocoAllLibModules fans out to every :lib:* jacocoTestReport (see lib/build.gradle.kts).

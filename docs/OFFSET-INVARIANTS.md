@@ -38,15 +38,16 @@ phrased as a property a test can assert.
   broker comes back, so its commit lands.
 
 - **A three-broker cluster** runs in `MultiBrokerFaultIntegrationTest`, with a separate controller node holding the
-  KRaft quorum, every partition of the test topic replicated on all three brokers, and `__consumer_offsets` set to
-  require two in-sync replicas. A fault pauses broker containers mid-run: the leader of every partition, a follower, the
-  group coordinator, or both followers, with the group placed on a coordinator that makes each fault test what it names.
-  The same two commit checks run throughout, in every mode, with records held across the fault. With one broker paused,
-  commits must resume on the others before the fault ends. With both followers paused, the test checks that the group's
-  offsets partition has shrunk to one in-sync replica, and no commit may be acknowledged. How soon commits resume after
-  losing the group coordinator depends on the client's `request.timeout.ms`: the client looks for a new coordinator only
-  once its request to the silent one times out, 30 seconds by default, and until then commits stall without losing
-  anything. The test sets it to five seconds.
+  KRaft quorum, every partition of the test topic replicated on all three brokers, and the controller and brokers
+  requiring two in-sync replicas. The controller's setting is the one that counts: it becomes the cluster-wide default
+  and overrides the brokers' own. A fault pauses broker containers mid-run: the leader of every partition, a follower,
+  the group coordinator, or both followers, with the group placed on a coordinator that makes each fault test what it
+  names. The same two commit checks run throughout, in every mode, with records held across the fault. With one broker
+  paused, commits must resume on the others before the fault ends. With both followers paused, the test checks that the
+  group's offsets partition has shrunk to one in-sync replica, and no commit may be acknowledged. How soon commits
+  resume after losing the group coordinator depends on the client's `request.timeout.ms`: the client looks for a new
+  coordinator only once its request to the silent one times out, 30 seconds by default, and until then commits stall
+  without losing anything. The test sets it to five seconds.
 
 - **Lincheck** (concurrency model-checking) was attempted but does not run on JDK 25 yet. Lincheck 2.39 (the newest
   release) bundles an ASM that rejects class-file major version 69 (Java 25); its runtime bytecode-instrumentation pass

@@ -36,6 +36,23 @@ Because of the frontier rule, offset 102 finishing before offset 101 does not le
 until it completes. This is what makes at-least-once true _with parallel processing_ — and note it constrains **commit
 order**, not side-effect order (see [Ordering](#ordering)).
 
+## Broker settings the guarantee depends on
+
+A committed offset is only as durable as the `__consumer_offsets` partition that holds it, and a record parked in the
+DLQ only as durable as the DLQ topic. The broker acknowledges a commit or a DLQ send once `min.insync.replicas` replicas
+have it, so set that to at least 2, with a replication factor of 3, on both topics.
+
+In a KRaft cluster with dedicated controllers, set `min.insync.replicas` on the controllers as well as the brokers. The
+controllers' value becomes a cluster-wide default that overrides the brokers' own: on Kafka 4.3.0, brokers set to 2 with
+a controller left at its default gave every topic, `__consumer_offsets` included, a minimum of 1. To check what a topic
+actually gets, describe its configs with
+`kafka-configs.sh --bootstrap-server <broker> --entity-type topics --entity-name __consumer_offsets --describe --all`
+and read `min.insync.replicas` and its source.
+
+If the broker coordinating the consumer group stops answering without closing its connections, commits stall until the
+client's request to it times out (`request.timeout.ms`, 30 seconds by default) and the client finds the new coordinator.
+Nothing is lost meanwhile; a shorter timeout shortens the stall.
+
 ## Failure matrix
 
 | Situation                                                           | What happens                                                                                                                                                                                                                    | Redelivered on restart?                     |
