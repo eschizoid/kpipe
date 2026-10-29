@@ -150,8 +150,9 @@ offsets:
 - On assignment the consumer seeks each partition the store returns an offset for. A failed load is retried, and the
   consumer does not poll while it retries, so a store that stays down past `max.poll.interval.ms` gets the consumer
   evicted. A partition the store has no offset for starts from the group's Kafka offset or `auto.offset.reset`; use
-  `auto.offset.reset=earliest` and, for a replicated store, strongly consistent reads, so a missing or stale row means
-  reprocessing rather than skipping.
+  `auto.offset.reset=earliest`, so a partition with no row is read from the start rather than the end. A stale row from
+  a replicated store holds a frontier some consumer already wrote, so it means reprocessing, never skipping; strongly
+  consistent reads only narrow how much.
 
 With a custom `OffsetManager`, KPipe still guarantees the _call points_ — track before dispatch, mark only on terminal
 success — but the frontier logic itself (lowest-pending, no-commit-ahead) lives in the default `KafkaOffsetManager`. A

@@ -894,11 +894,12 @@ public class KPipeConsumer implements AutoCloseable {
   ///
   /// 1. **Never-started fast path.** CREATED → CLOSED via [#closeNeverStarted]: release every
   ///    constructor-created resource, close the Kafka consumer directly, count down the latch.
-  /// 2. **Normal shutdown.** Transition to CLOSING, then [#initiateShutdown] (stop reporter,
-  ///    queue Close, signal dispatcher, drain in-flight), then [#waitForConsumerThreadToJoin]
-  ///    (wakeup + unpark + join). If the thread joined cleanly, [#finalizeAfterThreadJoined]
-  ///    runs the (idempotent) release + state=CLOSED + countDown as a safety net — the consumer
-  ///    thread's own finally has already done the work in the common case.
+  /// 2. **Normal shutdown.** Transition to CLOSING, then [#initiateShutdown] (signal the offset
+  ///    manager, stop reporter, queue Close, signal dispatcher, drain in-flight), then
+  ///    [#waitForConsumerThreadToJoin] (wakeup + unpark + join). If the thread joined cleanly,
+  ///    [#finalizeAfterThreadJoined] runs the (idempotent) release + state=CLOSED + countDown as
+  ///    a safety net — the consumer thread's own finally has already done the work in the common
+  ///    case.
   /// 3. **Join-timeout escape.** The consumer thread is still alive after
   ///    `threadTerminationTimeout` (e.g. SEQUENTIAL mode stuck in a hung pipeline). Interrupt
   ///    and return — tearing down resources here would race a live thread that still holds the
@@ -933,8 +934,8 @@ public class KPipeConsumer implements AutoCloseable {
     shutdownLatch.countDown();
   }
 
-  /// Stop the metrics reporter, ask the consumer loop to halt, and let any in-flight records
-  /// drain before we start waking and joining the consumer thread.
+  /// Signal the offset manager, stop the metrics reporter, ask the consumer loop to halt, and let
+  /// any in-flight records drain before we start waking and joining the consumer thread.
   ///
   /// No pause command needed: CLOSING already halts the poll loop ([#isRunning] is false), and
   /// the subsequent `wakeup`/`unpark` in [#waitForConsumerThreadToJoin] breaks any in-progress

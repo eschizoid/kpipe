@@ -19,7 +19,7 @@ import org.apache.kafka.common.TopicPartition;
 ///
 /// Kafka rejects a commit from a consumer that has been evicted from the group; a store does not
 /// know which consumer owns a partition. A consumer that is evicted but has not yet noticed can
-/// still write its own, older frontier, which moves the stored offset backwards and causes
+/// still write its own, older frontier, which can move the stored offset backwards and causes
 /// reprocessing, never a skip. A store that must rule this out needs its own fencing, such as a
 /// conditional write on an owner epoch.
 ///
@@ -32,11 +32,11 @@ public interface OffsetStore {
   /// partition to its offset. A partition left out of the result starts from Kafka's committed
   /// offset for the group, or from `auto.offset.reset` when there is none.
   ///
-  /// A thrown exception means the offsets are unknown, because reading from any other position
-  /// could skip records. The manager retries with a growing wait on the consumer thread, which does
-  /// not poll meanwhile; a store that stays down past `max.poll.interval.ms` gets the consumer
-  /// evicted from the group. Once the consumer is closing, the manager stops retrying and the
-  /// failure propagates out of the rebalance callback.
+  /// A thrown exception means the offsets are unknown. Reading from any other position could skip
+  /// records, so the manager retries with a growing wait on the consumer thread, which does not
+  /// poll meanwhile; a store that stays down past `max.poll.interval.ms` gets the consumer evicted
+  /// from the group. Once the consumer is closing, the manager stops retrying and the failure
+  /// propagates out of the rebalance callback.
   ///
   /// @param partitions the partitions just assigned to this consumer
   /// @return the next offset to read for each partition the store has an offset for
@@ -46,9 +46,9 @@ public interface OffsetStore {
   ///
   /// A thrown exception fails this commit only. A failed periodic commit is not retried itself:
   /// the offsets stay in the manager and the next commit carries the then-current frontier. A
-  /// failed commit on revoke or close is the partition's last, so the stored offset stays where the
-  /// previous commit left it. Either way a lost commit means records are reprocessed after a
-  /// restart, never skipped.
+  /// failed commit on revoke or close is this manager's last write for that partition, so the
+  /// stored offset stays where the previous commit left it. Either way a lost commit means
+  /// records are reprocessed after a restart, never skipped.
   ///
   /// @param offsets the next offset to read for each partition, never empty
   void commit(Map<TopicPartition, Long> offsets);
