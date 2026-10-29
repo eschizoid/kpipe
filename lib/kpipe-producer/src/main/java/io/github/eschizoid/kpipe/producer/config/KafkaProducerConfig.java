@@ -36,6 +36,10 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 ///     .withProperty("retries", "10")
 ///     .build();
 /// ```
+///
+/// `createProducerConfig` defaults `acks` to `all`: a record counts as sent only once every in-sync
+/// replica has it, which a DLQ or sink producer needs before KPipe commits past the record. Pass
+/// `withAcks("1")` for leader-only acknowledgement, which also turns idempotence off.
 public final class KafkaProducerConfig {
 
   private KafkaProducerConfig() {}
@@ -74,6 +78,8 @@ public final class KafkaProducerConfig {
     props.put("bootstrap.servers", bootstrapServers);
     props.put("key.serializer", ByteArraySerializer.class.getName());
     props.put("value.serializer", ByteArraySerializer.class.getName());
+    // A leader-only ack loses the record if the leader fails before a follower copies it, after
+    // KPipe has already committed past it.
     props.put("acks", "all");
 
     return customizer != null ? customizer.apply(props) : props;
