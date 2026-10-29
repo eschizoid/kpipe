@@ -135,12 +135,18 @@ durability, partial writes — is outside KPipe's control. Two documented weaken
 (above), and a batch sink's records are only as durable as the batch flush (the coverage contract and shutdown drain are
 described in [SINKS.md](SINKS.md#batch-sinks)).
 
-## External offset managers
+## External offset stores and managers
+
+With an `OffsetStore` (`Builder.withOffsetStore`), every guarantee above holds unchanged: the default
+`KafkaOffsetManager` still computes the frontier and commits it on the same schedule, and the store only replaces where
+the offsets are kept. On assignment the consumer seeks to the stored offset, and a failed load is retried rather than
+skipped, so a partition never starts from a position the store did not give.
 
 With a custom `OffsetManager`, KPipe still guarantees the _call points_ — track before dispatch, mark only on terminal
-success, commit executed on the consumer thread — but the frontier logic itself (lowest-pending, no-commit-ahead) lives
-in the default `KafkaOffsetManager`. A custom implementation takes on that responsibility; the invariants it must uphold
-are specified in [OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md).
+success — but the frontier logic itself (lowest-pending, no-commit-ahead) lives in the default `KafkaOffsetManager`. A
+custom implementation takes on that responsibility; the invariants it must uphold are specified in
+[OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md). Storing each finished record's offset does not uphold them: in `PARALLEL`
+and `KEY_ORDERED` mode a later offset can be stored while an earlier record is still running.
 
 ## What this is not
 

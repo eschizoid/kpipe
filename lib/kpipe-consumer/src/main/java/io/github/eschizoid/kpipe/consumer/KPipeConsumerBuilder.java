@@ -59,6 +59,7 @@ public final class KPipeConsumerBuilder {
   OffsetManager offsetManager;
   Function<Consumer<byte[], byte[]>, OffsetManager> offsetManagerProvider;
   Duration commitInterval;
+  OffsetStore offsetStore;
   /// The provider `build()` installed for the default offset manager, so a second `build()` on
   /// the same builder does not mistake it for one the caller supplied.
   private Function<Consumer<byte[], byte[]>, OffsetManager> defaultOffsetManagerProvider;
@@ -332,6 +333,17 @@ public final class KPipeConsumerBuilder {
       this.rebalanceListener = offsetManager.createRebalanceListener();
       return offsetManager;
     };
+    return this;
+  }
+
+  /// Keeps committed offsets in an external store, such as a database table, instead of Kafka.
+  /// The default [KafkaOffsetManager] still computes the commit frontier and commits it on the
+  /// same schedule; only the destination changes. See [OffsetStore].
+  ///
+  /// @param offsetStore the store that holds this consumer group's offsets
+  /// @return This builder instance for method chaining
+  public KPipeConsumerBuilder withOffsetStore(final OffsetStore offsetStore) {
+    this.offsetStore = Objects.requireNonNull(offsetStore, "Offset store cannot be null");
     return this;
   }
 
@@ -625,11 +637,16 @@ public final class KPipeConsumerBuilder {
     if (customOffsetManager && commitInterval != null) throw new IllegalArgumentException(
       "withCommitInterval configures the default KafkaOffsetManager; a custom OffsetManager sets its own commit interval"
     );
+    if (customOffsetManager && offsetStore != null) throw new IllegalArgumentException(
+      "withOffsetStore configures the default KafkaOffsetManager; a custom OffsetManager stores its own offsets"
+    );
     if (!customOffsetManager) {
       final var interval = commitInterval;
+      final var store = offsetStore;
       offsetManagerProvider = consumer -> {
         final var manager = KafkaOffsetManager.builder(consumer).withCommitExecutor(getCommitExecutor());
         if (interval != null) manager.withCommitInterval(interval);
+        if (store != null) manager.withOffsetStore(store);
         return manager.build();
       };
       defaultOffsetManagerProvider = offsetManagerProvider;

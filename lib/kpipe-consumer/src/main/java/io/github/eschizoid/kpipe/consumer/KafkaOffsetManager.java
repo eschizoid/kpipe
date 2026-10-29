@@ -7,11 +7,13 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 
 /// Manages Kafka consumer offsets for parallel processing scenarios.
@@ -33,6 +35,8 @@ import org.apache.kafka.common.errors.WakeupException;
 /// * Gap detection to ensure only fully processed offset ranges are committed
 /// * Diagnostic methods for monitoring offset state and troubleshooting
 /// * Virtual thread execution for non-blocking I/O operations
+/// * Commits to an external [OffsetStore] in place of Kafka, set with
+///   [Builder#withOffsetStore(OffsetStore)]
 ///
 /// Example usage:
 ///
@@ -72,6 +76,17 @@ public class KafkaOffsetManager implements OffsetManager {
   /// as [OffsetStatistics#pendingCommits].
   private final AtomicInteger pendingCommits = new AtomicInteger();
 
+  /// Where commits go when offsets live outside Kafka; null means Kafka, through
+  /// [#commitExecutor].
+  private final OffsetStore offsetStore;
+
+  /// Serializes every [#offsetStore] call. A periodic commit reads the frontier and writes it
+  /// under this lock, and a revoke reads, writes and forgets its partitions under it, so a
+  /// periodic commit can never write a partition after the revoke wrote its final offset and
+  /// another consumer took it over. A load holds it per attempt, not across the wait between
+  /// retries.
+  private final Object storeLock = new Object();
+
   /// Per-partition offset bookkeeping — the pending windows, highest-processed marks, the interned
   /// `TopicPartition` cache, and the single commit-frontier rule they feed. This manager owns
   /// lifecycle, scheduling, commit I/O, and rebalance orchestration; the ledger owns everything
@@ -80,6 +95,8 @@ public class KafkaOffsetManager implements OffsetManager {
 
   private static final Duration FINAL_COMMIT_TIMEOUT = ConsumerDefaults.FINAL_COMMIT;
   private static final Duration COMMIT_SCHEDULER_STOP = ConsumerDefaults.COMMIT_SCHEDULER_STOP;
+  private static final Duration LOAD_RETRY_INITIAL = Duration.ofMillis(100);
+  private static final Duration LOAD_RETRY_MAX = Duration.ofSeconds(5);
   private final Duration commitInterval;
   private volatile ScheduledExecutorService scheduler;
   private volatile ScheduledFuture<?> scheduledCommitTask;
@@ -98,6 +115,7 @@ public class KafkaOffsetManager implements OffsetManager {
     private final Consumer<byte[], byte[]> kafkaConsumer;
     private Duration commitInterval = Duration.ofSeconds(30);
     private CommitExecutor commitExecutor;
+    private OffsetStore offsetStore;
 
     private Builder(final Consumer<byte[], byte[]> consumer) {
       this.kafkaConsumer = Objects.requireNonNull(consumer, "Consumer cannot be null");
@@ -125,12 +143,23 @@ public class KafkaOffsetManager implements OffsetManager {
       return this;
     }
 
+    /// Commits offsets to an external store instead of Kafka. On assignment the consumer seeks each
+    /// partition to the offset the store returns. The commit interval and the commit points on
+    /// revoke and close stay the same, and no commit executor is needed.
+    ///
+    /// @param offsetStore the store that holds this consumer group's offsets
+    /// @return This builder instance
+    public Builder withOffsetStore(final OffsetStore offsetStore) {
+      this.offsetStore = Objects.requireNonNull(offsetStore, "Offset store cannot be null");
+      return this;
+    }
+
     /// Builds the KafkaOffsetManager instance.
     ///
     /// @return A new KafkaOffsetManager instance
     public KafkaOffsetManager build() {
-      if (commitExecutor == null) throw new IllegalStateException(
-        "withCommitExecutor(...) must be called before build()"
+      if (commitExecutor == null && offsetStore == null) throw new IllegalStateException(
+        "withCommitExecutor(...) or withOffsetStore(...) must be called before build()"
       );
       return new KafkaOffsetManager(this);
     }
@@ -140,6 +169,7 @@ public class KafkaOffsetManager implements OffsetManager {
     this.kafkaConsumer = builder.kafkaConsumer;
     this.commitInterval = builder.commitInterval;
     this.commitExecutor = builder.commitExecutor;
+    this.offsetStore = builder.offsetStore;
   }
 
   /// Starts the KafkaOffsetManager and begins periodic offset commits. This method is idempotent -
@@ -265,6 +295,9 @@ public class KafkaOffsetManager implements OffsetManager {
   /// discarded, so the next interval (or a later explicit call) simply retries with the then-
   /// current frontier.
   ///
+  /// With an [OffsetStore] the commit runs on the calling thread and `timeout` does not apply;
+  /// the store bounds its own call.
+  ///
   /// @param timeout Maximum time to wait for the commit
   /// @return true if the commit was successful
   /// @throws InterruptedException if the thread is interrupted while waiting
@@ -272,7 +305,62 @@ public class KafkaOffsetManager implements OffsetManager {
     if (state.get() == OffsetState.STOPPED) return true;
     if (ledger.committableOffsets().isEmpty()) return true;
 
-    return performCommit(timeout);
+    return offsetStore != null ? performStoreCommit() : performCommit(timeout);
+  }
+
+  /// Writes the current frontier to the [OffsetStore]. The frontier is read under [#storeLock],
+  /// so it never includes a partition that a revoke has already written and forgotten.
+  private boolean performStoreCommit() {
+    pendingCommits.incrementAndGet();
+    try {
+      synchronized (storeLock) {
+        final var offsets = ledger.committableOffsets();
+        if (!offsets.isEmpty()) writeToStore(offsets);
+      }
+      return true;
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.WARNING, "Failed to commit offsets to the offset store", e);
+      return false;
+    } finally {
+      pendingCommits.decrementAndGet();
+    }
+  }
+
+  private void writeToStore(final Map<TopicPartition, OffsetAndMetadata> offsets) {
+    offsetStore.commit(
+      offsets.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().offset()))
+    );
+  }
+
+  /// Seeks each newly assigned partition to the offset the [OffsetStore] holds for it. A failed
+  /// load is retried, not skipped: returning without a seek leaves the partition at the group's
+  /// Kafka-committed offset, which an external store never advances, so the consumer would replay
+  /// from there or, under `auto.offset.reset=latest`, start past records nobody processed.
+  private void seekToStoredOffsets(final Collection<TopicPartition> partitions) {
+    var backoff = LOAD_RETRY_INITIAL;
+    while (true) {
+      try {
+        final Map<TopicPartition, Long> stored;
+        synchronized (storeLock) {
+          stored = offsetStore.load(partitions);
+        }
+        stored.forEach((partition, offset) -> {
+          if (partitions.contains(partition)) kafkaConsumer.seek(partition, offset);
+        });
+        return;
+      } catch (final RuntimeException e) {
+        if (state.get() != OffsetState.RUNNING) throw e;
+        LOGGER.log(Level.WARNING, "Failed to load offsets for %s, retrying in %s".formatted(partitions, backoff), e);
+      }
+      try {
+        Thread.sleep(backoff);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new InterruptException(e);
+      }
+      final var doubled = backoff.multipliedBy(2);
+      backoff = doubled.compareTo(LOAD_RETRY_MAX) < 0 ? doubled : LOAD_RETRY_MAX;
+    }
   }
 
   /// Submits a commit through the [CommitExecutor] and waits for its outcome. The executor
@@ -338,7 +426,12 @@ public class KafkaOffsetManager implements OffsetManager {
       stopScheduler();
       try {
         final var offsetsToCommit = ledger.committableOffsets();
-        if (!offsetsToCommit.isEmpty()) commitFinalOffsets(offsetsToCommit);
+        if (!offsetsToCommit.isEmpty()) {
+          if (offsetStore != null) synchronized (storeLock) {
+            writeToStore(offsetsToCommit);
+          }
+          else commitFinalOffsets(offsetsToCommit);
+        }
       } catch (final Exception e) {
         LOGGER.log(Level.WARNING, "Error during final offset commit", e);
       }
@@ -364,18 +457,23 @@ public class KafkaOffsetManager implements OffsetManager {
         if (state.get() == OffsetState.STOPPED) return;
         LOGGER.log(Level.INFO, "Partitions revoked: %s".formatted(partitions));
 
-        final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
-        partitions.forEach(partition ->
-          ledger.frontier(partition).ifPresent(offset -> offsetsToCommit.put(partition, new OffsetAndMetadata(offset)))
-        );
-        ledger.removePartitions(partitions);
+        synchronized (storeLock) {
+          final var offsetsToCommit = new HashMap<TopicPartition, OffsetAndMetadata>();
+          partitions.forEach(partition ->
+            ledger
+              .frontier(partition)
+              .ifPresent(offset -> offsetsToCommit.put(partition, new OffsetAndMetadata(offset)))
+          );
+          ledger.removePartitions(partitions);
 
-        if (!offsetsToCommit.isEmpty()) {
-          try {
-            kafkaConsumer.commitSync(offsetsToCommit);
-            LOGGER.log(Level.INFO, "Committed offsets for revoked partitions: %s".formatted(offsetsToCommit));
-          } catch (final Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to commit offsets during rebalance", e);
+          if (!offsetsToCommit.isEmpty()) {
+            try {
+              if (offsetStore != null) writeToStore(offsetsToCommit);
+              else kafkaConsumer.commitSync(offsetsToCommit);
+              LOGGER.log(Level.INFO, "Committed offsets for revoked partitions: %s".formatted(offsetsToCommit));
+            } catch (final Exception e) {
+              LOGGER.log(Level.WARNING, "Failed to commit offsets during rebalance", e);
+            }
           }
         }
       }
@@ -385,6 +483,7 @@ public class KafkaOffsetManager implements OffsetManager {
         if (state.get() == OffsetState.STOPPED) return;
         LOGGER.log(Level.INFO, "Partitions assigned: %s".formatted(partitions));
         ledger.removePartitions(partitions);
+        if (offsetStore != null && !partitions.isEmpty()) seekToStoredOffsets(partitions);
       }
 
       @Override
