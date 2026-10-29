@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.IntPredicate;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -156,9 +157,9 @@ class MultiBrokerFaultIntegrationTest {
       while (true) {
         try {
           admin.electLeaders(ElectionType.PREFERRED, null).all().get(15, TimeUnit.SECONDS);
-        } catch (final ExecutionException e) {
-          // A partition already led by its preferred replica reports an error; the check below
-          // is what decides.
+        } catch (final ExecutionException | TimeoutException e) {
+          // A partition already led by its preferred replica reports an error, and a slow
+          // election is retried on the next pass; the check below is what decides.
         }
         final var topics = admin
           .listTopics(new ListTopicsOptions().listInternal(true))
@@ -253,12 +254,19 @@ class MultiBrokerFaultIntegrationTest {
           run.awaitCompleted(5, Duration.ofSeconds(60));
           assertEquals(coordinator, coordinatorOf(groupId), "the group is coordinated where the fault expects");
           TimeUnit.MILLISECONDS.sleep(HEALTHY_WINDOW.toMillis());
+          final var faultStarted = System.nanoTime();
           for (final var id : paused) pause(brokers.get(id - 1));
-          TimeUnit.MILLISECONDS.sleep(FAULT_SETTLE.toMillis());
+          if (fault == BrokerFault.TWO_FOLLOWERS_PAUSED) {
+            // Count from the moment the partition is below its minimum: a commit the brokers
+            // had already replicated before the pause can still be acknowledged after it.
+            awaitOffsetsPartitionBelowMinIsr(groupId, Duration.ofSeconds(15));
+          } else {
+            TimeUnit.MILLISECONDS.sleep(FAULT_SETTLE.toMillis());
+          }
           run.faultInEffect.set(true);
           run.release(RELEASED_DURING_FAULT);
-          TimeUnit.MILLISECONDS.sleep(FAULT_WINDOW.minus(FAULT_SETTLE).toMillis());
-          if (fault == BrokerFault.TWO_FOLLOWERS_PAUSED) assertOffsetsPartitionBelowMinIsr(groupId);
+          final var remaining = FAULT_WINDOW.minus(Duration.ofNanos(System.nanoTime() - faultStarted));
+          if (!remaining.isNegative()) TimeUnit.MILLISECONDS.sleep(remaining.toMillis());
           run.faultInEffect.set(false);
           for (final var id : paused) resume(brokers.get(id - 1));
           if (!holds.isEmpty()) run.awaitCommittedAt(RELEASED_AFTER_HEAL, Duration.ofSeconds(60));
@@ -310,24 +318,13 @@ class MultiBrokerFaultIntegrationTest {
     }
   }
 
-  /// Checks that the fault really left the group's `__consumer_offsets` partition below the
-  /// in-sync replicas it requires: one in-sync replica, against a minimum of two.
-  private static void assertOffsetsPartitionBelowMinIsr(final String groupId) throws Exception {
+  /// Waits for the group's `__consumer_offsets` partition to fall below the in-sync replicas it
+  /// requires, one against a minimum of two, and fails the test if it does not within `timeout`.
+  private static void awaitOffsetsPartitionBelowMinIsr(final String groupId, final Duration timeout)
+    throws Exception {
     final var props = directAdminProperties(broker1);
     props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "3000");
     try (final var admin = Admin.create(props)) {
-      final var partitions = admin
-        .describeTopics(List.of("__consumer_offsets"))
-        .allTopicNames()
-        .get(15, TimeUnit.SECONDS)
-        .get("__consumer_offsets")
-        .partitions();
-      final var partition = offsetsPartitionOf(groupId, partitions);
-      assertEquals(
-        1,
-        partition.isr().size(),
-        "the group's offsets partition shrinks to one replica; ISR " + partition.isr()
-      );
       final var resource = new ConfigResource(ConfigResource.Type.TOPIC, "__consumer_offsets");
       final var minIsr = admin
         .describeConfigs(List.of(resource))
@@ -337,6 +334,20 @@ class MultiBrokerFaultIntegrationTest {
         .get("min.insync.replicas")
         .value();
       assertEquals("2", minIsr, "__consumer_offsets requires two in-sync replicas");
+      final var deadline = System.nanoTime() + timeout.toNanos();
+      var isr = List.<Integer>of();
+      while (System.nanoTime() < deadline) {
+        final var partitions = admin
+          .describeTopics(List.of("__consumer_offsets"))
+          .allTopicNames()
+          .get(15, TimeUnit.SECONDS)
+          .get("__consumer_offsets")
+          .partitions();
+        isr = offsetsPartitionOf(groupId, partitions).isr().stream().map(node -> node.id()).toList();
+        if (isr.size() == 1) return;
+        TimeUnit.MILLISECONDS.sleep(200);
+      }
+      throw new AssertionError("the group's offsets partition must shrink to one in-sync replica; ISR " + isr);
     }
   }
 
