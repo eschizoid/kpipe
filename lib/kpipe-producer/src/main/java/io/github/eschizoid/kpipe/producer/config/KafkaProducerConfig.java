@@ -73,7 +73,7 @@ public final class KafkaProducerConfig {
     props.put("bootstrap.servers", bootstrapServers);
     props.put("key.serializer", ByteArraySerializer.class.getName());
     props.put("value.serializer", ByteArraySerializer.class.getName());
-    props.put("acks", "1");
+    props.put("acks", "all");
 
     return customizer != null ? customizer.apply(props) : props;
   }
