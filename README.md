@@ -169,9 +169,10 @@ allocation accounting, and KPipe tracks every record for its offset manager, as 
 0.95× and 1.04×). In key-ordered mode Atleon leads at 0µs, where KPipe runs at 0.85× with the error bands apart, and the
 two are within the error bands at 100 and 1000µs. KPipe ran at 5.4× to 7.8× Confluent Parallel Consumer's unordered
 throughput and at 5.1× to 6.2× its per-key throughput. Reactor Kafka ran at 1.21× KPipe at 0µs and at 0.67× and 0.16× at
-100 and 1000µs, because its 100 rails process at most 100 records at a time. Reactor also commits the latest
-acknowledged offset per partition rather than a lowest-pending frontier, which is cheaper and does not hold
-at-least-once when records finish out of order. The
+100 and 1000µs, because its 100 rails process at most 100 records at a time. In that capture Reactor committed the
+latest acknowledged offset per partition rather than a lowest-pending frontier, which is cheaper and does not hold
+at-least-once when records finish out of order; the Reactor arm now defers out-of-order commits behind the same
+10,000-record watermark as KPipe, so later captures compare like with like. The
 [2026-10-21](benchmarks/results/2026-10-21/2026-10-21-ci-parallel.md),
 [2026-10-15](benchmarks/results/2026-10-15/2026-10-15-ci-parallel.md) and
 [2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) captures ran KPipe without offset tracking
