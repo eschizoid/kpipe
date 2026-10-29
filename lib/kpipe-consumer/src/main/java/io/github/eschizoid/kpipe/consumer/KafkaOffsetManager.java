@@ -355,7 +355,8 @@ public class KafkaOffsetManager implements OffsetManager {
         return;
       } catch (final Exception e) {
         // Exception, not RuntimeException: a store can throw a checked exception it does not
-        // declare. Escaping, it would fail the poll and stop the consumer instead of being retried.
+        // declare, and letting that escape would skip the seek, so the partition would start from
+        // Kafka's committed offset or auto.offset.reset.
         if (isClosing()) throw new IllegalStateException(closedBeforeLoad(partitions), e);
         LOGGER.log(Level.WARNING, "Failed to load offsets for %s, retrying in %s".formatted(partitions, backoff), e);
       }
