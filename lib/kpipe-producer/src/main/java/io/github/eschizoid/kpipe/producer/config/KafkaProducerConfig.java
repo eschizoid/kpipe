@@ -19,14 +19,14 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 ///     props -> {
 ///         Properties modified = new Properties();
 ///         modified.putAll(props);
-///         modified.put("acks", "all");
+///         modified.put("linger.ms", "5");
 ///         return modified;
 ///     });
 ///
 /// // Using transformers
-/// final var acksAllProducer = KafkaProducerConfig.createProducerConfig(
+/// final var leaderOnlyProducer = KafkaProducerConfig.createProducerConfig(
 ///     "localhost:9092",
-///     KafkaProducerConfig.withAcks("all"));
+///     KafkaProducerConfig.withAcks("1"));
 ///
 /// // Using builder pattern
 /// final var builderProps = KafkaProducerConfig.producerBuilder()
@@ -36,6 +36,10 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 ///     .withProperty("retries", "10")
 ///     .build();
 /// ```
+///
+/// `createProducerConfig` defaults `acks` to `all`: a record counts as sent only once every in-sync
+/// replica has it, which a DLQ or sink producer needs before KPipe commits past the record. Pass
+/// `withAcks("1")` for leader-only acknowledgement, which also turns idempotence off.
 public final class KafkaProducerConfig {
 
   private KafkaProducerConfig() {}
@@ -51,20 +55,21 @@ public final class KafkaProducerConfig {
   ///     p -> {
   ///         Properties modified = new Properties();
   ///         modified.putAll(p);
-  ///         modified.put("acks", "all");
+  ///         modified.put("linger.ms", "5");
   ///         return modified;
   ///     });
   ///
   /// // With transformer functions
   /// final var props = KafkaProducerConfig.createProducerConfig(
   ///     "localhost:9092",
-  ///     KafkaProducerConfig.withAcks("all"));
+  ///     KafkaProducerConfig.withAcks("1"));
   /// ```
   ///
   /// @param bootstrapServers Comma-separated list of host:port pairs for establishing the initial
   ///     connection to the Kafka cluster
   /// @param customizer A function to apply additional configuration modifications
-  /// @return Properties configured for a Kafka producer
+  /// @return Properties for a Kafka producer: byte-array serializers and `acks=all`, then whatever
+  ///     the customizer changes
   public static Properties createProducerConfig(
     final String bootstrapServers,
     final UnaryOperator<Properties> customizer
@@ -73,7 +78,9 @@ public final class KafkaProducerConfig {
     props.put("bootstrap.servers", bootstrapServers);
     props.put("key.serializer", ByteArraySerializer.class.getName());
     props.put("value.serializer", ByteArraySerializer.class.getName());
-    props.put("acks", "1");
+    // A leader-only ack loses the record if the leader fails before a follower copies it, after
+    // KPipe has already committed past it.
+    props.put("acks", "all");
 
     return customizer != null ? customizer.apply(props) : props;
   }
@@ -88,7 +95,7 @@ public final class KafkaProducerConfig {
   ///
   /// @param bootstrapServers Comma-separated list of host:port pairs for establishing the initial
   ///     connection to the Kafka cluster
-  /// @return Properties configured for a Kafka producer
+  /// @return Properties for a Kafka producer with byte-array serializers and `acks=all`
   public static Properties createProducerConfig(final String bootstrapServers) {
     return createProducerConfig(bootstrapServers, null);
   }
@@ -129,7 +136,7 @@ public final class KafkaProducerConfig {
   /// ```java
   /// final var props = KafkaProducerConfig.createProducerConfig(
   ///     "localhost:9092",
-  ///     KafkaProducerConfig.withAcks("all"));
+  ///     KafkaProducerConfig.withAcks("1"));
   /// ```
   ///
   /// @param acks The acknowledgment level (e.g., "0", "1", "all")

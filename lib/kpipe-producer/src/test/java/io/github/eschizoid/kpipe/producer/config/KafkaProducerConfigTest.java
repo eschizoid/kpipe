@@ -17,7 +17,7 @@ class KafkaProducerConfigTest {
     assertEquals(BOOTSTRAP_SERVERS, props.get("bootstrap.servers"));
     assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", props.get("key.serializer"));
     assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", props.get("value.serializer"));
-    assertEquals("1", props.get("acks"));
+    assertEquals("all", props.get("acks"), "a record counts as sent only once every in-sync replica has it");
   }
 
   @Test
@@ -53,10 +53,10 @@ class KafkaProducerConfigTest {
   @Test
   void shouldSetAcks() {
     // Act
-    final var props = KafkaProducerConfig.createProducerConfig(BOOTSTRAP_SERVERS, KafkaProducerConfig.withAcks("all"));
+    final var props = KafkaProducerConfig.createProducerConfig(BOOTSTRAP_SERVERS, KafkaProducerConfig.withAcks("1"));
 
     // Assert
-    assertEquals("all", props.get("acks"));
+    assertEquals("1", props.get("acks"));
   }
 
   @Test
@@ -93,7 +93,7 @@ class KafkaProducerConfigTest {
     final var props = KafkaProducerConfig.producerBuilder()
       .withBootstrapServers(BOOTSTRAP_SERVERS)
       .withByteArraySerializers()
-      .withAcks("all")
+      .withAcks("1")
       .withProperty("retries", "10")
       .build();
 
@@ -101,7 +101,7 @@ class KafkaProducerConfigTest {
     assertEquals(BOOTSTRAP_SERVERS, props.get("bootstrap.servers"));
     assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", props.get("key.serializer"));
     assertEquals("org.apache.kafka.common.serialization.ByteArraySerializer", props.get("value.serializer"));
-    assertEquals("all", props.get("acks"));
+    assertEquals("1", props.get("acks"));
     assertEquals("10", props.get("retries"));
   }
 }
