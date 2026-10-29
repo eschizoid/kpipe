@@ -39,15 +39,19 @@ order**, not side-effect order (see [Ordering](#ordering)).
 ## Broker settings the guarantee depends on
 
 A committed offset is only as durable as the `__consumer_offsets` partition that holds it, and a record parked in the
-DLQ only as durable as the DLQ topic. The broker acknowledges a commit or a DLQ send once `min.insync.replicas` replicas
-have it, so set that to at least 2, with a replication factor of 3, on both topics.
+DLQ only as durable as the DLQ topic. A write sent with `acks=all` is acknowledged once every replica in the partition's
+in-sync replica set has it, and `min.insync.replicas` is the floor: below it the broker refuses the write instead of
+acknowledging it with fewer copies. Offset commits are always written this way. A DLQ send is covered only when its
+producer uses `acks=all`, which is Kafka's default and what the DLQ producer KPipe builds uses unless the consumer's
+properties set `acks`. Set `min.insync.replicas` to at least 2, with a replication factor of 3, for both topics.
 
-In a KRaft cluster with dedicated controllers, set `min.insync.replicas` on the controllers as well as the brokers. The
-controllers' value becomes a cluster-wide default that overrides the brokers' own: on Kafka 4.3.0, brokers set to 2 with
-a controller left at its default gave every topic, `__consumer_offsets` included, a minimum of 1. To check what a topic
-actually gets, describe its configs with
-`kafka-configs.sh --bootstrap-server <broker> --entity-type topics --entity-name __consumer_offsets --describe --all`
-and read `min.insync.replicas` and its source.
+In a KRaft cluster the effective value can come from a cluster-wide default rather than from each broker's own
+configuration. On Kafka 4.3.0 with a dedicated controller left at its default, brokers configured with 2 still gave
+every topic, `__consumer_offsets` included, a minimum of 1, sourced from `DYNAMIC_DEFAULT_BROKER_CONFIG`; with the
+controller configured with 2 as well, every topic got 2. Check what a topic actually gets with
+`kafka-configs.sh --bootstrap-server <broker> --entity-type topics --entity-name __consumer_offsets --describe --all`,
+which shows `min.insync.replicas` and its source, and set the cluster-wide default with
+`kafka-configs.sh --bootstrap-server <broker> --entity-type brokers --entity-default --alter --add-config min.insync.replicas=2`.
 
 If the broker coordinating the consumer group stops answering without closing its connections, commits stall until the
 client's request to it times out (`request.timeout.ms`, 30 seconds by default) and the client finds the new coordinator.
