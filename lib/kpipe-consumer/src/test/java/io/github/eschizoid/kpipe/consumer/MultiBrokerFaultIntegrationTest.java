@@ -320,8 +320,7 @@ class MultiBrokerFaultIntegrationTest {
 
   /// Waits for the group's `__consumer_offsets` partition to fall below the in-sync replicas it
   /// requires, one against a minimum of two, and fails the test if it does not within `timeout`.
-  private static void awaitOffsetsPartitionBelowMinIsr(final String groupId, final Duration timeout)
-    throws Exception {
+  private static void awaitOffsetsPartitionBelowMinIsr(final String groupId, final Duration timeout) throws Exception {
     final var props = directAdminProperties(broker1);
     props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "3000");
     try (final var admin = Admin.create(props)) {
@@ -343,7 +342,11 @@ class MultiBrokerFaultIntegrationTest {
           .get(15, TimeUnit.SECONDS)
           .get("__consumer_offsets")
           .partitions();
-        isr = offsetsPartitionOf(groupId, partitions).isr().stream().map(node -> node.id()).toList();
+        isr = offsetsPartitionOf(groupId, partitions)
+          .isr()
+          .stream()
+          .map(node -> node.id())
+          .toList();
         if (isr.size() == 1) return;
         TimeUnit.MILLISECONDS.sleep(200);
       }
