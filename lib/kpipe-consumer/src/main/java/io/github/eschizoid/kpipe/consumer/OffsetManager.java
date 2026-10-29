@@ -47,6 +47,11 @@ public interface OffsetManager extends AutoCloseable {
     };
   }
 
+  /// Tells the manager the consumer is closing. The consumer calls this before it wakes its
+  /// thread, so a manager blocking that thread, such as one retrying a store read inside a
+  /// rebalance callback, can stop. The final commit still belongs to [#close].
+  default void signalClosing() {}
+
   /// Gets the current operational state of the offset manager.
   /// @return The current OffsetState
   OffsetState getState();

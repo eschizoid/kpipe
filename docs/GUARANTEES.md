@@ -135,12 +135,30 @@ durability, partial writes — is outside KPipe's control. Two documented weaken
 (above), and a batch sink's records are only as durable as the batch flush (the coverage contract and shutdown drain are
 described in [SINKS.md](SINKS.md#batch-sinks)).
 
-## External offset managers
+## External offset stores and managers
+
+With an `OffsetStore` (`Builder.withOffsetStore`), at-least-once and the commit frontier hold unchanged: the default
+`KafkaOffsetManager` still computes the frontier and commits it on the same schedule. Three things differ from Kafka
+offsets:
+
+- Periodic commits run on the manager's scheduler thread rather than the consumer thread, and the offsets are only as
+  durable as the store.
+- The store gets none of Kafka's group-generation fencing. A lost partition is dropped without a write, but a consumer
+  evicted from the group keeps writing its partitions on the commit interval until its next poll learns of the eviction.
+  Such a write can move the stored offset backwards (more reprocessing), never forwards past an unfinished record. A
+  store shared by several regions must fence writers itself if the stored offset has to move only forwards.
+- On assignment the consumer seeks each partition the store returns an offset for. A failed load is retried, and the
+  consumer does not poll while it retries, so a store that stays down past `max.poll.interval.ms` gets the consumer
+  evicted. A partition the store has no offset for starts from the group's Kafka offset or `auto.offset.reset`; use
+  `auto.offset.reset=earliest`, so a partition with no row is read from the start rather than the end. A stale row from
+  a replicated store holds a frontier some consumer already wrote, so it means reprocessing, never skipping; strongly
+  consistent reads only narrow how much.
 
 With a custom `OffsetManager`, KPipe still guarantees the _call points_ — track before dispatch, mark only on terminal
-success, commit executed on the consumer thread — but the frontier logic itself (lowest-pending, no-commit-ahead) lives
-in the default `KafkaOffsetManager`. A custom implementation takes on that responsibility; the invariants it must uphold
-are specified in [OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md).
+success — but the frontier logic itself (lowest-pending, no-commit-ahead) lives in the default `KafkaOffsetManager`. A
+custom implementation takes on that responsibility; the invariants it must uphold are specified in
+[OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md). Storing each finished record's offset does not uphold them: in `PARALLEL`
+and `KEY_ORDERED` mode a later offset can be stored while an earlier record is still running.
 
 ## What this is not
 

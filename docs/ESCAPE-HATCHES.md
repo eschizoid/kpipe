@@ -52,7 +52,8 @@ Rows in **bold** are deliberately escape-hatch-only (no fluent equivalent planne
 | Poll timeout                                        | `Stream.withPollTimeout(Duration)`                                                                                              | `Builder.withPollTimeout(Duration)`                                                                                        | Default 100ms.                                                                                                                                                                                          |
 | Offset commit interval                              | `Stream.withCommitInterval(Duration)`                                                                                           | `Builder.withCommitInterval(Duration)`                                                                                     | Default 30 seconds. Configures the default `KafkaOffsetManager`; rejected alongside a custom `OffsetManager`.                                                                                           |
 | Lifecycle handle                                    | `Handle.isHealthy / metrics / awaitShutdown / close`                                                                            | `KPipeConsumer.start / awaitShutdown / shutdownGracefully / waitForInFlightDrain`                                          | `Handle` is `AutoCloseable` (5s graceful default); the consumer hosts the lifecycle directly.                                                                                                           |
-| **Custom `OffsetManager`**                          | — (escape hatch only)                                                                                                           | `Builder.withOffsetManager(OffsetManager)` / `withOffsetManagerProvider(Function<Consumer<byte[],byte[]>, OffsetManager>)` | E.g. Postgres/Redis-backed manager. The `Provider` form receives the live Kafka consumer for wiring commit callbacks.                                                                                   |
+| **External offset store**                           | — (escape hatch only)                                                                                                           | `Builder.withOffsetStore(OffsetStore)`                                                                                     | Keeps committed offsets in a database instead of Kafka; the default manager still computes the frontier. Rejected alongside a custom `OffsetManager`.                                                   |
+| **Custom `OffsetManager`**                          | — (escape hatch only)                                                                                                           | `Builder.withOffsetManager(OffsetManager)` / `withOffsetManagerProvider(Function<Consumer<byte[],byte[]>, OffsetManager>)` | Replaces frontier tracking too. The `Provider` form receives the live Kafka consumer for wiring commit callbacks.                                                                                       |
 | **Custom Kafka `Consumer` factory**                 | —                                                                                                                               | `Builder.withConsumer(Supplier<Consumer<byte[],byte[]>>)`                                                                  | Test seam / SSL configurators.                                                                                                                                                                          |
 | **Custom DLQ `KafkaProducer`**                      | —                                                                                                                               | `Builder.withKafkaProducer(Producer<byte[],byte[]>)` / `withKafkaProducer(KPipeProducer<byte[],byte[]>)`                   | Override default producer for the DLQ. The `KPipeProducer` overload shares an already-wrapped instance (e.g. one with custom metrics attached).                                                         |
 | **Rebalance listener**                              | —                                                                                                                               | Owned by the registered `OffsetManager` — override `OffsetManager.createRebalanceListener()`                               | No standalone `withRebalanceListener` builder; the consumer wires the listener from whatever manager you register.                                                                                      |
@@ -65,26 +66,55 @@ Rows in **bold** are deliberately escape-hatch-only (no fluent equivalent planne
 
 ## Worked examples
 
-### A custom OffsetManager
+### Offsets in an external store
 
-Use case: persist offsets in Postgres alongside business writes, so commit is atomic with the record's downstream
-side-effect.
+Use case: keep committed offsets in a database, such as Postgres or a DynamoDB global table that more than one region
+can read, instead of in Kafka.
 
 ```java
-final var offsetManager = new PostgresOffsetManager(dataSource);
+final class PostgresOffsetStore implements OffsetStore {
+
+  @Override
+  public Map<TopicPartition, Long> load(final Collection<TopicPartition> partitions) {
+    // SELECT next_offset ... for each partition; leave out partitions with no row
+  }
+
+  @Override
+  public void commit(final Map<TopicPartition, Long> offsets) {
+    // UPSERT (group, topic, partition) -> next_offset for every entry in one transaction
+  }
+}
 
 final var consumer = KPipeConsumer.builder()
   .withProperties(kafkaProps)
   .withTopic("orders")
   .withPipeline(pipeline)
-  .withOffsetManager(offsetManager)
+  .withOffsetStore(new PostgresOffsetStore(dataSource, "payment-service"))
   .build();
 ```
+
+The default `KafkaOffsetManager` still decides what is safe to commit. The store receives the commit frontier, the
+lowest offset that has not finished processing, on the commit interval, on revoke and at shutdown. On assignment the
+consumer seeks each partition to the offset `load` returns, and retries a failed `load` until it succeeds or the
+consumer closes; it does not poll while it retries. A partition with no stored offset starts from the group's Kafka
+offset or `auto.offset.reset`. `ExternalOffsetIntegrationTest` has a complete Postgres store.
+
+Storing the offset of each record as it finishes, as a hand-written `OffsetManager` might, can skip records in
+`PARALLEL` and `KEY_ORDERED` mode: records finish out of order, so a later offset can be stored while an earlier record
+is still running, and a restart seeks past it.
+
+The offset write is separate from the sink's writes, so delivery stays at-least-once: a restart reprocesses the records
+from the stored frontier on. The store is not fenced the way Kafka fences commits from a consumer that left the group,
+so a store several regions write to, such as a DynamoDB global table, needs its own fencing if its offsets must only
+move forwards; see [GUARANTEES.md](GUARANTEES.md#external-offset-stores-and-managers).
+
+### A custom OffsetManager
 
 `OffsetManager` is a thin SPI — the load-bearing methods are `trackOffset` (a record entered the pipeline),
 `markOffsetProcessed` (it finished), and `close`, plus the `start` / `stop` / `isRunning` / `getState` / `getStatistics`
 lifecycle-and-introspection surface and the default `createRebalanceListener()`. The consumer threads call into it
-concurrently; implementations must be thread-safe.
+concurrently; implementations must be thread-safe. A manager that replaces `KafkaOffsetManager` must compute the commit
+frontier itself; to change only where offsets are kept, use an `OffsetStore`.
 
 ### A custom rebalance listener
 
@@ -126,8 +156,8 @@ final class FlushingOffsetManager implements OffsetManager {
 }
 
 // Wire it up with the Provider form so the Kafka consumer is available when the manager is built.
-// KafkaOffsetManager.Builder requires a CommitExecutor — the seam that runs its periodic commits on
-// the consumer thread. Grab the one bound to this builder via getCommitExecutor().
+// Without an OffsetStore, KafkaOffsetManager.Builder requires a CommitExecutor — the seam that runs its periodic
+// commits on the consumer thread. Grab the one bound to this builder via getCommitExecutor().
 final var builder = KPipeConsumer.builder()
   .withProperties(kafkaProps)
   .withTopic("orders")
