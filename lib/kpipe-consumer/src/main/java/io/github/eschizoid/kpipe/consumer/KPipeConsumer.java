@@ -944,6 +944,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// consumer thread can drop its pending count and let `close()` proceed promptly instead of
   /// spinning past `threadTerminationTimeout`.
   private void initiateShutdown() {
+    if (offsetManager != null) offsetManager.signalClosing();
     stopMetricsReporterThread();
     commandQueue.offer(new ConsumerCommand.Close());
     dispatcher.signalShutdown();

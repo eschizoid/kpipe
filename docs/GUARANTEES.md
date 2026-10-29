@@ -137,10 +137,21 @@ described in [SINKS.md](SINKS.md#batch-sinks)).
 
 ## External offset stores and managers
 
-With an `OffsetStore` (`Builder.withOffsetStore`), every guarantee above holds unchanged: the default
-`KafkaOffsetManager` still computes the frontier and commits it on the same schedule, and the store only replaces where
-the offsets are kept. On assignment the consumer seeks to the stored offset, and a failed load is retried rather than
-skipped, so a partition never starts from a position the store did not give.
+With an `OffsetStore` (`Builder.withOffsetStore`), at-least-once and the commit frontier hold unchanged: the default
+`KafkaOffsetManager` still computes the frontier and commits it on the same schedule. Three things differ from Kafka
+offsets:
+
+- Periodic commits run on the manager's scheduler thread rather than the consumer thread, and the offsets are only as
+  durable as the store.
+- The store gets none of Kafka's group-generation fencing. A lost partition is dropped without a write, but a consumer
+  evicted from the group keeps writing its partitions on the commit interval until its next poll learns of the eviction.
+  Such a write can move the stored offset backwards (more reprocessing), never forwards past an unfinished record. A
+  store shared by several regions must fence writers itself if the stored offset has to move only forwards.
+- On assignment the consumer seeks each partition the store returns an offset for. A failed load is retried, and the
+  consumer does not poll while it retries, so a store that stays down past `max.poll.interval.ms` gets the consumer
+  evicted. A partition the store has no offset for starts from the group's Kafka offset or `auto.offset.reset`; use
+  `auto.offset.reset=earliest` and, for a replicated store, strongly consistent reads, so a missing or stale row means
+  reprocessing rather than skipping.
 
 With a custom `OffsetManager`, KPipe still guarantees the _call points_ — track before dispatch, mark only on terminal
 success — but the frontier logic itself (lowest-pending, no-commit-ahead) lives in the default `KafkaOffsetManager`. A

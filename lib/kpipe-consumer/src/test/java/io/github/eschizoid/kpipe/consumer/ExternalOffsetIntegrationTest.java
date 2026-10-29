@@ -126,7 +126,8 @@ class ExternalOffsetIntegrationTest {
     }
   }
 
-  /// Wraps a store and records the highest offset it was asked to commit for each partition.
+  /// Wraps a store and records, for each partition, the highest offset it committed, and counts
+  /// its commits.
   static final class RecordingStore implements OffsetStore {
 
     private final OffsetStore delegate;
@@ -173,8 +174,8 @@ class ExternalOffsetIntegrationTest {
   }
 
   /// PARALLEL finishes records out of order. While v5 is still running and every other record has
-  /// finished, the store must hold 5, not 10; after a restart, v5 is processed again and the
-  /// records before it are not.
+  /// finished, the store must hold 5, not 10; after a restart, processing resumes at v5 and the
+  /// records before it are not processed again.
   @Test
   void restartReprocessesARecordThatWasStillRunningWhenALaterOneFinished() throws Exception {
     final var firstRun = new MockConsumer<byte[], byte[]>("earliest");
@@ -221,6 +222,42 @@ class ExternalOffsetIntegrationTest {
     assertEquals(values(5, 10), reprocessed, "the restart resumes at v5, the record that never finished");
   }
 
+  /// A consumer closing while its store is down returns promptly: the load retry inside the
+  /// rebalance callback ends on close instead of holding the consumer thread until the join
+  /// timeout interrupts it.
+  @Test
+  void closeDuringALoadRetryReturnsWithoutWaitingForTheJoinTimeout() throws Exception {
+    final var mc = new MockConsumer<byte[], byte[]>("earliest");
+    mc.updateBeginningOffsets(Map.of(PARTITION, 0L));
+    final var loads = new AtomicInteger();
+    final var storeDown = new OffsetStore() {
+      @Override
+      public Map<TopicPartition, Long> load(final Collection<TopicPartition> partitions) {
+        loads.incrementAndGet();
+        throw new IllegalStateException("store down");
+      }
+
+      @Override
+      public void commit(final Map<TopicPartition, Long> offsets) {}
+    };
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withConsumer(() -> mc)
+      .withOffsetStore(storeDown)
+      .withPipeline(TestPipelines.identity())
+      .withThreadTerminationTimeout(Duration.ofSeconds(20))
+      .build();
+    consumer.start();
+    mc.schedulePollTask(() -> mc.rebalance(List.of(PARTITION)));
+    awaitTrue(() -> loads.get() >= 3, "the consumer thread retries the load");
+
+    // MockConsumer.wakeup() waits for the consumer thread's monitor, so a load retry that ignores
+    // the close blocks close() outright; bounding the wait makes that a failure, not a hang.
+    final var closed = CompletableFuture.runAsync(consumer::close);
+    assertDoesNotThrow(() -> closed.get(5, TimeUnit.SECONDS), "close returns well before the 20 s join timeout");
+  }
+
   /// Against a real broker, a restart resumes from the offset in Postgres and never from Kafka: the
   /// group commits nothing to Kafka, so without the seek the restart would start from the
   /// beginning under `auto.offset.reset=earliest`.
@@ -257,7 +294,7 @@ class ExternalOffsetIntegrationTest {
     assertNotNull(stored, "the first run stores an offset");
     assertTrue(
       stored <= STALL_FROM,
-      "the store never moves past the stalled v%d; stored %d".formatted(STALL_FROM, stored)
+      "the stored offset is not past the stalled v%d; stored %d".formatted(STALL_FROM, stored)
     );
     for (int i = 0; i < stored; i++) {
       assertTrue(firstSeen.contains("v" + i), "v%d is below the stored offset, so it finished".formatted(i));

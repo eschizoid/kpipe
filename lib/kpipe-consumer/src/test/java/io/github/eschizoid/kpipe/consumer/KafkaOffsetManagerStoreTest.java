@@ -40,12 +40,16 @@ class KafkaOffsetManagerStoreTest {
     final List<Map<TopicPartition, Long>> commits = new CopyOnWriteArrayList<>();
     final Map<TopicPartition, Long> stored = new java.util.concurrent.ConcurrentHashMap<>();
     final AtomicInteger failingLoads = new AtomicInteger();
+    final AtomicInteger checkedLoadFailures = new AtomicInteger();
     final AtomicInteger failingCommits = new AtomicInteger();
     final AtomicInteger loads = new AtomicInteger();
 
     @Override
     public Map<TopicPartition, Long> load(final Collection<TopicPartition> partitions) {
       loads.incrementAndGet();
+      if (checkedLoadFailures.getAndUpdate(n -> Math.max(0, n - 1)) > 0) throwUnchecked(
+        new java.io.IOException("store down")
+      );
       if (failingLoads.getAndUpdate(n -> Math.max(0, n - 1)) > 0) throw new IllegalStateException("store down");
       final var result = new java.util.HashMap<TopicPartition, Long>();
       partitions.forEach(partition -> {
@@ -61,6 +65,13 @@ class KafkaOffsetManagerStoreTest {
       commits.add(Map.copyOf(offsets));
       stored.putAll(offsets);
     }
+  }
+
+  /// Throws a checked exception from a method that does not declare it, as a store written in
+  /// another JVM language can.
+  @SuppressWarnings("unchecked")
+  private static <E extends Throwable> void throwUnchecked(final Throwable t) throws E {
+    throw (E) t;
   }
 
   private KafkaOffsetManager startManager() {
@@ -99,6 +110,95 @@ class KafkaOffsetManagerStoreTest {
 
     assertEquals(3, store.loads.get(), "two failed loads, then one that succeeds");
     verify(consumer).seek(PARTITION, 7L);
+  }
+
+  @Test
+  void aCheckedExceptionFromLoadIsRetriedLikeAnyOther() {
+    store.stored.put(PARTITION, 7L);
+    store.checkedLoadFailures.set(1);
+    startManager().createRebalanceListener().onPartitionsAssigned(List.of(PARTITION));
+
+    assertEquals(2, store.loads.get(), "one load throwing IOException, then one that succeeds");
+    verify(consumer).seek(PARTITION, 7L);
+  }
+
+  @Test
+  void signalClosingEndsTheWaitBetweenLoadRetriesAtOnce() throws Exception {
+    store.failingLoads.set(Integer.MAX_VALUE);
+    final var listener = startManager().createRebalanceListener();
+    final var assignment = CompletableFuture.runAsync(() -> listener.onPartitionsAssigned(List.of(PARTITION)));
+    while (store.loads.get() < 4) TimeUnit.MILLISECONDS.sleep(10);
+    final var signalled = System.nanoTime();
+    manager.signalClosing();
+
+    assertThrows(java.util.concurrent.ExecutionException.class, () -> assignment.get(10, TimeUnit.SECONDS));
+    final var waited = Duration.ofNanos(System.nanoTime() - signalled);
+    assertTrue(waited.compareTo(Duration.ofMillis(500)) < 0, "the retry wait ends on the signal; took " + waited);
+    verify(consumer, never()).seek(any(TopicPartition.class), anyLong());
+  }
+
+  @Test
+  void aLostPartitionIsForgottenWithoutAStoreWrite() throws Exception {
+    final var listener = startManager().createRebalanceListener();
+    manager.trackOffset(record(0));
+    manager.markOffsetProcessed(record(0));
+
+    listener.onPartitionsLost(List.of(PARTITION));
+
+    assertTrue(store.commits.isEmpty(), "a lost partition may already belong to another consumer");
+    assertTrue(manager.commitSyncAndWait(Duration.ofSeconds(1)));
+    assertTrue(store.commits.isEmpty(), "the lost partition's state is gone, so later commits skip it");
+  }
+
+  /// A periodic commit that is still writing when a revoke arrives finishes first; the revoke then
+  /// writes the final frontier, so the last write for the partition is the revoke's.
+  @Test
+  void aRevokeWaitsForAPeriodicCommitThatIsStillWriting() throws Exception {
+    final var entered = new java.util.concurrent.CountDownLatch(1);
+    final var release = new java.util.concurrent.CountDownLatch(1);
+    final var writers = new CopyOnWriteArrayList<String>();
+    final OffsetStore blocking = new OffsetStore() {
+      @Override
+      public Map<TopicPartition, Long> load(final Collection<TopicPartition> partitions) {
+        return Map.of();
+      }
+
+      @Override
+      public void commit(final Map<TopicPartition, Long> offsets) {
+        if (writers.isEmpty()) {
+          entered.countDown();
+          try {
+            release.await();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        }
+        writers.add(Thread.currentThread().getName() + offsets);
+      }
+    };
+    manager = KafkaOffsetManager.builder(consumer)
+      .withOffsetStore(blocking)
+      .withCommitInterval(Duration.ofHours(1))
+      .build()
+      .start();
+    final var listener = manager.createRebalanceListener();
+    manager.trackOffset(record(0));
+    manager.trackOffset(record(1));
+    manager.markOffsetProcessed(record(0));
+
+    final var periodic = Thread.ofPlatform().name("periodic").start(manager::commitSafeOffsets);
+    assertTrue(entered.await(5, TimeUnit.SECONDS));
+    manager.markOffsetProcessed(record(1));
+    final var revoke = Thread.ofPlatform()
+      .name("revoke")
+      .start(() -> listener.onPartitionsRevoked(List.of(PARTITION)));
+    revoke.join(300);
+    assertTrue(revoke.isAlive(), "the revoke waits while the periodic commit is writing");
+    release.countDown();
+    periodic.join(5_000);
+    revoke.join(5_000);
+
+    assertEquals(List.of("periodic{" + PARTITION + "=1}", "revoke{" + PARTITION + "=2}"), writers);
   }
 
   @Test

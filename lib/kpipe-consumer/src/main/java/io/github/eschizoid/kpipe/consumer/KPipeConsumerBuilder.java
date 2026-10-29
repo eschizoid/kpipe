@@ -337,8 +337,9 @@ public final class KPipeConsumerBuilder {
   }
 
   /// Keeps committed offsets in an external store, such as a database table, instead of Kafka.
-  /// The default [KafkaOffsetManager] still computes the commit frontier and commits it on the
-  /// same schedule; only the destination changes. See [OffsetStore].
+  /// The default [KafkaOffsetManager] still computes the commit frontier on the same schedule, but
+  /// periodic commits run on its commit thread instead of the consumer thread, and each newly
+  /// assigned partition is sought to its stored offset before it is polled. See [OffsetStore].
   ///
   /// @param offsetStore the store that holds this consumer group's offsets
   /// @return This builder instance for method chaining
