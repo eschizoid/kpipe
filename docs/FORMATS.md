@@ -18,7 +18,8 @@ sets what a pipeline costs:
 | Forward records untouched with `KPipe.bytes`                    | never   | never   |
 
 The counts are per processing attempt: a retried record is decoded again, and encoded again if its sink writes bytes.
-The middle row needs a format with a fixed schema or descriptor; Schema Registry mode cannot serialize.
+For Avro and Protobuf, the middle row needs a format built with a fixed schema or descriptor; in Schema Registry mode
+`serialize` throws `UnsupportedOperationException`.
 
 For Avro and Protobuf, every record written back to Kafka costs a full encode, whether or not an operator changed it.
 KPipe does not edit encoded bytes in place. Avro carries no field tags or offsets, so finding one field means reading
