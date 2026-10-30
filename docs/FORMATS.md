@@ -8,21 +8,21 @@ sink. Operators are `UnaryOperator<T>` where `T` is the format's payload type: `
 `GenericRecord` for Avro, `Message` for Protobuf.
 
 KPipe never encodes between steps. The only encode is the one a sink that writes bytes does itself, such as a
-`KafkaMessageSink` whose value mapper calls `format.serialize`: once per processing attempt, for each such sink. That sets
-what a pipeline costs:
+`KafkaMessageSink` whose value mapper calls `format.serialize`: once per processing attempt, for each such sink. That
+sets what a pipeline costs:
 
-| What the pipeline does                                                    | Decodes | Encodes |
-| ------------------------------------------------------------------------- | ------- | ------- |
-| Any operators, then a sink that takes the object (a DB, an API)           | once    | never   |
-| Any operators, then a sink that writes bytes back to Kafka                | once    | once    |
-| Forward records untouched with `KPipe.bytes`                              | never   | never   |
+| What the pipeline does                                          | Decodes | Encodes |
+| --------------------------------------------------------------- | ------- | ------- |
+| Any operators, then a sink that takes the object (a DB, an API) | once    | never   |
+| Any operators, then a sink that writes bytes back to Kafka      | once    | once    |
+| Forward records untouched with `KPipe.bytes`                    | never   | never   |
 
-The counts are per processing attempt: a retried record is decoded again, and encoded again if its sink writes bytes. The
-middle row needs a format with a fixed schema or descriptor; Schema Registry mode cannot serialize.
+The counts are per processing attempt: a retried record is decoded again, and encoded again if its sink writes bytes.
+The middle row needs a format with a fixed schema or descriptor; Schema Registry mode cannot serialize.
 
 For Avro and Protobuf, every record written back to Kafka costs a full encode, whether or not an operator changed it.
-KPipe does not edit encoded bytes in place. Avro carries no field tags or offsets, so finding one field means reading past
-every field before it.
+KPipe does not edit encoded bytes in place. Avro carries no field tags or offsets, so finding one field means reading
+past every field before it.
 
 A note on mutability: the **pipeline definition** is immutable (each fluent call returns a new `Stream<T>`), but the
 **payload objects** are not necessarily — JSON maps and Avro records are mutable, and several `Operators` helpers mutate
