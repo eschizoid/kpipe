@@ -24,9 +24,9 @@ declare a pipeline — deserialize, transform, sink — and KPipe runs it with:
 - **At-least-once delivery, held under parallelism.** An offset is committed only after its record reaches a terminal
   state (sink completed, filtered, or parked in the dead-letter topic, the DLQ), and commits never pass a record that is
   still in flight. The exact guarantee boundary and failure matrix: [docs/GUARANTEES.md](docs/GUARANTEES.md).
-- **One deserialize, one serialize per processing attempt.** Operators transform the typed payload (`Map`,
-  `GenericRecord`, `Message`) between a single decode and at most one encode (typed sinks skip it), instead of
-  re-serializing between steps.
+- **One decode per processing attempt, no re-encode between steps.** Operators work on the typed payload (`Map`,
+  `GenericRecord`, `Message`) from a single decode to the sink. KPipe itself never encodes; a sink that writes bytes
+  back to Kafka encodes once per attempt. See [docs/FORMATS.md](docs/FORMATS.md) for what each kind of pipeline costs.
 - **Typed outcomes instead of nulls.** Every record ends as `Passed`, `Filtered`, or `Failed` — a sealed type, so
   "intentionally skipped" and "broken" cannot be confused, in code or in metrics.
 - **The operational stack as configuration.** Retries, dead-letter routing, backpressure, a circuit breaker, metrics,

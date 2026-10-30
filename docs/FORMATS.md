@@ -3,8 +3,27 @@
 Payload formats, their typed pipelines, wire envelopes, and Confluent Schema Registry integration. Snippets use
 placeholder values unless stated otherwise.
 
-Pipelines deserialize once, transform many times, serialize once. Operators are `UnaryOperator<T>` where `T` is the
-format's payload type: `Map<String, Object>` for JSON, `GenericRecord` for Avro, `Message` for Protobuf.
+A pipeline decodes each record once per processing attempt and passes the typed payload through every operator to the
+sink. Operators are `UnaryOperator<T>` where `T` is the format's payload type: `Map<String, Object>` for JSON,
+`GenericRecord` for Avro, `Message` for Protobuf.
+
+KPipe never encodes between steps. The only encode is the one a sink that writes bytes does itself, such as a
+`KafkaMessageSink` whose value mapper calls `format.serialize`: once per processing attempt, for each such sink. That
+sets what a pipeline costs:
+
+| What the pipeline does                                          | Decodes | Encodes |
+| --------------------------------------------------------------- | ------- | ------- |
+| Any operators, then a sink that takes the object (a DB, an API) | once    | never   |
+| Any operators, then a sink that writes bytes back to Kafka      | once    | once    |
+| Forward records untouched with `KPipe.bytes`                    | never   | never   |
+
+The counts are per processing attempt: a retried record is decoded again, and encoded again if its sink writes bytes.
+For Avro and Protobuf, the middle row needs a format built with a fixed schema or descriptor; in Schema Registry mode
+`serialize` throws `UnsupportedOperationException`.
+
+For Avro and Protobuf, every record written back to Kafka costs a full encode, whether or not an operator changed it.
+KPipe does not edit encoded bytes in place. Avro carries no field tags or offsets, so finding one field means reading
+past every field before it.
 
 A note on mutability: the **pipeline definition** is immutable (each fluent call returns a new `Stream<T>`), but the
 **payload objects** are not necessarily — JSON maps and Avro records are mutable, and several `Operators` helpers mutate

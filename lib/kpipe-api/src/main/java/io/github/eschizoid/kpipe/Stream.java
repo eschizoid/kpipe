@@ -379,16 +379,15 @@ public interface Stream<T> {
   Stream<T> withSchemaRegistry(final SchemaResolver resolver);
 
   /// Terminates the stream with a format-appropriate console sink and returns a [Sink] ready
-  /// to start. For Avro streams this requires that a default schema has been registered; see
-  /// [KPipe#avro] for details.
+  /// to start. Each format supplies its own console sink; a [KPipe#custom] stream logs
+  /// `String.valueOf(value)`.
   ///
   /// A **registry-mode** Avro/Protobuf stream (via [#withSchemaRegistry]) has no fixed
   /// schema/descriptor, so the console sink is unsupported there — `toConsole()` throws; use
   /// `.toCustom(...)` with your own sink instead.
   ///
   /// @return a [Sink] ready to start
-  /// @throws IllegalStateException if the stream's format requires schema/config that has not
-  ///     been registered (e.g. Avro without a default schema, or a registry-mode stream)
+  /// @throws IllegalStateException if the stream is in registry mode
   Sink<T> toConsole();
 
   /// Terminates the stream with a user-provided sink and returns a [Sink] ready to start.

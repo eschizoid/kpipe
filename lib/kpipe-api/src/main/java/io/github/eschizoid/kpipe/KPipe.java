@@ -261,7 +261,7 @@ public final class KPipe {
   /// ```java
   /// KPipe.multi(props)
   ///     .json("events-json", s -> s.pipe(addTimestamp).toCustom(jsonSink))
-  ///     .avro("events-avro", s -> s.filter(active).toCustom(avroSink))
+  ///     .avro("events-avro", AvroFormat.of(schemaJson), s -> s.filter(active).toCustom(avroSink))
   ///     .start();
   /// ```
   ///
