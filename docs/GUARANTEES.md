@@ -137,9 +137,9 @@ described in [SINKS.md](SINKS.md#batch-sinks)).
 
 ## External offset stores and managers
 
-With an `OffsetStore` (`Builder.withOffsetStore`), at-least-once and the commit frontier hold unchanged: the default
-`KafkaOffsetManager` still computes the frontier and commits it on the same schedule. Three things differ from Kafka
-offsets:
+With an `OffsetStore` (`Builder.withOffsetStore` or `Stream.withOffsetStore`), at-least-once and the commit frontier
+hold unchanged: the default `KafkaOffsetManager` still computes the frontier and commits it on the same schedule. Three
+things differ from Kafka offsets:
 
 - Periodic commits run on the manager's scheduler thread rather than the consumer thread, and the offsets are only as
   durable as the store.

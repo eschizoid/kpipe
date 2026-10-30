@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe;
 import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
@@ -236,6 +237,12 @@ record DefaultStream<T>(
   public Stream<T> withCommitInterval(final Duration interval) {
     Objects.requireNonNull(interval, "interval cannot be null");
     return mutateConfig(c -> c.commitInterval = interval);
+  }
+
+  @Override
+  public Stream<T> withOffsetStore(final OffsetStore store) {
+    Objects.requireNonNull(store, "store cannot be null");
+    return mutateConfig(c -> c.offsetStore = store);
   }
 
   @Override
