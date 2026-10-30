@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
+import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
@@ -49,7 +50,8 @@ record ConsumerConfig(
   Boolean shutdownHook,
   Duration threadTerminationTimeout,
   Duration waitForMessagesTimeout,
-  Duration commitInterval
+  Duration commitInterval,
+  OffsetStore offsetStore
 ) {
   /// The all-unset configuration: no retry, no backpressure, parallel mode with the default
   /// key-ordered cap, and every optional component `null`.
@@ -61,6 +63,7 @@ record ConsumerConfig(
       null,
       ProcessingMode.PARALLEL,
       ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS,
+      null,
       null,
       null,
       null,
@@ -106,6 +109,7 @@ record ConsumerConfig(
     if (threadTerminationTimeout != null) builder.withThreadTerminationTimeout(threadTerminationTimeout);
     if (waitForMessagesTimeout != null) builder.withWaitForMessagesTimeout(waitForMessagesTimeout);
     if (commitInterval != null) builder.withCommitInterval(commitInterval);
+    if (offsetStore != null) builder.withOffsetStore(offsetStore);
   }
 
   /// One consumer-wide setting as seen by the [MultiBuilder] per-route guard: the `Stream.with*`
@@ -155,7 +159,8 @@ record ConsumerConfig(
     mirrored("withShutdownHook", c -> c.shutdownHook() != null),
     mirrored("withThreadTerminationTimeout", c -> c.threadTerminationTimeout() != null),
     mirrored("withWaitForMessagesTimeout", c -> c.waitForMessagesTimeout() != null),
-    mirrored("withCommitInterval", c -> c.commitInterval() != null)
+    mirrored("withCommitInterval", c -> c.commitInterval() != null),
+    mirrored("withOffsetStore", c -> c.offsetStore() != null)
   );
 
   /// Descriptor for the common case: a setting whose rejection message points at the
@@ -193,6 +198,7 @@ record ConsumerConfig(
     Duration threadTerminationTimeout;
     Duration waitForMessagesTimeout;
     Duration commitInterval;
+    OffsetStore offsetStore;
 
     static Mut from(final ConsumerConfig c) {
       final var m = new Mut();
@@ -214,6 +220,7 @@ record ConsumerConfig(
       m.threadTerminationTimeout = c.threadTerminationTimeout;
       m.waitForMessagesTimeout = c.waitForMessagesTimeout;
       m.commitInterval = c.commitInterval;
+      m.offsetStore = c.offsetStore;
       return m;
     }
 
@@ -236,7 +243,8 @@ record ConsumerConfig(
         shutdownHook,
         threadTerminationTimeout,
         waitForMessagesTimeout,
-        commitInterval
+        commitInterval,
+        offsetStore
       );
     }
   }

@@ -5,6 +5,7 @@ import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
+import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
@@ -211,6 +212,17 @@ public final class MultiBuilder {
   public MultiBuilder withCommitInterval(final Duration interval) {
     Objects.requireNonNull(interval, "interval cannot be null");
     consumerConfig = consumerConfig.with(c -> c.commitInterval = interval);
+    return this;
+  }
+
+  /// Keeps the consumer's committed offsets in `store` instead of Kafka. Consumer-wide (one offset
+  /// manager), mirror of `Stream.withOffsetStore(OffsetStore)`.
+  ///
+  /// @param store where the consumer group's offsets live (must be non-null)
+  /// @return this builder
+  public MultiBuilder withOffsetStore(final OffsetStore store) {
+    Objects.requireNonNull(store, "store cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.offsetStore = store);
     return this;
   }
 

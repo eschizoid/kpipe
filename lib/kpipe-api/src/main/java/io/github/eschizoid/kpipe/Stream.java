@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
@@ -276,6 +277,15 @@ public interface Stream<T> {
   /// @return a new stream with the commit interval configured
   /// @throws NullPointerException if `interval` is null
   Stream<T> withCommitInterval(final Duration interval);
+
+  /// Returns a new stream that keeps its committed offsets in `store` instead of Kafka. The
+  /// consumer still commits the offset frontier on the same schedule; on assignment it seeks each
+  /// partition to the offset the store holds. See [OffsetStore] for what a store must guarantee.
+  ///
+  /// @param store where the consumer group's offsets live (non-null)
+  /// @return a new stream with the offset store configured
+  /// @throws NullPointerException if `store` is null
+  Stream<T> withOffsetStore(final OffsetStore store);
 
   /// Returns a new stream that reports consumer metrics periodically through `reporters`.
   ///

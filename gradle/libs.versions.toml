@@ -9,6 +9,7 @@ junit = "6.1.3"
 mockito = "5.24.0"
 testcontainers = "2.0.5"
 postgresql = "42.7.14"
+awssdk = "2.46.7"
 parallelConsumer = "0.5.3.3"
 reactorKafka = "1.3.25"
 atleon = "0.47.1"
@@ -51,6 +52,7 @@ testcontainersPostgresql = { module = "org.testcontainers:testcontainers-postgre
 testcontainersKafka = { module = "org.testcontainers:testcontainers-kafka", version.ref = "testcontainers" }
 testcontainersToxiproxy = { module = "org.testcontainers:testcontainers-toxiproxy", version.ref = "testcontainers" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+awsDynamodb = { module = "software.amazon.awssdk:dynamodb", version.ref = "awssdk" }
 parallelConsumerCore = { module = "io.confluent.parallelconsumer:parallel-consumer-core", version.ref = "parallelConsumer" }
 reactorKafka = { module = "io.projectreactor.kafka:reactor-kafka", version.ref = "reactorKafka" }
 atleonKafka = { module = "io.atleon:atleon-kafka", version.ref = "atleon" }

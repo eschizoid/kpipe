@@ -2,13 +2,16 @@ package io.github.eschizoid.kpipe;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -32,6 +35,18 @@ import org.junit.jupiter.api.Test;
 /// precondition to trip and nothing observable to assert without reaching into the JVM's
 /// shutdown-hook registry. Its delegation is covered by inspection alone.
 class OperationalSettersTest {
+
+  private static final OffsetStore STORE = new OffsetStore() {
+    @Override
+    public Map<org.apache.kafka.common.TopicPartition, Long> load(
+      final java.util.Collection<org.apache.kafka.common.TopicPartition> partitions
+    ) {
+      return Map.of();
+    }
+
+    @Override
+    public void commit(final Map<org.apache.kafka.common.TopicPartition, Long> offsets) {}
+  };
 
   private static Properties props() {
     final var p = new Properties();
@@ -68,6 +83,7 @@ class OperationalSettersTest {
       configOf(stream().withWaitForMessagesTimeout(Duration.ofSeconds(9))).waitForMessagesTimeout()
     );
     assertEquals(Duration.ofSeconds(5), configOf(stream().withCommitInterval(Duration.ofSeconds(5))).commitInterval());
+    assertSame(STORE, configOf(stream().withOffsetStore(STORE)).offsetStore());
   }
 
   @Test
@@ -82,6 +98,7 @@ class OperationalSettersTest {
     assertNull(c.threadTerminationTimeout());
     assertNull(c.waitForMessagesTimeout());
     assertNull(c.commitInterval());
+    assertNull(c.offsetStore());
   }
 
   @Test
@@ -110,6 +127,7 @@ class OperationalSettersTest {
     assertThrows(NullPointerException.class, () -> stream().withThreadTerminationTimeout(null));
     assertThrows(NullPointerException.class, () -> stream().withWaitForMessagesTimeout(null));
     assertThrows(NullPointerException.class, () -> stream().withCommitInterval(null));
+    assertThrows(NullPointerException.class, () -> stream().withOffsetStore(null));
   }
 
   @Test
@@ -180,7 +198,8 @@ class OperationalSettersTest {
       new Case("withShutdownHook", s -> s.withShutdownHook(true)),
       new Case("withThreadTerminationTimeout", s -> s.withThreadTerminationTimeout(Duration.ofSeconds(1))),
       new Case("withWaitForMessagesTimeout", s -> s.withWaitForMessagesTimeout(Duration.ofSeconds(1))),
-      new Case("withCommitInterval", s -> s.withCommitInterval(Duration.ofSeconds(1)))
+      new Case("withCommitInterval", s -> s.withCommitInterval(Duration.ofSeconds(1))),
+      new Case("withOffsetStore", s -> s.withOffsetStore(STORE))
     );
     for (final var c : cases) {
       final var multi = KPipe.multi(props()).bytes("topic-a", s ->
@@ -211,6 +230,7 @@ class OperationalSettersTest {
       .withThreadTerminationTimeout(Duration.ofSeconds(7))
       .withWaitForMessagesTimeout(Duration.ofSeconds(9))
       .withCommitInterval(Duration.ofSeconds(5))
+      .withOffsetStore(STORE)
       .bytes("topic-a", s -> s.toCustom(_ -> {}));
   }
 }

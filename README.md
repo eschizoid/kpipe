@@ -267,20 +267,20 @@ a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-test")`; t
 
 ## Documentation
 
-| Document                                               | Contents                                                                                  |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| [docs/API.md](docs/API.md)                             | The fluent surface, grouped by type; multi-topic routing; built-in operators              |
-| [docs/GUARANTEES.md](docs/GUARANTEES.md)               | Delivery guarantee boundary, failure matrix, ordering, backpressure                       |
-| [docs/FORMATS.md](docs/FORMATS.md)                     | JSON / Avro / Protobuf, wire envelopes, Confluent Schema Registry modes                   |
-| [docs/SINKS.md](docs/SINKS.md)                         | Custom, Kafka-producer, fan-out, and batch sinks                                          |
-| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)         | Metrics tables, outcome counters, tracing, local Grafana stack                            |
-| [docs/MODULES.md](docs/MODULES.md)                     | Module catalog, BOM usage, JPMS                                                           |
-| [docs/ESCAPE-HATCHES.md](docs/ESCAPE-HATCHES.md)       | The explicit builder API: custom offset managers, reporters, seams                        |
-| [docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md) | The machine-checked offset invariants                                                     |
-| [docs/VERSIONING.md](docs/VERSIONING.md)               | What breaks in a minor, what counts as public API, and when the rule changes              |
-| [docs/adr/](docs/adr)                                  | Architecture decision records — why the concurrency tooling is what it is                 |
-| [benchmarks/](benchmarks)                              | Methodology, raw results, dated capture snapshots                                         |
-| [examples/](examples)                                  | Runnable apps per format + a full demo with observability stack (`./scripts/run-demo.sh`) |
+| Document                                               | Contents                                                                                                                                                                              |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [docs/API.md](docs/API.md)                             | The fluent surface, grouped by type; multi-topic routing; built-in operators                                                                                                          |
+| [docs/GUARANTEES.md](docs/GUARANTEES.md)               | Delivery guarantee boundary, failure matrix, ordering, backpressure                                                                                                                   |
+| [docs/FORMATS.md](docs/FORMATS.md)                     | JSON / Avro / Protobuf, wire envelopes, Confluent Schema Registry modes                                                                                                               |
+| [docs/SINKS.md](docs/SINKS.md)                         | Custom, Kafka-producer, fan-out, and batch sinks                                                                                                                                      |
+| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)         | Metrics tables, outcome counters, tracing, local Grafana stack                                                                                                                        |
+| [docs/MODULES.md](docs/MODULES.md)                     | Module catalog, BOM usage, JPMS                                                                                                                                                       |
+| [docs/ESCAPE-HATCHES.md](docs/ESCAPE-HATCHES.md)       | The explicit builder API: custom offset managers, reporters, seams                                                                                                                    |
+| [docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md) | The machine-checked offset invariants                                                                                                                                                 |
+| [docs/VERSIONING.md](docs/VERSIONING.md)               | What breaks in a minor, what counts as public API, and when the rule changes                                                                                                          |
+| [docs/adr/](docs/adr)                                  | Architecture decision records — why the concurrency tooling is what it is                                                                                                             |
+| [benchmarks/](benchmarks)                              | Methodology, raw results, dated capture snapshots                                                                                                                                     |
+| [examples/](examples)                                  | Runnable apps per format, a full demo with observability stack (`./scripts/run-demo.sh`), and multi-region failover with offsets in a DynamoDB global table (`examples/global-table`) |
 
 ## Requirements
 
