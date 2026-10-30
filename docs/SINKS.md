@@ -22,12 +22,12 @@ auto-registered:
 final var registry = new MessageProcessorRegistry();
 
 registry.registerSink(RegistryKey.json("jsonConsole"), new JsonConsoleSink<Map<String, Object>>());
-registry.registerSink(RegistryKey.of("database", Map.class), databaseSink);
+registry.registerSink(RegistryKey.json("database"), databaseSink);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
   .add(RegistryKey.json("sanitize"))
-  .toSink(RegistryKey.of("database", Map.class))
+  .toSink(RegistryKey.json("database"))
   .build();
 ```
 

@@ -31,7 +31,7 @@ Rows in **bold** are deliberately escape-hatch-only (no fluent equivalent planne
 | Format selection                                    | `KPipe.json/avro/protobuf/bytes/custom(...)`                                                                                    | `new MessageProcessorRegistry()` + `registry.pipeline(format)`                                                             | The registry is format-agnostic; pass the `MessageFormat<T>` per pipeline. The `KPipe.custom(...)` facade form gives user-supplied formats the same fluent surface as the bundled ones.                 |
 | Topic subscription (homogeneous)                    | `KPipe.X(topic, props)`                                                                                                         | `Builder.withTopic(s) / withTopics(...)`                                                                                   | One topic-set, one shared pipeline.                                                                                                                                                                     |
 | Topic subscription (heterogeneous)                  | `KPipe.multi(props).json(...).avro(...)...start()`                                                                              | `Builder.withPipelines(Map<String, MessagePipeline<?>>)`                                                                   | Per-topic dispatch.                                                                                                                                                                                     |
-| Operator chain (`pipe/filter/peek/when`)            | `Stream.pipe / filter / peek / when`                                                                                            | `MessageProcessorRegistry.pipeline(format).add(...)`                                                                       | Identical operator semantics.                                                                                                                                                                           |
+| Operator chain (`pipe/filter/peek/when`)            | `Stream.pipe / filter / peek / when`                                                                                            | `MessageProcessorRegistry.pipeline(format).add(...)`                                                                       | Same operator types; `filter` and `peek` come from `Operators.filter` / `Operators.peek` passed to `add`.                                                                                               |
 | Result observers (`onFiltered/onFailed/peekResult`) | `Stream.onFiltered / onFailed / peekResult`                                                                                     | — (the fluent facade is the entry point; explicit API users pattern-match `Result<T>` directly)                            | Observers fire after the pipeline returns `Result.Passed/Filtered/Failed`. Side-effect only; they do not suppress or reroute.                                                                           |
 | Custom terminal sink                                | `Stream.toCustom(MessageSink<T>)`                                                                                               | `registry.registerSink(key, sink)`                                                                                         | Any `MessageSink<T>`; facade also offers `.toConsole()`.                                                                                                                                                |
 | Multi-sink fanout                                   | `Stream.toMulti(sinks...)`                                                                                                      | `new CompositeMessageSink<>(...)`                                                                                          | Best-effort delivery; per-sink errors logged + suppressed.                                                                                                                                              |
@@ -180,8 +180,8 @@ registry.registerOperator(RegistryKey.json("enrich"), enrichOp);
 registry.registerSink(RegistryKey.json("warehouse"), warehouseSink);
 
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
-    .add(RegistryKey.<Map<String, Object>>json("enrich"))
-    .toSink(RegistryKey.<Map<String, Object>>json("warehouse"))
+    .add(RegistryKey.json("enrich"))
+    .toSink(RegistryKey.json("warehouse"))
     .build();
 
 final var groupA = KPipeConsumer.builder()
@@ -222,6 +222,7 @@ registry.registerEnum((Class<Map<String, Object>>) (Class<?>) Map.class, Standar
 ```
 
 **Conditional processing** — `TypedPipelineBuilder.when(predicate, ifTrue, ifFalse)` branches inside one pipeline; both
-branches are required. For drop-on-condition, use `filter` — a false predicate marks the record `Filtered` (offset still
-commits, sink skipped), which is the deliberate-skip half of the sealed `Result` type. The failure half (`Failed`)
-routes through retry / error handler / DLQ — the two are distinct types precisely so a filter can never mask a bug.
+branches are required. For drop-on-condition, add `Operators.filter(predicate)` — a false predicate marks the record
+`Filtered` (offset still commits, sink skipped), which is the deliberate-skip half of the sealed `Result` type. The
+failure half (`Failed`) routes through retry / error handler / DLQ — the two are distinct types precisely so a filter
+can never mask a bug.

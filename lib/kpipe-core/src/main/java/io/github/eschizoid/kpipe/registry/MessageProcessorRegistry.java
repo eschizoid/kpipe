@@ -12,8 +12,9 @@ import java.util.function.UnaryOperator;
 
 /// Registry for managing message processors AND message sinks in KPipe pipelines.
 ///
-/// Holds two type-safe maps keyed by [RegistryKey]: one for [UnaryOperator]s (the transforms
-/// you compose with `.pipe(...)`), one for [MessageSink]s (the terminal consumers). The two
+/// Holds two type-safe maps keyed by [RegistryKey]: one for [UnaryOperator]s (the transforms a
+/// pipeline adds by key with `add(RegistryKey...)`), one for [MessageSink]s (the terminal
+/// consumers). The two
 /// namespaces share the same key shape but are stored independently — a key may exist as an
 /// operator, as a sink, as both, or as neither. Internally both namespaces share a single
 /// `Namespace` helper so the structural-mirror methods all funnel into one body each.
@@ -54,8 +55,8 @@ public class MessageProcessorRegistry {
 
   /// Internal helper: each namespace owns one map and exposes the structural CRUD methods. Keeps
   /// the public registry from carrying two hand-rolled mirrors. The user-facing methods
-  /// (`register`, `getOperator` / `getSink`, etc.) still split by overload / suffix to preserve
-  /// the type-safe API; only the *plumbing* is shared.
+  /// (`registerOperator` / `registerSink`, `getOperator` / `getSink`, etc.) still split by suffix
+  /// to preserve the type-safe API; only the *plumbing* is shared.
   private static final class Namespace {
 
     private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> map = new ConcurrentHashMap<>();
