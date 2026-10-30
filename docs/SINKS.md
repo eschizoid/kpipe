@@ -14,9 +14,9 @@ sink building blocks themselves. Snippets use placeholder values; they show shap
 
 `MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape:
 `registerOperator(key, op)` / `registerSink(key, sink)` to add, `getOperator(key)` / `getSink(key)` to look up, and
-per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`, `compositeSink`). Console
-sinks (`JsonConsoleSink`, `AvroConsoleSink`, `ProtobufConsoleSink`) live in their format modules and are not
-auto-registered:
+per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`). To fan out to several sinks,
+use `Stream.toMulti(...)`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`, `ProtobufConsoleSink`) live in their
+format modules and are not auto-registered:
 
 ```java
 final var registry = new MessageProcessorRegistry();

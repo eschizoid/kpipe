@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.Result;
@@ -36,10 +37,14 @@ class AvroFormatEnvelopeEdgeCasesTest {
   private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
   /// Drives `bytes` through deserialize -> process -> serialize, re-throwing a failure cause.
-  private static <T> byte[] roundTrip(final MessagePipeline<T> pipeline, final byte[] bytes) {
+  private static <T> byte[] roundTrip(
+    final MessageFormat<T> format,
+    final MessagePipeline<T> pipeline,
+    final byte[] bytes
+  ) {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
-      case Result.Passed<T> p -> pipeline.serialize(p.value());
+      case Result.Passed<T> p -> format.serialize(p.value());
       case Result.Filtered<T> _ -> null;
       case Result.Failed<T> f -> {
         if (f.cause() instanceof RuntimeException re) throw re;
@@ -135,7 +140,7 @@ class AvroFormatEnvelopeEdgeCasesTest {
     final var bytes = encode(format.schema(), big);
 
     final var pipeline = REGISTRY.pipeline(format).build();
-    final var result = roundTrip(pipeline, bytes);
+    final var result = roundTrip(format, pipeline, bytes);
 
     assertNotNull(result);
     assertArrayEquals(bytes, result, "an oversized payload must round-trip byte-for-byte");

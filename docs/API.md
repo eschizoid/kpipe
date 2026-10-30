@@ -129,11 +129,11 @@ KPipe.multi(kafkaProps)
 ## Built-in operators
 
 `io.github.eschizoid.kpipe.registry.Operators` provides ready-made operators for `.pipe(...)`: `filter`, `drop`, `peek`,
-`map`, `compose`, `safe`, `requireField`, `rename`, `removeFields`, `addField`. The `Map`-typed helpers (`rename`,
-`removeFields`, `addField`, `requireField`) **mutate the payload map in place and return it** — they are convenient, not
-pure functions. In the standard sink path this is sound (a record's payload is confined to the one worker processing
-that attempt; the batch path hands buffered values to the flusher under a lock), but it matters if your own code shares
-payload references beyond the pipeline.
+`compose`, `requireField`, `rename`, `removeFields`, `addField`. The `Map`-typed helpers (`rename`, `removeFields`,
+`addField`, `requireField`) **mutate the payload map in place and return it** — they are convenient, not pure functions.
+In the standard sink path this is sound (a record's payload is confined to the one worker processing that attempt; the
+batch path hands buffered values to the flusher under a lock), but it matters if your own code shares payload references
+beyond the pipeline.
 
 ## The explicit API
 

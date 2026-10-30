@@ -71,41 +71,6 @@ class MessageProcessorRegistrySinksTest {
   }
 
   @Test
-  void shouldDispatchCompositeSinkToEveryRegisteredKey() {
-    final var sink1 = mock(MessageSink.class);
-    final var sink2 = mock(MessageSink.class);
-
-    final var key1 = RegistryKey.of("sink1", Object.class);
-    final var key2 = RegistryKey.of("sink2", Object.class);
-
-    registry.registerSink(key1, sink1);
-    registry.registerSink(key2, sink2);
-
-    registry.compositeSink(key1, key2).accept("processed");
-
-    verify(sink1).accept("processed");
-    verify(sink2).accept("processed");
-  }
-
-  @Test
-  void shouldKeepDeliveringWhenOneCompositeSinkThrows() {
-    final var failingSink = mock(MessageSink.class);
-    doThrow(new RuntimeException("Test failure")).when(failingSink).accept(any());
-
-    final var workingSink = mock(MessageSink.class);
-
-    final var keyFailing = RegistryKey.of("failingSink", Object.class);
-    final var keyWorking = RegistryKey.of("workingSink", Object.class);
-
-    registry.registerSink(keyFailing, failingSink);
-    registry.registerSink(keyWorking, workingSink);
-
-    registry.compositeSink(keyFailing, keyWorking).accept("processed");
-
-    verify(workingSink).accept("processed");
-  }
-
-  @Test
   void shouldTrackMetricsForSink() {
     final var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
     final MessageSink<Object> countingSink = _ -> callCount.incrementAndGet();

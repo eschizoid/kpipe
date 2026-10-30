@@ -64,14 +64,12 @@ class MessagePipelineContractTest {
   }
 
   @Test
-  void shouldRoundTripSuccessfully() {
-    final byte[] output = new byte[] { 9, 9, 9 };
-    final var pipeline = new TestPipeline<String>(_ -> "v", Result::passed, _ -> output, null);
+  void aDeserializedValuePassesThroughProcess() {
+    final var pipeline = new TestPipeline<String>(_ -> "v", Result::passed, null);
 
     final var deserialized = pipeline.deserializeOrFail(INPUT);
-    final var result = pipeline.process(deserialized);
-    final var passed = assertInstanceOf(Result.Passed.class, result);
-    assertSame(output, pipeline.serialize((String) passed.value()));
+    final var passed = assertInstanceOf(Result.Passed.class, pipeline.process(deserialized));
+    assertEquals("v", passed.value());
   }
 
   private interface DeserializeFn<T> {
@@ -82,16 +80,12 @@ class MessagePipelineContractTest {
     Result<T> apply(T value);
   }
 
-  private interface SerializeFn<T> {
-    byte[] apply(T value);
-  }
-
   private static MessagePipeline<String> pipelineWithDeserialize(final DeserializeFn<String> fn) {
-    return new TestPipeline<>(fn, Result::passed, _ -> INPUT, null);
+    return new TestPipeline<>(fn, Result::passed, null);
   }
 
   private static MessagePipeline<String> pipelineWithProcess(final ProcessFn<String> fn) {
-    return new TestPipeline<>(_ -> "v", fn, _ -> INPUT, null);
+    return new TestPipeline<>(_ -> "v", fn, null);
   }
 
   /// Minimal record-style pipeline used to drive the contract tests. `process` returns
@@ -100,17 +94,11 @@ class MessagePipelineContractTest {
   private record TestPipeline<T>(
     DeserializeFn<T> deserializer,
     ProcessFn<T> processor,
-    SerializeFn<T> serializer,
     MessageSink<T> sink
   ) implements MessagePipeline<T> {
     @Override
     public T deserialize(final byte[] data) {
       return deserializer.apply(data);
-    }
-
-    @Override
-    public byte[] serialize(final T data) {
-      return serializer.apply(data);
     }
 
     @Override
