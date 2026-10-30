@@ -62,6 +62,15 @@ abstract class OffsetStoreContract {
   }
 
   @Test
+  void topicsDoNotSeeEachOthersOffsets() {
+    final var store = store("payments");
+    final var otherTopic = new TopicPartition("refunds-" + UUID.randomUUID(), 0);
+    store.commit(Map.of(p0, 10L));
+
+    assertEquals(Map.of(), store.load(List.of(otherTopic)), "same group and partition number, other topic");
+  }
+
+  @Test
   void groupsDoNotSeeEachOthersOffsets() {
     store("payments").commit(Map.of(p0, 10L));
     store("refunds").commit(Map.of(p0, 99L));

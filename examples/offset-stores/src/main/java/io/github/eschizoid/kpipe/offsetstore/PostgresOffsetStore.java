@@ -68,6 +68,7 @@ public final class PostgresOffsetStore implements OffsetStore {
   @Override
   public void commit(final Map<TopicPartition, Long> offsets) {
     try (final var connection = dataSource.getConnection(); final var statement = connection.prepareStatement(upsert)) {
+      final var autoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
       try {
         for (final var entry : offsets.entrySet()) {
@@ -79,10 +80,16 @@ public final class PostgresOffsetStore implements OffsetStore {
         }
         statement.executeBatch();
         connection.commit();
-      } catch (final SQLException e) {
+      } catch (final SQLException | RuntimeException e) {
         // JDBC leaves an open transaction's fate on close to the driver or pool.
-        connection.rollback();
+        try {
+          connection.rollback();
+        } catch (final SQLException rollback) {
+          e.addSuppressed(rollback);
+        }
         throw e;
+      } finally {
+        connection.setAutoCommit(autoCommit);
       }
     } catch (final SQLException e) {
       throw new IllegalStateException("Failed to commit offsets " + offsets, e);
