@@ -379,8 +379,8 @@ public interface Stream<T> {
   Stream<T> withSchemaRegistry(final SchemaResolver resolver);
 
   /// Terminates the stream with a format-appropriate console sink and returns a [Sink] ready
-  /// to start. An Avro or Protobuf stream prints with the schema or descriptor its format was
-  /// built with.
+  /// to start. Each format supplies its own console sink; a [KPipe#custom] stream logs
+  /// `String.valueOf(value)`.
   ///
   /// A **registry-mode** Avro/Protobuf stream (via [#withSchemaRegistry]) has no fixed
   /// schema/descriptor, so the console sink is unsupported there — `toConsole()` throws; use

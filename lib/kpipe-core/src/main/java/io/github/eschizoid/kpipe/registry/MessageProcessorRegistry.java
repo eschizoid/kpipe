@@ -14,10 +14,10 @@ import java.util.function.UnaryOperator;
 ///
 /// Holds two type-safe maps keyed by [RegistryKey]: one for [UnaryOperator]s (the transforms a
 /// pipeline adds by key with `add(RegistryKey...)`), one for [MessageSink]s (the terminal
-/// consumers). The two
-/// namespaces share the same key shape but are stored independently — a key may exist as an
-/// operator, as a sink, as both, or as neither. Internally both namespaces share a single
-/// `Namespace` helper so the structural-mirror methods all funnel into one body each.
+/// consumers). The two namespaces share the same key shape but are stored independently — a
+/// key may exist as an operator, as a sink, as both, or as neither. Internally both namespaces
+/// share a single `Namespace` helper so the structural-mirror methods all funnel into one body
+/// each.
 ///
 /// The public surface is a perfect per-namespace mirror: every operation carries its namespace
 /// in the method name (`registerOperator`/`registerSink`, `getOperator`/`getSink`,

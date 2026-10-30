@@ -25,8 +25,8 @@ declare a pipeline — deserialize, transform, sink — and KPipe runs it with:
   state (sink completed, filtered, or parked in the dead-letter topic, the DLQ), and commits never pass a record that is
   still in flight. The exact guarantee boundary and failure matrix: [docs/GUARANTEES.md](docs/GUARANTEES.md).
 - **One decode per processing attempt, no re-encode between steps.** Operators work on the typed payload (`Map`,
-  `GenericRecord`, `Message`) from a single decode to the sink; only a sink that writes bytes back to Kafka encodes,
-  once. See [docs/FORMATS.md](docs/FORMATS.md) for what each kind of transform costs.
+  `GenericRecord`, `Message`) from a single decode to the sink. KPipe itself never encodes; a sink that writes bytes back
+  to Kafka encodes once per attempt. See [docs/FORMATS.md](docs/FORMATS.md) for what each kind of pipeline costs.
 - **Typed outcomes instead of nulls.** Every record ends as `Passed`, `Filtered`, or `Failed` — a sealed type, so
   "intentionally skipped" and "broken" cannot be confused, in code or in metrics.
 - **The operational stack as configuration.** Retries, dead-letter routing, backpressure, a circuit breaker, metrics,
