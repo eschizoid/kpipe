@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.globaltable;
+package io.github.eschizoid.kpipe.offsetstore;
 
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import java.util.Collection;
@@ -17,6 +17,10 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 /// resumes from it. Replication is asynchronous, so that frontier can be older than the last one
 /// the failed region wrote, and the records in between are processed again. None is skipped: the
 /// store only ever holds a frontier, and every offset below a frontier finished processing.
+///
+/// A partition with no item yet starts from `auto.offset.reset`. Set it to `earliest`: the store
+/// never commits to Kafka, so under `latest` a region that fails before its first frontier
+/// replicates leaves the other region starting at the log end.
 ///
 /// An offset means the same record in every region only when the topic is replicated with its
 /// offsets preserved.

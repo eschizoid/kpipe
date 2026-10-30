@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.globaltable;
+package io.github.eschizoid.kpipe.offsetstore;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
@@ -8,7 +8,6 @@ import io.github.eschizoid.kpipe.KPipe;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.consumer.config.KafkaConsumerConfig;
-import java.net.URI;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
@@ -29,15 +28,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
-import software.amazon.awssdk.services.dynamodb.model.BillingMode;
-import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
-import software.amazon.awssdk.services.dynamodb.model.KeyType;
-import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
 /// One consumer group in two regions, each with its own Kafka cluster and its own replica of the
 /// offset table. East processes until it fails; west takes over from the offsets that replicated.
@@ -49,8 +40,7 @@ import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 class GlobalTableFailoverIntegrationTest {
 
   private static final String KAFKA_VERSION = System.getProperty("kafkaVersion", "4.3.0");
-  private static final DockerImageName DYNAMODB_LOCAL = DockerImageName.parse("amazon/dynamodb-local:3.3.2");
-  private static final String TABLE = "kpipe-offsets";
+  private static final String TABLE = DynamoDbLocal.TABLE;
   private static final String GROUP = "payments";
   private static final String TOPIC = "payments";
   private static final int PARTITIONS = 3;
@@ -67,20 +57,20 @@ class GlobalTableFailoverIntegrationTest {
   private static final KafkaContainer westKafka = kafka();
 
   @Container
-  private static final GenericContainer<?> eastDynamo = new GenericContainer<>(DYNAMODB_LOCAL).withExposedPorts(8000);
+  private static final GenericContainer<?> eastDynamo = DynamoDbLocal.container();
 
   @Container
-  private static final GenericContainer<?> westDynamo = new GenericContainer<>(DYNAMODB_LOCAL).withExposedPorts(8000);
+  private static final GenericContainer<?> westDynamo = DynamoDbLocal.container();
 
   private DynamoDbClient eastTable;
   private DynamoDbClient westTable;
 
   @BeforeEach
   void setUp() throws Exception {
-    eastTable = client(eastDynamo);
-    westTable = client(westDynamo);
-    createTable(eastTable);
-    createTable(westTable);
+    eastTable = DynamoDbLocal.client(eastDynamo);
+    westTable = DynamoDbLocal.client(westDynamo);
+    DynamoDbLocal.createTable(eastTable);
+    DynamoDbLocal.createTable(westTable);
     final var eastOffsets = produce(eastKafka);
     final var westOffsets = produce(westKafka);
     assertEquals(eastOffsets, westOffsets, "a replicated topic holds each record at the same offset");
@@ -123,14 +113,16 @@ class GlobalTableFailoverIntegrationTest {
     try (
       final var _ = consumer(westKafka, new DynamoDbOffsetStore(westTable, TABLE, GROUP), "latest", westSeen, _ -> {})
     ) {
-      awaitTrue(() -> westSeen.size() == PARTITIONS * (RECORDS - REPLICATED), "west reaches the last records");
+      awaitTrue(
+        () -> westSeen.size() == PARTITIONS * (RECORDS - REPLICATED),
+        "west reaches the last records; under auto.offset.reset=latest it processes none without the seek"
+      );
     }
 
     assertEquals(
       values(REPLICATED, RECORDS),
       westSeen,
-      "west processes exactly the records from the replicated frontier on; under auto.offset.reset=latest it " +
-        "would have processed none without the seek"
+      "west processes exactly the records from the replicated frontier on"
     );
     final var everyRecord = new HashSet<>(eastSeen);
     everyRecord.addAll(westSeen);
@@ -165,6 +157,7 @@ class GlobalTableFailoverIntegrationTest {
       .withProcessingMode(ProcessingMode.PARALLEL)
       .withOffsetStore(store)
       .withCommitInterval(Duration.ofMillis(100))
+      .withWaitForMessagesTimeout(Duration.ZERO)
       .toCustom(payload -> {
         final var value = new String(payload, UTF_8);
         try {
@@ -214,11 +207,18 @@ class GlobalTableFailoverIntegrationTest {
 
     Replication(final DynamoDbClient source, final DynamoDbClient target) {
       executor.scheduleWithFixedDelay(
-        () ->
-          source
-            .scan(request -> request.tableName(TABLE).consistentRead(true))
-            .items()
-            .forEach(item -> target.putItem(request -> request.tableName(TABLE).item(item))),
+        () -> {
+          // A thrown exception would cancel every later run; a failed copy is retried on the
+          // next.
+          try {
+            source
+              .scan(request -> request.tableName(TABLE).consistentRead(true))
+              .items()
+              .forEach(item -> target.putItem(request -> request.tableName(TABLE).item(item)));
+          } catch (final RuntimeException e) {
+            System.getLogger(Replication.class.getName()).log(System.Logger.Level.WARNING, "copy failed", e);
+          }
+        },
         0,
         50,
         TimeUnit.MILLISECONDS
@@ -234,29 +234,6 @@ class GlobalTableFailoverIntegrationTest {
 
   private static KafkaContainer kafka() {
     return new KafkaContainer(DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION)));
-  }
-
-  private static DynamoDbClient client(final GenericContainer<?> dynamo) {
-    return DynamoDbClient.builder()
-      .endpointOverride(URI.create("http://%s:%d".formatted(dynamo.getHost(), dynamo.getMappedPort(8000))))
-      .region(Region.US_EAST_1)
-      .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("local", "local")))
-      .build();
-  }
-
-  private static void createTable(final DynamoDbClient client) {
-    client.createTable(request ->
-      request
-        .tableName(TABLE)
-        .keySchema(KeySchemaElement.builder().attributeName(DynamoDbOffsetStore.KEY).keyType(KeyType.HASH).build())
-        .attributeDefinitions(
-          AttributeDefinition.builder()
-            .attributeName(DynamoDbOffsetStore.KEY)
-            .attributeType(ScalarAttributeType.S)
-            .build()
-        )
-        .billingMode(BillingMode.PAY_PER_REQUEST)
-    );
   }
 
   /// Creates the topic and writes `p<partition>-v<index>` to every partition in order, returning

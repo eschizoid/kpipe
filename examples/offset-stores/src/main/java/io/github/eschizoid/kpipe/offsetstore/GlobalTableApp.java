@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.globaltable;
+package io.github.eschizoid.kpipe.offsetstore;
 
 import io.github.eschizoid.kpipe.KPipe;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
@@ -12,11 +12,11 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 /// A consumer that keeps its offsets in this region's replica of a DynamoDB global table. Run the
 /// same app in every region, each against its own Kafka cluster and its own `AWS_REGION`; when one
 /// region goes down, the group in another region resumes from the offsets that replicated there.
-public final class App {
+public final class GlobalTableApp {
 
-  private static final Logger LOGGER = System.getLogger(App.class.getName());
+  private static final Logger LOGGER = System.getLogger(GlobalTableApp.class.getName());
 
-  private App() {}
+  private GlobalTableApp() {}
 
   static void main() {
     final var bootstrapServers = env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092");
@@ -26,6 +26,9 @@ public final class App {
     final var region = Region.of(env("AWS_REGION", "us-east-1"));
 
     final var props = KafkaConsumerConfig.createConsumerConfig(bootstrapServers, group);
+    // A partition with no stored offset yet starts here; the store never commits to Kafka, so
+    // under `latest` a region that fails before its first offset replicates would skip records.
+    props.put("auto.offset.reset", "earliest");
     try (
       final var dynamo = DynamoDbClient.builder().region(region).build();
       final var handle = KPipe.bytes(topic, props)
