@@ -52,7 +52,7 @@ Rows in **bold** are deliberately escape-hatch-only (no fluent equivalent planne
 | Poll timeout                                        | `Stream.withPollTimeout(Duration)`                                                                                              | `Builder.withPollTimeout(Duration)`                                                                                        | Default 100ms.                                                                                                                                                                                          |
 | Offset commit interval                              | `Stream.withCommitInterval(Duration)`                                                                                           | `Builder.withCommitInterval(Duration)`                                                                                     | Default 30 seconds. Configures the default `KafkaOffsetManager`; rejected alongside a custom `OffsetManager`.                                                                                           |
 | Lifecycle handle                                    | `Handle.isHealthy / metrics / awaitShutdown / close`                                                                            | `KPipeConsumer.start / awaitShutdown / shutdownGracefully / waitForInFlightDrain`                                          | `Handle` is `AutoCloseable` (5s graceful default); the consumer hosts the lifecycle directly.                                                                                                           |
-| **External offset store**                           | — (escape hatch only)                                                                                                           | `Builder.withOffsetStore(OffsetStore)`                                                                                     | Keeps committed offsets in a database instead of Kafka; the default manager still computes the frontier. Rejected alongside a custom `OffsetManager`.                                                   |
+| **External offset store**                           | `Stream.withOffsetStore(OffsetStore)` / `MultiBuilder.withOffsetStore(...)`                                                     | `Builder.withOffsetStore(OffsetStore)`                                                                                     | Keeps committed offsets in a database instead of Kafka; the default manager still computes the frontier. Rejected alongside a custom `OffsetManager`.                                                   |
 | **Custom `OffsetManager`**                          | — (escape hatch only)                                                                                                           | `Builder.withOffsetManager(OffsetManager)` / `withOffsetManagerProvider(Function<Consumer<byte[],byte[]>, OffsetManager>)` | Replaces frontier tracking too. The `Provider` form receives the live Kafka consumer for wiring commit callbacks.                                                                                       |
 | **Custom Kafka `Consumer` factory**                 | —                                                                                                                               | `Builder.withConsumer(Supplier<Consumer<byte[],byte[]>>)`                                                                  | Test seam / SSL configurators.                                                                                                                                                                          |
 | **Custom DLQ `KafkaProducer`**                      | —                                                                                                                               | `Builder.withKafkaProducer(Producer<byte[],byte[]>)` / `withKafkaProducer(KPipeProducer<byte[],byte[]>)`                   | Override default producer for the DLQ. The `KPipeProducer` overload shares an already-wrapped instance (e.g. one with custom metrics attached).                                                         |
@@ -72,34 +72,25 @@ Use case: keep committed offsets in a database, such as Postgres or a DynamoDB g
 can read, instead of in Kafka.
 
 ```java
-final class PostgresOffsetStore implements OffsetStore {
-
-  @Override
-  public Map<TopicPartition, Long> load(final Collection<TopicPartition> partitions) {
-    // SELECT next_offset ... for each partition; leave out partitions with no row
-  }
-
-  @Override
-  public void commit(final Map<TopicPartition, Long> offsets) {
-    // UPSERT (group, topic, partition) -> next_offset for every entry in one transaction
-  }
-}
-
-final var consumer = KPipeConsumer.builder()
-  .withProperties(kafkaProps)
-  .withTopic("orders")
-  .withPipeline(pipeline)
-  .withOffsetStore(new PostgresOffsetStore(dataSource, "payment-service"))
-  .build();
+final var handle = KPipe.json("orders", kafkaProps)
+  .withProcessingMode(ProcessingMode.PARALLEL)
+  .withOffsetStore(new PostgresOffsetStore(dataSource, "kpipe_offsets", "payment-service"))
+  .toCustom(this::handle)
+  .start();
 ```
+
+An `OffsetStore` has two methods: `load(partitions)` returns the stored next offset for each partition it has one for,
+and `commit(offsets)` stores the next offset for each partition given.
+[`examples/offset-stores`](../examples/offset-stores) has two to copy, `PostgresOffsetStore` and `DynamoDbOffsetStore`,
+built the same way (connection, table, group) and checked by one contract test.
 
 The default `KafkaOffsetManager` still decides what is safe to commit. The store receives the commit frontier, the
 lowest offset that has not finished processing, on the commit interval, on revoke and at shutdown. On assignment the
 consumer seeks each partition to the offset `load` returns, and retries a failed `load` until it succeeds or the
 consumer closes; it does not poll while it retries. A partition with no stored offset starts from the group's Kafka
-offset or `auto.offset.reset`. The `KPipe` streams take a store through `withOffsetStore` as well.
-`ExternalOffsetIntegrationTest` has a complete Postgres store, and [`examples/global-table`](../examples/global-table) a
-DynamoDB store with a test in which one region fails and another resumes from the offsets that replicated to it.
+offset or `auto.offset.reset`; with a store, set `auto.offset.reset=earliest`. `KPipeConsumer.builder()` takes a store
+through `withOffsetStore` as well. `GlobalTableFailoverIntegrationTest` in the same example runs one group in two
+regions over a DynamoDB table and shows the second region resuming from the offsets that replicated to it.
 
 Storing the offset of each record as it finishes, as a hand-written `OffsetManager` might, can skip records in
 `PARALLEL` and `KEY_ORDERED` mode: records finish out of order, so a later offset can be stored while an earlier record

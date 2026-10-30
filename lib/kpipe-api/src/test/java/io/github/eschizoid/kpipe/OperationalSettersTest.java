@@ -34,6 +34,10 @@ import org.junit.jupiter.api.Test;
 /// `withShutdownHook` is the exception: `true` and `false` are both valid, so there is no
 /// precondition to trip and nothing observable to assert without reaching into the JVM's
 /// shutdown-hook registry. Its delegation is covered by inspection alone.
+///
+/// `withOffsetStore` has no invalid value either. `GlobalTableFailoverIntegrationTest` in
+/// `examples/offset-stores` covers its delegation: the consumer there writes to the store only
+/// when the facade passes it on.
 class OperationalSettersTest {
 
   private static final OffsetStore STORE = new OffsetStore() {

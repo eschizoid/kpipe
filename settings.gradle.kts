@@ -28,6 +28,6 @@ include("examples:tracing")
 include("examples:schema-registry")
 include("examples:protobuf-schema-registry")
 include("examples:custom-format")
-include("examples:global-table")
+include("examples:offset-stores")
 
 include("benchmarks")
