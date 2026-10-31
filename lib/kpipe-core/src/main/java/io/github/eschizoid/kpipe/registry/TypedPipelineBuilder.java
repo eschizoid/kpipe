@@ -47,13 +47,20 @@ public final class TypedPipelineBuilder<T> {
     return this;
   }
 
-  /// Adds transformation operators from the registry.
+  /// Adds transformation operators from the registry. Each one looks its key up when it runs, so
+  /// re-registering a key takes effect at once.
   ///
   /// @param keys The registry keys for the operators.
   /// @return This builder.
+  /// @throws IllegalArgumentException if no operator is registered under one of the keys
   @SafeVarargs
   public final TypedPipelineBuilder<T> add(final RegistryKey<T>... keys) {
-    for (final var key : keys) add(registry.getOperator(key));
+    for (final var key : keys) {
+      if (!registry.hasOperator(key)) throw new IllegalArgumentException(
+        "No operator registered under key %s; register it before adding it to a pipeline".formatted(key)
+      );
+      add(registry.getOperator(key));
+    }
     return this;
   }
 
@@ -92,13 +99,20 @@ public final class TypedPipelineBuilder<T> {
     return this;
   }
 
-  /// Sets terminal sinks for the pipeline from the registry.
+  /// Sets terminal sinks for the pipeline from the registry. Each one looks its key up when it
+  /// runs, so re-registering a key takes effect at once.
   ///
   /// @param sinkKeys The registry keys for the sinks.
   /// @return This builder.
+  /// @throws IllegalArgumentException if no sink is registered under one of the keys
   @SafeVarargs
   public final TypedPipelineBuilder<T> toSink(final RegistryKey<T>... sinkKeys) {
-    for (final var key : sinkKeys) toSink(registry.getSink(key));
+    for (final var key : sinkKeys) {
+      if (!registry.hasSink(key)) throw new IllegalArgumentException(
+        "No sink registered under key %s; register it before adding it to a pipeline".formatted(key)
+      );
+      toSink(registry.getSink(key));
+    }
     return this;
   }
 

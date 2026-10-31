@@ -14,7 +14,7 @@ import org.pastalab.fray.junit.junit5.annotations.FrayTest;
 /// Operators and sinks live in separate maps under the same key shape, so registering one of each
 /// under an identical key must leave both intact. If the two namespaces shared a map — or a
 /// registration read-modify-wrote a shared structure without atomicity — one would clobber the
-/// other and the loser's lookup would silently fall back to a pass-through.
+/// other and the loser's lookup would throw for a missing key.
 @ExtendWith(FrayTestExtension.class)
 @Tag("FrayTest")
 class MessageProcessorRegistryFrayTest {
@@ -27,8 +27,7 @@ class MessageProcessorRegistryFrayTest {
     final var sinkReceived = new AtomicBoolean(false);
 
     FrayScenariosCore.runConcurrently(
-      // Identity-plus-one: a surviving registration is observable because the pass-through
-      // fallback would return the input unchanged.
+      // Identity-plus-one, so the result shows this operator ran and not some other.
       () -> registry.registerOperator(KEY, input -> input + 1),
       () -> registry.registerSink(KEY, value -> sinkReceived.set(true))
     );
