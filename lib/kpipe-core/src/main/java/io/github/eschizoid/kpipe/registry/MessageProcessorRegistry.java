@@ -103,22 +103,6 @@ public class MessageProcessorRegistry {
   private final Namespace operators = new Namespace();
   private final Namespace sinks = new Namespace();
 
-  /// Tracks which unrouted keys have already been warned about, so the per-record WARNING for a
-  /// missing operator/sink fires once per distinct key instead of once per record. The WARNING
-  /// signal is load-bearing — operators need to know a key is unrouted — but repeating it per
-  /// record floods logs during a sustained misconfiguration. Bounded in practice: keyed by
-  /// [RegistryKey], whose cardinality is the (finite) set of keys a pipeline ever looks up. Kept
-  /// separate per namespace so an unrouted key warned on the operator side still warns once on the
-  /// sink side (the two lookups are independent).
-  ///
-  /// The one unbounded case is a caller that generates fresh `RegistryKey` instances dynamically
-  /// (e.g. a key derived from per-record data) and routes none of them — each distinct miss adds
-  /// a set entry. That's a pathological misuse (the registry is meant for a fixed, declared key
-  /// set), but if it ever becomes a real concern, cap the set or switch to a bounded LRU.
-  private final Set<RegistryKey<?>> warnedMissingOperatorKeys = ConcurrentHashMap.newKeySet();
-
-  private final Set<RegistryKey<?>> warnedMissingSinkKeys = ConcurrentHashMap.newKeySet();
-
   /// Creates a new registry. The registry is format-agnostic — supply the format per pipeline via
   /// [#pipeline(MessageFormat)].
   public MessageProcessorRegistry() {}
@@ -160,26 +144,25 @@ public class MessageProcessorRegistry {
     }
   }
 
-  /// Retrieves a typed operator. If `key` is not registered, returns a logging pass-through —
-  /// a missing operator is almost always a config error and silent pass-through would mask the
-  /// bug.
+  /// Retrieves a typed operator that looks `key` up each time it runs, so re-registering the key
+  /// takes effect at once. If nothing is registered under `key` when it runs, it throws
+  /// [IllegalStateException], which fails the record rather than passing it on untransformed.
   ///
   /// @param key the registry key to look up
   /// @param <T> the pipeline value type
-  /// @return the registered operator, or a logging pass-through if `key` is not registered
+  /// @return an operator that applies whatever is registered under `key` when it runs
   public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
     return input -> {
       final RegistryEntry<UnaryOperator<T>> entry = operators.getAs(key);
-      if (entry == null) {
-        // Warn once per distinct key — repeats are suppressed so a sustained misconfig
-        // doesn't flood logs while still surfacing the unrouted key the first time.
-        if (warnedMissingOperatorKeys.add(key)) {
-          LOGGER.log(Level.WARNING, "No operator registered under key {0} — passing input through unchanged", key);
-        }
-        return input;
-      }
+      if (entry == null) throw new IllegalStateException("No operator registered under key " + key);
       return entry.apply(input);
     };
+  }
+
+  /// @param key the registry key to look up
+  /// @return whether an operator is registered under `key` now
+  boolean hasOperator(final RegistryKey<?> key) {
+    return operators.getAs(key) != null;
   }
 
   /// Removes an operator entry. Sinks are untouched — use [#unregisterSink(RegistryKey)] for
@@ -231,25 +214,26 @@ public class MessageProcessorRegistry {
     sinks.put(key, sink);
   }
 
-  /// Retrieves a typed sink. Unlike operators, a missing sink does NOT pass through — it logs at
-  /// WARNING and drops the value (no usable fallback for a void terminal).
+  /// Retrieves a typed sink that looks `key` up each time it runs, so re-registering the key takes
+  /// effect at once. If nothing is registered under `key` when it runs, it throws
+  /// [IllegalStateException], which fails the record rather than dropping it and committing its
+  /// offset.
   ///
   /// @param key the registry key to look up
   /// @param <T> the pipeline value type the sink consumes
-  /// @return the registered sink, or a logging drop-sink if `key` is not registered
+  /// @return a sink that delivers to whatever is registered under `key` when it runs
   public <T> MessageSink<T> getSink(final RegistryKey<T> key) {
     return value -> {
       final RegistryEntry<MessageSink<T>> entry = sinks.getAs(key);
-      if (entry == null) {
-        // Warn once per distinct key — repeats are suppressed so a sustained misconfig
-        // doesn't flood logs while still surfacing the unrouted key the first time.
-        if (warnedMissingSinkKeys.add(key)) {
-          LOGGER.log(Level.WARNING, "No sink found in registry for key: {0}", key);
-        }
-        return;
-      }
+      if (entry == null) throw new IllegalStateException("No sink registered under key " + key);
       entry.accept(value);
     };
+  }
+
+  /// @param key the registry key to look up
+  /// @return whether a sink is registered under `key` now
+  boolean hasSink(final RegistryKey<?> key) {
+    return sinks.getAs(key) != null;
   }
 
   /// Removes a sink entry.
