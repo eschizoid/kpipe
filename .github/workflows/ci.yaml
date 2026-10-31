@@ -42,7 +42,7 @@ jobs:
         run: |
           ./gradlew clean
           ./gradlew spotlessCheck
-          ./gradlew build test --stacktrace --no-daemon --max-workers=2
+          ./gradlew build test :benchmarks:compileJmhJava --stacktrace --no-daemon --max-workers=2
 
       # A Testcontainers class marked disabledWithoutDocker is skipped, not failed, when Docker is
       # unavailable, so the build would stay green with those tests never run.
