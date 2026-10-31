@@ -118,7 +118,7 @@ public class AvroPipelineBenchmark {
     if (!(result instanceof Result.Passed<GenericRecord> passed)) {
       throw new AssertionError("benchmark input should always pass: " + result);
     }
-    bh.consume(kpipePipeline.serialize(passed.value()));
+    bh.consume(format.serialize(passed.value()));
   }
 
   @Benchmark
@@ -129,7 +129,7 @@ public class AvroPipelineBenchmark {
     if (!(result instanceof Result.Passed<GenericRecord> passed)) {
       throw new AssertionError("benchmark input should always pass: " + result);
     }
-    bh.consume(kpipeMagicPipeline.serialize(passed.value()));
+    bh.consume(format.serialize(passed.value()));
   }
 
   @Benchmark

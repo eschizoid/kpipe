@@ -55,12 +55,6 @@ class OperatorsTest {
   }
 
   @Test
-  void mapShouldApplyFunction() {
-    final var op = Operators.map((String s) -> s.toUpperCase());
-    assertEquals("HELLO", op.apply("hello"));
-  }
-
-  @Test
   void filterShouldComposeInPipeline() {
     // Verify the operator actually integrates with TypedPipelineBuilder's
     // null-handling — filtered messages short-circuit the chain.
@@ -80,15 +74,6 @@ class OperatorsTest {
     final var keptResult = pipeline.process("keep-this".getBytes());
     final var passed = assertInstanceOf(Result.Passed.class, keptResult);
     assertEquals("keep-this", new String((byte[]) passed.value()));
-  }
-
-  @Test
-  void safeShouldReturnInputOnException() {
-    final UnaryOperator<String> throwing = _ -> {
-      throw new RuntimeException("boom");
-    };
-    final var op = Operators.safe(throwing);
-    assertEquals("input", op.apply("input"));
   }
 
   @Test

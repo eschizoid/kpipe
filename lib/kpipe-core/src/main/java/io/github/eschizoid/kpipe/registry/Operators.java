@@ -2,7 +2,6 @@ package io.github.eschizoid.kpipe.registry;
 
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
@@ -78,41 +77,6 @@ public final class Operators {
       sideEffect.accept(value);
       return value;
     };
-  }
-
-  /// Maps each element via the given function. Equivalent to passing the function directly to
-  /// `.add(...)`, but reads more naturally for inline transformations.
-  ///
-  /// Example:
-  /// ```java
-  /// registry.pipeline(JsonFormat.INSTANCE)
-  ///     .add(Operators.map(msg -> { msg.put("processed", true); return msg; }))
-  ///     .build();
-  /// ```
-  ///
-  /// @param mapper the function to apply to each value
-  /// @param <T> the operator's value type
-  /// @return an operator that returns `mapper.apply(input)`
-  public static <T> UnaryOperator<T> map(final Function<T, T> mapper) {
-    return mapper::apply;
-  }
-
-  /// Wraps an operator with error handling that suppresses exceptions and returns the original
-  /// input on failure.
-  ///
-  /// Convenience facade over [MessageProcessorRegistry#withOperatorErrorHandling] so users can
-  /// stay on the [Operators] namespace without importing the registry just to wrap an operator.
-  ///
-  /// Example:
-  /// ```java
-  /// .add(Operators.safe(Operators.map(msg -> riskyTransform(msg))))
-  /// ```
-  ///
-  /// @param op the operator to wrap with error handling
-  /// @param <T> the operator's value type
-  /// @return an operator that returns its input on exception (logged via the registry's logger)
-  public static <T> UnaryOperator<T> safe(final UnaryOperator<T> op) {
-    return MessageProcessorRegistry.withOperatorErrorHandling(op);
   }
 
   /// Returns an operator that filters out messages missing the given field.

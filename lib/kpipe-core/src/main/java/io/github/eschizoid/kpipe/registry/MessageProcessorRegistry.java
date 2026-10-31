@@ -218,16 +218,6 @@ public class MessageProcessorRegistry {
     return operators.metrics(key);
   }
 
-  /// Wraps an operator with error-handling logic that suppresses exceptions and returns the
-  /// original input.
-  ///
-  /// @param operator the operator to wrap
-  /// @param <T>      the pipeline value type
-  /// @return a new operator that logs and swallows exceptions raised by the original
-  public static <T> UnaryOperator<T> withOperatorErrorHandling(final UnaryOperator<T> operator) {
-    return RegistryFunctions.withOperatorErrorHandling(operator, LOGGER);
-  }
-
   // ───────────────────────────── Sinks ─────────────────────────────
 
   /// Registers a typed sink under `key`.
@@ -304,24 +294,5 @@ public class MessageProcessorRegistry {
   /// @return a new sink that logs and swallows exceptions raised by the original
   public static <T> MessageSink<T> withSinkErrorHandling(final MessageSink<T> sink) {
     return RegistryFunctions.withConsumerErrorHandling(sink, LOGGER)::accept;
-  }
-
-  /// Creates a composite sink that delivers each value to every registered sink under `sinkKeys`,
-  /// in order. A failure in one sink is logged at WARNING but does not stop the others.
-  ///
-  /// @param sinkKeys the registry keys whose sinks to fan out to
-  /// @param <T>      the pipeline value type
-  /// @return a fan-out sink that delivers to each registered sink in order
-  @SafeVarargs
-  public final <T> MessageSink<T> compositeSink(final RegistryKey<T>... sinkKeys) {
-    return value -> {
-      for (final var key : sinkKeys) {
-        try {
-          getSink(key).accept(value);
-        } catch (final Exception e) {
-          LOGGER.log(Level.WARNING, "Sink %s threw during compositeSink delivery; continuing".formatted(key), e);
-        }
-      }
-    };
   }
 }

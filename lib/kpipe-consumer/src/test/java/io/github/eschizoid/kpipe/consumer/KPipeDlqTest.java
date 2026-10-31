@@ -268,11 +268,6 @@ class KPipeDlqTest {
       }
 
       @Override
-      public byte[] serialize(final String data) {
-        return data.getBytes(StandardCharsets.UTF_8);
-      }
-
-      @Override
       public io.github.eschizoid.kpipe.registry.Result<String> process(final String data) {
         return io.github.eschizoid.kpipe.registry.Result.passed(data);
       }

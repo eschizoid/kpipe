@@ -141,12 +141,6 @@ public final class TypedPipelineBuilder<T> {
       }
 
       @Override
-      public byte[] serialize(T data) {
-        if (data == null) return null;
-        return format.serialize(data);
-      }
-
-      @Override
       public Result<T> process(T data) {
         if (data == null) return Result.filtered();
         var current = data;

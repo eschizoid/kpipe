@@ -82,7 +82,7 @@ public class JsonPipelineBenchmark {
     if (!(result instanceof Result.Passed<Map<String, Object>> passed)) {
       throw new AssertionError("benchmark input should always pass: " + result);
     }
-    bh.consume(kpipePipeline.serialize(passed.value()));
+    bh.consume(JsonFormat.INSTANCE.serialize(passed.value()));
   }
 
   @Benchmark

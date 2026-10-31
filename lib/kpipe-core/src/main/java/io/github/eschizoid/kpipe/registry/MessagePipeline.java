@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe.registry;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 
 /// A unified pipeline interface for the lifecycle:
-/// byte[] (Kafka) -> T (deserialized) -> T (processed) -> byte[] (Kafka).
+/// byte[] (Kafka) -> T (deserialized) -> T (processed) -> sink.
 ///
 /// ## Error contract
 ///
@@ -27,12 +27,6 @@ public interface MessagePipeline<T> {
   /// @param data the raw data from Kafka
   /// @return the deserialized object (never null)
   T deserialize(byte[] data);
-
-  /// Serializes the typed object back into a byte array.
-  ///
-  /// @param data the processed object
-  /// @return the serialized data to be sent to Kafka
-  byte[] serialize(T data);
 
   /// Applies the chain of transformations to the typed object.
   ///

@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.format.json;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.RegistryKey;
@@ -21,10 +22,14 @@ class MessageProcessorRegistryJsonTest {
   /// re-throw the cause. Replaces the byte-level `apply(byte[])` entry point that was removed
   /// from `MessagePipeline` so production callers couldn't accidentally rely on its
   /// null-for-filter / rethrow-for-failure semantics.
-  private static <T> byte[] roundTrip(final MessagePipeline<T> pipeline, final byte[] bytes) {
+  private static <T> byte[] roundTrip(
+    final MessageFormat<T> format,
+    final MessagePipeline<T> pipeline,
+    final byte[] bytes
+  ) {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
-      case Result.Passed<T> p -> pipeline.serialize(p.value());
+      case Result.Passed<T> p -> format.serialize(p.value());
       case Result.Filtered<T> _ -> null;
       case Result.Failed<T> f -> {
         if (f.cause() instanceof RuntimeException re) throw re;
@@ -57,7 +62,7 @@ class MessageProcessorRegistryJsonTest {
       })
       .build();
 
-    final var result = new String(roundTrip(pipeline, "{}".getBytes()));
+    final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
 
     assertTrue(result.contains("\"source\":\"test-app\""));
     assertTrue(result.contains("\"timestamp\":"));
@@ -73,7 +78,7 @@ class MessageProcessorRegistryJsonTest {
     });
 
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key).build();
-    final var result = new String(roundTrip(pipeline, "{}".getBytes()));
+    final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
 
     assertTrue(result.contains("\"test\":\"value\""));
   }
@@ -93,7 +98,7 @@ class MessageProcessorRegistryJsonTest {
     });
 
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(op1).add(op2).build();
-    final var result = new String(roundTrip(pipeline, "{}".getBytes()));
+    final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
 
     assertTrue(result.contains("\"op1\":\"val1\""));
     assertTrue(result.contains("\"op2\":\"val2\""));
@@ -107,21 +112,10 @@ class MessageProcessorRegistryJsonTest {
 
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(operator).build();
 
-    final var ex = assertThrows(RuntimeException.class, () -> roundTrip(pipeline, "{}".getBytes()));
+    final var ex = assertThrows(RuntimeException.class, () ->
+      roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes())
+    );
     assertEquals("Test exception", ex.getMessage());
-  }
-
-  @Test
-  void shouldWrapOperatorWithErrorHandling() {
-    final UnaryOperator<Map<String, Object>> operator = _ -> {
-      throw new RuntimeException("Test exception");
-    };
-    final var safeOperator = MessageProcessorRegistry.withOperatorErrorHandling(operator);
-
-    final var input = new java.util.HashMap<String, Object>();
-    final var result = safeOperator.apply(input);
-
-    assertSame(input, result);
   }
 
   @Test
@@ -151,10 +145,10 @@ class MessageProcessorRegistryJsonTest {
       .build();
 
     final var nonEmpty = "{\"key\":\"val\"}".getBytes();
-    assertTrue(new String(roundTrip(pipeline, nonEmpty)).contains("\"result\":\"true\""));
+    assertTrue(new String(roundTrip(JsonFormat.INSTANCE, pipeline, nonEmpty)).contains("\"result\":\"true\""));
 
     final var empty = "{}".getBytes();
-    assertTrue(new String(roundTrip(pipeline, empty)).contains("\"result\":\"false\""));
+    assertTrue(new String(roundTrip(JsonFormat.INSTANCE, pipeline, empty)).contains("\"result\":\"false\""));
   }
 
   @Test
@@ -184,8 +178,8 @@ class MessageProcessorRegistryJsonTest {
 
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key).build();
 
-    roundTrip(pipeline, "{}".getBytes());
-    roundTrip(pipeline, "{}".getBytes());
+    roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes());
+    roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes());
 
     final var metrics = registry.getOperatorMetrics(key);
     assertEquals(2L, metrics.get("invocationCount"));
@@ -201,7 +195,7 @@ class MessageProcessorRegistryJsonTest {
 
     final var retrieved = registry.getOperator(key);
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key).build();
-    final var result = new String(roundTrip(pipeline, "{}".getBytes()));
+    final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
 
     assertNotNull(retrieved);
     assertTrue(result.contains("\"typed\":\"success\""));
@@ -228,7 +222,7 @@ class MessageProcessorRegistryJsonTest {
       })
       .build();
 
-    final var result = new String(roundTrip(pipeline, "{}".getBytes()));
+    final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
 
     assertTrue(result.contains("\"b1\":\"v1\""));
     assertTrue(result.contains("\"b2\":\"v2\""));
@@ -270,7 +264,7 @@ class MessageProcessorRegistryJsonTest {
 
     final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key1).add(key2).build();
 
-    final var result = new String(roundTrip(pipeline, "{}".getBytes()));
+    final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
     assertTrue(result.contains("\"enum1\":\"v1\""));
     assertTrue(result.contains("\"enum2\":\"v2\""));
   }

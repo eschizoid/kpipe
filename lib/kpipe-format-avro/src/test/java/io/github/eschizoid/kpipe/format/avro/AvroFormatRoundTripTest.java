@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.Result;
@@ -27,10 +28,14 @@ class AvroFormatRoundTripTest {
   /// re-throw the cause. Replaces the byte-level `apply(byte[])` entry point that was removed
   /// from `MessagePipeline` so production callers couldn't accidentally rely on its
   /// null-for-filter / rethrow-for-failure semantics.
-  private static <T> byte[] roundTrip(final MessagePipeline<T> pipeline, final byte[] bytes) {
+  private static <T> byte[] roundTrip(
+    final MessageFormat<T> format,
+    final MessagePipeline<T> pipeline,
+    final byte[] bytes
+  ) {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
-      case Result.Passed<T> p -> pipeline.serialize(p.value());
+      case Result.Passed<T> p -> format.serialize(p.value());
       case Result.Filtered<T> _ -> null;
       case Result.Failed<T> f -> {
         if (f.cause() instanceof RuntimeException re) throw re;
@@ -57,7 +62,7 @@ class AvroFormatRoundTripTest {
     final var pipeline = REGISTRY.pipeline(format).build();
     final var invalidAvroBytes = "invalid avro".getBytes(StandardCharsets.UTF_8);
 
-    assertThrows(RuntimeException.class, () -> roundTrip(pipeline, invalidAvroBytes));
+    assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, invalidAvroBytes));
   }
 
   @Test
@@ -66,7 +71,7 @@ class AvroFormatRoundTripTest {
     final var avroBytes = encode(format.schema(), "test");
 
     final var pipeline = REGISTRY.pipeline(format).build();
-    final var result = roundTrip(pipeline, avroBytes);
+    final var result = roundTrip(format, pipeline, avroBytes);
 
     assertNotNull(result);
     assertEquals(avroBytes.length, result.length, "Result should have the same length as input");
@@ -78,7 +83,7 @@ class AvroFormatRoundTripTest {
     final var avroBytes = encode(format.schema(), "test-value");
 
     final var pipeline = REGISTRY.pipeline(format).build();
-    final var result = roundTrip(pipeline, avroBytes);
+    final var result = roundTrip(format, pipeline, avroBytes);
 
     assertNotNull(result);
     assertEquals(avroBytes.length, result.length);

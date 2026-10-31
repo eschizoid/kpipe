@@ -368,11 +368,6 @@ record DefaultStream<T>(
       }
 
       @Override
-      public byte[] serialize(final T data) {
-        return base.serialize(data);
-      }
-
-      @Override
       public Result<T> process(final T data) {
         final var result = base.process(data);
         if (peek != null) safeAccept(peek, result, "peekResult");

@@ -67,10 +67,10 @@ to prevent thrashing:
 
 **One registry type, two namespaces.** `MessageProcessorRegistry` holds operators (`UnaryOperator<T>`) and sinks
 (`MessageSink<T>`) in separate internal maps, keyed identically by `RegistryKey<T>`. The registration entry points are
-split by namespace — `registerOperator(key, op)` / `registerSink(key, sink)` — and the static error-handling helpers
-follow the same naming: `withOperatorErrorHandling(UnaryOperator<T>)` / `withSinkErrorHandling(MessageSink<T>)`. Lookups
-are `getOperator(key)` / `getSink(key)`. Since 1.19.0 the namespaces are a perfect 7×2 mirror — every method carries its
-namespace (`unregisterOperator`/`unregisterSink`, `clearOperators`/`clearSinks`, `getOperatorKeys`/`getSinkKeys`,
+split by namespace — `registerOperator(key, op)` / `registerSink(key, sink)` — and the static sink error-handling helper
+follows the same naming: `withSinkErrorHandling(MessageSink<T>)`. Lookups are `getOperator(key)` / `getSink(key)`. Since
+1.19.0 the namespaces are a perfect 7×2 mirror — every method carries its namespace
+(`unregisterOperator`/`unregisterSink`, `clearOperators`/`clearSinks`, `getOperatorKeys`/`getSinkKeys`,
 `getAllOperators`/`getAllSinks`, `getOperatorMetrics`/`getSinkMetrics`); the bare `unregister`/`clear`/`getKeys`/
 `getMetrics` operator forms are gone (they invited `registry.clear()`-wipes-only-operators surprises).
 
@@ -80,10 +80,10 @@ overload-ambiguity footgun.
 
 ## §8 Centralized error handling
 
-Public face: `MessageProcessorRegistry.withOperatorErrorHandling(UnaryOperator<T>)` and
-`MessageProcessorRegistry.withSinkErrorHandling(MessageSink<T>)`. Both wrap user code so one failing component can't
-crash the pipeline. Implementation note: the sink helper delegates to `RegistryFunctions.withConsumerErrorHandling`
-internally — that mismatched name is a historical artifact and not part of the surface users should call.
+Public face: `MessageProcessorRegistry.withSinkErrorHandling(MessageSink<T>)` wraps a sink so its failure is logged
+instead of thrown. There is no operator equivalent: an operator that throws makes the record `Failed`, which goes to
+retry, the error handler and the DLQ, whereas returning the input on failure would pass on a possibly half-modified
+payload as a success. `RegistryFunctions` is package-private.
 
 ## §9 Modular architecture
 

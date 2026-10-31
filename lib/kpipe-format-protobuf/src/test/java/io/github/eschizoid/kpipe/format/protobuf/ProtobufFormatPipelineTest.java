@@ -8,6 +8,7 @@ import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
+import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.RegistryKey;
@@ -27,10 +28,14 @@ class ProtobufFormatPipelineTest {
   /// re-throw the cause. Replaces the byte-level `apply(byte[])` entry point that was removed
   /// from `MessagePipeline` so production callers couldn't accidentally rely on its
   /// null-for-filter / rethrow-for-failure semantics.
-  private static <T> byte[] roundTrip(final MessagePipeline<T> pipeline, final byte[] bytes) {
+  private static <T> byte[] roundTrip(
+    final MessageFormat<T> format,
+    final MessagePipeline<T> pipeline,
+    final byte[] bytes
+  ) {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
-      case Result.Passed<T> p -> pipeline.serialize(p.value());
+      case Result.Passed<T> p -> format.serialize(p.value());
       case Result.Filtered<T> _ -> null;
       case Result.Failed<T> f -> {
         if (f.cause() instanceof RuntimeException re) throw re;
@@ -73,7 +78,7 @@ class ProtobufFormatPipelineTest {
       .build();
 
     final var input = format.serialize(createTestMessage());
-    final var output = roundTrip(pipeline, input);
+    final var output = roundTrip(format, pipeline, input);
     assertNotNull(output);
 
     final var result = format.deserialize(output);
@@ -86,13 +91,13 @@ class ProtobufFormatPipelineTest {
   @Test
   void shouldHandleNullInputInPipeline() {
     final var pipeline = registry.pipeline(format).build();
-    assertThrows(RuntimeException.class, () -> roundTrip(pipeline, null));
+    assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, null));
   }
 
   @Test
   void shouldHandleEmptyInputInPipeline() {
     final var pipeline = registry.pipeline(format).build();
-    assertThrows(RuntimeException.class, () -> roundTrip(pipeline, new byte[0]));
+    assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, new byte[0]));
   }
 
   private static Descriptors.Descriptor buildTestDescriptor() throws Descriptors.DescriptorValidationException {
