@@ -37,7 +37,7 @@ dependencies {
 // arm resolves kafka-clients 4.3.0 so the comparison runs on one client version that all of them support. Remove
 // the pin once a Parallel Consumer release works on the version the libraries build against.
 configurations.configureEach {
-  resolutionStrategy.force("org.apache.kafka:kafka-clients:4.3.0")
+  resolutionStrategy.force("org.apache.kafka:kafka-clients:4.4.0")
 }
 
 jmh {
