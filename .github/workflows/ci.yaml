@@ -25,7 +25,7 @@ jobs:
           cache: "gradle"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.4.0
+        uses: gradle/actions/setup-gradle@v6.4.1
 
       - name: Documentation consistency
         # Relative links resolve, one kpipe version across install snippets, the README
@@ -98,7 +98,7 @@ jobs:
           cache: "gradle"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.4.0
+        uses: gradle/actions/setup-gradle@v6.4.1
 
       - name: Controlled concurrency (Fray)
         # One task per module carrying Fray tests. The plugin rewires each Test task
