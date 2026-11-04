@@ -8,6 +8,7 @@ dependencies {
   implementation(project(":lib:kpipe-consumer"))
   implementation(project(":lib:kpipe-format-json"))
   implementation(project(":lib:kpipe-format-avro"))
+  implementation(project(":lib:kpipe-format-protobuf"))
 
   // Benchmark targets
   implementation(libs.kafkaClients)
@@ -19,6 +20,7 @@ dependencies {
   implementation(libs.reactorKafka)
   implementation(libs.atleonKafka)
   implementation(libs.avro)
+  implementation(libs.protobufJava)
 
   // Logging for JMH forks
   implementation(libs.slf4jSimple)

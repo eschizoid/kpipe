@@ -157,8 +157,9 @@ The operators change the record's map in place and return it. That is safe in a 
 to the attempt processing it and a retry decodes a fresh one, but it matters if your own code keeps a reference to the
 map. `set` and `setIfAbsent` put the same value object into every record; use `derive` for a fresh one per record.
 
-For Avro and Protobuf, write the change as a function on the record (`GenericRecord.put`, `Message.toBuilder()`); see
-[FORMATS.md](FORMATS.md).
+For Avro and Protobuf, write the change as a function on the record (`GenericRecord.put`, `Message.toBuilder()`). For
+Protobuf records that are only forwarded, `ProtobufBytes` edits the encoded bytes on a `KPipe.bytes` stream without
+decoding them; see [FORMATS.md](FORMATS.md#editing-encoded-bytes).
 
 ## The explicit API
 

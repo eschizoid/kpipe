@@ -21,8 +21,9 @@ The counts are per processing attempt: a retried record is decoded again, and en
 For Avro and Protobuf, the middle row needs a format built with a fixed schema or descriptor; in Schema Registry mode
 `serialize` throws `UnsupportedOperationException`.
 
-For Avro and Protobuf, every record written back to Kafka costs a full encode, whether or not an operator changed it.
-KPipe does not edit encoded bytes in place. Avro carries no field tags or offsets, so finding one field means reading
+For Avro and Protobuf, every record written back to Kafka costs a full encode, whether or not an operator changed it. A
+Protobuf record can skip both: `ProtobufBytes` edits the encoded bytes on a `KPipe.bytes` stream (see
+[Protobuf](#protobuf)). Avro has no equivalent: it carries no field tags or offsets, so finding one field means reading
 past every field before it.
 
 A note on mutability: the **pipeline definition** is immutable (each fluent call returns a new `Stream<T>`), but the
@@ -97,6 +98,43 @@ registry.registerOperator(clearEmailKey, msg -> {
   return msg.toBuilder().clearField(emailField).build();
 });
 ```
+
+### Editing encoded bytes
+
+When a pipeline only removes or sets a few fields and forwards the record to Kafka, it does not need the decoded
+message. `ProtobufBytes` edits the encoded bytes by field number on a `KPipe.bytes` stream; each operator copies the
+fields it keeps and skips the rest, so the record is never decoded or encoded again:
+
+```java
+import static io.github.eschizoid.kpipe.format.protobuf.ProtobufBytes.*;
+
+KPipe.bytes("customers", props)
+  .filter(has(EMAIL))
+  .pipe(remove(SSN))
+  .pipe(setString(STATUS, "processed"))
+  .toCustom(kafkaSink)
+  .start();
+```
+
+| Operator                                             | Does                                                             |
+| ---------------------------------------------------- | ---------------------------------------------------------------- |
+| `remove(fieldNumbers...)`                            | Removes every occurrence of the fields, packed repeated ones too |
+| `keep(fieldNumbers...)`                              | Removes every other field                                        |
+| `setString` / `setBytes` / `setLong(fieldNumber, v)` | Replaces every occurrence of the field with one value            |
+| `has(fieldNumber)`                                   | A predicate for `filter`: the field is written in the message    |
+
+The operators know field numbers and wire types, not the schema, so the caller picks the setter that matches the field's
+declared type. `setLong` writes a varint, right for `int32`, `int64`, `uint32`, `uint64`, `bool` and enums but not for
+`sint32`/`sint64` or the fixed-width types; a setter that finds the field written with another wire type fails the
+record. A proto3 scalar field without `optional`, set to its default value, is not written, so `has` does not match it.
+The bytes must be a bare message: a record with a Confluent wire envelope in front of it is not supported. Bytes whose
+top-level fields are malformed fail the record; the contents of length-delimited fields are copied unchecked, and `has`
+stops reading at the first match.
+
+`ProtobufFieldEditBenchmark` removes one field and sets another on a ten-field message. On the GitHub runner
+([run 41919627125](https://github.com/eschizoid/kpipe/actions/runs/41919627125)) the byte edit had about twelve times
+the throughput of decoding into a `DynamicMessage`, editing and encoding again, and allocated about a quarter of the
+memory per edit.
 
 ## Wire envelopes and skipBytes
 
