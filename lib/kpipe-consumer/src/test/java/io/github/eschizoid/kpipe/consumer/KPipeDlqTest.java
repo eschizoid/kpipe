@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Properties;
@@ -288,5 +289,102 @@ class KPipeDlqTest {
     props.put("key.deserializer", keyDeserializer);
     props.put("value.deserializer", valueDeserializer);
     return props;
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void aNonRetryableFailureGoesToTheDlqAfterOneAttempt() throws Exception {
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(UTF_8));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
+    final var attempts = new AtomicInteger();
+    final var retryCounts = new java.util.concurrent.CopyOnWriteArrayList<Integer>();
+
+    try (
+      final var consumer = KPipeConsumer.builder()
+        .withProperties(byteProperties())
+        .withTopic(TOPIC)
+        .withPipeline(
+          TestPipelines.sideEffect(_ -> {
+            attempts.incrementAndGet();
+            throw new NonRetryableException("missing required field 'id'");
+          })
+        )
+        .withRetry(3, Duration.ofSeconds(1))
+        .withDeadLetterTopic(DLQ_TOPIC)
+        .withKafkaProducer(mockProducer)
+        .withErrorHandler(error -> retryCounts.add(error.retryCount()))
+        .build()
+    ) {
+      final var started = System.nanoTime();
+      consumer.processRecord(record);
+      final var took = Duration.ofNanos(System.nanoTime() - started);
+
+      assertEquals(1, attempts.get(), "a failure a retry cannot fix is not retried");
+      assertTrue(took.compareTo(Duration.ofSeconds(1)) < 0, "no retry backoff was waited out; took " + took);
+      verify(mockProducer).send(argThat(r -> DLQ_TOPIC.equals(r.topic())));
+      assertEquals(java.util.List.of(0), retryCounts);
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void aFailureCausedByANonRetryableOneIsNotRetriedEither() throws Exception {
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(UTF_8));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
+    final var attempts = new AtomicInteger();
+
+    try (
+      final var consumer = KPipeConsumer.builder()
+        .withProperties(byteProperties())
+        .withTopic(TOPIC)
+        .withPipeline(
+          TestPipelines.sideEffect(_ -> {
+            attempts.incrementAndGet();
+            throw new IllegalStateException("wrapped", new NonRetryableException("malformed"));
+          })
+        )
+        .withRetry(3, Duration.ofMillis(1))
+        .withDeadLetterTopic(DLQ_TOPIC)
+        .withKafkaProducer(mockProducer)
+        .build()
+    ) {
+      consumer.processRecord(record);
+
+      assertEquals(1, attempts.get());
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void anOrdinaryFailureIsStillRetried() throws Exception {
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "value".getBytes(UTF_8));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
+    final var attempts = new AtomicInteger();
+
+    try (
+      final var consumer = KPipeConsumer.builder()
+        .withProperties(byteProperties())
+        .withTopic(TOPIC)
+        .withPipeline(
+          TestPipelines.sideEffect(_ -> {
+            attempts.incrementAndGet();
+            throw new RuntimeException("downstream timeout");
+          })
+        )
+        .withRetry(3, Duration.ofMillis(1))
+        .withDeadLetterTopic(DLQ_TOPIC)
+        .withKafkaProducer(mockProducer)
+        .build()
+    ) {
+      consumer.processRecord(record);
+
+      assertEquals(4, attempts.get(), "one attempt and three retries");
+    }
   }
 }

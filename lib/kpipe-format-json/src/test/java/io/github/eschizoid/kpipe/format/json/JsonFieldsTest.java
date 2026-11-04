@@ -4,6 +4,7 @@ import static io.github.eschizoid.kpipe.format.json.JsonFields.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -64,7 +65,7 @@ class JsonFieldsTest {
 
   @Test
   void renameOfAMissingFieldFails() {
-    final var thrown = assertThrows(IllegalArgumentException.class, () ->
+    final var thrown = assertThrows(NonRetryableException.class, () ->
       rename("ts", "timestamp").apply(record("id", 1))
     );
     assertTrue(thrown.getMessage().contains("ts"), thrown.getMessage());
@@ -74,7 +75,7 @@ class JsonFieldsTest {
   void renameOntoAnExistingFieldFailsInsteadOfOverwritingIt() {
     final var input = record("ts", 5, "timestamp", 7);
 
-    assertThrows(IllegalArgumentException.class, () -> rename("ts", "timestamp").apply(input));
+    assertThrows(NonRetryableException.class, () -> rename("ts", "timestamp").apply(input));
     assertEquals(Map.of("ts", 5, "timestamp", 7), input, "the record is left as it was");
   }
 
@@ -87,7 +88,7 @@ class JsonFieldsTest {
 
   @Test
   void requireFailsNamingTheFirstMissingField() {
-    final var thrown = assertThrows(IllegalArgumentException.class, () ->
+    final var thrown = assertThrows(NonRetryableException.class, () ->
       require("id", "name", "email").apply(record("id", 1))
     );
     assertTrue(thrown.getMessage().contains("'name'"), thrown.getMessage());
@@ -99,7 +100,7 @@ class JsonFieldsTest {
     final var decoded = pipeline.deserializeOrFail("{\"name\":\"a\"}".getBytes(StandardCharsets.UTF_8));
 
     final var failed = assertInstanceOf(Result.Failed.class, pipeline.process(decoded));
-    assertInstanceOf(IllegalArgumentException.class, failed.cause());
+    assertInstanceOf(NonRetryableException.class, failed.cause());
   }
 
   @Test
@@ -118,7 +119,7 @@ class JsonFieldsTest {
 
   @Test
   void requireTreatsANullValueAsMissing() {
-    assertThrows(IllegalArgumentException.class, () -> require("id").apply(record("id", null)));
+    assertThrows(NonRetryableException.class, () -> require("id").apply(record("id", null)));
   }
 
   @Test
@@ -150,7 +151,7 @@ class JsonFieldsTest {
   void renameOfAJsonNullFieldFails() {
     final var decoded = JsonFormat.INSTANCE.deserialize("{\"ts\":null,\"x\":1}".getBytes(StandardCharsets.UTF_8));
 
-    assertThrows(IllegalArgumentException.class, () -> rename("ts", "timestamp").apply(decoded));
+    assertThrows(NonRetryableException.class, () -> rename("ts", "timestamp").apply(decoded));
   }
 
   @Test

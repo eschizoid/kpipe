@@ -4,6 +4,7 @@ import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
@@ -156,7 +157,7 @@ final class RecordProcessor {
       public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
         metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
         otelMetrics.recordProcessingError(record.topic());
-        health.recordOutcome(false);
+        if (!NonRetryableException.isNonRetryable(cause)) health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
         // LOCKSTEP: mirror of the per-record path's DLQ-or-mark block in handleProcessingError
         // —
@@ -272,8 +273,9 @@ final class RecordProcessor {
   /// back off and re-run up to `maxRetries` times. Interruption (of the backoff sleep, or a failure
   /// [#interruptedBy] recognises) restores the flag and aborts without retrying and without
   /// invoking the error path — teardown recovery is re-fetch on restart.
-  /// Once attempts are exhausted the failure goes terminal through [#handleProcessingError]
-  /// with `retryCount` equal to the retries actually performed.
+  /// Once attempts are exhausted, or at once for a [NonRetryableException] anywhere in the
+  /// failure's cause chain, the failure goes terminal through [#handleProcessingError] with
+  /// `retryCount` equal to the retries actually performed.
   private boolean runWithRetries(
     final ConsumerRecord<byte[], byte[]> record,
     final Tracer.SpanScope span,
@@ -304,7 +306,7 @@ final class RecordProcessor {
           Thread.currentThread().interrupt();
           return false;
         }
-        if (attempt == maxRetries) {
+        if (attempt == maxRetries || NonRetryableException.isNonRetryable(e)) {
           handleProcessingError(record, e, attempt, span);
           return false;
         }
@@ -446,7 +448,9 @@ final class RecordProcessor {
       // No DLQ configured: the caller opted into log-and-advance. Mark processed and move on.
       markOffsetProcessed(record);
     }
-    health.recordOutcome(false);
+    // A record that cannot succeed says nothing about downstream health, so it stays out of the
+    // circuit breaker's window.
+    if (!NonRetryableException.isNonRetryable(e)) health.recordOutcome(false);
     try {
       errorHandler.accept(new KPipeConsumer.ProcessingError(record, e, retryCount));
     } catch (final Exception ex) {

@@ -5,6 +5,7 @@ import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.WireFormat;
+import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Arrays;
@@ -39,9 +40,11 @@ import java.util.function.UnaryOperator;
 /// the one value. Field order changes, which Protobuf allows.
 ///
 /// The bytes must be a bare Protobuf message, with no Confluent wire envelope in front. Bytes
-/// whose top-level fields are malformed throw [IllegalArgumentException], which fails the record.
-/// The contents of length-delimited fields are copied unchecked, and [#has] stops reading at the
-/// first match.
+/// whose top-level fields are malformed, and a setter that meets another wire type, throw
+/// [NonRetryableException]: the record fails without retries. The contents of length-delimited
+/// fields are copied unchecked, and [#has] stops reading at the first match. Arguments that can
+/// never work, such as no field numbers, throw [IllegalArgumentException] when the operator is
+/// created.
 public final class ProtobufBytes {
 
   private static final byte[] EMPTY = new byte[0];
@@ -55,7 +58,7 @@ public final class ProtobufBytes {
   ///
   /// @param fieldNumbers the fields to remove, at least one
   /// @return an operator that removes the fields
-  /// @throws IllegalArgumentException if no field number is given or one is not positive
+  /// @throws IllegalArgumentException if no field number is given or one is out of range
   public static UnaryOperator<byte[]> remove(final int... fieldNumbers) {
     final var removed = fieldSet("remove", fieldNumbers);
     return message -> rewrite(message, field -> !removed.test(field), null);
@@ -65,7 +68,7 @@ public final class ProtobufBytes {
   ///
   /// @param fieldNumbers the fields to keep, at least one
   /// @return an operator that keeps only the fields
-  /// @throws IllegalArgumentException if no field number is given or one is not positive
+  /// @throws IllegalArgumentException if no field number is given or one is out of range
   public static UnaryOperator<byte[]> keep(final int... fieldNumbers) {
     final var kept = fieldSet("keep", fieldNumbers);
     return message -> rewrite(message, kept, null);
@@ -153,7 +156,7 @@ public final class ProtobufBytes {
         if (tag == 0) break;
         final var field = WireFormat.getTagFieldNumber(tag);
         if (append != null && field == append.fieldNumber() && WireFormat.getTagWireType(tag) != append.wireType()) {
-          throw new IllegalArgumentException(
+          throw new NonRetryableException(
             "Field %d has wire type %d, not %d".formatted(field, WireFormat.getTagWireType(tag), append.wireType())
           );
         }
@@ -216,8 +219,8 @@ public final class ProtobufBytes {
     );
   }
 
-  private static IllegalArgumentException malformed(final IOException e) {
-    return new IllegalArgumentException(
+  private static NonRetryableException malformed(final IOException e) {
+    return new NonRetryableException(
       e instanceof InvalidProtocolBufferException ? "Malformed Protobuf message: " + e.getMessage() : e.getMessage(),
       e
     );
