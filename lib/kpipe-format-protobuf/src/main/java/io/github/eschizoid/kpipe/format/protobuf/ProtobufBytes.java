@@ -42,6 +42,8 @@ import java.util.function.UnaryOperator;
 /// bytes throw [IllegalArgumentException], which fails the record.
 public final class ProtobufBytes {
 
+  private static final byte[] EMPTY = new byte[0];
+
   private ProtobufBytes() {}
 
   /// Removes every occurrence of each of `fieldNumbers`, including packed repeated values.
@@ -121,10 +123,12 @@ public final class ProtobufBytes {
 
   private static UnaryOperator<byte[]> set(final int fieldNumber, final int wireType, final FieldWriter writer) {
     checkFieldNumber(fieldNumber);
-    return message -> rewrite(message, field -> field != fieldNumber, new Append(fieldNumber, wireType, writer));
+    final var append = new Append(fieldNumber, wireType, encode(writer));
+    return message -> rewrite(message, field -> field != fieldNumber, append);
   }
 
-  private record Append(int fieldNumber, int wireType, FieldWriter writer) {}
+  /// A field to write after the kept ones, encoded once when the operator is created.
+  private record Append(int fieldNumber, int wireType, byte[] encoded) {}
 
   /// Copies the fields `keep` accepts, then writes `append` if there is one. Two passes over the
   /// input: the first finds the kept ranges and their total size, so the output is allocated once
@@ -163,7 +167,7 @@ public final class ProtobufBytes {
     }
     if (append == null && keptBytes == message.length) return message;
 
-    final var appended = append == null ? new byte[0] : encode(append);
+    final var appended = append == null ? EMPTY : append.encoded();
     final var out = new byte[keptBytes + appended.length];
     var position = 0;
     for (var i = 0; i < count; i++) {
@@ -175,11 +179,11 @@ public final class ProtobufBytes {
     return out;
   }
 
-  private static byte[] encode(final Append append) {
+  private static byte[] encode(final FieldWriter writer) {
     final var buffer = new java.io.ByteArrayOutputStream();
     final var out = CodedOutputStream.newInstance(buffer);
     try {
-      append.writer().write(out);
+      writer.write(out);
       out.flush();
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
