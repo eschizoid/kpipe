@@ -131,12 +131,13 @@ public final class JsonFields {
     Objects.requireNonNull(to, "to");
     if (from.equals(to)) throw new IllegalArgumentException("Cannot rename '%s' to itself".formatted(from));
     return record -> {
-      if (!record.containsKey(from)) throw new IllegalArgumentException(
+      if (record.get(from) == null) throw new IllegalArgumentException(
         "Cannot rename missing field '%s'".formatted(from)
       );
-      if (record.containsKey(to)) throw new IllegalArgumentException(
+      if (record.get(to) != null) throw new IllegalArgumentException(
         "Cannot rename '%s' to '%s': the record already has '%s'".formatted(from, to, to)
       );
+      record.remove(to);
       record.put(to, record.remove(from));
       return record;
     };

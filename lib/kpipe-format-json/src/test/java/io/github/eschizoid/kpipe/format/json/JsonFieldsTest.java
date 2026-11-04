@@ -145,4 +145,20 @@ class JsonFieldsTest {
   void renamingAFieldToItselfIsRejectedWhenTheOperatorIsCreated() {
     assertThrows(IllegalArgumentException.class, () -> rename("ts", "ts"));
   }
+
+  @Test
+  void renameOfAJsonNullFieldFails() {
+    final var decoded = JsonFormat.INSTANCE.deserialize("{\"ts\":null,\"x\":1}".getBytes(StandardCharsets.UTF_8));
+
+    assertThrows(IllegalArgumentException.class, () -> rename("ts", "timestamp").apply(decoded));
+  }
+
+  @Test
+  void renameOntoAJsonNullFieldReplacesIt() {
+    final var decoded = JsonFormat.INSTANCE.deserialize(
+      "{\"ts\":5,\"timestamp\":null}".getBytes(StandardCharsets.UTF_8)
+    );
+
+    assertEquals(Map.of("timestamp", 5), rename("ts", "timestamp").apply(decoded));
+  }
 }
