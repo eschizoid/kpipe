@@ -1,14 +1,13 @@
 package io.github.eschizoid.kpipe.registry;
 
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
 /// Reusable [UnaryOperator] factories for use with [TypedPipelineBuilder#add(UnaryOperator)].
 ///
-/// These helpers cover common patterns that would otherwise require an inline lambda
-/// or custom operator implementation.
+/// These helpers work on any payload type. Operators that change the fields of a JSON record,
+/// such as `set`, `remove` and `rename`, are `JsonFields` in `kpipe-format-json`.
 ///
 /// Example:
 /// ```java
@@ -79,43 +78,6 @@ public final class Operators {
     };
   }
 
-  /// Returns an operator that filters out messages missing the given field.
-  ///
-  /// The operator returns `null` (the [MessagePipeline] filter signal) when the input map is
-  /// `null` or does not contain `fieldName`; otherwise the input map is passed through unchanged.
-  ///
-  /// Example:
-  /// ```java
-  /// .add(requireField("user_id"))
-  /// ```
-  ///
-  /// @param fieldName the key that must be present in the message map
-  /// @return an operator that returns the input map when the field is present, else `null`
-  public static UnaryOperator<Map<String, Object>> requireField(final String fieldName) {
-    return msg -> (msg != null && msg.containsKey(fieldName)) ? msg : null;
-  }
-
-  /// Returns an operator that renames a key in a [Map] message.
-  ///
-  /// If the source key is absent (or the map is `null`), the operator returns the input
-  /// unchanged. When present, the value is moved from `from` to `to` in-place.
-  ///
-  /// Example:
-  /// ```java
-  /// .add(rename("userId", "user_id"))
-  /// ```
-  ///
-  /// @param from the source key
-  /// @param to the destination key
-  /// @return an operator that renames the key in-place, or returns the input unchanged when absent
-  public static UnaryOperator<Map<String, Object>> rename(final String from, final String to) {
-    return msg -> {
-      if (msg == null || !msg.containsKey(from)) return msg;
-      msg.put(to, msg.remove(from));
-      return msg;
-    };
-  }
-
   /// Returns an operator that chains multiple operators left-to-right.
   ///
   /// If any operator in the chain returns `null` (the [MessagePipeline] filter signal),
@@ -125,8 +87,8 @@ public final class Operators {
   /// Example:
   /// ```java
   /// final var op = Operators.compose(
-  ///     Operators.requireField("id"),
-  ///     Operators.rename("ts", "timestamp"));
+  ///     Operators.filter(order -> order.amount() > 0),
+  ///     Operators.peek(order -> log.info("order {}", order.id())));
   /// ```
   ///
   /// @param ops operators to chain in order
@@ -141,48 +103,6 @@ public final class Operators {
         v = op.apply(v);
       }
       return v;
-    };
-  }
-
-  /// Returns an operator that removes one or more fields from a [Map] message.
-  ///
-  /// Mutates the input map in-place. Returns `null` when the input is `null`. Missing keys are
-  /// silently ignored.
-  ///
-  /// Example:
-  /// ```java
-  /// .add(removeFields("password", "secret_token"))
-  /// ```
-  ///
-  /// @param fields the keys to remove from the message
-  /// @return an operator that removes the fields in-place, or returns `null` when the input is null
-  public static UnaryOperator<Map<String, Object>> removeFields(final String... fields) {
-    return msg -> {
-      if (msg == null) return null;
-      for (final var f : fields) msg.remove(f);
-      return msg;
-    };
-  }
-
-  /// Returns an operator that sets a field on a [Map] message to the given value.
-  ///
-  /// Mutates the input map in-place. Returns `null` when the input is `null`. Existing values
-  /// for `key` are overwritten.
-  ///
-  /// Example:
-  /// ```java
-  /// .add(addField("source", "kpipe-consumer"))
-  /// .add(addField("processed_at", System.currentTimeMillis()))
-  /// ```
-  ///
-  /// @param key the field name to set
-  /// @param value the value to write under `key`
-  /// @return an operator that sets the field in-place, or returns `null` when the input is null
-  public static UnaryOperator<Map<String, Object>> addField(final String key, final Object value) {
-    return msg -> {
-      if (msg == null) return null;
-      msg.put(key, value);
-      return msg;
     };
   }
 }

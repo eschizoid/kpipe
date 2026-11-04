@@ -7,10 +7,10 @@ import io.github.eschizoid.kpipe.KPipe;
 import io.github.eschizoid.kpipe.consumer.config.KafkaConsumerConfig;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonConsoleSink;
+import io.github.eschizoid.kpipe.format.json.JsonFields;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.health.HttpHealthServer;
 import io.github.eschizoid.kpipe.metrics.otel.OtelConsumerMetrics;
-import io.github.eschizoid.kpipe.registry.Operators;
 import io.github.eschizoid.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
@@ -86,10 +86,10 @@ public class DemoApp implements AutoCloseable {
       .withMetrics(new OtelConsumerMetrics(otel, "demo-multi"))
       .json(config.jsonTopic(), s ->
         s
-          .pipe(Operators.addField("source", "demo-app"))
-          .pipe(Operators.addField("status", "processed"))
-          .pipe(Operators.addField("processedAt", System.currentTimeMillis()))
-          .pipe(Operators.removeFields("password", "ssn"))
+          .pipe(JsonFields.set("source", "demo-app"))
+          .pipe(JsonFields.set("status", "processed"))
+          .pipe(JsonFields.derive("processedAt", _ -> System.currentTimeMillis()))
+          .pipe(JsonFields.remove("password", "ssn"))
           .toCustom(new JsonConsoleSink<>())
       )
       .avro(config.avroTopic(), avroFormat, s -> s.skipBytes(5).toConsole())

@@ -128,12 +128,37 @@ KPipe.multi(kafkaProps)
 
 ## Built-in operators
 
-`io.github.eschizoid.kpipe.registry.Operators` provides ready-made operators for `.pipe(...)`: `filter`, `drop`, `peek`,
-`compose`, `requireField`, `rename`, `removeFields`, `addField`. The `Map`-typed helpers (`rename`, `removeFields`,
-`addField`, `requireField`) **mutate the payload map in place and return it** — they are convenient, not pure functions.
-In the standard sink path this is sound (a record's payload is confined to the one worker processing that attempt; the
-batch path hands buffered values to the flusher under a lock), but it matters if your own code shares payload references
-beyond the pipeline.
+`io.github.eschizoid.kpipe.registry.Operators` provides operators for any payload type: `filter`, `drop`, `peek` and
+`compose`.
+
+`io.github.eschizoid.kpipe.format.json.JsonFields` changes the fields of a JSON record:
+
+| Operator                         | Does                                                       | When the field is missing                  |
+| -------------------------------- | ---------------------------------------------------------- | ------------------------------------------ |
+| `set(field, value)`              | Sets the field to a value fixed when the pipeline is built | Adds it                                    |
+| `setIfAbsent(field, value)`      | Sets the field only if the record has no value for it      | Adds it                                    |
+| `derive(field, record -> value)` | Sets the field to a value computed from each record        | Adds it                                    |
+| `remove(fields...)`              | Removes the fields                                         | Ignores it                                 |
+| `keep(fields...)`                | Removes every other field                                  | Ignores it                                 |
+| `rename(from, to)`               | Moves the value of `from` to `to`                          | Fails the record; so does an existing `to` |
+| `require(fields...)`             | Passes the record on unchanged                             | Fails the record                           |
+
+A field whose value is JSON `null` counts as missing, because `JsonFormat` leaves null-valued keys out when it writes a
+record; for the same reason `set` rejects a null value. Field names are top-level keys: `"user.id"` names a key with a
+dot in it. An empty field list, or a rename of a field to itself, is rejected when the operator is created. To replace
+an existing field with a rename, remove it first: `.pipe(remove("timestamp")).pipe(rename("ts", "timestamp"))`.
+
+A failed record goes to retry, the error handler and the dead-letter topic when one is configured. KPipe retries every
+failure the same way, so a record that fails `require` waits out its retries before it reaches the dead-letter topic,
+and it counts as a failure toward the circuit breaker when one is configured. To skip a record without a field instead,
+use `filter(record -> record.get("id") != null)`.
+
+The operators change the record's map in place and return it. That is safe in a pipeline, where a record's map belongs
+to the attempt processing it and a retry decodes a fresh one, but it matters if your own code keeps a reference to the
+map. `set` and `setIfAbsent` put the same value object into every record; use `derive` for a fresh one per record.
+
+For Avro and Protobuf, write the change as a function on the record (`GenericRecord.put`, `Message.toBuilder()`); see
+[FORMATS.md](FORMATS.md).
 
 ## The explicit API
 

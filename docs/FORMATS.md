@@ -26,7 +26,7 @@ KPipe does not edit encoded bytes in place. Avro carries no field tags or offset
 past every field before it.
 
 A note on mutability: the **pipeline definition** is immutable (each fluent call returns a new `Stream<T>`), but the
-**payload objects** are not necessarily — JSON maps and Avro records are mutable, and several `Operators` helpers mutate
+**payload objects** are not necessarily — JSON maps and Avro records are mutable, and the `JsonFields` operators mutate
 them in place. In the standard sink path this is sound: a record's payload is confined to the worker running that
 processing attempt, and a retry re-deserializes from the raw bytes rather than reusing a possibly-mutated object. (The
 batch path hands buffered values to the flusher under a lock.) Protobuf messages are immutable; transforms build a new
@@ -38,12 +38,12 @@ Add `kpipe-format-json` (parsing backed by [fastjson2](https://github.com/alibab
 `UnaryOperator<Map<String, Object>>`:
 
 ```java
-import static io.github.eschizoid.kpipe.registry.Operators.*;
+import static io.github.eschizoid.kpipe.format.json.JsonFields.remove;
 
 final var registry = new MessageProcessorRegistry();
 
 final var sanitizeKey = RegistryKey.json("sanitize");
-registry.registerOperator(sanitizeKey, removeFields("password", "ssn"));
+registry.registerOperator(sanitizeKey, remove("password", "ssn"));
 
 // Inline lambdas work too. Returning null from an operator filters the record: downstream
 // sinks are skipped but the offset is still marked processed.

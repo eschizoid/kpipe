@@ -31,7 +31,7 @@ import java.util.function.UnaryOperator;
 /// ```java
 /// final var root = KPipe.json("events", props);
 /// final var enriched = root.pipe(addTimestamp);   // root remains untouched
-/// final var sanitized = root.pipe(removeFields("password")); // independent of `enriched`
+/// final var sanitized = root.pipe(JsonFields.remove("password")); // independent of `enriched`
 /// ```
 ///
 /// Standard fluent usage chains the calls so the intermediate instances are not visible:
