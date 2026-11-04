@@ -2,7 +2,6 @@ package io.github.eschizoid.kpipe.registry;
 
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
