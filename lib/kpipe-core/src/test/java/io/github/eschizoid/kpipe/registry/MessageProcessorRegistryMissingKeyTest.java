@@ -31,6 +31,17 @@ class MessageProcessorRegistryMissingKeyTest {
   }
 
   @Test
+  void aMissingKeyAmongSeveralLeavesTheBuilderUnchanged() {
+    final var registered = RegistryKey.of("registered", byte[].class);
+    registry.registerOperator(registered, _ -> new byte[] { 9 });
+    final var builder = registry.pipeline(MessageFormat.bytes());
+
+    assertThrows(IllegalArgumentException.class, () -> builder.add(registered, KEY));
+    final var passed = assertInstanceOf(Result.Passed.class, builder.build().process(new byte[] { 1 }));
+    assertArrayEquals(new byte[] { 1 }, (byte[]) passed.value(), "the registered key was not added either");
+  }
+
+  @Test
   void anOperatorUnregisteredAfterTheBuildFailsTheRecord() {
     registry.registerOperator(KEY, value -> value);
     final var pipeline = registry.pipeline(MessageFormat.bytes()).add(KEY).build();
