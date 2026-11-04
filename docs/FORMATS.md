@@ -126,8 +126,9 @@ KPipe.bytes("customers", props)
 The operators know field numbers and wire types, not the schema, so the caller picks the setter that matches the field's
 declared type. `setLong` writes a varint, right for `int32`, `int64`, `uint32`, `uint64`, `bool` and enums but not for
 `sint32`/`sint64` or the fixed-width types; a setter that finds the field written with another wire type fails the
-record. A proto3 field set to its default value is not written, so `has` does not match it. The bytes must be a bare
-message: a record with a Confluent wire envelope in front of it is not supported. Malformed bytes fail the record.
+record. A proto3 scalar field without `optional`, set to its default value, is not written, so `has` does not match it.
+The bytes must be a bare message: a record with a Confluent wire envelope in front of it is not supported. Bytes whose
+top-level fields are malformed fail the record; the contents of length-delimited fields are copied unchecked.
 
 `ProtobufFieldEditBenchmark` removes one field and sets another on a ten-field message. On the GitHub runner
 ([run 41919627125](https://github.com/eschizoid/kpipe/actions/runs/41919627125)) the byte edit had about twelve times

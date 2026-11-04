@@ -172,5 +172,7 @@ class ProtobufBytesTest {
     assertThrows(IllegalArgumentException.class, ProtobufBytes::keep);
     assertThrows(IllegalArgumentException.class, () -> remove(0));
     assertThrows(IllegalArgumentException.class, () -> setString(-1, "x"));
+    assertThrows(IllegalArgumentException.class, () -> setString(1 << 29, "x"), "the tag would overflow");
+    assertThrows(IllegalArgumentException.class, () -> remove(Integer.MAX_VALUE));
   }
 }

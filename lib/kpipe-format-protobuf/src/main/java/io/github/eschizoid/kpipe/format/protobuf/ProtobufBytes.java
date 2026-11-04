@@ -38,11 +38,16 @@ import java.util.function.UnaryOperator;
 /// a singular scalar field, so the result reads as the new value; a repeated field ends up with
 /// the one value. Field order changes, which Protobuf allows.
 ///
-/// The bytes must be a bare Protobuf message, with no Confluent wire envelope in front. Malformed
-/// bytes throw [IllegalArgumentException], which fails the record.
+/// The bytes must be a bare Protobuf message, with no Confluent wire envelope in front. Bytes
+/// whose top-level fields are malformed throw [IllegalArgumentException], which fails the record.
+/// The contents of length-delimited fields are copied unchecked, and [#has] stops reading at the
+/// first match.
 public final class ProtobufBytes {
 
   private static final byte[] EMPTY = new byte[0];
+
+  /// A tag holds the field number in 29 bits.
+  private static final int MAX_FIELD_NUMBER = (1 << 29) - 1;
 
   private ProtobufBytes() {}
 
@@ -86,7 +91,8 @@ public final class ProtobufBytes {
     return set(fieldNumber, WireFormat.WIRETYPE_LENGTH_DELIMITED, out -> out.writeBytes(fieldNumber, copy));
   }
 
-  /// Sets a varint field: `int32`, `int64`, `uint32`, `uint64`, `bool` (0 or 1) or an enum.
+  /// Sets a varint field: `int32`, `int64`, `uint32`, `uint64`, `bool` (0 or 1) or an enum. The
+  /// value is written as a 64-bit varint; a parser of a 32-bit or enum field keeps the low 32 bits.
   ///
   /// @param fieldNumber the field
   /// @param value the value
@@ -95,8 +101,10 @@ public final class ProtobufBytes {
     return set(fieldNumber, WireFormat.WIRETYPE_VARINT, out -> out.writeInt64(fieldNumber, value));
   }
 
-  /// Matches messages that contain `fieldNumber` at least once. A singular scalar field set to its
-  /// default value is usually not written, so it does not match.
+  /// Matches messages that contain `fieldNumber` at least once on the wire. A singular scalar field
+  /// set to its default value is usually not written, so it does not match. It reports what is
+  /// written, not what a parser keeps: a `oneof` member followed by another member still matches,
+  /// although a parser clears it.
   ///
   /// @param fieldNumber the field
   /// @return a predicate for `filter`
@@ -203,8 +211,8 @@ public final class ProtobufBytes {
   }
 
   private static void checkFieldNumber(final int fieldNumber) {
-    if (fieldNumber <= 0) throw new IllegalArgumentException(
-      "Field numbers are positive, got %d".formatted(fieldNumber)
+    if (fieldNumber < 1 || fieldNumber > MAX_FIELD_NUMBER) throw new IllegalArgumentException(
+      "Field numbers are 1 to %d, got %d".formatted(MAX_FIELD_NUMBER, fieldNumber)
     );
   }
 
