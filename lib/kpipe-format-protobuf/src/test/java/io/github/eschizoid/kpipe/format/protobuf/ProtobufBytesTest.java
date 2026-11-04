@@ -174,5 +174,6 @@ class ProtobufBytesTest {
     assertThrows(IllegalArgumentException.class, () -> setString(-1, "x"));
     assertThrows(IllegalArgumentException.class, () -> setString(1 << 29, "x"), "the tag would overflow");
     assertThrows(IllegalArgumentException.class, () -> remove(Integer.MAX_VALUE));
+    assertDoesNotThrow(() -> setString((1 << 29) - 1, "x"), "the largest field number is legal");
   }
 }
