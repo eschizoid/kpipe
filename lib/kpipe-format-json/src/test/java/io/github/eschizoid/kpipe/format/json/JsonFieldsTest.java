@@ -101,4 +101,48 @@ class JsonFieldsTest {
     final var failed = assertInstanceOf(Result.Failed.class, pipeline.process(decoded));
     assertInstanceOf(IllegalArgumentException.class, failed.cause());
   }
+
+  @Test
+  void setRejectsANullValueBecauseTheWriterWouldDropTheField() {
+    assertThrows(NullPointerException.class, () -> set("source", null));
+  }
+
+  @Test
+  void setIfAbsentFillsAMissingOrNullFieldAndKeepsAnExistingOne() {
+    final var defaultCurrency = setIfAbsent("currency", "USD");
+
+    assertEquals("USD", defaultCurrency.apply(record()).get("currency"));
+    assertEquals("USD", defaultCurrency.apply(record("currency", null)).get("currency"));
+    assertEquals("EUR", defaultCurrency.apply(record("currency", "EUR")).get("currency"));
+  }
+
+  @Test
+  void requireTreatsANullValueAsMissing() {
+    assertThrows(IllegalArgumentException.class, () -> require("id").apply(record("id", null)));
+  }
+
+  @Test
+  void aJsonNullFailsRequireInAPipeline() {
+    final var pipeline = new MessageProcessorRegistry().pipeline(JsonFormat.INSTANCE).add(require("id")).build();
+    final var decoded = pipeline.deserializeOrFail("{\"id\":null,\"x\":1}".getBytes(StandardCharsets.UTF_8));
+
+    assertInstanceOf(Result.Failed.class, pipeline.process(decoded));
+  }
+
+  @Test
+  void anEmptyFieldListIsRejectedWhenTheOperatorIsCreated() {
+    assertThrows(IllegalArgumentException.class, JsonFields::keep, "keep() would empty every record");
+    assertThrows(IllegalArgumentException.class, JsonFields::remove);
+    assertThrows(IllegalArgumentException.class, JsonFields::require);
+  }
+
+  @Test
+  void aNullFieldNameIsRejectedWhenTheOperatorIsCreated() {
+    assertThrows(NullPointerException.class, () -> remove("a", null));
+  }
+
+  @Test
+  void renamingAFieldToItselfIsRejectedWhenTheOperatorIsCreated() {
+    assertThrows(IllegalArgumentException.class, () -> rename("ts", "ts"));
+  }
 }
