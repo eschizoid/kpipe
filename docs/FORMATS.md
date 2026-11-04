@@ -54,7 +54,7 @@ registry.registerOperator(lowerEmailKey, msg -> {
 });
 
 final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
-    .add(sanitizeKey)
+    .pipe(sanitizeKey)
     .add(lowerEmailKey)
     .build();
 ```

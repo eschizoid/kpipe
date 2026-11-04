@@ -18,7 +18,7 @@ class MessageProcessorRegistryMissingKeyTest {
   void addingAnOperatorKeyWithNothingRegisteredFailsTheBuild() {
     final var builder = registry.pipeline(MessageFormat.bytes());
 
-    final var thrown = assertThrows(IllegalArgumentException.class, () -> builder.add(KEY));
+    final var thrown = assertThrows(IllegalArgumentException.class, () -> builder.pipe(KEY));
     assertTrue(thrown.getMessage().contains("enrich"), thrown.getMessage());
   }
 
@@ -36,7 +36,7 @@ class MessageProcessorRegistryMissingKeyTest {
     registry.registerOperator(registered, _ -> new byte[] { 9 });
     final var builder = registry.pipeline(MessageFormat.bytes());
 
-    assertThrows(IllegalArgumentException.class, () -> builder.add(registered, KEY));
+    assertThrows(IllegalArgumentException.class, () -> builder.pipe(registered, KEY));
     final var passed = assertInstanceOf(Result.Passed.class, builder.build().process(new byte[] { 1 }));
     assertArrayEquals(new byte[] { 1 }, (byte[]) passed.value(), "the registered key was not added either");
   }
@@ -44,7 +44,7 @@ class MessageProcessorRegistryMissingKeyTest {
   @Test
   void anOperatorUnregisteredAfterTheBuildFailsTheRecord() {
     registry.registerOperator(KEY, value -> value);
-    final var pipeline = registry.pipeline(MessageFormat.bytes()).add(KEY).build();
+    final var pipeline = registry.pipeline(MessageFormat.bytes()).pipe(KEY).build();
     registry.unregisterOperator(KEY);
 
     final var failed = assertInstanceOf(Result.Failed.class, pipeline.process(new byte[] { 1 }));
@@ -65,7 +65,7 @@ class MessageProcessorRegistryMissingKeyTest {
     final var delivered = new ArrayList<String>();
     registry.registerOperator(KEY, _ -> new byte[] { 1 });
     registry.registerSink(KEY, value -> delivered.add("first:" + value[0]));
-    final var pipeline = registry.pipeline(MessageFormat.bytes()).add(KEY).toSink(KEY).build();
+    final var pipeline = registry.pipeline(MessageFormat.bytes()).pipe(KEY).toSink(KEY).build();
 
     registry.registerOperator(KEY, _ -> new byte[] { 2 });
     registry.registerSink(KEY, value -> delivered.add("second:" + value[0]));

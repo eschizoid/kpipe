@@ -4,7 +4,8 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
-/// Reusable [UnaryOperator] factories for use with [TypedPipelineBuilder#add(UnaryOperator)].
+/// Reusable [UnaryOperator] factories for [TypedPipelineBuilder#pipe(UnaryOperator)] and
+/// `Stream.pipe`.
 ///
 /// These helpers work on any payload type. Operators that change the fields of a JSON record,
 /// such as `set`, `remove` and `rename`, are `JsonFields` in `kpipe-format-json`.
@@ -14,7 +15,7 @@ import java.util.function.UnaryOperator;
 /// import static io.github.eschizoid.kpipe.registry.Operators.filter;
 ///
 /// registry.pipeline(JsonFormat.INSTANCE)
-///     .add(filter(msg -> "active".equals(msg.get("status"))))
+///     .pipe(filter(msg -> "active".equals(msg.get("status"))))
 ///     .toSink(activeMessageSink)
 ///     .build();
 /// ```
@@ -31,7 +32,7 @@ public final class Operators {
   /// Example:
   /// ```java
   /// // Keep only messages where the "status" field equals "active"
-  /// .add(filter(msg -> "active".equals(msg.get("status"))))
+  /// .pipe(filter(msg -> "active".equals(msg.get("status"))))
   /// ```
   ///
   /// @param keep predicate that returns true for messages to keep, false to drop
@@ -65,7 +66,7 @@ public final class Operators {
   ///
   /// Example:
   /// ```java
-  /// .add(peek(msg -> log.info("processing {}", msg.get("id"))))
+  /// .pipe(peek(msg -> log.info("processing {}", msg.get("id"))))
   /// ```
   ///
   /// @param sideEffect the action to run on each value

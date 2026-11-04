@@ -435,10 +435,9 @@ public interface Stream<T> {
   /// mark them as processed and commit offsets. The consumer's error path / DLQ is not invoked
   /// for per-sink failures — only the per-sink ERROR log.
   ///
-  /// If you need guaranteed delivery to every sink, do not use `toMulti`. Wire each sink as its
-  /// own pipeline through the explicit
-  /// [io.github.eschizoid.kpipe.registry.MessageProcessorRegistry] API and
-  /// drive failure handling through the consumer's `errorHandler` / DLQ configuration.
+  /// If you need delivery to every sink, do not use `toMulti`. Pass `toCustom` one sink that calls
+  /// each in turn: a failure in any of them then fails the record, which goes to retry, the error
+  /// handler and the DLQ, and on a retry the sinks that already succeeded receive it again.
   ///
   /// @param sinks the sinks to broadcast to (must contain at least one element)
   /// @return a [Sink] ready to start

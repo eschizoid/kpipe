@@ -72,7 +72,7 @@ final class DefaultBatchSink<T> implements Sink<T> {
   MessagePipeline<T> buildPipeline() {
     final var registry = new MessageProcessorRegistry();
     final var pipelineBuilder = registry.pipeline(stream.format()).skipBytes(stream.skipBytes());
-    for (final var op : stream.operators()) pipelineBuilder.add(op);
+    for (final var op : stream.operators()) pipelineBuilder.pipe(op);
     return stream.wrapWithObservers(pipelineBuilder.build());
   }
 

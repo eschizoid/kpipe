@@ -48,15 +48,15 @@ class MessageProcessorRegistryJsonTest {
   void shouldComposeJsonProcessorChain() {
     final var pipeline = registry
       .pipeline(JsonFormat.INSTANCE)
-      .add(obj -> {
+      .pipe(obj -> {
         obj.put("source", "test-app");
         return obj;
       })
-      .add(obj -> {
+      .pipe(obj -> {
         obj.put("timestamp", System.currentTimeMillis());
         return obj;
       })
-      .add(obj -> {
+      .pipe(obj -> {
         obj.put("processed", "true");
         return obj;
       })
@@ -77,7 +77,7 @@ class MessageProcessorRegistryJsonTest {
       return obj;
     });
 
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key).build();
+    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(key).build();
     final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
 
     assertTrue(result.contains("\"test\":\"value\""));
@@ -97,7 +97,7 @@ class MessageProcessorRegistryJsonTest {
       return obj;
     });
 
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(op1).add(op2).build();
+    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(op1).pipe(op2).build();
     final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
 
     assertTrue(result.contains("\"op1\":\"val1\""));
@@ -110,7 +110,7 @@ class MessageProcessorRegistryJsonTest {
       throw new RuntimeException("Test exception");
     };
 
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(operator).build();
+    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(operator).build();
 
     final var ex = assertThrows(RuntimeException.class, () ->
       roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes())
@@ -176,7 +176,7 @@ class MessageProcessorRegistryJsonTest {
     final var key = RegistryKey.json("metricsTest");
     registry.registerOperator(key, obj -> obj);
 
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key).build();
+    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(key).build();
 
     roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes());
     roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes());
@@ -194,7 +194,7 @@ class MessageProcessorRegistryJsonTest {
     });
 
     final var retrieved = registry.getOperator(key);
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key).build();
+    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(key).build();
     final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
 
     assertNotNull(retrieved);
@@ -211,12 +211,12 @@ class MessageProcessorRegistryJsonTest {
 
     final var pipeline = registry
       .pipeline(JsonFormat.INSTANCE)
-      .add(key1)
-      .add(obj -> {
+      .pipe(key1)
+      .pipe(obj -> {
         obj.put("b2", "v2");
         return obj;
       })
-      .add(obj -> {
+      .pipe(obj -> {
         obj.put("source", "test-app");
         return obj;
       })
@@ -262,7 +262,7 @@ class MessageProcessorRegistryJsonTest {
     assertNotNull(registry.getOperator(key1));
     assertNotNull(registry.getOperator(key2));
 
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).add(key1).add(key2).build();
+    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(key1).pipe(key2).build();
 
     final var result = new String(roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes()));
     assertTrue(result.contains("\"enum1\":\"v1\""));

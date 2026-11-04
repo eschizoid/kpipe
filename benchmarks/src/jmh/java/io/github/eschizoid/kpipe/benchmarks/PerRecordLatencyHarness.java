@@ -189,7 +189,7 @@ public final class PerRecordLatencyHarness {
   ) {
     final var pipeline = new MessageProcessorRegistry()
       .pipeline(MessageFormat.bytes())
-      .add(bytes -> {
+      .pipe(bytes -> {
         sink.accept(bytes);
         return bytes;
       })

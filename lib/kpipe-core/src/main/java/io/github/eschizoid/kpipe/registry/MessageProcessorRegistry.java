@@ -12,7 +12,7 @@ import java.util.function.UnaryOperator;
 /// Registry for managing message processors AND message sinks in KPipe pipelines.
 ///
 /// Holds two type-safe maps keyed by [RegistryKey]: one for [UnaryOperator]s (the transforms a
-/// pipeline adds by key with `add(RegistryKey...)`), one for [MessageSink]s (the terminal
+/// pipeline adds by key with `pipe(RegistryKey...)`), one for [MessageSink]s (the terminal
 /// consumers). The two namespaces share the same key shape but are stored independently — a
 /// key may exist as an operator, as a sink, as both, or as neither. Internally both namespaces
 /// share a single `Namespace` helper so the structural-mirror methods all funnel into one body
@@ -40,7 +40,7 @@ import java.util.function.UnaryOperator;
 ///
 /// // Build a pipeline that uses both
 /// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
-///   .add(RegistryKey.json("addTimestamp"))
+///   .pipe(RegistryKey.json("addTimestamp"))
 ///   .toSink(RegistryKey.json("dbSink"))
 ///   .build();
 /// ```

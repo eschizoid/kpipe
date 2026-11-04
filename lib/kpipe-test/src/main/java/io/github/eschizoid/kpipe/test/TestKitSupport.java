@@ -33,7 +33,7 @@ final class TestKitSupport {
     final MessageSink<T> sink
   ) {
     final var builder = new MessageProcessorRegistry().pipeline(format);
-    for (final var op : operators) builder.add(op);
+    for (final var op : operators) builder.pipe(op);
     if (sink != null) builder.toSink(sink);
     return builder.build();
   }

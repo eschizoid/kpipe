@@ -2,7 +2,7 @@ package io.github.eschizoid.kpipe.registry;
 
 /// Identity-passthrough [MessageFormat] for `byte[]` payloads.
 ///
-/// Use this when you want the [TypedPipelineBuilder] ergonomics — fluent `add(...)`
+/// Use this when you want the [TypedPipelineBuilder] ergonomics — fluent `pipe(...)`
 /// and `toSink(...)` — but don't need real deserialization. Common cases:
 ///
 /// - Tests that exercise consumer mechanics (backpressure, retry, offsets) without

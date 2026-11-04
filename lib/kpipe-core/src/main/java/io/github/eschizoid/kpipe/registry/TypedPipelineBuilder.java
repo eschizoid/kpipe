@@ -1,9 +1,11 @@
 package io.github.eschizoid.kpipe.registry;
 
+import io.github.eschizoid.kpipe.sink.CompositeMessageSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
@@ -38,37 +40,54 @@ public final class TypedPipelineBuilder<T> {
     return this;
   }
 
-  /// Adds a transformation operator to the pipeline.
+  /// Appends an operator. An operator that returns `null` filters the record; one that throws
+  /// fails it.
   ///
-  /// @param operator The operator to add.
-  /// @return This builder.
-  public TypedPipelineBuilder<T> add(final UnaryOperator<T> operator) {
+  /// @param operator the operator to append
+  /// @return this builder
+  public TypedPipelineBuilder<T> pipe(final UnaryOperator<T> operator) {
     operators.add(Objects.requireNonNull(operator, "operator cannot be null"));
     return this;
   }
 
-  /// Adds transformation operators from the registry. Each one looks its key up when it runs, so
+  /// Appends operators from the registry. Each one looks its key up when it runs, so
   /// re-registering a key takes effect at once.
   ///
-  /// @param keys The registry keys for the operators.
-  /// @return This builder.
+  /// @param keys the registry keys of the operators
+  /// @return this builder
   /// @throws IllegalArgumentException if no operator is registered under one of the keys
   @SafeVarargs
-  public final TypedPipelineBuilder<T> add(final RegistryKey<T>... keys) {
+  public final TypedPipelineBuilder<T> pipe(final RegistryKey<T>... keys) {
     for (final var key : keys)
       if (!registry.hasOperator(key)) throw new IllegalArgumentException(
         "No operator registered under key %s; register it before adding it to a pipeline".formatted(key)
       );
-    for (final var key : keys) add(registry.getOperator(key));
+    for (final var key : keys) pipe(registry.getOperator(key));
     return this;
   }
 
-  /// Adds a conditional operator to the pipeline.
+  /// Keeps records that match `keep` and filters the rest.
   ///
-  /// @param condition The predicate to evaluate.
-  /// @param ifTrue The operator to apply if the condition is true.
-  /// @param ifFalse The operator to apply if the condition is false.
-  /// @return This builder.
+  /// @param keep returns true for records to keep
+  /// @return this builder
+  public TypedPipelineBuilder<T> filter(final Predicate<T> keep) {
+    return pipe(Operators.filter(Objects.requireNonNull(keep, "keep cannot be null")));
+  }
+
+  /// Runs `sideEffect` on each record and passes it on unchanged.
+  ///
+  /// @param sideEffect the action to run
+  /// @return this builder
+  public TypedPipelineBuilder<T> peek(final Consumer<T> sideEffect) {
+    return pipe(Operators.peek(Objects.requireNonNull(sideEffect, "sideEffect cannot be null")));
+  }
+
+  /// Applies `ifTrue` to records that match `condition` and `ifFalse` to the rest.
+  ///
+  /// @param condition the predicate to evaluate
+  /// @param ifTrue the operator for matching records
+  /// @param ifFalse the operator for the rest
+  /// @return this builder
   public TypedPipelineBuilder<T> when(
     final Predicate<T> condition,
     final UnaryOperator<T> ifTrue,
@@ -78,40 +97,68 @@ public final class TypedPipelineBuilder<T> {
     Objects.requireNonNull(ifTrue, "ifTrue operator cannot be null");
     Objects.requireNonNull(ifFalse, "ifFalse operator cannot be null");
 
-    return add(obj -> condition.test(obj) ? ifTrue.apply(obj) : ifFalse.apply(obj));
+    return pipe(obj -> condition.test(obj) ? ifTrue.apply(obj) : ifFalse.apply(obj));
   }
 
-  /// Sets a terminal sink for the pipeline.
+  /// Sets the pipeline's sink. A pipeline has one; to deliver to several, use [#toMulti].
   ///
-  /// @param sink The sink to add.
-  /// @return This builder.
+  /// A sink that throws fails the record, which is then retried. To deliver to several systems and
+  /// retry the record when any of them fails, write one sink that calls each in turn.
+  ///
+  /// @param sink the sink
+  /// @return this builder
+  /// @throws IllegalStateException if the pipeline already has a sink
   public TypedPipelineBuilder<T> toSink(final MessageSink<T> sink) {
-    if (this.sink == null) {
-      this.sink = Objects.requireNonNull(sink, "sink cannot be null");
-    } else {
-      final var currentSink = this.sink;
-      this.sink = value -> {
-        currentSink.accept(value);
-        sink.accept(value);
-      };
-    }
+    Objects.requireNonNull(sink, "sink cannot be null");
+    if (this.sink != null) throw new IllegalStateException(
+      "This pipeline already has a sink; use toMulti to deliver to several"
+    );
+    this.sink = sink;
     return this;
   }
 
-  /// Sets terminal sinks for the pipeline from the registry. Each one looks its key up when it
-  /// runs, so re-registering a key takes effect at once.
+  /// Sets the pipeline's sink from the registry. It looks its key up when it runs, so
+  /// re-registering the key takes effect at once.
   ///
-  /// @param sinkKeys The registry keys for the sinks.
-  /// @return This builder.
-  /// @throws IllegalArgumentException if no sink is registered under one of the keys
+  /// @param key the registry key of the sink
+  /// @return this builder
+  /// @throws IllegalArgumentException if no sink is registered under `key`
+  /// @throws IllegalStateException if the pipeline already has a sink
+  public TypedPipelineBuilder<T> toSink(final RegistryKey<T> key) {
+    requireSink(key);
+    return toSink(registry.getSink(key));
+  }
+
+  /// Delivers each record to every one of `sinks`, in order, as `Stream.toMulti` does. Delivery is
+  /// best effort: a sink that throws is logged and the others still run, and the record does not
+  /// fail.
+  ///
+  /// @param sinks the sinks, at least one
+  /// @return this builder
+  /// @throws IllegalStateException if the pipeline already has a sink
   @SafeVarargs
-  public final TypedPipelineBuilder<T> toSink(final RegistryKey<T>... sinkKeys) {
-    for (final var key : sinkKeys)
-      if (!registry.hasSink(key)) throw new IllegalArgumentException(
-        "No sink registered under key %s; register it before adding it to a pipeline".formatted(key)
-      );
-    for (final var key : sinkKeys) toSink(registry.getSink(key));
-    return this;
+  public final TypedPipelineBuilder<T> toMulti(final MessageSink<T>... sinks) {
+    return toSink(new CompositeMessageSink<>(List.of(sinks)));
+  }
+
+  /// Delivers each record to the registry sinks under `keys`, as [#toMulti(MessageSink...)] does.
+  ///
+  /// @param keys the registry keys of the sinks
+  /// @return this builder
+  /// @throws IllegalArgumentException if no sink is registered under one of the keys
+  /// @throws IllegalStateException if the pipeline already has a sink
+  @SafeVarargs
+  public final TypedPipelineBuilder<T> toMulti(final RegistryKey<T>... keys) {
+    for (final var key : keys) requireSink(key);
+    final var sinks = new ArrayList<MessageSink<T>>();
+    for (final var key : keys) sinks.add(registry.getSink(key));
+    return toSink(new CompositeMessageSink<>(sinks));
+  }
+
+  private void requireSink(final RegistryKey<T> key) {
+    if (!registry.hasSink(key)) throw new IllegalArgumentException(
+      "No sink registered under key %s; register it before adding it to a pipeline".formatted(key)
+    );
   }
 
   /// Builds the [MessagePipeline].

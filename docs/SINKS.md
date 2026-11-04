@@ -14,9 +14,11 @@ sink building blocks themselves. Snippets use placeholder values; they show shap
 
 `MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape:
 `registerOperator(key, op)` / `registerSink(key, sink)` to add, `getOperator(key)` / `getSink(key)` to look up, and
-per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`). To fan out to several sinks,
-use `Stream.toMulti(...)`. A key must be registered before a pipeline adds it with `add` or `toSink`; building with an
-unregistered key throws `IllegalArgumentException`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`,
+per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`). A pipeline has one sink. To
+fan out to several, use `toMulti(...)`, on a stream or on the pipeline builder; delivery is best effort, so a sink that
+throws is logged and the record still succeeds. To retry the record when any destination fails, write one sink that
+calls each in turn. A key must be registered before a pipeline uses it with `pipe`, `toSink` or `toMulti`; building with
+an unregistered key throws `IllegalArgumentException`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`,
 `ProtobufConsoleSink`) live in their format modules and are not auto-registered:
 
 ```java
@@ -28,7 +30,7 @@ registry.registerOperator(RegistryKey.json("sanitize"), sanitize);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
-  .add(RegistryKey.json("sanitize"))
+  .pipe(RegistryKey.json("sanitize"))
   .toSink(RegistryKey.json("database"))
   .build();
 ```
@@ -51,7 +53,7 @@ registry.registerOperator(RegistryKey.json("transform"), transform);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
-  .add(RegistryKey.json("transform"))
+  .pipe(RegistryKey.json("transform"))
   .toSink(KafkaMessageSink.of(
     producer, "output-topic", JsonFormat.INSTANCE::serialize, ProducerMetrics.noop(), Tracer.noop()))
   .build();
