@@ -49,7 +49,7 @@ public final class Operators {
   ///
   /// Example:
   /// ```java
-  /// .add(drop(msg -> Boolean.TRUE.equals(msg.get("deleted"))))
+  /// .pipe(drop(msg -> Boolean.TRUE.equals(msg.get("deleted"))))
   /// ```
   ///
   /// @param drop predicate that returns true for messages to drop

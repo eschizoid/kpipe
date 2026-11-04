@@ -66,8 +66,9 @@ Pass a real `ProducerMetrics` / `Tracer` to count sends and propagate trace cont
 `.toMulti(sinkA, sinkB, ...)` (or `new CompositeMessageSink<>(...)` in the explicit API) delivers each record to every
 sink, **best effort**: a sink that throws is logged at WARNING and suppressed, the other sinks still run, the record
 counts as processed, its offset commits, and the DLQ is not involved. This is the right tool for "also mirror to a debug
-sink"; it is the wrong tool when every sink must durably receive every record — for that, produce to a topic and let
-each destination consume it, or use one sink that writes transactionally to both destinations.
+sink"; it is the wrong tool when every sink must durably receive every record. For that, pass one sink that calls each
+destination in turn: a failure in any of them fails the record, and on a retry the destinations that already succeeded
+receive it again, so each must be idempotent. Alternatively, produce to a topic and let each destination consume it.
 
 ## Batch sinks
 

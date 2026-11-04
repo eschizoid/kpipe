@@ -13,7 +13,7 @@ package io.github.eschizoid.kpipe.registry;
 /// Example:
 /// ```java
 /// final var pipeline = registry.pipeline(MessageFormat.bytes())
-///     .add(b -> { metrics.inc(); return b; })
+///     .pipe(b -> { metrics.inc(); return b; })
 ///     .toSink(b -> System.out.println(new String(b)))
 ///     .build();
 /// ```

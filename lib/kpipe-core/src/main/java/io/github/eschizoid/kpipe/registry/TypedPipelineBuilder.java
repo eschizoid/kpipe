@@ -102,8 +102,9 @@ public final class TypedPipelineBuilder<T> {
 
   /// Sets the pipeline's sink. A pipeline has one; to deliver to several, use [#toMulti].
   ///
-  /// A sink that throws fails the record, which is then retried. To deliver to several systems and
-  /// retry the record when any of them fails, write one sink that calls each in turn.
+  /// A sink that throws fails the record, which goes through the configured retries, then the
+  /// error handler and DLQ. To deliver to several systems and fail the record when any of them
+  /// fails, write one sink that calls each in turn.
   ///
   /// @param sink the sink
   /// @return this builder
@@ -135,20 +136,23 @@ public final class TypedPipelineBuilder<T> {
   ///
   /// @param sinks the sinks, at least one
   /// @return this builder
+  /// @throws IllegalArgumentException if no sink is given
   /// @throws IllegalStateException if the pipeline already has a sink
   @SafeVarargs
   public final TypedPipelineBuilder<T> toMulti(final MessageSink<T>... sinks) {
+    if (sinks.length == 0) throw new IllegalArgumentException("toMulti needs at least one sink");
     return toSink(new CompositeMessageSink<>(List.of(sinks)));
   }
 
   /// Delivers each record to the registry sinks under `keys`, as [#toMulti(MessageSink...)] does.
   ///
-  /// @param keys the registry keys of the sinks
+  /// @param keys the registry keys of the sinks, at least one
   /// @return this builder
-  /// @throws IllegalArgumentException if no sink is registered under one of the keys
+  /// @throws IllegalArgumentException if no key is given, or no sink is registered under one
   /// @throws IllegalStateException if the pipeline already has a sink
   @SafeVarargs
   public final TypedPipelineBuilder<T> toMulti(final RegistryKey<T>... keys) {
+    if (keys.length == 0) throw new IllegalArgumentException("toMulti needs at least one sink key");
     for (final var key : keys) requireSink(key);
     final var sinks = new ArrayList<MessageSink<T>>();
     for (final var key : keys) sinks.add(registry.getSink(key));

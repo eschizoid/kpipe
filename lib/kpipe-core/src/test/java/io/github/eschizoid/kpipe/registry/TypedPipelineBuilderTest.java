@@ -75,4 +75,15 @@ class TypedPipelineBuilderTest {
     );
     assertDoesNotThrow(() -> builder.toSink(registered), "the failed toMulti left the builder without a sink");
   }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void toMultiWithNoSinksIsRejected() {
+    final var builder = registry.pipeline(MessageFormat.bytes());
+    final MessageSink<byte[]>[] noSinks = new MessageSink[0];
+    final RegistryKey<byte[]>[] noKeys = new RegistryKey[0];
+
+    assertThrows(IllegalArgumentException.class, () -> builder.toMulti(noSinks), "an empty fan-out drops every record");
+    assertThrows(IllegalArgumentException.class, () -> builder.toMulti(noKeys));
+  }
 }
