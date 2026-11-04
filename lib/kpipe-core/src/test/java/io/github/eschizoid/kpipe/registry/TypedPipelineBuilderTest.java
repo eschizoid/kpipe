@@ -86,4 +86,31 @@ class TypedPipelineBuilderTest {
     assertThrows(IllegalArgumentException.class, () -> builder.toMulti(noSinks), "an empty fan-out drops every record");
     assertThrows(IllegalArgumentException.class, () -> builder.toMulti(noKeys));
   }
+
+  @Test
+  void whenAppliesTheOperatorForTheBranchTheRecordMatches() {
+    final var pipeline = registry
+      .pipeline(MessageFormat.bytes())
+      .when(value -> value[0] > 0, _ -> new byte[] { 1 }, _ -> new byte[] { 2 })
+      .build();
+
+    final var positive = assertInstanceOf(Result.Passed.class, pipeline.process(new byte[] { 5 }));
+    final var zero = assertInstanceOf(Result.Passed.class, pipeline.process(new byte[] { 0 }));
+    assertArrayEquals(new byte[] { 1 }, (byte[]) positive.value());
+    assertArrayEquals(new byte[] { 2 }, (byte[]) zero.value());
+  }
+
+  @Test
+  void toMultiByKeyDeliversToEachRegisteredSinkInOrder() {
+    final var delivered = new ArrayList<String>();
+    final var audit = RegistryKey.of("audit", byte[].class);
+    final var archive = RegistryKey.of("archive", byte[].class);
+    registry.registerSink(audit, _ -> delivered.add("audit"));
+    registry.registerSink(archive, _ -> delivered.add("archive"));
+    final var pipeline = registry.pipeline(MessageFormat.bytes()).toMulti(audit, archive).build();
+
+    pipeline.getSink().accept(new byte[] { 1 });
+
+    assertEquals(List.of("audit", "archive"), delivered);
+  }
 }
