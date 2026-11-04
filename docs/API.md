@@ -128,12 +128,28 @@ KPipe.multi(kafkaProps)
 
 ## Built-in operators
 
-`io.github.eschizoid.kpipe.registry.Operators` provides ready-made operators for `.pipe(...)`: `filter`, `drop`, `peek`,
-`compose`, `requireField`, `rename`, `removeFields`, `addField`. The `Map`-typed helpers (`rename`, `removeFields`,
-`addField`, `requireField`) **mutate the payload map in place and return it** — they are convenient, not pure functions.
-In the standard sink path this is sound (a record's payload is confined to the one worker processing that attempt; the
-batch path hands buffered values to the flusher under a lock), but it matters if your own code shares payload references
-beyond the pipeline.
+`io.github.eschizoid.kpipe.registry.Operators` provides operators for any payload type: `filter`, `drop`, `peek` and
+`compose`.
+
+`io.github.eschizoid.kpipe.format.json.JsonFields` changes the fields of a JSON record:
+
+| Operator                         | Does                                                       | When the field is missing                  |
+| -------------------------------- | ---------------------------------------------------------- | ------------------------------------------ |
+| `set(field, value)`              | Sets the field to a value fixed when the pipeline is built | Adds it                                    |
+| `derive(field, record -> value)` | Sets the field to a value computed from each record        | Adds it                                    |
+| `remove(fields...)`              | Removes the fields                                         | Ignores it                                 |
+| `keep(fields...)`                | Removes every other field                                  | Ignores it                                 |
+| `rename(from, to)`               | Moves the value of `from` to `to`                          | Fails the record; so does an existing `to` |
+| `require(fields...)`             | Passes the record on unchanged                             | Fails the record                           |
+
+A failed record goes to retry, the error handler and the dead-letter topic. To skip a record without a field instead,
+use `filter(record -> record.containsKey("id"))`. Field names are top-level keys: `"user.id"` names a key with a dot in
+it. The operators change the record's map in place and return it. That is safe in a pipeline, where a record's map
+belongs to the attempt processing it and a retry decodes a fresh one, but it matters if your own code keeps a reference
+to the map.
+
+For Avro and Protobuf, write the change as a function on the record (`GenericRecord.put`, `Message.toBuilder()`); see
+[FORMATS.md](FORMATS.md).
 
 ## The explicit API
 

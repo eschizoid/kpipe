@@ -6,11 +6,11 @@ Runs JSON, Avro, and Protobuf consumer pipelines side by side in one application
 
 Three KPipe pipelines, one per topic, each with its own deserializer and sink:
 
-| Pipeline | Topic         | Format   | Processors                                           |
-| -------- | ------------- | -------- | ---------------------------------------------------- |
-| JSON     | `json-topic`  | JSON     | addSource, markProcessed, addTimestamp, removeFields |
-| Avro     | `avro-topic`  | Avro     | Schema Registry deserialization + console sink       |
-| Protobuf | `proto-topic` | Protobuf | Descriptor-based deserialization + console sink      |
+| Pipeline | Topic         | Format   | Processors                                                               |
+| -------- | ------------- | -------- | ------------------------------------------------------------------------ |
+| JSON     | `json-topic`  | JSON     | `set` source and status, `derive` processedAt, `remove` password and ssn |
+| Avro     | `avro-topic`  | Avro     | Schema Registry deserialization + console sink                           |
+| Protobuf | `proto-topic` | Protobuf | Descriptor-based deserialization + console sink                          |
 
 ## Running
 

@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import io.github.eschizoid.kpipe.format.json.JsonFields;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -10,7 +11,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /// Compile-time witness that the 5-line "hello world" example from the facade brief actually
@@ -18,15 +18,6 @@ import org.junit.jupiter.api.Test;
 /// without a real Kafka broker; the operator chain is then exercised manually to prove the
 /// transformations are wired correctly.
 class KPipeApiTest {
-
-  /// Mimic of the `Operators.removeFields(...)` helper that the brief references — kept inline so
-  /// this test does not need a new public API.
-  private static UnaryOperator<Map<String, Object>> removeFields(final String... fields) {
-    return m -> {
-      for (final var f : fields) m.remove(f);
-      return m;
-    };
-  }
 
   @Test
   void fiveLineHelloWorldCompilesAndComposes() {
@@ -40,7 +31,7 @@ class KPipeApiTest {
         msg.put("ts", 42L);
         return msg;
       })
-      .pipe(removeFields("password"));
+      .pipe(JsonFields.remove("password"));
     final Sink<Map<String, Object>> sink = stream.toConsole();
     assertNotNull(sink);
 
@@ -51,7 +42,7 @@ class KPipeApiTest {
     for (final var op : ds.operators()) v = op.apply(v);
 
     assertEquals(42L, v.get("ts"));
-    assertFalse(v.containsKey("password"), "removeFields should drop the password field");
+    assertFalse(v.containsKey("password"), "remove should drop the password field");
   }
 
   /// Pins the [KPipe#custom(String, Properties, MessageFormat)] facade entry point. A

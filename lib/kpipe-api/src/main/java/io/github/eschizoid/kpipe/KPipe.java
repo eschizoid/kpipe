@@ -24,8 +24,8 @@ import org.apache.avro.generic.GenericRecord;
 ///
 /// ```java
 /// KPipe.json("events", kafkaProps)
-///     .pipe(msg -> { msg.put("ts", System.currentTimeMillis()); return msg; })
-///     .pipe(Operators.removeFields("password"))
+///     .pipe(JsonFields.derive("ts", _ -> System.currentTimeMillis()))
+///     .pipe(JsonFields.remove("password"))
 ///     .toConsole()
 ///     .start();
 /// ```
