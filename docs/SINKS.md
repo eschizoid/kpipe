@@ -15,14 +15,16 @@ sink building blocks themselves. Snippets use placeholder values; they show shap
 `MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape:
 `registerOperator(key, op)` / `registerSink(key, sink)` to add, `getOperator(key)` / `getSink(key)` to look up, and
 per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`). To fan out to several sinks,
-use `Stream.toMulti(...)`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`, `ProtobufConsoleSink`) live in their
-format modules and are not auto-registered:
+use `Stream.toMulti(...)`. A key must be registered before a pipeline adds it with `add` or `toSink`; building with an
+unregistered key throws `IllegalArgumentException`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`,
+`ProtobufConsoleSink`) live in their format modules and are not auto-registered:
 
 ```java
 final var registry = new MessageProcessorRegistry();
 
 registry.registerSink(RegistryKey.json("jsonConsole"), new JsonConsoleSink<Map<String, Object>>());
 registry.registerSink(RegistryKey.json("database"), databaseSink);
+registry.registerOperator(RegistryKey.json("sanitize"), sanitize);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
@@ -45,6 +47,7 @@ import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 
 final var producer = new KafkaProducer<byte[], byte[]>(producerProps);
+registry.registerOperator(RegistryKey.json("transform"), transform);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
