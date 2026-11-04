@@ -73,8 +73,8 @@ class ProtobufFormatPipelineTest {
 
     final var pipeline = registry
       .pipeline(format)
-      .add(RegistryKey.of("setName", Message.class))
-      .add(RegistryKey.of("deactivate", Message.class))
+      .pipe(RegistryKey.of("setName", Message.class))
+      .pipe(RegistryKey.of("deactivate", Message.class))
       .build();
 
     final var input = format.serialize(createTestMessage());

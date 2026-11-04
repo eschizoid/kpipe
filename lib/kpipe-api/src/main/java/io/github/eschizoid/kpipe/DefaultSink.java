@@ -50,7 +50,7 @@ final class DefaultSink<T> implements Sink<T> {
   MessagePipeline<?> buildPipeline() {
     final var registry = new MessageProcessorRegistry();
     final var pipelineBuilder = registry.pipeline(stream.format()).skipBytes(stream.skipBytes());
-    for (final var op : stream.operators()) pipelineBuilder.add(op);
+    for (final var op : stream.operators()) pipelineBuilder.pipe(op);
     final var base = pipelineBuilder.toSink(terminalSink).build();
     return stream.wrapWithObservers(base);
   }

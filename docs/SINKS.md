@@ -14,9 +14,11 @@ sink building blocks themselves. Snippets use placeholder values; they show shap
 
 `MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape:
 `registerOperator(key, op)` / `registerSink(key, sink)` to add, `getOperator(key)` / `getSink(key)` to look up, and
-per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`). To fan out to several sinks,
-use `Stream.toMulti(...)`. A key must be registered before a pipeline adds it with `add` or `toSink`; building with an
-unregistered key throws `IllegalArgumentException`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`,
+per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`). A pipeline has one sink. To
+fan out to several, use `toMulti(...)`, on a stream or on the pipeline builder; delivery is best effort, so a sink that
+throws is logged and the record still succeeds. To retry the record when any destination fails, write one sink that
+calls each in turn. A key must be registered before a pipeline uses it with `pipe`, `toSink` or `toMulti`; building with
+an unregistered key throws `IllegalArgumentException`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`,
 `ProtobufConsoleSink`) live in their format modules and are not auto-registered:
 
 ```java
@@ -28,7 +30,7 @@ registry.registerOperator(RegistryKey.json("sanitize"), sanitize);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
-  .add(RegistryKey.json("sanitize"))
+  .pipe(RegistryKey.json("sanitize"))
   .toSink(RegistryKey.json("database"))
   .build();
 ```
@@ -51,7 +53,7 @@ registry.registerOperator(RegistryKey.json("transform"), transform);
 
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
-  .add(RegistryKey.json("transform"))
+  .pipe(RegistryKey.json("transform"))
   .toSink(KafkaMessageSink.of(
     producer, "output-topic", JsonFormat.INSTANCE::serialize, ProducerMetrics.noop(), Tracer.noop()))
   .build();
@@ -64,8 +66,9 @@ Pass a real `ProducerMetrics` / `Tracer` to count sends and propagate trace cont
 `.toMulti(sinkA, sinkB, ...)` (or `new CompositeMessageSink<>(...)` in the explicit API) delivers each record to every
 sink, **best effort**: a sink that throws is logged at WARNING and suppressed, the other sinks still run, the record
 counts as processed, its offset commits, and the DLQ is not involved. This is the right tool for "also mirror to a debug
-sink"; it is the wrong tool when every sink must durably receive every record — for that, produce to a topic and let
-each destination consume it, or use one sink that writes transactionally to both destinations.
+sink"; it is the wrong tool when every sink must durably receive every record. For that, pass one sink that calls each
+destination in turn: a failure in any of them fails the record, and on a retry the destinations that already succeeded
+receive it again, so each must be idempotent. Alternatively, produce to a topic and let each destination consume it.
 
 ## Batch sinks
 

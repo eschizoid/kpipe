@@ -58,8 +58,8 @@ class OperatorsTest {
     final var registry = new MessageProcessorRegistry();
     final var pipeline = registry
       .pipeline(MessageFormat.bytes())
-      .add(Operators.filter(b -> new String(b).startsWith("keep-")))
-      .add(
+      .pipe(Operators.filter(b -> new String(b).startsWith("keep-")))
+      .pipe(
         Operators.peek(b -> {
           // This should not be invoked for filtered messages.
           if (new String(b).startsWith("drop-")) throw new AssertionError("filter did not short-circuit");

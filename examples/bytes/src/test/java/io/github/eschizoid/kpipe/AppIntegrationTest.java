@@ -67,7 +67,7 @@ class AppIntegrationTest {
     final var capturingSink = new CapturingSink<byte[]>();
     final var pipeline = new MessageProcessorRegistry()
       .pipeline(MessageFormat.bytes())
-      .add(hexPreviewOperator)
+      .pipe(hexPreviewOperator)
       .toSink(capturingSink)
       .build();
 

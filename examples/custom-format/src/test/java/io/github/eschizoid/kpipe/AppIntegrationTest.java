@@ -58,9 +58,9 @@ class AppIntegrationTest {
       .pipeline(new CsvOrderFormat())
       // Mirrors App's .filter(order -> order.quantity() > 0): null return = intentional
       // filter.
-      .add(order -> order.quantity() > 0 ? order : null)
+      .pipe(order -> order.quantity() > 0 ? order : null)
       // Mirrors App's .pipe(...): uppercase the SKU.
-      .add(order -> new CsvOrder(order.id(), order.sku().toUpperCase(), order.quantity()))
+      .pipe(order -> new CsvOrder(order.id(), order.sku().toUpperCase(), order.quantity()))
       .toSink(capturingSink)
       .build();
 

@@ -426,19 +426,18 @@ public interface Stream<T> {
   Sink<T> toBatch(final BatchSink<T> sink, final BatchPolicy policy);
 
   /// Terminates the stream by fanning out to multiple sinks. Each delivered message is dispatched
-  /// to every sink; an exception in one sink is **logged at ERROR but suppressed** so the
+  /// to every sink; an exception in one sink is **logged at WARNING but suppressed** so the
   /// remaining sinks still receive the message (see
   /// [io.github.eschizoid.kpipe.sink.CompositeMessageSink]).
   ///
   /// **Best-effort delivery, NOT at-least-once-per-sink.** Because exceptions are suppressed,
   /// a sink that consistently fails will silently drop messages while the consumer continues to
   /// mark them as processed and commit offsets. The consumer's error path / DLQ is not invoked
-  /// for per-sink failures — only the per-sink ERROR log.
+  /// for per-sink failures — only the per-sink WARNING log.
   ///
-  /// If you need guaranteed delivery to every sink, do not use `toMulti`. Wire each sink as its
-  /// own pipeline through the explicit
-  /// [io.github.eschizoid.kpipe.registry.MessageProcessorRegistry] API and
-  /// drive failure handling through the consumer's `errorHandler` / DLQ configuration.
+  /// If you need delivery to every sink, do not use `toMulti`. Pass `toCustom` one sink that calls
+  /// each in turn: a failure in any of them then fails the record, which goes to retry, the error
+  /// handler and the DLQ, and on a retry the sinks that already succeeded receive it again.
   ///
   /// @param sinks the sinks to broadcast to (must contain at least one element)
   /// @return a [Sink] ready to start

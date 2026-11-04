@@ -26,7 +26,7 @@ final class TestPipelines {
   /// @param processor the byte[] transform invoked from `process()`
   /// @return a MessagePipeline driving the given processor
   static MessagePipeline<byte[]> sideEffect(final UnaryOperator<byte[]> processor) {
-    return REGISTRY.pipeline(MessageFormat.bytes()).add(processor).build();
+    return REGISTRY.pipeline(MessageFormat.bytes()).pipe(processor).build();
   }
 
   /// An identity pipeline — bytes in, same bytes out, no side effects.

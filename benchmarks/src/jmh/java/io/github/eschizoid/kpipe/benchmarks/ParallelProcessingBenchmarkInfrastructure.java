@@ -300,7 +300,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       final var props = kafkaContext.consumerProps("kpipe-group");
       final var workMicros = params.workMicros;
       final var pipeline = REGISTRY.pipeline(MessageFormat.bytes())
-        .add(b -> {
+        .pipe(b -> {
           simulateWork(workMicros);
           processedCount.incrementAndGet();
           return b;
@@ -347,7 +347,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       final var props = kafkaContext.consumerProps("kpipe-keyordered-group");
       final var workMicros = params.workMicros;
       final var pipeline = REGISTRY.pipeline(MessageFormat.bytes())
-        .add(b -> {
+        .pipe(b -> {
           simulateWork(workMicros);
           processedCount.incrementAndGet();
           return b;
