@@ -59,6 +59,7 @@ final class ConsumerCounters {
   private long circuitBreakerTrips;
   private long openNanos;
   private long openSince = -1;
+  private boolean stopped;
 
   ConsumerCounters() {
     this(System::nanoTime);
@@ -77,7 +78,7 @@ final class ConsumerCounters {
   void backpressurePaused() {
     synchronized (periods) {
       backpressurePauses++;
-      if (pausedSince < 0) pausedSince = clock.getAsLong();
+      if (pausedSince < 0 && !stopped) pausedSince = clock.getAsLong();
     }
   }
 
@@ -93,7 +94,7 @@ final class ConsumerCounters {
     synchronized (periods) {
       if (state == CircuitBreakerState.OPEN) {
         circuitBreakerTrips++;
-        if (openSince < 0) openSince = clock.getAsLong();
+        if (openSince < 0 && !stopped) openSince = clock.getAsLong();
       } else if (openSince >= 0) {
         openNanos += clock.getAsLong() - openSince;
         openSince = -1;
@@ -101,10 +102,12 @@ final class ConsumerCounters {
     }
   }
 
-  /// Ends any backpressure pause or open breaker period now, so snapshots taken after the consumer
-  /// stops do not keep counting time.
+  /// Ends any backpressure pause or open breaker period now, and starts no new one, so snapshots
+  /// taken after the consumer stops do not keep counting time. A batch flushed while the consumer
+  /// closes can still trip the breaker; that trip is counted but not timed.
   void stopClocks() {
     synchronized (periods) {
+      stopped = true;
       final var now = clock.getAsLong();
       if (pausedSince >= 0) {
         backpressureNanos += now - pausedSince;

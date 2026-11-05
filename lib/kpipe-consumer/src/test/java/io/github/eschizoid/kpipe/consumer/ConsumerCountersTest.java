@@ -130,4 +130,18 @@ class ConsumerCountersTest {
     assertEquals(Duration.ofSeconds(2), snapshot.backpressure().time(), "time stops when the consumer stops");
     assertEquals(Duration.ofSeconds(2), snapshot.circuitBreaker().openTime());
   }
+
+  @Test
+  void aPeriodThatStartsAfterTheClocksStopIsCountedButNotTimed() {
+    counters.stopClocks();
+    now.set(Duration.ofSeconds(1).toNanos());
+    counters.circuitBreakerChanged(CircuitBreakerState.OPEN);
+    counters.backpressurePaused();
+    now.set(Duration.ofSeconds(60).toNanos());
+
+    final var snapshot = counters.snapshot(0);
+    assertEquals(1, snapshot.circuitBreaker().trips());
+    assertEquals(Duration.ZERO, snapshot.circuitBreaker().openTime(), "a trip during close does not start a clock");
+    assertEquals(Duration.ZERO, snapshot.backpressure().time());
+  }
 }

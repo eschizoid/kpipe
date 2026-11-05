@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
@@ -1011,6 +1012,54 @@ class KPipeConsumerTest {
     final var records = consumer.metrics().records();
     assertEquals(1L, records.filtered());
     assertEquals(0L, records.processed());
+    consumer.close();
+  }
+
+  /// Counts the processed calls the consumer makes on its `ConsumerMetrics`.
+  private static final class ProcessedCalls implements ConsumerMetrics {
+
+    final AtomicInteger processed = new AtomicInteger();
+
+    @Override
+    public void recordMessageReceived() {}
+
+    @Override
+    public void recordMessageProcessed() {}
+
+    @Override
+    public void recordMessageProcessed(final String topic) {
+      processed.incrementAndGet();
+    }
+
+    @Override
+    public void recordProcessingError() {}
+
+    @Override
+    public void recordProcessingDuration(final long millis) {}
+
+    @Override
+    public void recordBackpressurePause() {}
+
+    @Override
+    public void recordBackpressureTime(final long millis) {}
+  }
+
+  /// The metrics export reports a filtered record as processed and an unrouted one as nothing.
+  @Test
+  void theMetricsExportStillReportsFilteredRecordsAsProcessed() {
+    final var calls = new ProcessedCalls();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.sideEffect(_ -> null))
+      .withMetrics(calls)
+      .build();
+
+    consumer.processRecord(createRecord(0, "key", "drop-me"));
+    assertEquals(1, calls.processed.get(), "a filtered record is reported as processed");
+
+    consumer.processRecord(new ConsumerRecord<>("unrouted", 0, 0L, "k".getBytes(), "v".getBytes()));
+    assertEquals(1, calls.processed.get(), "an unrouted record is not reported");
     consumer.close();
   }
 }
