@@ -3,6 +3,8 @@ package io.github.eschizoid.kpipe.consumer;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
@@ -73,18 +75,59 @@ class ConsumerCountersTest {
 
     final var breaker = counters.snapshot(0).circuitBreaker();
     assertEquals(2, breaker.trips(), "closed to open and half-open to open both trip");
-    assertEquals(Duration.ofSeconds(5), breaker.openTime(), "three closed seconds plus two still open");
+    assertEquals(Duration.ofSeconds(5), breaker.openTime(), "three open seconds plus two still open");
   }
 
   @Test
-  void outcomesNeverExceedReceivedInASnapshot() {
-    final var topic = counters.topic("orders");
-    topic.received.add(10);
-    topic.processed.add(6);
-    topic.filtered.add(2);
-    topic.failed.add(1);
+  void outcomesNeverExceedReceivedWhileWritersRun() throws Exception {
+    final var real = new ConsumerCounters();
+    final var topic = real.topic("orders");
+    final var stop = new AtomicBoolean();
+    final var writers = new ArrayList<Thread>();
+    for (int w = 0; w < 4; w++) {
+      final var kind = w;
+      writers.add(
+        Thread.ofPlatform().start(() -> {
+          while (!stop.get()) {
+            topic.received.increment();
+            switch (kind % 3) {
+              case 0 -> topic.processed.increment();
+              case 1 -> topic.filtered.increment();
+              default -> topic.failed.increment();
+            }
+          }
+        })
+      );
+    }
+    try {
+      final var deadline = System.nanoTime() + Duration.ofMillis(500).toNanos();
+      var snapshots = 0;
+      while (System.nanoTime() < deadline) {
+        final var r = real.snapshot(0).records();
+        assertTrue(
+          r.received() >= r.processed() + r.filtered() + r.failed(),
+          "received %d < outcomes %d".formatted(r.received(), r.processed() + r.filtered() + r.failed())
+        );
+        snapshots++;
+      }
+      assertTrue(snapshots > 100, "the reader ran " + snapshots + " snapshots");
+    } finally {
+      stop.set(true);
+      for (final var t : writers) t.join();
+    }
+  }
 
-    final var records = counters.snapshot(1).records();
-    assertTrue(records.received() >= records.processed() + records.filtered() + records.failed());
+  @Test
+  void stopClocksEndsOpenPeriods() {
+    now.set(Duration.ofSeconds(1).toNanos());
+    counters.backpressurePaused();
+    counters.circuitBreakerChanged(CircuitBreakerState.OPEN);
+    now.set(Duration.ofSeconds(3).toNanos());
+    counters.stopClocks();
+    now.set(Duration.ofSeconds(60).toNanos());
+
+    final var snapshot = counters.snapshot(0);
+    assertEquals(Duration.ofSeconds(2), snapshot.backpressure().time(), "time stops when the consumer stops");
+    assertEquals(Duration.ofSeconds(2), snapshot.circuitBreaker().openTime());
   }
 }

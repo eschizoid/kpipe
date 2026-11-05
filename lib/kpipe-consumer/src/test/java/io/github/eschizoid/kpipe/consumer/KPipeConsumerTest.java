@@ -12,7 +12,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -531,7 +533,7 @@ class KPipeConsumerTest {
     TestAwaits.pollUntil(
       () -> consumer.metrics().records().processed() == 1L,
       Duration.ofSeconds(2),
-      "messagesProcessed reaches 1 after retry"
+      "processed reaches 1 after retry"
     );
 
     // Assert
@@ -564,7 +566,7 @@ class KPipeConsumerTest {
     TestAwaits.pollUntil(
       () -> consumer.metrics().records().failed() == 1L,
       Duration.ofSeconds(2),
-      "processingErrors reaches 1 after exhausting retries"
+      "failed reaches 1 after exhausting retries"
     );
 
     // Assert
@@ -605,7 +607,7 @@ class KPipeConsumerTest {
     TestAwaits.pollUntil(
       () -> consumer.metrics().records().processed() == 3L,
       Duration.ofSeconds(2),
-      "messagesProcessed reaches 3 after intermittent retries"
+      "processed reaches 3 after intermittent retries"
     );
 
     // Assert
@@ -769,7 +771,7 @@ class KPipeConsumerTest {
     consumer.processRecord(createRecord(2, "k2", "v2"));
 
     // Wait for all 3 sink invocations to begin — proves the dispatcher started the work, so
-    // messagesReceived has been counted and in-flight is at 3.
+    // received has been counted and in-flight is at 3.
     assertTrue(sinkStarted.await(3, TimeUnit.SECONDS), "All 3 records should be in-flight at the sink");
 
     // In-flight = 3 received - 0 processed = 3 >= highWatermark(2)
@@ -811,7 +813,7 @@ class KPipeConsumerTest {
     consumer.pause();
     final var metrics = consumer.metrics();
     assertEquals(0L, metrics.backpressure().pauses(), "a manual pause is not a backpressure pause");
-    assertEquals(java.time.Duration.ZERO, metrics.backpressure().time());
+    assertEquals(Duration.ZERO, metrics.backpressure().time());
 
     sinkRelease.countDown();
     consumer.close();
@@ -829,7 +831,7 @@ class KPipeConsumerTest {
     // Assert: backpressure metric keys are present by default
     final var metrics = consumer.metrics();
     assertEquals(0L, metrics.backpressure().pauses(), "a manual pause is not a backpressure pause");
-    assertEquals(java.time.Duration.ZERO, metrics.backpressure().time());
+    assertEquals(Duration.ZERO, metrics.backpressure().time());
 
     consumer.close();
   }
@@ -936,10 +938,10 @@ class KPipeConsumerTest {
     // Records arrive in the deliberately interleaved order alpha-1, beta-1, alpha-2, beta-2,
     // alpha-3, beta-3. KEY_ORDERED must produce two strictly-ordered per-key sub-sequences;
     // the overall interleaving between keys can be anything.
-    final var processed = new java.util.concurrent.ConcurrentHashMap<String, java.util.List<String>>();
-    processed.put("alpha", new java.util.concurrent.CopyOnWriteArrayList<>());
-    processed.put("beta", new java.util.concurrent.CopyOnWriteArrayList<>());
-    final var latch = new java.util.concurrent.CountDownLatch(6);
+    final var processed = new ConcurrentHashMap<String, List<String>>();
+    processed.put("alpha", new CopyOnWriteArrayList<>());
+    processed.put("beta", new CopyOnWriteArrayList<>());
+    final var latch = new CountDownLatch(6);
 
     final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
@@ -971,10 +973,44 @@ class KPipeConsumerTest {
     );
 
     consumer.processRecords(records);
-    assertTrue(latch.await(5, java.util.concurrent.TimeUnit.SECONDS));
+    assertTrue(latch.await(5, TimeUnit.SECONDS));
 
     assertEquals(List.of("alpha-1", "alpha-2", "alpha-3"), processed.get("alpha"));
     assertEquals(List.of("beta-1", "beta-2", "beta-3"), processed.get("beta"));
+    consumer.close();
+  }
+
+  @Test
+  void aRecordForATopicWithNoPipelineIsCountedFiltered() {
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .build();
+
+    consumer.processRecord(new ConsumerRecord<>("unrouted", 0, 0L, "k".getBytes(), "v".getBytes()));
+
+    final var unrouted = consumer.metrics().records("unrouted");
+    assertEquals(1L, unrouted.received());
+    assertEquals(1L, unrouted.filtered(), "a record no pipeline is routed for is dropped on purpose");
+    assertEquals(0L, unrouted.processed());
+    assertEquals(0L, unrouted.failed());
+    consumer.close();
+  }
+
+  @Test
+  void aFilteredRecordIsCountedFilteredNotProcessed() {
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.sideEffect(_ -> null))
+      .build();
+
+    consumer.processRecord(createRecord(0, "key", "drop-me"));
+
+    final var records = consumer.metrics().records();
+    assertEquals(1L, records.filtered());
+    assertEquals(0L, records.processed());
     consumer.close();
   }
 }

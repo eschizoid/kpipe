@@ -20,8 +20,8 @@ import java.util.Objects;
 ///
 /// @param records counts across every topic
 /// @param topics counts per topic, for each topic that has received a record
-/// @param inFlight records received and not yet in a terminal state, including records waiting in
-///     a batch buffer
+/// @param inFlight records the consumer holds: being processed, queued behind their key, or
+///     waiting in a batch buffer. Queued ones are not yet counted in [Records#received].
 /// @param backpressure how often and how long backpressure paused consumption
 /// @param circuitBreaker how often and how long the circuit breaker stopped consumption
 public record MetricsSnapshot(
@@ -31,6 +31,7 @@ public record MetricsSnapshot(
   Backpressure backpressure,
   CircuitBreaker circuitBreaker
 ) {
+  /// Copies `topics` and rejects null parts.
   public MetricsSnapshot {
     Objects.requireNonNull(records, "records");
     topics = Map.copyOf(topics);
@@ -38,7 +39,9 @@ public record MetricsSnapshot(
     Objects.requireNonNull(circuitBreaker, "circuitBreaker");
   }
 
-  /// @return a snapshot of a consumer that has received nothing, for test doubles
+  /// A snapshot of a consumer that has received nothing, for test doubles.
+  ///
+  /// @return a snapshot with every counter at zero
   public static MetricsSnapshot empty() {
     return new MetricsSnapshot(
       Records.ZERO,
@@ -49,6 +52,8 @@ public record MetricsSnapshot(
     );
   }
 
+  /// The counts for one topic.
+  ///
   /// @param topic a topic name
   /// @return the counts for `topic`, all zero if it has received no record
   public Records records(final String topic) {
@@ -81,6 +86,7 @@ public record MetricsSnapshot(
   ) {
     static final Records ZERO = new Records(0, 0, 0, 0, 0, 0, 0, Duration.ZERO);
 
+    /// Rejects a null processing time.
     public Records {
       Objects.requireNonNull(processingTime, "processingTime");
     }
@@ -95,17 +101,23 @@ public record MetricsSnapshot(
     }
   }
 
+  /// How often and how long backpressure paused consumption.
+  ///
   /// @param pauses times backpressure paused consumption
   /// @param time total time paused, counting a pause still in progress
   public record Backpressure(long pauses, Duration time) {
+    /// Rejects a null time.
     public Backpressure {
       Objects.requireNonNull(time, "time");
     }
   }
 
+  /// How often and how long the circuit breaker stopped consumption.
+  ///
   /// @param trips times the breaker opened
   /// @param openTime total time open, counting an open period still in progress
   public record CircuitBreaker(long trips, Duration openTime) {
+    /// Rejects a null open time.
     public CircuitBreaker {
       Objects.requireNonNull(openTime, "openTime");
     }

@@ -101,6 +101,22 @@ final class ConsumerCounters {
     }
   }
 
+  /// Ends any backpressure pause or open breaker period now, so snapshots taken after the consumer
+  /// stops do not keep counting time.
+  void stopClocks() {
+    synchronized (periods) {
+      final var now = clock.getAsLong();
+      if (pausedSince >= 0) {
+        backpressureNanos += now - pausedSince;
+        pausedSince = -1;
+      }
+      if (openSince >= 0) {
+        openNanos += now - openSince;
+        openSince = -1;
+      }
+    }
+  }
+
   /// @param inFlight the consumer's in-flight count, read by the caller
   /// @return every counter, totals summed over topics
   MetricsSnapshot snapshot(final long inFlight) {

@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.consumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -369,7 +370,7 @@ class KPipeBackpressureIntegrationTest {
       mc.updateEndOffsets(Map.of(PARTITION, 10L));
 
       assertEquals(0, mc.position(PARTITION));
-      mc.poll(java.time.Duration.ZERO);
+      mc.poll(Duration.ZERO);
       assertEquals(2, mc.position(PARTITION));
       assertEquals(10L, mc.endOffsets(List.of(PARTITION)).get(PARTITION));
     }

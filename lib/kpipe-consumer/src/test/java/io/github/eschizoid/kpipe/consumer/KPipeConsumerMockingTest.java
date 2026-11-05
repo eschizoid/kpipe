@@ -418,11 +418,11 @@ class KPipeConsumerMockingTest {
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
-    // Wait for the worker virtual thread to mark messagesProcessed.
+    // Wait for the worker virtual thread to count the record as processed.
     TestAwaits.pollUntil(
       () -> functionalConsumer.metrics().records().processed() == 1L,
       Duration.ofSeconds(2),
-      "messagesProcessed reaches 1"
+      "processed reaches 1"
     );
 
     // Verify metrics
@@ -470,7 +470,7 @@ class KPipeConsumerMockingTest {
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
-    // errorHandler is invoked after processingErrors is incremented in KPipeConsumer.processRecord
+    // errorHandler is invoked after the failure is counted in KPipeConsumer.processRecord
     verify(errorHandler, timeout(1000)).accept(any());
 
     // Verify metrics
@@ -1227,10 +1227,6 @@ class KPipeConsumerMockingTest {
   }
 
   public static class TestableKPipeConsumer extends KPipeConsumer {
-
-    private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
-    private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
-    private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
 
     public TestableKPipeConsumer(
       final Properties props,

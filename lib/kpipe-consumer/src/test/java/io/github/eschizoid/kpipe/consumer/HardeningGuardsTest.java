@@ -11,6 +11,7 @@ import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -168,7 +169,7 @@ class HardeningGuardsTest {
       "k".getBytes(UTF_8),
       "v".getBytes(StandardCharsets.UTF_8),
       originalHeaders,
-      java.util.Optional.empty()
+      Optional.empty()
     );
 
     try (

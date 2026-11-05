@@ -966,6 +966,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// consumer, which would throw (and silently drop the last offsets) on an already-closed one.
   private void releaseConstructedResources() {
     if (!resourcesReleased.compareAndSet(false, true)) return; // already released by another path
+    counters.stopClocks();
     // Every step is best-effort: the CAS above already fired, so a throw here would leak the
     // remaining resources (no path retries). Catch + log each so teardown always runs to the end.
     try {

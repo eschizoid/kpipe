@@ -89,7 +89,7 @@ class KPipeFacadeIntegrationTest {
       final var metrics = handle.metrics();
       assertNotNull(metrics, "metrics() must not be null");
       final var processed = metrics.records().processed();
-      assertTrue(processed >= 5L, "messagesProcessed (%d) must be >= 5".formatted(processed));
+      assertTrue(processed >= 5L, "processed (%d) must be >= 5".formatted(processed));
 
       // Still healthy mid-flight.
       assertTrue(handle.isHealthy(), "Handle should remain healthy while running");

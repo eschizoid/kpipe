@@ -167,7 +167,7 @@ class KPipeCircuitBreakerIntegrationTest {
     assertTrue(mc.paused().isEmpty(), "after openDuration the breaker should probe and resume");
 
     final var timeOpenMs = (long) consumer.metrics().circuitBreaker().openTime().toMillis();
-    assertTrue(timeOpenMs > 0L, "circuitBreakerTimeOpenMs must be > 0 after a probe");
+    assertTrue(timeOpenMs > 0L, "open time must be > 0 after a probe");
 
     consumer.close();
   }

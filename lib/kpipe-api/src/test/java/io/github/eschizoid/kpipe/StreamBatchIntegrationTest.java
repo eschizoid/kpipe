@@ -23,6 +23,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
@@ -80,7 +81,7 @@ class StreamBatchIntegrationTest {
         producer.flush();
       }
 
-      // Wait until the consumer has polled all 25 records from Kafka — `messagesReceived` is
+      // Wait until the consumer has polled all 25 records from Kafka — `received` is
       // the post-poll counter. Without this gate, shutdown can race ahead of a slow fetch and
       // the trailing records never reach the buffer (failure surfaced after the partial-batch
       // flusher refactor reshuffled timing).
@@ -134,7 +135,7 @@ class StreamBatchIntegrationTest {
       }
 
       @Override
-      public void injectContextInto(final org.apache.kafka.common.header.Headers headers) {}
+      public void injectContextInto(final Headers headers) {}
     };
     // High threshold + large window so the breaker never trips during the test — we only need it
     // wired, not tripping.

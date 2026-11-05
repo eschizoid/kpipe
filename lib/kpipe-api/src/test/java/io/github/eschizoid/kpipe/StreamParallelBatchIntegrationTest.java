@@ -83,7 +83,7 @@ class StreamParallelBatchIntegrationTest {
         producer.flush();
       }
 
-      // Gate shutdown on `messagesReceived` so the consumer has actually polled every record
+      // Gate shutdown on `received` so the consumer has actually polled every record
       // before we drain. Same flake-avoidance pattern as `StreamBatchIntegrationTest`.
       waitFor(
         () -> handle.metrics().records().received() >= (long) RECORD_COUNT,
@@ -111,7 +111,7 @@ class StreamParallelBatchIntegrationTest {
       final var metrics = handle.metrics();
       assertTrue(
         metrics.records().processed() >= (long) RECORD_COUNT,
-        "messagesProcessed should be >= RECORD_COUNT, got " + metrics.records().processed()
+        "processed should be >= RECORD_COUNT, got " + metrics.records().processed()
       );
       assertEquals(0L, metrics.records().failed(), "no processing errors expected");
     } finally {
