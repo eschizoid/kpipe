@@ -143,8 +143,9 @@ configured) and wire via `.withMetrics(...)`.
 |                   | `kpipe.consumer.circuit_breaker.state_changes` | counter   |
 |                   | `kpipe.consumer.circuit_breaker.time_open`     | counter   |
 
-Log-based fallback for users who don't run OTel: `ConsumerMetricsReporter` (consumer-wide snapshot) +
-`EntryMetricsReporter` (per-entry, namespace-aware via `forProcessors(...)` / `forSinks(...)`).
+Programmatic access: `KPipeConsumer.metrics()` / `Handle.metrics()` return a typed `MetricsSnapshot` read from
+`ConsumerCounters`, the single place every counter is incremented. Log-based fallback: `EntryMetricsReporter`
+(per-entry, namespace-aware via `forProcessors(...)` / `forSinks(...)`) or a `KPipeMetricsReporter` lambda.
 
 ## §11 KPipeConsumer concurrency & safety patterns
 
@@ -176,7 +177,7 @@ Log-based fallback for users who don't run OTel: `ConsumerMetricsReporter` (cons
   and lag is monotonically non-decreasing while parked) and got the consumer evicted from the group after 5 minutes.
 - **Pipeline null handling.** Null record value and null deserialization throw specific `IllegalStateException` messages
   (retryable). Null `process()` result is intentional filtering — mark offset processed, count as success, no error.
-- **Metrics immutability.** `getMetrics()` returns `Collections.unmodifiableMap()`.
+- **Metrics snapshots.** `metrics()` returns an immutable `MetricsSnapshot` record.
 - **Thread-safety boundaries.** `processCommands()` is package-private — external callers can't invoke
   `kafkaConsumer.pause()`/`resume()`/`commitSync()` from arbitrary threads. `isRunning()` snapshots `state.get()` into a
   local before comparing.
@@ -234,7 +235,7 @@ produce independent streams. Adding a new fluent setter is a one-place change: d
 method, reference in `DefaultSink.buildPipeline` if it affects pipeline construction.
 
 `Handle` is `AutoCloseable` with a default `close()` that calls `shutdownGracefully(Duration.ofSeconds(5))`. `metrics()`
-returns `Map<String, Long>` (typed).
+returns a `MetricsSnapshot` record.
 
 ## §14 Audit-derived concurrency patterns
 
@@ -543,10 +544,10 @@ test-classifier jar — it's a runtime tool for users' test suites.
   production dispatcher / offset / sink code paths and stay in sync as the consumer evolves, at roughly an order of
   magnitude more time per test than direct pipeline invocation. Default mode is SEQUENTIAL so capture order equals send
   order; `withProcessingMode` opts into PARALLEL / KEY_ORDERED (assertions must then be order-insensitive).
-- **Deterministic `flush()` contract.** Returns only when every sent record is (1) polled (`messagesReceived` ≥ sent),
-  (2) accounted for (`messagesProcessed + processingErrors + inFlight` ≥ sent), and (3) drained (`waitForInFlightDrain`,
-  then a re-read of (1)+(2)). Records move strictly forward (unpolled → in-flight → buffered/terminal), so this check
-  order cannot false-positive. On timeout (default 10s) it throws `AssertionError` carrying the metrics snapshot.
+- **Deterministic `flush()` contract.** Returns only when every sent record is (1) polled (`received` ≥ sent), (2)
+  accounted for (`processed + filtered + failed + inFlight` ≥ sent), and (3) drained (`waitForInFlightDrain`, then a
+  re-read of (1)+(2)). Records move strictly forward (unpolled → in-flight → buffered/terminal), so this check order
+  cannot false-positive. On timeout (default 10s) it throws `AssertionError` carrying the metrics snapshot.
 - **Batch v1 semantics: size + shutdown flush only.** `toBatch(sink, maxSize)` flushes on the size trigger while running
   and drains the trailing partial batch on `close()` (the production shutdown-drain guarantee). The age trigger is
   deliberately disabled (1-day age cap) — a virtual-clock age-flush is a follow-up because it has to interact with the

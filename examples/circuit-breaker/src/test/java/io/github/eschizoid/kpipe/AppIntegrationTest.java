@@ -56,14 +56,14 @@ class AppIntegrationTest {
       // timer fired (not just the trip).
       final var deadline = System.currentTimeMillis() + 15_000;
       while (System.currentTimeMillis() < deadline) {
-        final var trips = (long) handle.metrics().get("circuitBreakerTrips");
-        final var timeOpenMs = (long) handle.metrics().get("circuitBreakerTimeOpenMs");
+        final var trips = handle.metrics().circuitBreaker().trips();
+        final var timeOpenMs = handle.metrics().circuitBreaker().openTime().toMillis();
         if (trips >= 1 && timeOpenMs > 0L) break;
         Thread.sleep(100);
       }
 
-      final var trips = (long) handle.metrics().get("circuitBreakerTrips");
-      final var timeOpenMs = (long) handle.metrics().get("circuitBreakerTimeOpenMs");
+      final var trips = handle.metrics().circuitBreaker().trips();
+      final var timeOpenMs = handle.metrics().circuitBreaker().openTime().toMillis();
 
       assertTrue(trips >= 1, "breaker should have tripped at least once, got " + trips);
       assertTrue(timeOpenMs > 0L, "circuitBreakerTimeOpenMs should be > 0 after the probe fired, got " + timeOpenMs);

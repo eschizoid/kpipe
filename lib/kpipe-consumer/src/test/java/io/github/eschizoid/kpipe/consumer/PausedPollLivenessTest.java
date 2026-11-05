@@ -74,7 +74,7 @@ class PausedPollLivenessTest {
       // deterministic — no records have been fetched yet.
       TestAwaits.pollUntil(() -> !mockConsumer.paused().isEmpty(), AWAIT, "lag backpressure pauses the consumer");
       assertTrue(consumer.isPaused(), "Consumer state should be PAUSED");
-      assertTrue(consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT) >= 1);
+      assertTrue(consumer.metrics().backpressure().pauses() >= 1);
 
       // External lag drop: end offsets shrink to the frozen position. Before the fix the
       // consumer thread was parked here and never re-read the metric — this await timed out.
@@ -87,11 +87,11 @@ class PausedPollLivenessTest {
       mockConsumer.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k0".getBytes(UTF_8), "v0".getBytes()));
       mockConsumer.updateEndOffsets(Map.of(PARTITION, 1L));
       TestAwaits.pollUntil(
-        () -> consumer.getMetrics().get("messagesProcessed") == 1L,
+        () -> consumer.metrics().records().processed() == 1L,
         AWAIT,
         "record produced after resume is processed"
       );
-      assertEquals(1L, consumer.getMetrics().get("messagesProcessed"));
+      assertEquals(1L, consumer.metrics().records().processed());
     } finally {
       consumer.close();
     }
@@ -148,7 +148,7 @@ class PausedPollLivenessTest {
 
       // The pause contract still holds: all that polling fetched nothing.
       assertTrue(consumer.isPaused(), "Consumer should still be paused while lag stays high");
-      assertEquals(0L, consumer.getMetrics().get("messagesReceived"), "No records may be fetched while paused");
+      assertEquals(0L, consumer.metrics().records().received(), "No records may be fetched while paused");
     } finally {
       consumer.close();
     }

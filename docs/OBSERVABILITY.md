@@ -4,12 +4,26 @@ Metrics, pipeline-outcome counters, tracing, and the local dashboard stack. Snip
 
 ## Programmatic access
 
-`Handle.metrics()` (fluent path) and `KPipeConsumer.getMetrics()` (explicit path) return an unmodifiable
-`Map<String, Long>` snapshot of the consumer counters — received, processed, errors, in-flight, backpressure pauses, and
-friends. For periodic logging without an OTel backend, the log-based reporters in `kpipe-metrics`
-(`ConsumerMetricsReporter`, `EntryMetricsReporter`) attach via `Stream.withMetricsReporters(...)` on the fluent path or
-`KPipeConsumerBuilder.withMetricsReporters(...)` on the explicit one, with `withMetricsInterval(...)` setting the
-cadence — see [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
+`Handle.metrics()` and `KPipeConsumer.metrics()` return a `MetricsSnapshot`, a typed record of the consumer's counters:
+
+```java
+final var m = handle.metrics();
+m.records().processed();            // across every topic
+m.records("orders").failed();       // one topic
+m.records().averageProcessingTime();
+m.inFlight();
+m.backpressure().time();            // counts a pause still in progress
+m.circuitBreaker().trips();
+```
+
+`records()` holds received, processed, filtered, failed, retries, dlqSent, dlqFailed and processingTime. Filtered
+records (dropped by an operator, or for a topic with no pipeline) are counted apart from processed ones, so
+`received = processed + filtered + failed + inFlight`, except for records a shutdown abandoned for redelivery. Each
+snapshot reads the outcome counts before `received`, so it never shows more outcomes than records received.
+
+For periodic logging without an OTel backend, `EntryMetricsReporter` and your own `KPipeMetricsReporter` attach via
+`Stream.withMetricsReporters(...)` or `KPipeConsumerBuilder.withMetricsReporters(...)`, with `withMetricsInterval(...)`
+setting the cadence — see [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
 
 ## OpenTelemetry metrics
 

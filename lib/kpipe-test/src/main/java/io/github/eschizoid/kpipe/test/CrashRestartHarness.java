@@ -264,7 +264,7 @@ public final class CrashRestartHarness<T> {
         throw new AssertionError("crash-restart phase interrupted awaiting " + target + " records", e);
       }
     }
-    throw new AssertionError("crash-restart phase timed out awaiting " + target + " records: " + consumer.getMetrics());
+    throw new AssertionError("crash-restart phase timed out awaiting " + target + " records: " + consumer.metrics());
   }
 
   /// An [OffsetManager] that never commits: `trackOffset` / `markOffsetProcessed` are

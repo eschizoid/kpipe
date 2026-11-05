@@ -104,7 +104,7 @@ class MultiBuilderBatchIntegrationTest {
       // Wait for the consumer to acknowledge it has polled all 25 records before shutting down,
       // matching the deterministic-shutdown pattern from StreamBatchIntegrationTest.
       waitFor(
-        () -> handle.metrics().getOrDefault("messagesReceived", 0L) >= 25L,
+        () -> handle.metrics().records().received() >= 25L,
         Duration.ofSeconds(20),
         "expected consumer to receive all 25 records"
       );

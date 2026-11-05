@@ -74,11 +74,7 @@ class KPipeCircuitBreakerIntegrationTest {
 
     awaitCondition(() -> !mc.paused().isEmpty(), 5000);
     assertTrue(mc.paused().contains(PARTITION), "breaker should have tripped and paused the consumer");
-    assertEquals(
-      1L,
-      consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS),
-      "exactly one trip should have been recorded"
-    );
+    assertEquals(1L, consumer.metrics().circuitBreaker().trips(), "exactly one trip should have been recorded");
 
     // The health snapshot must tell the truth during the incident: the consumer thread is
     // alive (running) but the breaker is OPEN, so healthy() is false. isRunning() alone reads
@@ -134,7 +130,7 @@ class KPipeCircuitBreakerIntegrationTest {
     assertTrue(mc.paused().contains(PARTITION), "batch failures must trip the breaker and pause the consumer");
     assertEquals(
       1L,
-      consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS),
+      consumer.metrics().circuitBreaker().trips(),
       "exactly one trip should have been recorded from the batch failure path"
     );
 
@@ -170,7 +166,7 @@ class KPipeCircuitBreakerIntegrationTest {
     awaitCondition(() -> mc.paused().isEmpty(), 3000);
     assertTrue(mc.paused().isEmpty(), "after openDuration the breaker should probe and resume");
 
-    final var timeOpenMs = (long) consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS);
+    final var timeOpenMs = (long) consumer.metrics().circuitBreaker().openTime().toMillis();
     assertTrue(timeOpenMs > 0L, "circuitBreakerTimeOpenMs must be > 0 after a probe");
 
     consumer.close();
@@ -210,7 +206,7 @@ class KPipeCircuitBreakerIntegrationTest {
     // After a successful probe, the breaker should be CLOSED — no second trip even though the
     // pipeline saw more records. We sanity-check via the trips counter staying at 1.
     Thread.sleep(300); // grace period for any spurious trip to register
-    final var trips = (long) consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS);
+    final var trips = (long) consumer.metrics().circuitBreaker().trips();
     assertEquals(1L, trips, "after recovery the breaker should stay closed; got " + trips + " trips");
 
     consumer.close();
@@ -244,7 +240,7 @@ class KPipeCircuitBreakerIntegrationTest {
     Thread.sleep(200); // grace period for any delayed trip to land
 
     assertTrue(mc.paused().isEmpty(), "breaker should NOT have tripped at 40% failure rate");
-    assertEquals(0L, consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS));
+    assertEquals(0L, consumer.metrics().circuitBreaker().trips());
 
     consumer.close();
   }
@@ -266,11 +262,11 @@ class KPipeCircuitBreakerIntegrationTest {
       .build();
 
     consumer.start();
-    awaitCondition(() -> consumer.getMetrics().get("processingErrors") >= 5, 5000);
+    awaitCondition(() -> consumer.metrics().records().failed() >= 5, 5000);
 
-    assertEquals(0L, consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS));
+    assertEquals(0L, consumer.metrics().circuitBreaker().trips());
     assertTrue(mc.paused().isEmpty(), "no breaker configured → never pauses despite all failures");
-    assertNotEquals(0L, consumer.getMetrics().get("processingErrors"));
+    assertNotEquals(0L, consumer.metrics().records().failed());
 
     consumer.close();
   }
@@ -320,10 +316,10 @@ class KPipeCircuitBreakerIntegrationTest {
       .build();
 
     consumer.start();
-    awaitCondition(() -> consumer.getMetrics().get("processingErrors") >= 12, 5000);
+    awaitCondition(() -> consumer.metrics().records().failed() >= 12, 5000);
 
     assertTrue(mc.paused().isEmpty(), "bad records say nothing about downstream health");
-    assertEquals(0L, consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS));
+    assertEquals(0L, consumer.metrics().circuitBreaker().trips());
     consumer.close();
   }
 
@@ -348,10 +344,10 @@ class KPipeCircuitBreakerIntegrationTest {
       .build();
 
     consumer.start();
-    awaitCondition(() -> consumer.getMetrics().get("processingErrors") >= 12, 5000);
+    awaitCondition(() -> consumer.metrics().records().failed() >= 12, 5000);
 
     assertTrue(mc.paused().isEmpty(), "bad records say nothing about downstream health");
-    assertEquals(0L, consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS));
+    assertEquals(0L, consumer.metrics().circuitBreaker().trips());
     consumer.close();
   }
 }

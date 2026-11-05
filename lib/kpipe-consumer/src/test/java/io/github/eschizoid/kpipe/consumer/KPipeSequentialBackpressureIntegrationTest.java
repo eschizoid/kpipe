@@ -84,7 +84,7 @@ class KPipeSequentialBackpressureIntegrationTest {
 
     // Assert: consumer is paused
     assertTrue(mockConsumer.paused().contains(PARTITION), "Consumer should be paused due to high lag");
-    assertTrue(consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT) >= 1);
+    assertTrue(consumer.metrics().backpressure().pauses() >= 1);
 
     // Wait for resume. As it processes records, position will stay the same in MockConsumer
     // unless we manually update it OR we rely on how MockConsumer.poll() works.

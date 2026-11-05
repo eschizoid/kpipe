@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.HealthSnapshot;
+import io.github.eschizoid.kpipe.consumer.MetricsSnapshot;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -23,12 +24,11 @@ public interface Handle extends AutoCloseable {
   /// @return an immutable point-in-time health view
   HealthSnapshot health();
 
-  /// Returns an unmodifiable snapshot of the consumer's metrics. All values are counters or
-  /// gauges represented as `Long`. Returns an empty map when metrics are disabled on the
-  /// underlying consumer.
+  /// The consumer's counters now: records received, processed, filtered and failed, in total and
+  /// per topic, plus in-flight records, backpressure and circuit breaker figures.
   ///
-  /// @return metric name -> value snapshot
-  Map<String, Long> metrics();
+  /// @return a snapshot of the counters
+  MetricsSnapshot metrics();
 
   /// Waits up to `timeout` for the consumer to shut down.
   ///

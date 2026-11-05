@@ -119,7 +119,7 @@ class HardeningGuardsTest {
       final var record = new ConsumerRecord<>(TOPIC, 0, 5L, "k".getBytes(UTF_8), "v".getBytes(UTF_8));
       assertDoesNotThrow(() -> consumer.processRecord(record), "a throwing metrics impl must be swallowed");
       assertTrue(marked.contains(5L), "the record must still be marked processed");
-      assertEquals(1L, consumer.getMetrics().get("messagesProcessed"), "internal counters unaffected");
+      assertEquals(1L, consumer.metrics().records().processed(), "internal counters unaffected");
     }
   }
 

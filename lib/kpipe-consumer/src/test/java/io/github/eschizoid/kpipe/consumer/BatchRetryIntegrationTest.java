@@ -121,10 +121,10 @@ class BatchRetryIntegrationTest {
       awaitCondition(() -> !flushed.isEmpty(), 10_000);
 
       assertEquals(3, attempts.get(), "the pipeline must be driven once per attempt (1 initial + 2 retries)");
-      assertEquals(2L, consumer.getMetrics().get("retries"), "retries metric must count the two real retries");
+      assertEquals(2L, consumer.metrics().records().retries(), "retries metric must count the two real retries");
       assertEquals(1, flushed.size(), "the recovered record must reach the batch sink exactly once");
       assertTrue(dlqOffsets.isEmpty(), "a record that recovers on retry must never touch the DLQ");
-      assertEquals(0L, consumer.getMetrics().get("processingErrors"), "no terminal error for a recovered record");
+      assertEquals(0L, consumer.metrics().records().failed(), "no terminal error for a recovered record");
       assertTrue(errors.isEmpty(), "the error handler must not fire for a recovered record");
     } finally {
       consumer.close();
@@ -165,13 +165,13 @@ class BatchRetryIntegrationTest {
       awaitCondition(() -> !errors.isEmpty() && !dlqOffsets.isEmpty(), 10_000);
 
       assertEquals(2, attempts.get(), "the pipeline must be driven twice (1 initial + 1 retry)");
-      assertEquals(1L, consumer.getMetrics().get("retries"), "retries metric must count the single real retry");
+      assertEquals(1L, consumer.metrics().records().retries(), "retries metric must count the single real retry");
       assertEquals(1, errors.size(), "the error handler must observe the exhausted failure exactly once");
       assertEquals(1, errors.getFirst().retryCount(), "retryCount must reflect the retries actually performed");
       assertEquals(List.of(OFFSET), dlqOffsets, "the exhausted record must park in the DLQ");
       assertTrue(flushed.isEmpty(), "a never-passing record must not reach the batch sink");
-      assertEquals(1L, consumer.getMetrics().get("processingErrors"), "exactly one terminal error");
-      assertEquals(1L, consumer.getMetrics().get("dlqSent"), "exactly one DLQ send");
+      assertEquals(1L, consumer.metrics().records().failed(), "exactly one terminal error");
+      assertEquals(1L, consumer.metrics().records().dlqSent(), "exactly one DLQ send");
     } finally {
       consumer.close();
     }

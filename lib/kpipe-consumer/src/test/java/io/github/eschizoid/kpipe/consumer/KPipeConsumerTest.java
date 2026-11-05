@@ -381,8 +381,8 @@ class KPipeConsumerTest {
     assertTrue(processed.await(2, TimeUnit.SECONDS), "the record must be processed and buffered");
     // Confirm the record is buffered (in-flight gauge counts it) and the dispatcher is idle.
     final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-    while (consumer.getMetrics().getOrDefault("inFlight", 0L) < 1 && System.nanoTime() < deadline) Thread.sleep(5);
-    assertEquals(1L, consumer.getMetrics().get("inFlight"), "the record should be buffered, not yet flushed");
+    while (consumer.metrics().inFlight() < 1 && System.nanoTime() < deadline) Thread.sleep(5);
+    assertEquals(1L, consumer.metrics().inFlight(), "the record should be buffered, not yet flushed");
 
     final var startNs = System.nanoTime();
     consumer.close();
@@ -529,17 +529,17 @@ class KPipeConsumerTest {
     // Act
     consumer.processRecord(record);
     TestAwaits.pollUntil(
-      () -> consumer.getMetrics().get("messagesProcessed") == 1L,
+      () -> consumer.metrics().records().processed() == 1L,
       Duration.ofSeconds(2),
       "messagesProcessed reaches 1 after retry"
     );
 
     // Assert
-    final var metrics = consumer.getMetrics();
+    final var metrics = consumer.metrics();
     assertEquals(2, attempts.get());
-    assertEquals(1, metrics.get("messagesProcessed"));
-    assertEquals(1, metrics.get("retries"));
-    assertEquals(0, metrics.get("processingErrors"));
+    assertEquals(1, metrics.records().processed());
+    assertEquals(1, metrics.records().retries());
+    assertEquals(0, metrics.records().failed());
     consumer.close();
   }
 
@@ -562,7 +562,7 @@ class KPipeConsumerTest {
     // Act
     consumer.processRecord(record);
     TestAwaits.pollUntil(
-      () -> consumer.getMetrics().get("processingErrors") == 1L,
+      () -> consumer.metrics().records().failed() == 1L,
       Duration.ofSeconds(2),
       "processingErrors reaches 1 after exhausting retries"
     );
@@ -574,10 +574,10 @@ class KPipeConsumerTest {
     assertEquals(record, error.record());
     assertEquals(2, error.retryCount());
     assertNotNull(error.exception());
-    final var metrics = consumer.getMetrics();
-    assertEquals(2, metrics.get("retries"));
-    assertEquals(0, metrics.get("messagesProcessed"));
-    assertEquals(1, metrics.get("processingErrors"));
+    final var metrics = consumer.metrics();
+    assertEquals(2, metrics.records().retries());
+    assertEquals(0, metrics.records().processed());
+    assertEquals(1, metrics.records().failed());
     consumer.close();
   }
 
@@ -603,17 +603,17 @@ class KPipeConsumerTest {
       consumer.processRecord(record);
     }
     TestAwaits.pollUntil(
-      () -> consumer.getMetrics().get("messagesProcessed") == 3L,
+      () -> consumer.metrics().records().processed() == 3L,
       Duration.ofSeconds(2),
       "messagesProcessed reaches 3 after intermittent retries"
     );
 
     // Assert
-    final var metrics = consumer.getMetrics();
-    assertEquals(3, metrics.get("messagesReceived"));
-    assertEquals(3, metrics.get("messagesProcessed"));
-    assertEquals(6, metrics.get("retries"));
-    assertEquals(0, metrics.get("processingErrors"));
+    final var metrics = consumer.metrics();
+    assertEquals(3, metrics.records().received());
+    assertEquals(3, metrics.records().processed());
+    assertEquals(6, metrics.records().retries());
+    assertEquals(0, metrics.records().failed());
     consumer.close();
   }
 
@@ -773,8 +773,8 @@ class KPipeConsumerTest {
     assertTrue(sinkStarted.await(3, TimeUnit.SECONDS), "All 3 records should be in-flight at the sink");
 
     // In-flight = 3 received - 0 processed = 3 >= highWatermark(2)
-    final var metrics = consumer.getMetrics();
-    assertTrue(metrics.get("messagesReceived") >= 3);
+    final var metrics = consumer.metrics();
+    assertTrue(metrics.records().received() >= 3);
 
     sinkRelease.countDown();
     consumer.close();
@@ -809,9 +809,9 @@ class KPipeConsumerTest {
     assertTrue(sinkStarted.await(3, TimeUnit.SECONDS), "All 3 records should be in-flight at the sink");
 
     consumer.pause();
-    final var metrics = consumer.getMetrics();
-    assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
-    assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS));
+    final var metrics = consumer.metrics();
+    assertEquals(0L, metrics.backpressure().pauses(), "a manual pause is not a backpressure pause");
+    assertEquals(java.time.Duration.ZERO, metrics.backpressure().time());
 
     sinkRelease.countDown();
     consumer.close();
@@ -827,9 +827,9 @@ class KPipeConsumerTest {
       .build();
 
     // Assert: backpressure metric keys are present by default
-    final var metrics = consumer.getMetrics();
-    assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
-    assertTrue(metrics.containsKey(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS));
+    final var metrics = consumer.metrics();
+    assertEquals(0L, metrics.backpressure().pauses(), "a manual pause is not a backpressure pause");
+    assertEquals(java.time.Duration.ZERO, metrics.backpressure().time());
 
     consumer.close();
   }

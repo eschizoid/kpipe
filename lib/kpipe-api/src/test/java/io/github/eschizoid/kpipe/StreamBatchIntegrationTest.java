@@ -85,7 +85,7 @@ class StreamBatchIntegrationTest {
       // the trailing records never reach the buffer (failure surfaced after the partial-batch
       // flusher refactor reshuffled timing).
       waitFor(
-        () -> handle.metrics().getOrDefault("messagesReceived", 0L) >= 25L,
+        () -> handle.metrics().records().received() >= 25L,
         Duration.ofSeconds(20),
         "expected consumer to receive all 25 records"
       );

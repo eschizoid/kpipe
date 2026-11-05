@@ -133,7 +133,7 @@ class DlqTerminalContractTest {
         if (expectMarked) {
           awaitCondition(() -> recorder.marked.contains(OFFSET), 5_000);
         } else {
-          awaitCondition(() -> consumer.getMetrics().getOrDefault("dlqFailed", 0L) >= 1, 5_000);
+          awaitCondition(() -> consumer.metrics().records().dlqFailed() >= 1, 5_000);
         }
         awaitCondition(() -> errorsSeen.get() >= 1, 5_000);
         assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed);
@@ -155,8 +155,8 @@ class DlqTerminalContractTest {
     } else {
       assertFalse(recorder.marked.contains(OFFSET), "offset must stay pending when the record is not durably parked");
     }
-    assertEquals(expectDlqSent, consumer.getMetrics().getOrDefault("dlqSent", 0L), "dlqSent");
-    assertEquals(expectDlqFailed, consumer.getMetrics().getOrDefault("dlqFailed", 0L), "dlqFailed");
+    assertEquals(expectDlqSent, consumer.metrics().records().dlqSent(), "dlqSent");
+    assertEquals(expectDlqFailed, consumer.metrics().records().dlqFailed(), "dlqFailed");
     assertEquals(1, errorsSeen.get(), "error handler must observe the failure exactly once");
   }
 

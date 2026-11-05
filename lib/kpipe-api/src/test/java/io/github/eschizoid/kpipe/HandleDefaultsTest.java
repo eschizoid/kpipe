@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerState;
 import io.github.eschizoid.kpipe.consumer.HealthSnapshot;
+import io.github.eschizoid.kpipe.consumer.MetricsSnapshot;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -35,8 +36,8 @@ class HandleDefaultsTest {
     }
 
     @Override
-    public Map<String, Long> metrics() {
-      return Map.of();
+    public MetricsSnapshot metrics() {
+      return MetricsSnapshot.empty();
     }
 
     @Override

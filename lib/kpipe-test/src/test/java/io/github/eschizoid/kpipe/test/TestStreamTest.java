@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
@@ -199,7 +198,8 @@ class TestStreamTest {
       driver.flush();
 
       assertEquals(List.of("keep"), ids(captured), "a null-returning branch filters the record");
-      assertEquals(2L, driver.metrics().get("messagesProcessed"), "branch-filtered records still count processed");
+      assertEquals(1L, driver.metrics().records().processed());
+      assertEquals(1L, driver.metrics().records().filtered(), "a branch that returns null filters the record");
       assertEquals(List.of(), driver.errors(), "branch filtering is not an error");
     }
   }
@@ -209,7 +209,7 @@ class TestStreamTest {
   // ────────────────────────────────────────────────────────────────────────────────
 
   @Test
-  void filteredRecordsAreCountedProcessedNotErrored() {
+  void filteredRecordsAreCountedFilteredNotErrored() {
     final var captured = new CapturingSink<Map<String, Object>>();
     try (
       final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
@@ -224,8 +224,9 @@ class TestStreamTest {
       driver.flush();
 
       assertEquals(List.of("keep-1", "keep-2"), ids(captured), "only records passing the filter reach the sink");
-      assertEquals(4L, driver.metrics().get("messagesProcessed"), "filtered records still count as processed");
-      assertEquals(0L, driver.metrics().get("processingErrors"), "intentional filtering is not an error");
+      assertEquals(2L, driver.metrics().records().processed());
+      assertEquals(2L, driver.metrics().records().filtered(), "filtered records are counted apart from processed");
+      assertEquals(0L, driver.metrics().records().failed(), "intentional filtering is not an error");
       assertEquals(List.of(), driver.errors(), "intentional filtering must not report ProcessingErrors");
     }
   }
@@ -244,8 +245,9 @@ class TestStreamTest {
       driver.flush();
 
       assertEquals(1, captured.count());
-      assertEquals(2L, driver.metrics().get("messagesProcessed"));
-      assertEquals(0L, driver.metrics().get("processingErrors"));
+      assertEquals(1L, driver.metrics().records().processed());
+      assertEquals(1L, driver.metrics().records().filtered());
+      assertEquals(0L, driver.metrics().records().failed());
     }
   }
 
@@ -275,8 +277,8 @@ class TestStreamTest {
         ids(captured),
         "the failing record must not reach the sink, later records still flow"
       );
-      assertEquals(2L, driver.metrics().get("messagesProcessed"));
-      assertEquals(1L, driver.metrics().get("processingErrors"));
+      assertEquals(2L, driver.metrics().records().processed());
+      assertEquals(1L, driver.metrics().records().failed());
 
       assertEquals(1, driver.errors().size());
       final var error = driver.errors().getFirst();
@@ -295,7 +297,7 @@ class TestStreamTest {
       driver.flush();
 
       assertEquals(List.of("valid"), ids(captured), "the malformed record must not poison subsequent valid records");
-      assertEquals(1L, driver.metrics().get("processingErrors"));
+      assertEquals(1L, driver.metrics().records().failed());
       assertEquals(1, driver.errors().size());
       assertNotNull(driver.errors().getFirst().exception());
     }
@@ -309,7 +311,7 @@ class TestStreamTest {
       driver.flush();
 
       assertEquals(0, captured.count());
-      assertEquals(1L, driver.metrics().get("processingErrors"));
+      assertEquals(1L, driver.metrics().records().failed());
       assertEquals(1, driver.errors().size());
     }
   }
@@ -353,7 +355,7 @@ class TestStreamTest {
       driver.flush();
 
       assertEquals(2, driver.errors().size(), "recording happens before the user handler, so both errors land");
-      assertEquals(2L, driver.metrics().get("processingErrors"));
+      assertEquals(2L, driver.metrics().records().failed());
     }
   }
 
@@ -476,10 +478,10 @@ class TestStreamTest {
       driver.send("v".getBytes(StandardCharsets.UTF_8)).flush();
 
       final var metrics = driver.metrics();
-      assertEquals(1L, metrics.get("messagesReceived"));
-      assertEquals(1L, metrics.get("messagesProcessed"));
-      assertEquals(0L, metrics.get("inFlight"));
-      assertTrue(metrics.containsKey("processingErrors"));
+      assertEquals(1L, metrics.records().received());
+      assertEquals(1L, metrics.records().processed());
+      assertEquals(0L, metrics.inFlight());
+      assertEquals(0L, metrics.records().failed());
     }
   }
 }

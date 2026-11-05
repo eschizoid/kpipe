@@ -14,9 +14,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 /// downstream that fails the first ten records (50%+ failure rate over a window of 5 ⇒ breaker
 /// trips), then recovers — driving the CLOSED → OPEN → HALF_OPEN → CLOSED cycle in one run.
 ///
-/// Watch the logs for `circuit breaker tripped`, `half-open probe`, and `breaker closed`. The
-/// JSON metrics endpoint (via `handle.metrics()`) exposes `circuitBreakerTrips` and
-/// `circuitBreakerTimeOpenMs`.
+/// Watch the logs for `circuit breaker tripped`, `half-open probe`, and `breaker closed`.
+/// `handle.metrics().circuitBreaker()` holds the trip count and the time spent open.
 public final class App {
 
   private static final Logger LOGGER = System.getLogger(App.class.getName());
