@@ -11,6 +11,7 @@ description = "KPipe Consumer - Functional Kafka consumer with virtual threads"
 dependencies {
   api(project(":lib:kpipe-core"))
   api(project(":lib:kpipe-producer"))
+  api(project(":lib:kpipe-metrics"))
   api(project(":lib:kpipe-tracing"))
 
   implementation(libs.kafkaClients)

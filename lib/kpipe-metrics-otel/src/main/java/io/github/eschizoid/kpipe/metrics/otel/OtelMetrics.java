@@ -52,6 +52,7 @@ import java.util.function.LongSupplier;
 /// | `kpipe.consumer.dlq.sent` | counter, per topic | `{record}` |
 /// | `kpipe.consumer.dlq.failed` | counter, per topic | `{record}` |
 /// | `kpipe.consumer.records.in_flight` | up-down counter | `{record}` |
+/// | `kpipe.consumer.lag` | up-down counter, per topic | `{record}` |
 /// | `kpipe.consumer.processing.duration` | histogram, per topic | `s` |
 /// | `kpipe.consumer.backpressure.pauses` | counter | `{pause}` |
 /// | `kpipe.consumer.backpressure.time` | counter | `s` |
@@ -67,7 +68,8 @@ import java.util.function.LongSupplier;
 /// One instance serves any number of consumers, and consumers that share a `group.id` and topic
 /// add up into the same series. A closed consumer's final counts stay in its counters for the
 /// instance's lifetime, so a counter never goes down when one of its consumers closes; the
-/// consumer drops out of `in_flight` and the state instrument. The instance stays registered with
+/// consumer drops out of `in_flight`, the lag and the state instrument. The instance stays
+// registered with
 /// the SDK, so create one per `OpenTelemetry` and share it rather than one per consumer.
 public final class OtelMetrics implements MetricsExporter {
 
@@ -124,6 +126,11 @@ public final class OtelMetrics implements MetricsExporter {
       .setDescription("Records the consumer holds: processing, queued behind their key, or buffered")
       .setUnit("{record}")
       .buildObserver();
+    final var lag = meter
+      .upDownCounterBuilder("kpipe.consumer.lag")
+      .setDescription("Records between the consumer's position and the end of the log")
+      .setUnit("{record}")
+      .buildObserver();
     final var pauses = meter
       .counterBuilder("kpipe.consumer.backpressure.pauses")
       .setDescription("Times backpressure paused consumption")
@@ -165,6 +172,7 @@ public final class OtelMetrics implements MetricsExporter {
           openTime.record(g.openNanos / 1e9, attributes);
         });
         collection.inFlight.forEach((attributes, n) -> inFlight.record(n, attributes));
+        collection.lag.forEach((attributes, n) -> lag.record(n, attributes));
         collection.states.forEach((attributes, n) -> state.record(n, attributes));
       },
       received,
@@ -175,6 +183,7 @@ public final class OtelMetrics implements MetricsExporter {
       dlqSent,
       dlqFailed,
       inFlight,
+      lag,
       pauses,
       pausedTime,
       trips,
@@ -183,6 +192,9 @@ public final class OtelMetrics implements MetricsExporter {
     );
   }
 
+  /// Creates an exporter and registers its instruments. Create one per `OpenTelemetry` and share
+  /// it: its callback stays registered with the SDK.
+  ///
   /// @param openTelemetry where to register the instruments
   /// @return an exporter for any number of consumers
   public static OtelMetrics of(final OpenTelemetry openTelemetry) {
@@ -255,6 +267,10 @@ public final class OtelMetrics implements MetricsExporter {
         if (reading == null) continue;
         export.addCounts(reading, collection.topics, collection.groups);
         collection.inFlight.merge(export.group, reading.metrics().inFlight(), Long::sum);
+        reading
+          .metrics()
+          .lagByTopic()
+          .forEach((topic, n) -> collection.lag.merge(export.topicAttributes(topic), n, Long::sum));
         export.stateAttributes.forEach((s, attributes) ->
           collection.states.merge(attributes, s == reading.state() ? 1L : 0L, Long::sum)
         );
@@ -269,6 +285,7 @@ public final class OtelMetrics implements MetricsExporter {
     final Map<Attributes, TopicTotals> topics = new HashMap<>();
     final Map<Attributes, GroupTotals> groups = new HashMap<>();
     final Map<Attributes, Long> inFlight = new HashMap<>();
+    final Map<Attributes, Long> lag = new HashMap<>();
     final Map<Attributes, Long> states = new HashMap<>();
 
     TopicTotals topic(final Attributes attributes) {

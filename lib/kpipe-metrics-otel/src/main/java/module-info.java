@@ -1,4 +1,4 @@
-/// KPipe Metrics OTel module — OpenTelemetry export of KPipe consumer and producer metrics.
+/// KPipe Metrics OTel module — OpenTelemetry export of KPipe consumer metrics.
 ///
 /// Add this module only if you want to export KPipe metrics through the OpenTelemetry pipeline
 /// (Prometheus, OTLP, etc.). The library code in `kpipe-metrics` ships interfaces only and
@@ -15,8 +15,8 @@ module io.github.eschizoid.kpipe.metrics.otel {
   requires transitive io.github.eschizoid.kpipe.metrics;
   requires transitive io.github.eschizoid.kpipe.core;
   requires transitive io.github.eschizoid.kpipe.consumer;
-  // transitive: OtelMetrics and OtelProducerMetrics take an OpenTelemetry (an io.opentelemetry.api
-  // type) in their public API, so callers must read it too.
+  // transitive: OtelMetrics takes an OpenTelemetry (an io.opentelemetry.api type) in its public
+  // API, so callers must read it too.
   requires transitive io.opentelemetry.api;
 
   exports io.github.eschizoid.kpipe.metrics.otel;

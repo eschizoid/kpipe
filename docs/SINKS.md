@@ -44,7 +44,6 @@ pipeline; the failure is logged and contained at the sink boundary.
 
 ```java
 import org.apache.kafka.clients.producer.KafkaProducer;
-import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
 import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 
@@ -54,12 +53,14 @@ registry.registerOperator(RegistryKey.json("transform"), transform);
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
   .pipe(RegistryKey.json("transform"))
-  .toSink(KafkaMessageSink.of(
-    producer, "output-topic", JsonFormat.INSTANCE::serialize, ProducerMetrics.noop(), Tracer.noop()))
+  .toSink(KafkaMessageSink.of(producer, "output-topic", JsonFormat.INSTANCE::serialize, Tracer.noop()))
   .build();
 ```
 
-Pass a real `ProducerMetrics` / `Tracer` to count sends and propagate trace context; the noops cost nothing.
+Each record waits for the broker to acknowledge its send, so its offset commits only once the message is written. A
+failed send fails the record: it is retried, then goes to the error handler and the dead-letter topic, and counts as
+failed in the consumer's metrics. In SEQUENTIAL mode each record waits for its own ack. Pass a real `Tracer` to
+propagate trace context into the outbound headers.
 
 ## Fan-out to multiple sinks
 

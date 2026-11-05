@@ -12,7 +12,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -33,7 +32,7 @@ class KPipeProducerTest {
 
   @Test
   void shouldRejectNullProducer() {
-    assertThrows(NullPointerException.class, () -> new KPipeProducer<>(null, true, null, Tracer.noop()));
+    assertThrows(NullPointerException.class, () -> new KPipeProducer<>(null, true, Tracer.noop()));
   }
 
   @Test
@@ -42,7 +41,7 @@ class KPipeProducerTest {
     final var expected = mock(RecordMetadata.class);
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(CompletableFuture.completedFuture(expected));
 
-    final var result = new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).send(
+    final var result = new KPipeProducer<>(mockProducer, false, Tracer.noop()).send(
       new ProducerRecord<>(TOPIC, "k".getBytes(), "v".getBytes())
     );
 
@@ -57,9 +56,7 @@ class KPipeProducerTest {
     );
 
     final var ex = assertThrows(RuntimeException.class, () ->
-      new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).send(
-        new ProducerRecord<>(TOPIC, null, "v".getBytes())
-      )
+      new KPipeProducer<>(mockProducer, false, Tracer.noop()).send(new ProducerRecord<>(TOPIC, null, "v".getBytes()))
     );
     assertEquals("Send failed", ex.getMessage());
   }
@@ -71,7 +68,7 @@ class KPipeProducerTest {
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(future);
     when(future.get()).thenThrow(new InterruptedException());
 
-    final var producer = new KPipeProducer<>(mockProducer, false, null, Tracer.noop());
+    final var producer = new KPipeProducer<>(mockProducer, false, Tracer.noop());
 
     assertThrows(RuntimeException.class, () -> producer.send(new ProducerRecord<>(TOPIC, null, "v".getBytes())));
     assertTrue(Thread.interrupted(), "interrupt flag should be restored");
@@ -81,9 +78,9 @@ class KPipeProducerTest {
   @SuppressWarnings("unchecked")
   void shouldReturnFutureOnSendAsync() {
     final var future = CompletableFuture.completedFuture(mock(RecordMetadata.class));
-    when(mockProducer.send(any(ProducerRecord.class), any(Callback.class))).thenReturn(future);
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(future);
 
-    final var result = new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).sendAsync(
+    final var result = new KPipeProducer<>(mockProducer, false, Tracer.noop()).sendAsync(
       new ProducerRecord<>(TOPIC, null, "v".getBytes())
     );
 
@@ -98,7 +95,7 @@ class KPipeProducerTest {
     );
 
     final var record = new ConsumerRecord<>(TOPIC, 2, 42L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).sendToDlq(
+    new KPipeProducer<>(mockProducer, false, Tracer.noop()).sendToDlq(
       DLQ_TOPIC,
       record,
       TOPIC,
@@ -146,7 +143,7 @@ class KPipeProducerTest {
     };
 
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    new KPipeProducer<>(mockProducer, false, null, stampingTracer).sendToDlq(
+    new KPipeProducer<>(mockProducer, false, stampingTracer).sendToDlq(
       DLQ_TOPIC,
       record,
       TOPIC,
@@ -171,7 +168,7 @@ class KPipeProducerTest {
     );
 
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    final var sent = new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).sendToDlq(
+    final var sent = new KPipeProducer<>(mockProducer, false, Tracer.noop()).sendToDlq(
       DLQ_TOPIC,
       record,
       TOPIC,
@@ -189,7 +186,7 @@ class KPipeProducerTest {
     );
 
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    final var sent = new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).sendToDlq(
+    final var sent = new KPipeProducer<>(mockProducer, false, Tracer.noop()).sendToDlq(
       DLQ_TOPIC,
       record,
       TOPIC,
@@ -203,7 +200,7 @@ class KPipeProducerTest {
   @Test
   void shouldReturnFalseAndBeNoOpWhenDlqTopicIsNull() {
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
-    final var sent = new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).sendToDlq(
+    final var sent = new KPipeProducer<>(mockProducer, false, Tracer.noop()).sendToDlq(
       null,
       record,
       TOPIC,
@@ -224,7 +221,7 @@ class KPipeProducerTest {
     final var record = new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(), "v".getBytes());
     // Exception with null message should not throw
     assertDoesNotThrow(() ->
-      new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).sendToDlq(
+      new KPipeProducer<>(mockProducer, false, Tracer.noop()).sendToDlq(
         DLQ_TOPIC,
         record,
         TOPIC,
@@ -242,33 +239,33 @@ class KPipeProducerTest {
 
   @Test
   void shouldCloseUnderlyingProducerWhenOwned() {
-    new KPipeProducer<>(mockProducer, true, null, Tracer.noop()).close();
+    new KPipeProducer<>(mockProducer, true, Tracer.noop()).close();
     verify(mockProducer).close();
   }
 
   @Test
   void shouldNotCloseUnderlyingProducerWhenNotOwned() {
-    new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).close();
+    new KPipeProducer<>(mockProducer, false, Tracer.noop()).close();
     verify(mockProducer, never()).close();
   }
 
   @Test
   void shouldCloseOwnedProducerWithinTheGivenTimeout() {
-    new KPipeProducer<>(mockProducer, true, null, Tracer.noop()).close(Duration.ofSeconds(5));
+    new KPipeProducer<>(mockProducer, true, Tracer.noop()).close(Duration.ofSeconds(5));
     verify(mockProducer).close(Duration.ofSeconds(5));
     verify(mockProducer, never()).close();
   }
 
   @Test
   void shouldNotCloseUnownedProducerWithATimeout() {
-    new KPipeProducer<>(mockProducer, false, null, Tracer.noop()).close(Duration.ofSeconds(5));
+    new KPipeProducer<>(mockProducer, false, Tracer.noop()).close(Duration.ofSeconds(5));
     verify(mockProducer, never()).close(any(Duration.class));
   }
 
   @Test
   void shouldHandleExceptionDuringClose() {
     doThrow(new RuntimeException("close failed")).when(mockProducer).close();
-    assertDoesNotThrow(() -> new KPipeProducer<>(mockProducer, true, null, Tracer.noop()).close());
+    assertDoesNotThrow(() -> new KPipeProducer<>(mockProducer, true, Tracer.noop()).close());
   }
 
   @Test
@@ -318,7 +315,7 @@ class KPipeProducerTest {
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
 
-    final var producer = new KPipeProducer<>(mockProducer, false, null, Tracer.noop());
+    final var producer = new KPipeProducer<>(mockProducer, false, Tracer.noop());
     final var errors = new CopyOnWriteArrayList<Throwable>();
     final int threadCount = 100;
 
@@ -347,7 +344,7 @@ class KPipeProducerTest {
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
 
-    final var kpipeProducer = new KPipeProducer<>(mockProducer, false, null, Tracer.noop());
+    final var kpipeProducer = new KPipeProducer<>(mockProducer, false, Tracer.noop());
     final var successCount = new AtomicLong(0);
     final var errors = new CopyOnWriteArrayList<Throwable>();
     final int threadCount = 50;

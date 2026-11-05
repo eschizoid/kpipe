@@ -3,7 +3,7 @@ plugins {
   jacoco
 }
 
-description = "KPipe Metrics OTel - OpenTelemetry-backed export of KPipe consumer and producer metrics"
+description = "KPipe Metrics OTel - OpenTelemetry-backed export of KPipe consumer metrics"
 
 dependencies {
   api(project(":lib:kpipe-metrics"))

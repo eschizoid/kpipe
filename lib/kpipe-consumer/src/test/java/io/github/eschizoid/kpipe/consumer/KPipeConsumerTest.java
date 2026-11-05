@@ -399,6 +399,41 @@ class KPipeConsumerTest {
     assertTrue(manager.marks.get() >= 1, "the flushed record's offset must be marked at teardown");
   }
 
+  /// The poll loop reads each topic's lag from the client's positions and end offsets, summed over
+  /// the assigned partitions, and a closed consumer reports none.
+  @Test
+  void lagIsSampledPerTopicAfterEachPoll() throws InterruptedException {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    final var first = new TopicPartition(TOPIC, 0);
+    final var second = new TopicPartition(TOPIC, 1);
+    mock.assign(List.of(first, second));
+    mock.updateBeginningOffsets(Map.of(first, 0L, second, 0L));
+    mock.updateEndOffsets(Map.of(first, 10L, second, 4L));
+
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    assertEquals(0L, consumer.metrics().lag(), "no lag before the first poll");
+
+    consumer.start();
+    TestAwaits.pollUntil(() -> consumer.metrics().lag(TOPIC) == 14L, Duration.ofSeconds(5), "lag of 14 sampled");
+    assertEquals(14L, consumer.metrics().lag());
+    assertEquals(0L, consumer.metrics().lag("another-topic"));
+
+    consumer.close();
+    assertEquals(0L, consumer.metrics().lag(), "a closed consumer reports no lag");
+  }
+
   @Test
   void closeBeforeStartReleasesKafkaConsumer() {
     // A consumer built but never started must still release every resource the constructor

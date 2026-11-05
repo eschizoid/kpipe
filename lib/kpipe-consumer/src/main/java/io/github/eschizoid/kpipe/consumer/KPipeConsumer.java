@@ -609,6 +609,7 @@ public class KPipeConsumer implements AutoCloseable {
             final var records = health.heldByInFlightBackpressure()
               ? pollAfterBackpressureWait()
               : pollRecords(pollTimeout);
+            sampleLag();
             if (records != null && !records.isEmpty()) processRecords(records);
           }
         } catch (final Exception e) {
@@ -984,6 +985,7 @@ public class KPipeConsumer implements AutoCloseable {
   private void releaseConstructedResources() {
     if (!resourcesReleased.compareAndSet(false, true)) return; // already released by another path
     counters.stopClocks();
+    counters.lagSampled(Map.of());
     // Every step is best-effort: the CAS above already fired, so a throw here would leak the
     // remaining resources (no path retries). Catch + log each so teardown always runs to the end.
     try {
@@ -1156,6 +1158,21 @@ public class KPipeConsumer implements AutoCloseable {
     var total = dispatcher.drainableCount();
     for (final var wrapper : batchWrappers.values()) total += wrapper.bufferedCount();
     return total;
+  }
+
+  /// Records each topic's lag from the client's fetch positions; no broker call. Runs on the
+  /// consumer thread, the only one allowed to touch the Kafka consumer.
+  private void sampleLag() {
+    try {
+      final var lag = new HashMap<String, Long>();
+      for (final var partition : kafkaConsumer.assignment()) {
+        final var partitionLag = kafkaConsumer.currentLag(partition);
+        if (partitionLag.isPresent()) lag.merge(partition.topic(), partitionLag.getAsLong(), Long::sum);
+      }
+      counters.lagSampled(lag);
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.DEBUG, "Could not read consumer lag", e);
+    }
   }
 
   private ConsumerRecords<byte[], byte[]> pollRecords(final Duration timeout) {

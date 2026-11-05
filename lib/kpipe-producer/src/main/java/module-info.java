@@ -1,7 +1,6 @@
 /// KPipe producer module — Kafka producer and Kafka-backed sink implementations.
 module io.github.eschizoid.kpipe.producer {
   requires transitive io.github.eschizoid.kpipe.core;
-  requires transitive io.github.eschizoid.kpipe.metrics;
   // transitive: KPipeProducer / KafkaMessageSink expose Tracer in their public API.
   requires transitive io.github.eschizoid.kpipe.tracing;
   requires transitive kafka.clients;

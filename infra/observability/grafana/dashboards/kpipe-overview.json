@@ -202,6 +202,26 @@
         "textMode": "auto",
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       }
+    },
+    {
+      "title": "Consumer Lag",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (messaging_destination_name) (kpipe_consumer_lag)",
+          "legendFormat": "{{messaging_destination_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
     }
   ],
   "schemaVersion": 39,
@@ -210,5 +230,5 @@
   "time": { "from": "now-15m", "to": "now" },
   "title": "KPipe Overview",
   "uid": "kpipe-overview",
-  "version": 3
+  "version": 4
 }
