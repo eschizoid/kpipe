@@ -3,11 +3,12 @@ plugins {
   jacoco
 }
 
-description = "KPipe Metrics OTel - OpenTelemetry-backed implementation of kpipe-metrics interfaces"
+description = "KPipe Metrics OTel - OpenTelemetry-backed export of KPipe consumer and producer metrics"
 
 dependencies {
   api(project(":lib:kpipe-metrics"))
   api(project(":lib:kpipe-core"))
+  api(project(":lib:kpipe-consumer"))
   api(libs.opentelemetryApi)
 
   testImplementation(platform(libs.junitBom))
@@ -17,9 +18,7 @@ dependencies {
   testImplementation(libs.mockitoCore)
   testImplementation(libs.mockitoJunitJupiter)
 
-  // Real SDK + InMemoryMetricReader for assertions that the OTel impls actually emit metrics
-  // with the right name, value, and attributes — the previous noop-only smoke tests would let
-  // emission regressions land silently.
+  // Real SDK + InMemoryMetricReader: tests read back each metric's name, value and attributes.
   testImplementation(libs.opentelemetrySdk)
   testImplementation(libs.opentelemetrySdkTesting)
 }

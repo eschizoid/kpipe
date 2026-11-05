@@ -34,9 +34,9 @@ import java.util.concurrent.atomic.AtomicLong;
 /// bucket. `computeIfAbsent` makes the load+store atomic — if two threads miss on the same ID
 /// concurrently, only one HTTP call goes out and the other waits for it to populate.
 ///
-/// **Observability.** [#hitCount] and [#missCount] expose cumulative counters so the user can
-/// wire these into their metrics layer (see `kpipe-metrics-otel`'s
-/// `PipelineMetricsObserver.bindSchemaRegistryCache(...)`).
+/// **Observability.** [#hitCount], [#missCount] and [#size] expose the cache so the user can
+/// wire it into their metrics layer (see `kpipe-metrics-otel`'s
+/// `OtelMetrics.exportSchemaRegistryCache(...)`).
 ///
 /// ```java
 /// final var raw = new ConfluentSchemaResolver("<http://schema-registry:8081>");

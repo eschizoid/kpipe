@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
@@ -69,7 +68,7 @@ public final class KPipeConsumerBuilder {
   BackpressureController backpressureController;
   String deadLetterTopic;
   KPipeProducer<byte[], byte[]> kpipeProducer;
-  ConsumerMetrics consumerMetrics;
+  MetricsExporter metricsExporter;
   Tracer tracer;
   CircuitBreakerController circuitBreakerController;
   final List<KPipeMetricsReporter> metricsReporters = new ArrayList<>();
@@ -495,16 +494,14 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Sets the OpenTelemetry metrics instruments for this consumer.
+  /// Exports this consumer's metrics to a monitoring backend, such as OpenTelemetry through
+  /// `OtelMetrics.of(openTelemetry)` from `kpipe-metrics-otel`. Without an exporter the metrics are
+  /// still counted and readable through [KPipeConsumer#metrics].
   ///
-  /// Use [io.github.eschizoid.kpipe.metrics.ConsumerMetrics] to create an instrumented instance,
-  /// or
-  /// [ConsumerMetrics#noop()] for a no-op default.
-  ///
-  /// @param metrics the consumer metrics instruments
-  /// @return This builder instance for method chaining
-  public KPipeConsumerBuilder withMetrics(final ConsumerMetrics metrics) {
-    this.consumerMetrics = Objects.requireNonNull(metrics, "metrics cannot be null");
+  /// @param exporter the exporter
+  /// @return this builder
+  public KPipeConsumerBuilder withMetrics(final MetricsExporter exporter) {
+    this.metricsExporter = Objects.requireNonNull(exporter, "metrics exporter cannot be null");
     return this;
   }
 

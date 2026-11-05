@@ -7,14 +7,14 @@
   "links": [],
   "panels": [
     {
-      "title": "Messages Received (rate/s)",
+      "title": "Records Received (rate/s)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum by (pipeline) (rate(kpipe_consumer_messages_received_total[30s]))",
-          "legendFormat": "{{pipeline}}",
+          "expr": "sum by (messaging_destination_name) (rate(kpipe_consumer_records_received_total[30s]))",
+          "legendFormat": "{{messaging_destination_name}}",
           "refId": "A"
         }
       ],
@@ -27,14 +27,14 @@
       }
     },
     {
-      "title": "Messages Processed (rate/s)",
+      "title": "Records Processed (rate/s)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum by (pipeline) (rate(kpipe_consumer_messages_processed_total[30s]))",
-          "legendFormat": "{{pipeline}}",
+          "expr": "sum by (messaging_destination_name) (rate(kpipe_consumer_records_processed_total[30s]))",
+          "legendFormat": "{{messaging_destination_name}}",
           "refId": "A"
         }
       ],
@@ -53,27 +53,27 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (pipeline, le) (rate(kpipe_consumer_processing_duration_milliseconds_bucket[30s])))",
-          "legendFormat": "{{pipeline}}",
+          "expr": "histogram_quantile(0.99, sum by (messaging_destination_name, le) (rate(kpipe_consumer_processing_duration_seconds_bucket[30s])))",
+          "legendFormat": "{{messaging_destination_name}}",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms",
+          "unit": "s",
           "color": { "mode": "palette-classic" }
         },
         "overrides": []
       }
     },
     {
-      "title": "Total Errors",
+      "title": "Records Failed",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(kpipe_consumer_messages_errors_total) or on() vector(0)",
+          "expr": "sum(kpipe_consumer_records_failed_total) or on() vector(0)",
           "refId": "A"
         }
       ],
@@ -107,7 +107,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(kpipe_consumer_messages_inflight) or on() vector(0)",
+          "expr": "sum(kpipe_consumer_records_in_flight) or on() vector(0)",
           "refId": "A"
         }
       ],
@@ -169,13 +169,13 @@
       }
     },
     {
-      "title": "Lag (received − processed)",
+      "title": "Dead-Lettered",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(kpipe_consumer_messages_received_total) - sum(kpipe_consumer_messages_processed_total) or on() vector(0)",
+          "expr": "sum(kpipe_consumer_dlq_sent_total) or on() vector(0)",
           "refId": "A"
         }
       ],

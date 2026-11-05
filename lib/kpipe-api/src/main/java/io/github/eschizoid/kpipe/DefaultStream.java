@@ -3,11 +3,11 @@ package io.github.eschizoid.kpipe;
 import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
@@ -210,9 +210,9 @@ record DefaultStream<T>(
   }
 
   @Override
-  public Stream<T> withMetrics(final ConsumerMetrics metrics) {
-    Objects.requireNonNull(metrics, "metrics cannot be null");
-    return mutateConfig(c -> c.consumerMetrics = metrics);
+  public Stream<T> withMetrics(final MetricsExporter exporter) {
+    Objects.requireNonNull(exporter, "exporter cannot be null");
+    return mutateConfig(c -> c.metricsExporter = exporter);
   }
 
   @Override

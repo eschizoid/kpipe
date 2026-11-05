@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -16,6 +15,7 @@ import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -25,52 +25,64 @@ import org.apache.kafka.common.record.TimestampType;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-/// Pins the pre-release hardening guards: a throwing user [ConsumerMetrics] must never crash a
+/// Pins the pre-release hardening guards: a throwing user [MetricsExporter] must never crash a
 /// record's processing, and the DLQ record must carry the original record's headers plus the
 /// source-timestamp envelope header so operators can correlate and replay.
 class HardeningGuardsTest {
 
   private static final String TOPIC = "hardening-topic";
 
-  /// A user metrics implementation where EVERY callback throws. The guard wraps it at
-  /// construction, so records must still process, mark, and count normally.
-  private static final class ThrowingMetrics implements ConsumerMetrics {
+  /// An export where every callback throws.
+  private static final class ThrowingExport implements MetricsExporter.Export {
 
     @Override
-    public void recordMessageReceived() {
+    public void recordProcessingTime(final String topic, final Duration time) {
       throw new RuntimeException("metrics bug");
     }
 
     @Override
-    public void recordMessageProcessed() {
-      throw new RuntimeException("metrics bug");
-    }
-
-    @Override
-    public void recordProcessingError() {
-      throw new RuntimeException("metrics bug");
-    }
-
-    @Override
-    public void recordProcessingDuration(final long millis) {
-      throw new RuntimeException("metrics bug");
-    }
-
-    @Override
-    public void recordBackpressurePause() {
-      throw new RuntimeException("metrics bug");
-    }
-
-    @Override
-    public void recordBackpressureTime(final long millis) {
+    public void close() {
       throw new RuntimeException("metrics bug");
     }
   }
 
+  /// A throwing exporter, whether it fails to start (including the `LinkageError` a missing OTel
+  /// SDK raises) or fails on every export call, must leave records processing, marking and
+  /// counting normally, and closing the consumer must not throw.
   @Test
-  void throwingUserMetricsMustNotCrashProcessingOrSkipOffsetMarking() {
-    final var marked = new CopyOnWriteArrayList<Long>();
-    final var offsetManager = new OffsetManager() {
+  void throwingExportersMustNotCrashStartProcessingOrClose() {
+    final List<MetricsExporter> exporters = List.of(
+      _ -> {
+        throw new RuntimeException("metrics bug");
+      },
+      _ -> {
+        throw new NoClassDefFoundError("io/opentelemetry/sdk/OpenTelemetrySdk");
+      },
+      _ -> new ThrowingExport()
+    );
+    for (final var exporter : exporters) {
+      final var marked = new CopyOnWriteArrayList<Long>();
+      final var kafka = new MockConsumer<byte[], byte[]>("earliest");
+      final var consumer = KPipeConsumer.builder()
+        .withProperties(byteProperties())
+        .withTopic(TOPIC)
+        .withPipeline(TestPipelines.sideEffect(v -> v))
+        .withConsumer(() -> kafka)
+        .withMetrics(exporter)
+        .withOffsetManager(markingOffsetManager(marked))
+        .build();
+      assertDoesNotThrow(consumer::start, "a throwing exporter must not fail start");
+      final var record = new ConsumerRecord<>(TOPIC, 0, 5L, "k".getBytes(UTF_8), "v".getBytes(UTF_8));
+      assertDoesNotThrow(() -> consumer.processRecord(record), "a throwing exporter must be swallowed");
+      assertTrue(marked.contains(5L), "the record must still be marked processed");
+      assertEquals(1L, consumer.metrics().records().processed(), "internal counters unaffected");
+      assertDoesNotThrow(consumer::close, "a throwing exporter must not fail close");
+      assertTrue(kafka.closed(), "close must still release the Kafka consumer");
+    }
+  }
+
+  private static OffsetManager markingOffsetManager(final List<Long> marked) {
+    return new OffsetManager() {
       @Override
       public OffsetManager start() {
         return this;
@@ -107,21 +119,6 @@ class HardeningGuardsTest {
       @Override
       public void close() {}
     };
-
-    try (
-      final var consumer = KPipeConsumer.builder()
-        .withProperties(byteProperties())
-        .withTopic(TOPIC)
-        .withPipeline(TestPipelines.sideEffect(v -> v))
-        .withMetrics(new ThrowingMetrics())
-        .withOffsetManager(offsetManager)
-        .build()
-    ) {
-      final var record = new ConsumerRecord<>(TOPIC, 0, 5L, "k".getBytes(UTF_8), "v".getBytes(UTF_8));
-      assertDoesNotThrow(() -> consumer.processRecord(record), "a throwing metrics impl must be swallowed");
-      assertTrue(marked.contains(5L), "the record must still be marked processed");
-      assertEquals(1L, consumer.metrics().records().processed(), "internal counters unaffected");
-    }
   }
 
   @Test

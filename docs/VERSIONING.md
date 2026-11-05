@@ -35,7 +35,7 @@ accept) is what makes it public, and that includes the types those signatures me
 and `ProcessingMode`. The published `kpipe-test` module is public API too — user test code compiles against it.
 
 **SPI** — a public interface users are expected to _implement_: `MessageFormat`, `MessageSink`, `BatchSink`,
-`SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `ConsumerMetrics`, `ProducerMetrics`,
+`SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `MetricsExporter`, `ProducerMetrics`,
 `KPipeMetricsReporter`, `KPipeConsumer.ErrorHandler`. Same stability rules, with one asymmetry worth knowing: adding a
 method to one of these is a breaking change for an implementer and invisible to a caller.
 

@@ -61,8 +61,8 @@ Skip `kpipe-api` only if you want the explicit registry/builder API without the 
 | `kpipe-core`                      | Registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                   |
 | `kpipe-consumer`                  | `KPipeConsumer`, `KPipeConsumerBuilder`, backpressure, circuit breaker, offset management, health server             |
 | `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, DLQ producer                                                             |
-| `kpipe-metrics`                   | Metrics interfaces (`ConsumerMetrics`, `ProducerMetrics`) + log-based reporters                                      |
-| `kpipe-metrics-otel`              | OpenTelemetry-backed metrics implementation (opt-in)                                                                 |
+| `kpipe-metrics`                   | `ProducerMetrics` and the `KPipeMetricsReporter` interface                                                           |
+| `kpipe-metrics-otel`              | OpenTelemetry export of consumer and producer metrics (opt-in)                                                       |
 | `kpipe-tracing`                   | Vendor-neutral `Tracer` SPI for cross-Kafka-boundary trace propagation (no-op default)                               |
 | `kpipe-tracing-otel`              | W3C trace-context propagation through Kafka headers (opt-in)                                                         |
 | `kpipe-schema-registry-confluent` | Confluent Schema Registry HTTP client + in-process cache (opt-in)                                                    |
@@ -80,7 +80,7 @@ kpipe-producer                     → core, metrics, tracing
 kpipe-consumer                     → core, producer, tracing (metrics transitively)
 kpipe-format-{json,avro,protobuf}  → core
 kpipe-api                          → core, consumer, producer, tracing; format modules are compile-only (requires static)
-kpipe-metrics-otel                 → metrics
+kpipe-metrics-otel                 → metrics, core, consumer
 kpipe-tracing-otel                 → tracing
 kpipe-schema-registry-confluent    → core
 kpipe-format-protobuf-confluent    → format-protobuf

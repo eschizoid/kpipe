@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
@@ -193,7 +192,7 @@ class KPipeConsumerBuilderValidationTest {
       .withDeadLetterTopic("dlq")
       .withKafkaProducer(producer)
       .withKafkaProducer(kpipeProducer)
-      .withMetrics(ConsumerMetrics.noop())
+      .withMetrics(_ -> MetricsExporter.Export.NONE)
       .withTracer(Tracer.noop())
       .withMetricsReporters(List.<KPipeMetricsReporter>of())
       .withMetricsInterval(Duration.ofSeconds(30))

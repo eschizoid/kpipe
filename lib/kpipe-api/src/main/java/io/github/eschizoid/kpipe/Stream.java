@@ -2,9 +2,9 @@ package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
@@ -141,14 +141,14 @@ public interface Stream<T> {
   /// @throws IllegalArgumentException if `maxKeys` is non-positive
   Stream<T> withKeyOrderedMaxKeys(final int maxKeys);
 
-  /// Returns a new stream with an OpenTelemetry-backed (or any custom) [ConsumerMetrics]
-  /// implementation attached. Use `new OtelConsumerMetrics(otel, "consumer-name")` from
-  /// `kpipe-metrics-otel` for the standard OTel wiring.
+  /// Returns a new stream that exports its metrics to a monitoring backend, such as OpenTelemetry
+  /// through `OtelMetrics.of(openTelemetry)` from `kpipe-metrics-otel`. Without an exporter the
+  /// metrics are still counted and readable through `Handle.metrics()`.
   ///
-  /// @param metrics the metrics implementation (must not be null)
-  /// @return a new stream with metrics attached
-  /// @throws NullPointerException if `metrics` is null
-  Stream<T> withMetrics(final ConsumerMetrics metrics);
+  /// @param exporter the exporter (must not be null)
+  /// @return a new stream with the exporter attached
+  /// @throws NullPointerException if `exporter` is null
+  Stream<T> withMetrics(final MetricsExporter exporter);
 
   /// Returns a new stream with a [Tracer] attached for W3C trace-context propagation. The tracer
   /// starts a consumer span around each record (extracting upstream context from headers) and
@@ -291,8 +291,8 @@ public interface Stream<T> {
   /// Returns a new stream that reports consumer metrics periodically through `reporters`.
   ///
   /// This is the log-based path for deployments without an OpenTelemetry backend; it is
-  /// independent of [#withMetrics], which wires the OTel instruments. The reporter thread is a
-  /// daemon and does not keep the JVM alive.
+  /// independent of [#withMetrics], which exports metrics to a monitoring backend. The reporter
+  /// thread is a daemon and does not keep the JVM alive.
   ///
   /// @param reporters the reporters to invoke on each interval (must be non-null); the collection
   ///     is copied

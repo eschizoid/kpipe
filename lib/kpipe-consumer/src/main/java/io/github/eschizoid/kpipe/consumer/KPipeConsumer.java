@@ -89,6 +89,8 @@ public class KPipeConsumer implements AutoCloseable {
   private final AtomicBoolean resourcesReleased = new AtomicBoolean(false);
   private final ProcessingMode processingMode;
   private final ConsumerCounters counters = new ConsumerCounters();
+  private final GuardedMetricsExporter exporter;
+  private final String consumerGroup;
   /// Owns the per-mode dispatch strategy and the in-flight counter for non-sequential modes.
   /// Constructed once in the consumer constructor from [#processingMode]; closed in `close()`
   /// before `offsetManager.close()` so any in-flight records get their offsets marked before
@@ -262,9 +264,8 @@ public class KPipeConsumer implements AutoCloseable {
         );
       }
 
-      // Guarded once at the source: a throwing user metrics implementation must never crash a
-      // worker, abort a batch-flush callback loop, or alter an error-path outcome.
-      final var otelMetrics = GuardedConsumerMetrics.guard(builder.consumerMetrics);
+      this.exporter = new GuardedMetricsExporter(builder.metricsExporter);
+      this.consumerGroup = builder.kafkaProps.getProperty("group.id");
 
       this.health = new ConsumerHealthController(
         bp,
@@ -285,30 +286,23 @@ public class KPipeConsumer implements AutoCloseable {
           @Override
           public void onBackpressurePause() {
             counters.backpressurePaused();
-            otelMetrics.recordBackpressurePause();
           }
 
           @Override
           public void onBackpressureTimeMs(final long ms) {
             counters.backpressureResumed();
-            otelMetrics.recordBackpressureTime(ms);
           }
 
           @Override
-          public void onCircuitBreakerTrip() {
-            otelMetrics.recordCircuitBreakerTrip();
-          }
+          public void onCircuitBreakerTrip() {}
 
           @Override
           public void onCircuitBreakerStateChange(final CircuitBreakerState state) {
             counters.circuitBreakerChanged(state);
-            otelMetrics.recordCircuitBreakerStateChange(state);
           }
 
           @Override
-          public void onCircuitBreakerTimeOpenMs(final long ms) {
-            otelMetrics.recordCircuitBreakerTimeOpen(ms);
-          }
+          public void onCircuitBreakerTimeOpenMs(final long ms) {}
         }
       );
 
@@ -322,7 +316,7 @@ public class KPipeConsumer implements AutoCloseable {
         this.scheduler,
         this.offsetManager,
         this.health,
-        otelMetrics,
+        exporter,
         this.counters,
         builder.errorHandler,
         deadLetterTopic,
@@ -551,6 +545,8 @@ public class KPipeConsumer implements AutoCloseable {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot restart a closed consumer");
     if (!state.compareAndSet(ConsumerState.CREATED, ConsumerState.RUNNING)) return;
 
+    exporter.start(metricsSource());
+
     if (offsetManager != null) offsetManager.start();
     batchWrappers.values().forEach(BatchPipelineWrapper::start);
     if (rebalanceListener != null) kafkaConsumer.subscribe(topics, rebalanceListener);
@@ -754,6 +750,25 @@ public class KPipeConsumer implements AutoCloseable {
   /// @return a snapshot of the counters
   public MetricsSnapshot metrics() {
     return counters.snapshot(backpressureLoad());
+  }
+
+  private MetricsSource metricsSource() {
+    return new MetricsSource() {
+      @Override
+      public String consumerGroup() {
+        return consumerGroup;
+      }
+
+      @Override
+      public MetricsSnapshot metrics() {
+        return KPipeConsumer.this.metrics();
+      }
+
+      @Override
+      public HealthSnapshot health() {
+        return KPipeConsumer.this.health();
+      }
+    };
   }
 
   /// Snapshot of the top `n` keys by current queue depth in the underlying dispatcher,
@@ -960,10 +975,12 @@ public class KPipeConsumer implements AutoCloseable {
   /// `kafkaConsumer` is excluded: on paths (1) and (3) the consumer thread's finally closes it,
   /// and on path (2) the fast path closes it via [#closeKafkaConsumerQuietly]. Closing a
   /// KafkaConsumer from two threads would throw ConcurrentModificationException. Order matters —
-  /// dispatcher → batch wrappers → offset manager → producer — so batch buffers flush (marking
-  /// their offsets) while the offset manager is still alive. Critically, all three callers run
-  /// this BEFORE closing `kafkaConsumer`: `offsetManager.close()` does a final commitSync on the
-  /// consumer, which would throw (and silently drop the last offsets) on an already-closed one.
+  /// dispatcher → batch wrappers → offset manager → producer → metrics export — so batch
+  /// buffers flush (marking their offsets) while the offset manager is still alive, and the
+  /// export's final read holds every count the shutdown completed. Critically, all three
+  /// callers run this BEFORE closing `kafkaConsumer`: `offsetManager.close()` does a final
+  /// commitSync on the consumer, which would throw (and silently drop the last offsets) on an
+  /// already-closed one.
   private void releaseConstructedResources() {
     if (!resourcesReleased.compareAndSet(false, true)) return; // already released by another path
     counters.stopClocks();
@@ -1008,6 +1025,9 @@ public class KPipeConsumer implements AutoCloseable {
           LOGGER.log(Level.WARNING, "Error closing producer during shutdown", e);
         }
       }
+      // Close the export after every flush and DLQ write above, so its final read holds the
+      // consumer's final counts.
+      exporter.close();
       // Deregister the JVM shutdown hook last. It's registered in the ctor (when
       // useShutdownHook=true), so it exists even for a never-started consumer and a
       // self-terminating consumer thread. Doing it here — inside the CAS-guarded release — means

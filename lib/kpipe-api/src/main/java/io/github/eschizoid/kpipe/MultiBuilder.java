@@ -5,12 +5,12 @@ import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
+import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
@@ -60,16 +60,15 @@ public final class MultiBuilder {
     this.kafkaProps = (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone();
   }
 
-  /// Attaches an OpenTelemetry-backed (or any custom) [ConsumerMetrics] implementation to the
-  /// multi-topic consumer. The metrics carry a `topic` attribute per record so dashboards can
-  /// break down by topic across heterogeneous routes.
+  /// Exports the multi-topic consumer's metrics to a monitoring backend, such as OpenTelemetry
+  /// through `OtelMetrics.of(openTelemetry)` from `kpipe-metrics-otel`. Record counts carry the
+  /// topic, so dashboards can break them down per route.
   ///
-  /// @param metrics the metrics implementation (typically `new OtelConsumerMetrics(otel, ...)`
-  ///     from `kpipe-metrics-otel`)
+  /// @param exporter the exporter (must not be null)
   /// @return this builder
-  public MultiBuilder withMetrics(final ConsumerMetrics metrics) {
-    Objects.requireNonNull(metrics, "metrics cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.consumerMetrics = metrics);
+  public MultiBuilder withMetrics(final MetricsExporter exporter) {
+    Objects.requireNonNull(exporter, "exporter cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.metricsExporter = exporter);
     return this;
   }
 
