@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
 import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
@@ -15,7 +14,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
@@ -27,7 +25,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// and close orchestration.
 ///
 /// The class holds no mutable state of its own — all fields are shared collaborators owned by
-/// the consumer (the metrics map, the offset manager, the health controller, the DLQ producer)
+/// the consumer (the counters, the offset manager, the health controller, the DLQ producer)
 /// — so [#process] is safe to invoke from any dispatcher worker thread.
 ///
 /// Retry semantics are uniform across route shapes: both the regular per-record path and the
@@ -39,23 +37,12 @@ final class RecordProcessor {
 
   private static final Logger LOGGER = System.getLogger(RecordProcessor.class.getName());
 
-  // Aliases of the shared public key set (ConsumerMetricKeys) — the single source of truth also
-  // read by ConsumerMetricsReporter and the kpipe-test quiescence check. Never re-declare the
-  // literals here; aliasing keeps every call site short while making drift impossible.
-  private static final String METRIC_MESSAGES_RECEIVED = ConsumerMetricKeys.MESSAGES_RECEIVED;
-  private static final String METRIC_MESSAGES_PROCESSED = ConsumerMetricKeys.MESSAGES_PROCESSED;
-  private static final String METRIC_PROCESSING_ERRORS = ConsumerMetricKeys.PROCESSING_ERRORS;
-  private static final String METRIC_PROCESSING_DURATION_TOTAL_MS = ConsumerMetricKeys.PROCESSING_DURATION_TOTAL_MS;
-  private static final String METRIC_RETRIES = ConsumerMetricKeys.RETRIES;
-  private static final String METRIC_DLQ_SENT = ConsumerMetricKeys.DLQ_SENT;
-  private static final String METRIC_DLQ_FAILED = ConsumerMetricKeys.DLQ_FAILED;
-
   private final Map<String, MessagePipeline<?>> pipelines;
   private final Map<String, BatchPipelineWrapper<?>> batchWrappers;
   private final OffsetManager offsetManager;
   private final ConsumerHealthController health;
   private final ConsumerMetrics otelMetrics;
-  private final Map<String, AtomicLong> metrics;
+  private final ConsumerCounters counters;
   private final KPipeConsumer.ErrorHandler errorHandler;
   private final String deadLetterTopic;
   private final KPipeProducer<byte[], byte[]> kpipeProducer;
@@ -68,12 +55,24 @@ final class RecordProcessor {
   /// Wakes the consumer thread when a batch flush may have drained an in-flight backpressure hold.
   private final Runnable loadReleased;
 
-  /// One deserialize + process attempt for a record. Returns the record's terminal-success flag
-  /// (the same meaning as [#tryProcessRecord]'s return value); throws to request another
-  /// attempt from the surrounding retry loop.
+  /// Where a record ended up after its attempts.
+  private enum Outcome {
+    /// Passed every operator and was handed to the sink.
+    PROCESSED,
+    /// An operator filtered it.
+    FILTERED,
+    /// No pipeline is routed for its topic, so it was dropped.
+    UNROUTED,
+    /// Not terminal here: buffered for a batch flush, failed and handed to the error path, or
+    /// abandoned on an interruption.
+    PENDING,
+  }
+
+  /// One deserialize + process attempt for a record; throws to request another attempt from the
+  /// surrounding retry loop.
   @FunctionalInterface
   private interface RecordAttempt {
-    boolean run(int attempt) throws Exception;
+    Outcome run(int attempt) throws Exception;
   }
 
   RecordProcessor(
@@ -83,7 +82,7 @@ final class RecordProcessor {
     final OffsetManager offsetManager,
     final ConsumerHealthController health,
     final ConsumerMetrics otelMetrics,
-    final Map<String, AtomicLong> metrics,
+    final ConsumerCounters counters,
     final KPipeConsumer.ErrorHandler errorHandler,
     final String deadLetterTopic,
     final KPipeProducer<byte[], byte[]> kpipeProducer,
@@ -97,7 +96,7 @@ final class RecordProcessor {
     this.offsetManager = offsetManager;
     this.health = health;
     this.otelMetrics = otelMetrics;
-    this.metrics = metrics;
+    this.counters = counters;
     this.errorHandler = errorHandler;
     this.deadLetterTopic = deadLetterTopic;
     this.kpipeProducer = kpipeProducer;
@@ -134,7 +133,7 @@ final class RecordProcessor {
     final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
       @Override
       public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
-        metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
+        counters.topic(record.topic()).processed.increment();
         otelMetrics.recordMessageProcessed(record.topic());
         // Feed the circuit breaker / health window so batch outcomes count toward the failure
         // rate, exactly like the per-record path. Both branches must report, or the rolling
@@ -155,7 +154,7 @@ final class RecordProcessor {
 
       @Override
       public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
-        metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+        counters.topic(record.topic()).failed.increment();
         otelMetrics.recordProcessingError(record.topic());
         if (!NonRetryableException.isNonRetryable(cause)) health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
@@ -169,10 +168,10 @@ final class RecordProcessor {
         // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
         if (deadLetterTopic != null && kpipeProducer != null) {
           if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause)) {
-            metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+            counters.topic(record.topic()).dlqSent.increment();
             if (offsetManager != null) offsetManager.markOffsetProcessed(record);
           } else {
-            metrics.get(METRIC_DLQ_FAILED).incrementAndGet();
+            counters.topic(record.topic()).dlqFailed.increment();
             LOGGER.log(
               Level.ERROR,
               () ->
@@ -206,18 +205,13 @@ final class RecordProcessor {
   /// or at once for a non-retryable failure, the record is routed to the DLQ (when configured)
   /// and the error handler is invoked.
   ///
-  /// Metrics tracked during processing:
-  ///
-  /// * `messagesReceived` — incremented on entry
-  /// * `messagesProcessed` — incremented on success
-  /// * `processingDurationTotalMs` — incremented on success by the wall-clock duration
-  /// * `retries` — incremented per retry attempt (not the initial attempt)
-  /// * `processingErrors` — incremented when processing fails after retries are exhausted or a
-  ///   failure is non-retryable
+  /// Counts the record as received on entry and, once its attempts end, as processed or
+  /// filtered; failures are counted on the error path and retries in the retry loop.
   ///
   /// @param record the Kafka consumer record to process
   void process(final ConsumerRecord<byte[], byte[]> record) {
-    metrics.get(METRIC_MESSAGES_RECEIVED).incrementAndGet();
+    final var topic = counters.topic(record.topic());
+    topic.received.increment();
     otelMetrics.recordMessageReceived(record.topic());
 
     Tracer.SpanScope span;
@@ -228,15 +222,26 @@ final class RecordProcessor {
       span = Tracer.SpanScope.noop();
     }
 
-    final long startTime = System.currentTimeMillis();
+    final long startNanos = System.nanoTime();
     try {
-      final var result = tryProcessRecord(record, span);
-      if (result) {
-        final var durationMs = System.currentTimeMillis() - startTime;
-        metrics.get(METRIC_MESSAGES_PROCESSED).incrementAndGet();
-        metrics.get(METRIC_PROCESSING_DURATION_TOTAL_MS).addAndGet(durationMs);
-        otelMetrics.recordMessageProcessed(record.topic());
-        otelMetrics.recordProcessingDuration(record.topic(), durationMs);
+      switch (tryProcessRecord(record, span)) {
+        case PROCESSED -> {
+          final var durationNanos = System.nanoTime() - startNanos;
+          topic.processingNanos.add(durationNanos);
+          topic.processed.increment();
+          otelMetrics.recordMessageProcessed(record.topic());
+          otelMetrics.recordProcessingDuration(record.topic(), durationNanos / 1_000_000);
+        }
+        case FILTERED -> {
+          topic.filtered.increment();
+          // The OTel export still reports filtered records as processed until it reads these
+          // counters (#408).
+          otelMetrics.recordMessageProcessed(record.topic());
+          otelMetrics.recordProcessingDuration(record.topic(), (System.nanoTime() - startNanos) / 1_000_000);
+        }
+        case UNROUTED -> topic.filtered.increment();
+        case PENDING -> {
+        }
       }
     } finally {
       try {
@@ -249,7 +254,7 @@ final class RecordProcessor {
     }
   }
 
-  private boolean tryProcessRecord(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
+  private Outcome tryProcessRecord(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
     final var batchWrapper = batchWrappers.get(record.topic());
     if (batchWrapper != null) return tryEnqueueBatchRecord(record, batchWrapper, span);
     final var pipeline = pipelines.get(record.topic());
@@ -261,13 +266,13 @@ final class RecordProcessor {
         record.offset()
       );
       markOffsetProcessed(record);
-      return false;
+      return Outcome.UNROUTED;
     }
     return runWithRetries(record, span, _ -> {
-      driveSinkedPipeline(pipeline, record.value());
+      final var delivered = driveSinkedPipeline(pipeline, record.value());
       markOffsetProcessed(record);
       health.recordOutcome(true);
-      return true;
+      return delivered ? Outcome.PROCESSED : Outcome.FILTERED;
     });
   }
 
@@ -278,14 +283,14 @@ final class RecordProcessor {
   /// Once attempts are exhausted, or at once for a [NonRetryableException] anywhere in the
   /// failure's cause chain, the failure goes terminal through [#handleProcessingError] with
   /// `retryCount` equal to the retries actually performed.
-  private boolean runWithRetries(
+  private Outcome runWithRetries(
     final ConsumerRecord<byte[], byte[]> record,
     final Tracer.SpanScope span,
     final RecordAttempt attemptBody
   ) {
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) {
-        metrics.get(METRIC_RETRIES).incrementAndGet();
+        counters.topic(record.topic()).retries.increment();
         LOGGER.log(
           Level.DEBUG,
           "Retrying message at offset {0} (attempt {1} of {2})",
@@ -297,7 +302,7 @@ final class RecordProcessor {
           Thread.sleep(retryBackoff.toMillis());
         } catch (final InterruptedException ie) {
           Thread.currentThread().interrupt();
-          return false;
+          return Outcome.PENDING;
         }
       }
 
@@ -306,15 +311,15 @@ final class RecordProcessor {
       } catch (final Exception e) {
         if (interruptedBy(e)) {
           Thread.currentThread().interrupt();
-          return false;
+          return Outcome.PENDING;
         }
         if (attempt == maxRetries || NonRetryableException.isNonRetryable(e)) {
           handleProcessingError(record, e, attempt, span);
-          return false;
+          return Outcome.PENDING;
         }
       }
     }
-    return false;
+    return Outcome.PENDING;
   }
 
   /// Batch route: drive the record's deserialize + operator step through the same retry loop as
@@ -323,7 +328,7 @@ final class RecordProcessor {
   /// region, so a slow or failing flush can never cause a duplicate buffer entry. Pipeline
   /// `Failed` results rethrow so a transient operator failure gets its configured attempts
   /// before going terminal (DLQ / error handler) with the real retry count.
-  private <T> boolean tryEnqueueBatchRecord(
+  private <T> Outcome tryEnqueueBatchRecord(
     final ConsumerRecord<byte[], byte[]> record,
     final BatchPipelineWrapper<T> wrapper,
     final Tracer.SpanScope span
@@ -336,7 +341,7 @@ final class RecordProcessor {
         case Result.Filtered<T> _ -> {
           // Intentional filter — mark processed immediately; nothing to buffer.
           markOffsetProcessed(record);
-          yield true;
+          yield Outcome.FILTERED;
         }
         case Result.Failed<T> f -> throw rethrowResultCause(f.cause());
       };
@@ -347,10 +352,10 @@ final class RecordProcessor {
   /// loop but handles its own failures so the loop can never observe an enqueue throw — retrying
   /// an enqueue would re-run deserialize + process and buffer a duplicate. An enqueue failure
   /// (e.g. an inline size-triggered flush path throwing) is terminal for the record: it takes
-  /// the standard error path with the retry count accumulated so far. Returns `false` because a
-  /// buffered record is not yet processed — `messagesProcessed` is incremented by the flush
-  /// callback when the batch is committed to the user sink.
-  private <T> boolean enqueueBuffered(
+  /// the standard error path with the retry count accumulated so far. Returns
+  /// [Outcome#PENDING] because a buffered record is not yet processed; the flush callback counts
+  /// it as processed when the batch reaches the user sink.
+  private <T> Outcome enqueueBuffered(
     final ConsumerRecord<byte[], byte[]> record,
     final BatchPipelineWrapper<T> wrapper,
     final T value,
@@ -362,28 +367,28 @@ final class RecordProcessor {
     } catch (final Exception e) {
       if (interruptedBy(e)) {
         Thread.currentThread().interrupt();
-        return false;
+        return Outcome.PENDING;
       }
       handleProcessingError(record, e, attempt, span);
     }
-    return false;
+    return Outcome.PENDING;
   }
 
   /// Drive a pipeline (with erased element type) from raw bytes to its terminal sink. Throws if
-  /// the pipeline reports `Failed` so the calling retry/error path handles it the same way it
-  /// always did. Returns normally on `Passed` (after the sink runs) and on `Filtered`.
-  private static <T> void driveSinkedPipeline(final MessagePipeline<T> pipeline, final byte[] data) {
+  /// the pipeline reports `Failed` so the calling retry/error path handles it.
+  ///
+  /// @return true when the record passed and its sink ran, false when it was filtered
+  private static <T> boolean driveSinkedPipeline(final MessagePipeline<T> pipeline, final byte[] data) {
     final var deserialized = pipeline.deserializeOrFail(data);
-    switch (pipeline.process(deserialized)) {
+    return switch (pipeline.process(deserialized)) {
       case Result.Passed<T> p -> {
         final var sink = pipeline.getSink();
         if (sink != null) sink.accept(p.value());
+        yield true;
       }
-      case Result.Filtered<T> _ -> {
-        /* intentional filter — no sink invocation */
-      }
+      case Result.Filtered<T> _ -> false;
       case Result.Failed<T> f -> throw rethrowResultCause(f.cause());
-    }
+    };
   }
 
   /// Re-throw a captured `Result.Failed` cause as an unchecked exception so the retry/error path
@@ -406,7 +411,7 @@ final class RecordProcessor {
     final int retryCount,
     final Tracer.SpanScope span
   ) {
-    metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+    counters.topic(record.topic()).failed.increment();
     otelMetrics.recordProcessingError(record.topic());
     // Mark the span as errored. Guarded — a misbehaving tracer must never crash the consumer
     // thread, leak in-flight counts, or skip offset marking.
@@ -434,10 +439,10 @@ final class RecordProcessor {
       // batch path), so a shared helper would blur those. Any change here must be mirrored
       // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
       if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e)) {
-        metrics.get(METRIC_DLQ_SENT).incrementAndGet();
+        counters.topic(record.topic()).dlqSent.increment();
         markOffsetProcessed(record);
       } else {
-        metrics.get(METRIC_DLQ_FAILED).incrementAndGet();
+        counters.topic(record.topic()).dlqFailed.increment();
         LOGGER.log(
           Level.ERROR,
           () ->
@@ -483,7 +488,10 @@ final class RecordProcessor {
   void handleParallelRejection(final ConsumerRecord<byte[], byte[]> record, final RejectedExecutionException e) {
     if (!consumerActive.getAsBoolean()) return;
     LOGGER.log(Level.WARNING, "Task submission rejected while the consumer was running", e);
-    metrics.get(METRIC_PROCESSING_ERRORS).incrementAndGet();
+    final var topic = counters.topic(record.topic());
+    topic.received.increment();
+    otelMetrics.recordMessageReceived(record.topic());
+    topic.failed.increment();
     otelMetrics.recordProcessingError(record.topic());
     try {
       errorHandler.accept(new KPipeConsumer.ProcessingError(record, e, 0));

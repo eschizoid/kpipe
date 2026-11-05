@@ -1,7 +1,9 @@
 package io.github.eschizoid.kpipe;
 
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.consumer.CircuitBreakerState;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.producer.config.KafkaProducerConfig;
 import io.github.eschizoid.kpipe.sink.MessageSink;
@@ -51,22 +53,24 @@ class AppIntegrationTest {
     ) {
       produceRecords(topic, 20);
 
-      // Wait for the full trip-and-probe cycle to have completed at least once. timeOpenMs only
-      // increments inside the OPEN → HALF_OPEN transition, so a non-zero value proves the probe
-      // timer fired (not just the trip).
+      // Wait for the full trip-and-probe cycle: a trip, then the probe timer moving the breaker out
+      // of OPEN. Open time alone proves only the trip, since it counts while the breaker is open.
       final var deadline = System.currentTimeMillis() + 15_000;
       while (System.currentTimeMillis() < deadline) {
-        final var trips = (long) handle.metrics().get("circuitBreakerTrips");
-        final var timeOpenMs = (long) handle.metrics().get("circuitBreakerTimeOpenMs");
-        if (trips >= 1 && timeOpenMs > 0L) break;
+        if (
+          handle.metrics().circuitBreaker().trips() >= 1 && handle.health().circuitBreaker() != CircuitBreakerState.OPEN
+        ) break;
         Thread.sleep(100);
       }
 
-      final var trips = (long) handle.metrics().get("circuitBreakerTrips");
-      final var timeOpenMs = (long) handle.metrics().get("circuitBreakerTimeOpenMs");
-
-      assertTrue(trips >= 1, "breaker should have tripped at least once, got " + trips);
-      assertTrue(timeOpenMs > 0L, "circuitBreakerTimeOpenMs should be > 0 after the probe fired, got " + timeOpenMs);
+      final var breaker = handle.metrics().circuitBreaker();
+      assertTrue(breaker.trips() >= 1, "breaker should have tripped at least once, got " + breaker.trips());
+      assertTrue(breaker.openTime().isPositive(), "the breaker spent time open, got " + breaker.openTime());
+      assertNotEquals(
+        CircuitBreakerState.OPEN,
+        handle.health().circuitBreaker(),
+        "the probe timer should have moved the breaker out of OPEN"
+      );
 
       assertTrue(handle.shutdownGracefully(Duration.ofSeconds(5)));
     }

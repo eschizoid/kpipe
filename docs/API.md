@@ -88,7 +88,7 @@ swallowed.
 | Method                         | Semantics                                                                                                                                               |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `isHealthy()`                  | Liveness snapshot.                                                                                                                                      |
-| `metrics()`                    | Unmodifiable `Map<String, Long>` snapshot; empty when metrics are disabled.                                                                             |
+| `metrics()`                    | A `MetricsSnapshot`: record counts in total and per topic, in-flight, backpressure and circuit breaker figures.                                         |
 | `awaitShutdown()`              | Blocks indefinitely until the consumer stops (throws `InterruptedException`).                                                                           |
 | `awaitShutdown(Duration)`      | Bounded wait; returns whether the consumer stopped.                                                                                                     |
 | `shutdownGracefully(Duration)` | Initiate shutdown with a bounded in-flight drain; returns whether the drain finished cleanly.                                                           |

@@ -42,8 +42,8 @@ class TestStreamBatchTest {
         batches,
         "full batches must flush on the size trigger, in order, before close"
       );
-      assertEquals(6L, driver.metrics().get("messagesProcessed"), "only flushed records count as processed");
-      assertEquals(1L, driver.metrics().get("inFlight"), "the trailing record stays buffered until close");
+      assertEquals(6L, driver.metrics().records().processed(), "only flushed records count as processed");
+      assertEquals(1L, driver.metrics().inFlight(), "the trailing record stays buffered until close");
     } finally {
       driver.close();
     }
@@ -84,8 +84,8 @@ class TestStreamBatchTest {
       driver.flush();
 
       assertEquals(List.of(List.of("e0", "e1"), List.of("e2", "e3")), batches);
-      assertEquals(0L, driver.metrics().get("inFlight"), "an exact multiple leaves no buffered records");
-      assertEquals(4L, driver.metrics().get("messagesProcessed"));
+      assertEquals(0L, driver.metrics().inFlight(), "an exact multiple leaves no buffered records");
+      assertEquals(4L, driver.metrics().records().processed());
     }
   }
 
@@ -119,8 +119,9 @@ class TestStreamBatchTest {
       driver.flush();
 
       assertEquals(List.of(List.of("keep-1", "keep-2")), batches, "filtered records are terminal, not buffered");
-      assertEquals(3L, driver.metrics().get("messagesProcessed"), "filtered records still count as processed");
-      assertEquals(0L, driver.metrics().get("inFlight"));
+      assertEquals(2L, driver.metrics().records().processed());
+      assertEquals(1L, driver.metrics().records().filtered(), "filtered records are counted apart from processed");
+      assertEquals(0L, driver.metrics().inFlight());
     }
   }
 
@@ -134,7 +135,7 @@ class TestStreamBatchTest {
       driver.send(bytes("f2"));
       driver.flush();
 
-      assertEquals(2L, driver.metrics().get("processingErrors"), "a throwing void batch sink fails the whole batch");
+      assertEquals(2L, driver.metrics().records().failed(), "a throwing void batch sink fails the whole batch");
       assertEquals(2, driver.errors().size());
       assertTrue(
         driver

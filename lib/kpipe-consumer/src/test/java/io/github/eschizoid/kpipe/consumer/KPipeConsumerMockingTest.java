@@ -418,19 +418,19 @@ class KPipeConsumerMockingTest {
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
-    // Wait for the worker virtual thread to mark messagesProcessed.
+    // Wait for the worker virtual thread to count the record as processed.
     TestAwaits.pollUntil(
-      () -> functionalConsumer.getMetrics().get("messagesProcessed") == 1L,
+      () -> functionalConsumer.metrics().records().processed() == 1L,
       Duration.ofSeconds(2),
-      "messagesProcessed reaches 1"
+      "processed reaches 1"
     );
 
     // Verify metrics
-    final var metrics = functionalConsumer.getMetrics();
-    assertEquals(1L, metrics.get("messagesReceived"));
-    assertEquals(1L, metrics.get("messagesProcessed"));
-    assertEquals(0L, metrics.get("processingErrors"));
-    assertEquals(0L, metrics.get("retries"));
+    final var metrics = functionalConsumer.metrics();
+    assertEquals(1L, metrics.records().received());
+    assertEquals(1L, metrics.records().processed());
+    assertEquals(0L, metrics.records().failed());
+    assertEquals(0L, metrics.records().retries());
   }
 
   @Test
@@ -470,14 +470,14 @@ class KPipeConsumerMockingTest {
 
     assertTrue(latch.await(1, TimeUnit.SECONDS), "Processing did not complete in time");
 
-    // errorHandler is invoked after processingErrors is incremented in KPipeConsumer.processRecord
+    // errorHandler is invoked after the failure is counted in KPipeConsumer.processRecord
     verify(errorHandler, timeout(1000)).accept(any());
 
     // Verify metrics
-    final var metrics = functionalConsumer.getMetrics();
-    assertEquals(1L, metrics.get("messagesReceived"));
-    assertEquals(0L, metrics.get("messagesProcessed"));
-    assertEquals(1L, metrics.get("processingErrors"));
+    final var metrics = functionalConsumer.metrics();
+    assertEquals(1L, metrics.records().received());
+    assertEquals(0L, metrics.records().processed());
+    assertEquals(1L, metrics.records().failed());
   }
 
   @Test
@@ -568,8 +568,8 @@ class KPipeConsumerMockingTest {
     verifyNoInteractions(processor);
 
     // Verify metrics
-    final var metrics = functionalConsumer.getMetrics();
-    assertEquals(0L, metrics.get("messagesReceived"));
+    final var metrics = functionalConsumer.metrics();
+    assertEquals(0L, metrics.records().received());
   }
 
   @Test
@@ -1215,7 +1215,7 @@ class KPipeConsumerMockingTest {
     final long deadline = System.currentTimeMillis() + 1000;
     long inFlight;
     do {
-      inFlight = consumer.getMetrics().getOrDefault("inFlight", 0L);
+      inFlight = consumer.metrics().inFlight();
       if (inFlight == 0L) break;
       Thread.sleep(10);
     } while (System.currentTimeMillis() < deadline);
@@ -1227,10 +1227,6 @@ class KPipeConsumerMockingTest {
   }
 
   public static class TestableKPipeConsumer extends KPipeConsumer {
-
-    private static final String METRIC_MESSAGES_RECEIVED = "messagesReceived";
-    private static final String METRIC_MESSAGES_PROCESSED = "messagesProcessed";
-    private static final String METRIC_PROCESSING_ERRORS = "processingErrors";
 
     public TestableKPipeConsumer(
       final Properties props,
@@ -1262,11 +1258,12 @@ class KPipeConsumerMockingTest {
     }
 
     private int getProcessingCount() {
-      final var metrics = getMetrics();
-      final var received = metrics.getOrDefault(METRIC_MESSAGES_RECEIVED, 0L);
-      final var processed = metrics.getOrDefault(METRIC_MESSAGES_PROCESSED, 0L);
-      final var errors = metrics.getOrDefault(METRIC_PROCESSING_ERRORS, 0L);
-      return (int) (received - processed - errors);
+      final var metrics = metrics();
+      final var received = metrics.records().received();
+      final var processed = metrics.records().processed();
+      final var filtered = metrics.records().filtered();
+      final var errors = metrics.records().failed();
+      return (int) (received - processed - filtered - errors);
     }
   }
 }

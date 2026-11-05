@@ -99,7 +99,7 @@ class BackpressureReleaseLatencyTest {
       );
       final var elapsed = Duration.ofNanos(System.nanoTime() - start);
       assertTrue(
-        consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT) >= RECORDS / RECORDS_PER_POLL - 1,
+        consumer.metrics().backpressure().pauses() >= RECORDS / RECORDS_PER_POLL - 1,
         "the workload must actually exercise backpressure; elapsed " + elapsed
       );
     } finally {

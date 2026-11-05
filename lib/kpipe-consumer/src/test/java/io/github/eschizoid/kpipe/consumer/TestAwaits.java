@@ -12,9 +12,9 @@ import java.util.function.BooleanSupplier;
 ///
 /// Typical shape:
 /// ```java
-/// pollUntil(() -> metrics.get("messagesProcessed") == 1L, Duration.ofSeconds(2),
-///   "messagesProcessed reaches 1");
-/// assertEquals(1L, metrics.get("messagesProcessed"));
+/// pollUntil(() -> consumer.metrics().records().processed() == 1L, Duration.ofSeconds(2),
+///   "processed reaches 1");
+/// assertEquals(1L, consumer.metrics().records().processed());
 /// ```
 ///
 /// The trailing `assertEquals` is the fence: the poll proves the condition has been observed at

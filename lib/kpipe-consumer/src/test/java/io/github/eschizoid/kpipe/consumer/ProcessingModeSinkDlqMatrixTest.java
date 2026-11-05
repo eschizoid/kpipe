@@ -494,7 +494,7 @@ class ProcessingModeSinkDlqMatrixTest {
       assertTrue(sinkSaw.contains(3L), "offset 3 must succeed on retry, not DLQ");
       assertEquals(
         0L,
-        consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS),
+        consumer.metrics().circuitBreaker().trips(),
         "the breaker must not trip at this sparse failure rate"
       );
     } finally {

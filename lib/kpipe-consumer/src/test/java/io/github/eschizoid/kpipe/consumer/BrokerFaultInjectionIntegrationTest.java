@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
-import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import java.io.IOException;
 import java.time.Duration;
@@ -361,7 +360,7 @@ class BrokerFaultInjectionIntegrationTest {
   }
 
   private static long dlqFailed(final KPipeConsumer consumer) {
-    return consumer.getMetrics().getOrDefault(ConsumerMetricKeys.DLQ_FAILED, 0L);
+    return consumer.metrics().records().dlqFailed();
   }
 
   /// A dead-letter producer on the DLQ's own proxy. A failing record counts as completed only once

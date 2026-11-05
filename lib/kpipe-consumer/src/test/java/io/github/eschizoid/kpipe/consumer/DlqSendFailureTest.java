@@ -101,8 +101,12 @@ class DlqSendFailureTest {
       );
 
       // The failure is observable, not swallowed.
-      assertEquals(1L, consumer.getMetrics().get("dlqFailed"), "failed DLQ send must increment the dlqFailed counter");
-      assertEquals(0L, consumer.getMetrics().get("dlqSent"), "no successful DLQ send occurred");
+      assertEquals(
+        1L,
+        consumer.metrics().records().dlqFailed(),
+        "failed DLQ send must increment the dlqFailed counter"
+      );
+      assertEquals(0L, consumer.metrics().records().dlqSent(), "no successful DLQ send occurred");
     }
   }
 
@@ -146,8 +150,8 @@ class DlqSendFailureTest {
 
       verify(mockProducer, times(1)).send(any(ProducerRecord.class));
       assertTrue(recorder.marked.contains(100L), "offset should be marked after a successful DLQ send");
-      assertEquals(1L, consumer.getMetrics().get("dlqSent"), "successful DLQ send must increment dlqSent");
-      assertEquals(0L, consumer.getMetrics().get("dlqFailed"), "no DLQ failure occurred");
+      assertEquals(1L, consumer.metrics().records().dlqSent(), "successful DLQ send must increment dlqSent");
+      assertEquals(0L, consumer.metrics().records().dlqFailed(), "no DLQ failure occurred");
     }
   }
 
@@ -198,12 +202,12 @@ class DlqSendFailureTest {
       // Await the synchronous flush → failed DLQ send. The dlqFailed counter is the observable
       // signal that onBatchFailure ran the failure branch.
       final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-      while (consumer.getMetrics().getOrDefault("dlqFailed", 0L) < 1 && System.nanoTime() < deadline) {
+      while (consumer.metrics().records().dlqFailed() < 1 && System.nanoTime() < deadline) {
         Thread.sleep(10);
       }
 
-      assertEquals(1L, consumer.getMetrics().get("dlqFailed"), "batch DLQ send failure must increment dlqFailed");
-      assertEquals(0L, consumer.getMetrics().get("dlqSent"), "no successful DLQ send occurred");
+      assertEquals(1L, consumer.metrics().records().dlqFailed(), "batch DLQ send failure must increment dlqFailed");
+      assertEquals(0L, consumer.metrics().records().dlqSent(), "no successful DLQ send occurred");
       // Positive control: the record WAS tracked (so 'not marked' below means held-pending, not
       // never-seen — guards against a broken trackOffset masquerading as correct behavior).
       assertTrue(recorder.tracked.contains(5L), "batch record should have been tracked before dispatch");
@@ -257,12 +261,16 @@ class DlqSendFailureTest {
       consumer.start();
 
       final var deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-      while (consumer.getMetrics().getOrDefault("dlqFailed", 0L) < 1 && System.nanoTime() < deadline) {
+      while (consumer.metrics().records().dlqFailed() < 1 && System.nanoTime() < deadline) {
         Thread.sleep(10);
       }
 
-      assertEquals(1L, consumer.getMetrics().get("dlqFailed"), "per-record DLQ send failure must increment dlqFailed");
-      assertEquals(0L, consumer.getMetrics().get("dlqSent"), "no successful DLQ send occurred");
+      assertEquals(
+        1L,
+        consumer.metrics().records().dlqFailed(),
+        "per-record DLQ send failure must increment dlqFailed"
+      );
+      assertEquals(0L, consumer.metrics().records().dlqSent(), "no successful DLQ send occurred");
       // No race: on the DLQ-fail branch the offset is never marked, so once dlqFailed==1 is
       // observed the record is permanently unmarked — the assertFalse below cannot flake.
       assertTrue(recorder.tracked.contains(5L), "record should have been tracked before dispatch");

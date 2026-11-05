@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.metrics.ConsumerMetricKeys;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
@@ -11,7 +10,6 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
@@ -72,21 +70,6 @@ public class KPipeConsumer implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
 
-  // Aliases of the shared public key set (ConsumerMetricKeys) — the single source of truth also
-  // read by ConsumerMetricsReporter and the kpipe-test quiescence check. Never re-declare the
-  // literals here; aliasing keeps every call site short while making drift impossible.
-  private static final String METRIC_MESSAGES_RECEIVED = ConsumerMetricKeys.MESSAGES_RECEIVED;
-  private static final String METRIC_MESSAGES_PROCESSED = ConsumerMetricKeys.MESSAGES_PROCESSED;
-  private static final String METRIC_PROCESSING_ERRORS = ConsumerMetricKeys.PROCESSING_ERRORS;
-  private static final String METRIC_PROCESSING_DURATION_TOTAL_MS = ConsumerMetricKeys.PROCESSING_DURATION_TOTAL_MS;
-  private static final String METRIC_RETRIES = ConsumerMetricKeys.RETRIES;
-  static final String METRIC_BACKPRESSURE_PAUSE_COUNT = ConsumerMetricKeys.BACKPRESSURE_PAUSE_COUNT;
-  static final String METRIC_BACKPRESSURE_TIME_MS = ConsumerMetricKeys.BACKPRESSURE_TIME_MS;
-  static final String METRIC_CIRCUIT_BREAKER_TRIPS = ConsumerMetricKeys.CIRCUIT_BREAKER_TRIPS;
-  static final String METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS = ConsumerMetricKeys.CIRCUIT_BREAKER_TIME_OPEN_MS;
-  private static final String METRIC_DLQ_SENT = ConsumerMetricKeys.DLQ_SENT;
-  private static final String METRIC_DLQ_FAILED = ConsumerMetricKeys.DLQ_FAILED;
-
   private final Queue<ConsumerCommand> commandQueue;
   private final Consumer<byte[], byte[]> kafkaConsumer;
   private final Set<String> topics;
@@ -105,7 +88,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// wrappers for the JVM's lifetime.
   private final AtomicBoolean resourcesReleased = new AtomicBoolean(false);
   private final ProcessingMode processingMode;
-  private final Map<String, AtomicLong> metrics = new ConcurrentHashMap<>();
+  private final ConsumerCounters counters = new ConsumerCounters();
   /// Owns the per-mode dispatch strategy and the in-flight counter for non-sequential modes.
   /// Constructed once in the consumer constructor from [#processingMode]; closed in `close()`
   /// before `offsetManager.close()` so any in-flight records get their offsets marked before
@@ -279,22 +262,6 @@ public class KPipeConsumer implements AutoCloseable {
         );
       }
 
-      metrics.putAll(
-        Map.ofEntries(
-          Map.entry(METRIC_MESSAGES_RECEIVED, new AtomicLong(0)),
-          Map.entry(METRIC_MESSAGES_PROCESSED, new AtomicLong(0)),
-          Map.entry(METRIC_PROCESSING_ERRORS, new AtomicLong(0)),
-          Map.entry(METRIC_PROCESSING_DURATION_TOTAL_MS, new AtomicLong(0)),
-          Map.entry(METRIC_RETRIES, new AtomicLong(0)),
-          Map.entry(METRIC_BACKPRESSURE_PAUSE_COUNT, new AtomicLong(0)),
-          Map.entry(METRIC_BACKPRESSURE_TIME_MS, new AtomicLong(0)),
-          Map.entry(METRIC_CIRCUIT_BREAKER_TRIPS, new AtomicLong(0)),
-          Map.entry(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS, new AtomicLong(0)),
-          Map.entry(METRIC_DLQ_SENT, new AtomicLong(0)),
-          Map.entry(METRIC_DLQ_FAILED, new AtomicLong(0))
-        )
-      );
-
       // Guarded once at the source: a throwing user metrics implementation must never crash a
       // worker, abort a batch-flush callback loop, or alter an error-path outcome.
       final var otelMetrics = GuardedConsumerMetrics.guard(builder.consumerMetrics);
@@ -317,30 +284,29 @@ public class KPipeConsumer implements AutoCloseable {
         new ConsumerHealthController.HealthMetricsObserver() {
           @Override
           public void onBackpressurePause() {
-            metrics.get(METRIC_BACKPRESSURE_PAUSE_COUNT).incrementAndGet();
+            counters.backpressurePaused();
             otelMetrics.recordBackpressurePause();
           }
 
           @Override
           public void onBackpressureTimeMs(final long ms) {
-            metrics.get(METRIC_BACKPRESSURE_TIME_MS).addAndGet(ms);
+            counters.backpressureResumed();
             otelMetrics.recordBackpressureTime(ms);
           }
 
           @Override
           public void onCircuitBreakerTrip() {
-            metrics.get(METRIC_CIRCUIT_BREAKER_TRIPS).incrementAndGet();
             otelMetrics.recordCircuitBreakerTrip();
           }
 
           @Override
           public void onCircuitBreakerStateChange(final CircuitBreakerState state) {
+            counters.circuitBreakerChanged(state);
             otelMetrics.recordCircuitBreakerStateChange(state);
           }
 
           @Override
           public void onCircuitBreakerTimeOpenMs(final long ms) {
-            metrics.get(METRIC_CIRCUIT_BREAKER_TIME_OPEN_MS).addAndGet(ms);
             otelMetrics.recordCircuitBreakerTimeOpen(ms);
           }
         }
@@ -357,7 +323,7 @@ public class KPipeConsumer implements AutoCloseable {
         this.offsetManager,
         this.health,
         otelMetrics,
-        this.metrics,
+        this.counters,
         builder.errorHandler,
         deadLetterTopic,
         this.kpipeProducer,
@@ -782,34 +748,12 @@ public class KPipeConsumer implements AutoCloseable {
     return state.get() == ConsumerState.PAUSED;
   }
 
-  /// Returns a snapshot of the current metrics collected by this consumer.
+  /// The consumer's counters now: records received, processed, filtered and failed, in total
+  /// and per topic, plus in-flight records, backpressure and circuit breaker figures.
   ///
-  /// Available metrics:
-  ///
-  /// * `messagesReceived` — records received from Kafka
-  /// * `messagesProcessed` — records successfully processed
-  /// * `processingErrors` — records that failed processing after all retries
-  /// * `processingDurationTotalMs` — total wall-clock time spent inside the pipeline
-  ///   (deserialize → operators → sink)
-  /// * `retries` — retry attempts made for failed records
-  /// * `backpressurePauseCount` / `backpressureTimeMs` — backpressure pause count and total ms held
-  /// * `circuitBreakerTrips` / `circuitBreakerTimeOpenMs` — CB trip count and total ms in OPEN
-  /// * `dlqSent` — records sent to the configured DLQ topic
-  /// * `dlqFailed` — records whose DLQ send failed; the offset is held (reprocessed on
-  ///   restart/rebalance), so a rising count signals a stalling DLQ
-  /// * `inFlight` — current number of messages held by the consumer (live counter, not a counter
-  /// delta).
-  ///   Sums the dispatcher's pending count (records currently being processed or queued per-key)
-  ///   AND any records buffered inside batch-sink wrappers awaiting size/age flush.
-  ///
-  /// @return an unmodifiable map of metric names to their current values
-  public Map<String, Long> getMetrics() {
-    final var snapshot = metrics
-      .entrySet()
-      .stream()
-      .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(), (a, _) -> a, HashMap::new));
-    snapshot.put(ConsumerMetricKeys.IN_FLIGHT, backpressureLoad());
-    return Collections.unmodifiableMap(snapshot);
+  /// @return a snapshot of the counters
+  public MetricsSnapshot metrics() {
+    return counters.snapshot(backpressureLoad());
   }
 
   /// Snapshot of the top `n` keys by current queue depth in the underlying dispatcher,
@@ -1022,6 +966,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// consumer, which would throw (and silently drop the last offsets) on an already-closed one.
   private void releaseConstructedResources() {
     if (!resourcesReleased.compareAndSet(false, true)) return; // already released by another path
+    counters.stopClocks();
     // Every step is best-effort: the CAS above already fired, so a throw here would leak the
     // remaining resources (no path retries). Catch + log each so teardown always runs to the end.
     try {

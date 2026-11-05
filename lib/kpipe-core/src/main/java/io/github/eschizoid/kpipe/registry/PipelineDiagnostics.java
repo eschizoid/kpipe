@@ -2,18 +2,17 @@ package io.github.eschizoid.kpipe.registry;
 
 /// Builds diagnostic messages for deserialization failures at the byte boundary.
 ///
-/// Motivated by a real burn: protobuf seed messages were failing decode because `skipBytes(5)`
-/// (Avro's envelope size) was set on a topic that actually carries the protobuf envelope
-/// (`skipBytes(6)`). The signal was indirect — `messagesProcessed` rising while
-/// `sinkInvocationCount` stayed at 0 — because the exception message gave no hint that the
-/// bytes looked like a Confluent envelope. This helper closes that gap: on a failing
-/// deserialize it hex-dumps the leading bytes and, when the payload looks like a Confluent
+/// A decode failure from a wrong `skipBytes` (5 for Avro's envelope on a topic that carries
+/// Protobuf's, which is 6) gives no hint on its own that the bytes look like a Confluent
+/// envelope. On a failing deserialize this helper hex-dumps the leading bytes and, when the
+/// payload looks like a Confluent
 /// magic-byte envelope and the caller forgot to set `skipBytes(...)`, suggests the right count
 /// for the configured format.
 final class PipelineDiagnostics {
 
   private static final int HEX_DUMP_BYTES = 16;
   private static final byte CONFLUENT_MAGIC = 0x00;
+
   // Byte rendering is shared with the format modules via WireDiagnostics so the two don't drift;
   // this boundary keeps the fuller `hexDump` presentation (leading bytes + total count).
 

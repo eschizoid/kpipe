@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.consumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +85,7 @@ class KPipeSequentialBackpressureIntegrationTest {
 
     // Assert: consumer is paused
     assertTrue(mockConsumer.paused().contains(PARTITION), "Consumer should be paused due to high lag");
-    assertTrue(consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT) >= 1);
+    assertTrue(consumer.metrics().backpressure().pauses() >= 1);
 
     // Wait for resume. As it processes records, position will stay the same in MockConsumer
     // unless we manually update it OR we rely on how MockConsumer.poll() works.
@@ -115,7 +116,7 @@ class KPipeSequentialBackpressureIntegrationTest {
     mc.updateEndOffsets(Map.of(PARTITION, 10L));
 
     assertEquals(0, mc.position(PARTITION));
-    mc.poll(java.time.Duration.ZERO);
+    mc.poll(Duration.ZERO);
     assertEquals(2, mc.position(PARTITION));
     assertEquals(10L, mc.endOffsets(List.of(PARTITION)).get(PARTITION));
   }

@@ -94,7 +94,7 @@ class StreamParallelBatchBackpressureIntegrationTest {
       // Wait for every record to be received before shutdown so we don't race ahead of a slow
       // poll. Generous timeout because the slow sink throttles delivery to ~1000 rec/s.
       waitFor(
-        () -> handle.metrics().getOrDefault("messagesReceived", 0L) >= (long) RECORD_COUNT,
+        () -> handle.metrics().records().received() >= (long) RECORD_COUNT,
         Duration.ofSeconds(60),
         "expected consumer to receive all " + RECORD_COUNT + " records"
       );
@@ -106,7 +106,7 @@ class StreamParallelBatchBackpressureIntegrationTest {
       // moment they're buffered, before the slow sink runs).
       final var metrics = handle.metrics();
       assertTrue(
-        metrics.getOrDefault("backpressurePauseCount", 0L) > 0L,
+        metrics.backpressure().pauses() > 0L,
         "expected at least one backpressure pause, got metrics=" + metrics
       );
 
@@ -120,7 +120,7 @@ class StreamParallelBatchBackpressureIntegrationTest {
       for (int i = 1; i <= RECORD_COUNT; i++) {
         assertTrue(observedIds.contains(i), "missing id " + i);
       }
-      assertEquals(0L, metrics.getOrDefault("processingErrors", 0L), "no processing errors expected");
+      assertEquals(0L, metrics.records().failed(), "no processing errors expected");
     } finally {
       handle.shutdownGracefully(Duration.ofSeconds(2));
     }

@@ -11,6 +11,7 @@ import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -119,7 +120,7 @@ class HardeningGuardsTest {
       final var record = new ConsumerRecord<>(TOPIC, 0, 5L, "k".getBytes(UTF_8), "v".getBytes(UTF_8));
       assertDoesNotThrow(() -> consumer.processRecord(record), "a throwing metrics impl must be swallowed");
       assertTrue(marked.contains(5L), "the record must still be marked processed");
-      assertEquals(1L, consumer.getMetrics().get("messagesProcessed"), "internal counters unaffected");
+      assertEquals(1L, consumer.metrics().records().processed(), "internal counters unaffected");
     }
   }
 
@@ -168,7 +169,7 @@ class HardeningGuardsTest {
       "k".getBytes(UTF_8),
       "v".getBytes(StandardCharsets.UTF_8),
       originalHeaders,
-      java.util.Optional.empty()
+      Optional.empty()
     );
 
     try (

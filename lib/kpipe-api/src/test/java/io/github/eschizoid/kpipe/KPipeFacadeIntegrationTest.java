@@ -88,8 +88,8 @@ class KPipeFacadeIntegrationTest {
       // Verify metrics reflect at least the 5 messages we produced.
       final var metrics = handle.metrics();
       assertNotNull(metrics, "metrics() must not be null");
-      final var processed = metrics.getOrDefault("messagesProcessed", 0L);
-      assertTrue(processed >= 5L, "messagesProcessed (%d) must be >= 5".formatted(processed));
+      final var processed = metrics.records().processed();
+      assertTrue(processed >= 5L, "processed (%d) must be >= 5".formatted(processed));
 
       // Still healthy mid-flight.
       assertTrue(handle.isHealthy(), "Handle should remain healthy while running");

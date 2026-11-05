@@ -3,9 +3,8 @@
 /// Defines the contracts that the consumer and producer runtimes call into to publish
 /// counters, gauges, and timers:
 ///
-/// - [ConsumerMetrics] / [ConsumerMetricsReporter] — consumer-side counters (records, lag, errors,
-/// ...).
-/// - [ProducerMetrics] — producer-side counters (sends, bytes, errors, ...).
+/// - [ConsumerMetrics] — consumer-side counters (records received, processed, failed, ...).
+/// - [ProducerMetrics] — producer-side counters (sends and failures, DLQ writes).
 /// - [KPipeMetricsReporter] — root reporter type used by the pipeline.
 /// - [NoopConsumerMetrics] / [NoopProducerMetrics] — zero-overhead defaults used when no
 ///   backend is wired in.

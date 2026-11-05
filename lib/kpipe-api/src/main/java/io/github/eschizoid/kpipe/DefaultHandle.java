@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.HealthSnapshot;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.consumer.MetricsSnapshot;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -29,8 +30,8 @@ record DefaultHandle(KPipeConsumer consumer) implements Handle {
   }
 
   @Override
-  public Map<String, Long> metrics() {
-    return consumer.getMetrics();
+  public MetricsSnapshot metrics() {
+    return consumer.metrics();
   }
 
   @Override

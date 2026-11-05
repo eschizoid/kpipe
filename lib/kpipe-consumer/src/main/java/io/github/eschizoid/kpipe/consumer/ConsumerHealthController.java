@@ -68,7 +68,7 @@ final class ConsumerHealthController {
   }
 
   /// Pure metric fan-out for backpressure and circuit-breaker events. KPipeConsumer wires this to
-  /// the AtomicLong metrics map plus the OTel `ConsumerMetrics`. These callbacks observe health
+  /// its `ConsumerCounters` plus the OTel `ConsumerMetrics`. These callbacks observe health
   /// transitions — they never touch Kafka consumer state (that is [PauseLifecycleHook]'s job).
   ///
   /// Because it is a pure observer, a caller (or a test) that doesn't record metrics can

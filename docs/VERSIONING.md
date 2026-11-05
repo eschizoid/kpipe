@@ -47,8 +47,8 @@ JPMS module here is exported, with no qualified exports anywhere, so nothing is 
 
 Some types are public without being surface. `ConsoleSinkSupport`, `ConfluentEnvelope` and `WireDiagnostics` are shared
 between KPipe modules and Java has no friend-module visibility, so they cannot be package-private. None of the three are
-user surface. The shape does not identify them — `Operators` and `ConsumerMetricKeys` look identical and are genuine API
-— so this list is the answer, not a pattern to apply.
+user surface. The shape does not identify them — `Operators` and `MetricsSnapshot` look identical and are genuine API —
+so this list is the answer, not a pattern to apply.
 
 `KafkaOffsetManager.getPartitionState` and the `PartitionState` it returns sit outside these tiers: a diagnostic
 surface, documented in [OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md) for observing the commit frontier, with no

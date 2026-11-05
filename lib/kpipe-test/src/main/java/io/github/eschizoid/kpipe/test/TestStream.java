@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.test;
 
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
+import io.github.eschizoid.kpipe.consumer.MetricsSnapshot;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.Operators;
@@ -177,12 +178,11 @@ public final class TestStream<T> implements AutoCloseable {
     );
   }
 
-  /// A snapshot of the underlying consumer's metrics (`messagesReceived`, `messagesProcessed`,
-  /// `processingErrors`, `inFlight`, ...), for assertions on filter and error paths.
+  /// A snapshot of the underlying consumer's counters, for assertions on filter and error paths.
   ///
-  /// @return an immutable metrics snapshot
-  public Map<String, Long> metrics() {
-    return consumer.getMetrics();
+  /// @return the consumer's counters now
+  public MetricsSnapshot metrics() {
+    return consumer.metrics();
   }
 
   /// Every [KPipeConsumer.ProcessingError] the consumer reported so far, in report order. Failed

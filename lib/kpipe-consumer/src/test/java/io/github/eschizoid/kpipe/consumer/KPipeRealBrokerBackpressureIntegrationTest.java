@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -112,11 +113,8 @@ class KPipeRealBrokerBackpressureIntegrationTest {
 
     try {
       // Pause must fire: the in-flight count crossed the high watermark under real fetch load.
-      awaitCondition(
-        () -> consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT) > 0,
-        Duration.ofSeconds(30)
-      );
-      final var pauseCount = consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT);
+      awaitCondition(() -> consumer.metrics().backpressure().pauses() > 0, Duration.ofSeconds(30));
+      final var pauseCount = consumer.metrics().backpressure().pauses();
       assertTrue(
         pauseCount > 0,
         "Consumer must pause at least once under real-broker backpressure; pauses=" + pauseCount
@@ -136,7 +134,7 @@ class KPipeRealBrokerBackpressureIntegrationTest {
 
       // Resume must have happened: once the backlog drains the consumer is no longer paused.
       // The public `inFlight` gauge mirrors the count the backpressure controller reads.
-      final var resumed = awaitCondition(() -> consumer.getMetrics().get("inFlight") == 0L, Duration.ofSeconds(30));
+      final var resumed = awaitCondition(() -> consumer.metrics().inFlight() == 0L, Duration.ofSeconds(30));
       assertTrue(resumed, "In-flight count must drain to zero after the burst is processed");
 
       LOGGER.log(
@@ -156,8 +154,7 @@ class KPipeRealBrokerBackpressureIntegrationTest {
   }
 
   /// Polls a boolean condition until it holds or the deadline passes. Returns the final state.
-  private boolean awaitCondition(final java.util.function.BooleanSupplier condition, final Duration timeout)
-    throws InterruptedException {
+  private boolean awaitCondition(final BooleanSupplier condition, final Duration timeout) throws InterruptedException {
     final var deadline = System.currentTimeMillis() + timeout.toMillis();
     while (!condition.getAsBoolean() && System.currentTimeMillis() < deadline) {
       TimeUnit.MILLISECONDS.sleep(50);

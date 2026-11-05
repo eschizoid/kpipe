@@ -311,7 +311,7 @@ class KPipeDlqTest {
             throw new NonRetryableException("missing required field 'id'");
           })
         )
-        .withRetry(3, Duration.ofSeconds(1))
+        .withRetry(3, Duration.ofSeconds(30))
         .withDeadLetterTopic(DLQ_TOPIC)
         .withKafkaProducer(mockProducer)
         .withErrorHandler(error -> retryCounts.add(error.retryCount()))
@@ -322,7 +322,7 @@ class KPipeDlqTest {
       final var took = Duration.ofNanos(System.nanoTime() - started);
 
       assertEquals(1, attempts.get(), "a failure a retry cannot fix is not retried");
-      assertTrue(took.compareTo(Duration.ofSeconds(1)) < 0, "no retry backoff was waited out; took " + took);
+      assertTrue(took.compareTo(Duration.ofSeconds(10)) < 0, "a retry would wait out a 30 s backoff; took " + took);
       verify(mockProducer).send(argThat(r -> DLQ_TOPIC.equals(r.topic())));
       assertEquals(java.util.List.of(0), retryCounts);
     }
@@ -409,7 +409,7 @@ class KPipeDlqTest {
             .pipe(io.github.eschizoid.kpipe.format.json.JsonFields.require("id"))
             .build()
         )
-        .withRetry(3, Duration.ofSeconds(1))
+        .withRetry(3, Duration.ofSeconds(30))
         .withDeadLetterTopic(DLQ_TOPIC)
         .withKafkaProducer(mockProducer)
         .withErrorHandler(error -> retryCounts.add(error.retryCount()))
@@ -419,7 +419,7 @@ class KPipeDlqTest {
       consumer.processRecord(record);
       final var took = Duration.ofNanos(System.nanoTime() - started);
 
-      assertTrue(took.compareTo(Duration.ofSeconds(1)) < 0, "no retry backoff was waited out; took " + took);
+      assertTrue(took.compareTo(Duration.ofSeconds(10)) < 0, "a retry would wait out a 30 s backoff; took " + took);
       verify(mockProducer).send(argThat(r -> DLQ_TOPIC.equals(r.topic())));
       assertEquals(java.util.List.of(0), retryCounts);
     }

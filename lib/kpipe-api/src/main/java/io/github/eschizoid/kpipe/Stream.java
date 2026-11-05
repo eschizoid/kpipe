@@ -219,9 +219,8 @@ public interface Stream<T> {
   /// throws, the exception is logged at WARNING and swallowed. Calling this method more than
   /// once replaces the previous observer.
   ///
-  /// **Use this when "processed" counters look healthy but the sink is starved.** If
-  /// `messagesProcessed` keeps rising while `sinkInvocationCount` stays at 0, the pipeline is
-  /// silently routing records into `Failed` (or `Filtered`). Attach
+  /// **Use this when records stop reaching the sink.** If `metrics().records().failed()` or
+  /// `filtered()` keeps rising while the sink sees nothing, attach
   /// `onFailed(cause -> log.warn("pipeline failed", cause))` to surface what's actually being
   /// lost.
   ///
@@ -296,8 +295,7 @@ public interface Stream<T> {
   /// daemon and does not keep the JVM alive.
   ///
   /// @param reporters the reporters to invoke on each interval (must be non-null); the collection
-  ///     is copied, and a `List<ConsumerMetricsReporter>` is accepted as well as a
-  ///     `List<KPipeMetricsReporter>`
+  ///     is copied
   /// @return a new stream with periodic reporting configured
   /// @throws NullPointerException if `reporters` is null
   Stream<T> withMetricsReporters(final Collection<? extends KPipeMetricsReporter> reporters);

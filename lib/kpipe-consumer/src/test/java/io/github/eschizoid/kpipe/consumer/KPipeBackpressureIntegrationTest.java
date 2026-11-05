@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.consumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -76,7 +77,7 @@ class KPipeBackpressureIntegrationTest {
 
       // Assert: Kafka consumer is paused
       assertTrue(mockConsumer.paused().contains(PARTITION), "Consumer should be paused due to backpressure");
-      assertEquals(1L, consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
+      assertEquals(1L, consumer.metrics().backpressure().pauses());
 
       // Release the sink → in-flight drops to 0, below lowWatermark=1
       sinkRelease.countDown();
@@ -123,10 +124,9 @@ class KPipeBackpressureIntegrationTest {
       sinkRelease.countDown();
       awaitCondition(() -> mockConsumer.paused().isEmpty(), 3000);
 
-      // backpressureTimeMs must be > 0
       assertTrue(
-        consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_TIME_MS) > 0,
-        "backpressureTimeMs should be positive after a backpressure pause"
+        consumer.metrics().backpressure().time().isPositive(),
+        "backpressure time should be positive after a backpressure pause"
       );
 
       consumer.close();
@@ -158,7 +158,7 @@ class KPipeBackpressureIntegrationTest {
       Thread.sleep(300);
 
       assertTrue(mockConsumer.paused().isEmpty(), "Consumer should never have paused");
-      assertEquals(0L, consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT));
+      assertEquals(0L, consumer.metrics().backpressure().pauses());
 
       consumer.close();
     }
@@ -211,7 +211,7 @@ class KPipeBackpressureIntegrationTest {
 
       // Assert: consumer is paused
       assertTrue(mc.paused().contains(PARTITION));
-      assertEquals(5L, consumer.getMetrics().get("messagesReceived"));
+      assertEquals(5L, consumer.metrics().records().received());
 
       // Now add more records while it's paused
       for (int i = 5; i < 10; i++) {
@@ -222,15 +222,15 @@ class KPipeBackpressureIntegrationTest {
       Thread.sleep(500);
 
       // Should still have only 5 records received because it's paused
-      assertEquals(5L, consumer.getMetrics().get("messagesReceived"), "No more records should be polled while paused");
+      assertEquals(5L, consumer.metrics().records().received(), "No more records should be polled while paused");
 
       // Release and wait for resume
       sinkRelease.countDown();
       awaitCondition(() -> mc.paused().isEmpty(), 3000);
 
       // Now it should poll the remaining records
-      awaitCondition(() -> consumer.getMetrics().get("messagesReceived") == 10, 3000);
-      assertEquals(10L, consumer.getMetrics().get("messagesReceived"));
+      awaitCondition(() -> consumer.metrics().records().received() == 10, 3000);
+      assertEquals(10L, consumer.metrics().records().received());
 
       consumer.close();
     }
@@ -264,7 +264,7 @@ class KPipeBackpressureIntegrationTest {
       consumer.start();
 
       // Wait for first 5 to be polled
-      awaitCondition(() -> consumer.getMetrics().get("messagesReceived") == 5, 2000);
+      awaitCondition(() -> consumer.metrics().records().received() == 5, 2000);
 
       // Pause manually
       consumer.pause();
@@ -279,14 +279,14 @@ class KPipeBackpressureIntegrationTest {
 
       // Wait some more to ensure no more are polled while paused
       Thread.sleep(500);
-      assertEquals(5L, consumer.getMetrics().get("messagesReceived"), "No more records should be polled while paused");
+      assertEquals(5L, consumer.metrics().records().received(), "No more records should be polled while paused");
 
       // Resume manually
       consumer.resume();
 
       // Wait for the rest to be polled
-      awaitCondition(() -> consumer.getMetrics().get("messagesReceived") == 10, 3000);
-      assertEquals(10L, consumer.getMetrics().get("messagesReceived"));
+      awaitCondition(() -> consumer.metrics().records().received() == 10, 3000);
+      assertEquals(10L, consumer.metrics().records().received());
 
       consumer.close();
     }
@@ -342,7 +342,7 @@ class KPipeBackpressureIntegrationTest {
 
       // Assert: consumer is paused
       assertTrue(mockConsumer.paused().contains(PARTITION), "Consumer should be paused due to high lag");
-      assertTrue(consumer.getMetrics().get(KPipeConsumer.METRIC_BACKPRESSURE_PAUSE_COUNT) >= 1);
+      assertTrue(consumer.metrics().backpressure().pauses() >= 1);
 
       consumer.close();
     }
@@ -370,7 +370,7 @@ class KPipeBackpressureIntegrationTest {
       mc.updateEndOffsets(Map.of(PARTITION, 10L));
 
       assertEquals(0, mc.position(PARTITION));
-      mc.poll(java.time.Duration.ZERO);
+      mc.poll(Duration.ZERO);
       assertEquals(2, mc.position(PARTITION));
       assertEquals(10L, mc.endOffsets(List.of(PARTITION)).get(PARTITION));
     }
