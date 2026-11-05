@@ -3,12 +3,18 @@ package io.github.eschizoid.kpipe.consumer;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -38,7 +44,7 @@ class KafkaOffsetManagerStoreTest {
   static final class FakeStore implements OffsetStore {
 
     final List<Map<TopicPartition, Long>> commits = new CopyOnWriteArrayList<>();
-    final Map<TopicPartition, Long> stored = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<TopicPartition, Long> stored = new ConcurrentHashMap<>();
     final AtomicInteger failingLoads = new AtomicInteger();
     final AtomicInteger checkedLoadFailures = new AtomicInteger();
     final AtomicInteger failingCommits = new AtomicInteger();
@@ -47,11 +53,9 @@ class KafkaOffsetManagerStoreTest {
     @Override
     public Map<TopicPartition, Long> load(final Collection<TopicPartition> partitions) {
       loads.incrementAndGet();
-      if (checkedLoadFailures.getAndUpdate(n -> Math.max(0, n - 1)) > 0) throwUnchecked(
-        new java.io.IOException("store down")
-      );
+      if (checkedLoadFailures.getAndUpdate(n -> Math.max(0, n - 1)) > 0) throwUnchecked(new IOException("store down"));
       if (failingLoads.getAndUpdate(n -> Math.max(0, n - 1)) > 0) throw new IllegalStateException("store down");
-      final var result = new java.util.HashMap<TopicPartition, Long>();
+      final var result = new HashMap<TopicPartition, Long>();
       partitions.forEach(partition -> {
         final var offset = stored.get(partition);
         if (offset != null) result.put(partition, offset);
@@ -131,7 +135,7 @@ class KafkaOffsetManagerStoreTest {
     final var signalled = System.nanoTime();
     manager.signalClosing();
 
-    assertThrows(java.util.concurrent.ExecutionException.class, () -> assignment.get(10, TimeUnit.SECONDS));
+    assertThrows(ExecutionException.class, () -> assignment.get(10, TimeUnit.SECONDS));
     final var waited = Duration.ofNanos(System.nanoTime() - signalled);
     assertTrue(waited.compareTo(Duration.ofMillis(500)) < 0, "the retry wait ends on the signal; took " + waited);
     verify(consumer, never()).seek(any(TopicPartition.class), anyLong());
@@ -154,8 +158,8 @@ class KafkaOffsetManagerStoreTest {
   /// writes the final frontier, so the last write for the partition is the revoke's.
   @Test
   void aRevokeWaitsForAPeriodicCommitThatIsStillWriting() throws Exception {
-    final var entered = new java.util.concurrent.CountDownLatch(1);
-    final var release = new java.util.concurrent.CountDownLatch(1);
+    final var entered = new CountDownLatch(1);
+    final var release = new CountDownLatch(1);
     final var writers = new CopyOnWriteArrayList<String>();
     final OffsetStore blocking = new OffsetStore() {
       @Override
@@ -209,9 +213,7 @@ class KafkaOffsetManagerStoreTest {
     while (store.loads.get() < 2) TimeUnit.MILLISECONDS.sleep(10);
     manager.close();
 
-    final var thrown = assertThrows(java.util.concurrent.ExecutionException.class, () ->
-      assignment.get(10, TimeUnit.SECONDS)
-    );
+    final var thrown = assertThrows(ExecutionException.class, () -> assignment.get(10, TimeUnit.SECONDS));
     assertInstanceOf(IllegalStateException.class, thrown.getCause());
     verify(consumer, never()).seek(any(TopicPartition.class), anyLong());
   }
@@ -275,7 +277,7 @@ class KafkaOffsetManagerStoreTest {
   void theConsumerBuilderRejectsAStoreAlongsideACustomOffsetManager() {
     final var custom = KafkaOffsetManager.builder(consumer).withOffsetStore(store).build();
     final var builder = KPipeConsumer.builder()
-      .withProperties(new java.util.Properties())
+      .withProperties(new Properties())
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.identity())
       .withConsumer(() -> consumer)

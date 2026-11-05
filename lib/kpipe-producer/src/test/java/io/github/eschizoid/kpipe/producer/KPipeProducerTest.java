@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.Callback;
@@ -66,7 +67,7 @@ class KPipeProducerTest {
   @Test
   @SuppressWarnings("unchecked")
   void shouldRestoreInterruptFlagOnInterruptedSend() throws Exception {
-    final var future = mock(java.util.concurrent.Future.class);
+    final var future = mock(Future.class);
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(future);
     when(future.get()).thenThrow(new InterruptedException());
 

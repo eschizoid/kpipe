@@ -10,6 +10,7 @@ import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -17,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.jupiter.api.Test;
 
@@ -42,14 +44,12 @@ class OperationalSettersTest {
 
   private static final OffsetStore STORE = new OffsetStore() {
     @Override
-    public Map<org.apache.kafka.common.TopicPartition, Long> load(
-      final java.util.Collection<org.apache.kafka.common.TopicPartition> partitions
-    ) {
+    public Map<TopicPartition, Long> load(final Collection<TopicPartition> partitions) {
       return Map.of();
     }
 
     @Override
-    public void commit(final Map<org.apache.kafka.common.TopicPartition, Long> offsets) {}
+    public void commit(final Map<TopicPartition, Long> offsets) {}
   };
 
   private static Properties props() {

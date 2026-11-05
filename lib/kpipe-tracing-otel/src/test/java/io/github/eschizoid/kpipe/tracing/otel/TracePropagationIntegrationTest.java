@@ -7,16 +7,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.KPipe;
 import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -57,10 +60,8 @@ class TracePropagationIntegrationTest {
     DockerImageName.parse("apache/kafka:%s".formatted(KAFKA_VERSION))
   ).withStartupAttempts(3);
 
-  private static java.util.List<io.opentelemetry.sdk.trace.data.SpanData> waitForSpans(
-    final InMemorySpanExporter exporter,
-    final Duration timeout
-  ) throws InterruptedException {
+  private static List<SpanData> waitForSpans(final InMemorySpanExporter exporter, final Duration timeout)
+    throws InterruptedException {
     final var deadline = System.nanoTime() + timeout.toNanos();
     while (System.nanoTime() < deadline) {
       final var spans = exporter.getFinishedSpanItems();
@@ -149,10 +150,7 @@ class TracePropagationIntegrationTest {
       assertTrue(parentCtx.isValid(), "captured span must have a valid parent context");
       assertEquals(INBOUND_TRACE_ID, parentCtx.getTraceId(), "span parent trace id must equal inbound trace id");
       assertEquals(INBOUND_SPAN_ID, parentCtx.getSpanId(), "span parent span id must equal inbound parent id");
-      assertEquals(
-        inputTopic,
-        span.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("messaging.kafka.topic"))
-      );
+      assertEquals(inputTopic, span.getAttributes().get(AttributeKey.stringKey("messaging.kafka.topic")));
     } finally {
       try {
         handle.shutdownGracefully(Duration.ofSeconds(5));

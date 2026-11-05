@@ -3,11 +3,13 @@ package io.github.eschizoid.kpipe.consumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
@@ -23,6 +25,7 @@ import net.jqwik.api.Tuple;
 import net.jqwik.api.constraints.IntRange;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
 /// Property-based coverage for the offset-lifecycle ordering invariants — lowest-pending commits,
@@ -383,9 +386,7 @@ class OffsetOrderingPropertyTest {
     final var lastCommit = new HashMap<TopicPartition, Long>();
     final var consumer = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
-      public synchronized void commitSync(
-        final java.util.Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsets
-      ) {
+      public synchronized void commitSync(final Map<TopicPartition, OffsetAndMetadata> offsets) {
         super.commitSync(offsets);
         offsets.forEach((tp, meta) -> lastCommit.put(tp, meta.offset()));
       }
@@ -455,7 +456,7 @@ class OffsetOrderingPropertyTest {
         }
 
         requested.clear();
-        assertTrue(manager.commitSyncAndWait(java.time.Duration.ofSeconds(1)), "a captured commit completes at once");
+        assertTrue(manager.commitSyncAndWait(Duration.ofSeconds(1)), "a captured commit completes at once");
         for (final var entry : requested.entrySet()) {
           final var partition = entry.getKey().partition();
           assertTrue(

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
+import java.util.Arrays;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
@@ -77,7 +78,7 @@ class KPipeBytesConsoleSinkTest {
     // to return false so the rest of the (otherwise printable) 'a' bytes go through the hex
     // preview. The total length (200) must still appear in the rendered output.
     final var large = new byte[200];
-    java.util.Arrays.fill(large, (byte) 'a');
+    Arrays.fill(large, (byte) 'a');
     large[0] = 0x00;
     KPipe.bytesConsoleSink().accept(large);
     final var out = output();

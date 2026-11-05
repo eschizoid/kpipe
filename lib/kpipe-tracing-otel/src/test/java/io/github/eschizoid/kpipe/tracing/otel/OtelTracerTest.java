@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.tracing.Tracer;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -76,14 +77,8 @@ class OtelTracerTest {
     assertNotEquals(PARENT_SPAN_ID, span.getSpanId());
 
     // Sanity checks on enrichment attributes — names follow OTel messaging semantic conventions.
-    assertEquals(
-      "source-topic",
-      span.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("messaging.kafka.topic"))
-    );
-    assertEquals(
-      "kafka",
-      span.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("messaging.system"))
-    );
+    assertEquals("source-topic", span.getAttributes().get(AttributeKey.stringKey("messaging.kafka.topic")));
+    assertEquals("kafka", span.getAttributes().get(AttributeKey.stringKey("messaging.system")));
   }
 
   @Test

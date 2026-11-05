@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import io.github.eschizoid.kpipe.sink.MessageSink;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -72,7 +73,7 @@ class MessageProcessorRegistrySinksTest {
 
   @Test
   void shouldTrackMetricsForSink() {
-    final var callCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    final var callCount = new AtomicInteger(0);
     final MessageSink<Object> countingSink = _ -> callCount.incrementAndGet();
 
     final var key = RegistryKey.of("countingSink", Object.class);

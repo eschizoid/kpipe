@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
@@ -47,13 +48,14 @@ class BackpressureControllerTest {
 
   @Test
   void shouldIncludeOffendingValueInWatermarkMessages() {
-    final var highThrown = assertThrows(
-      IllegalArgumentException.class, () -> new BackpressureController(-7, 0, DUMMY_STRATEGY));
-    assertTrue(
-      highThrown.getMessage().contains("got -7"), () -> "msg was: " + highThrown.getMessage());
+    final var highThrown = assertThrows(IllegalArgumentException.class, () ->
+      new BackpressureController(-7, 0, DUMMY_STRATEGY)
+    );
+    assertTrue(highThrown.getMessage().contains("got -7"), () -> "msg was: " + highThrown.getMessage());
 
-    final var lowThrown = assertThrows(
-      IllegalArgumentException.class, () -> new BackpressureController(1000, -3, DUMMY_STRATEGY));
+    final var lowThrown = assertThrows(IllegalArgumentException.class, () ->
+      new BackpressureController(1000, -3, DUMMY_STRATEGY)
+    );
     assertTrue(lowThrown.getMessage().contains("got -3"), () -> "msg was: " + lowThrown.getMessage());
   }
 
@@ -100,7 +102,7 @@ class BackpressureControllerTest {
     final var assignment = Set.of(tp1, tp2);
 
     when(consumer.assignment()).thenReturn(assignment);
-    when(consumer.endOffsets(assignment, java.time.Duration.ofSeconds(2))).thenReturn(Map.of(tp1, 100L, tp2, 200L));
+    when(consumer.endOffsets(assignment, Duration.ofSeconds(2))).thenReturn(Map.of(tp1, 100L, tp2, 200L));
     when(consumer.position(tp1)).thenReturn(90L); // lag 10
     when(consumer.position(tp2)).thenReturn(150L); // lag 50
 
@@ -125,7 +127,7 @@ class BackpressureControllerTest {
     final var assignment = Set.of(tp);
 
     when(consumer.assignment()).thenReturn(assignment);
-    when(consumer.endOffsets(assignment, java.time.Duration.ofSeconds(2))).thenReturn(Map.of(tp, 100L));
+    when(consumer.endOffsets(assignment, Duration.ofSeconds(2))).thenReturn(Map.of(tp, 100L));
     when(consumer.position(tp)).thenReturn(80L);
 
     assertEquals(20, strategy.getMetric(consumer));
@@ -133,7 +135,7 @@ class BackpressureControllerTest {
 
   @Test
   void inFlightStrategyShouldReturnCorrectNameAndMetric() {
-    final var inFlightValue = new java.util.concurrent.atomic.AtomicLong(42);
+    final var inFlightValue = new AtomicLong(42);
     final var strategy = BackpressureController.inFlightStrategy(inFlightValue::get);
     assertEquals("in-flight", strategy.getName());
 

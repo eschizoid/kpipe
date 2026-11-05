@@ -12,10 +12,12 @@ import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -140,10 +142,8 @@ class DlqTracePropagationIntegrationTest {
     }
   }
 
-  private static java.util.List<io.opentelemetry.sdk.trace.data.SpanData> waitForSpans(
-    final InMemorySpanExporter exporter,
-    final Duration timeout
-  ) throws InterruptedException {
+  private static List<SpanData> waitForSpans(final InMemorySpanExporter exporter, final Duration timeout)
+    throws InterruptedException {
     final var deadline = System.nanoTime() + timeout.toNanos();
     while (System.nanoTime() < deadline) {
       final var spans = exporter.getFinishedSpanItems();

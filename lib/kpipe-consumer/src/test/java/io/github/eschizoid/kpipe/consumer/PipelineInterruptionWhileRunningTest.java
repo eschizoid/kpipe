@@ -20,6 +20,7 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Headers;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -109,7 +110,7 @@ class PipelineInterruptionWhileRunningTest {
   /// At shutdown the same exception does mean the record was cut short, even when the pipeline
   /// wraps the `InterruptedException` without restoring the interrupt flag. The record stays
   /// unmarked, so the commit stops at it and it is redelivered.
-  @org.junit.jupiter.api.Test
+  @Test
   void anInterruptionAtShutdownStillLeavesTheRecordUnmarkedWithoutTheFlag() throws InterruptedException {
     final var commits = new ConcurrentHashMap<TopicPartition, OffsetAndMetadata>();
     final var mockConsumer = new MockConsumer<byte[], byte[]>("earliest") {

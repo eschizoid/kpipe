@@ -9,6 +9,7 @@ import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -422,7 +423,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   }
 
   private void logInterrupted(final List<Entry<T>> snapshot, final Throwable cause) {
-    final var lowestOffsetByPartition = new java.util.TreeMap<Integer, Long>();
+    final var lowestOffsetByPartition = new TreeMap<Integer, Long>();
     for (final var entry : snapshot) {
       lowestOffsetByPartition.merge(entry.record().partition(), entry.record().offset(), Math::min);
     }

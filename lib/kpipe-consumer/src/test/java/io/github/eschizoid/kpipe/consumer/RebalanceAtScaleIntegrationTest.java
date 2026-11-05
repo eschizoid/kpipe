@@ -14,6 +14,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -464,8 +465,7 @@ class RebalanceAtScaleIntegrationTest {
   }
 
   /// Polls a boolean condition until it holds or the deadline passes. Returns the final state.
-  private boolean awaitCondition(final java.util.function.BooleanSupplier condition, final Duration timeout)
-    throws InterruptedException {
+  private boolean awaitCondition(final BooleanSupplier condition, final Duration timeout) throws InterruptedException {
     final var deadline = System.currentTimeMillis() + timeout.toMillis();
     while (System.currentTimeMillis() < deadline) {
       if (condition.getAsBoolean()) {

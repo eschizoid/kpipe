@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.registry;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /// A key with nothing registered under it fails, at build time when the pipeline is built and as
@@ -72,6 +73,6 @@ class MessageProcessorRegistryMissingKeyTest {
     final var passed = assertInstanceOf(Result.Passed.class, pipeline.process(new byte[] { 0 }));
     pipeline.getSink().accept((byte[]) passed.value());
 
-    assertEquals(java.util.List.of("second:2"), delivered);
+    assertEquals(List.of("second:2"), delivered);
   }
 }

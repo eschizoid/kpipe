@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /// Payload-shape edge cases for [JsonFormat]: oversized documents, truncated UTF-8 input, and
@@ -16,7 +17,7 @@ class JsonFormatEdgeCasesTest {
   @Test
   void oversizedDocumentRoundTrips() {
     final var big = "y".repeat(2_000_000);
-    final var bytes = JsonFormat.INSTANCE.serialize(java.util.Map.of("blob", big));
+    final var bytes = JsonFormat.INSTANCE.serialize(Map.of("blob", big));
 
     final var decoded = JsonFormat.INSTANCE.deserialize(bytes);
 

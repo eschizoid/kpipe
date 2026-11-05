@@ -22,6 +22,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 /// A batch route's final flush at shutdown, cut short by `close()` interrupting the consumer
 /// thread, must not cost the records it never delivered, nor the final commit. The commit has to
@@ -172,8 +173,8 @@ class ShutdownBatchInterruptTest {
   /// Teardown carries on when the offset manager's close throws; the consumer still closes.
   @Test
   void closeCompletesWhenTheOffsetManagerThrowsOnClose() {
-    final var manager = org.mockito.Mockito.mock(OffsetManager.class);
-    org.mockito.Mockito.doThrow(new IllegalStateException("close failed")).when(manager).close();
+    final var manager = Mockito.mock(OffsetManager.class);
+    Mockito.doThrow(new IllegalStateException("close failed")).when(manager).close();
     final var properties = new Properties();
     properties.put("bootstrap.servers", "localhost:9092");
     properties.put("group.id", "offset-manager-close-group");
@@ -191,6 +192,6 @@ class ShutdownBatchInterruptTest {
     consumer.close();
 
     assertTrue(consumer.awaitShutdown(Duration.ofSeconds(5)), "the consumer finishes closing");
-    org.mockito.Mockito.verify(manager).close();
+    Mockito.verify(manager).close();
   }
 }

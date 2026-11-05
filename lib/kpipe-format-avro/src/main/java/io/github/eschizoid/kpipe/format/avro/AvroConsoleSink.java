@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericDatumWriter;
@@ -24,7 +25,7 @@ public record AvroConsoleSink<T>(Schema schema) implements MessageSink<T> {
 
   /// Canonical constructor; rejects a null schema.
   public AvroConsoleSink {
-    java.util.Objects.requireNonNull(schema, "schema cannot be null");
+    Objects.requireNonNull(schema, "schema cannot be null");
   }
 
   @Override

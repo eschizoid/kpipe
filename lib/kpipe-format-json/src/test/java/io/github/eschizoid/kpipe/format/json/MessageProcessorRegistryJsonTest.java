@@ -8,6 +8,7 @@ import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.RegistryKey;
 import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.sink.MessageSink;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
@@ -125,7 +126,7 @@ class MessageProcessorRegistryJsonTest {
     };
     final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(sink);
 
-    assertDoesNotThrow(() -> safeSink.accept(new java.util.HashMap<>()));
+    assertDoesNotThrow(() -> safeSink.accept(new HashMap<>()));
   }
 
   @Test

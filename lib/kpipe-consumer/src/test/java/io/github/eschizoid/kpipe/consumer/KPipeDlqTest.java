@@ -5,13 +5,19 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import io.github.eschizoid.kpipe.format.json.JsonFields;
+import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.NonRetryableException;
+import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.Producer;
@@ -269,8 +275,8 @@ class KPipeDlqTest {
       }
 
       @Override
-      public io.github.eschizoid.kpipe.registry.Result<String> process(final String data) {
-        return io.github.eschizoid.kpipe.registry.Result.passed(data);
+      public Result<String> process(final String data) {
+        return Result.passed(data);
       }
     };
   }
@@ -299,7 +305,7 @@ class KPipeDlqTest {
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
     final var attempts = new AtomicInteger();
-    final var retryCounts = new java.util.concurrent.CopyOnWriteArrayList<Integer>();
+    final var retryCounts = new CopyOnWriteArrayList<Integer>();
 
     try (
       final var consumer = KPipeConsumer.builder()
@@ -324,7 +330,7 @@ class KPipeDlqTest {
       assertEquals(1, attempts.get(), "a failure a retry cannot fix is not retried");
       assertTrue(took.compareTo(Duration.ofSeconds(10)) < 0, "a retry would wait out a 30 s backoff; took " + took);
       verify(mockProducer).send(argThat(r -> DLQ_TOPIC.equals(r.topic())));
-      assertEquals(java.util.List.of(0), retryCounts);
+      assertEquals(List.of(0), retryCounts);
     }
   }
 
@@ -397,17 +403,14 @@ class KPipeDlqTest {
     when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
       CompletableFuture.completedFuture(mock(RecordMetadata.class))
     );
-    final var retryCounts = new java.util.concurrent.CopyOnWriteArrayList<Integer>();
+    final var retryCounts = new CopyOnWriteArrayList<Integer>();
 
     try (
       final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
         .withPipeline(
-          new io.github.eschizoid.kpipe.registry.MessageProcessorRegistry()
-            .pipeline(io.github.eschizoid.kpipe.format.json.JsonFormat.INSTANCE)
-            .pipe(io.github.eschizoid.kpipe.format.json.JsonFields.require("id"))
-            .build()
+          new MessageProcessorRegistry().pipeline(JsonFormat.INSTANCE).pipe(JsonFields.require("id")).build()
         )
         .withRetry(3, Duration.ofSeconds(30))
         .withDeadLetterTopic(DLQ_TOPIC)
@@ -421,7 +424,7 @@ class KPipeDlqTest {
 
       assertTrue(took.compareTo(Duration.ofSeconds(10)) < 0, "a retry would wait out a 30 s backoff; took " + took);
       verify(mockProducer).send(argThat(r -> DLQ_TOPIC.equals(r.topic())));
-      assertEquals(java.util.List.of(0), retryCounts);
+      assertEquals(List.of(0), retryCounts);
     }
   }
 }

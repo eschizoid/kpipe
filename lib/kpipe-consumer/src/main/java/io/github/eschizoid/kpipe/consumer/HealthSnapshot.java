@@ -22,13 +22,16 @@ public record HealthSnapshot(
   CircuitBreakerState circuitBreaker,
   long inFlight
 ) {
+  /// Copies `pauseSources`.
   public HealthSnapshot {
     pauseSources = Set.copyOf(pauseSources);
   }
 
-  /// `true` when the consumer is running and the circuit breaker is not OPEN. Backpressure or
-  /// manual pauses do not make a consumer unhealthy — they are normal flow control — but an
-  /// OPEN breaker means downstream is failing and consumption is deliberately halted.
+  /// Whether the consumer is running and the circuit breaker is not OPEN. Backpressure or manual
+  /// pauses do not make a consumer unhealthy — they are normal flow control — but an OPEN breaker
+  /// means downstream is failing and consumption is deliberately halted.
+  ///
+  /// @return `true` when the consumer is running and the breaker is not OPEN
   public boolean healthy() {
     return running && circuitBreaker != CircuitBreakerState.OPEN;
   }

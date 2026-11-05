@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongFunction;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
@@ -69,7 +70,7 @@ class KeyOrderedEvictTombstoneFrayTest {
   /// One thread dispatches two records for key A back to back, mirroring production where a single
   /// consumer thread dispatches, while another forces an eviction by introducing key B. Every task
   /// must run exactly once, key A's two tasks must never overlap, and they must run in the
-/// order they were dispatched.
+  /// order they were dispatched.
   @FrayTest(iterations = 500)
   void evictionNeverBreaksPerKeySerialization() {
     final var dispatcher = new KeyOrderedDispatcher(1, Thread.ofPlatform().daemon().factory());
@@ -80,13 +81,14 @@ class KeyOrderedEvictTombstoneFrayTest {
     final var maxConcurrentOnA = new AtomicInteger();
     final var done = new CountDownLatch(3);
     final var keyAOrder = Collections.synchronizedList(new ArrayList<Long>());
-    final java.util.function.LongFunction<Runnable> keyATask = offset -> () -> {
-      final var live = concurrentOnA.incrementAndGet();
-      maxConcurrentOnA.accumulateAndGet(live, Math::max);
-      keyAOrder.add(offset);
-      tasksRun.incrementAndGet();
-      concurrentOnA.decrementAndGet();
-    };
+    final LongFunction<Runnable> keyATask = offset ->
+      () -> {
+        final var live = concurrentOnA.incrementAndGet();
+        maxConcurrentOnA.accumulateAndGet(live, Math::max);
+        keyAOrder.add(offset);
+        tasksRun.incrementAndGet();
+        concurrentOnA.decrementAndGet();
+      };
 
     FrayScenarios.runConcurrently(
       () -> {
@@ -103,15 +105,15 @@ class KeyOrderedEvictTombstoneFrayTest {
     assertEquals(
       List.of(10L, 11L),
       List.copyOf(keyAOrder),
-      "key A's records ran out of dispatch order. Non-overlap alone is not the KEY_ORDERED "
-        + "guarantee — records sharing a key must also run in the order they were dispatched, and "
-        + "an eviction between the two dispatches is exactly where that can be lost."
+      "key A's records ran out of dispatch order. Non-overlap alone is not the KEY_ORDERED " +
+        "guarantee — records sharing a key must also run in the order they were dispatched, and " +
+        "an eviction between the two dispatches is exactly where that can be lost."
     );
     assertEquals(
       1,
       maxConcurrentOnA.get(),
-      "two workers processed key A at the same time: a dispatcher enqueued into an evicted queue "
-        + "and the next record for that key allocated a second queue and worker"
+      "two workers processed key A at the same time: a dispatcher enqueued into an evicted queue " +
+        "and the next record for that key allocated a second queue and worker"
     );
   }
 
@@ -155,10 +157,10 @@ class KeyOrderedEvictTombstoneFrayTest {
     System.out.printf("eviction-tombstone retries observed across the run: %d%n", hits);
     assertTrue(
       hits > 0,
-      "no schedule reached the dead-tombstone retry path, so this run proved nothing about it. "
-        + "Either the key cap leaves a spare idle queue so eviction never has to touch key A, or "
-        + "the scenario no longer sets up the {A: empty, idle} precondition eviction needs, or "
-        + "the suite ran un-instrumented and every schedule was skipped."
+      "no schedule reached the dead-tombstone retry path, so this run proved nothing about it. " +
+        "Either the key cap leaves a spare idle queue so eviction never has to touch key A, or " +
+        "the scenario no longer sets up the {A: empty, idle} precondition eviction needs, or " +
+        "the suite ran un-instrumented and every schedule was skipped."
     );
   }
 

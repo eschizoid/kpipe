@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -21,7 +22,7 @@ class CommitSchedulerStopTest {
     // Like a command queue the consumer thread no longer drains: requests are taken, never served.
     final CommitExecutor unserved = _ -> {
       commitRequested.countDown();
-      return new java.util.concurrent.CompletableFuture<>();
+      return new CompletableFuture<>();
     };
     final var manager = KafkaOffsetManager.builder(new MockConsumer<byte[], byte[]>("earliest"))
       .withCommitExecutor(unserved)

@@ -120,7 +120,7 @@ public final class KPipeConsumerBuilder {
   /// @param topics The topic names (must be non-empty)
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withTopics(final String... topics) {
-    return withTopics(java.util.Arrays.asList(Objects.requireNonNull(topics, "Topics cannot be null")));
+    return withTopics(Arrays.asList(Objects.requireNonNull(topics, "Topics cannot be null")));
   }
 
   /// Sets the pipeline to process each consumed message.

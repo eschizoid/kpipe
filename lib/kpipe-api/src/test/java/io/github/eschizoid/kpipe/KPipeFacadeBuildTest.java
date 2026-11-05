@@ -52,12 +52,12 @@ class KPipeFacadeBuildTest {
   @Test
   void withRetryAndBackpressureAndSequentialAreCaptured() {
     final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
-      .withRetry(5, java.time.Duration.ofMillis(100))
+      .withRetry(5, Duration.ofMillis(100))
       .withBackpressure(2_000, 1_000)
       .withProcessingMode(ProcessingMode.SEQUENTIAL);
 
     assertEquals(5, stream.consumerConfig().maxRetries());
-    assertEquals(java.time.Duration.ofMillis(100), stream.consumerConfig().retryBackoff());
+    assertEquals(Duration.ofMillis(100), stream.consumerConfig().retryBackoff());
     assertEquals(2_000L, stream.consumerConfig().backpressureHigh());
     assertEquals(1_000L, stream.consumerConfig().backpressureLow());
     assertEquals(ProcessingMode.SEQUENTIAL, stream.consumerConfig().processingMode());
@@ -86,7 +86,7 @@ class KPipeFacadeBuildTest {
   @Test
   void negativeRetriesAreRejected() {
     final var stream = KPipe.json("topic", props());
-    assertThrows(IllegalArgumentException.class, () -> stream.withRetry(-1, java.time.Duration.ZERO));
+    assertThrows(IllegalArgumentException.class, () -> stream.withRetry(-1, Duration.ZERO));
   }
 
   @Test
@@ -117,7 +117,7 @@ class KPipeFacadeBuildTest {
       KPipe.json("topic", props())
         .pipe(m -> m)
         .filter(_ -> true)
-        .withRetry(2, java.time.Duration.ofMillis(50))
+        .withRetry(2, Duration.ofMillis(50))
         .withBackpressure()
         .withProcessingMode(ProcessingMode.PARALLEL)
         .toCustom(_ -> {})

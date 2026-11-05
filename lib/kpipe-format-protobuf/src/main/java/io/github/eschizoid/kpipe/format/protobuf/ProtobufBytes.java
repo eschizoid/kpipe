@@ -6,6 +6,7 @@ import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.WireFormat;
 import io.github.eschizoid.kpipe.registry.NonRetryableException;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Arrays;
@@ -191,7 +192,7 @@ public final class ProtobufBytes {
   }
 
   private static byte[] encode(final FieldWriter writer) {
-    final var buffer = new java.io.ByteArrayOutputStream();
+    final var buffer = new ByteArrayOutputStream();
     final var out = CodedOutputStream.newInstance(buffer);
     try {
       writer.write(out);

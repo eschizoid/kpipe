@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaParseException;
+import org.apache.avro.generic.GenericData;
 import org.junit.jupiter.api.Test;
 
 class AvroFormatBehaviorTest {
@@ -64,7 +65,7 @@ class AvroFormatBehaviorTest {
   @Test
   void serializeRoundTripsThroughDeserialize() {
     final var format = AvroFormat.of(USER_SCHEMA_JSON);
-    final var record = new org.apache.avro.generic.GenericData.Record(format.schema());
+    final var record = new GenericData.Record(format.schema());
     record.put("id", "1");
     record.put("name", "Alice");
     record.put("email", "alice@example.com");

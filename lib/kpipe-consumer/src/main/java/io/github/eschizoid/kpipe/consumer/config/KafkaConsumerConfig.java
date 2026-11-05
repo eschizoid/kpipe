@@ -235,6 +235,7 @@ public final class KafkaConsumerConfig {
     );
   }
 
+  /// Builds consumer properties step by step; start one with `consumerBuilder()`.
   public static class ConsumerConfigBuilder {
 
     private ConsumerConfigBuilder() {

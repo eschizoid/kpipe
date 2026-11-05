@@ -5,7 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 
 /// Pins the daemon-thread contract on the dispatchers' package-private thread-factory seams.
@@ -19,18 +23,16 @@ class DispatcherThreadFactoryContractTest {
 
   @Test
   void keyOrderedRejectsANonDaemonFactory() {
-    final var thrown = assertThrows(
-      IllegalArgumentException.class,
-      () -> new KeyOrderedDispatcher(2, Thread.ofPlatform().factory())
+    final var thrown = assertThrows(IllegalArgumentException.class, () ->
+      new KeyOrderedDispatcher(2, Thread.ofPlatform().factory())
     );
     assertTrue(thrown.getMessage().contains("daemon"), "the message should name the violated contract");
   }
 
   @Test
   void parallelRejectsANonDaemonFactory() {
-    final var thrown = assertThrows(
-      IllegalArgumentException.class,
-      () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), Thread.ofPlatform().factory())
+    final var thrown = assertThrows(IllegalArgumentException.class, () ->
+      new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), Thread.ofPlatform().factory())
     );
     assertTrue(thrown.getMessage().contains("daemon"), "the message should name the violated contract");
   }
@@ -38,8 +40,8 @@ class DispatcherThreadFactoryContractTest {
   @Test
   void daemonFactoriesAndTheProductionDefaultsAreAccepted() {
     assertDoesNotThrow(() -> new KeyOrderedDispatcher(2, Thread.ofPlatform().daemon().factory()).close());
-    assertDoesNotThrow(
-      () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), Thread.ofPlatform().daemon().factory()).close()
+    assertDoesNotThrow(() ->
+      new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), Thread.ofPlatform().daemon().factory()).close()
     );
     // The production constructors pass a virtual-thread factory, and virtual threads are always
     // daemon — so the enforcement must not reject the path every consumer actually takes.
@@ -52,17 +54,13 @@ class DispatcherThreadFactoryContractTest {
   /// the guard the caller gets an opaque NullPointerException from inside a constructor.
   @Test
   void aFactoryThatRefusesToCreateAThreadIsRejectedClearly() {
-    final java.util.concurrent.ThreadFactory refuses = r -> null;
+    final ThreadFactory refuses = r -> null;
 
-    final var fromKeyOrdered = assertThrows(
-      IllegalArgumentException.class,
-      () -> new KeyOrderedDispatcher(2, refuses)
-    );
+    final var fromKeyOrdered = assertThrows(IllegalArgumentException.class, () -> new KeyOrderedDispatcher(2, refuses));
     assertTrue(fromKeyOrdered.getMessage().contains("refused"), "the message should say the factory refused");
 
-    final var fromParallel = assertThrows(
-      IllegalArgumentException.class,
-      () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), refuses)
+    final var fromParallel = assertThrows(IllegalArgumentException.class, () ->
+      new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), refuses)
     );
     assertTrue(fromParallel.getMessage().contains("refused"), "the message should say the factory refused");
   }
@@ -71,15 +69,11 @@ class DispatcherThreadFactoryContractTest {
   /// constructor several frames below where the argument was passed.
   @Test
   void aNullFactoryIsRejectedClearly() {
-    final var fromKeyOrdered = assertThrows(
-      IllegalArgumentException.class,
-      () -> new KeyOrderedDispatcher(2, null)
-    );
+    final var fromKeyOrdered = assertThrows(IllegalArgumentException.class, () -> new KeyOrderedDispatcher(2, null));
     assertTrue(fromKeyOrdered.getMessage().contains("null"), "the message should name the null argument");
 
-    final var fromParallel = assertThrows(
-      IllegalArgumentException.class,
-      () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), null)
+    final var fromParallel = assertThrows(IllegalArgumentException.class, () ->
+      new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), null)
     );
     assertTrue(fromParallel.getMessage().contains("null"), "the message should name the null argument");
   }
@@ -88,16 +82,15 @@ class DispatcherThreadFactoryContractTest {
   /// would both have side effects and leave the dispatcher not owning the thread's lifecycle.
   @Test
   void aFactoryReturningAStartedThreadIsRejected() {
-    final java.util.concurrent.ThreadFactory startsIt = r -> {
+    final ThreadFactory startsIt = r -> {
       final var t = Thread.ofPlatform().daemon().unstarted(r);
       t.start();
       return t;
     };
 
     assertThrows(IllegalArgumentException.class, () -> new KeyOrderedDispatcher(2, startsIt));
-    assertThrows(
-      IllegalArgumentException.class,
-      () -> new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), startsIt)
+    assertThrows(IllegalArgumentException.class, () ->
+      new ParallelDispatcher((_, _) -> {}, Duration.ofSeconds(1), startsIt)
     );
   }
 
@@ -106,8 +99,8 @@ class DispatcherThreadFactoryContractTest {
   /// surface as an opaque failure at dispatch time.
   @Test
   void everyThreadTheFactoryLaterProducesIsValidated() {
-    final var calls = new java.util.concurrent.atomic.AtomicInteger();
-    final java.util.concurrent.ThreadFactory goodThenBad = r -> {
+    final var calls = new AtomicInteger();
+    final ThreadFactory goodThenBad = r -> {
       if (calls.incrementAndGet() == 1) {
         return Thread.ofPlatform().daemon().unstarted(r);
       }
@@ -118,13 +111,13 @@ class DispatcherThreadFactoryContractTest {
     assertThrows(IllegalStateException.class, () -> dispatcher.dispatch(record(1L), () -> {}, () -> {}));
   }
 
-  private static org.apache.kafka.clients.consumer.ConsumerRecord<byte[], byte[]> record(final long offset) {
-    return new org.apache.kafka.clients.consumer.ConsumerRecord<>(
+  private static ConsumerRecord<byte[], byte[]> record(final long offset) {
+    return new ConsumerRecord<>(
       "contract-topic",
       0,
       offset,
-      "k".getBytes(java.nio.charset.StandardCharsets.UTF_8),
-      "v".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+      "k".getBytes(StandardCharsets.UTF_8),
+      "v".getBytes(StandardCharsets.UTF_8)
     );
   }
 
@@ -138,8 +131,8 @@ class DispatcherThreadFactoryContractTest {
   /// its own and the assertions would then hold whether or not the guard exists.
   @Test
   void aParallelFactoryThatDeclinesLaterDoesNotStrandTheInFlightCount() {
-    final var rejections = new java.util.concurrent.atomic.AtomicInteger();
-    final var calls = new java.util.concurrent.atomic.AtomicInteger();
+    final var rejections = new AtomicInteger();
+    final var calls = new AtomicInteger();
     final var dispatcher = new ParallelDispatcher(
       (r, e) -> rejections.incrementAndGet(),
       Duration.ofSeconds(1),

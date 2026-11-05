@@ -24,6 +24,7 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.errors.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -134,7 +135,7 @@ class ShutdownJoinBudgetTest {
       @Override
       public void commitSync(final Map<TopicPartition, OffsetAndMetadata> offsets, final Duration timeout) {
         if (!waitOut(timeout)) throw new InterruptException(new InterruptedException());
-        throw new org.apache.kafka.common.errors.TimeoutException("the broker cannot be reached");
+        throw new TimeoutException("the broker cannot be reached");
       }
 
       @Override
