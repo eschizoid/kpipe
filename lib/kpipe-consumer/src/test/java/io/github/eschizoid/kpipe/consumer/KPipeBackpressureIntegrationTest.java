@@ -123,10 +123,9 @@ class KPipeBackpressureIntegrationTest {
       sinkRelease.countDown();
       awaitCondition(() -> mockConsumer.paused().isEmpty(), 3000);
 
-      // backpressureTimeMs must be > 0
       assertTrue(
-        consumer.metrics().backpressure().time().toMillis() > 0,
-        "backpressureTimeMs should be positive after a backpressure pause"
+        consumer.metrics().backpressure().time().isPositive(),
+        "backpressure time should be positive after a backpressure pause"
       );
 
       consumer.close();
