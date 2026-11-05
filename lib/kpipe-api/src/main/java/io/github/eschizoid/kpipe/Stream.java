@@ -85,7 +85,9 @@ public interface Stream<T> {
 
   /// Returns a new stream with retry behavior configured. After a processing exception, the
   /// pipeline retries up to `maxRetries` times, waiting `backoff` between attempts. When
-  /// `maxRetries` is 0 (the default) the message goes straight to the error path / DLQ.
+  /// `maxRetries` is 0 (the default) the message goes straight to the error path / DLQ. A
+  /// `NonRetryableException`, or a failure caused by one, is not retried and goes straight to
+  /// the error handler / DLQ.
   ///
   /// @param maxRetries maximum number of retry attempts (must be ≥ 0)
   /// @param backoff duration to wait between attempts (must be non-null)

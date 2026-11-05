@@ -202,8 +202,9 @@ final class RecordProcessor {
 
   /// Processes a single Kafka consumer record using the topic's configured pipeline. Runs in the
   /// current virtual thread; retries on exception according to `maxRetries` + `retryBackoff`. On
-  /// success the per-record outcome feeds the circuit-breaker window; on retry-exhausted failure
-  /// the record is routed to the DLQ (when configured) and the error handler is invoked.
+  /// success the per-record outcome feeds the circuit-breaker window; once retries are exhausted,
+  /// or at once for a non-retryable failure, the record is routed to the DLQ (when configured)
+  /// and the error handler is invoked.
   ///
   /// Metrics tracked during processing:
   ///
@@ -211,7 +212,8 @@ final class RecordProcessor {
   /// * `messagesProcessed` — incremented on success
   /// * `processingDurationTotalMs` — incremented on success by the wall-clock duration
   /// * `retries` — incremented per retry attempt (not the initial attempt)
-  /// * `processingErrors` — incremented when processing fails after all retries
+  /// * `processingErrors` — incremented when processing fails after retries are exhausted or a
+  ///   failure is non-retryable
   ///
   /// @param record the Kafka consumer record to process
   void process(final ConsumerRecord<byte[], byte[]> record) {

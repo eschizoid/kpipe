@@ -109,7 +109,7 @@ A record's outcome is one of three sealed variants:
 - **Filtered** — a `filter` predicate returned false or an operator returned null. Deliberate: the sink is skipped and
   the offset still commits.
 - **Failed** — an operator, the deserializer, or the sink threw. After configured retries, the record goes to the error
-  handler and (if configured) the dead-letter topic.
+  handler and (if configured) the dead-letter topic. A `NonRetryableException` skips the retries.
 
 Offsets commit on a 30-second cadence (synchronously, on the consumer thread), always at the **commit frontier** — the
 lowest offset still in flight per partition. A fast record cannot commit past a slow one, which is how at-least-once
@@ -134,6 +134,7 @@ Capture per account", key the producer by account **and** run `KEY_ORDERED` (or 
 Each is one fluent call; exact semantics are in [docs/API.md](docs/API.md).
 
 - **Retries** — `withRetry(maxRetries, backoff)`: fixed backoff, `maxRetries` counts retries after the initial attempt.
+  A `NonRetryableException`, or a failure caused by one, is not retried.
 - **Dead-letter topic** — `withDeadLetterTopic("orders.dlq")`: terminally-failed records are produced there with their
   original headers plus an `x-dlq-*` envelope (error, source topic/partition/offset, timestamp), making the DLQ
   replayable. A failed DLQ send leaves the offset uncommitted — a down DLQ applies backpressure rather than dropping

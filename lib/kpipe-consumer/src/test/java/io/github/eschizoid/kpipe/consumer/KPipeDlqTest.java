@@ -387,4 +387,41 @@ class KPipeDlqTest {
       assertEquals(4, attempts.get(), "one attempt and three retries");
     }
   }
+
+  /// A record without a field that `JsonFields.require` checks reaches the DLQ after one attempt,
+  /// even with retries configured.
+  @Test
+  @SuppressWarnings("unchecked")
+  void aRecordFailingJsonRequireGoesToTheDlqAfterOneAttempt() throws Exception {
+    final var record = new ConsumerRecord<>(TOPIC, 0, 100L, "key".getBytes(UTF_8), "{\"name\":\"a\"}".getBytes(UTF_8));
+    when(mockProducer.send(any(ProducerRecord.class))).thenReturn(
+      CompletableFuture.completedFuture(mock(RecordMetadata.class))
+    );
+    final var retryCounts = new java.util.concurrent.CopyOnWriteArrayList<Integer>();
+
+    try (
+      final var consumer = KPipeConsumer.builder()
+        .withProperties(byteProperties())
+        .withTopic(TOPIC)
+        .withPipeline(
+          new io.github.eschizoid.kpipe.registry.MessageProcessorRegistry()
+            .pipeline(io.github.eschizoid.kpipe.format.json.JsonFormat.INSTANCE)
+            .pipe(io.github.eschizoid.kpipe.format.json.JsonFields.require("id"))
+            .build()
+        )
+        .withRetry(3, Duration.ofSeconds(1))
+        .withDeadLetterTopic(DLQ_TOPIC)
+        .withKafkaProducer(mockProducer)
+        .withErrorHandler(error -> retryCounts.add(error.retryCount()))
+        .build()
+    ) {
+      final var started = System.nanoTime();
+      consumer.processRecord(record);
+      final var took = Duration.ofNanos(System.nanoTime() - started);
+
+      assertTrue(took.compareTo(Duration.ofSeconds(1)) < 0, "no retry backoff was waited out; took " + took);
+      verify(mockProducer).send(argThat(r -> DLQ_TOPIC.equals(r.topic())));
+      assertEquals(java.util.List.of(0), retryCounts);
+    }
+  }
 }
