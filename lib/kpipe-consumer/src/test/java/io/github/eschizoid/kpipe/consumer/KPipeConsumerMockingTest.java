@@ -1265,8 +1265,9 @@ class KPipeConsumerMockingTest {
       final var metrics = metrics();
       final var received = metrics.records().received();
       final var processed = metrics.records().processed();
+      final var filtered = metrics.records().filtered();
       final var errors = metrics.records().failed();
-      return (int) (received - processed - errors);
+      return (int) (received - processed - filtered - errors);
     }
   }
 }

@@ -17,9 +17,11 @@ m.circuitBreaker().trips();
 ```
 
 `records()` holds received, processed, filtered, failed, retries, dlqSent, dlqFailed and processingTime. Filtered
-records (dropped by an operator, or for a topic with no pipeline) are counted apart from processed ones, so
-`received = processed + filtered + failed + inFlight`, except for records a shutdown abandoned for redelivery. Each
-snapshot reads the outcome counts before `received`, so it never shows more outcomes than records received.
+records (dropped by an operator, or for a topic with no pipeline) are counted apart from processed ones, so once
+in-flight records finish, `received = processed + filtered + failed`, except for records a shutdown abandoned for
+redelivery. Each snapshot reads the outcome counts before `received`, so it never shows more outcomes than records
+received. Batch routes do not measure processing time; read `averageProcessingTime()` per topic when some topics are
+batch routes.
 
 For periodic logging without an OTel backend, `EntryMetricsReporter` and your own `KPipeMetricsReporter` attach via
 `Stream.withMetricsReporters(...)` or `KPipeConsumerBuilder.withMetricsReporters(...)`, with `withMetricsInterval(...)`

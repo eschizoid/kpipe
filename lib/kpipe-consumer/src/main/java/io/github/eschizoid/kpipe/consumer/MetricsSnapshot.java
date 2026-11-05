@@ -58,7 +58,8 @@ public record MetricsSnapshot(
   /// Record counts for one topic or for all of them.
   ///
   /// @param received records the consumer started processing
-  /// @param processed records that reached their sink
+  /// @param processed records that passed every operator and were handed to their sink, if the
+  ///     pipeline has one
   /// @param filtered records dropped on purpose: by an operator that filtered them, or because no
   ///     pipeline is routed for their topic
   /// @param failed records that failed after their retries, or at once for a
@@ -67,7 +68,7 @@ public record MetricsSnapshot(
   /// @param dlqSent failed records written to the dead-letter topic
   /// @param dlqFailed failed records whose dead-letter write failed; their offsets stay pending
   /// @param processingTime wall-clock time from receiving a record to its sink, retries included,
-  ///     summed over processed records on per-record routes
+  ///     summed over processed records on per-record routes; batch routes do not measure it
   public record Records(
     long received,
     long processed,
@@ -84,6 +85,10 @@ public record MetricsSnapshot(
       Objects.requireNonNull(processingTime, "processingTime");
     }
 
+    /// A topic is either a batch route or a per-record one. Batch routes do not measure processing
+    /// time, so a batch topic's average reads zero, and the average over all topics reads low
+    /// when some of them are batch routes; read it per topic in that case.
+    ///
     /// @return [#processingTime] divided by [#processed], or zero before the first record
     public Duration averageProcessingTime() {
       return processed == 0 ? Duration.ZERO : processingTime.dividedBy(processed);
