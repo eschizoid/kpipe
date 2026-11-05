@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.NonRetryableException;
@@ -41,7 +40,7 @@ final class RecordProcessor {
   private final Map<String, BatchPipelineWrapper<?>> batchWrappers;
   private final OffsetManager offsetManager;
   private final ConsumerHealthController health;
-  private final ConsumerMetrics otelMetrics;
+  private final GuardedMetricsExporter exporter;
   private final ConsumerCounters counters;
   private final KPipeConsumer.ErrorHandler errorHandler;
   private final String deadLetterTopic;
@@ -81,7 +80,7 @@ final class RecordProcessor {
     final ScheduledExecutorService scheduler,
     final OffsetManager offsetManager,
     final ConsumerHealthController health,
-    final ConsumerMetrics otelMetrics,
+    final GuardedMetricsExporter exporter,
     final ConsumerCounters counters,
     final KPipeConsumer.ErrorHandler errorHandler,
     final String deadLetterTopic,
@@ -95,7 +94,7 @@ final class RecordProcessor {
     this.pipelines = pipelines;
     this.offsetManager = offsetManager;
     this.health = health;
-    this.otelMetrics = otelMetrics;
+    this.exporter = exporter;
     this.counters = counters;
     this.errorHandler = errorHandler;
     this.deadLetterTopic = deadLetterTopic;
@@ -134,7 +133,6 @@ final class RecordProcessor {
       @Override
       public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
         counters.topic(record.topic()).processed.increment();
-        otelMetrics.recordMessageProcessed(record.topic());
         // Feed the circuit breaker / health window so batch outcomes count toward the failure
         // rate, exactly like the per-record path. Both branches must report, or the rolling
         // window would see only failures and trip spuriously.
@@ -155,7 +153,6 @@ final class RecordProcessor {
       @Override
       public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
         counters.topic(record.topic()).failed.increment();
-        otelMetrics.recordProcessingError(record.topic());
         if (!NonRetryableException.isNonRetryable(cause)) health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
         // LOCKSTEP: mirror of the per-record path's DLQ-or-mark block in handleProcessingError
@@ -212,7 +209,6 @@ final class RecordProcessor {
   void process(final ConsumerRecord<byte[], byte[]> record) {
     final var topic = counters.topic(record.topic());
     topic.received.increment();
-    otelMetrics.recordMessageReceived(record.topic());
 
     Tracer.SpanScope span;
     try {
@@ -229,16 +225,9 @@ final class RecordProcessor {
           final var durationNanos = System.nanoTime() - startNanos;
           topic.processingNanos.add(durationNanos);
           topic.processed.increment();
-          otelMetrics.recordMessageProcessed(record.topic());
-          otelMetrics.recordProcessingDuration(record.topic(), durationNanos / 1_000_000);
+          exporter.recordProcessingTime(record.topic(), Duration.ofNanos(durationNanos));
         }
-        case FILTERED -> {
-          topic.filtered.increment();
-          // The OTel export still reports filtered records as processed until it reads these
-          // counters (#408).
-          otelMetrics.recordMessageProcessed(record.topic());
-          otelMetrics.recordProcessingDuration(record.topic(), (System.nanoTime() - startNanos) / 1_000_000);
-        }
+        case FILTERED -> topic.filtered.increment();
         case UNROUTED -> topic.filtered.increment();
         case PENDING -> {
         }
@@ -412,7 +401,6 @@ final class RecordProcessor {
     final Tracer.SpanScope span
   ) {
     counters.topic(record.topic()).failed.increment();
-    otelMetrics.recordProcessingError(record.topic());
     // Mark the span as errored. Guarded — a misbehaving tracer must never crash the consumer
     // thread, leak in-flight counts, or skip offset marking.
     try {
@@ -490,9 +478,7 @@ final class RecordProcessor {
     LOGGER.log(Level.WARNING, "Task submission rejected while the consumer was running", e);
     final var topic = counters.topic(record.topic());
     topic.received.increment();
-    otelMetrics.recordMessageReceived(record.topic());
     topic.failed.increment();
-    otelMetrics.recordProcessingError(record.topic());
     try {
       errorHandler.accept(new KPipeConsumer.ProcessingError(record, e, 0));
     } catch (final Exception ex) {

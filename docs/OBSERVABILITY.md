@@ -1,6 +1,6 @@
 # Observability
 
-Metrics, pipeline-outcome counters, tracing, and the local dashboard stack. Snippets use placeholder values.
+Metrics, tracing, and the local dashboard stack. Snippets use placeholder values.
 
 ## Programmatic access
 
@@ -29,60 +29,85 @@ setting the cadence — see [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
 
 ## OpenTelemetry metrics
 
-`kpipe-metrics` ships interfaces against `opentelemetry-api` only — no SDK. Add `kpipe-metrics-otel` plus your own OTel
-SDK at runtime and wire `.withMetrics(new OtelConsumerMetrics(openTelemetry, "my-pipeline"))`. When `withMetrics(...)`
-is omitted, `ConsumerMetrics.noop()` / `ProducerMetrics.noop()` are used: zero allocation, no OTel API needed on the
-classpath.
-
-| Instrument                                     | Type      | Description                                        |
-| ---------------------------------------------- | --------- | -------------------------------------------------- |
-| `kpipe.consumer.messages.received`             | Counter   | Records polled from Kafka                          |
-| `kpipe.consumer.messages.processed`            | Counter   | Records successfully processed                     |
-| `kpipe.consumer.messages.errors`               | Counter   | Records that failed processing                     |
-| `kpipe.consumer.processing.duration`           | Histogram | Per-record processing time (ms)                    |
-| `kpipe.consumer.messages.inflight`             | Gauge     | Current number of in-flight messages               |
-| `kpipe.consumer.backpressure.pauses`           | Counter   | Times backpressure paused the consumer             |
-| `kpipe.consumer.backpressure.time`             | Counter   | Total time paused due to backpressure              |
-| `kpipe.consumer.circuit_breaker.trips`         | Counter   | Times the breaker tripped CLOSED → OPEN            |
-| `kpipe.consumer.circuit_breaker.state_changes` | Counter   | Any CB state transition (tagged with target state) |
-| `kpipe.consumer.circuit_breaker.time_open`     | Counter   | Total time the breaker spent in OPEN (ms)          |
-| `kpipe.producer.messages.sent`                 | Counter   | Records successfully produced                      |
-| `kpipe.producer.messages.failed`               | Counter   | Records that failed to produce                     |
-| `kpipe.producer.dlq.sent`                      | Counter   | Records sent to DLQ                                |
-| `kpipe.producer.dlq.failed`                    | Counter   | DLQ sends that failed (record stays uncommitted)   |
-
-## Pipeline outcome counters
-
-`PipelineMetricsObserver` (also in `kpipe-metrics-otel`) implements `Consumer<Result<?>>`. Hand it to
-`Stream.peekResult(observer)` and every `Passed` / `Filtered` / `Failed` outcome increments the matching
-`kpipe.pipeline.*` counter. This makes the classic silent-failure signature — "processed" rising while the sink stays
-flat, i.e. a flood of `Filtered` or `Failed` records — visible in metrics instead of only in logs.
+Add `kpipe-metrics-otel` plus your own OTel SDK and exporter, then pass `OtelMetrics.of(openTelemetry)` to
+`withMetrics(...)`. Create one `OtelMetrics` per `OpenTelemetry` and share it across every consumer: its callback stays
+registered with the SDK for good. Without `withMetrics(...)`, the consumer still counts everything and
+`Handle.metrics()` still works; nothing is exported and the OTel API is not needed.
 
 ```java
-final var otel = GlobalOpenTelemetry.get();
+final var metrics = OtelMetrics.of(GlobalOpenTelemetry.get());   // one, shared by every consumer
 
 try (var handle = KPipe.json("orders", kafkaProps)
     .pipe(enrich)
-    .withMetrics(new OtelConsumerMetrics(otel, "orders-consumer"))   // kpipe.consumer.* metrics
-    .peekResult(new PipelineMetricsObserver(otel, "orders"))         // kpipe.pipeline.* outcome counters
+    .withMetrics(metrics)
     .toCustom(orderSink)
     .start()) {
   handle.awaitShutdown();
 }
 ```
 
-Using Confluent SR auto-lookup? Bind the resolver's cache counters so hit rate is visible alongside the outcomes:
+Every instrument except the processing-time histogram is observable. One batch callback per `OtelMetrics` reads every
+running consumer's `MetricsSnapshot` at each collection and adds the final counts of consumers that have closed, so each
+running consumer reports the numbers its `Handle.metrics()` returns; the state counter reads `Handle.health()`.
+Processing time is a histogram recorded once per processed record on per-record routes.
+
+| Instrument                                 | Type                     | Unit         | Description                                                        |
+| ------------------------------------------ | ------------------------ | ------------ | ------------------------------------------------------------------ |
+| `kpipe.consumer.records.received`          | Counter, per topic       | `{record}`   | Records the consumer started processing                            |
+| `kpipe.consumer.records.processed`         | Counter, per topic       | `{record}`   | Records that passed every operator to the sink                     |
+| `kpipe.consumer.records.filtered`          | Counter, per topic       | `{record}`   | Records dropped on purpose: filtered, or no pipeline for the topic |
+| `kpipe.consumer.records.failed`            | Counter, per topic       | `{record}`   | Records that failed after retries, or at once                      |
+| `kpipe.consumer.records.retries`           | Counter, per topic       | `{retry}`    | Retry attempts, not counting first attempts                        |
+| `kpipe.consumer.dlq.sent`                  | Counter, per topic       | `{record}`   | Failed records written to the dead-letter topic                    |
+| `kpipe.consumer.dlq.failed`                | Counter, per topic       | `{record}`   | Failed records whose dead-letter write failed                      |
+| `kpipe.consumer.records.in_flight`         | UpDownCounter            | `{record}`   | Records the consumer holds: processing, queued, or buffered        |
+| `kpipe.consumer.processing.duration`       | Histogram, per topic     | `s`          | Time from receiving a record to its sink, retries included         |
+| `kpipe.consumer.backpressure.pauses`       | Counter                  | `{pause}`    | Times backpressure paused consumption                              |
+| `kpipe.consumer.backpressure.time`         | Counter                  | `s`          | Time paused by backpressure                                        |
+| `kpipe.consumer.circuit_breaker.trips`     | Counter                  | `{trip}`     | Times the circuit breaker opened                                   |
+| `kpipe.consumer.circuit_breaker.open_time` | Counter                  | `s`          | Time the circuit breaker spent open                                |
+| `kpipe.consumer.circuit_breaker.state`     | UpDownCounter, per state | `{consumer}` | Consumers whose circuit breaker is in each state                   |
+
+Every consumer instrument carries `messaging.consumer.group.name` (the consumer's `group.id`) when one is set. Per-topic
+instruments also carry `messaging.destination.name`, and the state counter carries `kpipe.circuit_breaker.state`
+(`closed`, `open` or `half_open`). Batch routes do not record processing time. Consumers that share a `group.id` and
+topic add up into the same series.
+
+When a consumer closes, its final counts, including records flushed during shutdown, stay in its counters for as long as
+the `OtelMetrics` lives, so a counter never goes down when one of the consumers adding into it closes. The closed
+consumer drops out of `in_flight` and the state counter. Close consumers before shutting down the OTel SDK, so the SDK's
+final collection includes their final counts. Retired totals are kept per group and topic, so their size grows only with
+the number of distinct groups and topics ever seen.
+
+A rising `filtered` or `failed` count while the sink stays flat is the usual sign of a pipeline silently dropping
+records, and it shows up here without any extra wiring.
+
+Using Confluent SR auto-lookup? Export the resolver's cache as `kpipe.schema_registry.cache.hits`, `.misses` and
+`.size`, with no attributes:
 
 ```java
-final var observer = new PipelineMetricsObserver(otel, "orders").bindSchemaRegistryCache(
+final var cacheMetrics = OtelMetrics.exportSchemaRegistryCache(
+  otel,
   resolver::hitCount,
   resolver::missCount,
   () -> (long) resolver.size()
 );
+// cacheMetrics.close() stops exporting it
 ```
 
-The observer takes `LongSupplier`s rather than the resolver itself, so `kpipe-metrics-otel` has no dependency on
-`kpipe-schema-registry-confluent`.
+Call it once per cache: each call reports the cache, so two calls over one cache double its counts. It takes
+`LongSupplier`s rather than the resolver, so `kpipe-metrics-otel` does not depend on `kpipe-schema-registry-confluent`.
+
+### Producer metrics
+
+`OtelProducerMetrics` counts what a `KPipeProducer` sends:
+
+| Instrument                       | Type    | Description                                      |
+| -------------------------------- | ------- | ------------------------------------------------ |
+| `kpipe.producer.messages.sent`   | Counter | Records successfully produced                    |
+| `kpipe.producer.messages.failed` | Counter | Records that failed to produce                   |
+| `kpipe.producer.dlq.sent`        | Counter | Records sent to DLQ                              |
+| `kpipe.producer.dlq.failed`      | Counter | DLQ sends that failed (record stays uncommitted) |
 
 ## Distributed tracing (W3C trace context)
 

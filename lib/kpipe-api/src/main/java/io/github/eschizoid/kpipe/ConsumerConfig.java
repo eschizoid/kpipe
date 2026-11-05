@@ -3,9 +3,9 @@ package io.github.eschizoid.kpipe;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
+import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
@@ -39,7 +39,7 @@ record ConsumerConfig(
   Long backpressureLow,
   ProcessingMode processingMode,
   int keyOrderedMaxKeys,
-  ConsumerMetrics consumerMetrics,
+  MetricsExporter metricsExporter,
   Consumer<KPipeConsumer.ProcessingError> errorHandler,
   String deadLetterTopic,
   Duration pollTimeout,
@@ -97,7 +97,7 @@ record ConsumerConfig(
     builder.withKeyOrderedMaxKeys(keyOrderedMaxKeys);
     if (maxRetries > 0) builder.withRetry(maxRetries, retryBackoff);
     if (backpressureHigh != null) builder.withBackpressure(backpressureHigh, backpressureLow);
-    if (consumerMetrics != null) builder.withMetrics(consumerMetrics);
+    if (metricsExporter != null) builder.withMetrics(metricsExporter);
     if (errorHandler != null) builder.withErrorHandler(errorHandler::accept);
     if (deadLetterTopic != null) builder.withDeadLetterTopic(deadLetterTopic);
     if (pollTimeout != null) builder.withPollTimeout(pollTimeout);
@@ -146,7 +146,7 @@ record ConsumerConfig(
         ) +
         "Move the call to MultiBuilder.withKeyOrderedMaxKeys(...) instead."
     ),
-    mirrored("withMetrics", c -> c.consumerMetrics() != null),
+    mirrored("withMetrics", c -> c.metricsExporter() != null),
     mirrored("withTracer", c -> c.tracer() != null),
     mirrored("withCircuitBreaker", c -> c.circuitBreaker() != null),
     mirrored("withRetry", c -> c.maxRetries() > 0),
@@ -186,7 +186,7 @@ record ConsumerConfig(
     Long backpressureLow;
     ProcessingMode processingMode;
     int keyOrderedMaxKeys;
-    ConsumerMetrics consumerMetrics;
+    MetricsExporter metricsExporter;
     Consumer<KPipeConsumer.ProcessingError> errorHandler;
     String deadLetterTopic;
     Duration pollTimeout;
@@ -208,7 +208,7 @@ record ConsumerConfig(
       m.backpressureLow = c.backpressureLow;
       m.processingMode = c.processingMode;
       m.keyOrderedMaxKeys = c.keyOrderedMaxKeys;
-      m.consumerMetrics = c.consumerMetrics;
+      m.metricsExporter = c.metricsExporter;
       m.errorHandler = c.errorHandler;
       m.deadLetterTopic = c.deadLetterTopic;
       m.pollTimeout = c.pollTimeout;
@@ -232,7 +232,7 @@ record ConsumerConfig(
         backpressureLow,
         processingMode,
         keyOrderedMaxKeys,
-        consumerMetrics,
+        metricsExporter,
         errorHandler,
         deadLetterTopic,
         pollTimeout,

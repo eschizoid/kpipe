@@ -67,9 +67,9 @@ final class ConsumerHealthController {
     void onResume();
   }
 
-  /// Pure metric fan-out for backpressure and circuit-breaker events. KPipeConsumer wires this to
-  /// its `ConsumerCounters` plus the OTel `ConsumerMetrics`. These callbacks observe health
-  /// transitions — they never touch Kafka consumer state (that is [PauseLifecycleHook]'s job).
+  /// Pure metric fan-out for backpressure and circuit-breaker events; KPipeConsumer feeds its
+  /// `ConsumerCounters` from them. These callbacks observe health transitions — they never touch
+  /// Kafka consumer state (that is [PauseLifecycleHook]'s job).
   ///
   /// Because it is a pure observer, a caller (or a test) that doesn't record metrics can
   /// substitute [#NOOP] and pair it with a real [PauseLifecycleHook] — the point of keeping the

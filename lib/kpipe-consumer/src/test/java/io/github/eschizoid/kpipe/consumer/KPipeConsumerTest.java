@@ -4,7 +4,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
@@ -20,6 +19,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -1015,51 +1015,125 @@ class KPipeConsumerTest {
     consumer.close();
   }
 
-  /// Counts the processed calls the consumer makes on its `ConsumerMetrics`.
-  private static final class ProcessedCalls implements ConsumerMetrics {
+  /// Records every call the consumer makes on its exporter and its export.
+  private static final class RecordingExporter implements MetricsExporter {
 
-    final AtomicInteger processed = new AtomicInteger();
-
-    @Override
-    public void recordMessageReceived() {}
-
-    @Override
-    public void recordMessageProcessed() {}
+    final List<MetricsSource> started = new CopyOnWriteArrayList<>();
+    final List<String> timedTopics = new CopyOnWriteArrayList<>();
+    final AtomicInteger closed = new AtomicInteger();
+    final AtomicLong processedAtClose = new AtomicLong(-1);
 
     @Override
-    public void recordMessageProcessed(final String topic) {
-      processed.incrementAndGet();
+    public Export start(final MetricsSource source) {
+      started.add(source);
+      return new Export() {
+        @Override
+        public void recordProcessingTime(final String topic, final Duration time) {
+          assertFalse(time.isNegative(), "processing time is never negative");
+          timedTopics.add(topic);
+        }
+
+        @Override
+        public void close() {
+          closed.incrementAndGet();
+          processedAtClose.set(source.metrics().records().processed());
+        }
+      };
     }
-
-    @Override
-    public void recordProcessingError() {}
-
-    @Override
-    public void recordProcessingDuration(final long millis) {}
-
-    @Override
-    public void recordBackpressurePause() {}
-
-    @Override
-    public void recordBackpressureTime(final long millis) {}
   }
 
-  /// The metrics export reports a filtered record as processed and an unrouted one as nothing.
+  /// Only a processed record has a processing time; filtered and unrouted ones do not.
   @Test
-  void theMetricsExportStillReportsFilteredRecordsAsProcessed() {
-    final var calls = new ProcessedCalls();
+  void theExporterTimesProcessedRecordsOnly() {
+    final var exporter = new RecordingExporter();
     final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withPipeline(TestPipelines.sideEffect(_ -> null))
-      .withMetrics(calls)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> new MockConsumer<>("earliest"))
+      .withMetrics(exporter)
       .build();
+    consumer.start();
 
-    consumer.processRecord(createRecord(0, "key", "drop-me"));
-    assertEquals(1, calls.processed.get(), "a filtered record is reported as processed");
-
+    consumer.processRecord(createRecord(0, "key", "keep-me"));
     consumer.processRecord(new ConsumerRecord<>("unrouted", 0, 0L, "k".getBytes(), "v".getBytes()));
-    assertEquals(1, calls.processed.get(), "an unrouted record is not reported");
+    assertEquals(List.of(TOPIC), exporter.timedTopics);
     consumer.close();
+
+    final var filtering = new RecordingExporter();
+    final var dropping = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.sideEffect(_ -> null))
+      .withConsumer(() -> new MockConsumer<>("earliest"))
+      .withMetrics(filtering)
+      .build();
+    dropping.start();
+    dropping.processRecord(createRecord(0, "key", "drop-me"));
+    assertEquals(List.of(), filtering.timedTopics, "a filtered record is not timed");
+    dropping.close();
+  }
+
+  /// `start()` hands the exporter a live view of this consumer, and `close()` closes it once.
+  @Test
+  void theExporterIsStartedWithTheConsumersViewAndClosedOnce() {
+    final var exporter = new RecordingExporter();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> new MockConsumer<>("earliest"))
+      .withMetrics(exporter)
+      .build();
+    assertEquals(List.of(), exporter.started, "building does not start the exporter");
+
+    consumer.start();
+    assertEquals(1, exporter.started.size());
+    final var source = exporter.started.getFirst();
+    assertEquals("test-group", source.consumerGroup());
+
+    consumer.processRecord(createRecord(0, "key", "value"));
+    assertEquals(1L, source.metrics().records(TOPIC).processed(), "the view reads live counters");
+    assertEquals(consumer.metrics(), source.metrics());
+    assertEquals(consumer.health().circuitBreaker(), source.health().circuitBreaker());
+
+    consumer.close();
+    consumer.close();
+    assertEquals(1, exporter.closed.get());
+  }
+
+  /// The export closes after the teardown flush, so its final read holds a record that was still
+  /// buffered when `close()` began.
+  @Test
+  void theExportClosesAfterTheFinalBatchFlush() {
+    final var exporter = new RecordingExporter();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withConsumer(() -> new MockConsumer<>("earliest"))
+      .withBatchPipeline(TOPIC, TestPipelines.identity(), BatchSink.ofVoid(_ -> {}), BatchPolicy.ofSize(100))
+      .withMetrics(exporter)
+      .build();
+    consumer.start();
+    consumer.processRecord(createRecord(0, "key", "buffered"));
+    assertEquals(0L, consumer.metrics().records().processed(), "the record waits in the batch buffer");
+
+    consumer.close();
+    assertEquals(1L, exporter.processedAtClose.get(), "the export's final read includes the flushed record");
+  }
+
+  /// A consumer closed before it starts never starts its export, so there is nothing to close.
+  @Test
+  void aConsumerClosedBeforeStartNeverTouchesItsExporter() {
+    final var exporter = new RecordingExporter();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> new MockConsumer<>("earliest"))
+      .withMetrics(exporter)
+      .build();
+    consumer.close();
+    assertEquals(List.of(), exporter.started);
+    assertEquals(0, exporter.closed.get());
   }
 }

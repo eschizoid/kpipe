@@ -1,17 +1,12 @@
-/// OpenTelemetry-backed implementation of the [io.github.eschizoid.kpipe.metrics] SPI.
+/// OpenTelemetry export of KPipe metrics.
 ///
-/// - [OtelConsumerMetrics] — [io.github.eschizoid.kpipe.metrics.ConsumerMetrics] adapter that emits
-/// via the
-///   OpenTelemetry `Meter` API.
-/// - [OtelProducerMetrics] — [io.github.eschizoid.kpipe.metrics.ProducerMetrics] adapter for the
-/// producer side.
-/// - [PipelineMetricsObserver] — pipeline-level observer that records per-stage timings and
-///   throughput.
+/// - [OtelMetrics] exports consumers' metrics; create one per `OpenTelemetry` and share it.
+/// - [OtelProducerMetrics] is the [io.github.eschizoid.kpipe.metrics.ProducerMetrics] adapter for
+///   the producer side.
 ///
-/// Wire-up is opt-in:
 /// ```java
-/// final var otel = GlobalOpenTelemetry.get();
-/// builder.withMetrics(new OtelConsumerMetrics(otel));
+/// final var metrics = OtelMetrics.of(GlobalOpenTelemetry.get()); // one, shared by every consumer
+/// builder.withMetrics(metrics);
 /// ```
 ///
 /// Bring your own SDK (`io.opentelemetry:opentelemetry-sdk` + an exporter); this module only

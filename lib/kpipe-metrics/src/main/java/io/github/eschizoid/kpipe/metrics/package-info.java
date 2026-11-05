@@ -1,15 +1,10 @@
 /// Metrics SPI — interfaces only, no telemetry backend.
 ///
-/// Defines the contracts that the consumer and producer runtimes call into to publish
-/// counters, gauges, and timers:
+/// - [ProducerMetrics] — producer-side counters (sends and failures, DLQ writes), with a
+///   zero-overhead [ProducerMetrics#noop()] default.
+/// - [KPipeMetricsReporter] — a reporter the consumer calls on a fixed interval, to write metrics
+///   somewhere such as a log.
 ///
-/// - [ConsumerMetrics] — consumer-side counters (records received, processed, failed, ...).
-/// - [ProducerMetrics] — producer-side counters (sends and failures, DLQ writes).
-/// - [KPipeMetricsReporter] — root reporter type used by the pipeline.
-/// - [NoopConsumerMetrics] / [NoopProducerMetrics] — zero-overhead defaults used when no
-///   backend is wired in.
-///
-/// Concrete backends live in separate modules. Add `kpipe-metrics-otel` to publish through
-/// the OpenTelemetry pipeline (Prometheus, OTLP, Jaeger, ...); otherwise the no-op default
-/// has zero overhead.
+/// Consumer metrics are exported through `MetricsExporter` in `kpipe-consumer`;
+/// `kpipe-metrics-otel` implements both for OpenTelemetry.
 package io.github.eschizoid.kpipe.metrics;

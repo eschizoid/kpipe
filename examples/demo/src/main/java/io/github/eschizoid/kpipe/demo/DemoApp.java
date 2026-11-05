@@ -10,7 +10,7 @@ import io.github.eschizoid.kpipe.format.json.JsonConsoleSink;
 import io.github.eschizoid.kpipe.format.json.JsonFields;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.health.HttpHealthServer;
-import io.github.eschizoid.kpipe.metrics.otel.OtelConsumerMetrics;
+import io.github.eschizoid.kpipe.metrics.otel.OtelMetrics;
 import io.github.eschizoid.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
@@ -30,6 +30,8 @@ public class DemoApp implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(DemoApp.class.getName());
   private static OpenTelemetry SHARED_OTEL;
+  private static OpenTelemetry metricsOtel;
+  private static OtelMetrics metrics;
 
   private final Handle handle;
 
@@ -71,6 +73,16 @@ public class DemoApp implements AutoCloseable {
     }
   }
 
+  /// One [OtelMetrics] per `OpenTelemetry`, shared by every DemoApp built on it: each instance's
+  /// callback stays registered with the SDK.
+  private static synchronized OtelMetrics metricsFor(final OpenTelemetry otel) {
+    if (metrics == null || metricsOtel != otel) {
+      metrics = OtelMetrics.of(otel);
+      metricsOtel = otel;
+    }
+    return metrics;
+  }
+
   /// Creates and starts the demo application with all three routes attached to a single consumer.
   /// The Avro [AvroFormat] and Protobuf [ProtobufFormat] are passed in explicitly — the caller is
   /// responsible for resolving the Avro schema (e.g. via Schema Registry) and building the
@@ -83,7 +95,7 @@ public class DemoApp implements AutoCloseable {
     final var otel = SHARED_OTEL != null ? SHARED_OTEL : GlobalOpenTelemetry.get();
 
     handle = KPipe.multi(kafkaProps)
-      .withMetrics(new OtelConsumerMetrics(otel, "demo-multi"))
+      .withMetrics(metricsFor(otel))
       .json(config.jsonTopic(), s ->
         s
           .pipe(JsonFields.set("source", "demo-app"))

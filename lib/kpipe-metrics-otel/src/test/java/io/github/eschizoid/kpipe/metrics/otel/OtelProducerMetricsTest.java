@@ -10,8 +10,7 @@ import java.util.Collection;
 import org.junit.jupiter.api.Test;
 
 /// Asserts that [OtelProducerMetrics] emits each of the documented producer counters into a real
-/// OTel SDK. Same rationale as [OtelConsumerMetricsTest] — the previous noop-only tests would
-/// have let a dropped `counter.add(...)` regression land silently.
+/// OTel SDK, so a dropped `counter.add(...)` fails a test.
 class OtelProducerMetricsTest {
 
   private record Fixture(OtelProducerMetrics metrics, InMemoryMetricReader reader) {

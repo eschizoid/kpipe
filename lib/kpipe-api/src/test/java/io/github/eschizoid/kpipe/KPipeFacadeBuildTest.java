@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
+import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
-import io.github.eschizoid.kpipe.metrics.ConsumerMetrics;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -305,7 +305,7 @@ class KPipeFacadeBuildTest {
   @Test
   void multiBuilderRejectsPerRouteWithMetrics() {
     final var multi = KPipe.multi(props()).json("topic-a", s ->
-      s.withMetrics(ConsumerMetrics.noop()).toCustom(_ -> {})
+      s.withMetrics(_ -> MetricsExporter.Export.NONE).toCustom(_ -> {})
     );
     final var ex = assertThrows(IllegalArgumentException.class, multi::start);
     assertTrue(ex.getMessage().contains("withMetrics"), () -> "message should name withMetrics: " + ex.getMessage());
@@ -350,7 +350,7 @@ class KPipeFacadeBuildTest {
     final var breaker = new CircuitBreakerController(0.5, 100, Duration.ofSeconds(1));
     assertDoesNotThrow(() ->
       KPipe.multi(props())
-        .withMetrics(ConsumerMetrics.noop())
+        .withMetrics(_ -> MetricsExporter.Export.NONE)
         .withTracer(Tracer.noop())
         .withCircuitBreaker(breaker)
         .json("topic-a", s -> s.toCustom(_ -> {}))
