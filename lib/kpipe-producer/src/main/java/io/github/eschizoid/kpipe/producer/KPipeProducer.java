@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.producer;
 
-import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -26,27 +25,16 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
   private final Producer<K, V> producer;
   private final boolean ownProducer;
-  private final ProducerMetrics metrics;
   private final Tracer tracer;
 
   /// Creates a new KPipeProducer that wraps an existing Kafka producer.
   ///
   /// @param producer    the Kafka producer to wrap
   /// @param ownProducer whether this wrapper owns the producer and should close it
-  /// @param metrics the producer metrics — any [ProducerMetrics] impl (e.g. `OtelProducerMetrics`
-  ///                from `kpipe-metrics-otel`); uses noop if null
   /// @param tracer      the tracer for outbound header injection; uses noop if null
-  KPipeProducer(
-    final Producer<K, V> producer,
-    final boolean ownProducer,
-    final ProducerMetrics metrics,
-    final Tracer tracer
-  ) {
+  KPipeProducer(final Producer<K, V> producer, final boolean ownProducer, final Tracer tracer) {
     this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
     this.ownProducer = ownProducer;
-    // Guarded once at the source: a throwing user metrics implementation must never turn a
-    // successful send/DLQ-park into a reported failure.
-    this.metrics = GuardedProducerMetrics.guard(metrics);
     this.tracer = tracer != null ? tracer : Tracer.noop();
   }
 
@@ -73,7 +61,6 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     private Properties props;
     private Producer<K, V> producer;
-    private ProducerMetrics metrics;
     private Tracer tracer;
 
     /// Sets the properties used to create the underlying Kafka producer.
@@ -99,20 +86,6 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /// Sets the [ProducerMetrics] for this producer. The SPI carries no telemetry
-    /// dependency — `kpipe-metrics` is interfaces plus a no-op default — so OpenTelemetry
-    /// is opt-in: add `kpipe-metrics-otel`, which brings `opentelemetry-api` with it, and
-    /// supply your own SDK. Then pass
-    /// `io.github.eschizoid.kpipe.metrics.otel.OtelProducerMetrics`, or
-    /// [ProducerMetrics#noop()] for the no-op default.
-    ///
-    /// @param metrics the producer metrics
-    /// @return this builder instance for method chaining
-    public Builder<K, V> withMetrics(final ProducerMetrics metrics) {
-      this.metrics = metrics;
-      return this;
-    }
-
     /// Sets the tracer used to inject the active span's context into outbound headers (DLQ and
     /// Kafka sinks). When not set, no propagation occurs (`Tracer.noop()`).
     ///
@@ -129,9 +102,9 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     /// @throws NullPointerException if neither [#withProducer(Producer)] nor
     ///     [#withProperties(Properties)] was called
     public KPipeProducer<K, V> build() {
-      if (producer != null) return new KPipeProducer<>(producer, false, metrics, tracer);
+      if (producer != null) return new KPipeProducer<>(producer, false, tracer);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
-      return new KPipeProducer<>(new KafkaProducer<>(buildProducerProperties(props)), true, metrics, tracer);
+      return new KPipeProducer<>(new KafkaProducer<>(buildProducerProperties(props)), true, tracer);
     }
 
     /// Builds the effective producer Properties from a source `Properties`. Visible for testing.
@@ -208,11 +181,9 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     try {
       send(producerRecord);
-      metrics.recordDlqSent();
       LOGGER.log(Level.DEBUG, "Sent record to DLQ topic {0}", dlqTopic);
       return true;
     } catch (final Exception ex) {
-      metrics.recordDlqFailed();
       LOGGER.log(Level.ERROR, () -> "Failed to send record to DLQ topic " + dlqTopic, ex);
       return false;
     }
@@ -235,31 +206,21 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @throws RuntimeException if the send is interrupted or fails
   public RecordMetadata send(final ProducerRecord<K, V> record) {
     try {
-      final var metadata = producer.send(record).get();
-      metrics.recordMessageSent();
-      return metadata;
+      return producer.send(record).get();
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      metrics.recordMessageFailed();
       throw new RuntimeException("Send interrupted", e);
     } catch (final ExecutionException e) {
-      metrics.recordMessageFailed();
       throw new RuntimeException("Send failed", e.getCause());
     }
   }
 
   /// Sends a record to a Kafka topic asynchronously.
   ///
-  /// Metrics are updated via a callback when the send completes — success increments
-  /// `kpipe.producer.messages.sent`, failure increments `kpipe.producer.messages.failed`.
-  ///
   /// @param record the record to send
   /// @return a future that will contain the record metadata
   public Future<RecordMetadata> sendAsync(final ProducerRecord<K, V> record) {
-    return producer.send(record, (_, exception) -> {
-      if (exception == null) metrics.recordMessageSent();
-      else metrics.recordMessageFailed();
-    });
+    return producer.send(record);
   }
 
   @Override

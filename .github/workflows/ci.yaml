@@ -111,7 +111,6 @@ jobs:
           ./gradlew --no-daemon --stacktrace --continue \
             :lib:kpipe-consumer:frayTest \
             :lib:kpipe-core:frayTest \
-            :lib:kpipe-producer:frayTest \
             :lib:kpipe-schema-registry-confluent:frayTest
 
       - name: Upload Fray report

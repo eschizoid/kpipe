@@ -47,7 +47,7 @@ class KPipeProducerDurabilityTest {
   @Test
   void sendToDlqReturnsTrueOnlyAfterDurableAck() throws Exception {
     final var mock = manualMockProducer();
-    final var producer = new KPipeProducer<>(mock, false, null, Tracer.noop());
+    final var producer = new KPipeProducer<>(mock, false, Tracer.noop());
 
     final var done = new CountDownLatch(1);
     final var result = new boolean[1];
@@ -73,7 +73,7 @@ class KPipeProducerDurabilityTest {
   @Test
   void sendToDlqReturnsFalseOnSendError() throws Exception {
     final var mock = manualMockProducer();
-    final var producer = new KPipeProducer<>(mock, false, null, Tracer.noop());
+    final var producer = new KPipeProducer<>(mock, false, Tracer.noop());
 
     final var done = new CountDownLatch(1);
     final var result = new boolean[] { true };
@@ -95,7 +95,7 @@ class KPipeProducerDurabilityTest {
   @Test
   void sendToDlqRetryAfterTransientFailureEventuallySucceeds() throws Exception {
     final var mock = manualMockProducer();
-    final var producer = new KPipeProducer<>(mock, false, null, Tracer.noop());
+    final var producer = new KPipeProducer<>(mock, false, Tracer.noop());
 
     // Attempt 1: transient failure → false.
     final var firstDone = new CountDownLatch(1);
@@ -129,7 +129,7 @@ class KPipeProducerDurabilityTest {
   @Test
   void synchronousSendSurfacesAckOutcome() throws Exception {
     final var mock = manualMockProducer();
-    final var producer = new KPipeProducer<>(mock, false, null, Tracer.noop());
+    final var producer = new KPipeProducer<>(mock, false, Tracer.noop());
 
     final var done = new CountDownLatch(1);
     final var thrown = new Throwable[1];

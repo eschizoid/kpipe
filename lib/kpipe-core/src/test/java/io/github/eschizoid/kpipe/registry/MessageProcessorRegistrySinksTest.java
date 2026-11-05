@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import io.github.eschizoid.kpipe.sink.MessageSink;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -72,44 +71,6 @@ class MessageProcessorRegistrySinksTest {
   }
 
   @Test
-  void shouldTrackMetricsForSink() {
-    final var callCount = new AtomicInteger(0);
-    final MessageSink<Object> countingSink = _ -> callCount.incrementAndGet();
-
-    final var key = RegistryKey.of("countingSink", Object.class);
-    registry.registerSink(key, countingSink);
-    final var sink = registry.getSink(key);
-
-    sink.accept("processed");
-    sink.accept("processed");
-
-    final var metrics = registry.getSinkMetrics(key);
-    assertEquals(2L, metrics.get("invocationCount"));
-    assertEquals(0L, metrics.get("errorCount"));
-  }
-
-  @Test
-  void shouldTrackErrorMetricsForFailingSink() {
-    final MessageSink<Object> failingSink = _ -> {
-      throw new RuntimeException("Test failure");
-    };
-
-    final var key = RegistryKey.of("failingSink", Object.class);
-    registry.registerSink(key, failingSink);
-    final var sink = registry.getSink(key);
-
-    try {
-      sink.accept("processed");
-      fail("Should have thrown an exception");
-    } catch (final RuntimeException e) {
-      // Expected
-    }
-
-    final var metrics = registry.getSinkMetrics(key);
-    assertEquals(1L, metrics.get("errorCount"));
-  }
-
-  @Test
   void shouldWrapSinkWithErrorHandling() {
     final MessageSink<Object> failingSink = _ -> {
       throw new RuntimeException("Test failure");
@@ -118,12 +79,6 @@ class MessageProcessorRegistrySinksTest {
     final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(failingSink);
 
     safeSink.accept("processed"); // must not throw
-  }
-
-  @Test
-  void shouldReturnEmptyMetricsForNonExistentSink() {
-    final var metrics = registry.getSinkMetrics(RegistryKey.of("nonExistent", Object.class));
-    assertTrue(metrics.isEmpty());
   }
 
   @Test

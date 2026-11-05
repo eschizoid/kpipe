@@ -33,7 +33,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 /// A `KPipeConsumer` is single-use — `start()` does `compareAndSet(CREATED, RUNNING)`, so it cannot
 /// be restarted after close. "Repeated cycles" therefore means a brand-new consumer per iteration;
 /// the leak hazard is that each cycle's resources (the Kafka consumer, the offset manager, the
-/// dispatcher's virtual-thread executor, the scheduler, batch wrappers, metrics-reporter threads)
+/// dispatcher's virtual-thread executor, the scheduler, batch wrappers)
 /// fail to release, so live threads / open consumers pile up over time.
 ///
 /// The probes here are deliberately observable rather than reflective:
@@ -133,7 +133,7 @@ class LifecycleLeakCycleTest {
 
   /// Snapshot of live thread names that the consumer might spawn. Virtual worker threads mount on
   /// shared carriers and aren't reliably countable; the names below are the ones a leaked teardown
-  /// would strand: the scheduler carrier, the metrics reporter, the named consumer thread.
+  /// would strand: the scheduler carrier and the named consumer thread.
   private static Set<String> kpipeThreadNames() {
     return Thread.getAllStackTraces()
       .keySet()

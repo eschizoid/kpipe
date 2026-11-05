@@ -173,20 +173,6 @@ class MessageProcessorRegistryJsonTest {
   }
 
   @Test
-  void shouldTrackMetrics() {
-    final var key = RegistryKey.json("metricsTest");
-    registry.registerOperator(key, obj -> obj);
-
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(key).build();
-
-    roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes());
-    roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes());
-
-    final var metrics = registry.getOperatorMetrics(key);
-    assertEquals(2L, metrics.get("invocationCount"));
-  }
-
-  @Test
   void shouldRegisterAndRetrieveTypedOperator() {
     final var key = RegistryKey.json("typedOp");
     registry.registerOperator(key, obj -> {

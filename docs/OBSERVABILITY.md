@@ -23,9 +23,24 @@ redelivery. Each snapshot reads the outcome counts before `received`, so it neve
 received. Batch routes do not measure processing time; read `averageProcessingTime()` per topic when some topics are
 batch routes.
 
-For periodic logging without an OTel backend, `EntryMetricsReporter` and your own `KPipeMetricsReporter` attach via
-`Stream.withMetricsReporters(...)` or `KPipeConsumerBuilder.withMetricsReporters(...)`, with `withMetricsInterval(...)`
-setting the cadence — see [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
+`m.lag()` and `m.lag("orders")` give the offsets between the consumer's position and the end of the log (the high
+watermark, or the last stable offset under `read_committed`), summed over its assigned partitions. The poll loop reads
+them at most once a second. A fetching partition's lag comes from the client's fetch state; the Kafka client may ask the
+broker for a partition's end offset when it does not know it yet, and logs that request at INFO. A paused partition is
+not fetched, so its lag is read from the broker's end offsets instead, with a 100 ms timeout; a partition whose lag
+cannot be read keeps its last value.
+
+## Logging metrics
+
+Without a monitoring backend, `withMetricsLog(Duration)` (on `Stream`, `MultiBuilder` and `KPipeConsumerBuilder`) writes
+one line per interval to the `io.github.eschizoid.kpipe.metrics.log` logger at INFO, plus a final line when the consumer
+closes, after its last records are counted. The keys follow the OpenTelemetry instrument names without the
+`kpipe.consumer.` and `records.` prefixes; times are in milliseconds, `processing.avg` is the average processing time,
+and `circuit_breaker.state` is the current state:
+
+```text
+kpipe metrics [orders group=billing] received=120 processed=117 filtered=1 failed=2 retries=3 dlq.sent=2 dlq.failed=0 in_flight=0 lag=14 processing.avg=4.2ms backpressure.pauses=0 backpressure.time=0.0ms circuit_breaker.state=closed circuit_breaker.trips=0 circuit_breaker.open_time=0.0ms
+```
 
 ## OpenTelemetry metrics
 
@@ -61,6 +76,7 @@ Processing time is a histogram recorded once per processed record on per-record 
 | `kpipe.consumer.dlq.sent`                  | Counter, per topic       | `{record}`   | Failed records written to the dead-letter topic                    |
 | `kpipe.consumer.dlq.failed`                | Counter, per topic       | `{record}`   | Failed records whose dead-letter write failed                      |
 | `kpipe.consumer.records.in_flight`         | UpDownCounter            | `{record}`   | Records the consumer holds: processing, queued, or buffered        |
+| `kpipe.consumer.lag`                       | UpDownCounter, per topic | `{record}`   | Records between the consumer's position and the end of the log     |
 | `kpipe.consumer.processing.duration`       | Histogram, per topic     | `s`          | Time from receiving a record to its sink, retries included         |
 | `kpipe.consumer.backpressure.pauses`       | Counter                  | `{pause}`    | Times backpressure paused consumption                              |
 | `kpipe.consumer.backpressure.time`         | Counter                  | `s`          | Time paused by backpressure                                        |
@@ -75,9 +91,9 @@ topic add up into the same series.
 
 When a consumer closes, its final counts, including records flushed during shutdown, stay in its counters for as long as
 the `OtelMetrics` lives, so a counter never goes down when one of the consumers adding into it closes. The closed
-consumer drops out of `in_flight` and the state counter. Close consumers before shutting down the OTel SDK, so the SDK's
-final collection includes their final counts. Retired totals are kept per group and topic, so their size grows only with
-the number of distinct groups and topics ever seen.
+consumer drops out of `in_flight`, the lag and the state counter. Close consumers before shutting down the OTel SDK, so
+the SDK's final collection includes their final counts. Retired totals are kept per group and topic, so their size grows
+only with the number of distinct groups and topics ever seen.
 
 A rising `filtered` or `failed` count while the sink stays flat is the usual sign of a pipeline silently dropping
 records, and it shows up here without any extra wiring.
@@ -98,16 +114,11 @@ final var cacheMetrics = OtelMetrics.exportSchemaRegistryCache(
 Call it once per cache: each call reports the cache, so two calls over one cache double its counts. It takes
 `LongSupplier`s rather than the resolver, so `kpipe-metrics-otel` does not depend on `kpipe-schema-registry-confluent`.
 
-### Producer metrics
+### Sends to Kafka
 
-`OtelProducerMetrics` counts what a `KPipeProducer` sends:
-
-| Instrument                       | Type    | Description                                      |
-| -------------------------------- | ------- | ------------------------------------------------ |
-| `kpipe.producer.messages.sent`   | Counter | Records successfully produced                    |
-| `kpipe.producer.messages.failed` | Counter | Records that failed to produce                   |
-| `kpipe.producer.dlq.sent`        | Counter | Records sent to DLQ                              |
-| `kpipe.producer.dlq.failed`      | Counter | DLQ sends that failed (record stays uncommitted) |
+KPipe has no separate producer metrics. A dead-letter write counts as `kpipe.consumer.dlq.sent` or
+`kpipe.consumer.dlq.failed`. A `KafkaMessageSink` send waits for the broker's ack, so it counts as `processed` once the
+broker has the record, or as `failed` when the send fails (after retries, if configured).
 
 ## Distributed tracing (W3C trace context)
 

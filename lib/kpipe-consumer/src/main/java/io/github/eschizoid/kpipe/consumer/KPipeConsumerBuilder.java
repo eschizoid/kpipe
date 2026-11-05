@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
@@ -71,8 +70,7 @@ public final class KPipeConsumerBuilder {
   MetricsExporter metricsExporter;
   Tracer tracer;
   CircuitBreakerController circuitBreakerController;
-  final List<KPipeMetricsReporter> metricsReporters = new ArrayList<>();
-  Duration metricsReporterInterval = Duration.ofMinutes(1);
+  Duration metricsLogInterval;
   boolean useShutdownHook = false;
 
   /// Sets the properties for the Kafka consumer. `build()` always sets `enable.auto.commit` to
@@ -540,27 +538,16 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Adds metrics reporters that run periodically while the consumer is alive. Each reporter is
-  /// invoked every `metricsReporterInterval` (defaults to 60s) on a dedicated platform daemon
-  /// thread. Reporter exceptions are logged at WARNING but do not crash the thread.
+  /// Logs one line of the consumer's metrics every `interval`, plus a final line when it closes,
+  /// after its last records are counted. The line goes to the
+  /// `io.github.eschizoid.kpipe.metrics.log` logger at INFO.
   ///
-  /// @param reporters the collection of reporters to run
+  /// @param interval how often to log (must be positive)
   /// @return this builder instance for method chaining
-  public KPipeConsumerBuilder withMetricsReporters(final Collection<KPipeMetricsReporter> reporters) {
-    this.metricsReporters.addAll(Objects.requireNonNull(reporters, "reporters cannot be null"));
-    return this;
-  }
-
-  /// Sets the interval between metrics-reporter invocations.
-  ///
-  /// @param interval the reporting interval (must be positive)
-  /// @return this builder instance for method chaining
-  public KPipeConsumerBuilder withMetricsInterval(final Duration interval) {
+  public KPipeConsumerBuilder withMetricsLog(final Duration interval) {
     Objects.requireNonNull(interval, "interval cannot be null");
-    if (interval.isNegative() || interval.isZero()) {
-      throw new IllegalArgumentException("interval must be positive, got " + interval);
-    }
-    this.metricsReporterInterval = interval;
+    if (!interval.isPositive()) throw new IllegalArgumentException("interval must be positive, got " + interval);
+    this.metricsLogInterval = interval;
     return this;
   }
 

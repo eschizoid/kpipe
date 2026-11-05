@@ -4,12 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
-import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -97,13 +95,10 @@ class KPipeConsumerBuilderValidationTest {
   }
 
   @Test
-  void withMetricsReportersRejectsNull() {
-    assertNpeWithMessage("reporters", () -> builder().withMetricsReporters(null));
-  }
-
-  @Test
-  void withMetricsIntervalRejectsNull() {
-    assertNpeWithMessage("interval", () -> builder().withMetricsInterval(null));
+  void withMetricsLogRejectsNullAndNonPositiveIntervals() {
+    assertNpeWithMessage("interval", () -> builder().withMetricsLog(null));
+    assertThrows(IllegalArgumentException.class, () -> builder().withMetricsLog(Duration.ZERO));
+    assertThrows(IllegalArgumentException.class, () -> builder().withMetricsLog(Duration.ofMillis(-1)));
   }
 
   @Test
@@ -194,8 +189,7 @@ class KPipeConsumerBuilderValidationTest {
       .withKafkaProducer(kpipeProducer)
       .withMetrics(_ -> MetricsExporter.Export.NONE)
       .withTracer(Tracer.noop())
-      .withMetricsReporters(List.<KPipeMetricsReporter>of())
-      .withMetricsInterval(Duration.ofSeconds(30))
+      .withMetricsLog(Duration.ofSeconds(30))
       .withCommandQueue(new ConcurrentLinkedQueue<>())
       .withConsumer(() -> mock(Consumer.class));
   }

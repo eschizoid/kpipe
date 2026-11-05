@@ -91,7 +91,14 @@ class OtelMetricsTest {
     final MetricsSnapshot.Backpressure backpressure,
     final MetricsSnapshot.CircuitBreaker breaker
   ) {
-    return new MetricsSnapshot(records, Map.of(TOPIC, records), inFlight, backpressure, breaker);
+    return new MetricsSnapshot(
+      records,
+      Map.of(TOPIC, records),
+      inFlight,
+      Map.of(TOPIC, 2 * inFlight),
+      backpressure,
+      breaker
+    );
   }
 
   private static MetricsSnapshot processed(final long n, final long inFlight) {
@@ -182,6 +189,7 @@ class OtelMetricsTest {
     assertEquals(1L, sum(m, "kpipe.consumer.dlq.sent", ON_TOPIC));
     assertEquals(0L, sum(m, "kpipe.consumer.dlq.failed", ON_TOPIC));
     assertEquals(3L, sum(m, "kpipe.consumer.records.in_flight", GROUP_ONLY));
+    assertEquals(6L, sum(m, "kpipe.consumer.lag", ON_TOPIC));
     assertEquals(5L, sum(m, "kpipe.consumer.backpressure.pauses", GROUP_ONLY));
     assertEquals(1.5, doubleSum(m, "kpipe.consumer.backpressure.time"), 1e-9);
     assertEquals(2L, sum(m, "kpipe.consumer.circuit_breaker.trips", GROUP_ONLY));
@@ -200,6 +208,7 @@ class OtelMetricsTest {
     assertEquals("{consumer}", metric(m, "kpipe.consumer.circuit_breaker.state").getUnit());
     assertTrue(metric(m, "kpipe.consumer.records.received").getLongSumData().isMonotonic());
     assertFalse(metric(m, "kpipe.consumer.records.in_flight").getLongSumData().isMonotonic());
+    assertFalse(metric(m, "kpipe.consumer.lag").getLongSumData().isMonotonic());
     assertFalse(metric(m, "kpipe.consumer.circuit_breaker.state").getLongSumData().isMonotonic());
   }
 
@@ -300,6 +309,7 @@ class OtelMetricsTest {
       assertEquals(5L, sum(m, "kpipe.consumer.records.processed", ON_TOPIC), "the counts read at close, for good");
       assertEquals(5L, sum(m, "kpipe.consumer.backpressure.pauses", GROUP_ONLY));
       assertFalse(hasPoint(m, "kpipe.consumer.records.in_flight", GROUP_ONLY), "a closed consumer holds nothing");
+      assertFalse(hasPoint(m, "kpipe.consumer.lag", ON_TOPIC), "a closed consumer has no lag");
       assertFalse(
         hasPoint(m, "kpipe.consumer.circuit_breaker.state", inState(GROUP, "closed")),
         "a closed consumer is in no state"
@@ -320,6 +330,7 @@ class OtelMetricsTest {
     var m = reader.collectAllMetrics();
     assertEquals(150L, sum(m, "kpipe.consumer.records.processed", ON_TOPIC));
     assertEquals(5L, sum(m, "kpipe.consumer.records.in_flight", GROUP_ONLY));
+    assertEquals(10L, sum(m, "kpipe.consumer.lag", ON_TOPIC), "consumers in a group add their partitions' lag");
 
     leaving.close();
     m = reader.collectAllMetrics();

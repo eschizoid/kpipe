@@ -121,7 +121,6 @@ class KPipeProducerIntegrationTest {
       new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer()),
       outputTopic,
       v -> v,
-      null,
       null
     );
     final var consumer = KPipeConsumer.builder()

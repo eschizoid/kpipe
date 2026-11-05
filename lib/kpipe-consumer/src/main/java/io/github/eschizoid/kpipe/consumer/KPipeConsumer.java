@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.tracing.Tracer;
@@ -15,6 +14,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 
@@ -68,6 +68,11 @@ import org.apache.kafka.common.errors.WakeupException;
 ///
 public class KPipeConsumer implements AutoCloseable {
 
+  /// How often the consumer reads its lag.
+  static final Duration LAG_SAMPLE_INTERVAL = Duration.ofSeconds(1);
+  /// The most a lag reading waits for a paused partition's end offset.
+  static final Duration PAUSED_LAG_TIMEOUT = Duration.ofMillis(100);
+
   private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
 
   private final Queue<ConsumerCommand> commandQueue;
@@ -117,11 +122,13 @@ public class KPipeConsumer implements AutoCloseable {
   /// Released by `close()` so callers blocked in [#awaitShutdown(Duration)] unblock when the
   /// consumer reaches CLOSED. Initialised once so the latch is stable across reconfiguration.
   private final CountDownLatch shutdownLatch = new CountDownLatch(1);
-  /// Periodic metrics-reporter thread. Started at the end of `start()` if any reporters are
-  /// configured; interrupted at the start of `close()`.
-  private volatile Thread metricsReporterThread;
-  private final List<KPipeMetricsReporter> metricsReporters;
-  private final Duration metricsReporterInterval;
+  /// Writes the metrics log line every [#metricsLogInterval]. Started at the end of `start()`
+  /// when the interval is set; interrupted at the start of `close()`.
+  private volatile Thread metricsLogThread;
+  private final Duration metricsLogInterval;
+  /// Each assigned partition's last lag reading. Read and written only on the consumer thread.
+  private final Map<TopicPartition, Long> partitionLag = new HashMap<>();
+  private long nextLagSampleNanos = System.nanoTime();
   /// JVM shutdown hook (when `useShutdownHook=true`); kept so `close()` can remove it explicitly.
   /// Without this, every constructed consumer accumulates a hook in the JVM's shutdown-hook set
   /// for the lifetime of the process — a real leak in hosts that build/close many consumers.
@@ -246,8 +253,7 @@ public class KPipeConsumer implements AutoCloseable {
         this.scheduler = null;
       }
 
-      this.metricsReporters = List.copyOf(builder.metricsReporters);
-      this.metricsReporterInterval = builder.metricsReporterInterval;
+      this.metricsLogInterval = builder.metricsLogInterval;
       final var useShutdownHook = builder.useShutdownHook;
       if (useShutdownHook) {
         this.shutdownHookThread = new Thread(this::close, "kpipe-shutdown-hook");
@@ -493,46 +499,44 @@ public class KPipeConsumer implements AutoCloseable {
     return drained;
   }
 
-  /// Starts the metrics-reporter thread if any reporters were configured on the builder. Called
-  /// from `start()`; no-op when the list is empty. The thread is a platform daemon so it cannot
-  /// keep the JVM alive past the consumer.
-  private void startMetricsReporterThread() {
-    if (metricsReporters.isEmpty() || metricsReporterInterval.toMillis() <= 0) return;
-    metricsReporterThread = Thread.ofPlatform()
-      .name("kpipe-metrics-reporter")
-      .daemon(true)
+  /// Starts the thread that logs a metrics line every [#metricsLogInterval], when one is set.
+  /// It is a virtual thread, so it never keeps the JVM alive.
+  private void startMetricsLogThread() {
+    if (metricsLogInterval == null) return;
+    metricsLogThread = Thread.ofVirtual()
+      .name("kpipe-metrics-log")
       .start(() -> {
-        final var current = Thread.currentThread();
-        while (state.get() != ConsumerState.CLOSED && !current.isInterrupted()) {
-          for (final var reporter : metricsReporters) {
-            try {
-              reporter.reportMetrics();
-            } catch (final Exception e) {
-              LOGGER.log(Level.WARNING, "Metrics reporter threw", e);
-            }
+        try {
+          while (state.get() != ConsumerState.CLOSED) {
+            Thread.sleep(metricsLogInterval);
+            if (state.get() == ConsumerState.RUNNING || state.get() == ConsumerState.PAUSED) logMetrics();
           }
-          try {
-            //noinspection BusyWait — fixed reporting-interval sleep, not a spin
-            Thread.sleep(metricsReporterInterval.toMillis());
-          } catch (final InterruptedException e) {
-            current.interrupt();
-            break;
-          }
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
         }
       });
   }
 
-  /// Interrupts and joins the metrics-reporter thread if it's running. Called from `close()`.
-  private void stopMetricsReporterThread() {
-    final var t = metricsReporterThread;
+  /// Stops the metrics log thread, if it runs.
+  private void stopMetricsLogThread() {
+    final var t = metricsLogThread;
     if (t == null) return;
     t.interrupt();
     try {
-      t.join(1_000);
+      t.join(Duration.ofSeconds(1));
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-    } finally {
-      metricsReporterThread = null;
+    }
+  }
+
+  private void logMetrics() {
+    try {
+      MetricsLog.LOGGER.log(
+        Level.INFO,
+        MetricsLog.line(topics, consumerGroup, metrics(), health.circuitBreakerState())
+      );
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.WARNING, "Could not log the consumer's metrics", e);
     }
   }
 
@@ -609,6 +613,7 @@ public class KPipeConsumer implements AutoCloseable {
             final var records = health.heldByInFlightBackpressure()
               ? pollAfterBackpressureWait()
               : pollRecords(pollTimeout);
+            sampleLag();
             if (records != null && !records.isEmpty()) processRecords(records);
           }
         } catch (final Exception e) {
@@ -638,7 +643,7 @@ public class KPipeConsumer implements AutoCloseable {
       });
 
     consumerThread.set(thread);
-    startMetricsReporterThread();
+    startMetricsLogThread();
     LOGGER.log(Level.INFO, "Consumer started for topics {0}", topics);
   }
 
@@ -854,8 +859,8 @@ public class KPipeConsumer implements AutoCloseable {
   /// 1. **Never-started fast path.** CREATED → CLOSED via [#closeNeverStarted]: release every
   ///    constructor-created resource, close the Kafka consumer directly, count down the latch.
   /// 2. **Normal shutdown.** Transition to CLOSING, then [#initiateShutdown] (signal the offset
-  ///    manager, stop reporter, queue Close, signal dispatcher, drain in-flight), then
-  ///    [#waitForConsumerThreadToJoin] (wakeup + unpark + join). If the thread joined cleanly,
+  ///    manager, stop the metrics log thread, queue Close, signal dispatcher, drain in-flight),
+  ///    then [#waitForConsumerThreadToJoin] (wakeup + unpark + join). If the thread joined cleanly,
   ///    [#finalizeAfterThreadJoined] runs the (idempotent) release + state=CLOSED + countDown as
   ///    a safety net — the consumer thread's own finally has already done the work in the common
   ///    case.
@@ -893,7 +898,7 @@ public class KPipeConsumer implements AutoCloseable {
     shutdownLatch.countDown();
   }
 
-  /// Signal the offset manager, stop the metrics reporter, ask the consumer loop to halt, and let
+  /// Signal the offset manager, stop the metrics log thread, ask the consumer loop to halt, and let
   /// any in-flight records drain before we start waking and joining the consumer thread.
   ///
   /// No pause command needed: CLOSING already halts the poll loop ([#isRunning] is false), and
@@ -905,7 +910,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// spinning past `threadTerminationTimeout`.
   private void initiateShutdown() {
     if (offsetManager != null) offsetManager.signalClosing();
-    stopMetricsReporterThread();
+    stopMetricsLogThread();
     commandQueue.offer(new ConsumerCommand.Close());
     dispatcher.signalShutdown();
     if (waitForMessagesTimeout.toMillis() > 0 && dispatcher.drainableCount() > 0) {
@@ -1025,9 +1030,14 @@ public class KPipeConsumer implements AutoCloseable {
           LOGGER.log(Level.WARNING, "Error closing producer during shutdown", e);
         }
       }
-      // Close the export after every flush and DLQ write above, so its final read holds the
-      // consumer's final counts.
+      // Close the export and write the final metrics line after every flush and DLQ write
+      // above, so both read the consumer's final counts.
       exporter.close();
+      if (metricsLogThread != null) {
+        stopMetricsLogThread();
+        logMetrics();
+      }
+      counters.lagSampled(Map.of());
       // Deregister the JVM shutdown hook last. It's registered in the ctor (when
       // useShutdownHook=true), so it exists even for a never-started consumer and a
       // self-terminating consumer thread. Doing it here — inside the CAS-guarded release — means
@@ -1156,6 +1166,56 @@ public class KPipeConsumer implements AutoCloseable {
     var total = dispatcher.drainableCount();
     for (final var wrapper : batchWrappers.values()) total += wrapper.bufferedCount();
     return total;
+  }
+
+  /// Records each topic's lag at most once per [#LAG_SAMPLE_INTERVAL]. Runs on the consumer
+  /// thread, the only one allowed to touch the Kafka consumer.
+  ///
+  /// A fetching partition's lag comes from the client's fetch state. A paused partition is not
+  /// fetched, so its high watermark stops moving and that lag would freeze while the backlog grows;
+  /// its end offset is asked of the broker instead, bounded by [#PAUSED_LAG_TIMEOUT]. A partition
+  /// whose lag cannot be read keeps its last reading.
+  private void sampleLag() {
+    final var now = System.nanoTime();
+    if (now - nextLagSampleNanos < 0) return;
+    nextLagSampleNanos = now + LAG_SAMPLE_INTERVAL.toNanos();
+    try {
+      final var assignment = kafkaConsumer.assignment();
+      partitionLag.keySet().retainAll(assignment);
+      final var paused = kafkaConsumer.paused();
+      final var pausedAssigned = new ArrayList<TopicPartition>();
+      for (final var partition : assignment) {
+        if (paused.contains(partition)) {
+          pausedAssigned.add(partition);
+        } else {
+          final var lag = kafkaConsumer.currentLag(partition);
+          if (lag.isPresent()) partitionLag.put(partition, lag.getAsLong());
+        }
+      }
+      if (!pausedAssigned.isEmpty()) samplePausedLag(pausedAssigned);
+      final var byTopic = new HashMap<String, Long>();
+      partitionLag.forEach((partition, lag) -> byTopic.merge(partition.topic(), lag, Long::sum));
+      counters.lagSampled(byTopic);
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.DEBUG, "Could not read consumer lag", e);
+    }
+  }
+
+  private void samplePausedLag(final List<TopicPartition> paused) {
+    final Map<TopicPartition, Long> ends;
+    try {
+      ends = kafkaConsumer.endOffsets(paused, PAUSED_LAG_TIMEOUT);
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.DEBUG, "Could not read the end offsets of paused partitions", e);
+      return;
+    }
+    ends.forEach((partition, end) -> {
+      try {
+        partitionLag.put(partition, Math.max(0, end - kafkaConsumer.position(partition, Duration.ZERO)));
+      } catch (final RuntimeException e) {
+        LOGGER.log(Level.DEBUG, "Could not read the position of paused partition " + partition, e);
+      }
+    });
   }
 
   private ConsumerRecords<byte[], byte[]> pollRecords(final Duration timeout) {

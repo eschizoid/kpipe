@@ -1,11 +1,8 @@
-/// OpenTelemetry export of KPipe metrics.
-///
-/// - [OtelMetrics] exports consumers' metrics; create one per `OpenTelemetry` and share it.
-/// - [OtelProducerMetrics] is the [io.github.eschizoid.kpipe.metrics.ProducerMetrics] adapter for
-///   the producer side.
+/// OpenTelemetry export of KPipe consumer metrics: [OtelMetrics]. Create one per `OpenTelemetry`
+/// and share it across every consumer.
 ///
 /// ```java
-/// final var metrics = OtelMetrics.of(GlobalOpenTelemetry.get()); // one, shared by every consumer
+/// final var metrics = OtelMetrics.of(GlobalOpenTelemetry.get());
 /// builder.withMetrics(metrics);
 /// ```
 ///

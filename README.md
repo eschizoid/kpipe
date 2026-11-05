@@ -88,8 +88,8 @@ implementation("io.github.eschizoid:kpipe-format-json")   // or -avro / -protobu
 Minor releases may remove public API through 1.x — see [docs/VERSIONING.md](docs/VERSIONING.md) for what is covered, how
 a break reaches you, and when that rule changes.
 
-`kpipe-api` brings the consumer, producer, core, metrics, and tracing modules transitively; its only external runtime
-dependency is `kafka-clients`. Maven snippets, the full module catalog, `platform` vs `enforcedPlatform`, and JPMS
+`kpipe-api` brings the consumer, producer, core and tracing modules transitively; its only external runtime dependency
+is `kafka-clients`. Maven snippets, the full module catalog, `platform` vs `enforcedPlatform`, and JPMS
 (`module-info.java`) guidance: [docs/MODULES.md](docs/MODULES.md).
 
 ## How processing works
@@ -144,8 +144,9 @@ Each is one fluent call; exact semantics are in [docs/API.md](docs/API.md).
   `max.poll.interval.ms` eviction while paused).
 - **Circuit breaker** — `withCircuitBreaker(threshold, window, openDuration)`: pauses consumption when the terminal
   failure rate trips, probes recovery after a cool-down. Off unless configured.
-- **Metrics** — `withMetrics(...)`: OpenTelemetry-backed counters/histograms via the opt-in `kpipe-metrics-otel`, or the
-  log-based reporters; `Handle.metrics()` for programmatic snapshots. [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+- **Metrics** — `withMetrics(...)`: OpenTelemetry-backed counters/histograms via the opt-in `kpipe-metrics-otel`, or
+  `withMetricsLog(Duration)` for one log line per interval; `Handle.metrics()` for programmatic snapshots, including
+  lag. [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 - **Tracing** — `withTracer(...)`: W3C `traceparent` extraction on consume, injection on produce and DLQ writes (opt-in
   `kpipe-tracing-otel`).
 - **Graceful shutdown** — bounded in-flight drain, batch-buffer flush, then a final synchronous commit. Interrupted
@@ -274,9 +275,9 @@ a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-test")`; t
 | [docs/GUARANTEES.md](docs/GUARANTEES.md)               | Delivery guarantee boundary, failure matrix, ordering, backpressure                                                                                                                         |
 | [docs/FORMATS.md](docs/FORMATS.md)                     | JSON / Avro / Protobuf, wire envelopes, Confluent Schema Registry modes                                                                                                                     |
 | [docs/SINKS.md](docs/SINKS.md)                         | Custom, Kafka-producer, fan-out, and batch sinks                                                                                                                                            |
-| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)         | Metrics tables, outcome counters, tracing, local Grafana stack                                                                                                                              |
+| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)         | Metrics tables, the metrics log, tracing, local Grafana stack                                                                                                                               |
 | [docs/MODULES.md](docs/MODULES.md)                     | Module catalog, BOM usage, JPMS                                                                                                                                                             |
-| [docs/ESCAPE-HATCHES.md](docs/ESCAPE-HATCHES.md)       | The explicit builder API: custom offset managers, reporters, seams                                                                                                                          |
+| [docs/ESCAPE-HATCHES.md](docs/ESCAPE-HATCHES.md)       | The explicit builder API: custom offset managers, seams                                                                                                                                     |
 | [docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md) | The machine-checked offset invariants                                                                                                                                                       |
 | [docs/VERSIONING.md](docs/VERSIONING.md)               | What breaks in a minor, what counts as public API, and when the rule changes                                                                                                                |
 | [docs/adr/](docs/adr)                                  | Architecture decision records — why the concurrency tooling is what it is                                                                                                                   |

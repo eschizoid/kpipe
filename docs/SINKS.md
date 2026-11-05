@@ -14,8 +14,8 @@ sink building blocks themselves. Snippets use placeholder values; they show shap
 
 `MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape:
 `registerOperator(key, op)` / `registerSink(key, sink)` to add, `getOperator(key)` / `getSink(key)` to look up, and
-per-namespace utilities (`getAllSinks`, `getSinkMetrics`, `unregisterSink`, `clearSinks`). A pipeline has one sink. To
-fan out to several, use `toMulti(...)`, on a stream or on the pipeline builder; delivery is best effort, so a sink that
+per-namespace utilities (`getAllSinks`, `getSinkKeys`, `unregisterSink`, `clearSinks`). A pipeline has one sink. To fan
+out to several, use `toMulti(...)`, on a stream or on the pipeline builder; delivery is best effort, so a sink that
 throws is logged and the record still succeeds. To retry the record when any destination fails, write one sink that
 calls each in turn. A key must be registered before a pipeline uses it with `pipe`, `toSink` or `toMulti`; building with
 an unregistered key throws `IllegalArgumentException`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`,
@@ -44,7 +44,6 @@ pipeline; the failure is logged and contained at the sink boundary.
 
 ```java
 import org.apache.kafka.clients.producer.KafkaProducer;
-import io.github.eschizoid.kpipe.metrics.ProducerMetrics;
 import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 
@@ -54,12 +53,18 @@ registry.registerOperator(RegistryKey.json("transform"), transform);
 final var pipeline = registry
   .pipeline(JsonFormat.INSTANCE)
   .pipe(RegistryKey.json("transform"))
-  .toSink(KafkaMessageSink.of(
-    producer, "output-topic", JsonFormat.INSTANCE::serialize, ProducerMetrics.noop(), Tracer.noop()))
+  .toSink(KafkaMessageSink.of(producer, "output-topic", JsonFormat.INSTANCE::serialize, Tracer.noop()))
   .build();
 ```
 
-Pass a real `ProducerMetrics` / `Tracer` to count sends and propagate trace context; the noops cost nothing.
+Each record waits for the broker to acknowledge its send; what an acknowledgement guarantees depends on the producer's
+`acks` (Kafka's default, `all`, waits for the in-sync replicas). A failed send fails the record, unless the sink is one
+destination of `toMulti(...)`. The record is then retried if retries are configured, goes to the error handler and, when
+configured, the dead-letter topic, and counts as failed in the consumer's metrics; its offset commits after that
+handling, unless the dead-letter write also fails. Delivery is at least once: a send that times out may still have
+reached the broker, so its retry can write the record twice. In SEQUENTIAL mode each record waits for its own ack,
+including the producer's `linger.ms`, so set `linger.ms=0` for such pipelines; PARALLEL overlaps sends across records,
+and KEY_ORDERED across keys. Pass a real `Tracer` to propagate trace context into the outbound headers.
 
 ## Fan-out to multiple sinks
 

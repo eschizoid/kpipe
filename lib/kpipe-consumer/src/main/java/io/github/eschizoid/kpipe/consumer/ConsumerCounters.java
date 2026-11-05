@@ -60,6 +60,7 @@ final class ConsumerCounters {
   private long openNanos;
   private long openSince = -1;
   private boolean stopped;
+  private volatile Map<String, Long> lag = Map.of();
 
   ConsumerCounters() {
     this(System::nanoTime);
@@ -102,6 +103,13 @@ final class ConsumerCounters {
     }
   }
 
+  /// Replaces the lag with a fresh reading.
+  ///
+  /// @param lagByTopic per topic, the lag summed over the consumer's assigned partitions
+  void lagSampled(final Map<String, Long> lagByTopic) {
+    lag = Map.copyOf(lagByTopic);
+  }
+
   /// Ends any backpressure pause or open breaker period now, and starts no new one, so snapshots
   /// taken after the consumer stops do not keep counting time. A batch flushed while the consumer
   /// closes can still trip the breaker; that trip is counted but not timed.
@@ -138,7 +146,7 @@ final class ConsumerCounters {
         Duration.ofNanos(openNanos + (openSince < 0 ? 0 : now - openSince))
       );
     }
-    return new MetricsSnapshot(total(perTopic), perTopic, inFlight, backpressure, circuitBreaker);
+    return new MetricsSnapshot(total(perTopic), perTopic, inFlight, lag, backpressure, circuitBreaker);
   }
 
   private static MetricsSnapshot.Records total(final Map<String, MetricsSnapshot.Records> perTopic) {

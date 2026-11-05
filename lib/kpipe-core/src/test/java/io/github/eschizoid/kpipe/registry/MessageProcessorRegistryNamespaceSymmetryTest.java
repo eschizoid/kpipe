@@ -47,22 +47,6 @@ class MessageProcessorRegistryNamespaceSymmetryTest {
   }
 
   @Test
-  void metricsAreTrackedPerNamespace() {
-    registry.getOperator(key).apply("value");
-    registry.getSink(key).accept("value");
-
-    assertEquals(1L, registry.getOperatorMetrics(key).get("invocationCount"));
-    assertEquals(1L, registry.getSinkMetrics(key).get("invocationCount"));
-  }
-
-  @Test
-  void metricsAreEmptyForUnknownKeys() {
-    final var unknown = RegistryKey.of("unknown", Object.class);
-    assertTrue(registry.getOperatorMetrics(unknown).isEmpty());
-    assertTrue(registry.getSinkMetrics(unknown).isEmpty());
-  }
-
-  @Test
   void unregisterOperatorLeavesSinkNamespaceUntouched() {
     assertTrue(registry.unregisterOperator(key));
     assertFalse(registry.unregisterOperator(key), "second removal must report nothing removed");

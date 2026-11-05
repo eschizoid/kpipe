@@ -8,7 +8,6 @@ import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.Operators;
@@ -246,16 +245,9 @@ record DefaultStream<T>(
   }
 
   @Override
-  public Stream<T> withMetricsReporters(final Collection<? extends KPipeMetricsReporter> reporters) {
-    Objects.requireNonNull(reporters, "reporters cannot be null");
-    final List<KPipeMetricsReporter> copy = List.copyOf(reporters);
-    return mutateConfig(c -> c.metricsReporters = copy);
-  }
-
-  @Override
-  public Stream<T> withMetricsInterval(final Duration interval) {
-    Objects.requireNonNull(interval, "interval cannot be null");
-    return mutateConfig(c -> c.metricsInterval = interval);
+  public Stream<T> withMetricsLog(final Duration interval) {
+    final var checked = ConsumerConfig.positiveInterval(interval);
+    return mutateConfig(c -> c.metricsLogInterval = checked);
   }
 
   @Override

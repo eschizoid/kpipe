@@ -69,10 +69,10 @@ to prevent thrashing:
 (`MessageSink<T>`) in separate internal maps, keyed identically by `RegistryKey<T>`. The registration entry points are
 split by namespace — `registerOperator(key, op)` / `registerSink(key, sink)` — and the static sink error-handling helper
 follows the same naming: `withSinkErrorHandling(MessageSink<T>)`. Lookups are `getOperator(key)` / `getSink(key)`. Since
-1.19.0 the namespaces are a perfect 7×2 mirror — every method carries its namespace
-(`unregisterOperator`/`unregisterSink`, `clearOperators`/`clearSinks`, `getOperatorKeys`/`getSinkKeys`,
-`getAllOperators`/`getAllSinks`, `getOperatorMetrics`/`getSinkMetrics`); the bare `unregister`/`clear`/`getKeys`/
-`getMetrics` operator forms are gone (they invited `registry.clear()`-wipes-only-operators surprises).
+1.19.0 the namespaces are a perfect mirror — every method carries its namespace (`unregisterOperator`/`unregisterSink`,
+`clearOperators`/`clearSinks`, `getOperatorKeys`/`getSinkKeys`, `getAllOperators`/`getAllSinks`); the bare
+`unregister`/`clear`/`getKeys` operator forms are gone (they invited `registry.clear()`-wipes-only-operators surprises).
+The registry keeps no per-entry metrics; the consumer counts every record in `MetricsSnapshot`.
 
 **Historical note:** through 1.13 these were `register` / `withErrorHandling` overloaded by argument type. Bare lambdas
 like `x -> x` were ambiguous and needed an explicit cast. 1.14 renamed both pairs per §16 (delete + migrate) to kill the
@@ -87,7 +87,7 @@ payload as a success. `RegistryFunctions` is package-private.
 
 ## §9 Modular architecture
 
-`kpipe-metrics` ← `kpipe-producer` ← `kpipe-consumer`. Each module is published individually to Maven Central;
+`kpipe-core` ← `kpipe-producer` ← `kpipe-consumer`. Each module is published individually to Maven Central;
 `kpipe-consumer` transitively pulls the other two.
 
 **Split-package rule (JPMS):** no two modules may export the same Java package. When a class references types from
@@ -98,16 +98,15 @@ Package ownership, as declared by the `exports` clauses in each `module-info.jav
 - `io.github.eschizoid.kpipe` → `kpipe-api`
 - `io.github.eschizoid.kpipe.registry` → `kpipe-core`
 - `io.github.eschizoid.kpipe.sink` → `kpipe-core` (this is where `MessageSink` and `CompositeMessageSink` live)
-- `io.github.eschizoid.kpipe.metrics` → `kpipe-metrics`
 - `io.github.eschizoid.kpipe.metrics.otel` → `kpipe-metrics-otel`
 - `io.github.eschizoid.kpipe.producer`, `.producer.config`, `.producer.sink` → `kpipe-producer`
-- `io.github.eschizoid.kpipe.consumer`, `.consumer.config`, `.consumer.metrics` → `kpipe-consumer`
+- `io.github.eschizoid.kpipe.consumer`, `.consumer.config` → `kpipe-consumer`
 - `io.github.eschizoid.kpipe.health` → `kpipe-consumer`
 - `io.github.eschizoid.kpipe.format.json` → `kpipe-format-json`
 - `io.github.eschizoid.kpipe.format.avro` → `kpipe-format-avro`
 - `io.github.eschizoid.kpipe.format.protobuf` → `kpipe-format-protobuf` (incl. the `ProtobufDescriptorCompiler` SPI)
 - `io.github.eschizoid.kpipe.schemaregistry.confluent` → `kpipe-schema-registry-confluent`
-- `io.github.eschizoid.kpipe.tracing` → `kpipe-tracing` (the `Tracer` SPI module — a root like `kpipe-metrics`)
+- `io.github.eschizoid.kpipe.tracing` → `kpipe-tracing` (the `Tracer` SPI module — a root like `kpipe-core`)
 - `io.github.eschizoid.kpipe.tracing.otel` → `kpipe-tracing-otel`
 - `io.github.eschizoid.kpipe.test` → `kpipe-test`
 
@@ -117,35 +116,39 @@ Package ownership, as declared by the `exports` clauses in each `module-info.jav
 **Facade opt-in (1.18.0):** `kpipe-api` `requires static` the JSON/Avro/Protobuf format modules — formats are opt-in, so
 a consumer only pulls the format it actually uses (§19).
 
-## §10 OpenTelemetry metrics
+## §10 Metrics
 
-`kpipe-metrics` carries no telemetry dependency — `build.gradle.kts` declares nothing beyond test libraries and
-`module-info` has no `requires` clause at all, so it is interfaces plus a no-op default and nothing else. On the metrics
-side `opentelemetry-api` arrives only with `kpipe-metrics-otel`, which brings the API along, so the user adds just an
-SDK (`opentelemetry-sdk`) and an exporter (Prometheus, OTLP). Tracing has its own at `kpipe-tracing-otel`. Consumer
-metrics are counted once, in `ConsumerCounters`, and exported through a `MetricsExporter` passed to `.withMetrics(...)`:
-`OtelMetrics.of(otel)` has one OTel batch callback that reads every live consumer's `MetricsSnapshot`, so each consumer
-reports the numbers its `Handle.metrics()` returns. One `OtelMetrics` serves any number of consumers (create one per
-`OpenTelemetry` and share it, since its callback stays registered with the SDK): `start` returns each consumer's
-`Export`, which the consumer closes after flushing batches, committing offsets and closing the DLQ producer. Closing
-moves the consumer's final counts into retired totals the callback keeps reporting, so counters never go down. Without
-an exporter nothing is exported. `ProducerMetrics` defaults to `ProducerMetrics.noop()`.
+The consumer counts every record once, in `ConsumerCounters`. `KPipeConsumer.metrics()` / `Handle.metrics()` return a
+typed `MetricsSnapshot` read from there, including each topic's lag. The poll loop reads it at most once a second: from
+the client's fetch state for fetching partitions, and from the broker's end offsets (100 ms timeout) for paused ones,
+whose fetch state stops moving.
 
-| Component             | Instrument                                                                         | Type                 |
-| --------------------- | ---------------------------------------------------------------------------------- | -------------------- |
-| `OtelProducerMetrics` | `kpipe.producer.messages.{sent,failed}`, `kpipe.producer.dlq.{sent,failed}`        | counter              |
-| `OtelMetrics`         | `kpipe.consumer.records.{received,processed,filtered,failed,retries}`              | counter, per topic   |
-|                       | `kpipe.consumer.dlq.{sent,failed}`                                                 | counter, per topic   |
-|                       | `kpipe.consumer.records.in_flight`                                                 | up-down counter      |
-|                       | `kpipe.consumer.processing.duration` (seconds)                                     | histogram, per topic |
-|                       | `kpipe.consumer.backpressure.{pauses,time}`                                        | counter              |
-|                       | `kpipe.consumer.circuit_breaker.{trips,open_time}`                                 | counter              |
-|                       | `kpipe.consumer.circuit_breaker.state` (consumers per state)                       | up-down counter      |
-|                       | `kpipe.schema_registry.cache.{hits,misses,size}` (via `exportSchemaRegistryCache`) | counter / gauge      |
+Export is opt-in through a `MetricsExporter` passed to `.withMetrics(...)`. `kpipe-metrics-otel` is the only module that
+brings `opentelemetry-api`; the user adds an SDK (`opentelemetry-sdk`) and an exporter (Prometheus, OTLP). Tracing has
+its own at `kpipe-tracing-otel`. `OtelMetrics.of(otel)` has one OTel batch callback that reads every live consumer's
+`MetricsSnapshot`, so each consumer reports the numbers its `Handle.metrics()` returns. One `OtelMetrics` serves any
+number of consumers (create one per `OpenTelemetry` and share it, since its callback stays registered with the SDK):
+`start` returns each consumer's `Export`, which the consumer closes after flushing batches, committing offsets and
+closing the DLQ producer. Closing moves the consumer's final counts into retired totals the callback keeps reporting, so
+counters never go down. Without an exporter nothing is exported.
 
-Programmatic access: `KPipeConsumer.metrics()` / `Handle.metrics()` return a typed `MetricsSnapshot` read from
-`ConsumerCounters`, the single place every counter is incremented. Log-based fallback: `EntryMetricsReporter`
-(per-entry, namespace-aware via `forProcessors(...)` / `forSinks(...)`) or a `KPipeMetricsReporter` lambda.
+There are no producer metrics: a DLQ write counts as `dlq.sent` / `dlq.failed`, and a `KafkaMessageSink` send, which
+waits for the broker's ack, counts as processed or failed.
+
+| Instrument                                                                         | Type                       |
+| ---------------------------------------------------------------------------------- | -------------------------- |
+| `kpipe.consumer.records.{received,processed,filtered,failed,retries}`              | counter, per topic         |
+| `kpipe.consumer.dlq.{sent,failed}`                                                 | counter, per topic         |
+| `kpipe.consumer.records.in_flight`                                                 | up-down counter            |
+| `kpipe.consumer.lag`                                                               | up-down counter, per topic |
+| `kpipe.consumer.processing.duration` (seconds)                                     | histogram, per topic       |
+| `kpipe.consumer.backpressure.{pauses,time}`                                        | counter                    |
+| `kpipe.consumer.circuit_breaker.{trips,open_time}`                                 | counter                    |
+| `kpipe.consumer.circuit_breaker.state` (consumers per state)                       | up-down counter            |
+| `kpipe.schema_registry.cache.{hits,misses,size}` (via `exportSchemaRegistryCache`) | counter / gauge            |
+
+Log-based fallback: `withMetricsLog(Duration)` writes one `key=value` line per interval to the
+`io.github.eschizoid.kpipe.metrics.log` logger, plus a final line at close after the last flush.
 
 ## §11 KPipeConsumer concurrency & safety patterns
 
@@ -325,7 +328,7 @@ deliberately escape-hatch-only.
 | Backpressure (custom watermarks)               | `kpipe-consumer`                                                                                | `Stream.withBackpressure(high, low)` / `MultiBuilder.withBackpressure(high, low)`                                                      | `Builder.withBackpressure(BackpressureController)`                                                                                  | High/low strategy auto-derived from `ProcessingMode`.                                                                                                                                                                                                                                                                                                                                    |
 | Processing mode                                | `kpipe-consumer`                                                                                | `Stream.withProcessingMode(ProcessingMode)`                                                                                            | `Builder.withProcessingMode(ProcessingMode)`                                                                                        | Three modes: `SEQUENTIAL` (lag-based BP §5), `PARALLEL` (default, in-flight BP), `KEY_ORDERED` (per-key serial via `KeyOrderedDispatcher`, in-flight BP). See §20.                                                                                                                                                                                                                       |
 | Key-ordered LRU cap                            | `kpipe-consumer`                                                                                | `Stream.withKeyOrderedMaxKeys(int)`                                                                                                    | `Builder.withKeyOrderedMaxKeys(int)`                                                                                                | Default 10,000 distinct keys held in memory. Only meaningful for `KEY_ORDERED`. Null-keyed records share a single sentinel queue.                                                                                                                                                                                                                                                        |
-| OTel/custom metrics                            | `kpipe-metrics(-otel)`                                                                          | `Stream.withMetrics(metrics)` (one shared `OtelMetrics.of(otel)`) / `MultiBuilder.withMetrics(...)`                                    | `Builder.withMetrics(MetricsExporter)`                                                                                              | Single-format and multi-topic both supported.                                                                                                                                                                                                                                                                                                                                            |
+| OTel/custom metrics                            | `kpipe-metrics-otel`                                                                            | `Stream.withMetrics(metrics)` (one shared `OtelMetrics.of(otel)`) / `MultiBuilder.withMetrics(...)`                                    | `Builder.withMetrics(MetricsExporter)`                                                                                              | Single-format and multi-topic both supported.                                                                                                                                                                                                                                                                                                                                            |
 | Tracing                                        | `kpipe-tracing-otel` + `kpipe-tracing`                                                          | `Stream.withTracer(Tracer)` / `MultiBuilder.withTracer(Tracer)`                                                                        | `Builder.withTracer(Tracer)`                                                                                                        | `Tracer` is the SPI (its own module, `kpipe-tracing`, package `io.github.eschizoid.kpipe.tracing` — since 1.19.0); `OtelTracer` is the OpenTelemetry-backed implementation in `kpipe-tracing-otel` that wires W3C `traceparent` propagation across the Kafka boundary. Default is `Tracer.noop()` — zero cost when not configured.                                                       |
 | Custom error handler                           | `kpipe-consumer`                                                                                | `Stream.withErrorHandler(...)` / `MultiBuilder.withErrorHandler(...)`                                                                  | `Builder.withErrorHandler(ErrorHandler<K>)`                                                                                         | Default logs at WARNING (§11). Facade handler is `Consumer<KPipeConsumer.ProcessingError>`.                                                                                                                                                                                                                                                                                              |
 | Dead-letter topic                              | `kpipe-consumer`                                                                                | `Stream.withDeadLetterTopic(String)` / `MultiBuilder.withDeadLetterTopic(String)`                                                      | `Builder.withDeadLetterTopic(String)` / `Builder.withDeadLetterQueue(String, KPipeProducer)`                                        | One DLQ for the whole consumer (no per-route DLQ). The two-arg builder form pairs the topic and a pre-built producer atomically — preferred over calling `withDeadLetterTopic` and `withKafkaProducer` separately because it makes the producer's role (DLQ-specific, not generic) explicit and stops the two settings from drifting out of sync.                                        |
@@ -335,11 +338,11 @@ deliberately escape-hatch-only.
 | **External offset store**                      | `kpipe-consumer`                                                                                | — (escape hatch only)                                                                                                                  | `Builder.withOffsetStore(OffsetStore)`                                                                                              | Keeps committed offsets in a database instead of Kafka; the default manager still computes the frontier. Rejected alongside a custom `OffsetManager`.                                                                                                                                                                                                                                    |
 | **Custom `OffsetManager`**                     | `kpipe-consumer`                                                                                | — (escape hatch only)                                                                                                                  | `Builder.withOffsetManager(OffsetManager<K>)` / `Builder.withOffsetManagerProvider(Function<Consumer<K,byte[]>, OffsetManager<K>>)` | Replaces frontier tracking too. The `Provider` form gets the live Kafka consumer so it can wire `commitSync` callbacks.                                                                                                                                                                                                                                                                  |
 | **Custom Kafka `Consumer` factory**            | `kpipe-consumer`                                                                                | —                                                                                                                                      | `Builder.withConsumer(Supplier<Consumer<K,byte[]>>)`                                                                                | Test seam / SSL configurators.                                                                                                                                                                                                                                                                                                                                                           |
-| **Custom DLQ `KafkaProducer`**                 | `kpipe-producer`                                                                                | —                                                                                                                                      | `Builder.withKafkaProducer(Producer<K,byte[]>)` / `Builder.withKafkaProducer(KPipeProducer<K,byte[]>)`                              | Override default producer for the DLQ. Use the `Producer` overload to hand in a raw Kafka producer; use the `KPipeProducer` overload to share an already-wrapped instance (e.g. one with custom metrics already attached).                                                                                                                                                               |
+| **Custom DLQ `KafkaProducer`**                 | `kpipe-producer`                                                                                | —                                                                                                                                      | `Builder.withKafkaProducer(Producer<K,byte[]>)` / `Builder.withKafkaProducer(KPipeProducer<K,byte[]>)`                              | Override default producer for the DLQ. Use the `Producer` overload to hand in a raw Kafka producer; use the `KPipeProducer` overload to share an already-wrapped instance (e.g. one with a tracer already attached).                                                                                                                                                                     |
 | **Rebalance listener**                         | `kpipe-consumer`                                                                                | —                                                                                                                                      | Owned by `OffsetManager` — override `OffsetManager.createRebalanceListener()` in a custom manager                                   | No standalone `withRebalanceListener` — the Builder sets it from whatever `OffsetManager` is registered. External offset commit hooks live alongside that manager.                                                                                                                                                                                                                       |
 | **Custom command queue**                       | `kpipe-consumer`                                                                                | —                                                                                                                                      | `Builder.withCommandQueue(Queue<ConsumerCommand>)`                                                                                  | Test seam (rarely needed).                                                                                                                                                                                                                                                                                                                                                               |
 | Thread/executor termination                    | `kpipe-consumer`                                                                                | `Stream.withThreadTerminationTimeout(Duration)` / `.withWaitForMessagesTimeout(Duration)`, and the `MultiBuilder` mirrors              | `Builder.withThreadTerminationTimeout / withWaitForMessagesTimeout`                                                                 | Shutdown tuning; operational rather than pipeline shape, so it lives on both surfaces. The executor-drain timeout stays non-tunable at `ConsumerDefaults.EXECUTOR_TERMINATION`.                                                                                                                                                                                                          |
-| Periodic metrics reporting + shutdown hook     | `kpipe-consumer`                                                                                | `Stream.withMetricsReporters(...)` / `.withMetricsInterval(...)` / `.withShutdownHook(boolean)`, and the `MultiBuilder` mirrors        | `Builder.withMetricsReporters(...) / withMetricsInterval(...) / withShutdownHook(true)`                                             | The log-based path for deployments without OTel — independent of `withMetrics`, which wires the OTel instruments. Reporter thread is a daemon. The shutdown hook covers SIGTERM, which try-with-resources on `Handle` does not.                                                                                                                                                          |
+| Metrics log + shutdown hook                    | `kpipe-consumer`                                                                                | `Stream.withMetricsLog(Duration)` / `.withShutdownHook(boolean)`, and the `MultiBuilder` mirrors                                       | `Builder.withMetricsLog(Duration) / withShutdownHook(true)`                                                                         | The log-based path for deployments without OTel — independent of `withMetrics`. One `key=value` line per interval to the `io.github.eschizoid.kpipe.metrics.log` logger, plus a final line at close. The shutdown hook covers SIGTERM, which try-with-resources on `Handle` does not.                                                                                                    |
 | **Health endpoint**                            | `kpipe-consumer`                                                                                | compose it from `Handle`                                                                                                               | `HttpHealthServer.fromEnv(...)`                                                                                                     | Not a facade gap: `fromEnv` takes suppliers and reads host/port/path from the environment, so a facade user wires `HttpHealthServer.fromEnv(handle::isHealthy, () -> handle.metrics().inFlight(), () -> !handle.isHealthy(), "app")` alongside the handle. It is a separate process concern, not pipeline configuration.                                                                 |
 | In-flight drain                                | `kpipe-consumer`                                                                                | `Handle.shutdownGracefully(Duration)`                                                                                                  | `KPipeConsumer.waitForInFlightDrain(Duration) / shutdownGracefully(Duration)`                                                       | Already on the facade — this row was marked escape-hatch-only in error. Waits on `dispatcher.drainableCount()`, not `KPipeConsumer.backpressureLoad()`, which adds the batch buffers on top: buffered batch records never flush mid-drain, so waiting on them only burns the timeout; teardown flushes and commits them immediately after.                                               |
 | **Custom `MessageProcessorRegistry`**          | `kpipe-core`                                                                                    | —                                                                                                                                      | `new MessageProcessorRegistry()` + `register*(...)` + `pipeline(format)`                                                            | Pre-shared pipelines across consumers, multi-format orchestrators. The registry is format-agnostic — the format is supplied per pipeline call, not on construction.                                                                                                                                                                                                                      |
@@ -440,8 +443,8 @@ ID unreadable. Users who set both get a decode error; documented in `Stream.skip
 descriptor), and `protobuf-java` has **no `.proto`-text parser** (it only builds a `Descriptor` from a binary
 `FileDescriptorProto`). This is the key asymmetry with Avro: Avro compiles its JSON schema text with its **own** bundled
 parser (`Schema.Parser`), so `AvroFormat.withRegistry` needs no extra module; Protobuf's compiler is heavy and
-JPMS-hostile, so it lives in a **separate module**. The split mirrors `kpipe-metrics` → `kpipe-metrics-otel` and the
-`Tracer` → `kpipe-tracing-otel` SPI/impl pattern:
+JPMS-hostile, so it lives in a **separate module**. The split mirrors the `Tracer` → `kpipe-tracing-otel` SPI/impl
+pattern:
 
 - **`kpipe-format-protobuf`** (base, stays a tiny real JPMS module, ~12K): the `ProtobufDescriptorCompiler` SPI +
   `ProtobufFormat.withRegistry(SchemaResolver)` — **single-param, an exact mirror of `AvroFormat.withRegistry`**. The
