@@ -5,7 +5,6 @@ import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
@@ -13,7 +12,6 @@ import io.github.eschizoid.kpipe.sink.BatchSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
@@ -288,25 +286,22 @@ public interface Stream<T> {
   /// @throws NullPointerException if `store` is null
   Stream<T> withOffsetStore(final OffsetStore store);
 
-  /// Returns a new stream that reports consumer metrics periodically through `reporters`.
+  /// Returns a new stream that logs one line of the consumer's metrics every `interval`, plus a
+  /// final line when it closes, after its last records are counted. The line goes to the
+  /// `io.github.eschizoid.kpipe.metrics` logger at INFO, as `key=value` pairs named like the
+  /// OpenTelemetry instruments:
   ///
-  /// This is the log-based path for deployments without an OpenTelemetry backend; it is
-  /// independent of [#withMetrics], which exports metrics to a monitoring backend. The reporter
-  /// thread is a daemon and does not keep the JVM alive.
+  /// ```text
+  /// kpipe metrics [orders group=billing] received=120 processed=117 filtered=1 failed=2 ...
+  /// ```
   ///
-  /// @param reporters the reporters to invoke on each interval (must be non-null); the collection
-  ///     is copied
-  /// @return a new stream with periodic reporting configured
-  /// @throws NullPointerException if `reporters` is null
-  Stream<T> withMetricsReporters(final Collection<? extends KPipeMetricsReporter> reporters);
-
-  /// Returns a new stream that reports metrics every `interval` rather than at the default
-  /// cadence. Only meaningful alongside [#withMetricsReporters].
+  /// It needs no monitoring backend and is independent of [#withMetrics].
   ///
-  /// @param interval how often to report (must be non-null and positive)
-  /// @return a new stream with the reporting interval configured
+  /// @param interval how often to log (must be positive)
+  /// @return a new stream with the metrics log configured
   /// @throws NullPointerException if `interval` is null
-  Stream<T> withMetricsInterval(final Duration interval);
+  /// @throws IllegalArgumentException if `interval` is zero or negative
+  Stream<T> withMetricsLog(final Duration interval);
 
   /// Returns a new stream that registers a JVM shutdown hook to close the consumer.
   ///
@@ -360,9 +355,9 @@ public interface Stream<T> {
   /// **Runtime modules.** Avro needs `kpipe-schema-registry-confluent` for the resolver; Protobuf
   /// additionally needs **`kpipe-format-protobuf-confluent`** on the runtime path — it supplies
   /// the `.proto`-text compiler discovered via `ServiceLoader` (protobuf-java has no `.proto`
-  /// parser, so the compiler ships in a separate shaded module, mirroring the `kpipe-metrics` →
-  /// `kpipe-metrics-otel` split). Calling this on a Protobuf stream without that module on the
-  /// path throws at first use with a message telling you to add it. That compiler is a ~19 MB
+  /// parser, so the compiler ships in a separate shaded module). Calling this on a Protobuf
+  /// stream without that module on the path throws at first use with a message telling you to
+  /// add it. That compiler is a ~19 MB
   /// shaded jar; only SR-Protobuf users pull it — static `new ProtobufFormat(descriptor)` needs
   /// nothing beyond `protobuf-java`.
   ///

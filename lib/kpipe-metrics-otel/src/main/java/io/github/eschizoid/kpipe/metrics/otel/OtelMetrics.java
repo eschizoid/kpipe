@@ -69,8 +69,8 @@ import java.util.function.LongSupplier;
 /// add up into the same series. A closed consumer's final counts stay in its counters for the
 /// instance's lifetime, so a counter never goes down when one of its consumers closes; the
 /// consumer drops out of `in_flight`, the lag and the state instrument. The instance stays
-// registered with
-/// the SDK, so create one per `OpenTelemetry` and share it rather than one per consumer.
+/// registered with the SDK, so create one per `OpenTelemetry` and share it rather than one per
+/// consumer.
 public final class OtelMetrics implements MetricsExporter {
 
   static final String SCOPE = "io.github.eschizoid.kpipe";

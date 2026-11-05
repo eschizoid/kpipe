@@ -21,10 +21,7 @@ import java.util.function.UnaryOperator;
 /// The public surface is a perfect per-namespace mirror: every operation carries its namespace
 /// in the method name (`registerOperator`/`registerSink`, `getOperator`/`getSink`,
 /// `unregisterOperator`/`unregisterSink`, `clearOperators`/`clearSinks`,
-/// `getOperatorKeys`/`getSinkKeys`, `getAllOperators`/`getAllSinks`,
-/// `getOperatorMetrics`/`getSinkMetrics`). Renamed in 1.19.0 from the bare operator-side names
-/// (`unregister`/`clear`/`getKeys`/`getMetrics`), which read registry-wide but touched only
-/// operators.
+/// `getOperatorKeys`/`getSinkKeys`, `getAllOperators`/`getAllSinks`).
 ///
 /// Example:
 ///
@@ -58,20 +55,20 @@ public class MessageProcessorRegistry {
   /// to preserve the type-safe API; only the *plumbing* is shared.
   private static final class Namespace {
 
-    private final ConcurrentHashMap<RegistryKey<?>, RegistryEntry<?>> map = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<RegistryKey<?>, Object> map = new ConcurrentHashMap<>();
 
     <T> void put(final RegistryKey<T> key, final Object value) {
-      map.put(key, new RegistryEntry<>(value));
+      map.put(key, value);
     }
 
-    /// Returns the entry under `key` cast to the caller-supplied wrapper type, or null if
+    /// Returns the value under `key` cast to the caller-supplied wrapper type, or null if
     /// nothing is registered. The wrapper type cannot be inferred from the key (which carries
     /// the *value* type, e.g. `Map<String, Object>`, not the wrapper `UnaryOperator<Map<...>>`),
     /// so callers supply it as a type witness. Type-safety of the registration is enforced at
     /// the public `register(RegistryKey<T>, ...)` overloads.
     @SuppressWarnings("unchecked")
-    <W> RegistryEntry<W> getAs(final RegistryKey<?> key) {
-      return (RegistryEntry<W>) map.get(key);
+    <W> W getAs(final RegistryKey<?> key) {
+      return (W) map.get(key);
     }
 
     boolean remove(final RegistryKey<?> key) {
@@ -87,15 +84,7 @@ public class MessageProcessorRegistry {
     }
 
     Map<RegistryKey<?>, String> all() {
-      return RegistryFunctions.createUnmodifiableView(map, value -> {
-        final var entry = (RegistryEntry<?>) value;
-        return entry.value().getClass().getSimpleName();
-      });
-    }
-
-    Map<String, Object> metrics(final RegistryKey<?> key) {
-      final var entry = map.get(key);
-      return entry == null ? Map.of() : entry.getMetrics();
+      return RegistryFunctions.createUnmodifiableView(map, value -> value.getClass().getSimpleName());
     }
   }
 
@@ -152,9 +141,9 @@ public class MessageProcessorRegistry {
   /// @return an operator that applies whatever is registered under `key` when it runs
   public <T> UnaryOperator<T> getOperator(final RegistryKey<T> key) {
     return input -> {
-      final RegistryEntry<UnaryOperator<T>> entry = operators.getAs(key);
-      if (entry == null) throw new IllegalStateException("No operator registered under key " + key);
-      return entry.apply(input);
+      final UnaryOperator<T> operator = operators.getAs(key);
+      if (operator == null) throw new IllegalStateException("No operator registered under key " + key);
+      return operator.apply(input);
     };
   }
 
@@ -192,14 +181,6 @@ public class MessageProcessorRegistry {
     return operators.all();
   }
 
-  /// Gets metrics for a specific operator entry.
-  ///
-  /// @param key the registry key to look up
-  /// @return the entry's metrics, or an empty map if `key` is not registered
-  public Map<String, Object> getOperatorMetrics(final RegistryKey<?> key) {
-    return operators.metrics(key);
-  }
-
   // ───────────────────────────── Sinks ─────────────────────────────
 
   /// Registers a typed sink under `key`.
@@ -223,9 +204,9 @@ public class MessageProcessorRegistry {
   /// @return a sink that delivers to whatever is registered under `key` when it runs
   public <T> MessageSink<T> getSink(final RegistryKey<T> key) {
     return value -> {
-      final RegistryEntry<MessageSink<T>> entry = sinks.getAs(key);
-      if (entry == null) throw new IllegalStateException("No sink registered under key " + key);
-      entry.accept(value);
+      final MessageSink<T> sink = sinks.getAs(key);
+      if (sink == null) throw new IllegalStateException("No sink registered under key " + key);
+      sink.accept(value);
     };
   }
 
@@ -260,14 +241,6 @@ public class MessageProcessorRegistry {
   /// @return an unmodifiable view of registered sinks (key → implementation simple name)
   public Map<RegistryKey<?>, String> getAllSinks() {
     return sinks.all();
-  }
-
-  /// Gets metrics for a specific sink entry.
-  ///
-  /// @param key the registry key to look up
-  /// @return the entry's metrics, or an empty map if `key` is not registered
-  public Map<String, Object> getSinkMetrics(final RegistryKey<?> key) {
-    return sinks.metrics(key);
   }
 
   /// Wraps a sink with error-handling logic that suppresses exceptions.

@@ -6,7 +6,6 @@ plugins {
 description = "KPipe Metrics OTel - OpenTelemetry-backed export of KPipe consumer metrics"
 
 dependencies {
-  api(project(":lib:kpipe-metrics"))
   api(project(":lib:kpipe-core"))
   api(project(":lib:kpipe-consumer"))
   api(libs.opentelemetryApi)

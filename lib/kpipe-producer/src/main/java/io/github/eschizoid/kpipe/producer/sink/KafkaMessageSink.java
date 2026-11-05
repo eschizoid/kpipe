@@ -16,7 +16,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 /// only once the message is durably written. A failed send throws, and the consumer treats it like
 /// any other sink failure: it retries the record, then sends it to the error handler and the
 /// dead-letter topic, and counts it as failed. In SEQUENTIAL mode each record therefore waits for
-/// its ack; the parallel modes overlap sends across records.
+/// its ack; PARALLEL overlaps sends across records, and KEY_ORDERED across keys.
 ///
 /// **Trace propagation.** A non-null `tracer` injects the active span's context (W3C `traceparent`
 /// by default) into outbound record headers so downstream consumers see the same trace. Pass

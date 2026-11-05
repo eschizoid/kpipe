@@ -1,6 +1,5 @@
 package io.github.eschizoid.kpipe.consumer;
 
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.tracing.Tracer;
@@ -117,11 +116,10 @@ public class KPipeConsumer implements AutoCloseable {
   /// Released by `close()` so callers blocked in [#awaitShutdown(Duration)] unblock when the
   /// consumer reaches CLOSED. Initialised once so the latch is stable across reconfiguration.
   private final CountDownLatch shutdownLatch = new CountDownLatch(1);
-  /// Periodic metrics-reporter thread. Started at the end of `start()` if any reporters are
-  /// configured; interrupted at the start of `close()`.
-  private volatile Thread metricsReporterThread;
-  private final List<KPipeMetricsReporter> metricsReporters;
-  private final Duration metricsReporterInterval;
+  /// Writes the metrics log line every [#metricsLogInterval]. Started at the end of `start()`
+  /// when the interval is set; interrupted at the start of `close()`.
+  private volatile Thread metricsLogThread;
+  private final Duration metricsLogInterval;
   /// JVM shutdown hook (when `useShutdownHook=true`); kept so `close()` can remove it explicitly.
   /// Without this, every constructed consumer accumulates a hook in the JVM's shutdown-hook set
   /// for the lifetime of the process — a real leak in hosts that build/close many consumers.
@@ -246,8 +244,7 @@ public class KPipeConsumer implements AutoCloseable {
         this.scheduler = null;
       }
 
-      this.metricsReporters = List.copyOf(builder.metricsReporters);
-      this.metricsReporterInterval = builder.metricsReporterInterval;
+      this.metricsLogInterval = builder.metricsLogInterval;
       final var useShutdownHook = builder.useShutdownHook;
       if (useShutdownHook) {
         this.shutdownHookThread = new Thread(this::close, "kpipe-shutdown-hook");
@@ -493,46 +490,44 @@ public class KPipeConsumer implements AutoCloseable {
     return drained;
   }
 
-  /// Starts the metrics-reporter thread if any reporters were configured on the builder. Called
-  /// from `start()`; no-op when the list is empty. The thread is a platform daemon so it cannot
-  /// keep the JVM alive past the consumer.
-  private void startMetricsReporterThread() {
-    if (metricsReporters.isEmpty() || metricsReporterInterval.toMillis() <= 0) return;
-    metricsReporterThread = Thread.ofPlatform()
-      .name("kpipe-metrics-reporter")
-      .daemon(true)
+  /// Starts the thread that logs a metrics line every [#metricsLogInterval], when one is set.
+  /// It is a virtual thread, so it never keeps the JVM alive.
+  private void startMetricsLogThread() {
+    if (metricsLogInterval == null) return;
+    metricsLogThread = Thread.ofVirtual()
+      .name("kpipe-metrics-log")
       .start(() -> {
-        final var current = Thread.currentThread();
-        while (state.get() != ConsumerState.CLOSED && !current.isInterrupted()) {
-          for (final var reporter : metricsReporters) {
-            try {
-              reporter.reportMetrics();
-            } catch (final Exception e) {
-              LOGGER.log(Level.WARNING, "Metrics reporter threw", e);
-            }
+        try {
+          while (state.get() != ConsumerState.CLOSED) {
+            Thread.sleep(metricsLogInterval);
+            if (state.get() == ConsumerState.RUNNING || state.get() == ConsumerState.PAUSED) logMetrics();
           }
-          try {
-            //noinspection BusyWait — fixed reporting-interval sleep, not a spin
-            Thread.sleep(metricsReporterInterval.toMillis());
-          } catch (final InterruptedException e) {
-            current.interrupt();
-            break;
-          }
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
         }
       });
   }
 
-  /// Interrupts and joins the metrics-reporter thread if it's running. Called from `close()`.
-  private void stopMetricsReporterThread() {
-    final var t = metricsReporterThread;
+  /// Stops the metrics log thread, if it runs.
+  private void stopMetricsLogThread() {
+    final var t = metricsLogThread;
     if (t == null) return;
     t.interrupt();
     try {
-      t.join(1_000);
+      t.join(Duration.ofSeconds(1));
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-    } finally {
-      metricsReporterThread = null;
+    }
+  }
+
+  private void logMetrics() {
+    try {
+      MetricsLog.LOGGER.log(
+        Level.INFO,
+        MetricsLog.line(topics, consumerGroup, metrics(), health.circuitBreakerState())
+      );
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.WARNING, "Could not log the consumer's metrics", e);
     }
   }
 
@@ -639,7 +634,7 @@ public class KPipeConsumer implements AutoCloseable {
       });
 
     consumerThread.set(thread);
-    startMetricsReporterThread();
+    startMetricsLogThread();
     LOGGER.log(Level.INFO, "Consumer started for topics {0}", topics);
   }
 
@@ -894,7 +889,7 @@ public class KPipeConsumer implements AutoCloseable {
     shutdownLatch.countDown();
   }
 
-  /// Signal the offset manager, stop the metrics reporter, ask the consumer loop to halt, and let
+  /// Signal the offset manager, stop the metrics log thread, ask the consumer loop to halt, and let
   /// any in-flight records drain before we start waking and joining the consumer thread.
   ///
   /// No pause command needed: CLOSING already halts the poll loop ([#isRunning] is false), and
@@ -906,7 +901,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// spinning past `threadTerminationTimeout`.
   private void initiateShutdown() {
     if (offsetManager != null) offsetManager.signalClosing();
-    stopMetricsReporterThread();
+    stopMetricsLogThread();
     commandQueue.offer(new ConsumerCommand.Close());
     dispatcher.signalShutdown();
     if (waitForMessagesTimeout.toMillis() > 0 && dispatcher.drainableCount() > 0) {
@@ -1027,9 +1022,10 @@ public class KPipeConsumer implements AutoCloseable {
           LOGGER.log(Level.WARNING, "Error closing producer during shutdown", e);
         }
       }
-      // Close the export after every flush and DLQ write above, so its final read holds the
-      // consumer's final counts.
+      // Close the export and write the final metrics line after every flush and DLQ write
+      // above, so both read the consumer's final counts.
       exporter.close();
+      if (metricsLogThread != null) logMetrics();
       // Deregister the JVM shutdown hook last. It's registered in the ctor (when
       // useShutdownHook=true), so it exists even for a never-started consumer and a
       // self-terminating consumer thread. Doing it here — inside the CAS-guarded release — means

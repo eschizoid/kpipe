@@ -11,7 +11,7 @@ import java.util.function.UnaryOperator;
 ///
 /// These helpers route through the canonical [MessageProcessorRegistry] +
 /// [MessageFormat#bytes] path so tests exercise the real production code path
-/// (TypedPipelineBuilder, RegistryEntry, etc.) rather than a parallel implementation.
+/// (TypedPipelineBuilder and the registry lookups) rather than a parallel implementation.
 ///
 /// They stay in the test source tree on purpose: they are NOT a public API.
 /// Production users should call `registry.pipeline(MessageFormat.bytes())` directly.

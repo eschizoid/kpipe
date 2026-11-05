@@ -3,7 +3,6 @@ rootProject.name = "kpipe"
 include("lib")
 include("lib:kpipe-bom")
 include("lib:kpipe-core")
-include("lib:kpipe-metrics")
 include("lib:kpipe-metrics-otel")
 include("lib:kpipe-tracing")
 include("lib:kpipe-tracing-otel")

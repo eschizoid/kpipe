@@ -11,7 +11,6 @@ import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
@@ -20,9 +19,7 @@ import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -225,27 +222,16 @@ public final class MultiBuilder {
     return this;
   }
 
-  /// Reports consumer metrics periodically through `reporters`, for deployments without an
-  /// OpenTelemetry backend. Consumer-wide: one reporting thread serves every route.
+  /// Logs one line of the consumer's metrics every `interval`, plus a final line when it closes.
+  /// Consumer-wide: one line covers every route. See [Stream#withMetricsLog].
   ///
-  /// @param reporters the reporters to invoke on each interval (must be non-null)
-  /// @return this builder
-  /// @throws NullPointerException if `reporters` is null
-  public MultiBuilder withMetricsReporters(final Collection<? extends KPipeMetricsReporter> reporters) {
-    Objects.requireNonNull(reporters, "reporters cannot be null");
-    final List<KPipeMetricsReporter> copy = List.copyOf(reporters);
-    consumerConfig = consumerConfig.with(c -> c.metricsReporters = copy);
-    return this;
-  }
-
-  /// Reports metrics every `interval`. Only meaningful alongside [#withMetricsReporters].
-  ///
-  /// @param interval how often to report (must be non-null and positive)
+  /// @param interval how often to log (must be positive)
   /// @return this builder
   /// @throws NullPointerException if `interval` is null
-  public MultiBuilder withMetricsInterval(final Duration interval) {
-    Objects.requireNonNull(interval, "interval cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.metricsInterval = interval);
+  /// @throws IllegalArgumentException if `interval` is zero or negative
+  public MultiBuilder withMetricsLog(final Duration interval) {
+    final var checked = ConsumerConfig.positiveInterval(interval);
+    consumerConfig = consumerConfig.with(c -> c.metricsLogInterval = checked);
     return this;
   }
 

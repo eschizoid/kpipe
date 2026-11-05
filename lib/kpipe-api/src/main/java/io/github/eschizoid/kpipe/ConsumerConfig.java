@@ -6,18 +6,17 @@ import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
 import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /// Package-private immutable holder for every consumer-wide setting the fluent facade exposes:
 /// retry, backpressure, processing mode, key-ordered cap, metrics, error handler, dead-letter
-/// topic, poll timeout, tracer, circuit breaker, metrics reporters and their interval, the
+/// topic, poll timeout, tracer, circuit breaker, the metrics log interval, the
 /// shutdown hook, and the two shutdown timeouts. One `KPipeConsumer` carries one of these,
 /// whether it was built from a single [Stream] or folded out of N [MultiBuilder] routes.
 ///
@@ -45,8 +44,7 @@ record ConsumerConfig(
   Duration pollTimeout,
   Tracer tracer,
   CircuitBreakerController circuitBreaker,
-  Collection<KPipeMetricsReporter> metricsReporters,
-  Duration metricsInterval,
+  Duration metricsLogInterval,
   Boolean shutdownHook,
   Duration threadTerminationTimeout,
   Duration waitForMessagesTimeout,
@@ -74,9 +72,18 @@ record ConsumerConfig(
       null,
       null,
       null,
-      null,
       null
     );
+  }
+
+  /// @param interval a metrics log interval
+  /// @return `interval`, once checked
+  /// @throws NullPointerException if `interval` is null
+  /// @throws IllegalArgumentException if `interval` is zero or negative
+  static Duration positiveInterval(final Duration interval) {
+    Objects.requireNonNull(interval, "interval cannot be null");
+    if (!interval.isPositive()) throw new IllegalArgumentException("interval must be positive, got " + interval);
+    return interval;
   }
 
   /// Single funnel for updates: snapshot into a [Mut], let the caller change what they need,
@@ -103,8 +110,7 @@ record ConsumerConfig(
     if (pollTimeout != null) builder.withPollTimeout(pollTimeout);
     if (tracer != null) builder.withTracer(tracer);
     if (circuitBreaker != null) builder.withCircuitBreaker(circuitBreaker);
-    if (metricsReporters != null) builder.withMetricsReporters(metricsReporters);
-    if (metricsInterval != null) builder.withMetricsInterval(metricsInterval);
+    if (metricsLogInterval != null) builder.withMetricsLog(metricsLogInterval);
     if (shutdownHook != null) builder.withShutdownHook(shutdownHook);
     if (threadTerminationTimeout != null) builder.withThreadTerminationTimeout(threadTerminationTimeout);
     if (waitForMessagesTimeout != null) builder.withWaitForMessagesTimeout(waitForMessagesTimeout);
@@ -154,8 +160,7 @@ record ConsumerConfig(
     mirrored("withDeadLetterTopic", c -> c.deadLetterTopic() != null),
     mirrored("withErrorHandler", c -> c.errorHandler() != null),
     mirrored("withPollTimeout", c -> c.pollTimeout() != null),
-    mirrored("withMetricsReporters", c -> c.metricsReporters() != null),
-    mirrored("withMetricsInterval", c -> c.metricsInterval() != null),
+    mirrored("withMetricsLog", c -> c.metricsLogInterval() != null),
     mirrored("withShutdownHook", c -> c.shutdownHook() != null),
     mirrored("withThreadTerminationTimeout", c -> c.threadTerminationTimeout() != null),
     mirrored("withWaitForMessagesTimeout", c -> c.waitForMessagesTimeout() != null),
@@ -192,8 +197,7 @@ record ConsumerConfig(
     Duration pollTimeout;
     Tracer tracer;
     CircuitBreakerController circuitBreaker;
-    Collection<KPipeMetricsReporter> metricsReporters;
-    Duration metricsInterval;
+    Duration metricsLogInterval;
     Boolean shutdownHook;
     Duration threadTerminationTimeout;
     Duration waitForMessagesTimeout;
@@ -214,8 +218,7 @@ record ConsumerConfig(
       m.pollTimeout = c.pollTimeout;
       m.tracer = c.tracer;
       m.circuitBreaker = c.circuitBreaker;
-      m.metricsReporters = c.metricsReporters;
-      m.metricsInterval = c.metricsInterval;
+      m.metricsLogInterval = c.metricsLogInterval;
       m.shutdownHook = c.shutdownHook;
       m.threadTerminationTimeout = c.threadTerminationTimeout;
       m.waitForMessagesTimeout = c.waitForMessagesTimeout;
@@ -238,8 +241,7 @@ record ConsumerConfig(
         pollTimeout,
         tracer,
         circuitBreaker,
-        metricsReporters,
-        metricsInterval,
+        metricsLogInterval,
         shutdownHook,
         threadTerminationTimeout,
         waitForMessagesTimeout,

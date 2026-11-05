@@ -15,10 +15,10 @@ import java.util.Objects;
 /// m.circuitBreaker().trips();
 /// ```
 ///
-/// Counters only grow; [#inFlight] and the lag are current values. Each one is read once per
-// snapshot, and the outcome counts are read before
-/// [Records#received], so `received >= processed + filtered + failed` holds in every snapshot. The
-/// difference is the records still being processed, plus any a shutdown abandoned for redelivery.
+/// Counters only grow; [#inFlight] and the lag are current values. Each figure is read once per
+/// snapshot, and the outcome counts are read before [Records#received], so
+/// `received >= processed + filtered + failed` holds in every snapshot. The difference is the
+/// records still being processed, plus any a shutdown abandoned for redelivery.
 ///
 /// @param records counts across every topic
 /// @param topics counts per topic, for each topic that has received a record

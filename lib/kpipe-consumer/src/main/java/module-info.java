@@ -4,7 +4,6 @@
 /// `kpipe-format-json`, `kpipe-format-avro`, `kpipe-format-protobuf`.
 module io.github.eschizoid.kpipe.consumer {
   requires transitive io.github.eschizoid.kpipe.core;
-  requires transitive io.github.eschizoid.kpipe.metrics;
   requires transitive io.github.eschizoid.kpipe.producer;
   // transitive: KPipeConsumerBuilder.withTracer exposes Tracer in the public builder API.
   requires transitive io.github.eschizoid.kpipe.tracing;
@@ -13,6 +12,5 @@ module io.github.eschizoid.kpipe.consumer {
 
   exports io.github.eschizoid.kpipe.consumer;
   exports io.github.eschizoid.kpipe.consumer.config;
-  exports io.github.eschizoid.kpipe.consumer.metrics;
   exports io.github.eschizoid.kpipe.health;
 }

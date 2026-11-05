@@ -15,9 +15,8 @@ import java.time.Duration;
 /// example. It is proven wire-compatible with Confluent's own `KafkaProtobufSerializer`.
 ///
 /// **Runtime module.** protobuf-java has no `.proto`-text parser, so the compiler ships separately
-/// in `kpipe-format-protobuf-confluent` (a shaded module, mirroring the `kpipe-metrics` →
-/// `kpipe-metrics-otel` split). It is discovered via `ServiceLoader`, so it only needs to be on the
-/// runtime path — this example declares it `runtimeOnly`.
+/// in the shaded `kpipe-format-protobuf-confluent` module. It is discovered via `ServiceLoader`, so
+/// it only needs to be on the runtime path — this example declares it `runtimeOnly`.
 ///
 /// Environment variables (in addition to the standard `AppConfig`):
 ///

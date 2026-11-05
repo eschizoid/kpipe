@@ -45,9 +45,8 @@ Maven equivalent:
 </dependencies>
 ```
 
-`kpipe-api` pulls `kpipe-consumer`, `kpipe-producer`, `kpipe-core`, `kpipe-metrics`, and `kpipe-tracing` transitively,
-so you do not list them in your build file. Format modules are deliberately **not** transitive — you add only the one(s)
-you use.
+`kpipe-api` pulls `kpipe-consumer`, `kpipe-producer`, `kpipe-core`, and `kpipe-tracing` transitively, so you do not list
+them in your build file. Format modules are deliberately **not** transitive — you add only the one(s) you use.
 
 Skip `kpipe-api` only if you want the explicit registry/builder API without the fluent facade; in that case depend on
 `kpipe-consumer` directly.
@@ -59,10 +58,9 @@ Skip `kpipe-api` only if you want the explicit registry/builder API without the 
 | `kpipe-api`                       | Fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                        |
 | `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                        |
 | `kpipe-core`                      | Registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                   |
-| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeConsumerBuilder`, backpressure, circuit breaker, offset management, health server             |
+| `kpipe-consumer`                  | `KPipeConsumer`, `KPipeConsumerBuilder`, backpressure, circuit breaker, offset management, metrics, health server    |
 | `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, DLQ producer                                                             |
-| `kpipe-metrics`                   | `ProducerMetrics` and the `KPipeMetricsReporter` interface                                                           |
-| `kpipe-metrics-otel`              | OpenTelemetry export of consumer and producer metrics (opt-in)                                                       |
+| `kpipe-metrics-otel`              | OpenTelemetry export of consumer metrics (opt-in)                                                                    |
 | `kpipe-tracing`                   | Vendor-neutral `Tracer` SPI for cross-Kafka-boundary trace propagation (no-op default)                               |
 | `kpipe-tracing-otel`              | W3C trace-context propagation through Kafka headers (opt-in)                                                         |
 | `kpipe-schema-registry-confluent` | Confluent Schema Registry HTTP client + in-process cache (opt-in)                                                    |
@@ -75,12 +73,12 @@ Skip `kpipe-api` only if you want the explicit registry/builder API without the 
 Dependency direction (from the `module-info` declarations):
 
 ```
-kpipe-core, kpipe-metrics, kpipe-tracing — roots, no kpipe dependencies
-kpipe-producer                     → core, metrics, tracing
-kpipe-consumer                     → core, producer, tracing (metrics transitively)
+kpipe-core, kpipe-tracing — roots, no kpipe dependencies
+kpipe-producer                     → core, tracing
+kpipe-consumer                     → core, producer, tracing
 kpipe-format-{json,avro,protobuf}  → core
 kpipe-api                          → core, consumer, producer, tracing; format modules are compile-only (requires static)
-kpipe-metrics-otel                 → metrics, core, consumer
+kpipe-metrics-otel                 → core, consumer
 kpipe-tracing-otel                 → tracing
 kpipe-schema-registry-confluent    → core
 kpipe-format-protobuf-confluent    → format-protobuf

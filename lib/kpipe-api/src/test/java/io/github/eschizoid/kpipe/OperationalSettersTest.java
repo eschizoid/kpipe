@@ -7,16 +7,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
-import io.github.eschizoid.kpipe.metrics.KPipeMetricsReporter;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.UnaryOperator;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
@@ -71,11 +73,9 @@ class OperationalSettersTest {
 
   @Test
   void everySetterReachesTheConfig() {
-    final KPipeMetricsReporter reporter = () -> {};
-    assertEquals(List.of(reporter), configOf(stream().withMetricsReporters(List.of(reporter))).metricsReporters());
     assertEquals(
       Duration.ofSeconds(30),
-      configOf(stream().withMetricsInterval(Duration.ofSeconds(30))).metricsInterval()
+      configOf(stream().withMetricsLog(Duration.ofSeconds(30))).metricsLogInterval()
     );
     assertEquals(Boolean.TRUE, configOf(stream().withShutdownHook(true)).shutdownHook());
     assertEquals(
@@ -96,8 +96,7 @@ class OperationalSettersTest {
     // A setter defaulting to a concrete value here would silently override that default for
     // everyone, including callers who never touched the setting.
     final var c = configOf(stream());
-    assertNull(c.metricsReporters());
-    assertNull(c.metricsInterval());
+    assertNull(c.metricsLogInterval());
     assertNull(c.shutdownHook());
     assertNull(c.threadTerminationTimeout());
     assertNull(c.waitForMessagesTimeout());
@@ -108,26 +107,23 @@ class OperationalSettersTest {
   @Test
   void settersReturnNewStreamsAndLeaveTheOriginalAlone() {
     final var base = stream();
-    final var derived = base.withShutdownHook(true).withMetricsInterval(Duration.ofSeconds(5));
+    final var derived = base.withShutdownHook(true).withMetricsLog(Duration.ofSeconds(5));
     assertNull(configOf(base).shutdownHook(), "the original stream must not observe a later setter");
-    assertNull(configOf(base).metricsInterval());
+    assertNull(configOf(base).metricsLogInterval());
     assertEquals(Boolean.TRUE, configOf(derived).shutdownHook());
   }
 
   @Test
-  void reporterCollectionIsCopiedSoLaterCallerMutationCannotLeakIn() {
-    final KPipeMetricsReporter reporter = () -> {};
-    final var mutable = new ArrayList<KPipeMetricsReporter>();
-    mutable.add(reporter);
-    final var s = stream().withMetricsReporters(mutable);
-    mutable.clear();
-    assertEquals(1, configOf(s).metricsReporters().size(), "the stream must hold its own copy");
+  void aNonPositiveMetricsLogIntervalIsRejectedAtTheCallSite() {
+    final var zero = assertThrows(IllegalArgumentException.class, () -> stream().withMetricsLog(Duration.ZERO));
+    assertTrue(zero.getMessage().contains("interval"), zero.getMessage());
+    assertThrows(IllegalArgumentException.class, () -> stream().withMetricsLog(Duration.ofSeconds(-1)));
+    assertThrows(IllegalArgumentException.class, () -> KPipe.multi(props()).withMetricsLog(Duration.ZERO));
   }
 
   @Test
   void nullArgumentsAreRejectedAtTheCallSite() {
-    assertThrows(NullPointerException.class, () -> stream().withMetricsReporters(null));
-    assertThrows(NullPointerException.class, () -> stream().withMetricsInterval(null));
+    assertThrows(NullPointerException.class, () -> stream().withMetricsLog(null));
     assertThrows(NullPointerException.class, () -> stream().withThreadTerminationTimeout(null));
     assertThrows(NullPointerException.class, () -> stream().withWaitForMessagesTimeout(null));
     assertThrows(NullPointerException.class, () -> stream().withCommitInterval(null));
@@ -139,14 +135,6 @@ class OperationalSettersTest {
     // The seam: applyTo runs before build(), so a value the builder rejects surfaces here. If a
     // delegation line were missing the value would never arrive and nothing would throw, which is
     // exactly what makes this a test of the delegation rather than of the setter.
-    final var interval = assertThrows(IllegalArgumentException.class, () ->
-      KPipe.bytes("t", props())
-        .withMetricsInterval(Duration.ZERO)
-        .toCustom(_ -> {})
-        .start()
-    );
-    assertTrue(interval.getMessage().contains("interval"), interval.getMessage());
-
     final var threadTermination = assertThrows(IllegalArgumentException.class, () ->
       KPipe.bytes("t", props())
         .withThreadTerminationTimeout(Duration.ofSeconds(-1))
@@ -173,20 +161,42 @@ class OperationalSettersTest {
   }
 
   @Test
-  void reportersActuallyFireAtTheConfiguredInterval() throws Exception {
-    // Covers both reporter settings end to end — facade setter, config, applyTo, build, start, and
-    // the periodic daemon thread the builder wires. A latch rather than a sleep so the assertion
-    // fails fast on a missing delegation instead of passing on a slow machine.
-    final var latch = new CountDownLatch(3);
-    final KPipeMetricsReporter reporter = latch::countDown;
-    try (
-      final var handle = KPipe.bytes("t", props())
-        .withMetricsReporters(List.of(reporter))
-        .withMetricsInterval(Duration.ofMillis(20))
-        .toCustom(_ -> {})
-        .start()
-    ) {
-      assertTrue(latch.await(5, TimeUnit.SECONDS), "reporter should fire repeatedly at a 20ms cadence");
+  void theMetricsLogWritesALineEachIntervalAndAFinalOneAtClose() throws Exception {
+    // Covers the setting end to end: facade setter, config, applyTo, build, start and the log
+    // thread. A latch rather than a sleep so a missing delegation fails fast.
+    final var lines = new CopyOnWriteArrayList<String>();
+    final var threeLines = new CountDownLatch(3);
+    final var logger = Logger.getLogger("io.github.eschizoid.kpipe.metrics");
+    final var handler = new Handler() {
+      @Override
+      public void publish(final LogRecord record) {
+        lines.add(record.getMessage());
+        threeLines.countDown();
+      }
+
+      @Override
+      public void flush() {}
+
+      @Override
+      public void close() {}
+    };
+    logger.addHandler(handler);
+    try {
+      try (
+        final var handle = KPipe.bytes("t", props())
+          .withMetricsLog(Duration.ofMillis(20))
+          .toCustom(_ -> {})
+          .start()
+      ) {
+        assertTrue(threeLines.await(5, TimeUnit.SECONDS), "a line every 20ms");
+      }
+      final var atClose = lines.size();
+      Thread.sleep(100);
+      assertEquals(atClose, lines.size(), "no line after close");
+      assertTrue(lines.getFirst().startsWith("kpipe metrics [t group="), lines.getFirst());
+      assertTrue(lines.getFirst().contains(" received=0 "), lines.getFirst());
+    } finally {
+      logger.removeHandler(handler);
     }
   }
 
@@ -197,8 +207,7 @@ class OperationalSettersTest {
     // then dropped when the routes were folded into one consumer.
     record Case(String setting, UnaryOperator<Stream<byte[]>> apply) {}
     final var cases = List.of(
-      new Case("withMetricsReporters", s -> s.withMetricsReporters(List.of(() -> {}))),
-      new Case("withMetricsInterval", s -> s.withMetricsInterval(Duration.ofSeconds(1))),
+      new Case("withMetricsLog", s -> s.withMetricsLog(Duration.ofSeconds(1))),
       new Case("withShutdownHook", s -> s.withShutdownHook(true)),
       new Case("withThreadTerminationTimeout", s -> s.withThreadTerminationTimeout(Duration.ofSeconds(1))),
       new Case("withWaitForMessagesTimeout", s -> s.withWaitForMessagesTimeout(Duration.ofSeconds(1))),
@@ -226,10 +235,8 @@ class OperationalSettersTest {
   void multiBuilderMirrorsAcceptTheSameSettings() {
     // The legitimate path for what the per-route test rejects. Not calling start() — that would
     // open a real Kafka connection; chaining proves the mirrors exist and validate.
-    final KPipeMetricsReporter reporter = () -> {};
     KPipe.multi(props())
-      .withMetricsReporters(List.of(reporter))
-      .withMetricsInterval(Duration.ofSeconds(30))
+      .withMetricsLog(Duration.ofSeconds(30))
       .withShutdownHook(true)
       .withThreadTerminationTimeout(Duration.ofSeconds(7))
       .withWaitForMessagesTimeout(Duration.ofSeconds(9))
