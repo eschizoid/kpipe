@@ -14,6 +14,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.*;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
 
@@ -66,6 +67,11 @@ import org.apache.kafka.common.errors.WakeupException;
 /// ```
 ///
 public class KPipeConsumer implements AutoCloseable {
+
+  /// How often the consumer reads its lag.
+  static final Duration LAG_SAMPLE_INTERVAL = Duration.ofSeconds(1);
+  /// The most a lag reading waits for a paused partition's end offset.
+  static final Duration PAUSED_LAG_TIMEOUT = Duration.ofMillis(100);
 
   private static final Logger LOGGER = System.getLogger(KPipeConsumer.class.getName());
 
@@ -120,6 +126,9 @@ public class KPipeConsumer implements AutoCloseable {
   /// when the interval is set; interrupted at the start of `close()`.
   private volatile Thread metricsLogThread;
   private final Duration metricsLogInterval;
+  /// Each assigned partition's last lag reading. Read and written only on the consumer thread.
+  private final Map<TopicPartition, Long> partitionLag = new HashMap<>();
+  private long nextLagSampleNanos = System.nanoTime();
   /// JVM shutdown hook (when `useShutdownHook=true`); kept so `close()` can remove it explicitly.
   /// Without this, every constructed consumer accumulates a hook in the JVM's shutdown-hook set
   /// for the lifetime of the process — a real leak in hosts that build/close many consumers.
@@ -850,8 +859,8 @@ public class KPipeConsumer implements AutoCloseable {
   /// 1. **Never-started fast path.** CREATED → CLOSED via [#closeNeverStarted]: release every
   ///    constructor-created resource, close the Kafka consumer directly, count down the latch.
   /// 2. **Normal shutdown.** Transition to CLOSING, then [#initiateShutdown] (signal the offset
-  ///    manager, stop reporter, queue Close, signal dispatcher, drain in-flight), then
-  ///    [#waitForConsumerThreadToJoin] (wakeup + unpark + join). If the thread joined cleanly,
+  ///    manager, stop the metrics log thread, queue Close, signal dispatcher, drain in-flight),
+  ///    then [#waitForConsumerThreadToJoin] (wakeup + unpark + join). If the thread joined cleanly,
   ///    [#finalizeAfterThreadJoined] runs the (idempotent) release + state=CLOSED + countDown as
   ///    a safety net — the consumer thread's own finally has already done the work in the common
   ///    case.
@@ -980,7 +989,6 @@ public class KPipeConsumer implements AutoCloseable {
   private void releaseConstructedResources() {
     if (!resourcesReleased.compareAndSet(false, true)) return; // already released by another path
     counters.stopClocks();
-    counters.lagSampled(Map.of());
     // Every step is best-effort: the CAS above already fired, so a throw here would leak the
     // remaining resources (no path retries). Catch + log each so teardown always runs to the end.
     try {
@@ -1025,7 +1033,11 @@ public class KPipeConsumer implements AutoCloseable {
       // Close the export and write the final metrics line after every flush and DLQ write
       // above, so both read the consumer's final counts.
       exporter.close();
-      if (metricsLogThread != null) logMetrics();
+      if (metricsLogThread != null) {
+        stopMetricsLogThread();
+        logMetrics();
+      }
+      counters.lagSampled(Map.of());
       // Deregister the JVM shutdown hook last. It's registered in the ctor (when
       // useShutdownHook=true), so it exists even for a never-started consumer and a
       // self-terminating consumer thread. Doing it here — inside the CAS-guarded release — means
@@ -1156,19 +1168,54 @@ public class KPipeConsumer implements AutoCloseable {
     return total;
   }
 
-  /// Records each topic's lag from the client's fetch positions; no broker call. Runs on the
-  /// consumer thread, the only one allowed to touch the Kafka consumer.
+  /// Records each topic's lag at most once per [#LAG_SAMPLE_INTERVAL]. Runs on the consumer
+  /// thread, the only one allowed to touch the Kafka consumer.
+  ///
+  /// A fetching partition's lag comes from the client's fetch state. A paused partition is not
+  /// fetched, so its high watermark stops moving and that lag would freeze while the backlog grows;
+  /// its end offset is asked of the broker instead, bounded by [#PAUSED_LAG_TIMEOUT]. A partition
+  /// whose lag cannot be read keeps its last reading.
   private void sampleLag() {
+    final var now = System.nanoTime();
+    if (now - nextLagSampleNanos < 0) return;
+    nextLagSampleNanos = now + LAG_SAMPLE_INTERVAL.toNanos();
     try {
-      final var lag = new HashMap<String, Long>();
-      for (final var partition : kafkaConsumer.assignment()) {
-        final var partitionLag = kafkaConsumer.currentLag(partition);
-        if (partitionLag.isPresent()) lag.merge(partition.topic(), partitionLag.getAsLong(), Long::sum);
+      final var assignment = kafkaConsumer.assignment();
+      partitionLag.keySet().retainAll(assignment);
+      final var paused = kafkaConsumer.paused();
+      final var pausedAssigned = new ArrayList<TopicPartition>();
+      for (final var partition : assignment) {
+        if (paused.contains(partition)) {
+          pausedAssigned.add(partition);
+        } else {
+          final var lag = kafkaConsumer.currentLag(partition);
+          if (lag.isPresent()) partitionLag.put(partition, lag.getAsLong());
+        }
       }
-      counters.lagSampled(lag);
+      if (!pausedAssigned.isEmpty()) samplePausedLag(pausedAssigned);
+      final var byTopic = new HashMap<String, Long>();
+      partitionLag.forEach((partition, lag) -> byTopic.merge(partition.topic(), lag, Long::sum));
+      counters.lagSampled(byTopic);
     } catch (final RuntimeException e) {
       LOGGER.log(Level.DEBUG, "Could not read consumer lag", e);
     }
+  }
+
+  private void samplePausedLag(final List<TopicPartition> paused) {
+    final Map<TopicPartition, Long> ends;
+    try {
+      ends = kafkaConsumer.endOffsets(paused, PAUSED_LAG_TIMEOUT);
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.DEBUG, "Could not read the end offsets of paused partitions", e);
+      return;
+    }
+    ends.forEach((partition, end) -> {
+      try {
+        partitionLag.put(partition, Math.max(0, end - kafkaConsumer.position(partition, Duration.ZERO)));
+      } catch (final RuntimeException e) {
+        LOGGER.log(Level.DEBUG, "Could not read the position of paused partition " + partition, e);
+      }
+    });
   }
 
   private ConsumerRecords<byte[], byte[]> pollRecords(final Duration timeout) {

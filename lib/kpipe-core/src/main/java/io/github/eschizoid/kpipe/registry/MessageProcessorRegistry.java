@@ -61,11 +61,11 @@ public class MessageProcessorRegistry {
       map.put(key, value);
     }
 
-    /// Returns the value under `key` cast to the caller-supplied wrapper type, or null if
-    /// nothing is registered. The wrapper type cannot be inferred from the key (which carries
-    /// the *value* type, e.g. `Map<String, Object>`, not the wrapper `UnaryOperator<Map<...>>`),
-    /// so callers supply it as a type witness. Type-safety of the registration is enforced at
-    /// the public `register(RegistryKey<T>, ...)` overloads.
+    /// Returns the operator or sink under `key` (`UnaryOperator<T>` / `MessageSink<T>`), or null
+    /// if nothing is registered. That type cannot be inferred from the key, which carries the
+    /// *value* type (e.g. `Map<String, Object>`), so callers supply it as a type witness.
+    /// Type-safety of the registration is enforced at the public `register*(RegistryKey<T>, ...)`
+    /// methods.
     @SuppressWarnings("unchecked")
     <W> W getAs(final RegistryKey<?> key) {
       return (W) map.get(key);

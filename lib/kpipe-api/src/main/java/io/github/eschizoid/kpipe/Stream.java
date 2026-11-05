@@ -288,8 +288,8 @@ public interface Stream<T> {
 
   /// Returns a new stream that logs one line of the consumer's metrics every `interval`, plus a
   /// final line when it closes, after its last records are counted. The line goes to the
-  /// `io.github.eschizoid.kpipe.metrics` logger at INFO, as `key=value` pairs named like the
-  /// OpenTelemetry instruments:
+  /// `io.github.eschizoid.kpipe.metrics.log` logger at INFO, as `key=value` pairs whose keys follow
+  /// the OpenTelemetry instrument names, with times in milliseconds:
   ///
   /// ```text
   /// kpipe metrics [orders group=billing] received=120 processed=117 filtered=1 failed=2 ...

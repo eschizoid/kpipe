@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -402,7 +403,7 @@ class KPipeConsumerTest {
   /// The poll loop reads each topic's lag from the client's positions and end offsets, summed over
   /// the assigned partitions, and a closed consumer reports none.
   @Test
-  void lagIsSampledPerTopicAfterEachPoll() throws InterruptedException {
+  void lagIsSampledPerTopic() throws InterruptedException {
     final var mock = new MockConsumer<byte[], byte[]>("earliest") {
       @Override
       public synchronized void subscribe(final Collection<String> topics) {}
@@ -432,6 +433,60 @@ class KPipeConsumerTest {
 
     consumer.close();
     assertEquals(0L, consumer.metrics().lag(), "a closed consumer reports no lag");
+  }
+
+  /// A paused partition is not fetched, so the client's own lag figure freezes while the backlog
+  /// grows. The consumer reads the broker's end offset for it instead.
+  @Test
+  void lagKeepsGrowingWhileThePartitionIsPaused() throws InterruptedException {
+    // The real client computes currentLag from the last fetched high watermark, which a paused
+    // partition stops updating; MockConsumer keeps it current, so this mock freezes it on pause.
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      private final Map<TopicPartition, Long> frozen = new ConcurrentHashMap<>();
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+
+      @Override
+      public synchronized void pause(final Collection<TopicPartition> partitions) {
+        for (final var partition : partitions) {
+          if (!paused().contains(partition)) super.currentLag(partition).ifPresent(lag -> frozen.put(partition, lag));
+        }
+        super.pause(partitions);
+      }
+
+      @Override
+      public synchronized OptionalLong currentLag(final TopicPartition partition) {
+        final var lag = frozen.get(partition);
+        return lag != null && paused().contains(partition) ? OptionalLong.of(lag) : super.currentLag(partition);
+      }
+    };
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(partition));
+    mock.updateBeginningOffsets(Map.of(partition, 0L));
+    mock.updateEndOffsets(Map.of(partition, 10L));
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    consumer.start();
+    TestAwaits.pollUntil(() -> consumer.metrics().lag(TOPIC) == 10L, Duration.ofSeconds(5), "lag of 10 sampled");
+
+    consumer.pause();
+    TestAwaits.pollUntil(() -> mock.paused().contains(partition), Duration.ofSeconds(5), "partition paused");
+    mock.updateEndOffsets(Map.of(partition, 50L));
+    TestAwaits.pollUntil(
+      () -> consumer.metrics().lag(TOPIC) == 50L,
+      Duration.ofSeconds(5),
+      "lag of a paused partition grows with the log"
+    );
+    consumer.close();
   }
 
   @Test

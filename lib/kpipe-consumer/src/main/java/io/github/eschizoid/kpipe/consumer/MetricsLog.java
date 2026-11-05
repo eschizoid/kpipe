@@ -5,12 +5,14 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.Locale;
 
-/// Formats the line `withMetricsLog` writes: one `key=value` pair per figure, named like the
-/// OpenTelemetry instruments without their `kpipe.consumer.` prefix.
+/// Formats the line `withMetricsLog` writes: one `key=value` pair per figure. The keys follow the
+/// OpenTelemetry instrument names without the `kpipe.consumer.` and `records.` prefixes; times are
+/// in milliseconds, `processing.avg` is the average processing time, and `circuit_breaker.state`
+/// is the current state.
 final class MetricsLog {
 
   /// The logger the line goes to, so it can be routed apart from the consumer's own logs.
-  static final Logger LOGGER = System.getLogger("io.github.eschizoid.kpipe.metrics");
+  static final Logger LOGGER = System.getLogger("io.github.eschizoid.kpipe.metrics.log");
 
   private MetricsLog() {}
 

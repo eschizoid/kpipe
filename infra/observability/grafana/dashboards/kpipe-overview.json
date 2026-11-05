@@ -210,8 +210,8 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum by (messaging_destination_name) (kpipe_consumer_lag)",
-          "legendFormat": "{{messaging_destination_name}}",
+          "expr": "sum by (messaging_consumer_group_name, messaging_destination_name) (kpipe_consumer_lag)",
+          "legendFormat": "{{messaging_consumer_group_name}} {{messaging_destination_name}}",
           "refId": "A"
         }
       ],

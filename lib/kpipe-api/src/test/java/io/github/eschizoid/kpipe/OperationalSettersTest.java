@@ -161,12 +161,12 @@ class OperationalSettersTest {
   }
 
   @Test
-  void theMetricsLogWritesALineEachIntervalAndAFinalOneAtClose() throws Exception {
+  void theMetricsLogWritesALineEachIntervalAndNoneAfterClose() throws Exception {
     // Covers the setting end to end: facade setter, config, applyTo, build, start and the log
     // thread. A latch rather than a sleep so a missing delegation fails fast.
     final var lines = new CopyOnWriteArrayList<String>();
     final var threeLines = new CountDownLatch(3);
-    final var logger = Logger.getLogger("io.github.eschizoid.kpipe.metrics");
+    final var logger = Logger.getLogger("io.github.eschizoid.kpipe.metrics.log");
     final var handler = new Handler() {
       @Override
       public void publish(final LogRecord record) {

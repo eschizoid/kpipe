@@ -539,8 +539,8 @@ public final class KPipeConsumerBuilder {
   }
 
   /// Logs one line of the consumer's metrics every `interval`, plus a final line when it closes,
-  /// after its last records are counted. The line goes to the `io.github.eschizoid.kpipe.metrics`
-  /// logger at INFO.
+  /// after its last records are counted. The line goes to the
+  /// `io.github.eschizoid.kpipe.metrics.log` logger at INFO.
   ///
   /// @param interval how often to log (must be positive)
   /// @return this builder instance for method chaining

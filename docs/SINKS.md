@@ -57,10 +57,14 @@ final var pipeline = registry
   .build();
 ```
 
-Each record waits for the broker to acknowledge its send, so its offset commits only once the message is written. A
-failed send fails the record: it is retried, then goes to the error handler and the dead-letter topic, and counts as
-failed in the consumer's metrics. In SEQUENTIAL mode each record waits for its own ack; PARALLEL overlaps sends across
-records, and KEY_ORDERED across keys. Pass a real `Tracer` to propagate trace context into the outbound headers.
+Each record waits for the broker to acknowledge its send; what an acknowledgement guarantees depends on the producer's
+`acks` (Kafka's default, `all`, waits for the in-sync replicas). A failed send fails the record, unless the sink is one
+destination of `toMulti(...)`: it is retried if retries are configured, then goes to the error handler and, when
+configured, the dead-letter topic, and counts as failed in the consumer's metrics. Delivery is at least once: a send
+that times out may still have reached the broker, so its retry can write the record twice. In SEQUENTIAL mode each
+record waits for its own ack, including the producer's `linger.ms`, so set `linger.ms=0` for such pipelines; PARALLEL
+overlaps sends across records, and KEY_ORDERED across keys. Pass a real `Tracer` to propagate trace context into the
+outbound headers.
 
 ## Fan-out to multiple sinks
 

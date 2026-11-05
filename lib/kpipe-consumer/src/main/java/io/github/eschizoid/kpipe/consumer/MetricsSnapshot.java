@@ -24,8 +24,8 @@ import java.util.Objects;
 /// @param topics counts per topic, for each topic that has received a record
 /// @param inFlight records the consumer holds: being processed, queued behind their key, or
 ///     waiting in a batch buffer. Queued ones are not yet counted in [Records#received].
-/// @param lagByTopic per topic, the records between this consumer's position and the end of the
-///     log, summed over its assigned partitions whose lag the client knows; read after each poll
+/// @param lagByTopic per topic, the offsets between this consumer's position and the end of the
+///     log, summed over its assigned partitions whose lag is known; read at most once a second
 /// @param backpressure how often and how long backpressure paused consumption
 /// @param circuitBreaker how often and how long the circuit breaker stopped consumption
 public record MetricsSnapshot(
@@ -75,7 +75,8 @@ public record MetricsSnapshot(
   }
 
   /// @param topic a topic name
-  /// @return the lag for `topic`, zero when this consumer holds none of its partitions
+  /// @return the lag for `topic`, zero when this consumer holds none of its partitions or the
+  ///     client does not yet know their lag
   public long lag(final String topic) {
     return lagByTopic.getOrDefault(topic, 0L);
   }

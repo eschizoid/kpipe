@@ -12,11 +12,20 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 
 /// A [MessageSink] that sends processed messages to a Kafka topic.
 ///
-/// Each [#accept] waits for the broker to acknowledge the send, so the record's offset is marked
-/// only once the message is durably written. A failed send throws, and the consumer treats it like
-/// any other sink failure: it retries the record, then sends it to the error handler and the
-/// dead-letter topic, and counts it as failed. In SEQUENTIAL mode each record therefore waits for
-/// its ack; PARALLEL overlaps sends across records, and KEY_ORDERED across keys.
+/// Each [#accept] waits for the broker to acknowledge the send; what an acknowledgement guarantees
+/// depends on the producer's `acks` (Kafka's default, `all`, waits for the in-sync replicas). A
+/// failed send throws, and the consumer handles it like any other sink failure: it retries the
+/// record when retries are configured, then hands it to the error handler and, when configured,
+/// the dead-letter topic, and counts it as failed. As one destination of a `CompositeMessageSink`,
+/// a failure is logged and the record still succeeds.
+///
+/// Delivery is at least once. A send that times out may still have reached the broker, so its
+/// retry can write the record twice; producer idempotence does not prevent that, because the retry
+/// is a new send.
+///
+/// In SEQUENTIAL mode each record waits for its own ack, including the producer's `linger.ms`;
+/// set `linger.ms=0` on the producer for such pipelines. PARALLEL overlaps sends across records,
+/// and KEY_ORDERED across keys.
 ///
 /// **Trace propagation.** A non-null `tracer` injects the active span's context (W3C `traceparent`
 /// by default) into outbound record headers so downstream consumers see the same trace. Pass

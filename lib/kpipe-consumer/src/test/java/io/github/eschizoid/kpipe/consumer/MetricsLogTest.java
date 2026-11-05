@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -12,8 +13,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +26,7 @@ class MetricsLogTest {
   private static final String TOPIC = "orders";
 
   private final List<String> lines = new CopyOnWriteArrayList<>();
-  private final Logger logger = Logger.getLogger("io.github.eschizoid.kpipe.metrics");
+  private final Logger logger = Logger.getLogger("io.github.eschizoid.kpipe.metrics.log");
   private final Handler handler = new Handler() {
     @Override
     public void publish(final LogRecord record) {
@@ -99,6 +102,37 @@ class MetricsLogTest {
     consumer.close();
     assertEquals(1, lines.size(), () -> "one final line: " + lines);
     assertTrue(lines.getFirst().contains(" processed=1 "), lines.getFirst());
+  }
+
+  /// The final line reports the lag the consumer last read, not the cleared value.
+  @Test
+  void theFinalLineShowsTheLastLag() throws InterruptedException {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(partition));
+    mock.updateBeginningOffsets(Map.of(partition, 0L));
+    mock.updateEndOffsets(Map.of(partition, 3L));
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties())
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .withMetricsLog(Duration.ofHours(1))
+      .build();
+    consumer.start();
+    TestAwaits.pollUntil(() -> consumer.metrics().lag() == 3L, Duration.ofSeconds(5), "lag of 3 sampled");
+
+    consumer.close();
+    assertEquals(1, lines.size(), () -> "one final line: " + lines);
+    assertTrue(lines.getFirst().contains(" lag=3 "), lines.getFirst());
+    assertEquals(0L, consumer.metrics().lag(), "a closed consumer reports no lag");
   }
 
   @Test
