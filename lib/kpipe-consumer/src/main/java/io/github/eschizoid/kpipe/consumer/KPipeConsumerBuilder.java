@@ -220,7 +220,8 @@ public final class KPipeConsumerBuilder {
 
   /// Configures retry behavior for failed message processing. The backoff is fixed (the same
   /// delay before every retry); an interruption during processing or backoff aborts without
-  /// further attempts.
+  /// further attempts. A `NonRetryableException`, or a failure caused by one, is not retried and
+  /// goes straight to the error handler / DLQ.
   ///
   /// On regular routes the retried unit is the record's full deserialize → operators → sink
   /// pass. On batch routes ([#withBatchPipeline]) the retried unit is the record's

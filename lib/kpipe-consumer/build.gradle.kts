@@ -20,6 +20,7 @@ dependencies {
   testRuntimeOnly(libs.junitPlatformLauncher)
 
   testImplementation(libs.mockitoCore)
+  testImplementation(project(":lib:kpipe-format-json"))
   testImplementation(libs.mockitoJunitJupiter)
 
   testImplementation(libs.jqwik)

@@ -12,6 +12,7 @@ import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.protobuf.DynamicMessage;
+import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -133,7 +134,7 @@ class ProtobufBytesTest {
   void aSetterThatMeetsAnotherWireTypeFailsTheRecord() {
     final var bytes = user().build().toByteArray();
 
-    final var thrown = assertThrows(IllegalArgumentException.class, () -> setLong(NAME, 1).apply(bytes));
+    final var thrown = assertThrows(NonRetryableException.class, () -> setLong(NAME, 1).apply(bytes));
     assertTrue(thrown.getMessage().contains("wire type"), thrown.getMessage());
   }
 
@@ -162,8 +163,8 @@ class ProtobufBytesTest {
     // Field 2, length-delimited, claiming 16 bytes but carrying one.
     final var bytes = new byte[] { 0x12, 0x10, 'J' };
 
-    assertThrows(IllegalArgumentException.class, () -> remove(SSN).apply(bytes));
-    assertThrows(IllegalArgumentException.class, () -> has(SSN).test(bytes));
+    assertThrows(NonRetryableException.class, () -> remove(SSN).apply(bytes));
+    assertThrows(NonRetryableException.class, () -> has(SSN).test(bytes));
   }
 
   @Test

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
@@ -298,5 +299,59 @@ class KPipeCircuitBreakerIntegrationTest {
   @FunctionalInterface
   interface BooleanSupplier {
     boolean getAsBoolean() throws InterruptedException;
+  }
+
+  @Test
+  void nonRetryableFailuresDoNotTripTheBreaker() throws InterruptedException {
+    final var mc = buildMockConsumer(12);
+    final var controller = new CircuitBreakerController(0.5, 5, Duration.ofSeconds(30));
+
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .withPipeline(
+        TestPipelines.sideEffect(_ -> {
+          throw new NonRetryableException("record is missing a required field");
+        })
+      )
+      .withCircuitBreaker(controller)
+      .withConsumer(() -> mc)
+      .build();
+
+    consumer.start();
+    awaitCondition(() -> consumer.getMetrics().get("processingErrors") >= 12, 5000);
+
+    assertTrue(mc.paused().isEmpty(), "bad records say nothing about downstream health");
+    assertEquals(0L, consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS));
+    consumer.close();
+  }
+
+  @Test
+  void nonRetryableBatchFailuresDoNotTripTheBreaker() throws InterruptedException {
+    final var mc = buildMockConsumer(12);
+    final var controller = new CircuitBreakerController(0.5, 5, Duration.ofSeconds(30));
+
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withProcessingMode(ProcessingMode.SEQUENTIAL)
+      .withBatchPipeline(
+        TOPIC,
+        TestPipelines.sideEffect(v -> v),
+        BatchSink.ofVoid(_ -> {
+          throw new NonRetryableException("batch holds a record the sink rejects");
+        }),
+        BatchPolicy.ofSize(1)
+      )
+      .withCircuitBreaker(controller)
+      .withConsumer(() -> mc)
+      .build();
+
+    consumer.start();
+    awaitCondition(() -> consumer.getMetrics().get("processingErrors") >= 12, 5000);
+
+    assertTrue(mc.paused().isEmpty(), "bad records say nothing about downstream health");
+    assertEquals(0L, consumer.getMetrics().get(KPipeConsumer.METRIC_CIRCUIT_BREAKER_TRIPS));
+    consumer.close();
   }
 }

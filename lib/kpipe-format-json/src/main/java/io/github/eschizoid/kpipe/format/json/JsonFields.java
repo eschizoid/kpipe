@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.format.json;
 
+import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,11 +30,12 @@ import java.util.function.UnaryOperator;
 /// is safe in a pipeline, where a record's map belongs to the one attempt processing it; a retry
 /// decodes a fresh map.
 ///
-/// An operator that cannot do what it says on a record throws [IllegalArgumentException]. The
-/// record then fails and goes to retry, the error handler and the dead-letter topic when one is
-/// configured; it is never passed on half-changed as a success. To skip a record instead, use
-/// `Operators.filter(record -> record.get("id") != null)`. Arguments that could never work on any
-/// record, such as an empty field list, are rejected when the operator is created.
+/// An operator that cannot do what it says on a record throws [NonRetryableException]: the record
+/// fails without retries, since the same record would fail again, and goes to the error handler
+/// and the dead-letter topic when one is configured. It is never passed on half-changed as a
+/// success. To skip a record instead, use `Operators.filter(record -> record.get("id") != null)`.
+/// Arguments that could never work on any record, such as an empty field list, throw
+/// [IllegalArgumentException] when the operator is created.
 public final class JsonFields {
 
   private JsonFields() {}
@@ -123,18 +125,16 @@ public final class JsonFields {
   /// @param from the field to rename
   /// @param to the new name, different from `from`
   /// @return an operator that renames the field
-  /// @throws IllegalArgumentException if `from` and `to` are the same; and from the operator, when
-  ///     the record has no `from` field or already has a `to` field, whose value the rename
-  ///     would otherwise overwrite
+  /// @throws IllegalArgumentException if `from` and `to` are the same
+  /// @throws NonRetryableException from the operator, when the record has no `from` field or
+  ///     already has a `to` field, whose value the rename would otherwise overwrite
   public static UnaryOperator<Map<String, Object>> rename(final String from, final String to) {
     Objects.requireNonNull(from, "from");
     Objects.requireNonNull(to, "to");
     if (from.equals(to)) throw new IllegalArgumentException("Cannot rename '%s' to itself".formatted(from));
     return record -> {
-      if (record.get(from) == null) throw new IllegalArgumentException(
-        "Cannot rename missing field '%s'".formatted(from)
-      );
-      if (record.get(to) != null) throw new IllegalArgumentException(
+      if (record.get(from) == null) throw new NonRetryableException("Cannot rename missing field '%s'".formatted(from));
+      if (record.get(to) != null) throw new NonRetryableException(
         "Cannot rename '%s' to '%s': the record already has '%s'".formatted(from, to, to)
       );
       record.remove(to);
@@ -147,15 +147,14 @@ public final class JsonFields {
   ///
   /// @param fields the fields the record must have, at least one
   /// @return an operator that checks the fields
-  /// @throws IllegalArgumentException if no field is given; and from the operator, naming the
-  ///     first field in `fields` that is missing or null
+  /// @throws IllegalArgumentException if no field is given
+  /// @throws NonRetryableException from the operator, naming the first field in `fields` that is
+  ///     missing or null
   public static UnaryOperator<Map<String, Object>> require(final String... fields) {
     final var required = fieldList("require", fields);
     return record -> {
       for (final var field : required)
-        if (record.get(field) == null) throw new IllegalArgumentException(
-          "Missing required field '%s'".formatted(field)
-        );
+        if (record.get(field) == null) throw new NonRetryableException("Missing required field '%s'".formatted(field));
       return record;
     };
   }
