@@ -25,10 +25,10 @@ batch routes.
 
 `m.lag()` and `m.lag("orders")` give the offsets between the consumer's position and the end of the log (the high
 watermark, or the last stable offset under `read_committed`), summed over its assigned partitions. The poll loop reads
-them at most once a second. A fetching partition's lag comes from the client's fetch state; the Kafka client asks the
-broker once for each newly assigned partition's end offset, and logs that request at INFO. A paused partition is not
-fetched, so its lag is read from the broker's end offsets instead, with a 100 ms timeout; a partition whose lag cannot
-be read keeps its last value.
+them at most once a second. A fetching partition's lag comes from the client's fetch state; the Kafka client may ask the
+broker for a partition's end offset when it does not know it yet, and logs that request at INFO. A paused partition is
+not fetched, so its lag is read from the broker's end offsets instead, with a 100 ms timeout; a partition whose lag
+cannot be read keeps its last value.
 
 ## Logging metrics
 

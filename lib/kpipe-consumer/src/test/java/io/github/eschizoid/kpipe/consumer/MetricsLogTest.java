@@ -13,6 +13,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import org.apache.kafka.clients.consumer.CloseOptions;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -26,11 +27,13 @@ class MetricsLogTest {
   private static final String TOPIC = "orders";
 
   private final List<String> lines = new CopyOnWriteArrayList<>();
+  private final List<String> threads = new CopyOnWriteArrayList<>();
   private final Logger logger = Logger.getLogger("io.github.eschizoid.kpipe.metrics.log");
   private final Handler handler = new Handler() {
     @Override
     public void publish(final LogRecord record) {
       lines.add(record.getMessage());
+      threads.add(Thread.currentThread().getName());
     }
 
     @Override
@@ -133,6 +136,56 @@ class MetricsLogTest {
     assertEquals(1, lines.size(), () -> "one final line: " + lines);
     assertTrue(lines.getFirst().contains(" lag=3 "), lines.getFirst());
     assertEquals(0L, consumer.metrics().lag(), "a closed consumer reports no lag");
+  }
+
+  /// A consumer thread that ends on its own, without `close()`, still writes the final line last:
+  /// the periodic thread is stopped before it, even while the Kafka client takes time to close.
+  @Test
+  void aSelfTerminatingConsumerWritesTheFinalLineLast() {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+
+      @Override
+      public synchronized void pause(final Collection<TopicPartition> partitions) {
+        throw new IllegalStateException("consumer loop dies");
+      }
+
+      @Override
+      public void close(final CloseOptions options) {
+        try {
+          Thread.sleep(400);
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+        super.close(options);
+      }
+    };
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties())
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .withMetricsLog(Duration.ofMillis(20))
+      .build();
+    consumer.start();
+    consumer.pause();
+    assertTrue(consumer.awaitShutdown(Duration.ofSeconds(10)), "the consumer thread ends on its own");
+
+    assertFalse(lines.isEmpty());
+    assertTrue(threads.getLast().startsWith("kafka-consumer-"), () -> "the last line comes from teardown: " + threads);
+    assertEquals(
+      1,
+      threads
+        .stream()
+        .filter(t -> t.startsWith("kafka-consumer-"))
+        .count(),
+      () -> "one final line: " + threads
+    );
   }
 
   @Test
