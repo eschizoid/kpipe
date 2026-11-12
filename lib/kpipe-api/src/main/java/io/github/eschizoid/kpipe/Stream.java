@@ -13,6 +13,7 @@ import io.github.eschizoid.kpipe.sink.MessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
@@ -80,6 +81,34 @@ public interface Stream<T> {
   /// @return a new stream with the branch appended
   /// @throws NullPointerException if any argument is null
   Stream<T> when(final Predicate<T> cond, final UnaryOperator<T> ifTrue, final UnaryOperator<T> ifFalse);
+
+  /// Replaces the record's key for the rest of the attempt. Later operators and sinks read the new
+  /// key from `RecordContext.current().key()`, and [#toKafka] writes it. Dispatch in `KEY_ORDERED`
+  /// mode, the error handler and the dead-letter topic use the consumed key, and a retry starts
+  /// from it again. A batch sink has no current record, so it does not see the new key.
+  ///
+  /// @param keyFn computes the new key from the value; null means no key
+  /// @return a new [Stream] with the operator appended
+  /// @throws NullPointerException if `keyFn` is null
+  Stream<T> rekey(final Function<? super T, byte[]> keyFn);
+
+  /// [#rekey] with the key given as a string and encoded as UTF-8.
+  ///
+  /// @param keyFn computes the new key from the value; null means no key
+  /// @return a new [Stream] with the operator appended
+  /// @throws NullPointerException if `keyFn` is null
+  Stream<T> rekeyString(final Function<? super T, String> keyFn);
+
+  /// Adds a header for the rest of the attempt. Later operators and sinks read it through
+  /// `RecordContext.current()`, and [#toKafka] writes it after the consumed record's headers. The
+  /// consumed record's headers never change, so the dead-letter topic and a retry do not see it. A
+  /// batch sink has no current record, so it does not see it either.
+  ///
+  /// @param name    the header name
+  /// @param valueFn computes the header value from the value
+  /// @return a new [Stream] with the operator appended
+  /// @throws NullPointerException if `name` or `valueFn` is null
+  Stream<T> withHeader(final String name, final Function<? super T, byte[]> valueFn);
 
   /// Returns a new stream with retry behavior configured. After a processing exception, the
   /// pipeline retries up to `maxRetries` times, waiting `backoff` between attempts. When
@@ -393,9 +422,11 @@ public interface Stream<T> {
   Sink<T> toCustom(final MessageSink<T> sink);
 
   /// Terminates the stream by producing each value to `topic`, serialized with this stream's
-  /// format. Each output record carries the key and headers of the record it came from. With the
-  /// default partitioner, records with the same non-null key go to one output partition, and in
-  /// `KEY_ORDERED` and `SEQUENTIAL` mode they arrive there in the order they were consumed.
+  /// format. Each output record carries the key and headers of the record it came from, after any
+  /// [#rekey] or [#withHeader]. With the default partitioner, records with the same non-null key
+  /// go to one output partition. Within one output partition, records consumed with the same key
+  /// arrive in the order they were consumed in `KEY_ORDERED` and `SEQUENTIAL` mode, and in
+  /// `SEQUENTIAL` mode every record does.
   ///
   /// The producer is built from this stream's Kafka properties when the stream starts, the same
   /// way the dead-letter producer is, and closes with the consumer. Each send waits for the

@@ -8,6 +8,7 @@ import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
+import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.Operators;
@@ -28,6 +29,7 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
@@ -124,6 +126,21 @@ record DefaultStream<T>(
     Objects.requireNonNull(ifTrue, "ifTrue cannot be null");
     Objects.requireNonNull(ifFalse, "ifFalse cannot be null");
     return withOperator(value -> cond.test(value) ? ifTrue.apply(value) : ifFalse.apply(value));
+  }
+
+  @Override
+  public Stream<T> rekey(final Function<? super T, byte[]> keyFn) {
+    return withOperator(RecordContext.rekey(keyFn));
+  }
+
+  @Override
+  public Stream<T> rekeyString(final Function<? super T, String> keyFn) {
+    return withOperator(RecordContext.rekeyString(keyFn));
+  }
+
+  @Override
+  public Stream<T> withHeader(final String name, final Function<? super T, byte[]> valueFn) {
+    return withOperator(RecordContext.withHeader(name, valueFn));
   }
 
   @Override

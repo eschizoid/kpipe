@@ -54,10 +54,12 @@ The producer is built from the stream's Kafka properties when the stream starts,
 is; the dead-letter topic writes through it too, and it closes with the consumer. A stream that reads through a Schema
 Registry cannot use `toKafka`, because its format only reads; it throws `IllegalStateException`.
 
-Each output record carries the key and headers of the record it came from. With the default partitioner, records with
-the same non-null key go to one output partition, and in `KEY_ORDERED` and `SEQUENTIAL` mode they arrive there in the
-order they were consumed. With an `OtelTracer`, the outbound `traceparent` is the current span's and replaces the one
-copied from the input; without a tracer, the copied headers pass through unchanged.
+Each output record carries the key and headers of the record it came from, after any `rekey` or `withHeader`. With the
+default partitioner, records with the same non-null key go to one output partition. Within one output partition, records
+consumed with the same key arrive in the order they were consumed in `KEY_ORDERED` and `SEQUENTIAL` mode, and in
+`SEQUENTIAL` mode every record does. A batch sink has no current record, so `rekey` and `withHeader` do not reach it.
+With an `OtelTracer`, the outbound `traceparent` is the current span's and replaces the one copied from the input;
+without a tracer, the copied headers pass through unchanged.
 
 In the explicit API, `KafkaMessageSink` (in `io.github.eschizoid.kpipe.producer.sink`) does the same with a producer you
 create and close. It reads the key and headers from `RecordContext.current()`. When no record is bound, which is the
