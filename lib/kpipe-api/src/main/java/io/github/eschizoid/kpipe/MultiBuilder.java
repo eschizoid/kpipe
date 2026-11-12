@@ -431,7 +431,14 @@ public final class MultiBuilder {
 
     if (!nonBatchPipelines.isEmpty()) consumerBuilder.withPipelines(nonBatchPipelines);
     consumerConfig.applyTo(consumerBuilder);
-    return DefaultHandle.startAndWrap(consumerBuilder.build());
+    final var terminalSinks = routes
+      .values()
+      .stream()
+      .filter(DefaultSink.class::isInstance)
+      .map(s -> ((DefaultSink<?>) s).terminalSink())
+      .toList();
+    final var opened = KafkaTopicSink.openAll(terminalSinks, kafkaProps, consumerConfig.tracer(), consumerBuilder);
+    return DefaultHandle.startAndWrap(KafkaTopicSink.closingOnFailure(opened, consumerBuilder::build));
   }
 
   /// Consumer-wide settings live on one [KPipeConsumer] (one consumer-group, one offset

@@ -318,6 +318,11 @@ record DefaultStream<T>(
   }
 
   @Override
+  public Sink<T> toKafka(final String topic) {
+    return new DefaultSink<>(this, KafkaTopicSink.of(topic, format));
+  }
+
+  @Override
   public Sink<T> toBatch(final BatchSink<T> sink, final BatchPolicy policy) {
     Objects.requireNonNull(sink, "sink cannot be null");
     Objects.requireNonNull(policy, "policy cannot be null");

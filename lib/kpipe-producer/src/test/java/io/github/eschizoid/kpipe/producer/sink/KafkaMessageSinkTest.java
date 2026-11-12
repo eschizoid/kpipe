@@ -4,7 +4,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import io.github.eschizoid.kpipe.producer.KPipeProducer;
+import io.github.eschizoid.kpipe.record.RecordContext;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.KafkaException;
@@ -45,24 +52,69 @@ class KafkaMessageSinkTest {
     );
   }
 
+  /// Inside a pipeline the sink writes the record's key and every input header, in order.
   @Test
-  void shouldSendWithKey() {
+  void forwardsTheCurrentRecordsKeyAndHeaders() {
     acknowledgeSends();
-    final KafkaMessageSink<String> sink = new KafkaMessageSink<>(
-      mockProducer,
-      TOPIC,
-      _ -> "key".getBytes(),
-      String::getBytes,
-      null
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final var context = new FixedContext(
+      "key".getBytes(),
+      List.of(Map.entry("tenant", "acme".getBytes()), Map.entry("tenant", "beta".getBytes()))
     );
+
+    RecordContext.callWith(context, () -> {
+      sink.accept("value");
+      return null;
+    });
+
+    verify(mockProducer, times(1)).send(
+      argThat(record -> {
+        assertArrayEquals("key".getBytes(), record.key());
+        assertArrayEquals("value".getBytes(), record.value());
+        final var tenants = new ArrayList<String>();
+        record
+          .headers()
+          .headers("tenant")
+          .forEach(h -> tenants.add(new String(h.value())));
+        assertEquals(List.of("acme", "beta"), tenants);
+        return true;
+      })
+    );
+  }
+
+  /// Outside a pipeline no record is bound, so the key is null and no header is copied.
+  @Test
+  void withNoCurrentRecordTheKeyIsNullAndNoHeadersAreCopied() {
+    acknowledgeSends();
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
 
     sink.accept("value");
 
     verify(mockProducer, times(1)).send(
       argThat(record -> {
+        assertNull(record.key());
+        assertEquals(0, record.headers().toArray().length);
+        return true;
+      })
+    );
+  }
+
+  /// A sink over a [KPipeProducer] sends through it and waits for the ack the same way.
+  @Test
+  void sendsThroughAKPipeProducer() {
+    acknowledgeSends();
+    final var producer = KPipeProducer.<byte[], byte[]>builder().withProducer(mockProducer).build();
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(producer, TOPIC, String::getBytes, null);
+
+    RecordContext.callWith(new FixedContext("key".getBytes(), List.of()), () -> {
+      sink.accept("value");
+      return null;
+    });
+
+    verify(mockProducer, times(1)).send(
+      argThat(record -> {
         assertEquals(TOPIC, record.topic());
         assertArrayEquals("key".getBytes(), record.key());
-        assertArrayEquals("value".getBytes(), record.value());
         return true;
       })
     );
@@ -151,22 +203,59 @@ class KafkaMessageSinkTest {
     assertSame(closed, thrown, "the closed-producer ISE must propagate unwrapped");
   }
 
-  /// `KafkaMessageSink.of(...)` builds a sink whose key is null; Kafka accepts null keys and the
-  /// configured partitioner picks the partition.
-  @Test
-  void ofStaticFactoryWithNullKeyAccepted() {
-    acknowledgeSends();
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+  private static final class FixedContext extends RecordContext {
 
-    sink.accept("payload");
+    private final byte[] key;
+    private final List<Map.Entry<String, byte[]>> headers;
 
-    verify(mockProducer, times(1)).send(
-      argThat(record -> {
-        assertEquals(TOPIC, record.topic());
-        assertNull(record.key(), "of(...) must produce a null-keyed record");
-        assertArrayEquals("payload".getBytes(), record.value());
-        return true;
-      })
-    );
+    FixedContext(final byte[] key, final List<Map.Entry<String, byte[]>> headers) {
+      this.key = key;
+      this.headers = headers;
+    }
+
+    @Override
+    public String topic() {
+      return "in";
+    }
+
+    @Override
+    public int partition() {
+      return 0;
+    }
+
+    @Override
+    public long offset() {
+      return 0;
+    }
+
+    @Override
+    public long timestamp() {
+      return 0;
+    }
+
+    @Override
+    public byte[] key() {
+      return key;
+    }
+
+    @Override
+    public byte[] originalKey() {
+      return key;
+    }
+
+    @Override
+    public Optional<byte[]> header(final String name) {
+      return headers
+        .reversed()
+        .stream()
+        .filter(h -> h.getKey().equals(name))
+        .map(Map.Entry::getValue)
+        .findFirst();
+    }
+
+    @Override
+    public void forEachHeader(final BiConsumer<String, byte[]> action) {
+      headers.forEach(h -> action.accept(h.getKey(), h.getValue()));
+    }
   }
 }

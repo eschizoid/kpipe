@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
+import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import io.github.eschizoid.kpipe.registry.Result;
@@ -266,17 +267,19 @@ final class RecordProcessor {
   }
 
   /// The shared attempt loop behind both route shapes: run `attempt`, and on a thrown exception
-  /// back off and re-run up to `maxRetries` times. Interruption (of the backoff sleep, or a failure
-  /// [#interruptedBy] recognises) restores the flag and aborts without retrying and without
-  /// invoking the error path — teardown recovery is re-fetch on restart.
-  /// Once attempts are exhausted, or at once for a [NonRetryableException] anywhere in the
-  /// failure's cause chain, the failure goes terminal through [#handleProcessingError] with
-  /// `retryCount` equal to the retries actually performed.
+  /// back off and re-run up to `maxRetries` times. Each attempt runs with the record bound as
+  /// [RecordContext#current()], so every attempt reads the record as it was consumed.
+  /// Interruption (of the backoff sleep, or a failure [#interruptedBy] recognises) restores the
+  /// flag and aborts without retrying and without invoking the error path — teardown recovery is
+  /// re-fetch on restart. Once attempts are exhausted, or at once for a [NonRetryableException]
+  /// anywhere in the failure's cause chain, the failure goes terminal through
+  /// [#handleProcessingError] with `retryCount` equal to the retries actually performed.
   private Outcome runWithRetries(
     final ConsumerRecord<byte[], byte[]> record,
     final Tracer.SpanScope span,
     final RecordAttempt attemptBody
   ) {
+    final var context = new KafkaRecordContext(record);
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) {
         counters.topic(record.topic()).retries.increment();
@@ -295,8 +298,9 @@ final class RecordProcessor {
         }
       }
 
+      final int current = attempt;
       try {
-        return attemptBody.run(attempt);
+        return RecordContext.callWith(context, () -> attemptBody.run(current));
       } catch (final Exception e) {
         if (interruptedBy(e)) {
           Thread.currentThread().interrupt();
@@ -447,7 +451,12 @@ final class RecordProcessor {
     // circuit breaker's window.
     if (!NonRetryableException.isNonRetryable(e)) health.recordOutcome(false);
     try {
-      errorHandler.accept(new KPipeConsumer.ProcessingError(record, e, retryCount));
+      // A failure can reach here from inside an attempt, where the record is bound; the error
+      // handler gets the record in the ProcessingError and never has a current record.
+      RecordContext.callWithout(() -> {
+        errorHandler.accept(new KPipeConsumer.ProcessingError(record, e, retryCount));
+        return null;
+      });
     } catch (final Exception ex) {
       LOGGER.log(
         Level.ERROR,

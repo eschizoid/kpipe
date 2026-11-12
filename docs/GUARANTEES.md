@@ -101,6 +101,10 @@ So for "Authorize must apply before Capture for the same account": key the _prod
 partition) **and** run KPipe in `KEY_ORDERED` (or `SEQUENTIAL`). Offset tracking alone does not give you this — in
 `PARALLEL` mode the two side effects can interleave even though the commit frontier is correct.
 
+To keep that order in an output topic, produce with `toKafka` or `KafkaMessageSink`. Each output record keeps its input
+key, so a key's records land on one output partition, and each send waits for its acknowledgement before the key's next
+record runs.
+
 ## Backpressure
 
 Enabled by default. When the monitored metric crosses the high watermark (default 10,000), KPipe pauses all assigned
