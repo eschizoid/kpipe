@@ -77,9 +77,9 @@ final class KafkaTopicSink<T> implements MessageSink<T> {
   /// producer to `builder`. The consumer closes it after its last record and also writes its
   /// dead-letter records through it.
   ///
-  /// @return what was opened, which [#closingOnFailure] abandons if building the consumer fails;
-  /// null when `sinks` holds no [KafkaTopicSink]
-  /// @throws IllegalStateException when a sink is already open for another consumer
+  /// @return what was opened, which [#closingOnFailure] abandons if building or starting the
+  /// consumer fails; null when `sinks` holds no [KafkaTopicSink]
+  /// @throws IllegalStateException when a consumer already uses one of the sinks
   static Opened openAll(
     final Collection<? extends MessageSink<?>> sinks,
     final Properties props,
@@ -98,9 +98,7 @@ final class KafkaTopicSink<T> implements MessageSink<T> {
       if (!sink.tryOpen(producer, tracer)) {
         new Opened(producer, opened).abandon();
         throw new IllegalStateException(
-          "The toKafka(\"" +
-            sink.topic +
-            "\") sink is already open for another consumer; build a new stream to start another"
+          "The toKafka(\"" + sink.topic + "\") sink is already used by a consumer; build a new stream to start another"
         );
       }
       opened.add(sink);
@@ -109,9 +107,9 @@ final class KafkaTopicSink<T> implements MessageSink<T> {
     return new Opened(producer, List.copyOf(opened));
   }
 
-  /// Builds the consumer. If that fails, abandons `opened` so the producer does not leak and the
-  /// sinks can be started again. A consumer that fails after taking the producer closes it too;
-  /// closing it twice is harmless.
+  /// Builds and starts the consumer. If either fails, abandons `opened` so the producer does not
+  /// leak and the sinks can be started again. A consumer that fails after taking the producer
+  /// closes it too; closing it twice is harmless.
   static <C> C closingOnFailure(final Opened opened, final Supplier<C> build) {
     try {
       return build.get();

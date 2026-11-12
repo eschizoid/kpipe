@@ -89,7 +89,7 @@ class ToKafkaBuildTest {
       final var e = assertThrows(IllegalStateException.class, () ->
         KafkaTopicSink.openAll(List.of(sink), props(), null, KPipeConsumer.builder())
       );
-      assertTrue(e.getMessage().contains("already open for another consumer"), e.getMessage());
+      assertTrue(e.getMessage().contains("already used by a consumer"), e.getMessage());
     } finally {
       opened.abandon();
     }

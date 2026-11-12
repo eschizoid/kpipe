@@ -47,7 +47,7 @@ final class DefaultSink<T> implements Sink<T> {
       consumerBuilder
     );
 
-    return DefaultHandle.startAndWrap(KafkaTopicSink.closingOnFailure(opened, consumerBuilder::build));
+    return KafkaTopicSink.closingOnFailure(opened, () -> DefaultHandle.startAndWrap(consumerBuilder.build()));
   }
 
   /// Builds the [MessagePipeline] for this sink's stream + terminal sink. Reused by
