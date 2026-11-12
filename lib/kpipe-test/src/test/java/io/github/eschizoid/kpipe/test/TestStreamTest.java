@@ -9,12 +9,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
+import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Predicate;
@@ -483,5 +485,102 @@ class TestStreamTest {
       assertEquals(0L, metrics.inFlight());
       assertEquals(0L, metrics.records().failed());
     }
+  }
+
+  /// A pipeline that re-keys records, read back from the capturing sink, with no broker.
+  @Test
+  void rekeyedRecordsCarryTheirNewKeysToTheSink() {
+    final var captured = new CapturingSink<Map<String, Object>>();
+    try (
+      final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
+        .rekeyString(order -> "order-" + order.get("id"))
+        .withHeader("source", _ -> "test-kit".getBytes(UTF_8))
+        .toCustom(captured)
+        .build()
+    ) {
+      driver.send(TestRecord.of(record("a", true)).withKey("in-a"));
+      driver.send(TestRecord.of(record("b", false)).withKey("in-b"));
+      driver.flush();
+    }
+    final var records = captured.records();
+    assertEquals(List.of("order-a", "order-b"), records.stream().map(CapturingSink.Captured::keyString).toList());
+    assertEquals(
+      List.of("in-a", "in-b"),
+      records
+        .stream()
+        .map(r -> new String(r.context().originalKey(), UTF_8))
+        .toList()
+    );
+    assertEquals(Optional.of("test-kit"), records.getFirst().headerString("source"));
+  }
+
+  /// A sent record's key, headers and timestamp reach operators through `RecordContext.current()`,
+  /// and each record gets its own offset.
+  @Test
+  void aSentRecordsKeyHeadersAndTimestampReachTheOperators() {
+    final var seen = new CopyOnWriteArrayList<String>();
+    try (
+      final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
+        .peek(_ -> {
+          final var ctx = RecordContext.current();
+          seen.add(
+            ctx.keyString() + "|" + ctx.headerString("tenant").orElse("-") + "|" + ctx.timestamp() + "|" + ctx.offset()
+          );
+        })
+        .toCustom(new CapturingSink<>())
+        .build()
+    ) {
+      driver.send(TestRecord.of(record("a", true)).withKey("k1").withHeader("tenant", "acme").withTimestamp(42L));
+      driver.send(record("b", true));
+      driver.flush();
+    }
+    assertEquals(List.of("k1|acme|42|0", "null|-|-1|1"), List.copyOf(seen));
+  }
+
+  /// `CapturingSink.asBatchSink()` captures each flushed value with its record, after a rekey.
+  @Test
+  void aBatchRouteCapturesEachValueWithItsRecord() {
+    final var captured = new CapturingSink<Map<String, Object>>();
+    try (
+      final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
+        .rekeyString(order -> "order-" + order.get("id"))
+        .toBatch(captured.asBatchSink(), 2)
+        .build()
+    ) {
+      driver.send(TestRecord.of(record("a", true)).withKey("in-a"));
+      driver.send(TestRecord.of(record("b", true)).withKey("in-b"));
+      driver.flush();
+    }
+    assertEquals(
+      List.of("a=order-a", "b=order-b"),
+      captured
+        .records()
+        .stream()
+        .map(r -> r.value().get("id") + "=" + r.keyString())
+        .toList()
+    );
+  }
+
+  /// A record of a subtype of the stream's type is accepted, and an operator that changes the key
+  /// array in place does not change the record for the next send.
+  @Test
+  void aSubtypeRecordIsAcceptedAndASentRecordStaysUnchanged() {
+    final var keys = new CopyOnWriteArrayList<String>();
+    try (
+      final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
+        .peek(_ -> {
+          keys.add(RecordContext.current().keyString());
+          RecordContext.current().key()[0] = 'X';
+        })
+        .toCustom(new CapturingSink<>())
+        .build()
+    ) {
+      final HashMap<String, Object> order = new HashMap<>(record("a", true));
+      final var sent = TestRecord.of(order).withKey("k1");
+      driver.send(sent);
+      driver.send(sent);
+      driver.flush();
+    }
+    assertEquals(List.of("k1", "k1"), List.copyOf(keys));
   }
 }

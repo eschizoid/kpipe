@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
+import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import java.util.HashSet;
 import java.util.List;
@@ -207,5 +208,31 @@ class CrashRestartHarnessTest {
     final var harness = CrashRestartHarness.builder(STRING_FORMAT).seed(values(10)).commitUpTo(3).crashAfter(7);
     harness.restart();
     assertThrows(IllegalStateException.class, harness::restart);
+  }
+
+  /// Keyed seeds reach the pipeline, and operators that read the record also run when the harness
+  /// computes the uncommitted tail, with each seeded record bound as the consumer binds it.
+  @Test
+  void keyedSeedsReachOperatorsInBothPhasesAndTheTail() {
+    final var records = IntStream.range(0, 10)
+      .mapToObj(i -> TestRecord.of("v" + i).withKey("k" + i).withHeader("source", "seed"))
+      .toList();
+    final var result = CrashRestartHarness.builder(STRING_FORMAT)
+      .pipe(
+        value ->
+          value +
+          "@" +
+          RecordContext.current().keyString() +
+          "/" +
+          RecordContext.current().headerString("source").orElseThrow()
+      )
+      .seedRecords(records)
+      .commitUpTo(3)
+      .crashAfter(7)
+      .restart();
+
+    assertEquals(List.of("v3@k3/seed", "v4@k4/seed", "v5@k5/seed", "v6@k6/seed"), result.uncommittedTail());
+    assertTrue(result.secondRun().containsAll(result.uncommittedTail()));
+    assertEquals("v0@k0/seed", result.firstRun().getFirst());
   }
 }

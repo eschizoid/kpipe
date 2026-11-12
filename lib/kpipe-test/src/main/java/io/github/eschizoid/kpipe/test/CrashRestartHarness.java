@@ -5,6 +5,7 @@ import io.github.eschizoid.kpipe.consumer.OffsetManager;
 import io.github.eschizoid.kpipe.consumer.OffsetState;
 import io.github.eschizoid.kpipe.consumer.OffsetStatistics;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
+import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -73,7 +74,7 @@ public final class CrashRestartHarness<T> {
   private final MessageFormat<T> format;
   private final List<UnaryOperator<T>> operators = new ArrayList<>();
   private ProcessingMode processingMode = ProcessingMode.SEQUENTIAL;
-  private List<T> seed;
+  private List<TestRecord<? extends T>> seed;
   private int commitUpTo = -1;
   private int crashAfter = -1;
   private int batchMaxSize = 0;
@@ -112,12 +113,23 @@ public final class CrashRestartHarness<T> {
     return this;
   }
 
-  /// Sets the full stream `[0, N)` of typed values to drive through the pipeline.
+  /// Sets the full stream `[0, N)` of typed values to drive through the pipeline, with no keys or
+  /// headers.
   ///
   /// @param values the seeded values (must be non-empty)
   /// @return this harness
   public CrashRestartHarness<T> seed(final List<T> values) {
-    this.seed = List.copyOf(Objects.requireNonNull(values, "seed cannot be null"));
+    Objects.requireNonNull(values, "seed cannot be null");
+    return seedRecords(values.stream().<TestRecord<T>>map(TestRecord::of).toList());
+  }
+
+  /// Sets the full stream `[0, N)` of records to drive through the pipeline, with their keys,
+  /// headers and timestamps.
+  ///
+  /// @param records the seeded records (must be non-empty)
+  /// @return this harness
+  public CrashRestartHarness<T> seedRecords(final List<? extends TestRecord<? extends T>> records) {
+    this.seed = List.copyOf(Objects.requireNonNull(records, "seed cannot be null"));
     return this;
   }
 
@@ -180,23 +192,33 @@ public final class CrashRestartHarness<T> {
     // capture order, which is not offset order under PARALLEL / KEY_ORDERED. It is the tail as
     // the sink sees it (operators applied, filtered records dropped), matching secondRun's shape.
     final var tail = new ArrayList<T>();
-    for (final var value : seed.subList(commitUpTo, crashAfter)) {
-      final var transformed = applyOperators(value);
+    for (var offset = commitUpTo; offset < crashAfter; offset++) {
+      final var transformed = applyOperators(offset);
       if (transformed != null) tail.add(transformed);
     }
     return new CrashRestartResult<>(first, second, commitUpTo, tail);
   }
 
-  /// Applies the configured operators to one seeded value in order, returning the
-  /// transformed value — or `null` if an operator filtered it out, so the expected tail
-  /// matches what the sink actually delivers.
-  private T applyOperators(final T value) {
-    var current = value;
-    for (final var op : operators) {
-      if (current == null) return null;
-      current = op.apply(current);
-    }
-    return current;
+  /// Applies the configured operators in order to the record seeded at `offset`, with that record
+  /// bound as `RecordContext.current()` as the consumer binds it, and returns the transformed value
+  /// — or `null` if an operator filtered it out, so the expected tail matches what the sink
+  /// actually delivers.
+  private T applyOperators(final int offset) {
+    final var record = seed.get(offset);
+    final var consumed = new ConsumedRecordContext(consumerRecord(offset));
+    return RecordContext.callWith(consumed, () -> {
+      T current = record.value();
+      for (final var op : operators) {
+        if (current == null) return null;
+        current = op.apply(current);
+      }
+      return current;
+    });
+  }
+
+  private ConsumerRecord<byte[], byte[]> consumerRecord(final int offset) {
+    final var record = seed.get(offset);
+    return record.toConsumerRecord(TOPIC, 0, offset, format.serialize(record.value()));
   }
 
   /// Runs one consumer over the seeded window `[fromOffset, toExclusive)` and returns what
@@ -218,10 +240,7 @@ public final class CrashRestartHarness<T> {
     final var tp = new TopicPartition(TOPIC, 0);
     mock.assign(List.of(tp));
     mock.updateBeginningOffsets(Map.of(tp, (long) fromOffset));
-    for (var i = 0; i < count; i++) {
-      final var value = seed.get(fromOffset + i);
-      mock.addRecord(new ConsumerRecord<>(TOPIC, 0, fromOffset + i, null, format.serialize(value)));
-    }
+    for (var i = 0; i < count; i++) mock.addRecord(consumerRecord(fromOffset + i));
 
     final var consumerBuilder = KPipeConsumer.builder()
       .withProperties(TestKitSupport.props("kpipe-crash-restart"))
