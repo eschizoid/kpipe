@@ -309,4 +309,29 @@ class RecordContextTest {
       return null;
     });
   }
+
+  /// A batch binding has the batch's records and no current record.
+  @Test
+  void aBatchBindingHasTheBatchAndNoCurrentRecord() {
+    final var other = new Fixed("k2".getBytes(UTF_8), Map.of());
+    final var contexts = new ArrayList<RecordContext>(List.of(ORDER, other));
+    RecordContext.callWithBatch(contexts, () -> {
+      contexts.clear();
+      assertEquals(List.of(ORDER, other), RecordContext.currentBatch());
+      assertFalse(RecordContext.isBound());
+      final var e = assertThrows(IllegalStateException.class, RecordContext::current);
+      assertTrue(e.getMessage().contains("RecordContext.currentBatch()"), e.getMessage());
+      assertThrows(IllegalStateException.class, () -> RecordContext.<String>rekey(_ -> null).apply("v"));
+      assertThrows(UnsupportedOperationException.class, () -> RecordContext.currentBatch().clear());
+      return null;
+    });
+  }
+
+  @Test
+  void currentBatchThrowsOutsideABatchSink() {
+    final var outside = assertThrows(IllegalStateException.class, RecordContext::currentBatch);
+    assertTrue(outside.getMessage().startsWith("No batch is being flushed on this thread"), outside.getMessage());
+    RecordContext.callWith(ORDER, () -> assertThrows(IllegalStateException.class, RecordContext::currentBatch));
+    RecordContext.callWithout(() -> assertThrows(IllegalStateException.class, RecordContext::currentBatch));
+  }
 }

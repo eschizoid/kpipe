@@ -125,19 +125,27 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     tickFuture = scheduler.scheduleWithFixedDelay(this::tick, tickMs, tickMs, TimeUnit.MILLISECONDS);
   }
 
-  /// Adds `(record, value)` to the buffer. If the new size meets the policy threshold, flushes
+  /// [#enqueue(ConsumerRecord, Object, RecordContext)] with the record as it was consumed, so any
+  /// `rekey` or `withHeader` is lost. For tests that drive the wrapper directly; the consumer
+  /// buffers the current record.
+  void enqueueAsConsumed(final ConsumerRecord<byte[], byte[]> record, final T value) {
+    enqueue(record, value, new KafkaRecordContext(record));
+  }
+
+  /// Adds `(record, value)` to the buffer, with `context` as the record a batch sink reads through
+  /// [RecordContext#currentBatch()]. If the new size meets the policy threshold, flushes
   /// inline. The caller must already have driven the pipeline (`pipeline.process(...)`) and only
   /// enqueue the `Passed` value; filtered records skip enqueueing entirely.
   ///
   /// `bufferedCount` is incremented before the lock is released so the in-flight backpressure
   /// strategy observes the new buffered record on its next check. The matching decrement happens
   /// in [#flushLocked] after the user sink returns.
-  void enqueue(final ConsumerRecord<byte[], byte[]> record, final T value) {
+  void enqueue(final ConsumerRecord<byte[], byte[]> record, final T value, final RecordContext context) {
     Runnable dispatch = null;
     lock.lock();
     try {
       if (buffer.isEmpty()) oldestEnqueueNanos = System.nanoTime();
-      buffer.add(new Entry<>(record, value));
+      buffer.add(new Entry<>(record, value, context));
       bufferedCount.incrementAndGet();
       if (buffer.size() >= policy.maxSize()) dispatch = flushLocked();
     } finally {
@@ -216,12 +224,16 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     if (size == 0) return null;
     final var snapshot = new ArrayList<>(buffer);
     final var values = new ArrayList<T>(size);
-    for (final var entry : snapshot) values.add(entry.value());
+    final var contexts = new ArrayList<RecordContext>(size);
+    for (final var entry : snapshot) {
+      values.add(entry.value());
+      contexts.add(entry.context());
+    }
     buffer.clear();
 
     final Runnable dispatch;
     try {
-      dispatch = flush(snapshot, values);
+      dispatch = flush(snapshot, values, contexts);
     } catch (final Throwable t) {
       // `flush` catches every Exception the sink can raise, so reaching here means an Error. The
       // records have already left the buffer, so the gauge has to come down even though no dispatch
@@ -309,13 +321,14 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   /// uncovered positions happen here, with the sink, because they are pure computation over the
   /// result — only the callbacks themselves are deferred. Sink-throw and null-result both fall back
   /// to whole-batch failure with a clear log line.
-  private Runnable flush(final List<Entry<T>> snapshot, final List<T> values) {
+  private Runnable flush(final List<Entry<T>> snapshot, final List<T> values, final List<RecordContext> contexts) {
     final var size = snapshot.size();
 
     final BatchResult result;
     try {
-      // A flush covers many records, so none of them is the current record.
-      result = RecordContext.callWithout(() -> sink.apply(values));
+      // A flush covers many records: none of them is current, and the sink reads them all through
+      // RecordContext.currentBatch().
+      result = RecordContext.callWithBatch(contexts, () -> sink.apply(values));
     } catch (final Exception e) {
       if (interruptedFlush(e)) return leaveUnmarked(snapshot, e);
       logBatchFailure("threw", size, e);
@@ -511,5 +524,5 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     awaitDispatchesQuiesced();
   }
 
-  record Entry<T>(ConsumerRecord<byte[], byte[]> record, T value) {}
+  record Entry<T>(ConsumerRecord<byte[], byte[]> record, T value, RecordContext context) {}
 }

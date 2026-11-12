@@ -79,7 +79,7 @@ class BatchFlushLockHoldTest {
 
       // Thread A fills the batch; the final enqueue trips the size flush and runs the dispatch.
       final var flusher = Thread.ofVirtual().start(() -> {
-        for (int i = 0; i < BATCH; i++) wrapper.enqueue(record(i), new byte[] { (byte) i });
+        for (int i = 0; i < BATCH; i++) wrapper.enqueueAsConsumed(record(i), new byte[] { (byte) i });
       });
 
       assertTrue(dispatchStarted.await(5, TimeUnit.SECONDS), "dispatch should begin");
@@ -88,7 +88,7 @@ class BatchFlushLockHoldTest {
       final var blockedNanos = new AtomicLong();
       final var competitor = Thread.ofVirtual().start(() -> {
         final var t0 = System.nanoTime();
-        wrapper.enqueue(record(999), new byte[] { 9 });
+        wrapper.enqueueAsConsumed(record(999), new byte[] { 9 });
         blockedNanos.set(System.nanoTime() - t0);
       });
 
@@ -152,7 +152,7 @@ class BatchFlushLockHoldTest {
     try {
       wrapper.start();
       assertThrows(StackOverflowError.class, () -> {
-        for (int i = 0; i < BATCH; i++) wrapper.enqueue(record(i), new byte[] { (byte) i });
+        for (int i = 0; i < BATCH; i++) wrapper.enqueueAsConsumed(record(i), new byte[] { (byte) i });
       });
       assertEquals(0L, wrapper.bufferedCount(), "the flushed batch must leave the gauge at zero, not stranded");
     } finally {

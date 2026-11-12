@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.record;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiConsumer;
@@ -22,8 +23,11 @@ import java.util.function.UnaryOperator;
 /// The key and headers change only through [#rekey] and [#withHeader]. Each returns an operator
 /// that, when it runs, makes [#current()] return a context with the new key or header for the rest
 /// of the binding. The consumed record never changes, and the consumer binds it again for each
-/// processing attempt, so a retry starts from the record as it was consumed. A batch sink has no
-/// current record, so it does not see these changes.
+/// processing attempt, so a retry starts from the record as it was consumed.
+///
+/// A batch sink covers many records, so none of them is current there. It reads them with
+/// [#currentBatch()], in the same order as its values and with the changes made before each was
+/// buffered.
 ///
 /// A context captured with `var ctx = current()` keeps the key and headers it had when captured
 /// and works on any thread, including through [#callWith]: each binding keeps its own changes. The
@@ -33,8 +37,8 @@ public abstract class RecordContext {
 
   private static final ScopedValue<Binding> CURRENT = ScopedValue.newInstance();
 
-  /// Bound where no single record is current: a batch flush and the error handler.
-  private static final Binding NONE = new Binding(null);
+  /// Bound where no record is current: a batch flush's outcome dispatch and the error handler.
+  private static final Binding NONE = new Binding(null, null);
 
   /// One [#callWith]: the context it bound and what [#rekey] and [#withHeader] made of it since.
   /// Only threads that inherit the binding read or write it. A plain thread or an executor task
@@ -43,9 +47,12 @@ public abstract class RecordContext {
   private static final class Binding {
 
     private RecordContext current;
+    /// The records of the batch being flushed, or null outside a batch sink.
+    private final List<RecordContext> batch;
 
-    private Binding(final RecordContext bound) {
+    private Binding(final RecordContext bound, final List<RecordContext> batch) {
       this.current = bound;
+      this.batch = batch;
     }
   }
 
@@ -96,15 +103,34 @@ public abstract class RecordContext {
   ///
   /// @return the current record's context
   /// @throws IllegalStateException when no record is being processed on this thread: inside an
-  /// executor task or a plain thread the operator started, inside a batch sink, which covers many
-  /// records, and inside the error handler, which receives its record in the `ProcessingError`
+  /// executor task or a plain thread the operator started, inside a batch sink, which reads its
+  /// records with [#currentBatch()], and inside the error handler, which receives its record in
+  /// the `ProcessingError`
   public static RecordContext current() {
-    final var context = CURRENT.orElse(NONE).current;
-    if (context == null) throw new IllegalStateException(
+    final var binding = CURRENT.orElse(NONE);
+    if (binding.current != null) return binding.current;
+    if (binding.batch != null) throw new IllegalStateException(
+      "A batch sink covers many records, so none of them is current. Read them with RecordContext.currentBatch(), " +
+        "in the same order as the values."
+    );
+    throw new IllegalStateException(
       "No record is being processed on this thread. Call RecordContext.current() from an operator or sink " +
         "while it runs, or capture it first (var ctx = RecordContext.current()) to use it on another thread."
     );
-    return context;
+  }
+
+  /// The records of the batch a batch sink is flushing, in the same order as the values it
+  /// receives. Each context is the record as it stood when it was buffered, including any
+  /// [#rekey] or [#withHeader].
+  ///
+  /// @return the batch's contexts, index-aligned with the batch's values; unmodifiable
+  /// @throws IllegalStateException outside a batch sink
+  public static List<RecordContext> currentBatch() {
+    final var batch = CURRENT.orElse(NONE).batch;
+    if (batch == null) throw new IllegalStateException(
+      "No batch is being flushed on this thread. Call RecordContext.currentBatch() from a batch sink while it runs."
+    );
+    return batch;
   }
 
   /// An operator that replaces the record's key for the rest of the current binding, which in the
@@ -186,11 +212,29 @@ public abstract class RecordContext {
   public static <R, X extends Throwable> R callWith(final RecordContext context, final ScopedValue.CallableOp<R, X> op)
     throws X {
     Objects.requireNonNull(context, "context cannot be null");
-    return ScopedValue.where(CURRENT, new Binding(context)).call(op);
+    return ScopedValue.where(CURRENT, new Binding(context, null)).call(op);
   }
 
-  /// Runs `op` with no current record, so [#current()] throws inside it. The consumer runs batch
-  /// sinks this way.
+  /// Runs `op` as a batch sink: [#currentBatch()] returns `contexts` and [#current()] throws. The
+  /// consumer calls this for each flush; a test calls it to run a batch sink that reads its
+  /// records.
+  ///
+  /// @param contexts the batch's records, in the same order as the values `op` flushes
+  /// @param op       the work to run
+  /// @param <R>      the result type
+  /// @param <X>      the exception `op` may throw
+  /// @return what `op` returns
+  /// @throws X when `op` throws
+  /// @throws NullPointerException if `contexts` or one of its elements is null
+  public static <R, X extends Throwable> R callWithBatch(
+    final List<RecordContext> contexts,
+    final ScopedValue.CallableOp<R, X> op
+  ) throws X {
+    return ScopedValue.where(CURRENT, new Binding(null, List.copyOf(contexts))).call(op);
+  }
+
+  /// Runs `op` with no current record, so [#current()] throws inside it. The consumer runs a
+  /// batch flush's outcome dispatch and the error handler this way.
   ///
   /// @param op  the work to run
   /// @param <R> the result type

@@ -39,6 +39,7 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
@@ -143,6 +144,66 @@ class ToKafkaIntegrationTest {
       assertEquals("k4", new String(dead.getFirst().key(), UTF_8), "the dead-letter topic gets the consumed key");
       assertEquals(null, dead.getFirst().headers().lastHeader("rekeyed-from"), "and not the added header");
     }
+  }
+
+  /// After a `rekey` and a `withHeader`, a failing record reaches the error handler and the
+  /// dead-letter topic as it was consumed, on the per-record route and on the batch route; the
+  /// batch sink itself reads the changed records through `currentBatch()`.
+  @ParameterizedTest
+  @ValueSource(booleans = { false, true })
+  void aFailingRecordReachesTheErrorHandlerAndDeadLetterTopicAsConsumed(final boolean batch) throws Exception {
+    final var in = "failure-in-" + UUID.randomUUID();
+    final var dlq = "failure-dlq-" + UUID.randomUUID();
+    createTopics(in, dlq);
+    produce(in, 6);
+
+    final var errors = new CopyOnWriteArrayList<String>();
+    final var batchKeys = new CopyOnWriteArrayList<String>();
+    final var changed = KPipe.json(in, consumerProps())
+      .withDeadLetterTopic(dlq)
+      .withErrorHandler(error ->
+        errors.add(
+          new String(error.record().key(), UTF_8) + "|" + (error.record().headers().lastHeader("added") == null)
+        )
+      )
+      .rekeyString(order -> "new-" + id(order))
+      .withHeader("added", _ -> new byte[] { 1 });
+    final var sink = batch
+      ? changed.toBatch(
+          values -> {
+            final var contexts = RecordContext.currentBatch();
+            final var failed = new HashMap<Integer, Exception>();
+            final var succeeded = new ArrayList<Integer>();
+            for (int i = 0; i < values.size(); i++) {
+              batchKeys.add(contexts.get(i).keyString());
+              if (id(values.get(i)) == 4) failed.put(i, new IllegalStateException("poison"));
+              else succeeded.add(i);
+            }
+            return new BatchResult(succeeded, failed);
+          },
+          new BatchPolicy(6, Duration.ofSeconds(1))
+        )
+      : changed
+          .pipe(order -> {
+            if (id(order) == 4) throw new IllegalStateException("poison");
+            return order;
+          })
+          .toCustom(_ -> {});
+
+    try (final var _ = sink.start()) {
+      final var dead = readAll(dlq, 1);
+      assertEquals(1, dead.size());
+      assertEquals("k4", new String(dead.getFirst().key(), UTF_8), "the dead-letter topic gets the consumed key");
+      assertEquals(null, dead.getFirst().headers().lastHeader("added"), "and not the added header");
+      final var deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+      while (errors.isEmpty() && System.nanoTime() < deadline) Thread.sleep(50);
+      assertEquals(List.of("k4|true"), List.copyOf(errors), "the error handler gets the consumed record");
+    }
+    if (batch) assertEquals(
+      List.of("new-0", "new-1", "new-2", "new-3", "new-4", "new-5"),
+      batchKeys.stream().sorted().toList(),
+      "the batch sink reads the changed records"
+    );
   }
 
   /// `KEY_ORDERED` processes each key in input order, and `toKafka` keeps the key, so a key's

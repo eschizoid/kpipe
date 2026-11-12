@@ -173,6 +173,56 @@ class RecordContextBindingTest {
     assertEquals(List.of("7:unbound", "7:unbound", "8:unbound"), bound.stream().sorted().toList());
   }
 
+  /// A batch sink reads each record through `currentBatch()`, index-aligned with the values and as
+  /// the record stood when it was buffered, after a `rekey`; on a size-triggered flush and on an
+  /// age-triggered one.
+  @Test
+  void aBatchSinkReadsItsRecordsThroughCurrentBatch() throws Exception {
+    assertEquals(List.of("v7|key-7|order-1", "v8|key-8|order-2"), flushOf(BatchPolicy.ofSize(2)));
+    assertEquals(
+      List.of("v7|key-7|order-1", "v8|key-8|order-2"),
+      flushOf(new BatchPolicy(1_000, Duration.ofMillis(100)))
+    );
+  }
+
+  private static List<String> flushOf(final BatchPolicy policy) throws Exception {
+    final var flushed = new CopyOnWriteArrayList<String>();
+    final var pipeline = new MessageProcessorRegistry()
+      .pipeline(MessageFormat.bytes())
+      .rekeyString(_ -> "key-" + RecordContext.current().offset())
+      .build();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(props())
+      .withBatchPipeline(
+        TOPIC,
+        pipeline,
+        values -> {
+          final var contexts = RecordContext.currentBatch();
+          for (int i = 0; i < values.size(); i++) flushed.add(
+            new String(values.get(i), UTF_8) +
+              "|" +
+              contexts.get(i).keyString() +
+              "|" +
+              new String(contexts.get(i).originalKey(), UTF_8)
+          );
+          return BatchResult.allSucceeded(values.size());
+        },
+        policy
+      )
+      .withConsumer(() -> seeded(2))
+      .withPollTimeout(Duration.ofMillis(5))
+      .build();
+    try {
+      consumer.start();
+      awaitCondition(() -> flushed.size() == 2, 10_000);
+    } finally {
+      consumer.close();
+    }
+    // Buffer order follows arrival, which PARALLEL mode does not fix; each value must sit with its
+    // own record.
+    return flushed.stream().sorted().toList();
+  }
+
   private static MockConsumer<byte[], byte[]> seeded() {
     return seeded(1);
   }
@@ -203,7 +253,7 @@ class RecordContextBindingTest {
           0,
           1,
           ("order-" + (i + 1)).getBytes(UTF_8),
-          "v".getBytes(UTF_8),
+          ("v" + (7 + i)).getBytes(UTF_8),
           headers,
           Optional.empty()
         )

@@ -107,6 +107,17 @@ output partition, and in `KEY_ORDERED` and `SEQUENTIAL` mode each send waits for
 record with the same consumed key runs. `KEY_ORDERED` orders by the consumed key even after a `rekey`, so records that
 share a new key but were consumed with different keys can reach the output in any order.
 
+## Keys and headers
+
+`rekey` and `withHeader` change the record that later operators and sinks read through `RecordContext.current()`, and
+that a batch sink reads through `RecordContext.currentBatch()`. Two rules hold whatever they change:
+
+- **On failure the consumed record wins.** The error handler's `ProcessingError` and the dead-letter topic carry the
+  record as it was consumed: its key and headers, without what `rekey` or `withHeader` set. The dead-letter topic is
+  there to replay the input, and each retry starts again from the consumed record.
+- **`KEY_ORDERED` orders by the consumed key.** The dispatcher picks a record's queue before any operator runs, so a
+  `rekey` does not move a record to another queue (see [Ordering](#ordering)).
+
 ## Backpressure
 
 Enabled by default. When the monitored metric crosses the high watermark (default 10,000), KPipe pauses all assigned

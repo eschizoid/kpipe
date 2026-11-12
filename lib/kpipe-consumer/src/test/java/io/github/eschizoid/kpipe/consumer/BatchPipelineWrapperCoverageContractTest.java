@@ -117,7 +117,7 @@ class BatchPipelineWrapperCoverageContractTest {
     try {
       for (int i = 0; i < 5; i++) {
         final var rec = record(topic, i);
-        wrapper.enqueue(rec, rec.value());
+        wrapper.enqueueAsConsumed(rec, rec.value());
       }
 
       assertEquals(4, callbacks.processed.size(), "indexes 0..3 should be marked processed");
@@ -180,7 +180,7 @@ class BatchPipelineWrapperCoverageContractTest {
     try {
       for (int i = 0; i < 5; i++) {
         final var rec = record(topic, i);
-        wrapper.enqueue(rec, rec.value());
+        wrapper.enqueueAsConsumed(rec, rec.value());
       }
 
       final var coverageWarn = captured
@@ -243,7 +243,7 @@ class BatchPipelineWrapperCoverageContractTest {
     try {
       for (int i = 0; i < 3; i++) {
         final var rec = record(topic, i);
-        wrapper.enqueue(rec, rec.value());
+        wrapper.enqueueAsConsumed(rec, rec.value());
       }
 
       final var outOfRangeWarnings = captured
@@ -283,7 +283,7 @@ class BatchPipelineWrapperCoverageContractTest {
     try {
       for (int i = 0; i < 4; i++) {
         final var rec = record(topic, i);
-        wrapper.enqueue(rec, rec.value());
+        wrapper.enqueueAsConsumed(rec, rec.value());
       }
 
       assertEquals(0, callbacks.processed.size(), "no record should be marked processed when sink returns null");
@@ -344,7 +344,7 @@ class BatchPipelineWrapperCoverageContractTest {
     wrapper.start();
     try {
       final var rec = record(topic, 42L);
-      wrapper.enqueue(rec, rec.value());
+      wrapper.enqueueAsConsumed(rec, rec.value());
 
       assertTrue(
         sinkLatch.await(5, TimeUnit.SECONDS),
@@ -395,7 +395,7 @@ class BatchPipelineWrapperCoverageContractTest {
     try {
       for (int i = 0; i < 3; i++) {
         final var rec = record(topic, i);
-        wrapper.enqueue(rec, rec.value());
+        wrapper.enqueueAsConsumed(rec, rec.value());
       }
 
       // No size flush, no age flush — verify the records are still buffered before close().

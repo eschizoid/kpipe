@@ -106,7 +106,7 @@ class BatchCoverageContractInvariantTest {
     try {
       for (int i = 0; i < batchSize; i++) {
         final var rec = record(topic, i);
-        wrapper.enqueue(rec, rec.value());
+        wrapper.enqueueAsConsumed(rec, rec.value());
       }
     } finally {
       wrapper.close();

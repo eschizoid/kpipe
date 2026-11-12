@@ -204,7 +204,7 @@ class BatchDispatchErrorPathsTest {
     try {
       wrapper.start();
       IntStream.range(0, BATCH).forEach(i ->
-        wrapper.enqueue(new ConsumerRecord<>(TOPIC, 0, i, new byte[0], new byte[0]), new byte[] { 1 })
+        wrapper.enqueueAsConsumed(new ConsumerRecord<>(TOPIC, 0, i, new byte[0], new byte[0]), new byte[] { 1 })
       );
       assertEquals(0L, wrapper.bufferedCount(), "the gauge comes down once the dispatch has run");
     } finally {

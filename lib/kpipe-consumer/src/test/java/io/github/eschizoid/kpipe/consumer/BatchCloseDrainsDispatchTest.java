@@ -60,7 +60,7 @@ class BatchCloseDrainsDispatchTest {
 
     try {
       wrapper.start();
-      wrapper.enqueue(new ConsumerRecord<>(TOPIC, 0, 0L, new byte[0], new byte[0]), new byte[] { 1 });
+      wrapper.enqueueAsConsumed(new ConsumerRecord<>(TOPIC, 0, 0L, new byte[0], new byte[0]), new byte[] { 1 });
 
       assertTrue(dispatchStarted.await(5, TimeUnit.SECONDS), "the age tick should start a dispatch");
       wrapper.close();
@@ -106,7 +106,7 @@ class BatchCloseDrainsDispatchTest {
     try {
       wrapper.start();
       assertDoesNotThrow(() ->
-        wrapper.enqueue(new ConsumerRecord<>(TOPIC, 0, 0L, new byte[0], new byte[0]), new byte[] { 1 })
+        wrapper.enqueueAsConsumed(new ConsumerRecord<>(TOPIC, 0, 0L, new byte[0], new byte[0]), new byte[] { 1 })
       );
       assertEquals(0L, wrapper.bufferedCount(), "the flush must still lower the buffered count");
 
