@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.test;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.MetricsSnapshot;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
+import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.Operators;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
@@ -19,6 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
@@ -120,6 +122,19 @@ public final class TestStream<T> implements AutoCloseable {
     return sendRaw(key, format.serialize(value));
   }
 
+  /// Serializes the record's value through the stream's format and appends it to the mock
+  /// partition with the record's key, headers and timestamp.
+  ///
+  /// @param record the record to send
+  /// @return this stream for chaining
+  public TestStream<T> send(final TestRecord<? extends T> record) {
+    Objects.requireNonNull(record, "record cannot be null");
+    ensureOpen();
+    final var serialized = format.serialize(record.value());
+    mockConsumer.addRecord(record.toConsumerRecord(topic, 0, nextOffset.getAndIncrement(), serialized));
+    return this;
+  }
+
   /// Appends raw bytes to the mock partition with a null key, bypassing the format's serializer.
   /// Use this to exercise deserialization-failure paths with malformed payloads.
   ///
@@ -206,9 +221,10 @@ public final class TestStream<T> implements AutoCloseable {
     if (closed.get()) throw new IllegalStateException("TestStream is closed");
   }
 
-  /// Builder for [TestStream]. The operator vocabulary — `pipe` / `filter` / `peek` / `when` —
-  /// and the sink terminals (`toCustom`, `toBatch`) map 1:1 onto the production facade, so a
-  /// transform chain proven here carries over to a `KPipe.X(...)` chain unchanged.
+  /// Builder for [TestStream]. The operator vocabulary (`pipe`, `filter`, `peek`, `when`,
+  /// `rekey`, `rekeyString`, `withHeader`) and the sink terminals (`toCustom`, `toBatch`) map 1:1
+  /// onto the production facade, so a transform chain proven here carries over to a
+  /// `KPipe.X(...)` chain unchanged.
   ///
   /// Deliberate differences from the facade's `Stream`:
   ///
@@ -292,6 +308,34 @@ public final class TestStream<T> implements AutoCloseable {
       Objects.requireNonNull(ifTrue, "ifTrue cannot be null");
       Objects.requireNonNull(ifFalse, "ifFalse cannot be null");
       operators.add(value -> cond.test(value) ? ifTrue.apply(value) : ifFalse.apply(value));
+      return this;
+    }
+
+    /// Replaces the record's key for the rest of the attempt, as the facade's `rekey` does.
+    ///
+    /// @param keyFn computes the new key from the value; null means no key
+    /// @return this builder
+    public Builder<T> rekey(final Function<? super T, byte[]> keyFn) {
+      operators.add(RecordContext.rekey(keyFn));
+      return this;
+    }
+
+    /// Replaces the record's key with a UTF-8 string, as the facade's `rekeyString` does.
+    ///
+    /// @param keyFn computes the new key from the value; null means no key
+    /// @return this builder
+    public Builder<T> rekeyString(final Function<? super T, String> keyFn) {
+      operators.add(RecordContext.rekeyString(keyFn));
+      return this;
+    }
+
+    /// Adds a header for the rest of the attempt, as the facade's `withHeader` does.
+    ///
+    /// @param name    the header name
+    /// @param valueFn computes the header value from the value
+    /// @return this builder
+    public Builder<T> withHeader(final String name, final Function<? super T, byte[]> valueFn) {
+      operators.add(RecordContext.withHeader(name, valueFn));
       return this;
     }
 

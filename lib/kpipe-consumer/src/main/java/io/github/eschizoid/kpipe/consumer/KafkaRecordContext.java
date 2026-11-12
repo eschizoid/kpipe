@@ -6,7 +6,8 @@ import java.util.function.BiConsumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /// A [RecordContext] that reads a consumed record in place. It returns the record's own arrays and
-/// reads headers only when asked.
+/// reads headers only when asked. The test kit's `ConsumedRecordContext` mirrors it, so a test
+/// sees records as the consumer presents them; a change to one belongs in both.
 final class KafkaRecordContext extends RecordContext {
 
   private final ConsumerRecord<byte[], byte[]> record;

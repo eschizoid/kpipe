@@ -263,6 +263,9 @@ try (final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTA
 }
 ```
 
+Send `TestRecord.of(value).withKey("order-1").withHeader("tenant", "acme")` when keys or headers matter, and read them
+back with `captured.records()`, which keeps each value with the record its sink saw, after any `rekey` or `withHeader`.
+
 A `CrashRestartHarness` covers the harder question — does the resume window reprocess correctly after a crash — without
 a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-test")`; the full kit lives in
 [`lib/kpipe-test`](lib/kpipe-test).

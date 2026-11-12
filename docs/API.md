@@ -111,7 +111,8 @@ KPipe.json("orders", props)
 - A batch sink covers many records, so `current()` throws inside one. It reads them with `RecordContext.currentBatch()`,
   index-aligned with its values and including any `rekey` or `withHeader`.
 - The error handler has no current record; it gets the record in its `ProcessingError`, as it was consumed.
-- To unit-test an operator that reads the record, extend `RecordContext` with fixed values and run the operator with
+- To unit-test an operator that reads the record, build its context with `TestRecord.of(value).withKey("k").context()`
+  from `kpipe-test`, or extend `RecordContext` with fixed values, and run the operator with
   `RecordContext.callWith(context, () -> op.apply(value))`.
 
 ## `Sink<T>` — one method

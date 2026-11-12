@@ -560,6 +560,12 @@ test-classifier jar — it's a runtime tool for users' test suites.
 - **`CapturingSink` has no assertion DSL, on purpose.** `captured()` returns an immutable snapshot `List<T>`; users
   assert with JUnit / AssertJ / Hamcrest. A bespoke DSL was considered and rejected — the value is the deterministic
   drive + capture, not a new assertion vocabulary.
+- **Records, not just values.** `TestRecord.of(value).withKey(...).withHeader(...).withTimestamp(...)` is what
+  `TestStream.send` and `CrashRestartHarness.seedRecords` take when keys, headers or timestamps matter; its `context()`
+  presents the record as the consumer would, for `RecordContext.callWith` in operator unit tests. `CapturingSink` keeps
+  each value with the record its sink saw (`records()`, after any `rekey` or `withHeader`), and `asBatchSink()` captures
+  a batch route through `RecordContext.currentBatch()`. `TestStream.Builder` has `rekey`, `rekeyString` and
+  `withHeader`, so its operator vocabulary stays 1:1 with the facade.
 - **`CrashRestartHarness` — deterministic resume-window verification (also public).**
   `CrashRestartHarness.builder(fmt).pipe(op).seed(values).commitUpTo(k).crashAfter(P).restart()` →
   `CrashRestartResult<T>` (`firstRun` / `secondRun` / `committedOffset` / `uncommittedTail`, all immutable, no assertion
