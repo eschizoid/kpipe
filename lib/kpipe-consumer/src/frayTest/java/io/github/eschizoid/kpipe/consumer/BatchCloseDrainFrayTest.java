@@ -61,10 +61,10 @@ class BatchCloseDrainFrayTest {
       callbacksRan
     );
     // One short of the threshold, so the racing enqueue below is what trips the flush.
-    wrapper.enqueue(record(0L), record(0L).value());
+    wrapper.enqueueAsConsumed(record(0L), record(0L).value());
 
     FrayScenarios.runConcurrently(
-      () -> wrapper.enqueue(record(1L), record(1L).value()),
+      () -> wrapper.enqueueAsConsumed(record(1L), record(1L).value()),
       () -> {
         wrapper.close();
         closeReturned.set(true);

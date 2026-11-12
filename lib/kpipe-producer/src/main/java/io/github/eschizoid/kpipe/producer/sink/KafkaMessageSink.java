@@ -20,9 +20,10 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 /// `rekey` or `withHeader`, read from [RecordContext#current()]. With the default partitioner,
 /// records with the same non-null key go to one output partition. Within one output partition,
 /// records consumed with the same key arrive in the order they were consumed in `KEY_ORDERED` and
-/// `SEQUENTIAL` mode, and in `SEQUENTIAL` mode every record does. When no record is bound, which
-/// is the case outside a pipeline, inside a batch sink and on any other thread, the key is null
-/// and no headers are copied.
+/// `SEQUENTIAL` mode, and in `SEQUENTIAL` mode every record does. When no record is current, which
+/// is the case outside a pipeline, on any other thread and inside a batch sink, the key is null and
+/// no headers are copied; a batch sink that produces to Kafka reads each record's key and headers
+/// from `RecordContext.currentBatch()` instead.
 ///
 /// Each [#accept] waits for the broker to acknowledge the send; what an acknowledgement guarantees
 /// depends on the producer's `acks` (Kafka's default, `all`, waits for the in-sync replicas). A

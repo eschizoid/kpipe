@@ -356,7 +356,7 @@ final class RecordProcessor {
     final Tracer.SpanScope span
   ) {
     try {
-      wrapper.enqueue(record, value);
+      wrapper.enqueue(record, value, RecordContext.current());
     } catch (final Exception e) {
       if (interruptedBy(e)) {
         Thread.currentThread().interrupt();

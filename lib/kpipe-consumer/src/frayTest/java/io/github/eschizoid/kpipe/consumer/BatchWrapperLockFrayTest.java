@@ -41,8 +41,8 @@ class BatchWrapperLockFrayTest {
     final var wrapper = newWrapper(new BatchPolicy(1000, Duration.ofMinutes(1)));
 
     FrayScenarios.runConcurrently(
-      () -> wrapper.enqueue(record(1L), record(1L).value()),
-      () -> wrapper.enqueue(record(2L), record(2L).value())
+      () -> wrapper.enqueueAsConsumed(record(1L), record(1L).value()),
+      () -> wrapper.enqueueAsConsumed(record(2L), record(2L).value())
     );
 
     assertEquals(2L, wrapper.bufferedCount(), "both enqueues should be buffered exactly once");
@@ -56,11 +56,11 @@ class BatchWrapperLockFrayTest {
   @FrayTest(iterations = 500)
   void flushDecrementMatchesWhatItDrained() {
     final var wrapper = newWrapper(new BatchPolicy(2, Duration.ofMinutes(1)));
-    wrapper.enqueue(record(0L), record(0L).value());
+    wrapper.enqueueAsConsumed(record(0L), record(0L).value());
 
     FrayScenarios.runConcurrently(
-      () -> wrapper.enqueue(record(1L), record(1L).value()),
-      () -> wrapper.enqueue(record(2L), record(2L).value())
+      () -> wrapper.enqueueAsConsumed(record(1L), record(1L).value()),
+      () -> wrapper.enqueueAsConsumed(record(2L), record(2L).value())
     );
 
     assertEquals(1L, wrapper.bufferedCount(), "one record should remain buffered after the size-triggered flush");

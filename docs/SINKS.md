@@ -57,13 +57,12 @@ Registry cannot use `toKafka`, because its format only reads; it throws `Illegal
 Each output record carries the key and headers of the record it came from, after any `rekey` or `withHeader`. With the
 default partitioner, records with the same non-null key go to one output partition. Within one output partition, records
 consumed with the same key arrive in the order they were consumed in `KEY_ORDERED` and `SEQUENTIAL` mode, and in
-`SEQUENTIAL` mode every record does. A batch sink has no current record, so `rekey` and `withHeader` do not reach it.
-With an `OtelTracer`, the outbound `traceparent` is the current span's and replaces the one copied from the input;
-without a tracer, the copied headers pass through unchanged.
+`SEQUENTIAL` mode every record does. With an `OtelTracer`, the outbound `traceparent` is the current span's and replaces
+the one copied from the input; without a tracer, the copied headers pass through unchanged.
 
 In the explicit API, `KafkaMessageSink` (in `io.github.eschizoid.kpipe.producer.sink`) does the same with a producer you
 create and close. It reads the key and headers from `RecordContext.current()`. When no record is bound, which is the
-case outside a pipeline, inside a batch sink and on any other thread, it writes a null key and copies no headers:
+case outside a pipeline, on any other thread and inside a batch sink, it writes a null key and copies no headers:
 
 ```java
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -111,6 +110,19 @@ KPipe.json("events", kafkaProps)
         BatchSink.ofVoid(batch -> jdbc.bulkInsert(batch)),     // void-style: success on return, fail on throw
         new BatchPolicy(100, Duration.ofSeconds(5)))           // flush at 100 records OR 5 seconds, whichever first
     .start();
+```
+
+A batch sink reads the records its values came from with `RecordContext.currentBatch()`, index-aligned with the values
+and including any `rekey` or `withHeader` that ran before each was buffered; `RecordContext.current()` throws there,
+because a flush covers many records. The sink must not modify `values`, since the contexts line up with it by index.
+Each buffered record keeps its context, including any added header values, until its batch flushes:
+
+```java
+.toBatch(values -> {
+    final var records = RecordContext.currentBatch();
+    for (int i = 0; i < values.size(); i++) store.put(records.get(i).keyString(), values.get(i));
+    return BatchResult.allSucceeded(values.size());
+}, policy)
 ```
 
 `BatchSink.ofVoid(...)` wraps a void-style consumer: a normal return means the whole batch succeeded, a throw sends the

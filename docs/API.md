@@ -108,8 +108,9 @@ KPipe.json("orders", props)
 - `current()` works on the thread that runs the operator or sink. On any other thread, such as an executor task, it
   throws `IllegalStateException`. A context reads the consumed record and keeps no per-thread state, so capture it first
   (`var ctx = current();`) and use `ctx` there. Do not modify the arrays it returns; a retry reads the same ones.
-- A batch sink covers many records, so `current()` throws inside one. The error handler has no current record either; it
-  gets the record in its `ProcessingError`.
+- A batch sink covers many records, so `current()` throws inside one. It reads them with `RecordContext.currentBatch()`,
+  index-aligned with its values and including any `rekey` or `withHeader`.
+- The error handler has no current record; it gets the record in its `ProcessingError`, as it was consumed.
 - To unit-test an operator that reads the record, extend `RecordContext` with fixed values and run the operator with
   `RecordContext.callWith(context, () -> op.apply(value))`.
 

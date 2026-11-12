@@ -55,22 +55,21 @@ class AppIntegrationTest {
 
       // Wait for the full trip-and-probe cycle: a trip, then the probe timer moving the breaker out
       // of OPEN. Open time alone proves only the trip, since it counts while the breaker is open.
+      // A later probe can fail and reopen the breaker, so assert the state the loop saw.
       final var deadline = System.currentTimeMillis() + 15_000;
+      var observed = CircuitBreakerState.OPEN;
       while (System.currentTimeMillis() < deadline) {
-        if (
-          handle.metrics().circuitBreaker().trips() >= 1 && handle.health().circuitBreaker() != CircuitBreakerState.OPEN
-        ) break;
+        if (handle.metrics().circuitBreaker().trips() >= 1) {
+          observed = handle.health().circuitBreaker();
+          if (observed != CircuitBreakerState.OPEN) break;
+        }
         Thread.sleep(100);
       }
 
       final var breaker = handle.metrics().circuitBreaker();
       assertTrue(breaker.trips() >= 1, "breaker should have tripped at least once, got " + breaker.trips());
       assertTrue(breaker.openTime().isPositive(), "the breaker spent time open, got " + breaker.openTime());
-      assertNotEquals(
-        CircuitBreakerState.OPEN,
-        handle.health().circuitBreaker(),
-        "the probe timer should have moved the breaker out of OPEN"
-      );
+      assertNotEquals(CircuitBreakerState.OPEN, observed, "the probe timer should have moved the breaker out of OPEN");
 
       assertTrue(handle.shutdownGracefully(Duration.ofSeconds(5)));
     }

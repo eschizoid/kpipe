@@ -85,7 +85,7 @@ public interface Stream<T> {
   /// Replaces the record's key for the rest of the attempt. Later operators and sinks read the new
   /// key from `RecordContext.current().key()`, and [#toKafka] writes it. Dispatch in `KEY_ORDERED`
   /// mode, the error handler and the dead-letter topic use the consumed key, and a retry starts
-  /// from it again. A batch sink has no current record, so it does not see the new key.
+  /// from it again. A batch sink reads the new key through `RecordContext.currentBatch()`.
   ///
   /// @param keyFn computes the new key from the value; null means no key
   /// @return a new [Stream] with the operator appended
@@ -102,7 +102,7 @@ public interface Stream<T> {
   /// Adds a header for the rest of the attempt. Later operators and sinks read it through
   /// `RecordContext.current()`, and [#toKafka] writes it after the consumed record's headers. The
   /// consumed record's headers never change, so the dead-letter topic and a retry do not see it. A
-  /// batch sink has no current record, so it does not see it either.
+  /// batch sink reads it through `RecordContext.currentBatch()`.
   ///
   /// @param name    the header name
   /// @param valueFn computes the header value from the value
@@ -457,6 +457,10 @@ public interface Stream<T> {
   /// cause) — silently marking them processed would mask sink bugs and risk data loss. If the
   /// sink itself throws, every record is sent to the DLQ with the thrown exception (whole-batch
   /// fallback).
+  ///
+  /// **Reading the records.** The sink receives values. It reads the records they came from with
+  /// `RecordContext.currentBatch()`, index-aligned with the values and including any [#rekey] or
+  /// [#withHeader]; `RecordContext.current()` throws there, because the batch covers many records.
   ///
   /// **All processing modes are supported.** Default is parallel; call [#withProcessingMode]
   /// to switch to per-partition or per-key ordering. Under the in-flight-backpressure modes

@@ -29,6 +29,10 @@ import java.util.function.Function;
 /// - If the sink itself throws, the failure falls back to whole-batch behavior — every record
 ///   is sent to the DLQ with the thrown exception as the cause.
 ///
+/// **Records.** `RecordContext.currentBatch()` returns the records the values came from, in the
+/// same order. Do not modify the values list: the contexts and the [BatchResult] indexes line up
+/// with it by position.
+///
 /// **Threading.** Flushes for one registered route run one at a time — the wrapper holds a
 /// per-topic lock across the whole flush — so a sink registered on a single topic does not need to
 /// be thread-safe, and the lock's happens-before means per-instance state written in one flush is

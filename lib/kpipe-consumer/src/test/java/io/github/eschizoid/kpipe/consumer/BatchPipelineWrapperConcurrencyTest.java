@@ -115,7 +115,7 @@ class BatchPipelineWrapperConcurrencyTest {
           for (int i = 0; i < perWorker; i++) {
             final var id = ids.getAndIncrement();
             final var bytes = Integer.toString(id).getBytes(UTF_8);
-            wrapper.enqueue(new ConsumerRecord<>(topic, 0, id, ("id-" + id).getBytes(UTF_8), bytes), bytes);
+            wrapper.enqueueAsConsumed(new ConsumerRecord<>(topic, 0, id, ("id-" + id).getBytes(UTF_8), bytes), bytes);
           }
           doneGate.countDown();
         });
@@ -176,7 +176,7 @@ class BatchPipelineWrapperConcurrencyTest {
             final var id = globalIdSeq.getAndIncrement();
             final var bytes = Integer.toString(id).getBytes();
             final var record = new ConsumerRecord<>(topic, 0, id, ("id-" + id).getBytes(UTF_8), bytes);
-            wrapper.enqueue(record, bytes);
+            wrapper.enqueueAsConsumed(record, bytes);
           }
           doneGate.countDown();
         });
