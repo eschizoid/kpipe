@@ -7,8 +7,8 @@ A pipeline decodes each record once per processing attempt and passes the typed 
 sink. Operators are `UnaryOperator<T>` where `T` is the format's payload type: `Map<String, Object>` for JSON,
 `GenericRecord` for Avro, `Message` for Protobuf.
 
-KPipe never encodes between steps. The only encode is the one a sink that writes bytes does itself, such as a
-`KafkaMessageSink` whose value mapper calls `format.serialize`: once per processing attempt, for each such sink. That
+KPipe never encodes between steps. The only encode is the one a sink that writes bytes does itself, such as `toKafka` or
+a `KafkaMessageSink` whose value mapper calls `format.serialize`: once per processing attempt, for each such sink. That
 sets what a pipeline costs:
 
 | What the pipeline does                                          | Decodes | Encodes |
@@ -112,7 +112,7 @@ KPipe.bytes("customers", props)
   .filter(has(EMAIL))
   .pipe(remove(SSN))
   .pipe(setString(STATUS, "processed"))
-  .toCustom(kafkaSink)
+  .toKafka("customers-clean")
   .start();
 ```
 

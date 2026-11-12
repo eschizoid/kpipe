@@ -392,6 +392,25 @@ public interface Stream<T> {
   /// @throws NullPointerException if `sink` is null
   Sink<T> toCustom(final MessageSink<T> sink);
 
+  /// Terminates the stream by producing each value to `topic`, serialized with this stream's
+  /// format. Each output record carries the key and headers of the record it came from. With the
+  /// default partitioner, records with the same non-null key go to one output partition, and in
+  /// `KEY_ORDERED` and `SEQUENTIAL` mode they arrive there in the order they were consumed.
+  ///
+  /// The producer is built from this stream's Kafka properties when the stream starts, the same
+  /// way the dead-letter producer is, and closes with the consumer. Each send waits for the
+  /// broker's acknowledgement. A failed send fails the record, which is retried when retries are
+  /// configured, then handed to the error handler and, when one is configured, the dead-letter
+  /// topic. Bytes removed with [#skipBytes] on input are not written back.
+  ///
+  /// @param topic the topic to produce to
+  /// @return a [Sink] ready to start
+  /// @throws NullPointerException if `topic` is null
+  /// @throws IllegalArgumentException if `topic` is blank
+  /// @throws IllegalStateException if the stream reads through a Schema Registry, whose format
+  /// cannot serialize
+  Sink<T> toKafka(final String topic);
+
   /// Terminates the stream with a buffering [BatchSink], flushing in chunks of `policy.maxSize()`
   /// or whenever `policy.maxAge()` elapses since the oldest buffered record. The sink returns a
   /// [io.github.eschizoid.kpipe.sink.BatchResult] naming per-record outcomes: succeeded records

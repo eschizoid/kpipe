@@ -1,5 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
@@ -253,9 +254,15 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     }
   }
 
-  /// Runs a dispatch returned by [#flushLocked]. Callers invoke this after releasing `lock`.
+  /// Runs a dispatch returned by [#flushLocked]. Callers invoke this after releasing `lock`. A
+  /// dispatch reports outcomes for many records, and a size-triggered one runs on the thread of the
+  /// record that filled the buffer, so it runs with no current record.
   private void runDispatch(final Runnable dispatch) {
-    if (dispatch != null) dispatch.run();
+    if (dispatch == null) return;
+    RecordContext.callWithout(() -> {
+      dispatch.run();
+      return null;
+    });
   }
 
   private void dispatchFinished() {
@@ -307,7 +314,8 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
 
     final BatchResult result;
     try {
-      result = sink.apply(values);
+      // A flush covers many records, so none of them is the current record.
+      result = RecordContext.callWithout(() -> sink.apply(values));
     } catch (final Exception e) {
       if (interruptedFlush(e)) return leaveUnmarked(snapshot, e);
       logBatchFailure("threw", size, e);

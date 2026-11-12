@@ -135,7 +135,7 @@ final OpenTelemetry otel = /* GlobalOpenTelemetry.get() or your SDK */;
 KPipe.json("events", kafkaProps)
     .withTracer(new OtelTracer(otel, "events-consumer"))
     .pipe(enrich)
-    .toCustom(producerSink)
+    .toKafka("events-enriched")
     .start();
 ```
 

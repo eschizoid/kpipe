@@ -135,6 +135,9 @@ class TracePropagationIntegrationTest {
       // Read the outbound record from the downstream topic.
       final var downstreamHeaders = pollFirstHeaders(outputTopic, Duration.ofSeconds(20));
       assertNotNull(downstreamHeaders.outboundTraceparent, "outbound record must carry a traceparent header");
+      // The sink copies the inbound headers, so the injected context has to replace the inbound
+      // traceparent rather than sit next to it.
+      assertEquals(1, downstreamHeaders.traceparentCount(), "outbound record must carry exactly one traceparent");
 
       // The outbound traceparent must reuse the inbound trace id (proves propagation worked) but
       // have a DIFFERENT span id (proves we started a fresh span chained off the parent).
@@ -161,8 +164,8 @@ class TracePropagationIntegrationTest {
     }
   }
 
-  /// Polls the downstream topic until the first record is available, returns its `traceparent`
-  /// header.
+  /// Polls the downstream topic until the first record is available, returns its last
+  /// `traceparent` header and how many it carries.
   private OutboundHeaders pollFirstHeaders(final String topic, final Duration timeout) {
     try (
       final var consumer = new KafkaConsumer<byte[], byte[]>(
@@ -175,12 +178,14 @@ class TracePropagationIntegrationTest {
         final var records = consumer.poll(Duration.ofMillis(500));
         for (final var record : records) {
           final var header = record.headers().lastHeader("traceparent");
-          return new OutboundHeaders(header == null ? null : new String(header.value(), StandardCharsets.UTF_8));
+          var count = 0;
+          for (final var _ : record.headers().headers("traceparent")) count++;
+          return new OutboundHeaders(header == null ? null : new String(header.value(), StandardCharsets.UTF_8), count);
         }
       }
     }
     throw new AssertionError("Timed out waiting for downstream record on " + topic);
   }
 
-  private record OutboundHeaders(String outboundTraceparent) {}
+  private record OutboundHeaders(String outboundTraceparent, int traceparentCount) {}
 }

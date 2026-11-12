@@ -6,9 +6,10 @@ Where processed messages go. `MessageSink<T>` is a `Consumer<T>`-shaped function
 final MessageSink<Map<String, Object>> databaseSink = processed -> databaseService.insert(processed);
 ```
 
-On the fluent path you attach a sink with a terminal: `.toConsole()`, `.toCustom(sink)`, `.toMulti(sinks...)`, or
-`.toBatch(sink, policy)` — semantics summarized in [API.md](API.md#terminals--each-returns-sinkt). This page covers the
-sink building blocks themselves. Snippets use placeholder values; they show shape, not a runnable program.
+On the fluent path you attach a sink with a terminal: `.toConsole()`, `.toCustom(sink)`, `.toKafka(topic)`,
+`.toMulti(sinks...)`, or `.toBatch(sink, policy)` — semantics summarized in
+[API.md](API.md#terminals--each-returns-sinkt). This page covers the sink building blocks themselves. Snippets use
+placeholder values; they show shape, not a runnable program.
 
 ## Registering sinks in the explicit API
 
@@ -40,7 +41,27 @@ pipeline; the failure is logged and contained at the sink boundary.
 
 ## Producing to another Kafka topic
 
-`KafkaMessageSink` (in `io.github.eschizoid.kpipe.producer.sink`) serializes the processed value and produces it:
+On the fluent path, `.toKafka(topic)` produces each value to `topic`, serialized with the stream's format:
+
+```java
+KPipe.json("orders", kafkaProps)
+    .pipe(enrich)
+    .toKafka("orders-enriched")
+    .start();
+```
+
+The producer is built from the stream's Kafka properties when the stream starts, the same way the dead-letter producer
+is; the dead-letter topic writes through it too, and it closes with the consumer. A stream that reads through a Schema
+Registry cannot use `toKafka`, because its format only reads; it throws `IllegalStateException`.
+
+Each output record carries the key and headers of the record it came from. With the default partitioner, records with
+the same non-null key go to one output partition, and in `KEY_ORDERED` and `SEQUENTIAL` mode they arrive there in the
+order they were consumed. With an `OtelTracer`, the outbound `traceparent` is the current span's and replaces the one
+copied from the input; without a tracer, the copied headers pass through unchanged.
+
+In the explicit API, `KafkaMessageSink` (in `io.github.eschizoid.kpipe.producer.sink`) does the same with a producer you
+create and close. It reads the key and headers from `RecordContext.current()`. When no record is bound, which is the
+case outside a pipeline, inside a batch sink and on any other thread, it writes a null key and copies no headers:
 
 ```java
 import org.apache.kafka.clients.producer.KafkaProducer;

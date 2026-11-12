@@ -4,6 +4,7 @@ import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.sink.MessageSink;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -39,8 +40,14 @@ final class DefaultSink<T> implements Sink<T> {
       .withPipeline(buildPipeline());
 
     stream.consumerConfig().applyTo(consumerBuilder);
+    final var opened = KafkaTopicSink.openAll(
+      List.of(terminalSink),
+      stream.kafkaProps(),
+      stream.consumerConfig().tracer(),
+      consumerBuilder
+    );
 
-    return DefaultHandle.startAndWrap(consumerBuilder.build());
+    return KafkaTopicSink.closingOnFailure(opened, () -> DefaultHandle.startAndWrap(consumerBuilder.build()));
   }
 
   /// Builds the [MessagePipeline] for this sink's stream + terminal sink. Reused by

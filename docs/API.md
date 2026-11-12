@@ -71,12 +71,43 @@ swallowed.
 
 ### Terminals — each returns `Sink<T>`
 
-| Method                               | Semantics                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `toConsole()`                        | Format-appropriate console sink. Throws `IllegalStateException` on registry-mode Avro/Protobuf streams (no fixed schema to format with).                                                                                                                                                                  |
-| `toCustom(MessageSink<T>)`           | Your own sink — `MessageSink` is a `Consumer<T>`-shaped functional interface.                                                                                                                                                                                                                             |
-| `toMulti(MessageSink<T>...)`         | Fan-out, **best effort**: each sink is invoked; a throwing sink is logged at WARNING and suppressed, the record still counts as processed and its offset commits, and the DLQ is not invoked. Do not use it when every sink must durably receive every record — see [GUARANTEES.md](GUARANTEES.md#sinks). |
-| `toBatch(BatchSink<T>, BatchPolicy)` | Buffered sink with size/age flush and per-record failure reporting — details in [SINKS.md](SINKS.md#batch-sinks).                                                                                                                                                                                         |
+| Method                               | Semantics                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toConsole()`                        | Format-appropriate console sink. Throws `IllegalStateException` on registry-mode Avro/Protobuf streams (no fixed schema to format with).                                                                                                                                                                                               |
+| `toCustom(MessageSink<T>)`           | Your own sink — `MessageSink` is a `Consumer<T>`-shaped functional interface.                                                                                                                                                                                                                                                          |
+| `toKafka(String topic)`              | Produce each value to `topic`, serialized with the stream's format, keeping each record's key and headers. The producer is built from the stream's Kafka properties and shared with the dead-letter topic. Throws `IllegalStateException` on registry-mode streams — details in [SINKS.md](SINKS.md#producing-to-another-kafka-topic). |
+| `toMulti(MessageSink<T>...)`         | Fan-out, **best effort**: each sink is invoked; a throwing sink is logged at WARNING and suppressed, the record still counts as processed and its offset commits, and the DLQ is not invoked. Do not use it when every sink must durably receive every record — see [GUARANTEES.md](GUARANTEES.md#sinks).                              |
+| `toBatch(BatchSink<T>, BatchPolicy)` | Buffered sink with size/age flush and per-record failure reporting — details in [SINKS.md](SINKS.md#batch-sinks).                                                                                                                                                                                                                      |
+
+### Reading the record
+
+Operators and sinks receive the value. To read the Kafka record it came from, call `RecordContext.current()` (in
+`io.github.eschizoid.kpipe.record`) inside the operator or sink:
+
+```java
+import static io.github.eschizoid.kpipe.record.RecordContext.current;
+
+KPipe.json("orders", props)
+    .filter(order -> current().headerString("tenant").isPresent())
+    .toCustom(order -> db.put(current().keyString(), order));
+```
+
+| Method                                                 | Returns                                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------------- |
+| `key()` / `keyString()`                                | The key as bytes, or decoded as UTF-8; `null` for a null key.        |
+| `originalKey()`                                        | The key the record was consumed with, which `key()` also returns.    |
+| `header(name)` / `headerString(name)`                  | The header's last value, as an `Optional`.                           |
+| `forEachHeader(action)`                                | Every header, in order.                                              |
+| `topic()` / `partition()` / `offset()` / `timestamp()` | Where the record came from, and its timestamp in epoch milliseconds. |
+
+- The consumer binds the record for each processing attempt, so a retry reads the record as it was consumed.
+- `current()` works on the thread that runs the operator or sink. On any other thread, such as an executor task, it
+  throws `IllegalStateException`. A context reads the consumed record and keeps no per-thread state, so capture it first
+  (`var ctx = current();`) and use `ctx` there. Do not modify the arrays it returns; a retry reads the same ones.
+- A batch sink covers many records, so `current()` throws inside one. The error handler has no current record either; it
+  gets the record in its `ProcessingError`.
+- To unit-test an operator that reads the record, extend `RecordContext` with fixed values and run the operator with
+  `RecordContext.callWith(context, () -> op.apply(value))`.
 
 ## `Sink<T>` — one method
 
