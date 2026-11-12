@@ -4,6 +4,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /// The Kafka record a pipeline is processing: its key, headers, topic, partition, offset and
 /// timestamp. While the consumer processes a record, any operator or sink reads it with
@@ -17,57 +19,35 @@ import java.util.function.BiConsumer;
 ///     .toCustom(order -> db.put(current().keyString(), order));
 /// ```
 ///
-/// A context reads the consumed record and holds no per-thread state, so one captured with
-/// `var ctx = current()` works on any thread. The byte arrays it returns are the record's own: do
-/// not modify them, because a retry, the dead-letter topic and `toKafka` read the same ones. The
-/// consumer binds the record for each processing attempt, so a retry reads the record as it was
-/// consumed.
+/// The key and headers change only through [#rekey] and [#withHeader]. Each returns an operator
+/// that, when it runs, makes [#current()] return a context with the new key or header for the rest
+/// of the binding. The consumed record never changes, and the consumer binds it again for each
+/// processing attempt, so a retry starts from the record as it was consumed. A batch sink has no
+/// current record, so it does not see these changes.
+///
+/// A context captured with `var ctx = current()` keeps the key and headers it had when captured
+/// and works on any thread, including through [#callWith]: each binding keeps its own changes. The
+/// consumed key and header arrays a context returns are the record's own: do not modify them,
+/// because a retry, the dead-letter topic and `toKafka` read the same ones.
 public abstract class RecordContext {
 
-  private static final ScopedValue<RecordContext> CURRENT = ScopedValue.newInstance();
+  private static final ScopedValue<Binding> CURRENT = ScopedValue.newInstance();
 
   /// Bound where no single record is current: a batch flush and the error handler.
-  private static final RecordContext NONE = new RecordContext() {
-    @Override
-    public String topic() {
-      throw new UnsupportedOperationException();
-    }
+  private static final Binding NONE = new Binding(null);
 
-    @Override
-    public int partition() {
-      throw new UnsupportedOperationException();
-    }
+  /// One [#callWith]: the context it bound and what [#rekey] and [#withHeader] made of it since.
+  /// Only threads that inherit the binding read or write it. A plain thread or an executor task
+  /// does not inherit it; a `StructuredTaskScope` fork does, so a fork binds its own before it
+  /// changes the record.
+  private static final class Binding {
 
-    @Override
-    public long offset() {
-      throw new UnsupportedOperationException();
-    }
+    private RecordContext current;
 
-    @Override
-    public long timestamp() {
-      throw new UnsupportedOperationException();
+    private Binding(final RecordContext bound) {
+      this.current = bound;
     }
-
-    @Override
-    public byte[] key() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public byte[] originalKey() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Optional<byte[]> header(final String name) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void forEachHeader(final BiConsumer<String, byte[]> action) {
-      throw new UnsupportedOperationException();
-    }
-  };
+  }
 
   /// For implementations that adapt a consumed record.
   protected RecordContext() {}
@@ -84,7 +64,7 @@ public abstract class RecordContext {
   /// @return the record's timestamp, in epoch milliseconds
   public abstract long timestamp();
 
-  /// @return the record's key; null when the record has no key
+  /// @return the record's key, after any [#rekey]; null when it has no key
   public abstract byte[] key();
 
   /// @return the key the record was consumed with; null when it had none
@@ -116,24 +96,86 @@ public abstract class RecordContext {
   ///
   /// @return the current record's context
   /// @throws IllegalStateException when no record is being processed on this thread: inside an
-  /// executor task or a thread the operator started, inside a batch sink, which covers many
+  /// executor task or a plain thread the operator started, inside a batch sink, which covers many
   /// records, and inside the error handler, which receives its record in the `ProcessingError`
   public static RecordContext current() {
-    final var context = CURRENT.orElse(NONE);
-    if (context == NONE) throw new IllegalStateException(
+    final var context = CURRENT.orElse(NONE).current;
+    if (context == null) throw new IllegalStateException(
       "No record is being processed on this thread. Call RecordContext.current() from an operator or sink " +
         "while it runs, or capture it first (var ctx = RecordContext.current()) to use it on another thread."
     );
     return context;
   }
 
-  /// @return whether a record is being processed on this thread
-  public static boolean isBound() {
-    return CURRENT.orElse(NONE) != NONE;
+  /// An operator that replaces the record's key for the rest of the current binding, which in the
+  /// consumer is one processing attempt. The value passes through unchanged; [#key()] returns the
+  /// new key and [#originalKey()] the consumed one. Inside a `StructuredTaskScope` fork, bind the
+  /// fork's own context first with `callWith(current(), ...)`, so its changes stay in the fork.
+  ///
+  /// @param keyFn computes the new key from the value; null means no key
+  /// @param <T>   the value type
+  /// @return the operator
+  /// @throws NullPointerException if `keyFn` is null
+  public static <T> UnaryOperator<T> rekey(final Function<? super T, byte[]> keyFn) {
+    Objects.requireNonNull(keyFn, "keyFn cannot be null");
+    return value -> {
+      final var binding = bindingFor("rekey");
+      binding.current = new Rekeyed(binding.current, keyFn.apply(value));
+      return value;
+    };
   }
 
-  /// Runs `op` with `context` as the current record. The consumer calls this once per processing
-  /// attempt; a test calls it to run an operator that reads the record.
+  /// An operator that adds a header for the rest of the current binding, which in the consumer is
+  /// one processing attempt. The value passes through unchanged; [#header] returns the added
+  /// value, and [#forEachHeader] reports the header after the consumed record's own. Inside a
+  /// `StructuredTaskScope` fork, bind the fork's own context first, as for [#rekey].
+  ///
+  /// @param name    the header name
+  /// @param valueFn computes the header value from the value
+  /// @param <T>     the value type
+  /// @return the operator
+  /// @throws NullPointerException if `name` or `valueFn` is null
+  public static <T> UnaryOperator<T> withHeader(final String name, final Function<? super T, byte[]> valueFn) {
+    Objects.requireNonNull(name, "name cannot be null");
+    Objects.requireNonNull(valueFn, "valueFn cannot be null");
+    return value -> {
+      final var binding = bindingFor("withHeader");
+      binding.current = new WithHeader(binding.current, name, valueFn.apply(value));
+      return value;
+    };
+  }
+
+  /// [#rekey] with the key given as a string and encoded as UTF-8.
+  ///
+  /// @param keyFn computes the new key from the value; null means no key
+  /// @param <T>   the value type
+  /// @return the operator
+  /// @throws NullPointerException if `keyFn` is null
+  public static <T> UnaryOperator<T> rekeyString(final Function<? super T, String> keyFn) {
+    Objects.requireNonNull(keyFn, "keyFn cannot be null");
+    return rekey(value -> {
+      final var key = keyFn.apply(value);
+      return key == null ? null : key.getBytes(StandardCharsets.UTF_8);
+    });
+  }
+
+  private static Binding bindingFor(final String operation) {
+    final var binding = CURRENT.orElse(NONE);
+    if (binding.current == null) throw new IllegalStateException(
+      operation + " changes the record being processed, so it runs only inside a pipeline"
+    );
+    return binding;
+  }
+
+  /// @return whether a record is being processed on this thread
+  public static boolean isBound() {
+    return CURRENT.orElse(NONE).current != null;
+  }
+
+  /// Runs `op` with `context` as the current record. What [#rekey] and [#withHeader] do inside
+  /// `op` lasts until `op` returns and changes neither `context` nor any other binding of it. The
+  /// consumer calls this once per processing attempt; a test calls it to run an operator that
+  /// reads the record.
   ///
   /// @param context the record to bind
   /// @param op      the work to run
@@ -144,7 +186,7 @@ public abstract class RecordContext {
   public static <R, X extends Throwable> R callWith(final RecordContext context, final ScopedValue.CallableOp<R, X> op)
     throws X {
     Objects.requireNonNull(context, "context cannot be null");
-    return ScopedValue.where(CURRENT, context).call(op);
+    return ScopedValue.where(CURRENT, new Binding(context)).call(op);
   }
 
   /// Runs `op` with no current record, so [#current()] throws inside it. The consumer runs batch
@@ -157,5 +199,93 @@ public abstract class RecordContext {
   /// @throws X when `op` throws
   public static <R, X extends Throwable> R callWithout(final ScopedValue.CallableOp<R, X> op) throws X {
     return ScopedValue.where(CURRENT, NONE).call(op);
+  }
+
+  /// A context that answers from `base` except where a subclass overrides.
+  private abstract static class Derived extends RecordContext {
+
+    final RecordContext base;
+
+    Derived(final RecordContext base) {
+      this.base = base;
+    }
+
+    @Override
+    public String topic() {
+      return base.topic();
+    }
+
+    @Override
+    public int partition() {
+      return base.partition();
+    }
+
+    @Override
+    public long offset() {
+      return base.offset();
+    }
+
+    @Override
+    public long timestamp() {
+      return base.timestamp();
+    }
+
+    @Override
+    public byte[] key() {
+      return base.key();
+    }
+
+    @Override
+    public byte[] originalKey() {
+      return base.originalKey();
+    }
+
+    @Override
+    public Optional<byte[]> header(final String name) {
+      return base.header(name);
+    }
+
+    @Override
+    public void forEachHeader(final BiConsumer<String, byte[]> action) {
+      base.forEachHeader(action);
+    }
+  }
+
+  private static final class Rekeyed extends Derived {
+
+    private final byte[] key;
+
+    Rekeyed(final RecordContext base, final byte[] key) {
+      super(base);
+      this.key = key;
+    }
+
+    @Override
+    public byte[] key() {
+      return key;
+    }
+  }
+
+  private static final class WithHeader extends Derived {
+
+    private final String name;
+    private final byte[] value;
+
+    WithHeader(final RecordContext base, final String name, final byte[] value) {
+      super(base);
+      this.name = name;
+      this.value = value;
+    }
+
+    @Override
+    public Optional<byte[]> header(final String header) {
+      return name.equals(header) ? Optional.ofNullable(value) : base.header(header);
+    }
+
+    @Override
+    public void forEachHeader(final BiConsumer<String, byte[]> action) {
+      base.forEachHeader(action);
+      action.accept(name, value);
+    }
   }
 }

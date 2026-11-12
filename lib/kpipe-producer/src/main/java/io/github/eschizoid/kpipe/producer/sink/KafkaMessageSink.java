@@ -16,11 +16,13 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 
 /// A [MessageSink] that sends processed messages to a Kafka topic.
 ///
-/// Each output record carries the key and headers of the record being processed, read from
-/// [RecordContext#current()]. With the default partitioner, records with the same non-null key go
-/// to one output partition, and in `KEY_ORDERED` and `SEQUENTIAL` mode they arrive there in the
-/// order they were consumed. When no record is bound, which is the case outside a pipeline, inside
-/// a batch sink and on any other thread, the key is null and no headers are copied.
+/// Each output record carries the key and headers of the record being processed, after any
+/// `rekey` or `withHeader`, read from [RecordContext#current()]. With the default partitioner,
+/// records with the same non-null key go to one output partition. Within one output partition,
+/// records consumed with the same key arrive in the order they were consumed in `KEY_ORDERED` and
+/// `SEQUENTIAL` mode, and in `SEQUENTIAL` mode every record does. When no record is bound, which
+/// is the case outside a pipeline, inside a batch sink and on any other thread, the key is null
+/// and no headers are copied.
 ///
 /// Each [#accept] waits for the broker to acknowledge the send; what an acknowledgement guarantees
 /// depends on the producer's `acks` (Kafka's default, `all`, waits for the in-sync replicas). A

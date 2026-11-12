@@ -1,11 +1,13 @@
 package io.github.eschizoid.kpipe.registry;
 
+import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.sink.CompositeMessageSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
@@ -98,6 +100,32 @@ public final class TypedPipelineBuilder<T> {
     Objects.requireNonNull(ifFalse, "ifFalse operator cannot be null");
 
     return pipe(obj -> condition.test(obj) ? ifTrue.apply(obj) : ifFalse.apply(obj));
+  }
+
+  /// Replaces the record's key for the rest of the attempt; see [RecordContext#rekey].
+  ///
+  /// @param keyFn computes the new key from the value; null means no key
+  /// @return this builder
+  public TypedPipelineBuilder<T> rekey(final Function<? super T, byte[]> keyFn) {
+    return pipe(RecordContext.rekey(keyFn));
+  }
+
+  /// Replaces the record's key with a UTF-8 string for the rest of the attempt; see
+  /// [RecordContext#rekey].
+  ///
+  /// @param keyFn computes the new key from the value; null means no key
+  /// @return this builder
+  public TypedPipelineBuilder<T> rekeyString(final Function<? super T, String> keyFn) {
+    return pipe(RecordContext.rekeyString(keyFn));
+  }
+
+  /// Adds a header for the rest of the attempt; see [RecordContext#withHeader].
+  ///
+  /// @param name    the header name
+  /// @param valueFn computes the header value from the value
+  /// @return this builder
+  public TypedPipelineBuilder<T> withHeader(final String name, final Function<? super T, byte[]> valueFn) {
+    return pipe(RecordContext.withHeader(name, valueFn));
   }
 
   /// Sets the pipeline's sink. A pipeline has one; to deliver to several, use [#toMulti].

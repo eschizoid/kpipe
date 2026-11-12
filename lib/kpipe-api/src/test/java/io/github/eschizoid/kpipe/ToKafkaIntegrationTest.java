@@ -99,6 +99,52 @@ class ToKafkaIntegrationTest {
     }
   }
 
+  /// In every mode, `rekeyString` and `withHeader` reach the output record; a retry starts again
+  /// from the consumed key, so a key built from the current key is not extended twice; and the
+  /// dead-letter topic gets the consumed key without the added header.
+  @ParameterizedTest
+  @EnumSource(ProcessingMode.class)
+  void rekeyAndWithHeaderReachTheOutputAndNotTheDeadLetterTopic(final ProcessingMode mode) throws Exception {
+    final var in = "rekey-in-" + UUID.randomUUID();
+    final var out = "rekey-out-" + UUID.randomUUID();
+    final var dlq = "rekey-dlq-" + UUID.randomUUID();
+    createTopics(in, out, dlq);
+    produce(in, 12);
+
+    final var attempts = new ConcurrentHashMap<Long, AtomicInteger>();
+    try (
+      final var _ = KPipe.json(in, consumerProps())
+        .withProcessingMode(mode)
+        .withRetry(1, Duration.ofMillis(10))
+        .withDeadLetterTopic(dlq)
+        .rekeyString(order -> current().keyString() + "-" + id(order))
+        .withHeader("rekeyed-from", _ -> current().originalKey())
+        .pipe(order -> {
+          final var id = id(order);
+          final var n = attempts.computeIfAbsent(id, _ -> new AtomicInteger()).incrementAndGet();
+          if (id == 4) throw new IllegalStateException("poison");
+          if (id % 3 == 0 && n == 1) throw new IllegalStateException("first attempt fails");
+          return order;
+        })
+        .toKafka(out)
+        .start()
+    ) {
+      final var received = readAll(out, 11);
+      assertEquals(11, received.size());
+      for (final var record : received) {
+        final var id = idOf(record);
+        final var consumedKey = "k" + (id % KEYS);
+        assertEquals(consumedKey + "-" + id, new String(record.key(), UTF_8), "key for id " + id);
+        assertEquals(consumedKey, new String(record.headers().lastHeader("rekeyed-from").value(), UTF_8));
+        assertEquals("" + id, new String(record.headers().lastHeader("source-id").value(), UTF_8));
+      }
+      final var dead = readAll(dlq, 1);
+      assertEquals(1, dead.size());
+      assertEquals("k4", new String(dead.getFirst().key(), UTF_8), "the dead-letter topic gets the consumed key");
+      assertEquals(null, dead.getFirst().headers().lastHeader("rekeyed-from"), "and not the added header");
+    }
+  }
+
   /// `KEY_ORDERED` processes each key in input order, and `toKafka` keeps the key, so a key's
   /// records land on one output partition in input order.
   @Test
