@@ -124,6 +124,8 @@ class TypedPipelineBuilderTest {
     final var seen = new ArrayList<String>();
     final var pipeline = registry
       .pipeline(MessageFormat.bytes())
+      .rekey(value -> new byte[] { value[0] })
+      .peek(_ -> seen.add("bytes-" + RecordContext.current().key()[0]))
       .rekeyString(value -> "key-" + value[0])
       .withHeader("source", _ -> "test".getBytes(StandardCharsets.UTF_8))
       .peek(_ -> {
@@ -136,7 +138,7 @@ class TypedPipelineBuilderTest {
 
     RecordContext.callWith(new KeylessRecord(), () -> pipeline.process(new byte[] { 7 }));
 
-    assertEquals(List.of("key-7|test", "null"), seen);
+    assertEquals(List.of("bytes-7", "key-7|test", "null"), seen);
   }
 
   private static final class KeylessRecord extends RecordContext {

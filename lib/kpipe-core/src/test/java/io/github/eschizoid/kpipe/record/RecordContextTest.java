@@ -282,4 +282,31 @@ class RecordContextTest {
       return null;
     });
   }
+
+  /// A changed context still answers everything else from the consumed record.
+  @Test
+  void aChangedContextKeepsTheRecordsOtherFields() {
+    RecordContext.callWith(ORDER, () -> {
+      assertTrue(RecordContext.isBound());
+      RecordContext.<String>rekey(_ -> "k2".getBytes(UTF_8)).apply("v");
+      final var rekeyed = RecordContext.current();
+      final var headers = new ArrayList<String>();
+      rekeyed.forEachHeader((name, value) -> headers.add(name + "=" + new String(value, UTF_8)));
+      assertEquals(
+        List.of("orders", "1", "42", "7", "k1", "[tenant=acme]"),
+        List.of(
+          rekeyed.topic(),
+          "" + rekeyed.partition(),
+          "" + rekeyed.offset(),
+          "" + rekeyed.timestamp(),
+          new String(rekeyed.originalKey(), UTF_8),
+          headers.toString()
+        )
+      );
+      RecordContext.<String>withHeader("h", _ -> new byte[0]).apply("v");
+      assertEquals("k2", RecordContext.current().keyString());
+      assertEquals(Optional.of("acme"), RecordContext.current().headerString("tenant"));
+      return null;
+    });
+  }
 }

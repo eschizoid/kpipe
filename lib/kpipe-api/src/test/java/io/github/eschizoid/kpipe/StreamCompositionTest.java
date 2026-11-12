@@ -6,11 +6,17 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.record.RecordContext;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
@@ -42,12 +48,9 @@ class StreamCompositionTest {
   @Test
   void withBackpressureRejectsInvalidWatermarksWithOffendingValues() {
     final var stream = KPipe.json("topic", props());
-    final var thrown = assertThrows(
-      IllegalArgumentException.class, () -> stream.withBackpressure(5, 10));
-    assertTrue(
-      thrown.getMessage().contains("got high=5, low=10"), () -> "msg was: " + thrown.getMessage());
-    assertTrue(
-      thrown.getMessage().contains("withBackpressure"), () -> "msg was: " + thrown.getMessage());
+    final var thrown = assertThrows(IllegalArgumentException.class, () -> stream.withBackpressure(5, 10));
+    assertTrue(thrown.getMessage().contains("got high=5, low=10"), () -> "msg was: " + thrown.getMessage());
+    assertTrue(thrown.getMessage().contains("withBackpressure"), () -> "msg was: " + thrown.getMessage());
   }
 
   @Test
@@ -169,5 +172,67 @@ class StreamCompositionTest {
     assertEquals("left", Objects.requireNonNull(apply(left, new HashMap<>())).get("branch"));
     assertEquals("right", Objects.requireNonNull(apply(right, new HashMap<>())).get("branch"));
     assertEquals(0, root.operators().size(), "root should remain unchanged");
+  }
+
+  /// `rekey`, `rekeyString` and `withHeader` append operators that change what later operators
+  /// read as the current record.
+  @Test
+  void rekeyAndWithHeaderChangeTheCurrentRecordForLaterOperators() {
+    final var seen = new ArrayList<String>();
+    final var stream = (DefaultStream<Map<String, Object>>) KPipe.json("topic", props())
+      .rekey(_ -> "bytes".getBytes(StandardCharsets.UTF_8))
+      .peek(_ -> seen.add(RecordContext.current().keyString()))
+      .rekeyString(order -> "order-" + order.get("id"))
+      .withHeader("source", _ -> "facade".getBytes(StandardCharsets.UTF_8))
+      .peek(_ ->
+        seen.add(
+          RecordContext.current().keyString() + "|" + RecordContext.current().headerString("source").orElseThrow()
+        )
+      );
+
+    RecordContext.callWith(new KeylessRecord(), () -> apply(stream, new HashMap<>(Map.of("id", 7))));
+
+    assertEquals(List.of("bytes", "order-7|facade"), seen);
+  }
+
+  private static final class KeylessRecord extends RecordContext {
+
+    @Override
+    public String topic() {
+      return "topic";
+    }
+
+    @Override
+    public int partition() {
+      return 0;
+    }
+
+    @Override
+    public long offset() {
+      return 0;
+    }
+
+    @Override
+    public long timestamp() {
+      return 0;
+    }
+
+    @Override
+    public byte[] key() {
+      return null;
+    }
+
+    @Override
+    public byte[] originalKey() {
+      return null;
+    }
+
+    @Override
+    public Optional<byte[]> header(final String name) {
+      return Optional.empty();
+    }
+
+    @Override
+    public void forEachHeader(final BiConsumer<String, byte[]> action) {}
   }
 }
