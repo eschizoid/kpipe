@@ -29,6 +29,9 @@ declare a pipeline — deserialize, transform, sink — and KPipe runs it with:
   back to Kafka encodes once per attempt. See [docs/FORMATS.md](docs/FORMATS.md) for what each kind of pipeline costs.
 - **Typed outcomes instead of nulls.** Every record ends as `Passed`, `Filtered`, or `Failed` — a sealed type, so
   "intentionally skipped" and "broken" cannot be confused, in code or in metrics.
+- **The whole record when you need it.** Any operator or sink reads the record's key, headers, topic, offset and
+  timestamp through `RecordContext.current()`, and a batch sink through `RecordContext.currentBatch()`. `rekey` and
+  `withHeader` change the key and headers, and `toKafka(topic)` produces each value with its key and headers.
 - **The operational stack as configuration.** Retries, dead-letter routing, backpressure, a circuit breaker, metrics,
   and W3C trace propagation are fluent calls, not code you write.
 
@@ -80,7 +83,7 @@ unless you opt in.
 ## Installation
 
 ```kotlin
-implementation(platform("io.github.eschizoid:kpipe-bom:1.20.0"))
+implementation(platform("io.github.eschizoid:kpipe-bom:1.24.0"))
 implementation("io.github.eschizoid:kpipe-api")
 implementation("io.github.eschizoid:kpipe-format-json")   // or -avro / -protobuf — formats are opt-in
 ```
@@ -126,8 +129,9 @@ holds under parallel processing. Full lifecycle, failure matrix, and rebalance/s
 
 Ordering requires cooperation from your producer: same-key records are only ordered if they land on the same partition,
 which is the producer's partitioner's job. Offset tracking alone does not order side effects — for "Authorize before
-Capture per account", key the producer by account **and** run `KEY_ORDERED` (or `SEQUENTIAL`). Details, including the
-`KEY_ORDERED` key cap and eviction behavior: [docs/GUARANTEES.md](docs/GUARANTEES.md#ordering).
+Capture per account", key the producer by account **and** run `KEY_ORDERED` (or `SEQUENTIAL`). To keep that order in an
+output topic, end the stream with `toKafka`, which keeps each record's key unless a `rekey` changes it. Details,
+including the `KEY_ORDERED` key cap and eviction behavior: [docs/GUARANTEES.md](docs/GUARANTEES.md#ordering).
 
 ## Operational features
 
@@ -157,55 +161,32 @@ producing to another topic: [docs/API.md](docs/API.md) and [docs/SINKS.md](docs/
 
 ## Performance
 
-Benchmarked against Atleon, Confluent Parallel Consumer, Reactor Kafka, the KIP-932 share consumer, and a raw
-`KafkaConsumer` + virtual-threads loop — same broker, same workload, JMH with published raw JSON. The reference numbers
-come from CI captures on a GitHub runner, described below. The CI captures do not yet compare KPipe with Confluent
-Parallel Consumer at 10 to 100ms of work per record, but earlier local captures do. In the 2026-07 capture on one 6-core
-machine, with that much work, KPipe `PARALLEL` sustained roughly 6.6× Confluent Parallel Consumer's throughput at 10ms
-and 41× at 100ms, tracking the machine's capacity where a fixed worker pool is bounded by `workers ÷ work-time`.
+KPipe `PARALLEL` runs within the error bands of Atleon, the fastest of the benchmarked alternatives that keep
+at-least-once, at every delay, and 5 to 8 times faster than Confluent Parallel Consumer. Thousands of records per
+second, every arm on one 4-vCPU GitHub runner with five forks
+([2026-10-22 capture](benchmarks/results/2026-10-22/2026-10-22-ci-parallel.md)):
 
-The [2026-10-22 capture](benchmarks/results/2026-10-22/2026-10-22-ci-parallel.md) is the reference. It runs all nine
-arms in one job on a 4-vCPU GitHub runner at 0, 100 and 1000µs of work per record, with five forks and JMH 1.37
-allocation accounting, and KPipe tracks every record for its offset manager, as Atleon does for its acknowledgements in
-`COMPACT_EAGER` mode. KPipe `PARALLEL` and Atleon parallel are within each other's error bands at every delay (1.09×,
-0.95× and 1.04×). In key-ordered mode Atleon leads at 0µs, where KPipe runs at 0.85× with the error bands apart, and the
-two are within the error bands at 100 and 1000µs. KPipe ran at 5.4× to 7.8× Confluent Parallel Consumer's unordered
-throughput and at 5.1× to 6.2× its per-key throughput. Reactor Kafka ran at 1.21× KPipe at 0µs and at 0.67× and 0.16× at
-100 and 1000µs, because its 100 rails process at most 100 records at a time. In that capture Reactor committed the
-latest acknowledged offset per partition rather than a lowest-pending frontier, which is cheaper and does not hold
-at-least-once when records finish out of order; the Reactor arm now defers out-of-order commits behind the same
-10,000-record watermark as KPipe, so later captures compare like with like. The
-[2026-10-21](benchmarks/results/2026-10-21/2026-10-21-ci-parallel.md),
-[2026-10-15](benchmarks/results/2026-10-15/2026-10-15-ci-parallel.md) and
-[2026-10-16](benchmarks/results/2026-10-16/2026-10-16-ci-parallel-jmh137.md) captures ran KPipe without offset tracking
-and Reactor on a one-thread-per-CPU scheduler, so they flatter KPipe; they stay in the results folder. The
-[2026-10-23 latency capture](benchmarks/results/2026-10-23/2026-10-23-ci-latency.md), five forks with offset tracking
-on, times how long each arm takes to drain a 25,000-record batch. In unordered mode KPipe and Atleon are within each
-other's error bands on average at every delay, and KPipe's p99 is 8 to 18 ms lower. In key-ordered mode Atleon is faster
-on average at 0 and 1000µs, while KPipe's p99.9 is lower at every delay. Confluent Parallel Consumer takes 5 to 8 times
-as long as KPipe in both modes.
+| Runtime                                 | 0 µs work per record |   100 µs |     1 ms |
+| --------------------------------------- | -------------------: | -------: | -------: |
+| **KPipe `PARALLEL`**                    |             713 ± 59 | 516 ± 72 | 544 ± 38 |
+| Atleon parallel                         |             656 ± 26 | 543 ± 19 | 522 ± 27 |
+| **KPipe `KEY_ORDERED`**                 |             658 ± 38 | 503 ± 35 | 316 ± 12 |
+| Atleon key-ordered                      |             778 ± 33 | 496 ± 20 | 335 ± 10 |
+| Confluent Parallel Consumer             |              117 ± 2 |   96 ± 2 |   70 ± 1 |
+| Confluent Parallel Consumer key-ordered |              106 ± 2 |   83 ± 2 |   62 ± 1 |
+| Reactor Kafka                           |             863 ± 37 |  348 ± 8 |   85 ± 1 |
+| Raw `KafkaConsumer` + virtual threads   |           1,001 ± 85 | 707 ± 55 | 685 ± 47 |
 
-The costs: KPipe `PARALLEL` ran at 0.71× to 0.79× the raw loop. Against the 2026-10-21 capture, its throughput fell 22%
-at 0µs while the raw loop and Atleon fell 4% to 6%, so tracking each record costs KPipe `PARALLEL` roughly 15% to 20% at
-0µs; at 100 and 1000µs the change between the two runs is within their error bands. No commit falls inside the measured
-window, which is shorter than the 30-second commit interval, so this is the cost of tracking, not of committing. It
-allocates about 1,128 B/op at 0µs and 1,770 to 1,820 at 100 and 1000µs, 13% to 28% more than the raw loop, and still
-less than Atleon's arm with the same ordering and less than CPC at every delay. Captures that used JMH 1.36 under-count
-allocation for any arm whose consumer runs on threads that exit during the measurement, so their allocation comparisons,
-including the 2026-07 ones, overstate KPipe's cost relative to the others. In the 2026-07 captures, the `KEY_ORDERED`
-mode's advantage over CPC's equivalent at sub-millisecond workloads was machine-dependent (it lost on one of our two
-test machines), and the virtual-thread-per-record advantage shrinks as per-record work approaches zero or becomes
-CPU-bound, because there is nothing to overlap. The raw loop has no in-flight limit, no backpressure and no offset
-tracking, so the gap to it measures all three.
+With no work per record, Reactor Kafka and the raw loop run faster than KPipe `PARALLEL`, and Atleon's key-ordered mode
+scores higher within the error bands; KPipe's key-ordered mode runs at 0.85 of Atleon's there. The Reactor arm committed
+the latest acknowledged offset (`maxDeferredCommits` 0), so it did not hold at-least-once when records finished out of
+order. The raw loop has no backpressure and no offset tracking, and KPipe `PARALLEL` runs at 0.71 to 0.79 of it; that
+gap is what those guarantees cost. The Kafka share consumer arm ran at about 5 thousand records per second.
 
-Full tables with error bars, environments, methodology, DNF explanations, and every capture's raw data:
-[`benchmarks/`](benchmarks).
-
-The at-least-once claim is itself under test: every CI run gates on 13 [Fray](https://github.com/cmu-pasta/fray)
-controlled-concurrency classes plus jqwik property suites over the offset lifecycle and chaos-rebalance/crash-restart
-integration tests against a real broker. Fray explores thread schedules under its own scheduler rather than running racy
-code repeatedly and hoping, and the suite is falsification-tested — deliberately breaking an invariant makes it fail.
-Building it caught three real data-loss bugs before release ([docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md)).
+The at-least-once claim is itself tested: every CI run gates on [Fray](https://github.com/cmu-pasta/fray)
+controlled-concurrency suites and property tests over the offset lifecycle, and deliberately breaking an invariant makes
+them fail ([docs/OFFSET-INVARIANTS.md](docs/OFFSET-INVARIANTS.md)). Latency, allocation, methodology and every capture's
+raw data are in [`benchmarks/`](benchmarks).
 
 ## Positioning
 
@@ -225,12 +206,9 @@ versions you run — these projects evolve):
 | Stateful processing (joins, windows, stores) | **Not supported**                                   | Not built-in                                                                                      | Core feature                         | Not built-in                    |
 | Ecosystem & maturity                         | Young, small API surface                            | Large ecosystem, long history                                                                     | Large ecosystem, long history        | Established in reactive stacks  |
 
-Benchmarked against Atleon 0.47.1, Confluent Parallel Consumer 0.5.3.3 and Reactor Kafka 1.3.25. The 2026-10-22 capture
-ran on kafka-clients 4.3.0, which [`benchmarks/build.gradle.kts`](benchmarks/build.gradle.kts) forces because Parallel
-Consumer processes no records on 4.4.0, and earlier captures ran on the kafka-clients version the libraries used at the
-time. The libraries build and test against the kafka-clients version in
-[`gradle/libs.versions.toml`](gradle/libs.versions.toml). The Spring Kafka and Kafka Streams columns describe documented
-behavior, not versions we test.
+In the 2026-10-22 capture, the benchmark arms ran Atleon 0.47.1, Confluent Parallel Consumer 0.5.3.3 and Reactor Kafka
+1.3.25 on kafka-clients 4.3.0; the Spring Kafka and Kafka Streams columns describe documented behavior, not versions we
+test.
 
 Choose Spring Kafka when you live in the Spring ecosystem or need transactions; Kafka Streams when you need stateful
 processing; Reactor Kafka when your service is already reactive. KPipe's case is the plain-JVM consumer service doing
@@ -296,8 +274,9 @@ a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-test")`; t
 
 ## Contributing
 
-Issues and PRs welcome — see the test suites (`unit`, Fray under `src/frayTest`, integration under `examples/`) for the
-bar contributions are held to.
+Issues and PRs welcome. Modules hold unit tests in `src/test`, and those that talk to Kafka also hold Testcontainers
+integration tests there. The offset modules hold Fray suites in `src/frayTest`, and each app in `examples/` has its own
+integration tests. Together they are the bar contributions are held to.
 
 ## License
 

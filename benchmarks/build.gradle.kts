@@ -38,8 +38,12 @@ dependencies {
 // partitions, resets their offsets and then never hands a record to the user function, with nothing logged. Every
 // arm resolves kafka-clients 4.3.0 so the comparison runs on one client version that all of them support. Remove
 // the pin once a Parallel Consumer release works on the version the libraries build against.
+//
+// Dependabot rewrites every "group:name:version" literal of a dependency it updates, and it updates kafka-clients
+// for the libraries, so the coordinate is spelled in parts. scripts/check-pins.sh fails a build that moves it.
+val parallelConsumerKafkaClients = listOf("org.apache.kafka", "kafka-clients", "4.3.0").joinToString(":")
 configurations.configureEach {
-  resolutionStrategy.force("org.apache.kafka:kafka-clients:4.4.0")
+  resolutionStrategy.force(parallelConsumerKafkaClients)
 }
 
 jmh {

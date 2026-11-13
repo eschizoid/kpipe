@@ -95,6 +95,16 @@ if [ -n "$splits" ]; then
   fail=1
 fi
 
+# The install snippets name one BOM version; the release workflow rewrites all three together, so
+# they must agree.
+versions=$(grep -ohE 'kpipe-bom:[0-9]+\.[0-9]+\.[0-9]+' README.md docs/MODULES.md | sed 's|kpipe-bom:||'
+  sed -nE '/<artifactId>kpipe-bom<\/artifactId>/{n;s|.*<version>([^<]+)</version>.*|\1|p;}' docs/MODULES.md)
+if [ "$(echo "$versions" | sort -u | wc -l | tr -d ' ')" -ne 1 ] || [ "$(echo "$versions" | wc -l | tr -d ' ')" -ne 3 ]; then
+  echo "BOM VERSION MISMATCH (README.md and docs/MODULES.md must name one version, three times):"
+  echo "$versions"
+  fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo "check-docs: FAILED"
   exit 1
