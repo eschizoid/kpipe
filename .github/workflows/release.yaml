@@ -92,3 +92,18 @@ jobs:
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
         run: |
           ./gradlew :lib:jreleaserFullRelease --stacktrace
+
+      # The install snippets in README.md and docs/MODULES.md name the BOM version; point them at the
+      # release just published. It runs last and cannot fail the release: the artifacts are out by
+      # now, and scripts/check-docs.sh fails a build when the three versions disagree.
+      - name: Update the documented version
+        continue-on-error: true
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i -E "s|kpipe-bom:[0-9]+\.[0-9]+\.[0-9]+|kpipe-bom:${VERSION}|" README.md docs/MODULES.md
+          sed -i -E "/<artifactId>kpipe-bom<\/artifactId>/{n;s|<version>[^<]+</version>|<version>${VERSION}</version>|;}" docs/MODULES.md
+          ./scripts/check-docs.sh
+          if git diff --quiet -- README.md docs/MODULES.md; then exit 0; fi
+          git add README.md docs/MODULES.md
+          git commit -m "docs: point the install snippets at ${VERSION}"
+          git push origin HEAD:main
