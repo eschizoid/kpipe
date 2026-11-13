@@ -33,6 +33,10 @@ jobs:
         # comment has a line split onto a plain `//` line.
         run: ./scripts/check-docs.sh
 
+      - name: Hand-pinned versions
+        # Versions Dependabot must not move; see scripts/check-pins.sh.
+        run: ./scripts/check-pins.sh
+
       - name: Test with Gradle
         # spotlessCheck, not spotlessApply. Apply rewrites the workspace and always succeeds, so
         # formatting drift never failed a build and survived on main indefinitely — the markdown
