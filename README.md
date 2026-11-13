@@ -11,29 +11,39 @@
 [![Javadoc](https://javadoc.io/badge2/io.github.eschizoid/kpipe-api/javadoc.svg?color=purple)](https://javadoc.io/doc/io.github.eschizoid/kpipe-api)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-KPipe is a plain-JVM Kafka consumer runtime for Java 25+: one virtual thread per record, a typed pipeline API, and
-at-least-once delivery that still holds while records run in parallel.
+**Parallel Kafka consumption at full speed, without giving up at-least-once.**
 
-KPipe replaces the hand-rolled `Consumer.poll` loop that most Kafka services grow around their business logic. You
-declare a pipeline — deserialize, transform, sink — and KPipe runs it with:
+KPipe is a plain-JVM Kafka consumer runtime for Java 25+. It runs every record on its own virtual thread and never
+commits past a record that has not finished. In `PARALLEL` mode it is as fast as the fastest alternative that keeps that
+guarantee, and 5 to 8 times faster than Confluent Parallel Consumer, behind a typed, fluent API you can test without a
+broker. It replaces the hand-rolled `Consumer.poll` loop that most Kafka services grow around their business logic: you
+declare a pipeline (deserialize, transform, sink) and KPipe runs it.
 
+## Why KPipe
+
+- **Fast.** KPipe `PARALLEL` runs within the error bands of Atleon, the fastest benchmarked alternative that keeps
+  at-least-once, at every load we measured, and 5 to 8 times faster than Confluent Parallel Consumer. The numbers are in
+  [Performance](#performance).
+- **Correct, and proven.** An offset commits only after its record reaches a terminal state (sink completed, filtered,
+  or parked in the dead-letter topic), and commits never pass a record still in flight. Every CI run checks this with
+  [Fray](https://github.com/cmu-pasta/fray) controlled-concurrency suites and property tests over the offset lifecycle,
+  which fail when an invariant is broken. The exact guarantee boundary and failure matrix:
+  [docs/GUARANTEES.md](docs/GUARANTEES.md).
 - **A virtual thread per record.** I/O-bound work (DB writes, HTTP calls) overlaps without a worker pool to configure.
-  You still bound in-flight work — records currently being processed — which KPipe's backpressure does by pausing
-  consumption past a watermark; and your downstream resources — connection pools and rate limits — don't disappear
-  because threads got cheap.
-- **At-least-once delivery, held under parallelism.** An offset is committed only after its record reaches a terminal
-  state (sink completed, filtered, or parked in the dead-letter topic, the DLQ), and commits never pass a record that is
-  still in flight. The exact guarantee boundary and failure matrix: [docs/GUARANTEES.md](docs/GUARANTEES.md).
-- **One decode per processing attempt, no re-encode between steps.** Operators work on the typed payload (`Map`,
-  `GenericRecord`, `Message`) from a single decode to the sink. KPipe itself never encodes; a sink that writes bytes
-  back to Kafka encodes once per attempt. See [docs/FORMATS.md](docs/FORMATS.md) for what each kind of pipeline costs.
-- **Typed outcomes instead of nulls.** Every record ends as `Passed`, `Filtered`, or `Failed` — a sealed type, so
-  "intentionally skipped" and "broken" cannot be confused, in code or in metrics.
+  Backpressure still bounds the records in flight by pausing consumption past a watermark, and your downstream limits,
+  such as connection pools and rate limits, still apply.
 - **The whole record when you need it.** Any operator or sink reads the record's key, headers, topic, offset and
   timestamp through `RecordContext.current()`, and a batch sink through `RecordContext.currentBatch()`. `rekey` and
-  `withHeader` change the key and headers, and `toKafka(topic)` produces each value with its key and headers.
-- **The operational stack as configuration.** Retries, dead-letter routing, backpressure, a circuit breaker, metrics,
-  and W3C trace propagation are fluent calls, not code you write.
+  `withHeader` change the key and headers, and `toKafka(topic)` produces each value with its key and headers, so in
+  `KEY_ORDERED` and `SEQUENTIAL` mode records with the same consumed key reach the output topic in order.
+- **One decode per attempt, typed outcomes.** Operators work on the typed payload (`Map`, `GenericRecord`, `Message`)
+  from a single decode to the sink, and KPipe never re-encodes between steps ([docs/FORMATS.md](docs/FORMATS.md)). Every
+  record ends as `Passed`, `Filtered` or `Failed`, a sealed type, so "intentionally skipped" and "broken" cannot be
+  confused in code or in metrics.
+- **Testable without a broker.** `kpipe-test` drives the real consumer over an in-memory `MockConsumer`, in milliseconds
+  per test ([Testing your pipeline](#testing-your-pipeline)).
+- **The operational stack as configuration.** Retries, a replayable dead-letter topic, backpressure, a circuit breaker,
+  OpenTelemetry metrics and W3C trace propagation are each one fluent call.
 
 Use it when you are building a transform, enrich, validate, route, or write-to-database consumer and the hard part is
 coordinating parallel I/O with commits. Reach for Kafka Streams instead when you need joins, windows, state stores, or
@@ -140,9 +150,9 @@ Each is one fluent call; exact semantics are in [docs/API.md](docs/API.md).
 - **Retries** — `withRetry(maxRetries, backoff)`: fixed backoff, `maxRetries` counts retries after the initial attempt.
   A `NonRetryableException`, or a failure caused by one, is not retried.
 - **Dead-letter topic** — `withDeadLetterTopic("orders.dlq")`: terminally-failed records are produced there with their
-  original headers plus an `x-dlq-*` envelope (error, source topic/partition/offset, timestamp), making the DLQ
-  replayable. A failed DLQ send leaves the offset uncommitted — a down DLQ applies backpressure rather than dropping
-  records.
+  original headers plus an `x-dlq-*` envelope (error, source topic/partition/offset, timestamp), making the dead-letter
+  topic (DLQ) replayable. A failed DLQ send leaves the offset uncommitted — a down DLQ applies backpressure rather than
+  dropping records.
 - **Backpressure** — on by default: pauses all assigned partitions at 10,000 in-flight records, resumes at 7,000
   (hysteresis prevents flapping). A paused consumer keeps polling, which keeps its group membership alive (no
   `max.poll.interval.ms` eviction while paused).
@@ -241,12 +251,21 @@ try (final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTA
 }
 ```
 
-Send `TestRecord.of(value).withKey("order-1").withHeader("tenant", "acme")` when keys or headers matter, and read them
-back with `captured.records()`, which keeps each value with the record its sink saw, after any `rekey` or `withHeader`.
+When keys or headers matter, send a `TestRecord` and read each value back with the record its sink saw, after any
+`rekey` or `withHeader`. Inside the same `try` block:
 
-A `CrashRestartHarness` covers the harder question — does the resume window reprocess correctly after a crash — without
-a broker involved. Add `testImplementation("io.github.eschizoid:kpipe-test")`; the full kit lives in
-[`lib/kpipe-test`](lib/kpipe-test).
+```java
+driver.send(TestRecord.of(order).withKey("order-1").withHeader("tenant", "acme"));
+driver.flush();
+assertEquals("order-1", captured.records().getFirst().keyString());
+```
+
+A `CrashRestartHarness` covers the harder question, whether the resume window reprocesses correctly after a crash,
+without a broker. Add the kit to your tests; the full kit lives in [`lib/kpipe-test`](lib/kpipe-test):
+
+```kotlin
+testImplementation("io.github.eschizoid:kpipe-test")
+```
 
 ## Documentation
 
