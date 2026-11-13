@@ -13,11 +13,11 @@
 
 **Parallel Kafka consumption at full speed, without giving up at-least-once.**
 
-KPipe is a Kafka consumer runtime for Java 25+. It runs every record on its own virtual thread and never commits past a
-record that has not finished. It is as fast as the fastest alternative that keeps that guarantee, and 5 to 8 times
-faster than Confluent Parallel Consumer, behind a typed, fluent API you can test without a broker. It replaces the
-hand-rolled `Consumer.poll` loop that most Kafka services grow around their business logic: you declare a pipeline
-(deserialize, transform, sink) and KPipe runs it.
+KPipe is a plain-JVM Kafka consumer runtime for Java 25+. It runs every record on its own virtual thread and never
+commits past a record that has not finished. In `PARALLEL` mode it is as fast as the fastest alternative that keeps that
+guarantee, and 5 to 8 times faster than Confluent Parallel Consumer, behind a typed, fluent API you can test without a
+broker. It replaces the hand-rolled `Consumer.poll` loop that most Kafka services grow around their business logic: you
+declare a pipeline (deserialize, transform, sink) and KPipe runs it.
 
 ## Why KPipe
 
@@ -34,8 +34,8 @@ hand-rolled `Consumer.poll` loop that most Kafka services grow around their busi
   such as connection pools and rate limits, still apply.
 - **The whole record when you need it.** Any operator or sink reads the record's key, headers, topic, offset and
   timestamp through `RecordContext.current()`, and a batch sink through `RecordContext.currentBatch()`. `rekey` and
-  `withHeader` change the key and headers, and `toKafka(topic)` produces each value with its key and headers, so per-key
-  order holds in the output topic.
+  `withHeader` change the key and headers, and `toKafka(topic)` produces each value with its key and headers, so in
+  `KEY_ORDERED` and `SEQUENTIAL` mode records with the same consumed key reach the output topic in order.
 - **One decode per attempt, typed outcomes.** Operators work on the typed payload (`Map`, `GenericRecord`, `Message`)
   from a single decode to the sink, and KPipe never re-encodes between steps ([docs/FORMATS.md](docs/FORMATS.md)). Every
   record ends as `Passed`, `Filtered` or `Failed`, a sealed type, so "intentionally skipped" and "broken" cannot be
@@ -150,9 +150,9 @@ Each is one fluent call; exact semantics are in [docs/API.md](docs/API.md).
 - **Retries** — `withRetry(maxRetries, backoff)`: fixed backoff, `maxRetries` counts retries after the initial attempt.
   A `NonRetryableException`, or a failure caused by one, is not retried.
 - **Dead-letter topic** — `withDeadLetterTopic("orders.dlq")`: terminally-failed records are produced there with their
-  original headers plus an `x-dlq-*` envelope (error, source topic/partition/offset, timestamp), making the DLQ
-  replayable. A failed DLQ send leaves the offset uncommitted — a down DLQ applies backpressure rather than dropping
-  records.
+  original headers plus an `x-dlq-*` envelope (error, source topic/partition/offset, timestamp), making the dead-letter
+  topic (DLQ) replayable. A failed DLQ send leaves the offset uncommitted — a down DLQ applies backpressure rather than
+  dropping records.
 - **Backpressure** — on by default: pauses all assigned partitions at 10,000 in-flight records, resumes at 7,000
   (hysteresis prevents flapping). A paused consumer keeps polling, which keeps its group membership alive (no
   `max.poll.interval.ms` eviction while paused).
@@ -252,7 +252,7 @@ try (final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTA
 ```
 
 When keys or headers matter, send a `TestRecord` and read each value back with the record its sink saw, after any
-`rekey` or `withHeader`:
+`rekey` or `withHeader`. Inside the same `try` block:
 
 ```java
 driver.send(TestRecord.of(order).withKey("order-1").withHeader("tenant", "acme"));
