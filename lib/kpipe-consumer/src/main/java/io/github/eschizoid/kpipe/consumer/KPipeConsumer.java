@@ -324,6 +324,7 @@ public class KPipeConsumer implements AutoCloseable {
         this.health,
         exporter,
         this.counters,
+        builder.attemptFailedObserver,
         builder.errorHandler,
         deadLetterTopic,
         this.kpipeProducer,

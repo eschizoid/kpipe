@@ -36,8 +36,9 @@ final var pipeline = registry
   .build();
 ```
 
-Wrap user sinks with `MessageProcessorRegistry.withSinkErrorHandling(sink)` when one failing sink must not take down the
-pipeline; the failure is logged and contained at the sink boundary.
+Outside `toMulti`, which is best effort by design, a sink that throws fails the record: it is retried, then handed to
+the error handler and, when one is configured, the dead-letter topic. A sink that should carry on past a failure catches
+it itself.
 
 ## Producing to another Kafka topic
 

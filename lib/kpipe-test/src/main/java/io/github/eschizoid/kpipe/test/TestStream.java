@@ -233,9 +233,6 @@ public final class TestStream<T> implements AutoCloseable {
   ///   * **`toBatch(sink, maxSize)` is size-only.** The facade takes a `BatchPolicy`
   ///     (size + age); the test kit's v1 batch semantics flush on size and shutdown only, so
   ///     the age trigger is not configurable here.
-  ///   * **No observers.** `onFiltered` / `onFailed` / `peekResult` do not exist — assert
-  ///     filter and failure outcomes through the captured sink output,
-  ///     [TestStream#metrics], and [TestStream#errors] instead.
   ///
   /// @param <T> the pipeline value type
   public static final class Builder<T> {
@@ -248,6 +245,7 @@ public final class TestStream<T> implements AutoCloseable {
     private int batchMaxSize;
     private ProcessingMode processingMode = ProcessingMode.SEQUENTIAL;
     private Consumer<KPipeConsumer.ProcessingError> errorHandler;
+    private Consumer<KPipeConsumer.ProcessingError> attemptFailedObserver;
 
     private Builder(final MessageFormat<T> format) {
       this.format = Objects.requireNonNull(format, "format cannot be null");
@@ -374,6 +372,16 @@ public final class TestStream<T> implements AutoCloseable {
       return this;
     }
 
+    /// Registers an observer for every failed processing attempt, as the facade's
+    /// `onAttemptFailed` does.
+    ///
+    /// @param observer called with each failed attempt
+    /// @return this builder
+    public Builder<T> onAttemptFailed(final Consumer<KPipeConsumer.ProcessingError> observer) {
+      this.attemptFailedObserver = Objects.requireNonNull(observer, "observer cannot be null");
+      return this;
+    }
+
     /// Registers an additional error observer, invoked after the stream records the error for
     /// [TestStream#errors].
     ///
@@ -420,6 +428,7 @@ public final class TestStream<T> implements AutoCloseable {
         .withErrorHandler(recordingHandler)
         .withConsumer(() -> mock)
         .withPollTimeout(Duration.ofMillis(10));
+      if (attemptFailedObserver != null) consumerBuilder.withAttemptFailedObserver(attemptFailedObserver::accept);
       if (batchSink != null) {
         consumerBuilder.withBatchPipeline(topic, pipeline, batchSink, new BatchPolicy(batchMaxSize, CLOSE_AGE_CAP));
       } else {

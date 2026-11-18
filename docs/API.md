@@ -31,7 +31,7 @@ other.
 | Method                                  | Semantics                                                                                                                                                                                                                                                                                        |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `pipe(UnaryOperator<T>)`                | Append an operator. Returning `null` filters the record: downstream operators and the sink are skipped, the offset is still marked processed.                                                                                                                                                    |
-| `filter(Predicate<T>)`                  | Predicate false → the record is filtered (same semantics as a null-returning operator: offset still commits, `onFiltered` observers fire).                                                                                                                                                       |
+| `filter(Predicate<T>)`                  | Predicate false → the record is filtered (same semantics as a null-returning operator: the offset still commits and the `filtered` metric counts it).                                                                                                                                            |
 | `peek(Consumer<T>)`                     | Observe without replacing the value.                                                                                                                                                                                                                                                             |
 | `when(Predicate, ifTrue, ifFalse)`      | Conditional operator. Both branches are required — there is no drop-on-else shape; use `filter` for dropping.                                                                                                                                                                                    |
 | `rekey(Function<T, byte[]>)`            | Replace the record's key for the rest of the attempt. Later operators and sinks read it from `RecordContext.current().key()`, and `toKafka` writes it. `KEY_ORDERED` dispatch, the error handler and the dead-letter topic use the consumed key, and a retry starts from it again.               |
@@ -39,16 +39,18 @@ other.
 | `withHeader(name, Function<T, byte[]>)` | Add a header for the rest of the attempt. `toKafka` writes it after the consumed record's headers; the dead-letter topic and a retry do not see it.                                                                                                                                              |
 | `skipBytes(int n)`                      | Strip a fixed-length leading prefix before deserialization (the payload is copied once, minus the prefix). A low-level escape hatch for fixed-size envelopes — see the framing warning in [FORMATS.md](FORMATS.md#wire-envelopes-and-skipbytes). Not allowed together with `withSchemaRegistry`. |
 
-### Observers (visibility only — never change the record's outcome)
+### Failure hooks
 
-Calling the same observer method twice replaces the previous observer. A throwing observer is logged at WARNING and
-swallowed.
+Two hooks, both consumer-wide and both handed a `KPipeConsumer.ProcessingError` (the consumed record, the cause and the
+retry count):
 
-| Method                            | Semantics                                                                                                                                                                                                                                                                                            |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `onFiltered(Runnable)`            | Fires when a record is intentionally filtered. No record argument.                                                                                                                                                                                                                                   |
-| `onFailed(Consumer<Throwable>)`   | Fires **per attempt** — with `withRetry(2, ...)` a persistently failing record invokes it up to 3 times. It observes pipeline (operator) failures only; a deserialization or sink throw takes the error path without invoking it. For one callback per record after retries, use `withErrorHandler`. |
-| `peekResult(Consumer<Result<T>>)` | Lowest-level hook: sees every `Passed` / `Filtered` / `Failed` outcome.                                                                                                                                                                                                                              |
+| Method                                        | Semantics                                                                                                                                                                                                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `withErrorHandler(Consumer<ProcessingError>)` | Once per record that fails for good: after its retries, or at once for a `NonRetryableException`. Default logs at WARNING.                                                                                                                                                   |
+| `onAttemptFailed(Consumer<ProcessingError>)`  | Once per failed attempt, at every stage (deserialize, operator, sink, batch flush), so it also sees the transient failures a retry recovers from. `retryCount` is the retries before that attempt. Watching only: it cannot stop a retry, and a throwing observer is logged. |
+
+Neither has a current record; read the record from the `ProcessingError`. For filtered records, use the `filtered`
+metric, or log from the filter itself, where `RecordContext.current()` gives the record.
 
 ### Configuration
 

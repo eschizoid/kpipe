@@ -583,4 +583,24 @@ class TestStreamTest {
     }
     assertEquals(List.of("k1", "k1"), List.copyOf(keys));
   }
+
+  /// `onAttemptFailed` hears each failed attempt, and `errors()` the record's final failure.
+  @Test
+  void onAttemptFailedHearsEachAttempt() {
+    final var attempts = new CopyOnWriteArrayList<Integer>();
+    try (
+      final var driver = TestStream.<Map<String, Object>>builder(JsonFormat.INSTANCE)
+        .pipe(_ -> {
+          throw new IllegalStateException("down");
+        })
+        .onAttemptFailed(error -> attempts.add(error.retryCount()))
+        .toCustom(new CapturingSink<>())
+        .build()
+    ) {
+      driver.send(record("a", true));
+      driver.flush();
+      assertEquals(List.of(0), List.copyOf(attempts));
+      assertEquals(1, driver.errors().size());
+    }
+  }
 }

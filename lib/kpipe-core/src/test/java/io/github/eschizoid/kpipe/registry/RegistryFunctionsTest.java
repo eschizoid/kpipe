@@ -1,47 +1,11 @@
 package io.github.eschizoid.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 class RegistryFunctionsTest {
-
-  @Test
-  void shouldExecuteConsumerSuccessfully() {
-    // Arrange
-    final var counter = new AtomicLong(0);
-    final Consumer<String> operation = _ -> counter.incrementAndGet();
-    final var logger = mock(System.Logger.class);
-
-    // Act
-    final var safeConsumer = RegistryFunctions.withConsumerErrorHandling(operation, logger);
-    safeConsumer.accept("test");
-
-    // Assert
-    assertEquals(1, counter.get());
-    verify(logger, never()).log(any(System.Logger.Level.class), anyString());
-    verify(logger, never()).log(any(System.Logger.Level.class), anyString(), any(Throwable.class));
-  }
-
-  @Test
-  void shouldSuppressAndLogConsumerExceptions() {
-    // Arrange
-    final Consumer<String> operation = _ -> {
-      throw new IllegalArgumentException("Test consumer exception");
-    };
-    final var logger = mock(System.Logger.class);
-
-    // Act
-    final var safeConsumer = RegistryFunctions.withConsumerErrorHandling(operation, logger);
-    safeConsumer.accept("test");
-
-    // Assert
-    verify(logger, atLeastOnce()).log(any(System.Logger.Level.class), anyString(), any(Throwable.class));
-  }
 
   @Test
   void shouldTransformRegistryValues() {

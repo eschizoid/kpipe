@@ -7,8 +7,6 @@ import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.RegistryKey;
 import io.github.eschizoid.kpipe.registry.Result;
-import io.github.eschizoid.kpipe.sink.MessageSink;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
@@ -117,16 +115,6 @@ class MessageProcessorRegistryJsonTest {
       roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes())
     );
     assertEquals("Test exception", ex.getMessage());
-  }
-
-  @Test
-  void shouldWrapSinkWithErrorHandling() {
-    final MessageSink<Map<String, Object>> sink = _ -> {
-      throw new RuntimeException("Test exception");
-    };
-    final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(sink);
-
-    assertDoesNotThrow(() -> safeSink.accept(new HashMap<>()));
   }
 
   @Test

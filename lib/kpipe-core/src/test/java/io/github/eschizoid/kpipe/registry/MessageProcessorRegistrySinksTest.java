@@ -71,17 +71,6 @@ class MessageProcessorRegistrySinksTest {
   }
 
   @Test
-  void shouldWrapSinkWithErrorHandling() {
-    final MessageSink<Object> failingSink = _ -> {
-      throw new RuntimeException("Test failure");
-    };
-
-    final var safeSink = MessageProcessorRegistry.withSinkErrorHandling(failingSink);
-
-    safeSink.accept("processed"); // must not throw
-  }
-
-  @Test
   void shouldRejectNullKey() {
     final var testSink = mock(MessageSink.class);
     assertThrows(NullPointerException.class, () -> registry.registerSink(null, testSink));

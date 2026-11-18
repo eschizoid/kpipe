@@ -165,6 +165,17 @@ public final class MultiBuilder {
     return this;
   }
 
+  /// Sets an observer called for every failed processing attempt on any route. Consumer-wide,
+  /// mirror of `Stream.onAttemptFailed(...)`.
+  ///
+  /// @param observer called with each failed attempt (must be non-null)
+  /// @return this builder
+  public MultiBuilder onAttemptFailed(final Consumer<KPipeConsumer.ProcessingError> observer) {
+    Objects.requireNonNull(observer, "observer cannot be null");
+    consumerConfig = consumerConfig.with(c -> c.attemptFailedObserver = observer);
+    return this;
+  }
+
   /// Sets a custom error handler invoked (after offset marking) for every record that fails on any
   /// route. Consumer-wide, mirror of `Stream.withErrorHandler(...)`; default logs at WARNING.
   ///

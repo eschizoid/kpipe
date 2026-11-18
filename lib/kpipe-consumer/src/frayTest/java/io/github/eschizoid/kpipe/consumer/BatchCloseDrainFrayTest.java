@@ -96,7 +96,11 @@ class BatchCloseDrainFrayTest {
       }
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+      public void onBatchFailure(
+        final ConsumerRecord<byte[], byte[]> record,
+        final Exception cause,
+        final int retries
+      ) {
         observe();
       }
 
