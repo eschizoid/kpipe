@@ -337,6 +337,31 @@ class KPipeFacadeIntegrationTest {
     assertEquals(List.of("attempt:0", "attempt:1", "error:1"), List.copyOf(heard));
   }
 
+  /// `MultiBuilder.onAttemptFailed` reaches the consumer the same way.
+  @Test
+  void multiBuilderOnAttemptFailedHearsEveryAttempt() throws Exception {
+    final var topic = "kpipe-facade-multi-attempt-" + UUID.randomUUID();
+    final var heard = new CopyOnWriteArrayList<String>();
+    try (
+      final var _ = KPipe.multi(consumerProps("kpipe-facade-multi-attempt-" + UUID.randomUUID()))
+        .withRetry(1, Duration.ofMillis(10))
+        .onAttemptFailed(error -> heard.add("attempt:" + error.retryCount()))
+        .withErrorHandler(error -> heard.add("error:" + error.retryCount()))
+        .json(topic, s ->
+          s.toCustom(_ -> {
+            throw new IllegalStateException("sink down");
+          })
+        )
+        .start()
+    ) {
+      try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
+        producer.send(new ProducerRecord<>(topic, "{\"id\":1}".getBytes(StandardCharsets.UTF_8))).get();
+      }
+      waitFor(() -> heard.size() >= 3, Duration.ofSeconds(20), "Timed out waiting for the failure callbacks");
+    }
+    assertEquals(List.of("attempt:0", "attempt:1", "error:1"), List.copyOf(heard));
+  }
+
   private static Properties consumerProps(final String groupId) {
     final var props = new Properties();
     props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
