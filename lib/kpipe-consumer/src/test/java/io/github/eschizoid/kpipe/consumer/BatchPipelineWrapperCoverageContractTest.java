@@ -79,7 +79,7 @@ class BatchPipelineWrapperCoverageContractTest {
     }
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retries) {
       failed.add(record);
       failureCauses.add(cause);
       events.add("onBatchFailure:" + record.offset());
@@ -335,7 +335,11 @@ class BatchPipelineWrapperCoverageContractTest {
       }
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+      public void onBatchFailure(
+        final ConsumerRecord<byte[], byte[]> record,
+        final Exception cause,
+        final int retries
+      ) {
         // no-op — the clean path shouldn't reach this
       }
     };

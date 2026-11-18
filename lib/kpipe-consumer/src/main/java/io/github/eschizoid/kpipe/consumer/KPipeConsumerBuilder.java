@@ -38,6 +38,7 @@ public final class KPipeConsumerBuilder {
   Map<String, MessagePipeline<?>> pipelinesPerTopic;
   final Map<String, BatchSpec<?>> batchSpecs = new LinkedHashMap<>();
   Duration pollTimeout = ConsumerDefaults.POLL_TIMEOUT;
+  KPipeConsumer.ErrorHandler attemptFailedObserver;
   KPipeConsumer.ErrorHandler errorHandler = e ->
     LOGGER.log(
       Level.WARNING,
@@ -212,6 +213,27 @@ public final class KPipeConsumerBuilder {
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withErrorHandler(final KPipeConsumer.ErrorHandler handler) {
     this.errorHandler = Objects.requireNonNull(handler, "handler cannot be null");
+    return this;
+  }
+
+  /// Sets an observer called for every failed processing attempt, at any stage: deserializing,
+  /// an operator, the sink, or a batch flush. It is called once per attempt, so a record retried
+  /// twice before it fails for good is reported three times, the last before the record is
+  /// counted as failed, sent to the dead-letter topic or passed to the error handler.
+  /// [KPipeConsumer.ProcessingError#retryCount] is the number of retries before the attempt; a
+  /// batch flush failure reports the retries its record took before it was buffered. An
+  /// interrupted attempt is not reported, and neither is a record the parallel dispatcher rejects
+  /// before it runs, which reaches the error handler without an attempt.
+  ///
+  /// The observer only watches: it cannot stop a retry or the error handling that follows. It has
+  /// no current record (`RecordContext.current()` throws there); it gets the record in its
+  /// `ProcessingError`. An observer that throws, an `AssertionError` included, is logged and does
+  /// not affect the record.
+  ///
+  /// @param observer called with each failed attempt
+  /// @return This builder instance for method chaining
+  public KPipeConsumerBuilder withAttemptFailedObserver(final KPipeConsumer.ErrorHandler observer) {
+    this.attemptFailedObserver = Objects.requireNonNull(observer, "observer cannot be null");
     return this;
   }
 

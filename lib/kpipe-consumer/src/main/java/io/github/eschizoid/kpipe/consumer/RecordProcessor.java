@@ -43,6 +43,7 @@ final class RecordProcessor {
   private final ConsumerHealthController health;
   private final GuardedMetricsExporter exporter;
   private final ConsumerCounters counters;
+  private final KPipeConsumer.ErrorHandler attemptFailedObserver;
   private final KPipeConsumer.ErrorHandler errorHandler;
   private final String deadLetterTopic;
   private final KPipeProducer<byte[], byte[]> kpipeProducer;
@@ -83,6 +84,7 @@ final class RecordProcessor {
     final ConsumerHealthController health,
     final GuardedMetricsExporter exporter,
     final ConsumerCounters counters,
+    final KPipeConsumer.ErrorHandler attemptFailedObserver,
     final KPipeConsumer.ErrorHandler errorHandler,
     final String deadLetterTopic,
     final KPipeProducer<byte[], byte[]> kpipeProducer,
@@ -97,6 +99,7 @@ final class RecordProcessor {
     this.health = health;
     this.exporter = exporter;
     this.counters = counters;
+    this.attemptFailedObserver = attemptFailedObserver;
     this.errorHandler = errorHandler;
     this.deadLetterTopic = deadLetterTopic;
     this.kpipeProducer = kpipeProducer;
@@ -152,7 +155,12 @@ final class RecordProcessor {
       }
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+      public void onBatchFailure(
+        final ConsumerRecord<byte[], byte[]> record,
+        final Exception cause,
+        final int retries
+      ) {
+        attemptFailed(record, cause, retries);
         counters.topic(record.topic()).failed.increment();
         if (!NonRetryableException.isNonRetryable(cause)) health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
@@ -182,7 +190,7 @@ final class RecordProcessor {
           offsetManager.markOffsetProcessed(record);
         }
         try {
-          errorHandler.accept(new KPipeConsumer.ProcessingError(record, cause, 0));
+          errorHandler.accept(new KPipeConsumer.ProcessingError(record, cause, retries));
         } catch (final Exception ex) {
           LOGGER.log(
             Level.ERROR,
@@ -306,6 +314,7 @@ final class RecordProcessor {
           Thread.currentThread().interrupt();
           return Outcome.PENDING;
         }
+        attemptFailed(record, e, attempt);
         if (attempt == maxRetries || NonRetryableException.isNonRetryable(e)) {
           handleProcessingError(record, e, attempt, span);
           return Outcome.PENDING;
@@ -356,12 +365,13 @@ final class RecordProcessor {
     final Tracer.SpanScope span
   ) {
     try {
-      wrapper.enqueue(record, value, RecordContext.current());
+      wrapper.enqueue(record, value, RecordContext.current(), attempt);
     } catch (final Exception e) {
       if (interruptedBy(e)) {
         Thread.currentThread().interrupt();
         return Outcome.PENDING;
       }
+      attemptFailed(record, e, attempt);
       handleProcessingError(record, e, attempt, span);
     }
     return Outcome.PENDING;
@@ -396,6 +406,24 @@ final class RecordProcessor {
 
   private void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
     if (offsetManager != null) offsetManager.markOffsetProcessed(record);
+  }
+
+  /// Reports one failed attempt to the attempt observer, with no record bound, as the error
+  /// handler runs. An observer that throws, an `AssertionError` included, is logged and cannot
+  /// change what happens to the record; only the JVM's own fatal errors pass through.
+  private void attemptFailed(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retryCount) {
+    final var observer = attemptFailedObserver;
+    if (observer == null) return;
+    try {
+      RecordContext.callWithout(() -> {
+        observer.accept(new KPipeConsumer.ProcessingError(record, cause, retryCount));
+        return null;
+      });
+    } catch (final VirtualMachineError fatal) {
+      throw fatal;
+    } catch (final Throwable ex) {
+      LOGGER.log(Level.WARNING, () -> "Attempt observer threw at offset " + record.offset(), ex);
+    }
   }
 
   private void handleProcessingError(

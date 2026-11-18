@@ -52,7 +52,11 @@ class BatchFlushLockHoldTest {
       public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+      public void onBatchFailure(
+        final ConsumerRecord<byte[], byte[]> record,
+        final Exception cause,
+        final int retries
+      ) {
         dispatchStarted.countDown();
         // Stands in for KPipeProducer.send(...).get() waiting on a broker that will not ack.
         try {
@@ -138,7 +142,11 @@ class BatchFlushLockHoldTest {
       public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {}
+      public void onBatchFailure(
+        final ConsumerRecord<byte[], byte[]> record,
+        final Exception cause,
+        final int retries
+      ) {}
     };
     final var wrapper = new BatchPipelineWrapper<byte[]>(
       TOPIC,

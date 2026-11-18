@@ -63,17 +63,12 @@ final class DefaultBatchSink<T> implements Sink<T> {
   }
 
   /// Builds the typed pipeline (deserialize → operators → return value) used by the consumer to
-  /// turn each `byte[]` into a `T` before enqueueing into the batch buffer. Observer dispatch
-  /// (`onFiltered` / `onFailed` / `peekResult`) is wired by [DefaultStream#wrapWithObservers] —
-  /// the same site [DefaultSink] uses, so the two sink types can't drift on it (the batch path
-  /// previously had no observer dispatch, silently dropping observers set on a `toBatch(...)`
-  /// stream). Observers fire on the per-record pipeline outcome, before buffering; batch-sink
-  /// failures are routed through the batch DLQ machinery, not `onFailed`.
+  /// turn each `byte[]` into a `T` before enqueueing into the batch buffer.
   MessagePipeline<T> buildPipeline() {
     final var registry = new MessageProcessorRegistry();
     final var pipelineBuilder = registry.pipeline(stream.format()).skipBytes(stream.skipBytes());
     for (final var op : stream.operators()) pipelineBuilder.pipe(op);
-    return stream.wrapWithObservers(pipelineBuilder.build());
+    return pipelineBuilder.build();
   }
 
   @Override

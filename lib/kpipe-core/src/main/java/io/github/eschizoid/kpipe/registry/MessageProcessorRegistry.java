@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.registry;
 
 import io.github.eschizoid.kpipe.sink.MessageSink;
-import java.lang.System.Logger;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
@@ -46,8 +45,6 @@ import java.util.function.UnaryOperator;
 /// `unregister*` are thread-safe. Lookups return wrapping operators/sinks that read the current
 /// map entry at invocation time, so live re-registration is observable.
 public class MessageProcessorRegistry {
-
-  private static final Logger LOGGER = System.getLogger(MessageProcessorRegistry.class.getName());
 
   /// Internal helper: each namespace owns one map and exposes the structural CRUD methods. Keeps
   /// the public registry from carrying two hand-rolled mirrors. The user-facing methods
@@ -241,14 +238,5 @@ public class MessageProcessorRegistry {
   /// @return an unmodifiable view of registered sinks (key → implementation simple name)
   public Map<RegistryKey<?>, String> getAllSinks() {
     return sinks.all();
-  }
-
-  /// Wraps a sink with error-handling logic that suppresses exceptions.
-  ///
-  /// @param sink the sink to wrap
-  /// @param <T>  the pipeline value type
-  /// @return a new sink that logs and swallows exceptions raised by the original
-  public static <T> MessageSink<T> withSinkErrorHandling(final MessageSink<T> sink) {
-    return RegistryFunctions.withConsumerErrorHandling(sink, LOGGER)::accept;
   }
 }

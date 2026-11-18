@@ -37,7 +37,11 @@ class BatchCloseDrainsDispatchTest {
       public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+      public void onBatchFailure(
+        final ConsumerRecord<byte[], byte[]> record,
+        final Exception cause,
+        final int retries
+      ) {
         dispatchStarted.countDown();
         try {
           Thread.sleep(300); // stands in for a DLQ produce waiting on a broker ack
@@ -85,7 +89,11 @@ class BatchCloseDrainsDispatchTest {
       public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {}
+      public void onBatchFailure(
+        final ConsumerRecord<byte[], byte[]> record,
+        final Exception cause,
+        final int retries
+      ) {}
 
       @Override
       public void onBufferReleased() {

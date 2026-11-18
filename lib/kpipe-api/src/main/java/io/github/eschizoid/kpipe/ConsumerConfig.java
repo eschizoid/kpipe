@@ -39,6 +39,7 @@ record ConsumerConfig(
   ProcessingMode processingMode,
   int keyOrderedMaxKeys,
   MetricsExporter metricsExporter,
+  Consumer<KPipeConsumer.ProcessingError> attemptFailedObserver,
   Consumer<KPipeConsumer.ProcessingError> errorHandler,
   String deadLetterTopic,
   Duration pollTimeout,
@@ -61,6 +62,7 @@ record ConsumerConfig(
       null,
       ProcessingMode.PARALLEL,
       ProcessingMode.DEFAULT_KEY_ORDERED_MAX_KEYS,
+      null,
       null,
       null,
       null,
@@ -105,6 +107,7 @@ record ConsumerConfig(
     if (maxRetries > 0) builder.withRetry(maxRetries, retryBackoff);
     if (backpressureHigh != null) builder.withBackpressure(backpressureHigh, backpressureLow);
     if (metricsExporter != null) builder.withMetrics(metricsExporter);
+    if (attemptFailedObserver != null) builder.withAttemptFailedObserver(attemptFailedObserver::accept);
     if (errorHandler != null) builder.withErrorHandler(errorHandler::accept);
     if (deadLetterTopic != null) builder.withDeadLetterTopic(deadLetterTopic);
     if (pollTimeout != null) builder.withPollTimeout(pollTimeout);
@@ -158,6 +161,7 @@ record ConsumerConfig(
     mirrored("withRetry", c -> c.maxRetries() > 0),
     mirrored("withBackpressure", c -> c.backpressureHigh() != null),
     mirrored("withDeadLetterTopic", c -> c.deadLetterTopic() != null),
+    mirrored("onAttemptFailed", c -> c.attemptFailedObserver() != null),
     mirrored("withErrorHandler", c -> c.errorHandler() != null),
     mirrored("withPollTimeout", c -> c.pollTimeout() != null),
     mirrored("withMetricsLog", c -> c.metricsLogInterval() != null),
@@ -192,6 +196,7 @@ record ConsumerConfig(
     ProcessingMode processingMode;
     int keyOrderedMaxKeys;
     MetricsExporter metricsExporter;
+    Consumer<KPipeConsumer.ProcessingError> attemptFailedObserver;
     Consumer<KPipeConsumer.ProcessingError> errorHandler;
     String deadLetterTopic;
     Duration pollTimeout;
@@ -213,6 +218,7 @@ record ConsumerConfig(
       m.processingMode = c.processingMode;
       m.keyOrderedMaxKeys = c.keyOrderedMaxKeys;
       m.metricsExporter = c.metricsExporter;
+      m.attemptFailedObserver = c.attemptFailedObserver;
       m.errorHandler = c.errorHandler;
       m.deadLetterTopic = c.deadLetterTopic;
       m.pollTimeout = c.pollTimeout;
@@ -236,6 +242,7 @@ record ConsumerConfig(
         processingMode,
         keyOrderedMaxKeys,
         metricsExporter,
+        attemptFailedObserver,
         errorHandler,
         deadLetterTopic,
         pollTimeout,

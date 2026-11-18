@@ -222,7 +222,7 @@ class BatchDispatchErrorPathsTest {
     public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retries) {
       if (throwForOffset != null && throwForOffset == record.offset()) {
         throw new IllegalStateException("callback failure for offset " + record.offset());
       }
@@ -246,7 +246,7 @@ class BatchDispatchErrorPathsTest {
     }
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retries) {
       failed.add(record.offset());
     }
 

@@ -254,6 +254,17 @@ class KPipeFacadeBuildTest {
   }
 
   @Test
+  void multiBuilderRejectsPerRouteOnAttemptFailed() {
+    final var multi = KPipe.multi(props()).json("topic-a", s -> s.onAttemptFailed(_ -> {}).toCustom(_ -> {}));
+    final var ex = assertThrows(IllegalArgumentException.class, multi::start);
+    assertTrue(ex.getMessage().contains("'topic-a'"), () -> "message should name the route: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("MultiBuilder.onAttemptFailed"),
+      () -> "message should point users at the consumer-level setter: " + ex.getMessage()
+    );
+  }
+
+  @Test
   void multiBuilderRejectsPerRouteWithErrorHandler() {
     final var multi = KPipe.multi(props()).json("topic-a", s -> s.withErrorHandler(_ -> {}).toCustom(_ -> {}));
     final var ex = assertThrows(IllegalArgumentException.class, multi::start);

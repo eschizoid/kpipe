@@ -80,7 +80,11 @@ class BatchCoverageContractInvariantTest {
     }
 
     @Override
-    public synchronized void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+    public synchronized void onBatchFailure(
+      final ConsumerRecord<byte[], byte[]> record,
+      final Exception cause,
+      final int retries
+    ) {
       failed.add(record.offset());
       failureCauseByOffset.put(record.offset(), cause);
     }

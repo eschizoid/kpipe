@@ -88,7 +88,11 @@ class BatchWrapperLockFrayTest {
       public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
 
       @Override
-      public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {}
+      public void onBatchFailure(
+        final ConsumerRecord<byte[], byte[]> record,
+        final Exception cause,
+        final int retries
+      ) {}
     };
   }
 

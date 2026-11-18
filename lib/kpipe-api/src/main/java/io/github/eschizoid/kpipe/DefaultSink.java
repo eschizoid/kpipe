@@ -51,15 +51,12 @@ final class DefaultSink<T> implements Sink<T> {
   }
 
   /// Builds the [MessagePipeline] for this sink's stream + terminal sink. Reused by
-  /// [MultiBuilder] when assembling a per-topic pipeline map. Observer dispatch (`onFiltered` /
-  /// `onFailed` / `peekResult`) is wired by [DefaultStream#wrapWithObservers] — shared with
-  /// [DefaultBatchSink] so the two sink types can't drift on it.
+  /// [MultiBuilder] when assembling a per-topic pipeline map.
   MessagePipeline<?> buildPipeline() {
     final var registry = new MessageProcessorRegistry();
     final var pipelineBuilder = registry.pipeline(stream.format()).skipBytes(stream.skipBytes());
     for (final var op : stream.operators()) pipelineBuilder.pipe(op);
-    final var base = pipelineBuilder.toSink(terminalSink).build();
-    return stream.wrapWithObservers(base);
+    return pipelineBuilder.toSink(terminalSink).build();
   }
 
   /// Exposes the configured stream for test inspection of composition.

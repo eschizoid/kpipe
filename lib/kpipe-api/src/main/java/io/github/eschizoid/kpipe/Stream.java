@@ -5,7 +5,6 @@ import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -216,60 +215,6 @@ public interface Stream<T> {
   /// @throws NullPointerException if `controller` is null
   Stream<T> withCircuitBreaker(final CircuitBreakerController controller);
 
-  /// Returns a new stream that invokes `observer` whenever a record is intentionally filtered
-  /// (an operator returned `null`). The observer is for visibility — it does **not** affect
-  /// pipeline flow, suppress the filter, or reroute the record. Use [#withErrorHandler] or
-  /// [#withDeadLetterTopic] for real failure routing; this is purely a hook for logging and
-  /// metrics.
-  ///
-  /// Runs on the same thread that processes the record: the consumer thread in `SEQUENTIAL`
-  /// mode, or a virtual worker thread in `PARALLEL` / `KEY_ORDERED` mode. If the observer
-  /// throws, the exception is logged at WARNING and swallowed so observer bugs cannot crash the
-  /// pipeline. Calling this method more than once replaces the previous observer — for fan-out,
-  /// compose externally.
-  ///
-  /// @param observer a side-effect invoked when a record is filtered (must not be null)
-  /// @return a new stream with the observer attached
-  /// @throws NullPointerException if `observer` is null
-  Stream<T> onFiltered(final Runnable observer);
-
-  /// Returns a new stream that invokes `observer` with the captured cause whenever the pipeline
-  /// returns `Failed`. The observer is for visibility — it does **not** suppress the failure or
-  /// stop the failure from reaching retry / DLQ / `withErrorHandler` logic.
-  ///
-  /// Fires on **every** failing pipeline invocation — including each retry attempt, so a record
-  /// that exhausts `withRetry(2, ...)` invokes this observer three times. For exactly one callback
-  /// per record after retries are exhausted, use `withErrorHandler(...)` instead.
-  ///
-  /// Runs on the same thread that processes the record: the consumer thread in `SEQUENTIAL`
-  /// mode, or a virtual worker thread in `PARALLEL` / `KEY_ORDERED` mode. If the observer
-  /// throws, the exception is logged at WARNING and swallowed. Calling this method more than
-  /// once replaces the previous observer.
-  ///
-  /// **Use this when records stop reaching the sink.** If `metrics().records().failed()` or
-  /// `filtered()` keeps rising while the sink sees nothing, attach
-  /// `onFailed(cause -> log.warn("pipeline failed", cause))` to surface what's actually being
-  /// lost.
-  ///
-  /// @param observer a side-effect invoked with the failure cause (must not be null)
-  /// @return a new stream with the observer attached
-  /// @throws NullPointerException if `observer` is null
-  Stream<T> onFailed(final Consumer<Throwable> observer);
-
-  /// Returns a new stream that invokes `observer` with every [Result] the pipeline produces —
-  /// `Passed`, `Filtered`, or `Failed`. The lowest-level observer hook; use this for full
-  /// pattern-matching diagnostic taps. Does **not** affect pipeline flow.
-  ///
-  /// Runs on the same thread that processes the record, before any downstream sink invocation:
-  /// the consumer thread in `SEQUENTIAL` mode, or a virtual worker thread in `PARALLEL` /
-  /// `KEY_ORDERED` mode. If the observer throws, the exception is logged at WARNING and
-  /// swallowed. Calling this method more than once replaces the previous observer.
-  ///
-  /// @param observer a side-effect invoked with every pipeline outcome (must not be null)
-  /// @return a new stream with the observer attached
-  /// @throws NullPointerException if `observer` is null
-  Stream<T> peekResult(final Consumer<Result<T>> observer);
-
   /// Returns a new stream with a custom error handler. The handler is invoked after retries are
   /// exhausted (or immediately when `maxRetries == 0`) with the failing record, the exception,
   /// and the retry count. The default handler logs at WARNING.
@@ -278,6 +223,25 @@ public interface Stream<T> {
   /// @return a new stream with the error handler attached
   /// @throws NullPointerException if `handler` is null
   Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler);
+
+  /// Returns a new stream that calls `observer` for every failed processing attempt, at any stage:
+  /// deserializing, an operator, the sink, or a batch flush. A record retried twice before it fails
+  /// for good is reported three times, the last before the record is counted as failed, sent to
+  /// the dead-letter topic or passed to the error handler; the error's `retryCount` is the number
+  /// of retries before the attempt. A batch flush failure reports the retries its record took
+  /// before it was buffered. An interrupted attempt is not reported, and neither is a record the
+  /// parallel dispatcher rejects before it runs.
+  ///
+  /// Use it to see transient failures that a retry later recovers from, which the error handler
+  /// never sees. The observer only watches: it cannot stop a retry or the error handling that
+  /// follows, and an observer that throws, an `AssertionError` included, is logged without
+  /// affecting the record. It has no current record; it gets the record in its `ProcessingError`.
+  /// Consumer-wide: in a [KPipe#multi] consumer, set it with `MultiBuilder.onAttemptFailed(...)`.
+  ///
+  /// @param observer called with each failed attempt (must not be null)
+  /// @return a new stream with the observer attached
+  /// @throws NullPointerException if `observer` is null
+  Stream<T> onAttemptFailed(final Consumer<KPipeConsumer.ProcessingError> observer);
 
   /// Returns a new stream with a dead-letter topic configured. Records that fail processing after
   /// retries are exhausted are forwarded to `dlqTopic` (using a `KPipeProducer` derived from the

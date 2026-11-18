@@ -57,8 +57,9 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     /// if one is configured, and invoke the error handler. The offset is marked processed only if
     /// the record reaches a durable terminal state — successfully parked in the DLQ, or no DLQ is
     /// configured (log-and-advance). A failed DLQ send leaves the offset pending so the record is
-    /// reprocessed on restart rather than silently dropped.
-    void onBatchFailure(ConsumerRecord<byte[], byte[]> record, Exception cause);
+    /// reprocessed on restart rather than silently dropped. `retries` is how many retries the
+    /// record took before it was buffered.
+    void onBatchFailure(ConsumerRecord<byte[], byte[]> record, Exception cause, int retries);
 
     /// Called after a flush's dispatch has lowered [#bufferedCount], on the thread that ran the
     /// flush. The owning consumer uses it to end an in-flight backpressure wait the flush drained.
@@ -125,27 +126,33 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     tickFuture = scheduler.scheduleWithFixedDelay(this::tick, tickMs, tickMs, TimeUnit.MILLISECONDS);
   }
 
-  /// [#enqueue(ConsumerRecord, Object, RecordContext)] with the record as it was consumed, so any
-  /// `rekey` or `withHeader` is lost. For tests that drive the wrapper directly; the consumer
-  /// buffers the current record.
+  /// [#enqueue(ConsumerRecord, Object, RecordContext, int)] with the record as it was consumed and
+  /// no retries, so any `rekey` or `withHeader` is lost. For tests that drive the wrapper
+  /// directly; the consumer buffers the current record.
   void enqueueAsConsumed(final ConsumerRecord<byte[], byte[]> record, final T value) {
-    enqueue(record, value, new KafkaRecordContext(record));
+    enqueue(record, value, new KafkaRecordContext(record), 0);
   }
 
   /// Adds `(record, value)` to the buffer, with `context` as the record a batch sink reads through
-  /// [RecordContext#currentBatch()]. If the new size meets the policy threshold, flushes
+  /// [RecordContext#currentBatch()] and `retries` as the retries the record took before it was
+  /// buffered, which a flush failure reports. If the new size meets the policy threshold, flushes
   /// inline. The caller must already have driven the pipeline (`pipeline.process(...)`) and only
   /// enqueue the `Passed` value; filtered records skip enqueueing entirely.
   ///
   /// `bufferedCount` is incremented before the lock is released so the in-flight backpressure
   /// strategy observes the new buffered record on its next check. The matching decrement happens
   /// in [#flushLocked] after the user sink returns.
-  void enqueue(final ConsumerRecord<byte[], byte[]> record, final T value, final RecordContext context) {
+  void enqueue(
+    final ConsumerRecord<byte[], byte[]> record,
+    final T value,
+    final RecordContext context,
+    final int retries
+  ) {
     Runnable dispatch = null;
     lock.lock();
     try {
       if (buffer.isEmpty()) oldestEnqueueNanos = System.nanoTime();
-      buffer.add(new Entry<>(record, value, context));
+      buffer.add(new Entry<>(record, value, context, retries));
       bufferedCount.incrementAndGet();
       if (buffer.size() >= policy.maxSize()) dispatch = flushLocked();
     } finally {
@@ -387,6 +394,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     return () -> {
       for (int i = 0; i < size; i++) {
         final var record = snapshot.get(i).record();
+        final var retries = snapshot.get(i).retries();
         // Per-iteration guard: a throwing callback (a custom OffsetManager in markProcessed, or a
         // buggy hook) must not abort the loop and strand the REMAINING records with no outcome at
         // all — every record in the batch gets its callback attempt. The failing record's own
@@ -407,7 +415,8 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
               ? perRecordCause
               : (coverageViolation != null
                   ? coverageViolation
-                  : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic))
+                  : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic)),
+            retries
           );
         } catch (final Exception callbackEx) {
           if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -466,7 +475,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     return () -> {
       for (final var entry : snapshot) {
         try {
-          callbacks.onBatchFailure(entry.record(), cause);
+          callbacks.onBatchFailure(entry.record(), cause, entry.retries());
         } catch (final Exception callbackEx) {
           if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
           LOGGER.log(
@@ -524,5 +533,5 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     awaitDispatchesQuiesced();
   }
 
-  record Entry<T>(ConsumerRecord<byte[], byte[]> record, T value, RecordContext context) {}
+  record Entry<T>(ConsumerRecord<byte[], byte[]> record, T value, RecordContext context, int retries) {}
 }

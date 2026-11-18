@@ -10,17 +10,13 @@ import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.Operators;
-import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import io.github.eschizoid.kpipe.sink.CompositeMessageSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,7 +35,7 @@ import java.util.function.UnaryOperator;
 /// This makes branching safe (`s.pipe(a)` and `s.pipe(b)` produce independent streams) and
 /// matches the Java Stream API's functional style.
 ///
-/// Pipeline-level state (topics, format, operators, skipBytes, result observers) lives as record
+/// Pipeline-level state (topics, format, operators, skipBytes) lives as record
 /// components here; every consumer-wide setting lives in the single [ConsumerConfig] component,
 /// whose `with*` methods below are thin delegates. Adding a new fluent setter is a one-place
 /// change: declare it on [ConsumerConfig] (or as a component + [Mut] field here if it is
@@ -53,13 +49,8 @@ record DefaultStream<T>(
   Supplier<MessageSink<T>> defaultConsoleSinkFactory,
   List<UnaryOperator<T>> operators,
   int skipBytes,
-  ConsumerConfig consumerConfig,
-  Runnable onFilteredObserver,
-  Consumer<Throwable> onFailedObserver,
-  Consumer<Result<T>> peekResultObserver
+  ConsumerConfig consumerConfig
 ) implements Stream<T> {
-  private static final Logger LOGGER = System.getLogger(DefaultStream.class.getName());
-
   /// Public constructor used by [KPipe] factories — single topic, empty pipeline, default
   /// retry / backpressure settings.
   DefaultStream(
@@ -87,10 +78,7 @@ record DefaultStream<T>(
       Objects.requireNonNull(defaultConsoleSinkFactory, "defaultConsoleSinkFactory cannot be null"),
       List.of(),
       0,
-      ConsumerConfig.defaults(),
-      null,
-      null,
-      null
+      ConsumerConfig.defaults()
     );
   }
 
@@ -238,6 +226,12 @@ record DefaultStream<T>(
   }
 
   @Override
+  public Stream<T> onAttemptFailed(final Consumer<KPipeConsumer.ProcessingError> observer) {
+    Objects.requireNonNull(observer, "observer cannot be null");
+    return mutateConfig(c -> c.attemptFailedObserver = observer);
+  }
+
+  @Override
   public Stream<T> withDeadLetterTopic(final String dlqTopic) {
     if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException("dlqTopic cannot be null or blank");
     return mutateConfig(c -> c.deadLetterTopic = dlqTopic);
@@ -306,24 +300,6 @@ record DefaultStream<T>(
   }
 
   @Override
-  public Stream<T> onFiltered(final Runnable observer) {
-    Objects.requireNonNull(observer, "observer cannot be null");
-    return mutate(m -> m.onFilteredObserver = observer);
-  }
-
-  @Override
-  public Stream<T> onFailed(final Consumer<Throwable> observer) {
-    Objects.requireNonNull(observer, "observer cannot be null");
-    return mutate(m -> m.onFailedObserver = observer);
-  }
-
-  @Override
-  public Stream<T> peekResult(final Consumer<Result<T>> observer) {
-    Objects.requireNonNull(observer, "observer cannot be null");
-    return mutate(m -> m.peekResultObserver = observer);
-  }
-
-  @Override
   public Sink<T> toConsole() {
     return toCustom(defaultConsoleSinkFactory.get());
   }
@@ -362,65 +338,6 @@ record DefaultStream<T>(
     });
   }
 
-  /// Wraps `base` with dispatch to the configured result observers (`onFiltered` / `onFailed` /
-  /// `peekResult`), or returns `base` unchanged when none is set. Lives here so both
-  /// [DefaultSink] and [DefaultBatchSink] share one wiring site: the batch path previously had
-  /// no observer dispatch at all, silently dropping observers set on a `toBatch(...)` stream.
-  ///
-  /// Observers fire on the PIPELINE outcome at `process()` time — for the batch path that is
-  /// before the record is buffered; batch-sink failures are a separate concern routed through the
-  /// batch DLQ machinery, not `onFailed`.
-  MessagePipeline<T> wrapWithObservers(final MessagePipeline<T> base) {
-    final var onFiltered = onFilteredObserver;
-    final var onFailed = onFailedObserver;
-    final var peek = peekResultObserver;
-    if (onFiltered == null && onFailed == null && peek == null) return base;
-    return new MessagePipeline<>() {
-      @Override
-      public T deserialize(final byte[] data) {
-        return base.deserialize(data);
-      }
-
-      @Override
-      public Result<T> process(final T data) {
-        final var result = base.process(data);
-        if (peek != null) safeAccept(peek, result, "peekResult");
-        switch (result) {
-          case Result.Passed<T> _ -> {
-          }
-          case Result.Filtered<T> _ -> {
-            if (onFiltered != null) safeRun(onFiltered);
-          }
-          case Result.Failed<T> failed -> {
-            if (onFailed != null) safeAccept(onFailed, failed.cause(), "onFailed");
-          }
-        }
-        return result;
-      }
-
-      @Override
-      public MessageSink<T> getSink() {
-        return base.getSink();
-      }
-    };
-  }
-
-  private static void safeRun(final Runnable observer) {
-    try {
-      observer.run();
-    } catch (final RuntimeException e) {
-      LOGGER.log(Level.WARNING, "onFiltered observer threw; swallowing to keep the pipeline running", e);
-    }
-  }
-
-  private static <A> void safeAccept(final Consumer<A> observer, final A arg, final String name) {
-    try {
-      observer.accept(arg);
-    } catch (final RuntimeException e) {
-      LOGGER.log(Level.WARNING, () -> name + " observer threw; swallowing to keep the pipeline running", e);
-    }
-  }
-
   /// Single funnel for every wither: snapshot this record into a [Mut], let the caller change
   /// what they need, rebuild a new record. New pipeline-level fields slot in at one site (the
   /// Mut declaration + its `from`/`build`); consumer-wide fields go through [#mutateConfig].
@@ -448,9 +365,6 @@ record DefaultStream<T>(
     List<UnaryOperator<T>> operators;
     int skipBytes;
     ConsumerConfig consumerConfig;
-    Runnable onFilteredObserver;
-    Consumer<Throwable> onFailedObserver;
-    Consumer<Result<T>> peekResultObserver;
 
     static <T> Mut<T> from(final DefaultStream<T> s) {
       final var m = new Mut<T>();
@@ -461,9 +375,6 @@ record DefaultStream<T>(
       m.operators = s.operators;
       m.skipBytes = s.skipBytes;
       m.consumerConfig = s.consumerConfig;
-      m.onFilteredObserver = s.onFilteredObserver;
-      m.onFailedObserver = s.onFailedObserver;
-      m.peekResultObserver = s.peekResultObserver;
       return m;
     }
 
@@ -475,10 +386,7 @@ record DefaultStream<T>(
         defaultConsoleSinkFactory,
         operators,
         skipBytes,
-        consumerConfig,
-        onFilteredObserver,
-        onFailedObserver,
-        peekResultObserver
+        consumerConfig
       );
     }
   }
