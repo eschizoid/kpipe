@@ -14,15 +14,18 @@ import io.github.eschizoid.kpipe.sink.MessageSink;
 /// - **`Failed<T>`** — non-fatal exception captured. The caller routes the cause to retry / DLQ /
 ///   error-handler logic.
 ///
-/// `deserialize(byte[])` throws on malformed input — `Result` is reserved for the `process()`
-/// boundary where the filter-vs-fail distinction lives. Callers do `deserializeOrFail(bytes)`
-/// then `switch (process(value))` and handle the three `Result` cases per their own semantics.
+/// `deserialize(byte[])` throws [MalformedRecordException] on bytes it cannot decode. `Result` is
+/// reserved for the `process()` boundary, where the filter-vs-fail distinction lives. Callers do
+/// `deserializeOrFail(bytes)`, then `switch (process(value))`, and handle the three `Result` cases
+/// per their own semantics.
 ///
 /// @param <T> the type of the object in the pipeline.
 public interface MessagePipeline<T> {
   /// Deserializes the raw byte array into a typed object.
   ///
-  /// Implementations MUST throw on malformed input rather than return `null`.
+  /// Implementations must throw rather than return `null`: [MalformedRecordException] for bytes
+  /// that cannot be decoded, including a null or empty value, and any other exception for a
+  /// failure a retry may fix, such as a schema registry that is down.
   ///
   /// @param data the raw data from Kafka
   /// @return the deserialized object (never null)
@@ -45,17 +48,19 @@ public interface MessagePipeline<T> {
     return null;
   }
 
-  /// Convenience wrapper that calls [#deserialize] and throws `IllegalStateException` if the
-  /// implementation violates the no-null contract. Most callers want this — they're going to
-  /// `switch (process(value))` next and would otherwise repeat the same null-check.
+  /// Calls [#deserialize] and throws [MalformedRecordException] when it returns null, which a
+  /// pipeline must not do. A pipeline built by [TypedPipelineBuilder] never returns null; this
+  /// guards a hand-written one.
   ///
   /// @param data the raw data from Kafka
   /// @return the deserialized object (never null)
-  /// @throws IllegalStateException if `deserialize` returns null
+  /// @throws MalformedRecordException if `deserialize` returns null
   default T deserializeOrFail(byte[] data) {
     final var deserialized = deserialize(data);
-    if (deserialized == null) throw new IllegalStateException(
-      "deserialize() returned null — implementations must throw on malformed input"
+    if (deserialized == null) throw new MalformedRecordException(
+      data == null
+        ? "The record value is null (a tombstone), so there is nothing to deserialize"
+        : "deserialize() returned null for a " + data.length + "-byte value instead of throwing"
     );
     return deserialized;
   }

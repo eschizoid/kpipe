@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -283,7 +284,7 @@ class AvroFormatSchemaEvolutionTest {
     final var resolver = new FakeResolver().put(2, USER_V2);
     final var format = AvroFormat.withRegistry(resolver);
 
-    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(stripped));
+    final var ex = assertThrows(MalformedRecordException.class, () -> format.deserialize(stripped));
     // The Avro payload for this record does not begin with the 0x00 magic byte, so the envelope
     // check fires before any schema lookup happens.
     assertTrue(
@@ -316,7 +317,7 @@ class AvroFormatSchemaEvolutionTest {
     if (stripped.length == 0) {
       assertNull(format.deserialize(stripped));
     } else {
-      final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(stripped));
+      final var ex = assertThrows(MalformedRecordException.class, () -> format.deserialize(stripped));
       assertTrue(
         ex.getMessage().contains("envelope") || ex.getMessage().contains("magic byte"),
         "short double-stripped record must be rejected; got: " + ex.getMessage()

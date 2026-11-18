@@ -1,6 +1,7 @@
 package io.github.eschizoid.kpipe.format.avro;
 
 import io.github.eschizoid.kpipe.registry.ConfluentEnvelope;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.registry.WireDiagnostics;
@@ -147,6 +148,9 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
   ///
   /// @param data the binary-encoded bytes (with Confluent envelope in Schema-Registry mode)
   /// @return the decoded record, or null if `data` is null/empty
+  /// @throws MalformedRecordException if the bytes do not decode, or the envelope is malformed; the
+  ///     record fails without retries. A failed schema lookup is thrown as the resolver threw it,
+  ///     and is retried.
   @Override
   public GenericRecord deserialize(final byte[] data) {
     if (data == null || data.length == 0) return null;
@@ -164,7 +168,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
       // the common bad-payload case would otherwise escape with a bare, context-free message. The
       // original cause is always attached, so a genuine programming error (e.g. an NPE) is still
       // visible in the cause chain rather than swallowed.
-      throw new IllegalStateException(
+      throw new MalformedRecordException(
         "AvroFormat.deserialize failed in static mode on " +
           data.length +
           " bytes against schema " +
@@ -199,7 +203,7 @@ public final class AvroFormat implements MessageFormat<GenericRecord> {
       // IOException,
       // so the production SR path would otherwise debug worse than the static path (context-free
       // escape). The original cause is always attached.
-      throw new IllegalStateException(
+      throw new MalformedRecordException(
         "Failed to decode Avro record under Confluent wire envelope (schema id " +
           schemaId +
           ", first bytes " +

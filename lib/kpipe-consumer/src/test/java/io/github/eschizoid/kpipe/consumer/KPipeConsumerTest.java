@@ -383,9 +383,10 @@ class KPipeConsumerTest {
 
     consumer.start();
     assertTrue(processed.await(2, TimeUnit.SECONDS), "the record must be processed and buffered");
-    // Confirm the record is buffered (in-flight gauge counts it) and the dispatcher is idle.
+    // Confirm the record is buffered (in-flight gauge counts it) and the dispatcher is idle. The
+    // gauge reads 2 while the dispatcher still counts the record it just buffered, so wait for 1.
     final var deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-    while (consumer.metrics().inFlight() < 1 && System.nanoTime() < deadline) Thread.sleep(5);
+    while (consumer.metrics().inFlight() != 1 && System.nanoTime() < deadline) Thread.sleep(5);
     assertEquals(1L, consumer.metrics().inFlight(), "the record should be buffered, not yet flushed");
 
     final var startNs = System.nanoTime();

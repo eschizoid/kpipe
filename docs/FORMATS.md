@@ -33,6 +33,19 @@ processing attempt, and a retry re-deserializes from the raw bytes rather than r
 batch path hands buffered values to the flusher under a lock.) Protobuf messages are immutable; transforms build a new
 message via `toBuilder()`.
 
+## Bytes that do not decode
+
+A record whose bytes cannot be decoded fails at once with `MalformedRecordException`, a `NonRetryableException`: the
+same bytes fail the same way on every attempt. That covers a null value (a tombstone), an empty value, a value no longer
+than `skipBytes`, a Confluent envelope that is too short or has the wrong magic byte, a Protobuf message index the
+schema does not have, and a payload the format cannot parse. The record skips its retries, goes to the error handler and
+the dead-letter topic, and does not count toward the circuit breaker.
+
+A Schema Registry lookup that fails is different. The registry may be down, so that failure keeps its own type and is
+retried. To route bad bytes on their own, test `error.exception() instanceof MalformedRecordException` in the error
+handler. A custom `MessageFormat` should throw `MalformedRecordException` for bytes it cannot decode, and any other
+exception for a failure a retry may fix.
+
 ## JSON
 
 Add `kpipe-format-json` (parsing backed by [fastjson2](https://github.com/alibaba/fastjson2)). Operators are

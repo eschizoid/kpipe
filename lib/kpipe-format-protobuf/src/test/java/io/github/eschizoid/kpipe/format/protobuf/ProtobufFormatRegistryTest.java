@@ -16,6 +16,7 @@ import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.DescriptorValidationException;
 import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.protobuf.DynamicMessage;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
@@ -242,13 +243,14 @@ class ProtobufFormatRegistryTest {
   void indexSizeExceedingTheEnvelopeIsRejectedBeforeAllocating() {
     // The size guard runs before `new int[size]`, so a corrupt varint cannot turn into a huge
     // allocation. Both cases below assert the guard's own message rather than just the exception
-    // type: without that, deleting the guard still throws IllegalStateException from the truncated
+    // type: without that, deleting the guard still throws MalformedRecordException from the
+    // truncated
     // varint the loop would hit next, and the test passes while covering nothing.
     final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
 
     // magic + id=1 + zig-zag size 0x04 (=2), with zero bytes left for the two index elements.
     final var truncated = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x04 };
-    final var small = assertThrows(IllegalStateException.class, () -> format.deserialize(truncated));
+    final var small = assertThrows(MalformedRecordException.class, () -> format.deserialize(truncated));
     assertTrue(
       small.getMessage().contains("exceeds remaining"),
       "must trip the size guard, not the truncated-varint branch; was: " + small.getMessage()
@@ -268,7 +270,7 @@ class ProtobufFormatRegistryTest {
       (byte) 0x80,
       0x08,
     };
-    final var big = assertThrows(IllegalStateException.class, () -> format.deserialize(huge));
+    final var big = assertThrows(MalformedRecordException.class, () -> format.deserialize(huge));
     assertTrue(
       big.getMessage().contains("exceeds remaining"),
       "a billion-element index must be rejected by the guard; was: " + big.getMessage()
@@ -294,7 +296,7 @@ class ProtobufFormatRegistryTest {
       (byte) 0x80,
       (byte) 0x80,
     };
-    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(overlong));
+    final var ex = assertThrows(MalformedRecordException.class, () -> format.deserialize(overlong));
     assertTrue(ex.getMessage().contains("varint"), "must mention varint; got: " + ex.getMessage());
   }
 
@@ -302,7 +304,7 @@ class ProtobufFormatRegistryTest {
   void wrongMagicByteThrows() {
     final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
     final var bad = new byte[] { 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x42 };
-    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(bad));
+    final var ex = assertThrows(MalformedRecordException.class, () -> format.deserialize(bad));
     assertTrue(ex.getMessage().contains("magic byte"), "must mention magic byte; got: " + ex.getMessage());
   }
 
@@ -310,7 +312,7 @@ class ProtobufFormatRegistryTest {
   void payloadShorterThanEnvelopeThrows() {
     final var format = ProtobufFormat.withRegistry(new FakeResolver(), new FakeCompiler());
     final var tooShort = new byte[] { 0x00, 0x00, 0x00 };
-    final var ex = assertThrows(IllegalStateException.class, () -> format.deserialize(tooShort));
+    final var ex = assertThrows(MalformedRecordException.class, () -> format.deserialize(tooShort));
     assertTrue(ex.getMessage().contains("envelope"));
   }
 

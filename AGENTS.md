@@ -179,8 +179,9 @@ Log-based fallback: `withMetricsLog(Duration)` writes one `key=value` line per i
   `wakeIfBackpressureDrained` ends an in-flight backpressure wait early (see the load-drop callback below). History: the
   old indefinite `park()` deadlocked forever under the lag strategy (SEQUENTIAL has no async completions to unpark it,
   and lag is monotonically non-decreasing while parked) and got the consumer evicted from the group after 5 minutes.
-- **Pipeline null handling.** Null record value and null deserialization throw specific `IllegalStateException` messages
-  (retryable). Null `process()` result is intentional filtering — mark offset processed, count as success, no error.
+- **Pipeline null handling.** A null, empty or too-short record value throws `MalformedRecordException` (not retried)
+  with a message naming which. Null `process()` result is intentional filtering — mark offset processed, count as
+  success, no error.
 - **Metrics snapshots.** `metrics()` returns an immutable `MetricsSnapshot` record.
 - **Thread-safety boundaries.** `processCommands()` is package-private — external callers can't invoke
   `kafkaConsumer.pause()`/`resume()`/`commitSync()` from arbitrary threads. `isRunning()` snapshots `state.get()` into a
@@ -200,16 +201,13 @@ errors as successes. Discovered during a Grafana session: protobuf seed messages
 
 **Invariants:**
 
-- Null record value or null deserialization → throw `IllegalStateException` (retryable). Format implementations must
-  throw, not return null.
-- **Read-path failures throw `IllegalStateException`, uniformly (1.19.0).** Every format's deserialize / wire-envelope
-  parse / descriptor-index resolution failure throws `IllegalStateException` — JSON, Avro, Protobuf (envelope + decode),
-  and `ConfluentProtobufDescriptorCompiler`'s message-index errors were unified from a JSON/Avro→`RuntimeException`,
-  Protobuf-envelope→`IllegalStateException`, confluent-index→`IllegalArgumentException` divergence. Two boundaries are
-  deliberate: a `SchemaResolver` that throws propagates its own exception unchanged (a transiently-down registry is not
-  a malformed-envelope condition to reclassify), and **write-path** `serialize` failures stay `RuntimeException` (a
-  can't-encode-this-object failure is a distinct mode from bad-input-bytes). Not a correctness hazard (no consumer path
-  switches on exception type — retry catches `Exception` uniformly); this is log/reader consistency.
+- **Bad bytes throw `MalformedRecordException`, which is not retried.** It extends `NonRetryableException`. Every
+  read-path failure that the same bytes would hit again throws it: a null, empty or too-short value (the built
+  pipeline's `deserialize` never returns null), a bad Confluent envelope, a bad Protobuf message index, and a decode
+  failure in JSON, Avro or Protobuf. `PipelineDiagnostics.wrap` keeps the type when it adds the hex dump. Two boundaries
+  are deliberate: a `SchemaResolver` failure propagates unchanged and is retried, and so does a schema text that does
+  not parse or compile, because both come from the registry side. **Write-path** `serialize` failures stay
+  `RuntimeException`.
 - `process()` returns `Result.Passed` / `Result.Filtered` / `Result.Failed(cause)`. `Result.filtered()` is a **shared
   singleton** to avoid per-record allocation; `Passed` and `Failed` allocate one record per call.
 - Operators (`UnaryOperator<T>`) still return `T` or null-for-filter — `Result` wrapping lives at the pipeline level.

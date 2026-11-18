@@ -122,7 +122,8 @@ A record's outcome is one of three sealed variants:
 - **Filtered** — a `filter` predicate returned false or an operator returned null. Deliberate: the sink is skipped and
   the offset still commits.
 - **Failed** — an operator, the deserializer, or the sink threw. After configured retries, the record goes to the error
-  handler and (if configured) the dead-letter topic. A `NonRetryableException` skips the retries.
+  handler and (if configured) the dead-letter topic. A `NonRetryableException` skips the retries, and so do bytes that
+  cannot be decoded, which fail with `MalformedRecordException`.
 
 Offsets commit on a 30-second cadence (synchronously, on the consumer thread), always at the **commit frontier** — the
 lowest offset still in flight per partition. A fast record cannot commit past a slow one, which is how at-least-once

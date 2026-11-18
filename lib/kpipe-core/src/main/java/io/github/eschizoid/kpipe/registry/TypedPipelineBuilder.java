@@ -213,22 +213,39 @@ public final class TypedPipelineBuilder<T> {
 
       @Override
       public T deserialize(byte[] data) {
-        if (data == null) return null;
+        if (data == null) throw new MalformedRecordException(
+          "The record value is null (a tombstone), so there is nothing to deserialize"
+        );
+        if (data.length == 0) throw new MalformedRecordException(
+          "The record value is empty, so there is nothing to deserialize"
+        );
+        if (data.length <= bytesToSkip) throw new MalformedRecordException(
+          "The record value is " +
+            data.length +
+            " bytes, so skipBytes(" +
+            bytesToSkip +
+            ") leaves nothing to deserialize"
+        );
+        final T value;
         if (bytesToSkip > 0) {
-          if (data.length <= bytesToSkip) return null;
           final var actualData = new byte[data.length - bytesToSkip];
           System.arraycopy(data, bytesToSkip, actualData, 0, actualData.length);
           try {
-            return format.deserialize(actualData);
+            value = format.deserialize(actualData);
           } catch (final RuntimeException e) {
             throw PipelineDiagnostics.wrap(data, bytesToSkip, formatName, e);
           }
+        } else {
+          try {
+            value = format.deserialize(data);
+          } catch (final RuntimeException e) {
+            throw PipelineDiagnostics.wrap(data, 0, formatName, e);
+          }
         }
-        try {
-          return format.deserialize(data);
-        } catch (final RuntimeException e) {
-          throw PipelineDiagnostics.wrap(data, 0, formatName, e);
-        }
+        if (value == null) throw new MalformedRecordException(
+          formatName + " returned null for a " + data.length + "-byte value instead of throwing"
+        );
+        return value;
       }
 
       @Override

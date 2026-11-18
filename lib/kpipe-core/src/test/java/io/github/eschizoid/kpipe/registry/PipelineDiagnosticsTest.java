@@ -82,4 +82,21 @@ class PipelineDiagnosticsTest {
     assertTrue(wrapped.getMessage().contains("Avro schema mismatch at field 'id'"));
     assertEquals("Avro schema mismatch at field 'id'", wrapped.getCause().getMessage());
   }
+
+  @Test
+  void wrappingBadBytesKeepsThemMalformed() {
+    final var wrapped = PipelineDiagnostics.wrap(
+      new byte[] { 1 },
+      0,
+      "JsonFormat",
+      new MalformedRecordException("bad")
+    );
+    assertTrue(wrapped instanceof MalformedRecordException, wrapped.getClass().getName());
+  }
+
+  @Test
+  void wrappingAnyOtherFailureKeepsItRetryable() {
+    final var wrapped = PipelineDiagnostics.wrap(new byte[] { 1 }, 0, "AvroFormat", new IllegalStateException("down"));
+    assertFalse(NonRetryableException.isNonRetryable(wrapped), wrapped.getClass().getName());
+  }
 }

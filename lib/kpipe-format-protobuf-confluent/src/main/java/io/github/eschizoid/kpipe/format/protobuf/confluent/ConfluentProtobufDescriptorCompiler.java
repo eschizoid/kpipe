@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.format.protobuf.confluent;
 import com.google.protobuf.Descriptors.Descriptor;
 import io.confluent.kafka.schemaregistry.protobuf.ProtobufSchema;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufDescriptorCompiler;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import java.util.Objects;
 
 /// Confluent-backed [ProtobufDescriptorCompiler]: compiles `.proto` source text to a protobuf
@@ -22,6 +23,8 @@ public final class ConfluentProtobufDescriptorCompiler implements ProtobufDescri
   /// @param protoText the `.proto` source for a schema id
   /// @param messageIndex the wire message-index path (`[0]` = first top-level message)
   /// @return the resolved message descriptor
+  /// @throws MalformedRecordException if `messageIndex`, which comes from the record's bytes,
+  ///     names a message the schema does not have; a schema that does not compile is retried
   @Override
   public Descriptor compile(final String protoText, final int[] messageIndex) {
     Objects.requireNonNull(protoText, "protoText cannot be null");
@@ -32,14 +35,14 @@ public final class ConfluentProtobufDescriptorCompiler implements ProtobufDescri
     final var file = schema.toDescriptor().getFile();
 
     final var topLevel = file.getMessageTypes();
-    if (messageIndex[0] < 0 || messageIndex[0] >= topLevel.size()) throw new IllegalStateException(
+    if (messageIndex[0] < 0 || messageIndex[0] >= topLevel.size()) throw new MalformedRecordException(
       "message-index[0]=" + messageIndex[0] + " out of range for " + topLevel.size() + " top-level messages"
     );
     var descriptor = topLevel.get(messageIndex[0]);
     for (var depth = 1; depth < messageIndex.length; depth++) {
       final var nested = descriptor.getNestedTypes();
       final var idx = messageIndex[depth];
-      if (idx < 0 || idx >= nested.size()) throw new IllegalStateException(
+      if (idx < 0 || idx >= nested.size()) throw new MalformedRecordException(
         "message-index[" +
           depth +
           "]=" +

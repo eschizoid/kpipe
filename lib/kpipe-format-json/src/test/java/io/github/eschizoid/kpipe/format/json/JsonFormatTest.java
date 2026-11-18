@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +19,7 @@ class JsonFormatTest {
   @Test
   void deserializeErrorMessageCarriesFormatNameAndByteLength() {
     final var malformed = "{\"a\":".getBytes(StandardCharsets.UTF_8);
-    final var thrown = assertThrows(IllegalStateException.class, () -> JsonFormat.INSTANCE.deserialize(malformed));
+    final var thrown = assertThrows(MalformedRecordException.class, () -> JsonFormat.INSTANCE.deserialize(malformed));
     final var message = thrown.getMessage();
     assertTrue(message.contains("JsonFormat"), () -> "message should name the format: " + message);
     assertTrue(
@@ -30,7 +31,9 @@ class JsonFormatTest {
   @Test
   void deserializeErrorMessageHandlesShortPayloadWithoutThrowing() {
     final var shortMalformed = new byte[] { (byte) 0xff, (byte) 0xfe };
-    final var thrown = assertThrows(IllegalStateException.class, () -> JsonFormat.INSTANCE.deserialize(shortMalformed));
+    final var thrown = assertThrows(MalformedRecordException.class, () ->
+      JsonFormat.INSTANCE.deserialize(shortMalformed)
+    );
     assertTrue(thrown.getMessage().contains("2 bytes"), () -> "message: " + thrown.getMessage());
   }
 }

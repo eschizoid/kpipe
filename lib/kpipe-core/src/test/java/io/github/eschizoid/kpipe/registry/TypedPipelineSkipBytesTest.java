@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
@@ -90,34 +91,36 @@ class TypedPipelineSkipBytesTest {
   }
 
   @Test
-  void payloadShorterThanPrefixDeserializesToNull() {
+  void payloadShorterThanPrefixIsMalformed() {
     final var format = new CapturingFormat();
     // 4 bytes of envelope, none of payload, against a 5-byte skip.
     final var tooShort = new byte[] { 0x00, 0x00, 0x00, 0x00 };
 
-    assertNull(pipelineWithSkip(format, 5).deserialize(tooShort), "no payload after the prefix decodes to null");
+    final var ex = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(format, 5).deserialize(tooShort)
+    );
+    assertEquals("The record value is 4 bytes, so skipBytes(5) leaves nothing to deserialize", ex.getMessage());
     assertNull(format.lastSeen, "the format must never be invoked when there is nothing left to decode");
   }
 
   @Test
-  void payloadExactlyEqualToPrefixLengthDeserializesToNull() {
+  void payloadExactlyEqualToPrefixLengthIsMalformed() {
     final var format = new CapturingFormat();
     // Exactly the 5-byte envelope, zero payload. The boundary is `data.length <= skip`.
     final var envelopeOnly = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x42 };
 
-    assertNull(pipelineWithSkip(format, 5).deserialize(envelopeOnly), "an envelope with no payload decodes to null");
+    assertThrows(MalformedRecordException.class, () -> pipelineWithSkip(format, 5).deserialize(envelopeOnly));
     assertNull(format.lastSeen);
   }
 
   @Test
-  void deserializeOrFailRejectsTheTruncatedPrefixAsAContractViolation() {
-    // The honest end-to-end path: a too-short record must not be reported as a silently
-    // filtered record. deserializeOrFail turns the null into the retryable no-null violation.
-    final var pipeline = pipelineWithSkip(new CapturingFormat(), 5);
-    final var tooShort = new byte[] { 0x00, 0x00, 0x00 };
+  void nullAndEmptyValuesAreMalformed() {
+    final var pipeline = pipelineWithSkip(new CapturingFormat(), 0);
 
-    final var ex = assertThrows(IllegalStateException.class, () -> pipeline.deserializeOrFail(tooShort));
-    assertEquals("deserialize() returned null — implementations must throw on malformed input", ex.getMessage());
+    final var tombstone = assertThrows(MalformedRecordException.class, () -> pipeline.deserialize(null));
+    assertTrue(tombstone.getMessage().contains("tombstone"), tombstone.getMessage());
+    final var empty = assertThrows(MalformedRecordException.class, () -> pipeline.deserialize(new byte[0]));
+    assertEquals("The record value is empty, so there is nothing to deserialize", empty.getMessage());
   }
 
   @Test

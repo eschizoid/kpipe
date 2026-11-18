@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
@@ -90,7 +91,7 @@ class ProtobufFormatEdgeCasesTest {
     // Tag byte for field 2 (name, wire type 2 = length-delimited) says "10 bytes follow" but
     // the buffer ends early. A partial decode must throw, not return a half-built message.
     final var truncated = new byte[] { 0x12, 0x0a, 'A', 'l', 'i' };
-    assertThrows(IllegalStateException.class, () -> format.deserialize(truncated));
+    assertThrows(MalformedRecordException.class, () -> format.deserialize(truncated));
   }
 
   @Test

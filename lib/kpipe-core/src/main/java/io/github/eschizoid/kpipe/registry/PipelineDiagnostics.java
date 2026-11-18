@@ -29,8 +29,8 @@ final class PipelineDiagnostics {
   /// @param formatClassName   the simple name of the `MessageFormat` impl, used to pick the
   ///                          right skipBytes suggestion (Avro = 5, Protobuf = 6)
   /// @param cause             the exception thrown by the format
-  /// @return a `RuntimeException` whose message carries the diagnostic; the original cause is
-  ///         preserved via `getCause()`
+  /// @return an exception whose message carries the diagnostic, with the original cause preserved
+  ///         via `getCause()`; a [MalformedRecordException] when `cause` is one
   static RuntimeException wrap(
     final byte[] data,
     final int configuredSkip,
@@ -57,7 +57,11 @@ final class PipelineDiagnostics {
     } else {
       msg.append(". Payload: empty");
     }
-    return new RuntimeException(msg.toString(), cause);
+    // Bad bytes stay recognisable as bad bytes; anything else, such as a registry outage, keeps the
+    // plain type so it is still retried.
+    return cause instanceof MalformedRecordException
+      ? new MalformedRecordException(msg.toString(), cause)
+      : new RuntimeException(msg.toString(), cause);
   }
 
   private static String suggestionFor(final String formatClassName) {

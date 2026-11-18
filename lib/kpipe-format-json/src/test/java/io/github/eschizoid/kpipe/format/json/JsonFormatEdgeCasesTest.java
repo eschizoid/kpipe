@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -65,7 +66,7 @@ class JsonFormatEdgeCasesTest {
   /// green this test on an unrelated bug. `JsonFormat.deserialize` wraps parse failures with this
   /// prefix; anything else (NPE, coercion) propagates without it and fails the check loudly.
   private static void assertDecodeFailure(final byte[] data) {
-    final var ex = assertThrows(IllegalStateException.class, () -> JsonFormat.INSTANCE.deserialize(data));
+    final var ex = assertThrows(MalformedRecordException.class, () -> JsonFormat.INSTANCE.deserialize(data));
     assertTrue(
       ex.getMessage() != null && ex.getMessage().contains("JsonFormat.deserialize failed"),
       () -> "expected a JsonFormat decode failure, got: " + ex

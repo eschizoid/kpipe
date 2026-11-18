@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufDescriptorCompiler;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import java.util.ServiceLoader;
 import org.junit.jupiter.api.Test;
 
@@ -63,7 +64,7 @@ class ConfluentProtobufDescriptorCompilerTest {
   @Test
   void outOfRangeIndexIsRejected() {
     final var proto = "syntax = \"proto3\"; message A { int64 id = 1; }";
-    assertThrows(IllegalStateException.class, () -> compiler.compile(proto, new int[] { 5 }));
+    assertThrows(MalformedRecordException.class, () -> compiler.compile(proto, new int[] { 5 }));
     assertThrows(IllegalStateException.class, () -> compiler.compile(proto, new int[] {}));
   }
 

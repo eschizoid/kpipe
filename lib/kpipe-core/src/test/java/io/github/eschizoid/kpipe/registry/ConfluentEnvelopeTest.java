@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-/// Unit tests for [ConfluentEnvelope] — the shared magic-byte check + big-endian schema-id read that
-/// the Avro and Protobuf registry-mode formats delegate to.
+/// Unit tests for [ConfluentEnvelope]: the shared magic-byte check and big-endian schema-id read
+/// that the Avro and Protobuf registry-mode formats delegate to.
 class ConfluentEnvelopeTest {
 
   @Test
@@ -34,14 +34,14 @@ class ConfluentEnvelopeTest {
   @Test
   void rejectsAWrongMagicByte() {
     final var data = new byte[] { 0x01, 0x00, 0x00, 0x00, 0x07 };
-    final var ex = assertThrows(IllegalStateException.class, () -> ConfluentEnvelope.readSchemaId(data));
+    final var ex = assertThrows(MalformedRecordException.class, () -> ConfluentEnvelope.readSchemaId(data));
     assertTrue(ex.getMessage().contains("magic byte"), ex.getMessage());
   }
 
   @Test
   void rejectsARecordShorterThanTheHeader() {
     final var data = new byte[] { 0x00, 0x00, 0x00 }; // 3 bytes < HEADER_LENGTH (5)
-    final var ex = assertThrows(IllegalStateException.class, () -> ConfluentEnvelope.readSchemaId(data));
+    final var ex = assertThrows(MalformedRecordException.class, () -> ConfluentEnvelope.readSchemaId(data));
     assertTrue(ex.getMessage().contains("too short"), ex.getMessage());
   }
 

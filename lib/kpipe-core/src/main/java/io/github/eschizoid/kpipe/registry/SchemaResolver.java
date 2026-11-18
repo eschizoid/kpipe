@@ -23,8 +23,9 @@ public interface SchemaResolver {
 
   /// Returns [#lookupById(int)]'s result after enforcing the no-null/no-blank contract. Format
   /// modules call this on the read path so a misbehaving resolver fails with one uniform
-  /// message instead of each format re-checking locally. Read-path failures throw
-  /// `IllegalStateException`, matching the formats' own deserialize failures.
+  /// message instead of each format re-checking locally. The failure is an
+  /// `IllegalStateException` and is retried, unlike a record's bad bytes: the text comes from the
+  /// registry, which may answer correctly on a later attempt.
   ///
   /// @param schemaId the integer schema identifier (typically extracted from the wire envelope)
   /// @return the schema text, guaranteed non-null and non-blank

@@ -2,10 +2,12 @@ package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.record.RecordContext;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
@@ -93,16 +95,63 @@ class AttemptFailedObserverTest {
     assertEquals(List.of("attempt:0:sink down", "error:0:sink down"), List.copyOf(heard));
   }
 
+  /// Bytes that do not parse fail the same way on every attempt, so a malformed record gets one
+  /// attempt however many retries are configured.
   @Test
-  void aDeserializationFailureIsHeard() throws Exception {
-    final var pipeline = new MessageProcessorRegistry()
-      .pipeline(JsonFormat.INSTANCE)
-      .toSink(_ -> {})
+  void aMalformedRecordIsHeardOnceAndNotRetried() throws Exception {
+    final var errors = new CopyOnWriteArrayList<Exception>();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(props())
+      .withTopic(TOPIC)
+      .withPipeline(
+        new MessageProcessorRegistry()
+          .pipeline(JsonFormat.INSTANCE)
+          .toSink(_ -> {})
+          .build()
+      )
+      .withRetry(3, Duration.ofMillis(1))
+      .withAttemptFailedObserver(observer)
+      .withErrorHandler(error -> {
+        errors.add(error.exception());
+        errorHandler.accept(error);
+      })
+      .withConsumer(AttemptFailedObserverTest::seeded)
+      .withPollTimeout(Duration.ofMillis(5))
       .build();
-    run(pipeline, 0, 2);
+    awaitHeard(consumer, 2);
     assertEquals(2, heard.size(), List.copyOf(heard).toString());
     assertTrue(heard.getFirst().startsWith("attempt:0:"), heard.getFirst());
     assertTrue(heard.getLast().startsWith("error:0:"), heard.getLast());
+    assertInstanceOf(MalformedRecordException.class, errors.getFirst());
+  }
+
+  /// A format failure that is not about the bytes, such as a schema registry that is down, may pass
+  /// on a later attempt, so it is retried.
+  @Test
+  void aFormatFailureThatMayPassLaterIsRetried() throws Exception {
+    final var calls = new AtomicInteger();
+    final var registryDown = new MessageFormat<byte[]>() {
+      @Override
+      public byte[] serialize(final byte[] data) {
+        return data;
+      }
+
+      @Override
+      public byte[] deserialize(final byte[] data) {
+        calls.incrementAndGet();
+        throw new IllegalStateException("registry down");
+      }
+    };
+    run(
+      new MessageProcessorRegistry()
+        .pipeline(registryDown)
+        .toSink(_ -> {})
+        .build(),
+      2,
+      4
+    );
+    assertEquals(3, calls.get(), "one attempt plus two retries");
+    assertTrue(heard.getLast().startsWith("error:2:"), heard.getLast());
   }
 
   @Test
