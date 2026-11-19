@@ -16,7 +16,7 @@ import io.github.eschizoid.kpipe.consumer.OffsetManager;
 import io.github.eschizoid.kpipe.consumer.OffsetState;
 import io.github.eschizoid.kpipe.consumer.OffsetStatistics;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.test.CapturingSink;
 import java.time.Duration;
 import java.util.Collection;
@@ -54,8 +54,7 @@ class AppIntegrationTest {
   void decodesFiltersTransformsAndSurfacesMalformedLinesEndToEnd() throws Exception {
     final var errors = new CopyOnWriteArrayList<ProcessingError>();
     final var capturingSink = new CapturingSink<CsvOrder>();
-    final var pipeline = new MessageProcessorRegistry()
-      .pipeline(new CsvOrderFormat())
+    final var pipeline = MessagePipeline.from(new CsvOrderFormat())
       // Mirrors App's .filter(order -> order.quantity() > 0): null return = intentional
       // filter.
       .pipe(order -> order.quantity() > 0 ? order : null)

@@ -14,7 +14,7 @@ import java.util.function.UnaryOperator;
 /// ```java
 /// import static io.github.eschizoid.kpipe.registry.Operators.filter;
 ///
-/// registry.pipeline(JsonFormat.INSTANCE)
+/// MessagePipeline.from(JsonFormat.INSTANCE)
 ///     .pipe(filter(msg -> "active".equals(msg.get("status"))))
 ///     .toSink(activeMessageSink)
 ///     .build();

@@ -47,12 +47,8 @@ import org.apache.kafka.common.errors.WakeupException;
 /// Example usage:
 ///
 /// ```java
-/// final var registry = new MessageProcessorRegistry();
-/// final var consoleSinkKey = RegistryKey.json("jsonConsole");
-/// registry.registerSink(consoleSinkKey, new JsonConsoleSink<>());
-///
-/// final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
-///     .toSink(consoleSinkKey)
+/// final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+///     .toSink(new JsonConsoleSink<>())
 ///     .build();
 ///
 /// final var consumer = KPipeConsumer.builder()

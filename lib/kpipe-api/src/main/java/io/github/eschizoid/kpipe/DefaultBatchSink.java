@@ -2,7 +2,6 @@ package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.util.Objects;
@@ -65,8 +64,7 @@ final class DefaultBatchSink<T> implements Sink<T> {
   /// Builds the typed pipeline (deserialize → operators → return value) used by the consumer to
   /// turn each `byte[]` into a `T` before enqueueing into the batch buffer.
   MessagePipeline<T> buildPipeline() {
-    final var registry = new MessageProcessorRegistry();
-    final var pipelineBuilder = registry.pipeline(stream.format()).skipBytes(stream.skipBytes());
+    final var pipelineBuilder = MessagePipeline.from(stream.format()).skipBytes(stream.skipBytes());
     for (final var op : stream.operators()) pipelineBuilder.pipe(op);
     return pipelineBuilder.build();
   }

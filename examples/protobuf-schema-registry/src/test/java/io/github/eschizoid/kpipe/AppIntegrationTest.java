@@ -21,7 +21,7 @@ import io.github.eschizoid.kpipe.consumer.OffsetState;
 import io.github.eschizoid.kpipe.consumer.OffsetStatistics;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.test.CapturingSink;
 import java.io.ByteArrayOutputStream;
@@ -95,10 +95,7 @@ class AppIntegrationTest {
     };
 
     final var capturingSink = new CapturingSink<Message>();
-    final var pipeline = new MessageProcessorRegistry()
-      .pipeline(ProtobufFormat.withRegistry(resolver))
-      .toSink(capturingSink)
-      .build();
+    final var pipeline = MessagePipeline.from(ProtobufFormat.withRegistry(resolver)).toSink(capturingSink).build();
 
     final var offsetManager = new MarkRecordingOffsetManager();
     final var mock = seededWith(confluentBytes);

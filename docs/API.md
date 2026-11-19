@@ -212,6 +212,6 @@ decoding them; see [FORMATS.md](FORMATS.md#editing-encoded-bytes).
 
 ## The explicit API
 
-Everything above is a facade over `MessageProcessorRegistry` + `KPipeConsumerBuilder`. Drop down when you need custom
-offset managers, pre-shared registries, custom Kafka consumer factories, or shutdown tuning — the capability map and
-worked examples are in [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
+Everything above is a facade over `MessagePipeline.from(format)` + `KPipeConsumerBuilder`. Drop down when you need
+custom offset managers, one built pipeline shared by several consumers, custom Kafka consumer factories, or shutdown
+tuning. The capability map and worked examples are in [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).

@@ -10,7 +10,6 @@ import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
@@ -85,8 +84,7 @@ class AttemptFailedObserverTest {
 
   @Test
   void aSinkFailureIsHeard() throws Exception {
-    final var pipeline = new MessageProcessorRegistry()
-      .pipeline(MessageFormat.bytes())
+    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
       .toSink(_ -> {
         throw new IllegalStateException("sink down");
       })
@@ -104,8 +102,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withTopic(TOPIC)
       .withPipeline(
-        new MessageProcessorRegistry()
-          .pipeline(JsonFormat.INSTANCE)
+        MessagePipeline.from(JsonFormat.INSTANCE)
           .toSink(_ -> {})
           .build()
       )
@@ -143,8 +140,7 @@ class AttemptFailedObserverTest {
       }
     };
     run(
-      new MessageProcessorRegistry()
-        .pipeline(registryDown)
+      MessagePipeline.from(registryDown)
         .toSink(_ -> {})
         .build(),
       2,
@@ -160,7 +156,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withBatchPipeline(
         TOPIC,
-        new MessageProcessorRegistry().pipeline(MessageFormat.bytes()).build(),
+        MessagePipeline.from(MessageFormat.bytes()).build(),
         values -> BatchResult.allFailed(values.size(), new IllegalStateException("flush down")),
         BatchPolicy.ofSize(1)
       )
@@ -230,7 +226,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withBatchPipeline(
         TOPIC,
-        new MessageProcessorRegistry().pipeline(MessageFormat.bytes()).build(),
+        MessagePipeline.from(MessageFormat.bytes()).build(),
         values -> new BatchResult(List.of(0), Map.of(1, new IllegalStateException("second down"))),
         BatchPolicy.ofSize(2)
       )
@@ -251,8 +247,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withBatchPipeline(
         TOPIC,
-        new MessageProcessorRegistry()
-          .pipeline(MessageFormat.bytes())
+        MessagePipeline.from(MessageFormat.bytes())
           .pipe(value -> {
             if (calls.incrementAndGet() == 1) throw new IllegalStateException("transient");
             return value;
@@ -272,8 +267,7 @@ class AttemptFailedObserverTest {
   }
 
   private static MessagePipeline<byte[]> operator(final UnaryOperator<byte[]> op) {
-    return new MessageProcessorRegistry()
-      .pipeline(MessageFormat.bytes())
+    return MessagePipeline.from(MessageFormat.bytes())
       .pipe(op)
       .toSink(_ -> {})
       .build();

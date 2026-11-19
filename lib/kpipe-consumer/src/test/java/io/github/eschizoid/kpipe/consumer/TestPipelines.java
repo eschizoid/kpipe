@@ -2,22 +2,18 @@ package io.github.eschizoid.kpipe.consumer;
 
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import java.util.function.UnaryOperator;
 
 /// Test-only fixtures for [MessagePipeline]. Tests that exercise consumer mechanics
 /// (backpressure, retry, offset commits, DLQ) typically don't need a real format
 /// pipeline — they just need a `byte[] -> byte[]` operation with optional side effects.
 ///
-/// These helpers route through the canonical [MessageProcessorRegistry] +
-/// [MessageFormat#bytes] path so tests exercise the real production code path
-/// (TypedPipelineBuilder and the registry lookups) rather than a parallel implementation.
+/// These helpers build through [MessagePipeline#from] and [MessageFormat#bytes], the path
+/// production code takes, rather than a parallel implementation.
 ///
 /// They stay in the test source tree on purpose: they are NOT a public API.
-/// Production users should call `registry.pipeline(MessageFormat.bytes())` directly.
+/// Production users should call `MessagePipeline.from(MessageFormat.bytes())` directly.
 final class TestPipelines {
-
-  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
   private TestPipelines() {}
 
@@ -26,13 +22,13 @@ final class TestPipelines {
   /// @param processor the byte[] transform invoked from `process()`
   /// @return a MessagePipeline driving the given processor
   static MessagePipeline<byte[]> sideEffect(final UnaryOperator<byte[]> processor) {
-    return REGISTRY.pipeline(MessageFormat.bytes()).pipe(processor).build();
+    return MessagePipeline.from(MessageFormat.bytes()).pipe(processor).build();
   }
 
   /// An identity pipeline — bytes in, same bytes out, no side effects.
   ///
   /// @return a passthrough MessagePipeline
   static MessagePipeline<byte[]> identity() {
-    return REGISTRY.pipeline(MessageFormat.bytes()).build();
+    return MessagePipeline.from(MessageFormat.bytes()).build();
   }
 }

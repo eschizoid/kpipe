@@ -48,8 +48,8 @@ Maven equivalent:
 `kpipe-api` pulls `kpipe-consumer`, `kpipe-producer`, `kpipe-core`, and `kpipe-tracing` transitively, so you do not list
 them in your build file. Format modules are deliberately **not** transitive — you add only the one(s) you use.
 
-Skip `kpipe-api` only if you want the explicit registry/builder API without the fluent facade; in that case depend on
-`kpipe-consumer` directly.
+Skip `kpipe-api` only if you want the explicit pipeline and consumer builders without the fluent facade; in that case
+depend on `kpipe-consumer` directly.
 
 ## Module catalog
 
@@ -57,7 +57,7 @@ Skip `kpipe-api` only if you want the explicit registry/builder API without the 
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `kpipe-api`                       | Fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                        |
 | `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                        |
-| `kpipe-core`                      | Registries, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                                   |
+| `kpipe-core`                      | `MessagePipeline` and its builder, `MessageFormat`, `MessageSink`, operators, `BatchSink`                            |
 | `kpipe-consumer`                  | `KPipeConsumer`, `KPipeConsumerBuilder`, backpressure, circuit breaker, offset management, metrics, health server    |
 | `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, DLQ producer                                                             |
 | `kpipe-metrics-otel`              | OpenTelemetry export of consumer metrics (opt-in)                                                                    |

@@ -12,7 +12,7 @@ import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -289,8 +289,6 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   @State(Scope.Thread)
   public static class KpipeInvocationContext {
 
-    private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
-
     private AtomicInteger processedCount;
     private KPipeConsumer consumer;
 
@@ -299,7 +297,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       processedCount = new AtomicInteger(0);
       final var props = kafkaContext.consumerProps("kpipe-group");
       final var workMicros = params.workMicros;
-      final var pipeline = REGISTRY.pipeline(MessageFormat.bytes())
+      final var pipeline = MessagePipeline.from(MessageFormat.bytes())
         .pipe(b -> {
           simulateWork(workMicros);
           processedCount.incrementAndGet();
@@ -336,8 +334,6 @@ public final class ParallelProcessingBenchmarkInfrastructure {
   @State(Scope.Thread)
   public static class KpipeKeyOrderedInvocationContext {
 
-    private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
-
     private AtomicInteger processedCount;
     private KPipeConsumer consumer;
 
@@ -346,7 +342,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       processedCount = new AtomicInteger(0);
       final var props = kafkaContext.consumerProps("kpipe-keyordered-group");
       final var workMicros = params.workMicros;
-      final var pipeline = REGISTRY.pipeline(MessageFormat.bytes())
+      final var pipeline = MessagePipeline.from(MessageFormat.bytes())
         .pipe(b -> {
           simulateWork(workMicros);
           processedCount.incrementAndGet();

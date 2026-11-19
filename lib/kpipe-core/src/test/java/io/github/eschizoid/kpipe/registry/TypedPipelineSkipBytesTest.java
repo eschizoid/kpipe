@@ -73,7 +73,7 @@ class TypedPipelineSkipBytesTest {
   }
 
   private static MessagePipeline<byte[]> pipelineWithSkip(final MessageFormat<byte[]> format, final int skip) {
-    return new TypedPipelineBuilder<>(format, new MessageProcessorRegistry()).skipBytes(skip).build();
+    return MessagePipeline.from(format).skipBytes(skip).build();
   }
 
   @Test

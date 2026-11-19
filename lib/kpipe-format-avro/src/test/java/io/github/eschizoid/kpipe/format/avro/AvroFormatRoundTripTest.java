@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -54,12 +53,10 @@ class AvroFormatRoundTripTest {
       ]
     }""";
 
-  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
-
   @Test
   void testParseAvroInvalidRecord() {
     final var format = AvroFormat.of(SIMPLE_SCHEMA_JSON);
-    final var pipeline = REGISTRY.pipeline(format).build();
+    final var pipeline = MessagePipeline.from(format).build();
     final var invalidAvroBytes = "invalid avro".getBytes(StandardCharsets.UTF_8);
 
     assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, invalidAvroBytes));
@@ -70,7 +67,7 @@ class AvroFormatRoundTripTest {
     final var format = AvroFormat.of(SIMPLE_SCHEMA_JSON);
     final var avroBytes = encode(format.schema(), "test");
 
-    final var pipeline = REGISTRY.pipeline(format).build();
+    final var pipeline = MessagePipeline.from(format).build();
     final var result = roundTrip(format, pipeline, avroBytes);
 
     assertNotNull(result);
@@ -82,7 +79,7 @@ class AvroFormatRoundTripTest {
     final var format = AvroFormat.of(SIMPLE_SCHEMA_JSON);
     final var avroBytes = encode(format.schema(), "test-value");
 
-    final var pipeline = REGISTRY.pipeline(format).build();
+    final var pipeline = MessagePipeline.from(format).build();
     final var result = roundTrip(format, pipeline, avroBytes);
 
     assertNotNull(result);

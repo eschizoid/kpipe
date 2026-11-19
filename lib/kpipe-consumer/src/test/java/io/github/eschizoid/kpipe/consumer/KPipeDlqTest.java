@@ -9,7 +9,6 @@ import io.github.eschizoid.kpipe.format.json.JsonFields;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
@@ -409,9 +408,7 @@ class KPipeDlqTest {
       final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
-        .withPipeline(
-          new MessageProcessorRegistry().pipeline(JsonFormat.INSTANCE).pipe(JsonFields.require("id")).build()
-        )
+        .withPipeline(MessagePipeline.from(JsonFormat.INSTANCE).pipe(JsonFields.require("id")).build())
         .withRetry(3, Duration.ofSeconds(30))
         .withDeadLetterTopic(DLQ_TOPIC)
         .withKafkaProducer(mockProducer)

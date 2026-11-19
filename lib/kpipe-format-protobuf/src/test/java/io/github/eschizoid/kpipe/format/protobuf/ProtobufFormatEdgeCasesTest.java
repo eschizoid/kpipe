@@ -13,7 +13,6 @@ import com.google.protobuf.DynamicMessage;
 import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,13 +24,11 @@ class ProtobufFormatEdgeCasesTest {
 
   private Descriptors.Descriptor descriptor;
   private ProtobufFormat format;
-  private MessageProcessorRegistry registry;
 
   @BeforeEach
   void setUp() throws Exception {
     descriptor = buildTestDescriptor();
     format = new ProtobufFormat(descriptor);
-    registry = new MessageProcessorRegistry();
   }
 
   /// Drives `bytes` through deserialize -> process -> serialize, re-throwing a failure cause.
@@ -78,7 +75,7 @@ class ProtobufFormatEdgeCasesTest {
     final var big = "z".repeat(2_000_000);
     final var bytes = format.serialize(message(1L, big));
 
-    final var pipeline = registry.pipeline(format).build();
+    final var pipeline = MessagePipeline.from(format).build();
     final var result = roundTrip(format, pipeline, bytes);
 
     assertNotNull(result);
@@ -99,7 +96,7 @@ class ProtobufFormatEdgeCasesTest {
     final var payload = format.serialize(message(7L, "framed"));
     final var framed = withEnvelope(99, payload);
 
-    final var pipeline = registry.pipeline(format).skipBytes(6).build();
+    final var pipeline = MessagePipeline.from(format).skipBytes(6).build();
     final var decoded = pipeline.deserializeOrFail(framed);
 
     assertNotNull(decoded);
@@ -113,7 +110,7 @@ class ProtobufFormatEdgeCasesTest {
     final var payload = format.serialize(message(7L, "framed"));
     final var framed = withEnvelope(99, payload);
 
-    final var pipeline = registry.pipeline(format).skipBytes(5).build();
+    final var pipeline = MessagePipeline.from(format).skipBytes(5).build();
 
     var corrupted = false;
     try {
