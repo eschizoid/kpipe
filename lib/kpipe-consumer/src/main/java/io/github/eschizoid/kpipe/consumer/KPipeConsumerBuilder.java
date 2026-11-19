@@ -418,6 +418,10 @@ public final class KPipeConsumerBuilder {
 
   /// Sets the supplier for providing a consumer instance.
   ///
+  /// The KPipe consumer owns partition pause state: on every pass it pauses the assignment while
+  /// a pause source holds a pause and resumes any paused partition otherwise, so a partition
+  /// paused directly through this consumer does not stay paused. Use [KPipeConsumer#pause()].
+  ///
   /// @param provider A supplier that returns a Consumer instance configured for processing
   ///     messages
   /// @return This builder instance for method chaining

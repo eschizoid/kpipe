@@ -23,15 +23,14 @@ import org.apache.kafka.clients.consumer.Consumer;
 ///
 /// Owns the pause bitmask, the CB state machine (`AtomicReference<CircuitBreakerState>`), the
 /// trip timestamp, the probe-timer `ScheduledFuture`, and the rolling success/failure window.
-/// Side effects (`kafkaConsumer.pause`, `LockSupport.unpark`, command-queue inserts) stay on
-/// [KPipeConsumer]; pause/resume transitions are signalled through the [PauseLifecycleHook] and
-/// metric events through the [HealthMetricsObserver], both supplied at construction so the host
-/// owns the single site that drives the command queue.
+/// Side effects (`kafkaConsumer.pause`, `LockSupport.unpark`) stay on [KPipeConsumer]; pause and
+/// resume transitions are signalled through the [PauseLifecycleHook] and metric events through
+/// the [HealthMetricsObserver], both supplied at construction.
 ///
 /// Surface used by [KPipeConsumer]:
 ///
 ///   * [#requestPause] / [#releasePause] for MANUAL pause; returns the "you caused the transition"
-///     boolean so the caller can decide whether to call `internalPause`.
+///     boolean so the caller can decide whether to wake the consumer thread.
 ///   * [#recordOutcome] for per-record success/failure; drives the CB state machine and fires the
 ///     pause callbacks itself when CB transitions cross.
 ///   * [#tickBackpressure] runs after each record (or each poll, sequential mode); drives the BP
@@ -41,24 +40,9 @@ final class ConsumerHealthController {
 
   private static final Logger LOGGER = System.getLogger(ConsumerHealthController.class.getName());
 
-  /// Pause sources arbitrated by the internal bitmask. The consumer is paused iff at least one
-  /// source holds it; resume fires only on the *last* release.
-  enum Source {
-    MANUAL(1),
-    BACKPRESSURE(2),
-    CIRCUIT_BREAKER(4);
-
-    final int bit;
-
-    Source(final int bit) {
-      this.bit = bit;
-    }
-  }
-
-  /// Pause-lifecycle side effects the controller drives during arbitration. KPipeConsumer wires
-  /// this to its `internalPause` / `internalResume` choreography — the two callbacks that flip
-  /// actual Kafka consumer state when the arbitrated pause set transitions between empty and
-  /// non-empty. Kept narrow so unit tests can substitute a recording fake.
+  /// Signals the edges of the arbitrated pause set: empty to non-empty, and back. KPipeConsumer
+  /// wakes its consumer thread on both, and that thread applies the pause to Kafka. Kept narrow so
+  /// unit tests can substitute a recording fake.
   interface PauseLifecycleHook {
     /// Invoked when an arbitrary source transitions the consumer into the paused state.
     void onPause();
@@ -68,12 +52,10 @@ final class ConsumerHealthController {
   }
 
   /// Pure metric fan-out for backpressure and circuit-breaker events; KPipeConsumer feeds its
-  /// `ConsumerCounters` from them. These callbacks observe health transitions — they never touch
-  /// Kafka consumer state (that is [PauseLifecycleHook]'s job).
-  ///
-  /// Because it is a pure observer, a caller (or a test) that doesn't record metrics can
-  /// substitute [#NOOP] and pair it with a real [PauseLifecycleHook] — the point of keeping the
-  /// two concerns as separate interfaces rather than one 7-method hook.
+  /// `ConsumerCounters` from them, and those keep their own clock for pause and open time. These
+  /// callbacks observe health transitions; they never touch Kafka consumer state, which is
+  /// [PauseLifecycleHook]'s job, so a caller that records no metrics can pass [#NOOP] alongside a
+  /// real hook.
   interface HealthMetricsObserver {
     /// A no-op observer: drops every event. For callers wiring pause arbitration without metrics.
     HealthMetricsObserver NOOP = new HealthMetricsObserver() {
@@ -81,38 +63,22 @@ final class ConsumerHealthController {
       public void onBackpressurePause() {}
 
       @Override
-      public void onBackpressureTimeMs(final long ms) {}
-
-      @Override
-      public void onCircuitBreakerTrip() {}
+      public void onBackpressureRelease() {}
 
       @Override
       public void onCircuitBreakerStateChange(final CircuitBreakerState state) {}
-
-      @Override
-      public void onCircuitBreakerTimeOpenMs(final long ms) {}
     };
 
     /// Invoked when backpressure first crosses the high watermark and requests a pause.
     void onBackpressurePause();
 
-    /// Invoked when backpressure releases its hold, with the elapsed paused duration.
-    ///
-    /// @param ms milliseconds the backpressure pause was held (always `>= 1`)
-    void onBackpressureTimeMs(long ms);
+    /// Invoked when backpressure releases its hold.
+    void onBackpressureRelease();
 
-    /// Invoked on CLOSED → OPEN and HALF_OPEN → OPEN circuit-breaker transitions.
-    void onCircuitBreakerTrip();
-
-    /// Invoked on every circuit-breaker state transition.
+    /// Invoked on every circuit-breaker state transition; a change to `OPEN` is a trip.
     ///
     /// @param state the new state
     void onCircuitBreakerStateChange(CircuitBreakerState state);
-
-    /// Invoked when the breaker leaves OPEN, with the elapsed duration spent open.
-    ///
-    /// @param ms milliseconds the breaker stayed in OPEN before probing
-    void onCircuitBreakerTimeOpenMs(long ms);
   }
 
   // ── Pause arbitration ────────────────────────────────────────────────────
@@ -170,42 +136,49 @@ final class ConsumerHealthController {
   ///
   /// @param source the pause source acquiring the hold
   /// @return `true` iff this call caused the transition from "no sources holding" to "at least
-  ///     one source holding" — the caller should now invoke `internalPause()`. Idempotent.
-  boolean requestPause(final Source source) {
-    return pauseMask.getAndUpdate(m -> m | source.bit) == 0;
+  ///     one source holding", so the caller should wake the consumer thread. Idempotent.
+  boolean requestPause(final PauseSource source) {
+    return pauseMask.getAndUpdate(m -> m | bit(source)) == 0;
   }
 
   /// Removes `source` from the held set.
   ///
   /// @param source the pause source releasing its hold
   /// @return `true` iff this call caused the transition from "at least one source holding" to
-  ///     "no sources holding" — the caller should now invoke `internalResume()`. Idempotent.
-  boolean releasePause(final Source source) {
-    final var prev = pauseMask.getAndUpdate(m -> m & ~source.bit);
-    return prev != 0 && (prev & ~source.bit) == 0;
+  ///     "no sources holding", so the caller should wake the consumer thread. Idempotent.
+  boolean releasePause(final PauseSource source) {
+    final var prev = pauseMask.getAndUpdate(m -> m & ~bit(source));
+    return prev != 0 && (prev & ~bit(source)) == 0;
   }
 
   boolean isPaused() {
     return pauseMask.get() != 0;
   }
 
-  boolean isHeldBy(final Source source) {
-    return (pauseMask.get() & source.bit) != 0;
+  boolean isHeldBy(final PauseSource source) {
+    return (pauseMask.get() & bit(source)) != 0;
   }
 
-  /// Snapshot of which sources currently hold the pause. Allocates — use only for logging.
-  Set<Source> currentSources() {
+  /// The sources holding the pause, from one read of the mask, so the set is never torn.
+  ///
+  /// @return a new set of the holding sources; empty when not paused
+  Set<PauseSource> pauseSources() {
     final var m = pauseMask.get();
-    final var set = EnumSet.noneOf(Source.class);
-    for (final var s : Source.values()) if ((m & s.bit) != 0) set.add(s);
+    final var set = EnumSet.noneOf(PauseSource.class);
+    for (final var s : PauseSource.values()) if ((m & bit(s)) != 0) set.add(s);
     return set;
+  }
+
+  private static int bit(final PauseSource source) {
+    return 1 << source.ordinal();
   }
 
   // ─────────────────────────── Backpressure API ─────────────────────────────
 
   /// Runs the backpressure decision against the current metric and dispatches the resulting action.
-  /// On PAUSE this records the pause-start timestamp, fires the trip + onPause callbacks. On RESUME
-  /// this computes the pause duration, fires the duration + onResume callbacks.
+  /// On PAUSE it records the pause start and fires `onBackpressurePause` and, when backpressure is
+  /// the first holder, `onPause`. On RESUME it fires `onBackpressureRelease` and, when backpressure
+  /// was the last holder, `onResume`.
   ///
   /// @param kafkaConsumer the Kafka consumer whose metric is read by the configured strategy
   void tickBackpressure(final Consumer<?, ?> kafkaConsumer) {
@@ -221,7 +194,7 @@ final class ConsumerHealthController {
         );
         metricsObserver.onBackpressurePause();
         backpressurePauseStartNanos = System.nanoTime();
-        if (requestPause(Source.BACKPRESSURE)) pauseHook.onPause();
+        if (requestPause(PauseSource.BACKPRESSURE)) pauseHook.onPause();
         // Lost-wakeup guard. The PAUSE decision above came from a metric read taken BEFORE
         // `requestPause` published the BACKPRESSURE bit, but a load drop only unparks the consumer
         // thread when it observes that bit after lowering the load. Load drops are record
@@ -253,23 +226,22 @@ final class ConsumerHealthController {
         // Only release when backpressure actually holds the pause. `check` answers RESUME for
         // "paused and metric at/below the low watermark" regardless of WHICH source paused the
         // consumer — during a MANUAL or circuit-breaker pause with an idle pipeline this arm
-        // would otherwise fire on every tick, feeding a garbage duration (nanoTime origin minus
-        // a never-set pause start) into the backpressure-time counter and logging a misleading
-        // "backpressure resolved" line each time.
-        if (isHeldBy(Source.BACKPRESSURE)) releaseBackpressure();
+        // would otherwise fire on every tick, counting a backpressure release that had no pause
+        // behind it and logging a misleading "backpressure resolved" line each time.
+        if (isHeldBy(PauseSource.BACKPRESSURE)) releaseBackpressure();
       }
       case NONE -> {
       }
     }
   }
 
-  /// Releases the backpressure hold: fires the paused-duration callback and — when backpressure
+  /// Releases the backpressure hold: fires the release callback and — when backpressure
   /// was the last holder — the resume callback. Shared by the regular RESUME tick and the
   /// post-pause lost-wakeup guard above.
   private void releaseBackpressure() {
     final long duration = Math.max(1, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - backpressurePauseStartNanos));
-    metricsObserver.onBackpressureTimeMs(duration);
-    if (releasePause(Source.BACKPRESSURE)) {
+    metricsObserver.onBackpressureRelease();
+    if (releasePause(PauseSource.BACKPRESSURE)) {
       LOGGER.log(Level.INFO, "Backpressure resolved: resuming consumer (paused for {0} ms)", duration);
       pauseHook.onResume();
     } else {
@@ -277,7 +249,7 @@ final class ConsumerHealthController {
         Level.INFO,
         "Backpressure resolved (paused for {0} ms), other sources still hold the pause: {1}",
         duration,
-        currentSources()
+        pauseSources()
       );
     }
   }
@@ -288,7 +260,7 @@ final class ConsumerHealthController {
     return (
       backpressure != null &&
       BackpressureController.IN_FLIGHT_METRIC_NAME.equals(backpressure.getMetricName()) &&
-      isHeldBy(Source.BACKPRESSURE)
+      isHeldBy(PauseSource.BACKPRESSURE)
     );
   }
 
@@ -370,9 +342,8 @@ final class ConsumerHealthController {
       cbWindow.failureRate(),
       cbController.openDuration()
     );
-    metricsObserver.onCircuitBreakerTrip();
     metricsObserver.onCircuitBreakerStateChange(CircuitBreakerState.OPEN);
-    if (requestPause(Source.CIRCUIT_BREAKER)) pauseHook.onPause();
+    if (requestPause(PauseSource.CIRCUIT_BREAKER)) pauseHook.onPause();
     final var existing = cbProbeFuture;
     if (existing != null) existing.cancel(false);
     try {
@@ -405,9 +376,8 @@ final class ConsumerHealthController {
     final var openedAt = cbOpenedAtNanos.get();
     final var openMs = openedAt == 0L ? 0L : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - openedAt);
     LOGGER.log(Level.INFO, "Circuit breaker probing: open for {0} ms, resuming consumer", openMs);
-    metricsObserver.onCircuitBreakerTimeOpenMs(openMs);
     metricsObserver.onCircuitBreakerStateChange(CircuitBreakerState.HALF_OPEN);
-    if (releasePause(Source.CIRCUIT_BREAKER)) pauseHook.onResume();
+    if (releasePause(PauseSource.CIRCUIT_BREAKER)) pauseHook.onResume();
   }
 
   /// Transitions the breaker back to CLOSED after a successful probe. Resets stats so the next trip

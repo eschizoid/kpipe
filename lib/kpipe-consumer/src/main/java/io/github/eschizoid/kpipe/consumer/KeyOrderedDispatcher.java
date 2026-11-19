@@ -58,7 +58,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 /// the queue's monitor (worker exit after observing an empty queue, or the start-failure
 /// rollback) — never while a worker is mid-drain.
 ///
-/// **Shutdown.** [KPipeConsumer#close] calls `waitForInFlightDrain(waitForMessagesTimeout)`
+/// **Shutdown.** [KPipeConsumer#close] calls `awaitDispatchIdle(waitForMessagesTimeout)`
 /// BEFORE invoking [#close()] on this dispatcher. By the time `close()` runs, all queues
 /// should be empty and workers exited. This `close()` performs a defensive short wait for
 /// any straggler, then interrupts remaining workers and returns; records still in flight
@@ -503,7 +503,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
 
   @Override
   public void signalShutdown() {
-    // Non-blocking. Set by KPipeConsumer.close() BEFORE waitForInFlightDrain so a consumer
+    // Non-blocking. Set by KPipeConsumer.close() BEFORE awaitDispatchIdle so a consumer
     // thread stuck in reserveCapacity's saturation stall-loop can escape promptly and let
     // the drain wait + thread.join make progress. Workers already inside task.run() are not
     // interrupted — they finish naturally or get abandoned at JVM exit (VTs are daemon).
@@ -515,7 +515,7 @@ final class KeyOrderedDispatcher implements Dispatcher {
     // Safety net: re-signal in case close() was called directly without signalShutdown()
     // (e.g. from a test or non-standard shutdown path). Idempotent — volatile write.
     closed = true;
-    // `KPipeConsumer.close()` already calls `waitForInFlightDrain(waitForMessagesTimeout)`
+    // `KPipeConsumer.close()` already calls `awaitDispatchIdle(waitForMessagesTimeout)`
     // BEFORE invoking us, so `pending` should typically be 0 by now. Short defensive wait
     // for any straggler in-flight record. Records that don't finish within the timeout are
     // abandoned to the JVM (same behavior as the prior `virtualThreadExecutor.shutdownNow`

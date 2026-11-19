@@ -67,7 +67,7 @@ class StreamBatchIntegrationTest {
       .start();
 
     try {
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       // Produce 25 records — expect 2 size-triggered flushes (10+10), then a tail flush of 5 via
       // age trigger or shutdown drain.
@@ -163,7 +163,7 @@ class StreamBatchIntegrationTest {
         Duration.ofSeconds(20),
         "batch path must invoke the tracer once per record; the circuit breaker must also be wired"
       );
-      assertTrue(handle.isHealthy(), "breaker is far below threshold — consumer stays healthy");
+      assertTrue(handle.health().healthy(), "breaker is far below threshold — consumer stays healthy");
     } finally {
       handle.shutdownGracefully(Duration.ofSeconds(5));
     }

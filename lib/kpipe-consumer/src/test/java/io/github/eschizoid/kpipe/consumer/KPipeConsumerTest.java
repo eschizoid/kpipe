@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -23,10 +24,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import org.apache.kafka.clients.consumer.CloseOptions;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.MockConsumer;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -342,7 +345,7 @@ class KPipeConsumerTest {
   void closeDoesNotBurnTimeoutWaitingForBufferedBatchRecords() throws InterruptedException {
     // A size-only batch policy (maxSize=100) means a single buffered record never auto-flushes —
     // it's flushed by BatchPipelineWrapper.close() at teardown. So the in-flight drain must wait
-    // only on the dispatcher's active work (drainableCount), not backpressureLoad (which counts the
+    // only on the dispatcher's active work (drainableCount), not inFlight (which counts the
     // buffered record); otherwise close() burns the whole waitForMessagesTimeout while the
     // dispatcher is already idle. Probe: close() returns well under the timeout AND the buffered
     // record is still flushed + its offset marked at teardown.
@@ -711,28 +714,229 @@ class KPipeConsumerTest {
     consumer.close();
   }
 
+  /// A consumer paused before it starts starts paused: it runs and stays healthy, fetches nothing
+  /// while paused, and consumes once resumed.
   @Test
-  void pauseShouldChangeStateAndEnqueuePauseCommand() {
-    // Arrange
-    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
+  void aConsumerPausedBeforeStartStartsPaused() throws InterruptedException {
+    final var mock = singlePartitionMock();
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
+    final var polls = new AtomicInteger();
+    for (int i = 0; i < 3; i++) mock.schedulePollTask(polls::incrementAndGet);
     final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
-      .withPipeline(TestPipelines.sideEffect(mockProcessor::apply))
-      .withCommandQueue(commandQueue)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
       .build();
 
-    // Act
     consumer.pause();
+    consumer.start();
+    TestAwaits.pollUntil(() -> polls.get() == 3, Duration.ofSeconds(5), "three polls while paused");
 
-    // Assert
-    assertTrue(consumer.isPaused());
-    assertTrue(commandQueue.stream().anyMatch(c -> c instanceof ConsumerCommand.Pause));
+    assertTrue(mock.paused().contains(partition), "the assignment is paused");
+    assertEquals(0L, consumer.metrics().records().received(), "nothing is fetched while paused");
+    final var health = consumer.health();
+    assertTrue(health.running());
+    assertEquals(Set.of(PauseSource.MANUAL), health.pauseSources());
+    assertTrue(health.healthy(), "a manual pause is not a health problem");
+
+    consumer.resume();
+    TestAwaits.pollUntil(
+      () -> consumer.metrics().records().processed() == 1L,
+      Duration.ofSeconds(5),
+      "the record is processed after resume"
+    );
+    consumer.close();
+  }
+
+  /// A partition assigned to a paused consumer is paused before the poll that assigned it can fetch
+  /// from it, so the records waiting on it stay unread until the consumer resumes.
+  @Test
+  void aPartitionAssignedWhilePausedIsNotFetched() throws InterruptedException {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest");
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.updateBeginningOffsets(Map.of(partition, 0L));
+    final var assigned = new CountDownLatch(1);
+    final var polls = new AtomicInteger();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    try {
+      consumer.pause();
+      consumer.start();
+      mock.schedulePollTask(() -> {
+        mock.rebalance(List.of(partition));
+        mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
+        assigned.countDown();
+      });
+      for (int i = 0; i < 3; i++) mock.schedulePollTask(polls::incrementAndGet);
+      assertTrue(assigned.await(5, TimeUnit.SECONDS), "the partition is assigned");
+      TestAwaits.pollUntil(() -> polls.get() == 3, Duration.ofSeconds(5), "three more polls while paused");
+
+      assertTrue(mock.paused().contains(partition), "the new partition is paused");
+      assertEquals(0L, consumer.metrics().records().received(), "nothing is fetched while paused");
+
+      consumer.resume();
+      TestAwaits.pollUntil(
+        () -> consumer.metrics().records().processed() == 1L,
+        Duration.ofSeconds(5),
+        "the record is processed after resume"
+      );
+    } finally {
+      consumer.close();
+    }
+  }
+
+  /// A poll loop that fails stops reporting itself as running at once, while it is still draining
+  /// in-flight records, not only once its teardown ends. A `close()` during that teardown waits for
+  /// it, so it still returns with the Kafka consumer closed.
+  @Test
+  void aFailedPollLoopIsNotRunningWhileItTearsDown() throws InterruptedException {
+    final var failPause = new AtomicBoolean();
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+
+      @Override
+      public synchronized void pause(final Collection<TopicPartition> partitions) {
+        if (failPause.get()) throw new KafkaException("broker gone");
+        super.pause(partitions);
+      }
+    };
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(partition));
+    mock.updateBeginningOffsets(Map.of(partition, 0L));
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
+    final var processing = new CountDownLatch(1);
+    final var release = new CountDownLatch(1);
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          processing.countDown();
+          try {
+            release.await();
+          } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+          return value;
+        })
+      )
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .withWaitForMessagesTimeout(Duration.ofSeconds(30))
+      .build();
+    try {
+      consumer.start();
+      assertTrue(processing.await(5, TimeUnit.SECONDS), "the record is in flight");
+      // The loop pauses the assignment itself on its next pass; the throw escapes the loop.
+      failPause.set(true);
+      consumer.pause();
+
+      TestAwaits.pollUntil(() -> !consumer.health().running(), Duration.ofSeconds(5), "running turns false");
+      assertFalse(consumer.health().healthy());
+      assertFalse(consumer.awaitShutdown(Duration.ZERO), "teardown is still draining the in-flight record");
+
+      release.countDown();
+      consumer.close();
+      assertTrue(consumer.awaitShutdown(Duration.ZERO), "close returns only once the teardown has finished");
+      assertTrue(mock.closed(), "the Kafka consumer is closed when close returns");
+    } finally {
+      release.countDown();
+      consumer.close();
+    }
+  }
+
+  /// A graceful shutdown of a running consumer drains it, closes it, and reports that nothing is
+  /// left in flight.
+  @Test
+  void shutdownGracefullyReportsADrainedConsumer() throws InterruptedException {
+    final var mock = singlePartitionMock();
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    consumer.start();
+    TestAwaits.pollUntil(() -> consumer.metrics().records().processed() == 1L, Duration.ofSeconds(5), "processed");
+
+    assertTrue(consumer.shutdownGracefully(Duration.ofSeconds(5)));
+    assertTrue(mock.closed());
+    assertTrue(consumer.shutdownGracefully(Duration.ofSeconds(5)), "a closed consumer has nothing left in flight");
+  }
+
+  /// A graceful shutdown that finds the consumer already shutting down waits for that shutdown to
+  /// finish before it reports, so it returns with the Kafka consumer closed.
+  @Test
+  void shutdownGracefullyDuringAShutdownWaitsForIt() throws InterruptedException {
+    final var closeGate = new CountDownLatch(1);
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+
+      @Override
+      public void close(final CloseOptions options) {
+        try {
+          closeGate.await();
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+        super.close(options);
+      }
+    };
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(partition));
+    mock.updateBeginningOffsets(Map.of(partition, 0L));
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    consumer.start();
+    final var closer = Thread.ofVirtual().start(consumer::close);
+    TestAwaits.pollUntil(() -> !consumer.isRunning(), Duration.ofSeconds(5), "the first shutdown has begun");
+
+    final var drained = new AtomicBoolean();
+    final var graceful = Thread.ofVirtual().start(() ->
+      drained.set(consumer.shutdownGracefully(Duration.ofSeconds(10)))
+    );
+    assertFalse(graceful.join(Duration.ofMillis(300)), "shutdownGracefully waits while the teardown is held open");
+
+    closeGate.countDown();
+    assertTrue(graceful.join(Duration.ofSeconds(10)), "shutdownGracefully returns once the teardown ends");
+    assertTrue(drained.get());
+    assertTrue(mock.closed(), "the Kafka consumer is closed when shutdownGracefully returns");
+    assertTrue(closer.join(Duration.ofSeconds(5)));
+  }
+
+  private static MockConsumer<byte[], byte[]> singlePartitionMock() {
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics) {}
+
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+    };
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(partition));
+    mock.updateBeginningOffsets(Map.of(partition, 0L));
+    return mock;
   }
 
   @Test
-  void resumeShouldChangeStateAndEnqueueResumeCommand() {
-    // Arrange
+  void pauseIsHeldByItsSourceWithoutACommand() {
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
     final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
@@ -740,14 +944,45 @@ class KPipeConsumerTest {
       .withPipeline(TestPipelines.sideEffect(mockProcessor::apply))
       .withCommandQueue(commandQueue)
       .build();
+
     consumer.pause();
 
-    // Act
+    assertTrue(consumer.isPaused());
+    assertEquals(Set.of(PauseSource.MANUAL), consumer.health().pauseSources());
+    assertTrue(commandQueue.isEmpty(), "the poll loop applies the pause; no command is queued");
+
     consumer.resume();
 
-    // Assert
     assertFalse(consumer.isPaused());
-    assertTrue(commandQueue.stream().anyMatch(c -> c instanceof ConsumerCommand.Resume));
+    assertTrue(commandQueue.isEmpty());
+  }
+
+  /// Kafka's pause state follows the pause sources: a partition paused at the Kafka level while
+  /// no source holds a pause is resumed by the poll loop's next pass, whatever paused it.
+  @Test
+  void aKafkaPauseWithNoSourceIsUndoneByTheNextPass() throws InterruptedException {
+    final var mock = singlePartitionMock();
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
+    mock.pause(List.of(partition));
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    try {
+      consumer.start();
+      TestAwaits.pollUntil(
+        () -> consumer.metrics().records().processed() == 1L,
+        Duration.ofSeconds(5),
+        "the stale Kafka pause is undone and the record processed"
+      );
+      assertTrue(mock.paused().isEmpty());
+    } finally {
+      consumer.close();
+    }
   }
 
   @Test
@@ -781,31 +1016,27 @@ class KPipeConsumerTest {
   }
 
   @Test
-  void processCommandsShouldHandleClose() {
-    // Arrange — wire the test's queue into the consumer so processCommands() actually drains it
-    // (the old version offered Close to a throwaway queue the consumer never read, so it only
-    // proved processCommands() tolerates an empty queue). pause() puts the consumer in a running
-    // state (PAUSED counts as running) that a Close can transition out of; clearing the Pause
-    // command pause() enqueues leaves only the Close to exercise — so processCommands() never
-    // calls kafkaConsumer.pause() and no live broker is needed.
+  void processCommandsShouldHandleClose() throws InterruptedException {
+    // A Close command on the queue the running poll loop drains moves the consumer out of RUNNING.
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
     final var consumer = KPipeConsumer.builder()
       .withProperties(properties)
       .withTopic(TOPIC)
       .withPipeline(TestPipelines.sideEffect(mockProcessor::apply))
       .withCommandQueue(commandQueue)
+      .withConsumer(KPipeConsumerTest::singlePartitionMock)
+      .withPollTimeout(Duration.ofMillis(10))
       .build();
-    consumer.pause();
-    commandQueue.clear();
-    assertTrue(consumer.isRunning(), "precondition: consumer is running (paused) before the Close");
-    commandQueue.offer(new ConsumerCommand.Close());
+    try {
+      consumer.start();
+      assertTrue(consumer.isRunning(), "precondition: the consumer is running before the Close");
 
-    // Act
-    assertDoesNotThrow(consumer::processCommands);
+      commandQueue.offer(new ConsumerCommand.Close());
 
-    // Assert — the Close command drove the consumer out of the running state into CLOSING.
-    assertFalse(consumer.isRunning(), "processCommands must handle Close by initiating shutdown");
-    assertFalse(consumer.isPaused());
+      TestAwaits.pollUntil(() -> !consumer.isRunning(), Duration.ofSeconds(5), "the Close stops the consumer");
+    } finally {
+      consumer.close();
+    }
   }
 
   @Test

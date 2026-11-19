@@ -45,12 +45,12 @@ class CircuitBreakerTransitionTest {
   /// because a
   /// trip must pause and a successful probe must resume.
   private static final class RecordingHook
-    implements ConsumerHealthController.PauseLifecycleHook, ConsumerHealthController.HealthMetricsObserver {
+    implements ConsumerHealthController.PauseLifecycleHook, ConsumerHealthController.HealthMetricsObserver
+  {
 
     final AtomicInteger pauses = new AtomicInteger();
     final AtomicInteger resumes = new AtomicInteger();
     final AtomicInteger trips = new AtomicInteger();
-    final AtomicInteger timeOpenReports = new AtomicInteger();
     final List<CircuitBreakerState> stateChanges = new ArrayList<>();
 
     @Override
@@ -67,21 +67,12 @@ class CircuitBreakerTransitionTest {
     public void onBackpressurePause() {}
 
     @Override
-    public void onBackpressureTimeMs(final long ms) {}
-
-    @Override
-    public void onCircuitBreakerTrip() {
-      trips.incrementAndGet();
-    }
+    public void onBackpressureRelease() {}
 
     @Override
     public void onCircuitBreakerStateChange(final CircuitBreakerState state) {
+      if (state == CircuitBreakerState.OPEN) trips.incrementAndGet();
       stateChanges.add(state);
-    }
-
-    @Override
-    public void onCircuitBreakerTimeOpenMs(final long ms) {
-      timeOpenReports.incrementAndGet();
     }
   }
 
@@ -369,7 +360,14 @@ class CircuitBreakerTransitionTest {
     scheduler.fireLatest();
     assertSame(CircuitBreakerState.HALF_OPEN, hc.circuitBreakerState());
     assertEquals(resumesBefore + 1, hook.resumes.get(), "probe fire resumes the consumer once");
-    assertEquals(1, hook.timeOpenReports.get(), "probe reports the open duration exactly once");
+    assertEquals(
+      1,
+      hook.stateChanges
+        .stream()
+        .filter(s -> s == CircuitBreakerState.HALF_OPEN)
+        .count(),
+      "the probe enters HALF_OPEN exactly once"
+    );
 
     // Re-firing the same one-shot task is a clean no-op (lost CAS): no second HALF_OPEN entry, no
     // second resume — the breaker is no longer OPEN.

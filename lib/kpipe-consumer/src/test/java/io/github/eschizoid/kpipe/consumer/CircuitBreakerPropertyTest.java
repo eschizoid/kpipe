@@ -176,18 +176,12 @@ class CircuitBreakerPropertyTest {
     public void onBackpressurePause() {}
 
     @Override
-    public void onBackpressureTimeMs(final long ms) {}
-
-    @Override
-    public void onCircuitBreakerTrip() {}
+    public void onBackpressureRelease() {}
 
     @Override
     public void onCircuitBreakerStateChange(final CircuitBreakerState state) {
       stateChanges.add(state);
     }
-
-    @Override
-    public void onCircuitBreakerTimeOpenMs(final long ms) {}
   }
 
   /// A scheduler that never runs anything on its own: each submitted probe task is captured so

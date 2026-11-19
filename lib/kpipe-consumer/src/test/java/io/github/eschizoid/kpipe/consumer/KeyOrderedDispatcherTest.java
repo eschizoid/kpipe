@@ -737,7 +737,7 @@ class KeyOrderedDispatcherTest {
   void signalShutdownUnblocksStalledDispatchBeforeClose() throws InterruptedException {
     // signalShutdown() must be enough on its own — no close() needed — to release a consumer
     // thread spinning in the saturation yield-loop. This is what KPipeConsumer.close() relies
-    // on to call signalShutdown() BEFORE waitForInFlightDrain (so drain doesn't wait
+    // on to call signalShutdown() BEFORE awaitDispatchIdle (so drain doesn't wait
     // indefinitely on a stuck pending counter).
     final var dispatcher = new KeyOrderedDispatcher(2);
     final var workerA = new CountDownLatch(1);

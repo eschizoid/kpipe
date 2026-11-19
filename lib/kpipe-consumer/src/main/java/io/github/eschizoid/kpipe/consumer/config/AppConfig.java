@@ -1,7 +1,6 @@
 package io.github.eschizoid.kpipe.consumer.config;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -26,9 +25,7 @@ import java.util.function.Function;
 ///     "my-topic",
 ///     "my-app",
 ///     Duration.ofMillis(100),
-///     Duration.ofSeconds(60),
-///     Duration.ofMinutes(1),
-///     List.of("parseJson", "addTimestamp")
+///     Duration.ofSeconds(60)
 /// );
 /// ```
 ///
@@ -38,21 +35,16 @@ import java.util.function.Function;
 /// @param appName The name of the application
 /// @param pollTimeout Timeout duration for polling messages
 /// @param shutdownTimeout Timeout duration for graceful shutdown
-/// @param metricsInterval Interval between metrics reporting
-/// @param processors List of processor names to apply to messages
 public record AppConfig(
   String bootstrapServers,
   String consumerGroup,
   String topic,
   String appName,
   Duration pollTimeout,
-  Duration shutdownTimeout,
-  Duration metricsInterval,
-  List<String> processors
+  Duration shutdownTimeout
 ) {
   public static final Duration DEFAULT_POLL_TIMEOUT = Duration.ofMillis(100);
   public static final Duration DEFAULT_SHUTDOWN_TIMEOUT = Duration.ofSeconds(30);
-  public static final Duration DEFAULT_METRICS_INTERVAL = Duration.ofMinutes(1);
 
   /// Creates a new Kafka configuration with the specified parameters.
   ///
@@ -62,17 +54,13 @@ public record AppConfig(
   /// @param appName Application name for metrics and logging
   /// @param pollTimeout Duration to wait in poll operations
   /// @param shutdownTimeout Maximum duration to wait during a graceful shutdown
-  /// @param metricsInterval Interval between metrics reporting
-  /// @param processors List of processor names to use in the processing pipeline
   public AppConfig(
     final String bootstrapServers,
     final String consumerGroup,
     final String topic,
     final String appName,
     final Duration pollTimeout,
-    final Duration shutdownTimeout,
-    final Duration metricsInterval,
-    final List<String> processors
+    final Duration shutdownTimeout
   ) {
     this.bootstrapServers = Objects.requireNonNull(bootstrapServers, "Bootstrap servers cannot be null");
     this.consumerGroup = Objects.requireNonNull(consumerGroup, "Consumer group cannot be null");
@@ -81,9 +69,6 @@ public record AppConfig(
 
     this.pollTimeout = validateDuration(pollTimeout, DEFAULT_POLL_TIMEOUT, "Poll timeout");
     this.shutdownTimeout = validateDuration(shutdownTimeout, DEFAULT_SHUTDOWN_TIMEOUT, "Shutdown timeout");
-    this.metricsInterval = validateDuration(metricsInterval, DEFAULT_METRICS_INTERVAL, "Metrics interval");
-
-    this.processors = processors != null ? List.copyOf(processors) : List.of();
   }
 
   /// Validates that a duration is not null and not negative.
@@ -109,9 +94,7 @@ public record AppConfig(
       getEnvOrDefault("KAFKA_TOPIC", "json-topic"),
       getEnvOrDefault("APP_NAME", "kpipe-app"),
       parseDurationWithFallback(getEnvOrDefault("KAFKA_POLL_TIMEOUT_MS", "100"), "100", Duration::ofMillis),
-      parseDurationWithFallback(getEnvOrDefault("SHUTDOWN_TIMEOUT_SEC", "30"), "30", Duration::ofSeconds),
-      parseDurationWithFallback(getEnvOrDefault("METRICS_INTERVAL_SEC", "60"), "60", Duration::ofSeconds),
-      List.of(getEnvOrDefault("PROCESSOR_PIPELINE", "parseJson,addSource,markProcessed,addTimestamp").split(","))
+      parseDurationWithFallback(getEnvOrDefault("SHUTDOWN_TIMEOUT_SEC", "30"), "30", Duration::ofSeconds)
     );
   }
 

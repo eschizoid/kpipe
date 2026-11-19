@@ -66,7 +66,7 @@ sealed interface Dispatcher
   }
 
   /// Non-blocking shutdown signal. Called by [KPipeConsumer#close] BEFORE
-  /// `waitForInFlightDrain` and `thread.join` so the consumer thread can escape any in-flight
+  /// `awaitDispatchIdle` and `thread.join` so the consumer thread can escape any in-flight
   /// stall (e.g. [KeyOrderedDispatcher]'s saturation stall loop) and let drain + join proceed
   /// promptly. Implementations that have no such stall override default to a no-op.
   /// Idempotent — `close()` may also call this internally as a safety net.

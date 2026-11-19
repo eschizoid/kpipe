@@ -83,7 +83,7 @@ class KPipeCircuitBreakerIntegrationTest {
     assertTrue(snapshot.running(), "consumer thread is alive while the breaker is open");
     assertTrue(snapshot.paused(), "breaker pause must be visible in the snapshot");
     assertEquals(CircuitBreakerState.OPEN, snapshot.circuitBreaker(), "snapshot must expose the OPEN breaker");
-    assertTrue(snapshot.pauseSources().contains("CIRCUIT_BREAKER"), "pause source must name the breaker");
+    assertTrue(snapshot.pauseSources().contains(PauseSource.CIRCUIT_BREAKER), "pause source must name the breaker");
     assertTrue(!snapshot.healthy(), "an OPEN breaker must make the consumer unhealthy");
 
     consumer.close();
@@ -96,16 +96,9 @@ class KPipeCircuitBreakerIntegrationTest {
     // flushes each record inline, so every record drives one failure outcome into the window;
     // windowSize=5 + threshold=0.5 trips once the window fills with all-failures.
     //
-    // Sequential mode, same as every other test in this class: the trip (and its pause) then
-    // happens inline on the consumer thread, so the Pause command is queued before the poll loop
-    // re-checks isPaused(). Under the default PARALLEL mode the trip fires on a batch-flush
-    // worker thread, and internalPause flips the state to PAUSED before offering the Pause
-    // command — the consumer thread can observe PAUSED, drain a still-empty command queue, and
-    // park without ever calling kafkaConsumer.pause(). No unpark source exists for a
-    // circuit-breaker pause until the 30s half-open probe, so mc.paused() stays empty past any
-    // bounded await (the CI flake). The mode is orthogonal to what this test proves (batch
-    // outcomes feed the breaker); the cross-thread pause-delivery race is a product bug with its
-    // own fix and liveness test (paused-consumer-keeps-polling rework).
+    // Sequential mode, same as every other test in this class, so each batch flush and the trip
+    // it causes run on the consumer thread. The mode is orthogonal to what this test proves:
+    // batch outcomes feed the breaker.
     final var mc = buildMockConsumer(12);
     final var controller = new CircuitBreakerController(0.5, 5, Duration.ofSeconds(30));
 

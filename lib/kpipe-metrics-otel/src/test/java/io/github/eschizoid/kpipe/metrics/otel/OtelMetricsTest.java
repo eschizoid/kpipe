@@ -57,7 +57,7 @@ class OtelMetricsTest {
 
     @Override
     public HealthSnapshot health() {
-      return new HealthSnapshot(true, false, Set.of(), state, metrics.inFlight());
+      return new HealthSnapshot(true, Set.of(), state);
     }
   }
 

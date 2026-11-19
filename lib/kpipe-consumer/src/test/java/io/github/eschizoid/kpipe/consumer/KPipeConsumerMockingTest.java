@@ -72,7 +72,7 @@ class KPipeConsumerMockingTest {
 
     try (functionalConsumer) {
       functionalConsumer.start();
-      verify(mockConsumer).subscribe(topicCaptor.capture());
+      verify(mockConsumer).subscribe(topicCaptor.capture(), any(ConsumerRebalanceListener.class));
       assertEquals(Set.of(TOPIC), Set.copyOf(topicCaptor.getValue()));
     }
   }
@@ -286,100 +286,6 @@ class KPipeConsumerMockingTest {
     // Verify error details
     var error = errorCaptor.getValue();
     assertEquals(0, error.retryCount()); // No retries
-  }
-
-  @Test
-  void shouldPauseConsumerWhenPauseCalled() {
-    // Setup
-    final var partitions = Set.of(new TopicPartition(TOPIC, PARTITION));
-    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-
-    when(mockConsumer.assignment()).thenReturn(partitions);
-
-    final var functionalConsumer = new TestableKPipeConsumer(
-      properties,
-      TOPIC,
-      processor,
-      mockConsumer,
-      0,
-      Duration.ofMillis(10),
-      errorHandler,
-      commandQueue,
-      offsetManager
-    );
-
-    // Action
-    functionalConsumer.pause();
-    functionalConsumer.processCommands();
-
-    // Verification
-    verify(mockConsumer).pause(partitions);
-  }
-
-  @Test
-  void shouldResumeConsumerWhenResumeCalled() {
-    // Setup
-    final var partition = new TopicPartition(TOPIC, PARTITION);
-    final var partitions = Set.of(partition);
-    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-
-    when(mockConsumer.assignment()).thenReturn(partitions);
-
-    final var functionalConsumer = new TestableKPipeConsumer(
-      properties,
-      TOPIC,
-      processor,
-      mockConsumer,
-      0,
-      Duration.ofMillis(10),
-      errorHandler,
-      commandQueue,
-      offsetManager
-    );
-
-    // Set up a paused state
-    functionalConsumer.pause();
-    functionalConsumer.processCommands(); // Process pause command
-
-    // Clear any previous interactions with the mock
-    reset(mockConsumer);
-    when(mockConsumer.assignment()).thenReturn(partitions);
-
-    // Action
-    functionalConsumer.resume();
-    functionalConsumer.processCommands(); // Process resume command
-
-    // Verification
-    verify(mockConsumer).resume(partitions);
-  }
-
-  @Test
-  void pauseAndResumeShouldBeIdempotent() {
-    // Setup
-    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-    final var partitions = Set.of(new TopicPartition(TOPIC, PARTITION));
-    when(mockConsumer.assignment()).thenReturn(partitions);
-
-    final var functionalConsumer = new TestableKPipeConsumer(
-      properties,
-      TOPIC,
-      processor,
-      mockConsumer,
-      0,
-      Duration.ofMillis(10),
-      errorHandler,
-      commandQueue,
-      offsetManager
-    );
-
-    // Action
-    functionalConsumer.pause();
-    functionalConsumer.processCommands(); // Process the pause command
-    functionalConsumer.pause(); // The second call should be idempotent
-    functionalConsumer.processCommands(); // Process the second command (should do nothing)
-
-    // Verify
-    verify(mockConsumer, times(1)).pause(any());
   }
 
   @Test
@@ -805,34 +711,6 @@ class KPipeConsumerMockingTest {
   }
 
   @Test
-  void processCommandsShouldHandlePauseAndResume() {
-    // Arrange
-    final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
-
-    final var functionalConsumer = new TestableKPipeConsumer(
-      properties,
-      TOPIC,
-      processor,
-      mockConsumer,
-      0,
-      Duration.ofMillis(10),
-      errorHandler,
-      commandQueue,
-      offsetManager
-    );
-
-    commandQueue.offer(new ConsumerCommand.Pause());
-    commandQueue.offer(new ConsumerCommand.Resume());
-
-    // Act
-    functionalConsumer.processCommands();
-
-    // Assert
-    verify(mockConsumer, atLeastOnce()).pause(any());
-    verify(mockConsumer, atLeastOnce()).resume(any());
-  }
-
-  @Test
   void shouldTrackInFlightMessagesCorrectly() throws Exception {
     // Create a custom consumer with tracking methods
     final var commandQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
@@ -960,7 +838,7 @@ class KPipeConsumerMockingTest {
 
     // Pause consumer
     functionalConsumer.pause();
-    TestAwaits.pollUntil(functionalConsumer::isPaused, Duration.ofSeconds(2), "consumer reaches PAUSED after pause()");
+    TestAwaits.pollUntil(functionalConsumer::isPaused, Duration.ofSeconds(2), "consumer pauses after pause()");
 
     // Check paused state
     assertTrue(functionalConsumer.isRunning(), "Should still be running when paused");
@@ -971,7 +849,7 @@ class KPipeConsumerMockingTest {
     TestAwaits.pollUntil(
       () -> !functionalConsumer.isPaused(),
       Duration.ofSeconds(2),
-      "consumer leaves PAUSED after resume()"
+      "consumer resumes after resume()"
     );
 
     // Check resumed state

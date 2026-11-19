@@ -36,4 +36,7 @@ Environment variables (defined in `docker-compose.yaml`):
 | `JSON_TOPIC`              | `json-topic`                  | Topic for JSON messages       |
 | `AVRO_TOPIC`              | `avro-topic`                  | Topic for Avro messages       |
 | `PROTO_TOPIC`             | `proto-topic`                 | Topic for Protobuf messages   |
-| `HEALTH_HTTP_PORT`        | `8080`                        | Health check HTTP port        |
+| `HEALTH_HTTP_ENABLED`     | `true`                        | Serve the health endpoint     |
+| `HEALTH_HTTP_HOST`        | `0.0.0.0`                     | Health endpoint bind host     |
+| `HEALTH_HTTP_PORT`        | `8080`                        | Health endpoint port          |
+| `HEALTH_HTTP_PATH`        | `/health`                     | Health endpoint path          |

@@ -76,7 +76,7 @@ class StreamParallelBatchBackpressureIntegrationTest {
     final var handle = KPipe.json(topic, consumerProps).withBackpressure(50, 25).toBatch(batchSink, policy).start();
 
     try {
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       // Aggressive burst — synchronous send, no flush between, so messages queue up at the
       // broker faster than the consumer can drain.

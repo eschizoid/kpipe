@@ -73,7 +73,7 @@ class PausedPollLivenessTest {
       // The first loop iteration ticks backpressure before the first poll, so the pause is
       // deterministic — no records have been fetched yet.
       TestAwaits.pollUntil(() -> !mockConsumer.paused().isEmpty(), AWAIT, "lag backpressure pauses the consumer");
-      assertTrue(consumer.isPaused(), "Consumer state should be PAUSED");
+      assertTrue(consumer.isPaused(), "consumer should be paused");
       assertTrue(consumer.metrics().backpressure().pauses() >= 1);
 
       // External lag drop: end offsets shrink to the frozen position. Before the fix the

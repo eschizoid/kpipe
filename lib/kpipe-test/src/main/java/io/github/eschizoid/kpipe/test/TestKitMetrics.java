@@ -14,7 +14,7 @@ final class TestKitMetrics {
   private TestKitMetrics() {}
 
   /// True once every sent record is (1) polled (`received` ≥ target), (2) terminally
-  /// accounted for, and (3) drained (`waitForInFlightDrain`, then a re-read of (1)+(2)).
+  /// accounted for, and (3) drained (`awaitDispatchIdle`, then a re-read of (1)+(2)).
   ///
   /// Records move strictly forward (unpolled → in-flight → buffered/terminal), so observing "all
   /// accounted for" before observing "in-flight drained" cannot yield a false positive: a record
@@ -28,7 +28,7 @@ final class TestKitMetrics {
     final var snapshot = consumer.metrics();
     if (snapshot.records().received() < target) return false;
     if (accountedFor(snapshot) < target) return false;
-    if (!consumer.waitForInFlightDrain(Duration.ofMillis(1))) return false;
+    if (!consumer.awaitDispatchIdle(Duration.ofMillis(1))) return false;
     final var settled = consumer.metrics();
     return settled.records().received() >= target && accountedFor(settled) >= target;
   }

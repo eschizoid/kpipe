@@ -53,15 +53,10 @@ public class DemoApp implements AutoCloseable {
 
     try (final var app = new DemoApp(config, avroFormat, protoFormat)) {
       LOGGER.log(Level.INFO, "Demo application started — JSON/Avro/Protobuf routes via KPipe.multi");
-      // Liveness probe wired to the handle's health snapshot: reports unhealthy when the
-      // circuit breaker is OPEN, not merely when the process has exited. Enabled/configured via
-      // HEALTH_* environment variables (see HealthConfig); disabled = empty Optional, no server.
-      final var healthServer = HttpHealthServer.fromEnv(
-        () -> app.handle.health().healthy(),
-        () -> app.handle.health().inFlight(),
-        () -> app.handle.health().paused(),
-        "demo-app"
-      );
+      // Liveness probe on the handle's health snapshot: unhealthy while the circuit breaker is
+      // OPEN, not only once the consumer has stopped. Configured by the HEALTH_* environment
+      // variables (see HealthConfig); disabled means an empty Optional and no server.
+      final var healthServer = HttpHealthServer.fromEnv(app.handle::health, "demo-app");
       try {
         app.handle.awaitShutdown();
       } finally {

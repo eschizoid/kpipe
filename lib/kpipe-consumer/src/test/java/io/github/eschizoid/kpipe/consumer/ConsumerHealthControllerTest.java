@@ -42,10 +42,10 @@ class ConsumerHealthControllerTest {
   void requestPauseReturnsTrueOnlyOnTransition() {
     final var health = new ConsumerHealthController(null, null, scheduler, hook, hook);
 
-    assertTrue(health.requestPause(ConsumerHealthController.Source.MANUAL), "first request causes transition");
-    assertFalse(health.requestPause(ConsumerHealthController.Source.MANUAL), "second request idempotent");
+    assertTrue(health.requestPause(PauseSource.MANUAL), "first request causes transition");
+    assertFalse(health.requestPause(PauseSource.MANUAL), "second request idempotent");
     assertFalse(
-      health.requestPause(ConsumerHealthController.Source.BACKPRESSURE),
+      health.requestPause(PauseSource.BACKPRESSURE),
       "additional source while already paused does not transition"
     );
   }
@@ -53,31 +53,25 @@ class ConsumerHealthControllerTest {
   @Test
   void releasePauseTransitionsOnlyOnLastRelease() {
     final var health = new ConsumerHealthController(null, null, scheduler, hook, hook);
-    health.requestPause(ConsumerHealthController.Source.MANUAL);
-    health.requestPause(ConsumerHealthController.Source.BACKPRESSURE);
+    health.requestPause(PauseSource.MANUAL);
+    health.requestPause(PauseSource.BACKPRESSURE);
 
-    assertFalse(
-      health.releasePause(ConsumerHealthController.Source.MANUAL),
-      "release with another holder pending must not transition"
-    );
+    assertFalse(health.releasePause(PauseSource.MANUAL), "release with another holder pending must not transition");
     assertTrue(health.isPaused(), "still paused because BACKPRESSURE still holds");
     assertTrue(
-      health.releasePause(ConsumerHealthController.Source.BACKPRESSURE),
+      health.releasePause(PauseSource.BACKPRESSURE),
       "release of the last holder causes the resume transition"
     );
     assertFalse(health.isPaused());
   }
 
   @Test
-  void currentSourcesReflectsHeldSet() {
+  void pauseSourcesReflectsHeldSet() {
     final var health = new ConsumerHealthController(null, null, scheduler, hook, hook);
-    health.requestPause(ConsumerHealthController.Source.MANUAL);
-    health.requestPause(ConsumerHealthController.Source.CIRCUIT_BREAKER);
+    health.requestPause(PauseSource.MANUAL);
+    health.requestPause(PauseSource.CIRCUIT_BREAKER);
 
-    assertEquals(
-      EnumSet.of(ConsumerHealthController.Source.MANUAL, ConsumerHealthController.Source.CIRCUIT_BREAKER),
-      health.currentSources()
-    );
+    assertEquals(EnumSet.of(PauseSource.MANUAL, PauseSource.CIRCUIT_BREAKER), health.pauseSources());
   }
 
   @Test
@@ -118,7 +112,7 @@ class ConsumerHealthControllerTest {
     health.recordOutcome(false);
     assertEquals(CircuitBreakerState.OPEN, health.circuitBreakerState(), "100% failures over full window trips");
 
-    assertTrue(health.isHeldBy(ConsumerHealthController.Source.CIRCUIT_BREAKER));
+    assertTrue(health.isHeldBy(PauseSource.CIRCUIT_BREAKER));
     assertEquals(1, hook.pauseCalls, "trip fires onPause exactly once");
     assertEquals(1, hook.trips);
   }
@@ -293,9 +287,8 @@ class ConsumerHealthControllerTest {
     // controller stays paused and the isPaused assertion below fails fast (this test asserts the
     // guard's outcome — it does not itself park a thread); in a real consumer the paused loop
     // keeps polling and re-ticks, so without the guard the miss costs fetch-nothing poll cycles
-    // rather than stranding the consumer. With the guard the Pause and Resume commands are
-    // queued inside the same tick and flush back-to-back in one processCommands() drain, so no
-    // poll ever runs while paused and no cycle is lost.
+    // rather than stranding the consumer. With the guard the pause is taken and released inside
+    // the same tick, so the next pass finds no source holding a pause and no poll runs paused.
     hook.backpressurePauseAction = () -> inflight.set(0);
 
     health.tickBackpressure(consumer);
@@ -304,8 +297,7 @@ class ConsumerHealthControllerTest {
     assertEquals(1, hook.pauseCalls);
     assertEquals(1, hook.resumeCalls);
     assertEquals(1, hook.backpressurePauses, "the pause edge itself must still be counted");
-    assertEquals(1, hook.backpressureTimeCalls, "the immediate release must record a paused duration");
-    assertTrue(hook.lastBackpressureTimeMs >= 1, "paused duration is clamped to >= 1 ms");
+    assertEquals(1, hook.backpressureReleases, "the immediate release must be counted");
   }
 
   @Test
@@ -314,18 +306,18 @@ class ConsumerHealthControllerTest {
     final var bp = new BackpressureController(10, 3, BackpressureController.inFlightStrategy(inflight::get));
     final var health = new ConsumerHealthController(bp, null, scheduler, hook, hook);
     final var consumer = new MockConsumer<byte[], byte[]>("earliest");
-    // MANUAL holds the pause; backpressure never paused, so its pause-start timestamp was never
-    // set. The metric sits at/below the low watermark, so the raw check() answer is RESUME —
-    // releasing here would feed a garbage duration (nanoTime origin) into the backpressure-time
-    // counter and log a misleading "backpressure resolved" line on every tick.
-    health.requestPause(ConsumerHealthController.Source.MANUAL);
+    // MANUAL holds the pause and backpressure never paused. The metric sits at/below the low
+    // watermark, so the raw check() answer is RESUME; releasing here would count a backpressure
+    // release with no pause behind it and log a misleading "backpressure resolved" line on every
+    // tick.
+    health.requestPause(PauseSource.MANUAL);
 
     health.tickBackpressure(consumer);
 
     assertTrue(health.isPaused(), "manual pause must survive the tick");
-    assertTrue(health.isHeldBy(ConsumerHealthController.Source.MANUAL));
+    assertTrue(health.isHeldBy(PauseSource.MANUAL));
     assertEquals(0, hook.resumeCalls, "no resume side effects when backpressure does not hold the pause");
-    assertEquals(0, hook.backpressureTimeCalls, "backpressure-time counter must stay untouched");
+    assertEquals(0, hook.backpressureReleases, "no backpressure release may be counted");
   }
 
   @Test
@@ -370,8 +362,7 @@ class ConsumerHealthControllerTest {
     int pauseCalls;
     int resumeCalls;
     int backpressurePauses;
-    int backpressureTimeCalls;
-    long lastBackpressureTimeMs;
+    int backpressureReleases;
     int trips;
     Runnable backpressurePauseAction = () -> {};
     private final CountDownLatch resumeLatch = new CountDownLatch(1);
@@ -405,20 +396,13 @@ class ConsumerHealthControllerTest {
     }
 
     @Override
-    public void onBackpressureTimeMs(final long ms) {
-      backpressureTimeCalls++;
-      lastBackpressureTimeMs = ms;
+    public void onBackpressureRelease() {
+      backpressureReleases++;
     }
 
     @Override
-    public void onCircuitBreakerTrip() {
-      trips++;
+    public void onCircuitBreakerStateChange(final CircuitBreakerState state) {
+      if (state == CircuitBreakerState.OPEN) trips++;
     }
-
-    @Override
-    public void onCircuitBreakerStateChange(final CircuitBreakerState state) {}
-
-    @Override
-    public void onCircuitBreakerTimeOpenMs(final long ms) {}
   }
 }

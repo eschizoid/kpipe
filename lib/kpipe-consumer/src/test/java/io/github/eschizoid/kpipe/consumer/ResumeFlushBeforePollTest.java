@@ -19,29 +19,22 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/// Regression coverage for the resume path reaching Kafka before the next poll.
+/// Coverage for a released pause reaching Kafka before the next poll.
 ///
-/// `internalResume()` flips the consumer state to RUNNING and queues a `Resume` command rather
-/// than calling `kafkaConsumer.resume()` inline — it is reachable off the consumer thread (the
-/// public `resume()`, and the circuit breaker's OPEN → HALF_OPEN probe firing from the scheduler
-/// thread), and only the consumer thread may touch the Kafka consumer. The queueing is therefore
-/// required and is not what these tests constrain.
+/// The poll loop applies the pause sources to Kafka on every pass, before it polls. A release
+/// that does not reach Kafka before the poll leaves the partitions paused while no source holds a
+/// pause, so the poll fetches nothing and the resume costs a full `pollTimeout` of not fetching,
+/// after every backpressure release, every half-open probe, and every manual resume.
 ///
-/// What they constrain is the flush. A queued `Resume` that is not drained before the poll leaves
-/// the partitions paused at the Kafka level while the consumer believes it is running, so the
-/// poll fetches nothing and the resume costs a full `pollTimeout` of not fetching — after every
-/// backpressure release, every half-open probe, and every manual resume.
-///
-/// The window is observable without reaching into the consumer: a poll that runs while the state
-/// has left PAUSED but the assignment is still paused at the Kafka level is a poll that cannot
+/// The window is observable without reaching into the consumer: a poll that runs while the pause
+/// has been released but the assignment is still paused at the Kafka level is a poll that cannot
 /// fetch. This drives the real consumer loop through [MockConsumer] and requires that count to be
 /// zero.
 ///
-/// Only the tick-driven resume is covered, and deliberately so. A manual `resume()` runs on the
-/// caller's thread, and between `internalResume()`'s state flip and its `offer(Resume)` — two
-/// adjacent statements — the state reads RUNNING with no command yet queued. A poll landing in
-/// that window fetches nothing no matter where the flush is placed, so asserting zero bad polls
-/// on that path would test an invariant the consumer does not provide.
+/// Only the tick-driven release is covered. A manual `resume()` runs on the caller's thread and
+/// can land while a poll is already in progress against the paused assignment; that poll fetches
+/// nothing whatever the loop does, so asserting zero bad polls on that path would test an
+/// invariant the consumer does not provide.
 class ResumeFlushBeforePollTest {
 
   private static final String TOPIC = "test-topic";
@@ -84,12 +77,12 @@ class ResumeFlushBeforePollTest {
 
       mockConsumer.updateEndOffsets(Map.of(PARTITION, 0L)); // lag = 0 <= low(2) -> RESUME
       TestAwaits.pollUntil(() -> mockConsumer.paused().isEmpty(), AWAIT, "resume reaches the Kafka consumer");
-      TestAwaits.pollUntil(() -> !consumer.isPaused(), AWAIT, "consumer state returns to RUNNING");
+      TestAwaits.pollUntil(() -> !consumer.isPaused(), AWAIT, "the consumer is no longer paused");
 
       assertEquals(
         0L,
         pollsUnableToFetch.get(),
-        "Every poll after the state left PAUSED must see un-paused partitions; a poll against a " +
+        "Every poll after the pause was released must see un-paused partitions; a poll against a " +
           "still-paused assignment cannot fetch and costs a full pollTimeout"
       );
     } finally {
@@ -98,9 +91,9 @@ class ResumeFlushBeforePollTest {
   }
 
   /// The same flush drains `Close`, and a drained `Close` must stop the iteration rather than fall
-  /// through to the poll. It sets CLOSING, not PAUSED, so `isPaused()` is false and the guard below
-  /// the flush — along with the check inside it — is skipped. Without a check of its own between
-  /// the flush and the poll, this iteration polls a consumer that has been told to stop.
+  /// through to the poll. It sets CLOSING; on an unpaused consumer the pause branch below the
+  /// flush, and the check inside it, are skipped. Without a check of its own between the flush and
+  /// the poll, this iteration polls a consumer that has been told to stop.
   ///
   /// The delivery point is what makes this bite, so the test controls it rather than racing for it.
   /// A `Close` offered from outside is almost always drained by the flush at the top of the loop,
@@ -176,7 +169,7 @@ class ResumeFlushBeforePollTest {
     }
   }
 
-  /// Counts polls issued while the consumer state has left PAUSED but the assignment is still
+  /// Counts polls issued while no source holds a pause but the assignment is still
   /// paused at the Kafka level — the window in which a poll is guaranteed to fetch nothing.
   private MockConsumer<byte[], byte[]> instrumentedConsumer(
     final AtomicReference<KPipeConsumer> consumerRef,

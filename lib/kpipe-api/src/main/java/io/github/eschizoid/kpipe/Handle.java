@@ -12,14 +12,9 @@ import java.util.Map;
 /// Implements [AutoCloseable] for try-with-resources usage; the default `close()` performs a
 /// graceful shutdown with a 5-second timeout.
 public interface Handle extends AutoCloseable {
-  /// Returns whether the underlying consumer is healthy.
-  ///
-  /// @return true when the consumer is running and the configured health check passes
-  boolean isHealthy();
-
-  /// Full health snapshot: running/paused state, active pause sources, circuit-breaker state,
-  /// and in-flight count. Wire liveness probes (e.g. `HttpHealthServer`) to this rather than
-  /// polling `metrics()`.
+  /// The consumer's health now: whether it runs, which sources hold a pause, and the circuit
+  /// breaker's state, each read once. `health().healthy()` is the liveness answer; wire a
+  /// probe with `HttpHealthServer.fromEnv(handle::health, "app")`.
   ///
   /// @return an immutable point-in-time health view
   HealthSnapshot health();
@@ -42,10 +37,11 @@ public interface Handle extends AutoCloseable {
   /// @throws InterruptedException if the calling thread is interrupted while waiting
   void awaitShutdown() throws InterruptedException;
 
-  /// Initiates a graceful shutdown, waiting up to `timeout` for in-flight messages.
+  /// Pauses, waits up to `timeout` for dispatched records to finish, then closes, which flushes
+  /// the records buffered for batches.
   ///
-  /// @param timeout maximum wait for in-flight drain
-  /// @return true if shutdown completed cleanly
+  /// @param timeout maximum wait for dispatched records before closing
+  /// @return `true` only when nothing is left in flight after close, buffered records included
   boolean shutdownGracefully(final Duration timeout);
 
   /// Snapshot of the top `n` keys by current queue depth, deepest-first. Only meaningful for

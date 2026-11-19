@@ -1,37 +1,40 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Objects;
 import java.util.Set;
 
-/// Point-in-time health view of a running consumer, taken via [KPipeConsumer#health()].
+/// A consumer's health, taken with [KPipeConsumer#health()]. Each component is read once, without
+/// a lock, so a snapshot taken during a breaker transition can pair the new breaker state with the
+/// pause sources from just before it; `pauseSources` itself comes from a single read and is never
+/// torn.
 ///
-/// This is the one place the "is this consumer healthy" question is answered. A consumer that
-/// paused itself because the circuit breaker tripped is alive but NOT healthy — the breaker
-/// pauses consumption precisely because downstream is failing — so [#healthy()] is the value a
-/// liveness/readiness probe should serve, not `running` alone.
+/// [#healthy()] is the value a liveness or readiness probe should serve. A consumer paused by its
+/// circuit breaker is running but not healthy, since the breaker pauses consumption because
+/// downstream is failing; a manual or backpressure pause is normal flow control and leaves it
+/// healthy. How much work is in flight is a load figure, not a health fact, so it lives in
+/// [MetricsSnapshot#inFlight()].
 ///
-/// @param running        the consumer thread is alive (RUNNING or PAUSED state)
-/// @param paused         consumption is currently paused (any source)
-/// @param pauseSources   names of the active pause sources (`MANUAL`, `BACKPRESSURE`,
-///                       `CIRCUIT_BREAKER`); empty when not paused
-/// @param circuitBreaker current circuit-breaker state; `CLOSED` when no breaker is configured
-/// @param inFlight       records currently in flight (dispatched + buffered batch records)
-public record HealthSnapshot(
-  boolean running,
-  boolean paused,
-  Set<String> pauseSources,
-  CircuitBreakerState circuitBreaker,
-  long inFlight
-) {
-  /// Copies `pauseSources`.
+/// @param running        the consumer has started and is not shutting down, paused or not
+/// @param pauseSources   the sources holding a pause, in declaration order; empty when not paused
+/// @param circuitBreaker the circuit breaker's state; `CLOSED` when no breaker is configured
+public record HealthSnapshot(boolean running, Set<PauseSource> pauseSources, CircuitBreakerState circuitBreaker) {
+  /// Copies `pauseSources` into an unmodifiable set that keeps declaration order.
+  ///
+  /// @throws NullPointerException if `pauseSources` or `circuitBreaker` is null
   public HealthSnapshot {
-    pauseSources = Set.copyOf(pauseSources);
+    Objects.requireNonNull(pauseSources, "pauseSources");
+    Objects.requireNonNull(circuitBreaker, "circuitBreaker");
+    pauseSources = pauseSources.isEmpty() ? Set.of() : Collections.unmodifiableSet(EnumSet.copyOf(pauseSources));
   }
 
-  /// Whether the consumer is running and the circuit breaker is not OPEN. Backpressure or manual
-  /// pauses do not make a consumer unhealthy — they are normal flow control — but an OPEN breaker
-  /// means downstream is failing and consumption is deliberately halted.
-  ///
-  /// @return `true` when the consumer is running and the breaker is not OPEN
+  /// @return `true` when at least one source holds a pause
+  public boolean paused() {
+    return !pauseSources.isEmpty();
+  }
+
+  /// @return `true` when the consumer is running and its circuit breaker is not `OPEN`
   public boolean healthy() {
     return running && circuitBreaker != CircuitBreakerState.OPEN;
   }

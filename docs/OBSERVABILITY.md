@@ -139,6 +139,28 @@ KPipe.json("events", kafkaProps)
     .start();
 ```
 
+## Health endpoint
+
+`HttpHealthServer` serves `Handle.health()` over HTTP for Kubernetes or any orchestrator that polls an endpoint:
+
+```java
+try (final var handle = KPipe.json(props, "orders").toConsole().start();
+     final var server = HttpHealthServer.fromEnv(handle::health).orElse(null)) {
+  handle.awaitShutdown();
+}
+```
+
+Each `GET` reads one snapshot and answers `200` when it is healthy, `503` otherwise:
+
+```json
+{ "healthy": true, "running": true, "pauseSources": ["backpressure"], "circuitBreaker": "closed" }
+```
+
+Enum values are lowercase, as in the OpenTelemetry attributes and the metrics log line. A snapshot supplier that throws
+or returns null answers `503` with `{"healthy": false}`. `HEAD` answers like `GET` without a body; any other method
+answers `405` with `Allow: GET, HEAD`. The `HEALTH_HTTP_ENABLED` (default `true`), `HEALTH_HTTP_HOST` (`0.0.0.0`),
+`HEALTH_HTTP_PORT` (`8080`) and `HEALTH_HTTP_PATH` (`/health`) environment variables configure it.
+
 ## Local dashboard
 
 A local observability stack under [`infra/observability/`](../infra/observability) runs via Docker Compose: OTel

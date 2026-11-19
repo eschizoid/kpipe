@@ -35,22 +35,19 @@ class ConsumerHealthFrayTest {
     final var backpressureClaimed = new AtomicBoolean();
 
     FrayScenarios.runConcurrently(
-      () -> manualClaimed.set(health.requestPause(ConsumerHealthController.Source.MANUAL)),
-      () -> backpressureClaimed.set(health.requestPause(ConsumerHealthController.Source.BACKPRESSURE))
+      () -> manualClaimed.set(health.requestPause(PauseSource.MANUAL)),
+      () -> backpressureClaimed.set(health.requestPause(PauseSource.BACKPRESSURE))
     );
 
-    assertTrue(health.isHeldBy(ConsumerHealthController.Source.MANUAL), "the MANUAL pause bit was lost");
-    assertTrue(
-      health.isHeldBy(ConsumerHealthController.Source.BACKPRESSURE),
-      "the BACKPRESSURE pause bit was lost"
-    );
+    assertTrue(health.isHeldBy(PauseSource.MANUAL), "the MANUAL pause bit was lost");
+    assertTrue(health.isHeldBy(PauseSource.BACKPRESSURE), "the BACKPRESSURE pause bit was lost");
     assertTrue(
       manualClaimed.get() ^ backpressureClaimed.get(),
       () ->
-        "exactly one caller must observe the running-to-paused transition, but manual="
-          + manualClaimed.get()
-          + " and backpressure="
-          + backpressureClaimed.get()
+        "exactly one caller must observe the running-to-paused transition, but manual=" +
+        manualClaimed.get() +
+        " and backpressure=" +
+        backpressureClaimed.get()
     );
   }
 
@@ -85,15 +82,9 @@ class ConsumerHealthFrayTest {
     public void onBackpressurePause() {}
 
     @Override
-    public void onBackpressureTimeMs(final long ms) {}
-
-    @Override
-    public void onCircuitBreakerTrip() {}
+    public void onBackpressureRelease() {}
 
     @Override
     public void onCircuitBreakerStateChange(final CircuitBreakerState state) {}
-
-    @Override
-    public void onCircuitBreakerTimeOpenMs(final long ms) {}
   }
 }
