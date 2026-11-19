@@ -49,7 +49,7 @@ class StreamCompositionTest {
   void withBackpressureRejectsInvalidWatermarksWithOffendingValues() {
     final var stream = KPipe.json("topic", props());
     final var thrown = assertThrows(IllegalArgumentException.class, () -> stream.withBackpressure(5, 10));
-    assertTrue(thrown.getMessage().contains("got high=5, low=10"), () -> "msg was: " + thrown.getMessage());
+    assertTrue(thrown.getMessage().contains("withBackpressure(5, 10)"), () -> "msg was: " + thrown.getMessage());
     assertTrue(thrown.getMessage().contains("withBackpressure"), () -> "msg was: " + thrown.getMessage());
   }
 

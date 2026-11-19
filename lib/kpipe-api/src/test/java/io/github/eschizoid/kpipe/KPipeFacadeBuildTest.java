@@ -56,11 +56,11 @@ class KPipeFacadeBuildTest {
       .withBackpressure(2_000, 1_000)
       .withProcessingMode(ProcessingMode.SEQUENTIAL);
 
-    assertEquals(5, stream.consumerConfig().maxRetries());
-    assertEquals(Duration.ofMillis(100), stream.consumerConfig().retryBackoff());
-    assertEquals(2_000L, stream.consumerConfig().backpressureHigh());
-    assertEquals(1_000L, stream.consumerConfig().backpressureLow());
-    assertEquals(ProcessingMode.SEQUENTIAL, stream.consumerConfig().processingMode());
+    assertEquals(5, stream.settings().maxRetries());
+    assertEquals(Duration.ofMillis(100), stream.settings().retryBackoff());
+    assertEquals(2_000L, stream.settings().backpressureHigh());
+    assertEquals(1_000L, stream.settings().backpressureLow());
+    assertEquals(ProcessingMode.SEQUENTIAL, stream.settings().processingMode());
   }
 
   @Test
@@ -69,10 +69,10 @@ class KPipeFacadeBuildTest {
     // Stream.withBackpressure() must produce the same defaults as the BackpressureController
     // constants. Hardcoded literals here would drift if the constants change; assert against the
     // single source of truth and pin the literal values as a separate smoke check.
-    assertEquals(BackpressureController.DEFAULT_HIGH_WATERMARK, stream.consumerConfig().backpressureHigh());
-    assertEquals(BackpressureController.DEFAULT_LOW_WATERMARK, stream.consumerConfig().backpressureLow());
-    assertEquals(10_000L, stream.consumerConfig().backpressureHigh());
-    assertEquals(7_000L, stream.consumerConfig().backpressureLow());
+    assertEquals(BackpressureController.DEFAULT_HIGH_WATERMARK, stream.settings().backpressureHigh());
+    assertEquals(BackpressureController.DEFAULT_LOW_WATERMARK, stream.settings().backpressureLow());
+    assertEquals(10_000L, stream.settings().backpressureHigh());
+    assertEquals(7_000L, stream.settings().backpressureLow());
   }
 
   @Test
@@ -163,8 +163,8 @@ class KPipeFacadeBuildTest {
     );
     final var ex = assertThrows(IllegalArgumentException.class, multi::start);
     assertTrue(
-      ex.getMessage().contains("KEY_ORDERED"),
-      () -> "message should name the offending mode: " + ex.getMessage()
+      ex.getMessage().contains("sets withProcessingMode on its Stream"),
+      () -> "message should name the offending call: " + ex.getMessage()
     );
     assertTrue(
       ex.getMessage().contains("MultiBuilder.withProcessingMode"),
@@ -178,7 +178,10 @@ class KPipeFacadeBuildTest {
     // dropped because the LRU cap is a consumer-wide setting. Fail loud at start().
     final var multi = KPipe.multi(props()).json("topic-a", s -> s.withKeyOrderedMaxKeys(50_000).toCustom(_ -> {}));
     final var ex = assertThrows(IllegalArgumentException.class, multi::start);
-    assertTrue(ex.getMessage().contains("50000"), () -> "message should name the offending value: " + ex.getMessage());
+    assertTrue(
+      ex.getMessage().contains("sets withKeyOrderedMaxKeys on its Stream"),
+      () -> "message should name the offending call: " + ex.getMessage()
+    );
     assertTrue(
       ex.getMessage().contains("MultiBuilder.withKeyOrderedMaxKeys"),
       () -> "message should point users at the consumer-level setter: " + ex.getMessage()

@@ -38,11 +38,11 @@ final class DefaultSink<T> implements Sink<T> {
       .withTopics(stream.topics())
       .withPipeline(buildPipeline());
 
-    stream.consumerConfig().applyTo(consumerBuilder);
+    consumerBuilder.withSettings(stream.settings());
     final var opened = KafkaTopicSink.openAll(
       List.of(terminalSink),
       stream.kafkaProps(),
-      stream.consumerConfig().tracer(),
+      stream.settings().tracer(),
       consumerBuilder
     );
 

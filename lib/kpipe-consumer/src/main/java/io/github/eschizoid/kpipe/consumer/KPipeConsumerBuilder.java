@@ -37,42 +37,17 @@ public final class KPipeConsumerBuilder {
   Pipeline<?> pipeline;
   Map<String, Pipeline<?>> pipelinesPerTopic;
   final Map<String, BatchSpec<?>> batchSpecs = new LinkedHashMap<>();
-  Duration pollTimeout = ConsumerDefaults.POLL_TIMEOUT;
-  KPipeConsumer.ErrorHandler attemptFailedObserver;
-  KPipeConsumer.ErrorHandler errorHandler = e ->
-    LOGGER.log(
-      Level.WARNING,
-      "Failed at offset {0} after {1} retries: {2}",
-      e.record().offset(),
-      e.retryCount(),
-      e.exception().getMessage()
-    );
-  int maxRetries = 0;
-  Duration retryBackoff = Duration.ofMillis(500);
-  ProcessingMode processingMode = ProcessingMode.PARALLEL;
-  int keyOrderedMaxKeys = KeyOrderedDispatcher.DEFAULT_MAX_KEYS;
-  Duration waitForMessagesTimeout = ConsumerDefaults.WAIT_FOR_MESSAGES;
-  /// Unset means the default for the processing mode, [ConsumerDefaults#threadTermination].
-  Duration threadTerminationTimeout;
+  ConsumerSettings settings = ConsumerSettings.defaults();
   final Duration executorTerminationTimeout = ConsumerDefaults.EXECUTOR_TERMINATION;
   OffsetManager offsetManager;
   Function<Consumer<byte[], byte[]>, OffsetManager> offsetManagerProvider;
-  Duration commitInterval;
-  OffsetStore offsetStore;
   /// The provider `build()` installed for the default offset manager, so a second `build()` on
   /// the same builder does not mistake it for one the caller supplied.
   private Function<Consumer<byte[], byte[]>, OffsetManager> defaultOffsetManagerProvider;
   Supplier<Consumer<byte[], byte[]>> consumerProvider;
   Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
   ConsumerRebalanceListener rebalanceListener;
-  BackpressureController backpressureController;
-  String deadLetterTopic;
   KPipeProducer<byte[], byte[]> kpipeProducer;
-  MetricsExporter metricsExporter;
-  Tracer tracer;
-  CircuitBreakerController circuitBreakerController;
-  Duration metricsLogInterval;
-  boolean useShutdownHook = false;
 
   /// Sets the properties for the Kafka consumer. `build()` always sets `enable.auto.commit` to
   /// `false`, because offsets are committed by the consumer's [OffsetManager], and always pins the
@@ -202,8 +177,10 @@ public final class KPipeConsumerBuilder {
   ///
   /// @param timeout The maximum time to wait for messages in each poll
   /// @return This builder instance for method chaining
+  /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is not positive
   public KPipeConsumerBuilder withPollTimeout(final Duration timeout) {
-    this.pollTimeout = Objects.requireNonNull(timeout, "timeout cannot be null");
+    settings = settings.withPollTimeout(timeout);
     return this;
   }
 
@@ -212,7 +189,7 @@ public final class KPipeConsumerBuilder {
   /// @param handler The consumer function that handles processing errors
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withErrorHandler(final KPipeConsumer.ErrorHandler handler) {
-    this.errorHandler = Objects.requireNonNull(handler, "handler cannot be null");
+    settings = settings.withErrorHandler(handler);
     return this;
   }
 
@@ -232,8 +209,8 @@ public final class KPipeConsumerBuilder {
   ///
   /// @param observer called with each failed attempt
   /// @return This builder instance for method chaining
-  public KPipeConsumerBuilder withAttemptFailedObserver(final KPipeConsumer.ErrorHandler observer) {
-    this.attemptFailedObserver = Objects.requireNonNull(observer, "observer cannot be null");
+  public KPipeConsumerBuilder onAttemptFailed(final KPipeConsumer.ErrorHandler observer) {
+    settings = settings.onAttemptFailed(observer);
     return this;
   }
 
@@ -250,13 +227,10 @@ public final class KPipeConsumerBuilder {
   /// @param maxRetries Maximum number of retry attempts
   /// @param backoff Duration to wait between retry attempts
   /// @return This builder instance for method chaining
+  /// @throws IllegalArgumentException if `maxRetries` or `backoff` is negative
+  /// @throws NullPointerException if `backoff` is null
   public KPipeConsumerBuilder withRetry(final int maxRetries, final Duration backoff) {
-    if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative, got " + maxRetries);
-    Objects.requireNonNull(backoff, "backoff cannot be null");
-    // Zero is legitimate (retry immediately, bounded by maxRetries); only negative is a misconfig.
-    if (backoff.isNegative()) throw new IllegalArgumentException("backoff cannot be negative, got " + backoff);
-    this.maxRetries = maxRetries;
-    this.retryBackoff = backoff;
+    settings = settings.withRetry(maxRetries, backoff);
     return this;
   }
 
@@ -272,7 +246,7 @@ public final class KPipeConsumerBuilder {
   /// @param mode The processing mode (must be non-null)
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withProcessingMode(final ProcessingMode mode) {
-    this.processingMode = Objects.requireNonNull(mode, "ProcessingMode must not be null");
+    settings = settings.withProcessingMode(mode);
     return this;
   }
 
@@ -287,8 +261,7 @@ public final class KPipeConsumerBuilder {
   /// @return This builder instance for method chaining
   /// @throws IllegalArgumentException if `maxKeys` is non-positive
   public KPipeConsumerBuilder withKeyOrderedMaxKeys(final int maxKeys) {
-    if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
-    this.keyOrderedMaxKeys = maxKeys;
+    settings = settings.withKeyOrderedMaxKeys(maxKeys);
     return this;
   }
 
@@ -301,15 +274,10 @@ public final class KPipeConsumerBuilder {
   ///
   /// @param interval the time between periodic commits (at least 1 millisecond)
   /// @return This builder instance for method chaining
+  /// @throws NullPointerException if `interval` is null
+  /// @throws IllegalArgumentException if `interval` is under 1 millisecond
   public KPipeConsumerBuilder withCommitInterval(final Duration interval) {
-    Objects.requireNonNull(interval, "interval cannot be null");
-    // The offset manager schedules in whole milliseconds, so the interval must convert to at
-    // least one and must not overflow the conversion; otherwise it fails only once the consumer
-    // starts.
-    if (
-      interval.compareTo(Duration.ofMillis(1)) < 0 || interval.compareTo(Duration.ofMillis(Long.MAX_VALUE)) > 0
-    ) throw new IllegalArgumentException("Commit interval must be between 1ms and Long.MAX_VALUE ms, got " + interval);
-    this.commitInterval = interval;
+    settings = settings.withCommitInterval(interval);
     return this;
   }
 
@@ -317,11 +285,10 @@ public final class KPipeConsumerBuilder {
   ///
   /// @param timeout Maximum time to wait for in-flight messages to complete
   /// @return This builder instance for method chaining
+  /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is negative
   public KPipeConsumerBuilder withWaitForMessagesTimeout(final Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout cannot be null");
-    // Zero is legitimate ("don't wait" on shutdown); only negative is a misconfig.
-    if (timeout.isNegative()) throw new IllegalArgumentException("timeout cannot be negative, got " + timeout);
-    this.waitForMessagesTimeout = timeout;
+    settings = settings.withWaitForMessagesTimeout(timeout);
     return this;
   }
 
@@ -331,11 +298,10 @@ public final class KPipeConsumerBuilder {
   ///
   /// @param timeout Maximum time to wait for the consumer thread to finish
   /// @return This builder instance for method chaining
+  /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is negative
   public KPipeConsumerBuilder withThreadTerminationTimeout(final Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout cannot be null");
-    // Zero is legitimate ("don't wait" on shutdown); only negative is a misconfig.
-    if (timeout.isNegative()) throw new IllegalArgumentException("timeout cannot be negative, got " + timeout);
-    this.threadTerminationTimeout = timeout;
+    settings = settings.withThreadTerminationTimeout(timeout);
     return this;
   }
 
@@ -365,7 +331,7 @@ public final class KPipeConsumerBuilder {
   /// @param offsetStore the store that holds this consumer group's offsets
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withOffsetStore(final OffsetStore offsetStore) {
-    this.offsetStore = Objects.requireNonNull(offsetStore, "Offset store cannot be null");
+    settings = settings.withOffsetStore(offsetStore);
     return this;
   }
 
@@ -437,10 +403,8 @@ public final class KPipeConsumerBuilder {
   ///
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withBackpressure() {
-    return withBackpressure(
-      BackpressureController.DEFAULT_HIGH_WATERMARK,
-      BackpressureController.DEFAULT_LOW_WATERMARK
-    );
+    settings = settings.withBackpressure();
+    return this;
   }
 
   /// Enables backpressure control using the given high and low watermarks. When the number of
@@ -455,7 +419,7 @@ public final class KPipeConsumerBuilder {
   ///     less than highWatermark)
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withBackpressure(final long highWatermark, final long lowWatermark) {
-    this.backpressureController = new BackpressureController(highWatermark, lowWatermark, null);
+    settings = settings.withBackpressure(highWatermark, lowWatermark);
     return this;
   }
 
@@ -468,10 +432,10 @@ public final class KPipeConsumerBuilder {
   ///
   /// @param topic The name of the DLQ topic
   /// @return This builder instance for method chaining
+  /// @throws NullPointerException if the topic is null
+  /// @throws IllegalArgumentException if the topic is blank
   public KPipeConsumerBuilder withDeadLetterTopic(final String topic) {
-    Objects.requireNonNull(topic, "topic cannot be null");
-    if (topic.isBlank()) throw new IllegalArgumentException("topic cannot be blank");
-    this.deadLetterTopic = topic;
+    settings = settings.withDeadLetterTopic(topic);
     return this;
   }
 
@@ -513,8 +477,9 @@ public final class KPipeConsumerBuilder {
   /// @param producer The KPipe producer wrapper used for DLQ sends (non-null)
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withDeadLetterQueue(final String topic, final KPipeProducer<byte[], byte[]> producer) {
-    this.deadLetterTopic = Objects.requireNonNull(topic, "DLQ topic cannot be null");
-    this.kpipeProducer = Objects.requireNonNull(producer, "DLQ producer cannot be null");
+    Objects.requireNonNull(producer, "DLQ producer cannot be null");
+    settings = settings.withDeadLetterTopic(topic);
+    this.kpipeProducer = producer;
     return this;
   }
 
@@ -525,7 +490,7 @@ public final class KPipeConsumerBuilder {
   /// @param exporter the exporter
   /// @return this builder
   public KPipeConsumerBuilder withMetrics(final MetricsExporter exporter) {
-    this.metricsExporter = Objects.requireNonNull(exporter, "metrics exporter cannot be null");
+    settings = settings.withMetrics(exporter);
     return this;
   }
 
@@ -543,7 +508,7 @@ public final class KPipeConsumerBuilder {
   /// @param tracer the tracer; pass `Tracer.noop()` to disable explicitly
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withTracer(final Tracer tracer) {
-    this.tracer = Objects.requireNonNull(tracer, "tracer cannot be null");
+    settings = settings.withTracer(tracer);
     return this;
   }
 
@@ -560,7 +525,7 @@ public final class KPipeConsumerBuilder {
   /// @param controller the failure-rate / window / open-duration policy (must not be null)
   /// @return this builder instance for method chaining
   public KPipeConsumerBuilder withCircuitBreaker(final CircuitBreakerController controller) {
-    this.circuitBreakerController = Objects.requireNonNull(controller, "controller cannot be null");
+    settings = settings.withCircuitBreaker(controller);
     return this;
   }
 
@@ -571,9 +536,7 @@ public final class KPipeConsumerBuilder {
   /// @param interval how often to log (must be positive)
   /// @return this builder instance for method chaining
   public KPipeConsumerBuilder withMetricsLog(final Duration interval) {
-    Objects.requireNonNull(interval, "interval cannot be null");
-    if (!interval.isPositive()) throw new IllegalArgumentException("interval must be positive, got " + interval);
-    this.metricsLogInterval = interval;
+    settings = settings.withMetricsLog(interval);
     return this;
   }
 
@@ -583,8 +546,32 @@ public final class KPipeConsumerBuilder {
   /// @param useShutdownHook true to register a JVM shutdown hook
   /// @return this builder instance for method chaining
   public KPipeConsumerBuilder withShutdownHook(final boolean useShutdownHook) {
-    this.useShutdownHook = useShutdownHook;
+    settings = settings.withShutdownHook(useShutdownHook);
     return this;
+  }
+
+  /// Starts from `settings` for every consumer-wide setting, as the `KPipe` facade does when it
+  /// builds a consumer. Call it before any consumer-wide builder method; those called afterwards
+  /// change the settings it passed in.
+  ///
+  /// @param settings the consumer-wide settings
+  /// @return This builder instance for method chaining
+  /// @throws IllegalStateException if a consumer-wide setting was already set on this builder,
+  ///     which the replacement would silently discard
+  public KPipeConsumerBuilder withSettings(final ConsumerSettings settings) {
+    Objects.requireNonNull(settings, "settings cannot be null");
+    if (!this.settings.explicitlySet().isEmpty()) throw new IllegalStateException(
+      "withSettings would discard %s already set on this builder; call withSettings first".formatted(
+        this.settings.explicitlySet()
+      )
+    );
+    this.settings = settings;
+    return this;
+  }
+
+  /// @return the consumer-wide settings this builder builds with
+  public ConsumerSettings settings() {
+    return settings;
   }
 
   /// Builds a new KPipeConsumer with the configured settings.
@@ -638,15 +625,13 @@ public final class KPipeConsumerBuilder {
     union.addAll(regularTopics);
     union.addAll(batchSpecs.keySet());
     this.topics = union;
-    if (maxRetries < 0) throw new IllegalArgumentException("Max retries cannot be negative, got " + maxRetries);
-    if (pollTimeout.isNegative() || pollTimeout.isZero()) throw new IllegalArgumentException(
-      "Poll timeout must be positive, got " + pollTimeout
-    );
     // Without an offset manager nothing commits the frontier: with enable.auto.commit=false no
     // offset is ever committed, and Kafka's auto-commit commits polled offsets before their records
     // finish. Every consumer gets a KafkaOffsetManager unless the caller supplies its own.
     final var customOffsetManager =
       offsetManager != null || (offsetManagerProvider != null && offsetManagerProvider != defaultOffsetManagerProvider);
+    final var commitInterval = settings.commitInterval();
+    final var offsetStore = settings.offsetStore();
     if (customOffsetManager && commitInterval != null) throw new IllegalArgumentException(
       "withCommitInterval configures the default KafkaOffsetManager; a custom OffsetManager sets its own commit interval"
     );
@@ -666,18 +651,23 @@ public final class KPipeConsumerBuilder {
     }
     disableAutoCommit(kafkaProps);
     forceByteArrayKeyDeserializer(kafkaProps);
-    if (backpressureController != null && processingMode == ProcessingMode.SEQUENTIAL) {
+    final var processingMode = settings.processingMode();
+    final var explicitlySet = settings.explicitlySet();
+    if (explicitlySet.contains(ConsumerSettings.Setting.BACKPRESSURE) && processingMode == ProcessingMode.SEQUENTIAL) {
       LOGGER.log(
         System.Logger.Level.INFO,
         "Sequential processing enabled with backpressure: switching to lag-based monitoring."
       );
     }
-    if (keyOrderedMaxKeys != KeyOrderedDispatcher.DEFAULT_MAX_KEYS && processingMode != ProcessingMode.KEY_ORDERED) {
+    if (
+      explicitlySet.contains(ConsumerSettings.Setting.KEY_ORDERED_MAX_KEYS) &&
+      processingMode != ProcessingMode.KEY_ORDERED
+    ) {
       LOGGER.log(
         System.Logger.Level.WARNING,
         "withKeyOrderedMaxKeys({0}) was set but processing mode is {1} — the setting will be ignored. " +
           "Call withProcessingMode(ProcessingMode.KEY_ORDERED) to use it.",
-        keyOrderedMaxKeys,
+        settings.keyOrderedMaxKeys(),
         processingMode
       );
     }

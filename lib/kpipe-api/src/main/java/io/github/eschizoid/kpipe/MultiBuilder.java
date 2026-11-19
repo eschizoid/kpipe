@@ -1,8 +1,8 @@
 package io.github.eschizoid.kpipe;
 
 import com.google.protobuf.Message;
-import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
+import io.github.eschizoid.kpipe.consumer.ConsumerSettings;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
 import io.github.eschizoid.kpipe.consumer.MetricsExporter;
@@ -51,10 +51,15 @@ public final class MultiBuilder {
 
   private final Properties kafkaProps;
   private final Map<String, Sink<?>> routes = new LinkedHashMap<>();
-  private ConsumerConfig consumerConfig = ConsumerConfig.defaults();
+  private ConsumerSettings settings = ConsumerSettings.defaults();
 
   MultiBuilder(final Properties kafkaProps) {
     this.kafkaProps = (Properties) Objects.requireNonNull(kafkaProps, "kafkaProps cannot be null").clone();
+  }
+
+  /// The consumer-wide settings this builder starts its consumer with.
+  ConsumerSettings settings() {
+    return settings;
   }
 
   /// Exports the multi-topic consumer's metrics to a monitoring backend, such as OpenTelemetry
@@ -64,8 +69,7 @@ public final class MultiBuilder {
   /// @param exporter the exporter (must not be null)
   /// @return this builder
   public MultiBuilder withMetrics(final MetricsExporter exporter) {
-    Objects.requireNonNull(exporter, "exporter cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.metricsExporter = exporter);
+    settings = settings.withMetrics(exporter);
     return this;
   }
 
@@ -76,8 +80,7 @@ public final class MultiBuilder {
   ///     `kpipe-tracing-otel`); pass `Tracer.noop()` to disable explicitly
   /// @return this builder
   public MultiBuilder withTracer(final Tracer tracer) {
-    Objects.requireNonNull(tracer, "tracer cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.tracer = tracer);
+    settings = settings.withTracer(tracer);
     return this;
   }
 
@@ -88,8 +91,7 @@ public final class MultiBuilder {
   /// @param controller the breaker policy (must not be null)
   /// @return this builder
   public MultiBuilder withCircuitBreaker(final CircuitBreakerController controller) {
-    Objects.requireNonNull(controller, "controller cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.circuitBreaker = controller);
+    settings = settings.withCircuitBreaker(controller);
     return this;
   }
 
@@ -102,8 +104,7 @@ public final class MultiBuilder {
   /// @param mode the processing mode (must not be null)
   /// @return this builder
   public MultiBuilder withProcessingMode(final ProcessingMode mode) {
-    Objects.requireNonNull(mode, "mode cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.processingMode = mode);
+    settings = settings.withProcessingMode(mode);
     return this;
   }
 
@@ -113,8 +114,7 @@ public final class MultiBuilder {
   /// @param maxKeys positive distinct-key cap
   /// @return this builder
   public MultiBuilder withKeyOrderedMaxKeys(final int maxKeys) {
-    if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
-    consumerConfig = consumerConfig.with(c -> c.keyOrderedMaxKeys = maxKeys);
+    settings = settings.withKeyOrderedMaxKeys(maxKeys);
     return this;
   }
 
@@ -125,13 +125,10 @@ public final class MultiBuilder {
   /// @param maxRetries retry attempts after the first failure (must be non-negative)
   /// @param backoff delay between attempts (must be non-null)
   /// @return this builder
+  /// @throws IllegalArgumentException if `maxRetries` or `backoff` is negative
+  /// @throws NullPointerException if `backoff` is null
   public MultiBuilder withRetry(final int maxRetries, final Duration backoff) {
-    if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative, got " + maxRetries);
-    Objects.requireNonNull(backoff, "backoff cannot be null");
-    consumerConfig = consumerConfig.with(c -> {
-      c.maxRetries = maxRetries;
-      c.retryBackoff = backoff;
-    });
+    settings = settings.withRetry(maxRetries, backoff);
     return this;
   }
 
@@ -141,10 +138,8 @@ public final class MultiBuilder {
   ///
   /// @return this builder
   public MultiBuilder withBackpressure() {
-    return withBackpressure(
-      BackpressureController.DEFAULT_HIGH_WATERMARK,
-      BackpressureController.DEFAULT_LOW_WATERMARK
-    );
+    settings = settings.withBackpressure();
+    return this;
   }
 
   /// Enables backpressure with custom high/low watermarks (hysteresis). The strategy is derived
@@ -155,13 +150,7 @@ public final class MultiBuilder {
   /// @param low resume watermark (must be >= 0 and < high)
   /// @return this builder
   public MultiBuilder withBackpressure(final long high, final long low) {
-    if (low < 0 || low >= high) throw new IllegalArgumentException(
-      "withBackpressure requires high > low > 0 (got high=%d, low=%d)".formatted(high, low)
-    );
-    consumerConfig = consumerConfig.with(c -> {
-      c.backpressureHigh = high;
-      c.backpressureLow = low;
-    });
+    settings = settings.withBackpressure(high, low);
     return this;
   }
 
@@ -171,8 +160,7 @@ public final class MultiBuilder {
   /// @param observer called with each failed attempt (must be non-null)
   /// @return this builder
   public MultiBuilder onAttemptFailed(final Consumer<KPipeConsumer.ProcessingError> observer) {
-    Objects.requireNonNull(observer, "observer cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.attemptFailedObserver = observer);
+    settings = settings.onAttemptFailed(observer);
     return this;
   }
 
@@ -182,8 +170,7 @@ public final class MultiBuilder {
   /// @param handler the error callback (must be non-null)
   /// @return this builder
   public MultiBuilder withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler) {
-    Objects.requireNonNull(handler, "handler cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.errorHandler = handler);
+    settings = settings.withErrorHandler(handler);
     return this;
   }
 
@@ -192,11 +179,10 @@ public final class MultiBuilder {
   ///
   /// @param dlqTopic the dead-letter topic (must be non-null and non-blank)
   /// @return this builder
+  /// @throws NullPointerException if the topic is null
+  /// @throws IllegalArgumentException if the topic is blank
   public MultiBuilder withDeadLetterTopic(final String dlqTopic) {
-    if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException(
-      "dlqTopic cannot be null or blank, got '" + dlqTopic + "'"
-    );
-    consumerConfig = consumerConfig.with(c -> c.deadLetterTopic = dlqTopic);
+    settings = settings.withDeadLetterTopic(dlqTopic);
     return this;
   }
 
@@ -205,9 +191,10 @@ public final class MultiBuilder {
   ///
   /// @param timeout the poll timeout (must be non-null)
   /// @return this builder
+  /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is not positive
   public MultiBuilder withPollTimeout(final Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.pollTimeout = timeout);
+    settings = settings.withPollTimeout(timeout);
     return this;
   }
 
@@ -216,9 +203,10 @@ public final class MultiBuilder {
   ///
   /// @param interval the time between periodic commits (must be non-null)
   /// @return this builder
+  /// @throws NullPointerException if `interval` is null
+  /// @throws IllegalArgumentException if `interval` is under 1 millisecond
   public MultiBuilder withCommitInterval(final Duration interval) {
-    Objects.requireNonNull(interval, "interval cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.commitInterval = interval);
+    settings = settings.withCommitInterval(interval);
     return this;
   }
 
@@ -228,8 +216,7 @@ public final class MultiBuilder {
   /// @param store where the consumer group's offsets live (must be non-null)
   /// @return this builder
   public MultiBuilder withOffsetStore(final OffsetStore store) {
-    Objects.requireNonNull(store, "store cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.offsetStore = store);
+    settings = settings.withOffsetStore(store);
     return this;
   }
 
@@ -241,8 +228,7 @@ public final class MultiBuilder {
   /// @throws NullPointerException if `interval` is null
   /// @throws IllegalArgumentException if `interval` is zero or negative
   public MultiBuilder withMetricsLog(final Duration interval) {
-    final var checked = ConsumerConfig.positiveInterval(interval);
-    consumerConfig = consumerConfig.with(c -> c.metricsLogInterval = checked);
+    settings = settings.withMetricsLog(interval);
     return this;
   }
 
@@ -252,7 +238,7 @@ public final class MultiBuilder {
   /// @param useShutdownHook whether to register the hook
   /// @return this builder
   public MultiBuilder withShutdownHook(final boolean useShutdownHook) {
-    consumerConfig = consumerConfig.with(c -> c.shutdownHook = useShutdownHook);
+    settings = settings.withShutdownHook(useShutdownHook);
     return this;
   }
 
@@ -261,9 +247,9 @@ public final class MultiBuilder {
   /// @param timeout the thread-join budget (must be non-null and non-negative)
   /// @return this builder
   /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is negative
   public MultiBuilder withThreadTerminationTimeout(final Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.threadTerminationTimeout = timeout);
+    settings = settings.withThreadTerminationTimeout(timeout);
     return this;
   }
 
@@ -272,9 +258,9 @@ public final class MultiBuilder {
   /// @param timeout the drain budget (must be non-null and non-negative)
   /// @return this builder
   /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is negative
   public MultiBuilder withWaitForMessagesTimeout(final Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout cannot be null");
-    consumerConfig = consumerConfig.with(c -> c.waitForMessagesTimeout = timeout);
+    settings = settings.withWaitForMessagesTimeout(timeout);
     return this;
   }
 
@@ -441,14 +427,14 @@ public final class MultiBuilder {
     }
 
     if (!nonBatchPipelines.isEmpty()) consumerBuilder.withPipelines(nonBatchPipelines);
-    consumerConfig.applyTo(consumerBuilder);
+    consumerBuilder.withSettings(settings);
     final var terminalSinks = routes
       .values()
       .stream()
       .filter(DefaultSink.class::isInstance)
       .map(s -> ((DefaultSink<?>) s).terminalSink())
       .toList();
-    final var opened = KafkaTopicSink.openAll(terminalSinks, kafkaProps, consumerConfig.tracer(), consumerBuilder);
+    final var opened = KafkaTopicSink.openAll(terminalSinks, kafkaProps, settings.tracer(), consumerBuilder);
     return KafkaTopicSink.closingOnFailure(opened, () -> DefaultHandle.startAndWrap(consumerBuilder.build()));
   }
 
@@ -461,17 +447,23 @@ public final class MultiBuilder {
   /// Routes are expected to be terminal sinks built via `toCustom(...)` / `toBatch(...)` /
   /// `toConsole()` etc.; unknown sink shapes are passed through (no false-positives).
   ///
-  /// Iterates [ConsumerConfig#CONSUMER_WIDE_SETTINGS] rather than one hand-written check per
-  /// setting — registering a setting on the descriptor list is what makes this guard cover it.
+  /// Every setting a route's own [ConsumerSettings] records as set is rejected, so a new setting
+  /// is covered as soon as it exists.
   private static void rejectPerRouteConsumerWideSettings(final String topic, final Sink<?> sink) {
     final DefaultStream<?> stream;
     if (sink instanceof DefaultSink<?> ds) stream = ds.stream();
     else if (sink instanceof DefaultBatchSink<?> dbs) stream = dbs.stream();
     else return;
-    final var routeConfig = stream.consumerConfig();
-    for (final var setting : ConsumerConfig.CONSUMER_WIDE_SETTINGS) {
-      if (setting.isSet().test(routeConfig)) throw new IllegalArgumentException(
-        setting.rejection().apply(topic, routeConfig)
+    final var misplaced = stream.settings().explicitlySet().stream().findFirst();
+    if (misplaced.isPresent()) {
+      final var method = misplaced.get().method();
+      throw new IllegalArgumentException(
+        "Route '%s' sets %s on its Stream, but %s is a consumer-wide setting; set it on MultiBuilder.%s(...) instead.".formatted(
+          topic,
+          method,
+          method,
+          method
+        )
       );
     }
   }

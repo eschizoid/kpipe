@@ -107,7 +107,7 @@ class AttemptFailedObserverTest {
           .build()
       )
       .withRetry(3, Duration.ofMillis(1))
-      .withAttemptFailedObserver(observer)
+      .onAttemptFailed(observer)
       .withErrorHandler(error -> {
         errors.add(error.exception());
         errorHandler.accept(error);
@@ -160,7 +160,7 @@ class AttemptFailedObserverTest {
         values -> BatchResult.allFailed(values.size(), new IllegalStateException("flush down")),
         BatchPolicy.ofSize(1)
       )
-      .withAttemptFailedObserver(observer)
+      .onAttemptFailed(observer)
       .withErrorHandler(errorHandler)
       .withConsumer(AttemptFailedObserverTest::seeded)
       .withPollTimeout(Duration.ofMillis(5))
@@ -182,7 +182,7 @@ class AttemptFailedObserverTest {
         })
       )
       .withRetry(1, Duration.ofMillis(1))
-      .withAttemptFailedObserver(_ -> {
+      .onAttemptFailed(_ -> {
         bound.add(RecordContext.isBound());
         throw new IllegalArgumentException("observer bug");
       })
@@ -208,7 +208,7 @@ class AttemptFailedObserverTest {
         })
       )
       .withRetry(1, Duration.ofMillis(1))
-      .withAttemptFailedObserver(_ -> {
+      .onAttemptFailed(_ -> {
         throw new AssertionError("assertion in an observer");
       })
       .withErrorHandler(errorHandler)
@@ -230,7 +230,7 @@ class AttemptFailedObserverTest {
         values -> new BatchResult(List.of(0), Map.of(1, new IllegalStateException("second down"))),
         BatchPolicy.ofSize(2)
       )
-      .withAttemptFailedObserver(observer)
+      .onAttemptFailed(observer)
       .withErrorHandler(errorHandler)
       .withConsumer(() -> seeded(2))
       .withPollTimeout(Duration.ofMillis(5))
@@ -257,7 +257,7 @@ class AttemptFailedObserverTest {
         BatchPolicy.ofSize(1)
       )
       .withRetry(1, Duration.ofMillis(1))
-      .withAttemptFailedObserver(observer)
+      .onAttemptFailed(observer)
       .withErrorHandler(errorHandler)
       .withConsumer(AttemptFailedObserverTest::seeded)
       .withPollTimeout(Duration.ofMillis(5))
@@ -278,7 +278,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withTopic(TOPIC)
       .withPipeline(pipeline)
-      .withAttemptFailedObserver(observer)
+      .onAttemptFailed(observer)
       .withErrorHandler(errorHandler)
       .withConsumer(AttemptFailedObserverTest::seeded)
       .withPollTimeout(Duration.ofMillis(5));

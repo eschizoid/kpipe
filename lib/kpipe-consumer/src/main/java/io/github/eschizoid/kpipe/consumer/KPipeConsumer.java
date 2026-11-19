@@ -2,7 +2,6 @@ package io.github.eschizoid.kpipe.consumer;
 
 import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
-import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
@@ -186,20 +185,21 @@ public class KPipeConsumer implements AutoCloseable {
       } else {
         pipelines = Map.of();
       }
-      this.pollTimeout = Objects.requireNonNull(builder.pollTimeout);
-      this.processingMode = builder.processingMode;
-      this.waitForMessagesTimeout = builder.waitForMessagesTimeout;
+      final var settings = builder.settings;
+      this.pollTimeout = settings.pollTimeout();
+      this.processingMode = settings.processingMode();
+      this.waitForMessagesTimeout = settings.waitForMessagesTimeout();
       this.threadTerminationTimeout =
-        builder.threadTerminationTimeout != null
-          ? builder.threadTerminationTimeout
+        settings.threadTerminationTimeout() != null
+          ? settings.threadTerminationTimeout()
           : ConsumerDefaults.threadTermination(
-              builder.processingMode,
-              builder.kpipeProducer != null || builder.deadLetterTopic != null
+              settings.processingMode(),
+              builder.kpipeProducer != null || settings.deadLetterTopic() != null
             );
       this.dispatcher = switch (this.processingMode) {
         case SEQUENTIAL -> new SequentialDispatcher();
         case PARALLEL -> new ParallelDispatcher(this::handleParallelRejection, builder.executorTerminationTimeout);
-        case KEY_ORDERED -> new KeyOrderedDispatcher(builder.keyOrderedMaxKeys);
+        case KEY_ORDERED -> new KeyOrderedDispatcher(settings.keyOrderedMaxKeys());
       };
       this.offsetManager =
         builder.offsetManager != null
@@ -213,23 +213,19 @@ public class KPipeConsumer implements AutoCloseable {
           ? builder.rebalanceListener
           : (this.offsetManager != null ? this.offsetManager.createRebalanceListener() : null);
 
-      final var bp = (
-        builder.backpressureController != null
-          ? builder.backpressureController
-          : new BackpressureController(
-              BackpressureController.DEFAULT_HIGH_WATERMARK,
-              BackpressureController.DEFAULT_LOW_WATERMARK,
-              null
-            )
+      final var bp = new BackpressureController(
+        settings.backpressureHigh(),
+        settings.backpressureLow(),
+        null
       ).withStrategy(
         this.processingMode == ProcessingMode.SEQUENTIAL
           ? BackpressureController.lagStrategy()
           : BackpressureController.inFlightStrategy(this::inFlight)
       );
 
-      final var tracer = builder.tracer != null ? builder.tracer : Tracer.noop();
+      final var tracer = settings.tracer();
 
-      final var deadLetterTopic = builder.deadLetterTopic;
+      final var deadLetterTopic = settings.deadLetterTopic();
       this.kpipeProducer =
         builder.kpipeProducer != null
           ? builder.kpipeProducer
@@ -237,7 +233,7 @@ public class KPipeConsumer implements AutoCloseable {
             ? KPipeProducer.<byte[], byte[]>builder().withProperties(builder.kafkaProps).withTracer(tracer).build()
             : null;
 
-      final var needScheduler = !builder.batchSpecs.isEmpty() || builder.circuitBreakerController != null;
+      final var needScheduler = !builder.batchSpecs.isEmpty() || settings.circuitBreaker() != null;
       if (needScheduler) {
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
           final var t = Thread.ofVirtual().unstarted(r);
@@ -248,14 +244,13 @@ public class KPipeConsumer implements AutoCloseable {
         this.scheduler = null;
       }
 
-      this.metricsLogInterval = builder.metricsLogInterval;
-      final var useShutdownHook = builder.useShutdownHook;
-      if (useShutdownHook) {
+      this.metricsLogInterval = settings.metricsLogInterval();
+      if (settings.shutdownHook()) {
         this.shutdownHookThread = new Thread(this::close, "kpipe-shutdown-hook");
         Runtime.getRuntime().addShutdownHook(this.shutdownHookThread);
       }
 
-      if (builder.backpressureController == null) {
+      if (!settings.explicitlySet().contains(ConsumerSettings.Setting.BACKPRESSURE)) {
         LOGGER.log(
           Level.INFO,
           "No backpressure configured, using default {0} strategy (high={1}, low={2})",
@@ -265,12 +260,12 @@ public class KPipeConsumer implements AutoCloseable {
         );
       }
 
-      this.exporter = new GuardedMetricsExporter(builder.metricsExporter);
+      this.exporter = new GuardedMetricsExporter(settings.metricsExporter());
       this.consumerGroup = builder.kafkaProps.getProperty("group.id");
 
       this.healthController = new ConsumerHealthController(
         bp,
-        builder.circuitBreakerController,
+        settings.circuitBreaker(),
         this.scheduler,
         new ConsumerHealthController.PauseLifecycleHook() {
           @Override
@@ -313,13 +308,13 @@ public class KPipeConsumer implements AutoCloseable {
         this.healthController,
         exporter,
         this.counters,
-        builder.attemptFailedObserver,
-        builder.errorHandler,
+        settings.attemptFailedObserver(),
+        settings.errorHandler(),
         deadLetterTopic,
         this.kpipeProducer,
         tracer,
-        builder.maxRetries,
-        builder.retryBackoff,
+        settings.maxRetries(),
+        settings.retryBackoff(),
         this::isRunning,
         this::wakeIfBackpressureDrained
       );

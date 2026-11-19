@@ -428,7 +428,7 @@ public final class TestStream<T> implements AutoCloseable {
         .withErrorHandler(recordingHandler)
         .withConsumer(() -> mock)
         .withPollTimeout(Duration.ofMillis(10));
-      if (attemptFailedObserver != null) consumerBuilder.withAttemptFailedObserver(attemptFailedObserver::accept);
+      if (attemptFailedObserver != null) consumerBuilder.onAttemptFailed(attemptFailedObserver::accept);
       if (batchSink != null) {
         consumerBuilder.withBatchPipeline(topic, pipeline, batchSink, new BatchPolicy(batchMaxSize, CLOSE_AGE_CAP));
       } else {

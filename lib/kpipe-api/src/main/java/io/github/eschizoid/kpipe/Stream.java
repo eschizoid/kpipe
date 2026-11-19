@@ -118,7 +118,7 @@ public interface Stream<T> {
   /// @param maxRetries maximum number of retry attempts (must be ≥ 0)
   /// @param backoff duration to wait between attempts (must be non-null)
   /// @return a new stream with the retry policy configured
-  /// @throws IllegalArgumentException if `maxRetries` is negative
+  /// @throws IllegalArgumentException if `maxRetries` or `backoff` is negative
   /// @throws NullPointerException if `backoff` is null
   Stream<T> withRetry(final int maxRetries, final Duration backoff);
 
@@ -249,7 +249,8 @@ public interface Stream<T> {
   ///
   /// @param dlqTopic the dead-letter topic name (must be non-blank)
   /// @return a new stream with the DLQ configured
-  /// @throws IllegalArgumentException if `dlqTopic` is null or blank
+  /// @throws NullPointerException if the topic is null
+  /// @throws IllegalArgumentException if the topic is blank
   Stream<T> withDeadLetterTopic(final String dlqTopic);
 
   /// Returns a new stream with a custom Kafka poll timeout. The default is 100ms; longer
@@ -259,6 +260,7 @@ public interface Stream<T> {
   /// @param timeout the poll timeout (must be non-null and non-negative)
   /// @return a new stream with the poll timeout configured
   /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is not positive
   Stream<T> withPollTimeout(final Duration timeout);
 
   /// Returns a new stream that commits the offset frontier at this interval. The default is 30
@@ -268,6 +270,7 @@ public interface Stream<T> {
   /// @param interval the time between periodic commits (non-null, at least 1 millisecond)
   /// @return a new stream with the commit interval configured
   /// @throws NullPointerException if `interval` is null
+  /// @throws IllegalArgumentException if `interval` is under 1 millisecond
   Stream<T> withCommitInterval(final Duration interval);
 
   /// Returns a new stream that keeps its committed offsets in `store` instead of Kafka. The
@@ -312,6 +315,7 @@ public interface Stream<T> {
   /// @param timeout the thread-join budget (must be non-null and non-negative)
   /// @return a new stream with the termination timeout configured
   /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is negative
   Stream<T> withThreadTerminationTimeout(final Duration timeout);
 
   /// Returns a new stream that waits at most `timeout` for in-flight records to drain during
@@ -321,6 +325,7 @@ public interface Stream<T> {
   /// @param timeout the drain budget (must be non-null and non-negative)
   /// @return a new stream with the drain timeout configured
   /// @throws NullPointerException if `timeout` is null
+  /// @throws IllegalArgumentException if `timeout` is negative
   Stream<T> withWaitForMessagesTimeout(final Duration timeout);
 
   /// Returns a new stream that skips the first `n` bytes of every payload before deserialization.

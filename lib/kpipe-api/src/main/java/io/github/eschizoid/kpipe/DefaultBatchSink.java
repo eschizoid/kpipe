@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /// [KPipeConsumerBuilder#withBatchPipeline] together with the configured [BatchSink] and
 /// [BatchPolicy]. Every consumer-wide setting the underlying [DefaultStream] carries (processing
 /// mode, metrics, errorHandler, DLQ, pollTimeout, retry, backpressure, tracer, circuit breaker)
-/// carries over via [ConsumerConfig#applyTo] — the same chain the non-batch path uses.
+/// carries over via [KPipeConsumerBuilder#withSettings] — the same path the non-batch path uses.
 ///
 /// `Stream.toBatch(...)` produces a single-topic instance. [MultiBuilder] also constructs single-
 /// topic instances per route and collects them at `start()` time into one consumer subscribing
@@ -78,7 +78,7 @@ final class DefaultBatchSink<T> implements Sink<T> {
       .withProperties(stream.kafkaProps())
       .withBatchPipeline(topic(), buildPipeline(), batchSink, batchPolicy);
 
-    stream.consumerConfig().applyTo(consumerBuilder);
+    consumerBuilder.withSettings(stream.settings());
 
     return DefaultHandle.startAndWrap(consumerBuilder.build());
   }

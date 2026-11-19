@@ -1,21 +1,21 @@
 package io.github.eschizoid.kpipe;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.consumer.ConsumerSettings;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import java.time.Duration;
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.function.UnaryOperator;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
@@ -30,18 +30,9 @@ import org.junit.jupiter.api.Test;
 /// which is why they belong on the 80% path: reaching one used to mean abandoning `KPipe.json(...)`
 /// and rebuilding through `KPipeConsumerBuilder` to obtain something orthogonal to the pipeline.
 ///
-/// **The `applyTo` delegation is covered, via the builder's own preconditions.** Passing an invalid
-/// value through a facade setter reaches the builder's validation during `start()`, so a missing
-/// delegation line means the value never arrives and nothing throws — which makes the assertion a
-/// test of the delegation rather than of the setter. No broker, no reflection.
-///
-/// `withShutdownHook` is the exception: `true` and `false` are both valid, so there is no
-/// precondition to trip and nothing observable to assert without reaching into the JVM's
-/// shutdown-hook registry. Its delegation is covered by inspection alone.
-///
-/// `withOffsetStore` has no invalid value either. `GlobalTableFailoverIntegrationTest` in
-/// `examples/offset-stores` covers its delegation: the consumer there writes to the store only
-/// when the facade passes it on.
+/// Every setter validates its value in [ConsumerSettings] when it is called, on the facade and the
+/// builder alike, and `ConsumerSettingsParityTest` checks that each setting reaches the settings
+/// on all three surfaces. These tests cover the values and the immutability of a stream.
 class OperationalSettersTest {
 
   private static final OffsetStore STORE = new OffsetStore() {
@@ -63,8 +54,8 @@ class OperationalSettersTest {
     return p;
   }
 
-  private static io.github.eschizoid.kpipe.ConsumerConfig configOf(final Stream<?> s) {
-    return ((DefaultStream<?>) s).consumerConfig();
+  private static ConsumerSettings configOf(final Stream<?> s) {
+    return ((DefaultStream<?>) s).settings();
   }
 
   private static Stream<byte[]> stream() {
@@ -77,7 +68,7 @@ class OperationalSettersTest {
       Duration.ofSeconds(30),
       configOf(stream().withMetricsLog(Duration.ofSeconds(30))).metricsLogInterval()
     );
-    assertEquals(Boolean.TRUE, configOf(stream().withShutdownHook(true)).shutdownHook());
+    assertTrue(configOf(stream().withShutdownHook(true)).shutdownHook());
     assertEquals(
       Duration.ofSeconds(7),
       configOf(stream().withThreadTerminationTimeout(Duration.ofSeconds(7))).threadTerminationTimeout()
@@ -91,26 +82,19 @@ class OperationalSettersTest {
   }
 
   @Test
-  void unsetLeavesNullSoTheBuilderKeepsItsOwnDefault() {
-    // Null is the facade's "unset" encoding — applyTo skips it, so the builder's default stands.
-    // A setter defaulting to a concrete value here would silently override that default for
-    // everyone, including callers who never touched the setting.
+  void anUntouchedStreamCarriesTheDefaultSettings() {
     final var c = configOf(stream());
-    assertNull(c.metricsLogInterval());
-    assertNull(c.shutdownHook());
-    assertNull(c.threadTerminationTimeout());
-    assertNull(c.waitForMessagesTimeout());
-    assertNull(c.commitInterval());
-    assertNull(c.offsetStore());
+    assertTrue(c.explicitlySet().isEmpty(), "no setting counts as set until its method is called");
+    assertSame(ConsumerSettings.defaults(), c);
   }
 
   @Test
   void settersReturnNewStreamsAndLeaveTheOriginalAlone() {
     final var base = stream();
     final var derived = base.withShutdownHook(true).withMetricsLog(Duration.ofSeconds(5));
-    assertNull(configOf(base).shutdownHook(), "the original stream must not observe a later setter");
+    assertFalse(configOf(base).shutdownHook(), "the original stream must not observe a later setter");
     assertNull(configOf(base).metricsLogInterval());
-    assertEquals(Boolean.TRUE, configOf(derived).shutdownHook());
+    assertTrue(configOf(derived).shutdownHook());
   }
 
   @Test
@@ -131,39 +115,27 @@ class OperationalSettersTest {
   }
 
   @Test
-  void invalidValuesReachTheBuilderAndTripItsPreconditions() {
-    // The seam: applyTo runs before build(), so a value the builder rejects surfaces here. If a
-    // delegation line were missing the value would never arrive and nothing would throw, which is
-    // exactly what makes this a test of the delegation rather than of the setter.
+  void invalidValuesAreRejectedWhenTheSetterIsCalled() {
     final var threadTermination = assertThrows(IllegalArgumentException.class, () ->
-      KPipe.bytes("t", props())
-        .withThreadTerminationTimeout(Duration.ofSeconds(-1))
-        .toCustom(_ -> {})
-        .start()
+      stream().withThreadTerminationTimeout(Duration.ofSeconds(-1))
     );
     assertTrue(threadTermination.getMessage().contains("negative"), threadTermination.getMessage());
 
     final var waitForMessages = assertThrows(IllegalArgumentException.class, () ->
-      KPipe.bytes("t", props())
-        .withWaitForMessagesTimeout(Duration.ofSeconds(-1))
-        .toCustom(_ -> {})
-        .start()
+      stream().withWaitForMessagesTimeout(Duration.ofSeconds(-1))
     );
     assertTrue(waitForMessages.getMessage().contains("negative"), waitForMessages.getMessage());
 
     final var commitInterval = assertThrows(IllegalArgumentException.class, () ->
-      KPipe.bytes("t", props())
-        .withCommitInterval(Duration.ZERO)
-        .toCustom(_ -> {})
-        .start()
+      stream().withCommitInterval(Duration.ZERO)
     );
     assertTrue(commitInterval.getMessage().contains("1ms"), commitInterval.getMessage());
   }
 
   @Test
   void theMetricsLogWritesALineEachIntervalAndNoneAfterClose() throws Exception {
-    // Covers the setting end to end: facade setter, config, applyTo, build, start and the log
-    // thread. A latch rather than a sleep so a missing delegation fails fast.
+    // Covers the setting end to end: facade setter, settings, build, start and the log thread. A
+    // latch rather than a sleep so a missing delegation fails fast.
     final var lines = new CopyOnWriteArrayList<String>();
     final var threeLines = new CountDownLatch(3);
     final var logger = Logger.getLogger("io.github.eschizoid.kpipe.metrics.log");
@@ -197,37 +169,6 @@ class OperationalSettersTest {
       assertTrue(lines.getFirst().contains(" received=0 "), lines.getFirst());
     } finally {
       logger.removeHandler(handler);
-    }
-  }
-
-  @Test
-  void multiBuilderRejectsThemPerRouteAndNamesItsOwnMirror() {
-    // Registering each in CONSUMER_WIDE_SETTINGS is what makes a route-level call an error rather
-    // than a silent no-op. Without the descriptor the setting would be accepted on the Stream and
-    // then dropped when the routes were folded into one consumer.
-    record Case(String setting, UnaryOperator<Stream<byte[]>> apply) {}
-    final var cases = List.of(
-      new Case("withMetricsLog", s -> s.withMetricsLog(Duration.ofSeconds(1))),
-      new Case("withShutdownHook", s -> s.withShutdownHook(true)),
-      new Case("withThreadTerminationTimeout", s -> s.withThreadTerminationTimeout(Duration.ofSeconds(1))),
-      new Case("withWaitForMessagesTimeout", s -> s.withWaitForMessagesTimeout(Duration.ofSeconds(1))),
-      new Case("withCommitInterval", s -> s.withCommitInterval(Duration.ofSeconds(1))),
-      new Case("withOffsetStore", s -> s.withOffsetStore(STORE))
-    );
-    for (final var c : cases) {
-      final var multi = KPipe.multi(props()).bytes("topic-a", s ->
-        c
-          .apply()
-          .apply(s)
-          .toCustom(_ -> {})
-      );
-      final var ex = assertThrows(IllegalArgumentException.class, multi::start, c.setting());
-      assertTrue(ex.getMessage().contains(c.setting()), () -> "should name " + c.setting() + ": " + ex.getMessage());
-      assertTrue(ex.getMessage().contains("'topic-a'"), () -> "should name the route: " + ex.getMessage());
-      assertTrue(
-        ex.getMessage().contains("MultiBuilder." + c.setting()),
-        () -> "should point at the mirror: " + ex.getMessage()
-      );
     }
   }
 
