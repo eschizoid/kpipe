@@ -837,6 +837,12 @@ public class KPipeConsumer implements AutoCloseable {
     return tryTransitionToClosing(state);
   }
 
+  /// The failures in the circuit breaker's window. Package-private for the tests that assert how
+  /// many failures one record adds.
+  long circuitBreakerFailures() {
+    return health.circuitBreakerFailures();
+  }
+
   /// The single-read compare-and-set that backs [#transitionToClosing], lifted to a static method
   /// over the supplied reference so the exact discipline (read once into a local, verify the state
   /// is active, then CAS to CLOSING) can be exercised under Fray without constructing a full

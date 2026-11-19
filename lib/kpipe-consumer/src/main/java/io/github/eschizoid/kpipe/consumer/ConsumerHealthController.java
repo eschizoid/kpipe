@@ -345,6 +345,12 @@ final class ConsumerHealthController {
     return cbState.get();
   }
 
+  /// The failures in the circuit breaker's window, or `0` when no breaker is configured. A test
+  /// seam: a breaker that trips on one failure cannot tell one failure from two.
+  long circuitBreakerFailures() {
+    return cbWindow == null ? 0 : cbWindow.failures();
+  }
+
   /// Cancels the in-flight probe timer if any. Called from KPipeConsumer.close() so a pending
   /// probe doesn't fire after the consumer thread has exited.
   void shutdown() {
@@ -450,6 +456,10 @@ final class ConsumerHealthController {
 
     long totalSamples() {
       return successes.get() + failures.get();
+    }
+
+    long failures() {
+      return failures.get();
     }
 
     double failureRate() {

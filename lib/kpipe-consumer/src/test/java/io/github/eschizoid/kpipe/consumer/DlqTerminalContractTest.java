@@ -40,12 +40,13 @@ import org.junit.jupiter.params.provider.MethodSource;
 /// configured. A failed DLQ send leaves the offset pending, so the record is reprocessed on
 /// restart and never silently dropped.
 ///
-/// The record adds one failure to the circuit breaker when a retry might have fixed it, or when
-/// its DLQ send failed. A non-retryable record that is safely parked stays out of the breaker's
-/// window; a DLQ that is down is a downstream outage and counts.
+/// The record adds exactly one failure to the circuit breaker when a retry might have fixed it,
+/// or when its DLQ send failed, however many attempts it took. A non-retryable record that is
+/// safely parked adds none; a DLQ that is down is a downstream outage and counts.
 ///
 /// Every cell of {path} × {failure} × {DLQ scenario} asserts the same outcome on both paths, with
-/// a breaker that trips on a single failure.
+/// two retries configured and a breaker window too large to fill, so the failures it holds are
+/// the record's own.
 class DlqTerminalContractTest {
 
   private static final String TOPIC = "contract-topic";
@@ -71,19 +72,18 @@ class DlqTerminalContractTest {
   static Stream<Arguments> cells() {
     return Stream.of(Path.values()).flatMap(path ->
       Stream.of(
-        // marked?, dlqSent, dlqFailed, breaker tripped? — identical per cell across
-        // BOTH paths.
-        Arguments.of(path, Failure.RETRYABLE, DlqScenario.SEND_OK, true, 1L, 0L, true),
-        Arguments.of(path, Failure.RETRYABLE, DlqScenario.SEND_FAIL, false, 0L, 1L, true),
-        Arguments.of(path, Failure.RETRYABLE, DlqScenario.NOT_CONFIGURED, true, 0L, 0L, true),
-        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.SEND_OK, true, 1L, 0L, false),
-        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.SEND_FAIL, false, 0L, 1L, true),
-        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.NOT_CONFIGURED, true, 0L, 0L, false)
+        // marked?, dlqSent, dlqFailed, breaker failures; the same on both paths.
+        Arguments.of(path, Failure.RETRYABLE, DlqScenario.SEND_OK, true, 1L, 0L, 1L),
+        Arguments.of(path, Failure.RETRYABLE, DlqScenario.SEND_FAIL, false, 0L, 1L, 1L),
+        Arguments.of(path, Failure.RETRYABLE, DlqScenario.NOT_CONFIGURED, true, 0L, 0L, 1L),
+        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.SEND_OK, true, 1L, 0L, 0L),
+        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.SEND_FAIL, false, 0L, 1L, 1L),
+        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.NOT_CONFIGURED, true, 0L, 0L, 0L)
       )
     );
   }
 
-  @ParameterizedTest(name = "{0} × {1} × {2} → marked={3} dlqSent={4} dlqFailed={5} tripped={6}")
+  @ParameterizedTest(name = "{0} × {1} × {2} → marked={3} dlqSent={4} dlqFailed={5} breakerFailures={6}")
   @MethodSource("cells")
   void bothFailurePathsShareTheDurableTerminalContract(
     final Path path,
@@ -92,7 +92,7 @@ class DlqTerminalContractTest {
     final boolean expectMarked,
     final long expectDlqSent,
     final long expectDlqFailed,
-    final boolean expectTripped
+    final long expectBreakerFailures
   ) throws Exception {
     final var recorder = new RecordingOffsetManager();
     final var errorsSeen = new AtomicInteger();
@@ -102,7 +102,8 @@ class DlqTerminalContractTest {
       .withProperties(byteProperties())
       .withOffsetManager(recorder)
       .withErrorHandler(_ -> errorsSeen.incrementAndGet())
-      .withCircuitBreaker(new CircuitBreakerController(1.0, 1, Duration.ofMinutes(1)))
+      .withCircuitBreaker(new CircuitBreakerController(1.0, 100, Duration.ofMinutes(1)))
+      .withRetry(2, Duration.ofMillis(1))
       .withPollTimeout(Duration.ofMillis(10));
 
     if (scenario != DlqScenario.NOT_CONFIGURED) {
@@ -116,14 +117,13 @@ class DlqTerminalContractTest {
           TestPipelines.sideEffect(_ -> {
             throw failure("processor always fails", failure);
           })
-        )
-        .withRetry(0, Duration.ofMillis(1));
+        );
 
       try (final var consumer = builder.build()) {
         final var record = new ConsumerRecord<>(TOPIC, 0, OFFSET, "k".getBytes(UTF_8), "v".getBytes(UTF_8));
         recorder.trackOffset(record);
         consumer.processRecord(record);
-        assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed, expectTripped);
+        assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed, expectBreakerFailures);
       }
     } else {
       // Batch: the pipeline passes, the batch sink throws, so the single record's whole-batch
@@ -149,7 +149,7 @@ class DlqTerminalContractTest {
           awaitCondition(() -> consumer.metrics().records().dlqFailed() >= 1, 5_000);
         }
         awaitCondition(() -> errorsSeen.get() >= 1, 5_000);
-        assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed, expectTripped);
+        assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed, expectBreakerFailures);
       }
     }
   }
@@ -161,7 +161,7 @@ class DlqTerminalContractTest {
     final boolean expectMarked,
     final long expectDlqSent,
     final long expectDlqFailed,
-    final boolean expectTripped
+    final long expectBreakerFailures
   ) {
     assertTrue(recorder.tracked.contains(OFFSET), "record must have been tracked (guards the negative assertions)");
     if (expectMarked) {
@@ -172,11 +172,7 @@ class DlqTerminalContractTest {
     assertEquals(expectDlqSent, consumer.metrics().records().dlqSent(), "dlqSent");
     assertEquals(expectDlqFailed, consumer.metrics().records().dlqFailed(), "dlqFailed");
     assertEquals(1, errorsSeen.get(), "error handler must observe the failure exactly once");
-    assertEquals(
-      expectTripped ? CircuitBreakerState.OPEN : CircuitBreakerState.CLOSED,
-      consumer.health().circuitBreaker(),
-      "circuit breaker"
-    );
+    assertEquals(expectBreakerFailures, consumer.circuitBreakerFailures(), "circuit breaker failures");
   }
 
   private static RuntimeException failure(final String message, final Failure failure) {
