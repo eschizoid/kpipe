@@ -25,8 +25,9 @@ import java.util.stream.Collectors;
 /// ```
 ///
 /// Enum values are lowercase, as in the OpenTelemetry attributes and the metrics log line. A
-/// snapshot supplier that throws or returns null answers `503` with `{"healthy": false}`. Any
-/// other method answers `405` with an `Allow: GET` header.
+/// snapshot supplier that throws or returns null answers `503` with `{"healthy": false}`. `HEAD`
+/// answers like `GET` without a body, for load balancers that probe with it; any other method
+/// answers `405` with an `Allow: GET, HEAD` header.
 public final class HttpHealthServer implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(HttpHealthServer.class.getName());
@@ -42,10 +43,12 @@ public final class HttpHealthServer implements AutoCloseable {
   ///
   /// @param host    the host to bind to, such as "0.0.0.0"
   /// @param port    the port to bind to, or 0 for any free port
-  /// @param path    the path to serve, such as "/health"; a missing leading slash is added
+  /// @param path    the path to serve, such as "/health"; a missing leading slash is added, and
+  ///                null or blank serves [HealthConfig#DEFAULT_PATH]
   /// @param health  reads the health to serve, once per request, such as `handle::health`
   /// @param appName the name used in log lines, or null for "kpipe-app"
   /// @throws IOException if the server cannot be created or bound
+  /// @throws NullPointerException if `health` is null
   public HttpHealthServer(
     final String host,
     final int port,
@@ -68,12 +71,24 @@ public final class HttpHealthServer implements AutoCloseable {
   }
 
   /// Creates and starts a server configured by the `HEALTH_*` environment variables (see
+  /// [HealthConfig]), unless they disable it, logging as "kpipe-app".
+  ///
+  /// @param health reads the health to serve, once per request, such as `handle::health`
+  /// @return the started server, or empty when disabled or when binding fails
+  /// @throws NullPointerException if `health` is null
+  public static Optional<HttpHealthServer> fromEnv(final Supplier<HealthSnapshot> health) {
+    return fromEnv(health, null);
+  }
+
+  /// Creates and starts a server configured by the `HEALTH_*` environment variables (see
   /// [HealthConfig]), unless they disable it.
   ///
   /// @param health  reads the health to serve, once per request, such as `handle::health`
   /// @param appName the name used in log lines, or null for "kpipe-app"
-  /// @return the started server, or empty when disabled or when it could not be started
+  /// @return the started server, or empty when disabled or when binding fails
+  /// @throws NullPointerException if `health` is null
   public static Optional<HttpHealthServer> fromEnv(final Supplier<HealthSnapshot> health, final String appName) {
+    Objects.requireNonNull(health, "health cannot be null");
     if (!HealthConfig.isEnabled()) return Optional.empty();
     try {
       final var server = new HttpHealthServer(
@@ -108,19 +123,17 @@ public final class HttpHealthServer implements AutoCloseable {
   }
 
   private void handleHealth(final HttpExchange exchange) throws IOException {
-    if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-      exchange.getResponseHeaders().add("Allow", "GET");
-      send(exchange, 405, "text/plain; charset=utf-8", "Method Not Allowed");
+    final var method = exchange.getRequestMethod();
+    final var head = "HEAD".equalsIgnoreCase(method);
+    if (!head && !"GET".equalsIgnoreCase(method)) {
+      exchange.getResponseHeaders().add("Allow", "GET, HEAD");
+      send(exchange, 405, "text/plain; charset=utf-8", "Method Not Allowed", false);
       return;
     }
     final var snapshot = read();
     final var healthy = snapshot != null && snapshot.healthy();
-    send(
-      exchange,
-      healthy ? 200 : 503,
-      "application/json; charset=utf-8",
-      snapshot == null ? UNREADABLE : json(snapshot)
-    );
+    final var body = snapshot == null ? UNREADABLE : json(snapshot);
+    send(exchange, healthy ? 200 : 503, "application/json; charset=utf-8", body, head);
   }
 
   private static final String UNREADABLE = "{\"healthy\": false}";
@@ -158,10 +171,21 @@ public final class HttpHealthServer implements AutoCloseable {
     return value.name().toLowerCase(Locale.ROOT);
   }
 
-  private static void send(final HttpExchange exchange, final int status, final String contentType, final String body)
-    throws IOException {
-    final var payload = body.getBytes(StandardCharsets.UTF_8);
+  private static void send(
+    final HttpExchange exchange,
+    final int status,
+    final String contentType,
+    final String body,
+    final boolean headersOnly
+  ) throws IOException {
     exchange.getResponseHeaders().add("Content-Type", contentType);
+    if (headersOnly) {
+      // -1 tells the JDK server there is no body to send.
+      exchange.sendResponseHeaders(status, -1);
+      exchange.close();
+      return;
+    }
+    final var payload = body.getBytes(StandardCharsets.UTF_8);
     exchange.sendResponseHeaders(status, payload.length);
     try (final var out = exchange.getResponseBody()) {
       out.write(payload);

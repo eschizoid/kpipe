@@ -174,8 +174,8 @@ Log-based fallback: `withMetricsLog(Duration)` writes one `key=value` line per i
   ALL pause sources, and (b) bounds the iteration to `pollTimeout` so `tickBackpressure` re-evaluates on a fixed cadence
   (external lag drops — reassignment, retention truncation, offset reset — now resume the consumer). Records slipping
   through a mid-poll rebalance are processed, never dropped (positions already advanced; dropping would lose data on
-  commit). Resume latency is ≤ `pollTimeout` (100ms default) rather than an instant unpark; the remaining unparks
-  (`internalResume`, `close`) are best-effort latency nudges for the teardown-drain `parkNanos` path, and
+  commit). Resume latency is ≤ `pollTimeout` (100ms default) rather than an instant unpark; the remaining unparks (pause
+  and resume edges, `close`) are best-effort latency nudges for the teardown-drain `parkNanos` path, and
   `wakeIfBackpressureDrained` ends an in-flight backpressure wait early (see the load-drop callback below). History: the
   old indefinite `park()` deadlocked forever under the lag strategy (SEQUENTIAL has no async completions to unpark it,
   and lag is monotonically non-decreasing while parked) and got the consumer evicted from the group after 5 minutes.
@@ -346,7 +346,7 @@ deliberately escape-hatch-only.
 | Thread/executor termination                    | `kpipe-consumer`                                                                                | `Stream.withThreadTerminationTimeout(Duration)` / `.withWaitForMessagesTimeout(Duration)`, and the `MultiBuilder` mirrors              | `Builder.withThreadTerminationTimeout / withWaitForMessagesTimeout`                                                                 | Shutdown tuning; operational rather than pipeline shape, so it lives on both surfaces. The executor-drain timeout stays non-tunable at `ConsumerDefaults.EXECUTOR_TERMINATION`.                                                                                                                                                                                                          |
 | Metrics log + shutdown hook                    | `kpipe-consumer`                                                                                | `Stream.withMetricsLog(Duration)` / `.withShutdownHook(boolean)`, and the `MultiBuilder` mirrors                                       | `Builder.withMetricsLog(Duration) / withShutdownHook(true)`                                                                         | The log-based path for deployments without OTel — independent of `withMetrics`. One `key=value` line per interval to the `io.github.eschizoid.kpipe.metrics.log` logger, plus a final line at close. The shutdown hook covers SIGTERM, which try-with-resources on `Handle` does not.                                                                                                    |
 | **Health endpoint**                            | `kpipe-consumer`                                                                                | compose it from `Handle`                                                                                                               | `HttpHealthServer.fromEnv(...)`                                                                                                     | Not a facade gap: `fromEnv` takes a `HealthSnapshot` supplier and reads host/port/path from the environment, so a facade user wires `HttpHealthServer.fromEnv(handle::health, "app")` alongside the handle; each probe reads one snapshot. It is a separate process concern, not pipeline configuration.                                                                                 |
-| In-flight drain                                | `kpipe-consumer`                                                                                | `Handle.shutdownGracefully(Duration)`                                                                                                  | `KPipeConsumer.awaitDispatchIdle(Duration) / shutdownGracefully(Duration)`                                                          | Already on the facade. `awaitDispatchIdle` waits for dispatched records only: buffered batch records never flush mid-drain, so waiting on them would only burn the timeout. `shutdownGracefully` then closes, which flushes them, and returns `true` only when nothing is left in flight, buffered records included.                                                                     |
+| In-flight drain                                | `kpipe-consumer`                                                                                | `Handle.shutdownGracefully(Duration)`                                                                                                  | `KPipeConsumer.awaitDispatchIdle(Duration) / shutdownGracefully(Duration)`                                                          | `awaitDispatchIdle` waits for dispatched records only: buffered batch records never flush mid-drain, so waiting on them would only burn the timeout. `shutdownGracefully` then closes, which flushes them, and returns `true` only when nothing is left in flight, buffered records included.                                                                                            |
 | **Custom `MessageProcessorRegistry`**          | `kpipe-core`                                                                                    | —                                                                                                                                      | `new MessageProcessorRegistry()` + `register*(...)` + `pipeline(format)`                                                            | Pre-shared pipelines across consumers, multi-format orchestrators. The registry is format-agnostic — the format is supplied per pipeline call, not on construction.                                                                                                                                                                                                                      |
 
 ## §18 Batch sink architecture (1.12.0)
@@ -394,14 +394,14 @@ deliberately escape-hatch-only.
 
 - **Backpressure participation in parallel mode.** `inFlightCount` is decremented as soon as `processRecord` returns —
   for batch paths that's "the record was buffered," which would make buffered records invisible to the in-flight
-  watermark. The wrapper's `bufferedCount()` is added to `KPipeConsumer.backpressureLoad()` to close that gap.
+  watermark. The wrapper's `bufferedCount()` is added to `KPipeConsumer.inFlight()` to close that gap.
 - **Offset commits use `OffsetManager` directly, not the command queue.** The command queue retains its real job:
-  serializing Kafka-consumer calls (`pause` / `resume` / `commitSync`) that genuinely need the consumer thread.
-  Originally batch-only (1.12.0); the architecture-deepening pass extended this to ALL offset bookkeeping — worker
-  virtual threads on every processing mode now call `offsetManager.markOffsetProcessed` / `trackOffset` directly. The
-  manager is thread-safe (atomic ops on `ConcurrentHashMap` / `ConcurrentSkipListSet`), so the queue was pure ceremony
-  plus a hop-to-consumer-thread latency penalty on every record. Bypassing it also means shutdown drain works even after
-  the consumer thread has exited.
+  serializing Kafka-consumer calls (`commitSync`) that genuinely need the consumer thread; the poll loop applies the
+  pause sources to Kafka itself on every pass. Originally batch-only (1.12.0); the architecture-deepening pass extended
+  this to ALL offset bookkeeping — worker virtual threads on every processing mode now call
+  `offsetManager.markOffsetProcessed` / `trackOffset` directly. The manager is thread-safe (atomic ops on
+  `ConcurrentHashMap` / `ConcurrentSkipListSet`), so the queue was pure ceremony plus a hop-to-consumer-thread latency
+  penalty on every record. Bypassing it also means shutdown drain works even after the consumer thread has exited.
 - **Whole-batch shutdown drain happens BEFORE `offsetManager.close()`.** The consumer's `close()` is split into four
   named phases — `closeNeverStarted` (fast path), `initiateShutdown` (queue Close + signal dispatcher + wait for
   in-flight drain), `waitForConsumerThreadToJoin` (wakeup + unpark + join), `finalizeAfterThreadJoined` (idempotent
@@ -495,7 +495,7 @@ interface has three implementations selected at construction time from a `Proces
 into each dispatcher: all three now own their own `drainableCount()`. `SequentialDispatcher` tracks a 0/1 counter
 incremented around the inline `processTask.run()` — lag-based backpressure doesn't read it, but `inFlight` metrics and
 `shutdownGracefully(timeout)` drain reporting do, and a hardcoded 0 would lie to both. `ParallelDispatcher` and
-`KeyOrderedDispatcher` each own a real counter exposed via `drainableCount()`. `KPipeConsumer.backpressureLoad()` is now
+`KeyOrderedDispatcher` each own a real counter exposed via `drainableCount()`. `KPipeConsumer.inFlight()` is
 `dispatcher.drainableCount() + Σ batchWrappers.bufferedCount()`.
 
 **Load-drop callback.** The unpark that backpressure needs lives in `KPipeConsumer.wakeIfBackpressureDrained()`. The

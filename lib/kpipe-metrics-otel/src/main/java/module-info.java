@@ -12,7 +12,6 @@
 /// Bring your own SDK (`io.opentelemetry:opentelemetry-sdk` + an exporter); this module only
 /// requires `opentelemetry-api`.
 module io.github.eschizoid.kpipe.metrics.otel {
-  requires transitive io.github.eschizoid.kpipe.core;
   requires transitive io.github.eschizoid.kpipe.consumer;
   // transitive: OtelMetrics takes an OpenTelemetry (an io.opentelemetry.api type) in its public
   // API, so callers must read it too.

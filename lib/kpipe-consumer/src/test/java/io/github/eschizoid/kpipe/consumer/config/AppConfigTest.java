@@ -3,7 +3,6 @@ package io.github.eschizoid.kpipe.consumer.config;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,20 +22,9 @@ class AppConfigTest {
     final var appName = "test-app";
     final var pollTimeout = Duration.ofMillis(200);
     final var shutdownTimeout = Duration.ofSeconds(40);
-    final var metricsInterval = Duration.ofMinutes(2);
-    final var processors = List.of("processor1", "processor2");
 
     // Act
-    final var config = new AppConfig(
-      bootstrapServers,
-      consumerGroup,
-      topic,
-      appName,
-      pollTimeout,
-      shutdownTimeout,
-      metricsInterval,
-      processors
-    );
+    final var config = new AppConfig(bootstrapServers, consumerGroup, topic, appName, pollTimeout, shutdownTimeout);
 
     // Assert
     assertEquals(bootstrapServers, config.bootstrapServers());
@@ -45,40 +33,28 @@ class AppConfigTest {
     assertEquals(appName, config.appName());
     assertEquals(pollTimeout, config.pollTimeout());
     assertEquals(shutdownTimeout, config.shutdownTimeout());
-    assertEquals(metricsInterval, config.metricsInterval());
-    assertEquals(processors, config.processors());
   }
 
   @Test
   void shouldUseDefaultValuesWhenParametersAreNull() {
     // Act
-    final var config = new AppConfig("localhost:9092", "test-group", "test-topic", "test-app", null, null, null, null);
+    final var config = new AppConfig("localhost:9092", "test-group", "test-topic", "test-app", null, null);
 
     // Assert
     assertEquals(AppConfig.DEFAULT_POLL_TIMEOUT, config.pollTimeout());
     assertEquals(AppConfig.DEFAULT_SHUTDOWN_TIMEOUT, config.shutdownTimeout());
-    assertEquals(AppConfig.DEFAULT_METRICS_INTERVAL, config.metricsInterval());
-    assertTrue(config.processors().isEmpty());
   }
 
   @Test
   void shouldThrowExceptionForNullRequiredParameters() {
     // Assert
-    assertThrows(NullPointerException.class, () ->
-      new AppConfig(null, "group", "topic", "app", null, null, null, null)
-    );
+    assertThrows(NullPointerException.class, () -> new AppConfig(null, "group", "topic", "app", null, null));
 
-    assertThrows(NullPointerException.class, () ->
-      new AppConfig("servers", null, "topic", "app", null, null, null, null)
-    );
+    assertThrows(NullPointerException.class, () -> new AppConfig("servers", null, "topic", "app", null, null));
 
-    assertThrows(NullPointerException.class, () ->
-      new AppConfig("servers", "group", null, "app", null, null, null, null)
-    );
+    assertThrows(NullPointerException.class, () -> new AppConfig("servers", "group", null, "app", null, null));
 
-    assertThrows(NullPointerException.class, () ->
-      new AppConfig("servers", "group", "topic", null, null, null, null, null)
-    );
+    assertThrows(NullPointerException.class, () -> new AppConfig("servers", "group", "topic", null, null, null));
   }
 
   @Test
@@ -88,15 +64,11 @@ class AppConfigTest {
 
     // Assert
     assertThrows(IllegalArgumentException.class, () ->
-      new AppConfig("servers", "group", "topic", "app", negativeDuration, null, null, null)
+      new AppConfig("servers", "group", "topic", "app", negativeDuration, null)
     );
 
     assertThrows(IllegalArgumentException.class, () ->
-      new AppConfig("servers", "group", "topic", "app", null, negativeDuration, null, null)
-    );
-
-    assertThrows(IllegalArgumentException.class, () ->
-      new AppConfig("servers", "group", "topic", "app", null, null, negativeDuration, null)
+      new AppConfig("servers", "group", "topic", "app", null, negativeDuration)
     );
   }
 
@@ -116,11 +88,7 @@ class AppConfigTest {
         "KAFKA_POLL_TIMEOUT_MS",
         "250",
         "SHUTDOWN_TIMEOUT_SEC",
-        "45",
-        "METRICS_INTERVAL_SEC",
-        "120",
-        "PROCESSOR_PIPELINE",
-        "proc1,proc2,proc3"
+        "45"
       );
 
       mockedStatic
@@ -145,8 +113,6 @@ class AppConfigTest {
       assertEquals("env-app", config.appName());
       assertEquals(Duration.ofMillis(250), config.pollTimeout());
       assertEquals(Duration.ofSeconds(45), config.shutdownTimeout());
-      assertEquals(Duration.ofSeconds(120), config.metricsInterval());
-      assertEquals(List.of("proc1", "proc2", "proc3"), config.processors());
     }
   }
 

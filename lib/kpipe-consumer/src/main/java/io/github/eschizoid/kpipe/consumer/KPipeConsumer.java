@@ -103,10 +103,9 @@ public class KPipeConsumer implements AutoCloseable {
   /// Composes pause arbitration + backpressure decision + circuit-breaker state machine. The
   /// underlying decision modules ([BackpressureController], [CircuitBreakerController]) remain
   /// public + testable on their own; this controller owns the side-effect choreography and
-  /// dispatches pause transitions through a PauseLifecycleHook that points back at
-  /// `internalPause` / `internalResume`, and metric events through a HealthMetricsObserver bound
-  /// to the counters.
-  private final ConsumerHealthController health;
+  /// signals pause transitions through a PauseLifecycleHook that wakes the consumer thread, and
+  /// metric events through a HealthMetricsObserver bound to the counters.
+  private final ConsumerHealthController healthController;
 
   private final KPipeProducer<byte[], byte[]> kpipeProducer;
 
@@ -272,19 +271,19 @@ public class KPipeConsumer implements AutoCloseable {
       this.exporter = new GuardedMetricsExporter(builder.metricsExporter);
       this.consumerGroup = builder.kafkaProps.getProperty("group.id");
 
-      this.health = new ConsumerHealthController(
+      this.healthController = new ConsumerHealthController(
         bp,
         builder.circuitBreakerController,
         this.scheduler,
         new ConsumerHealthController.PauseLifecycleHook() {
           @Override
           public void onPause() {
-            internalPause();
+            wakeConsumerThread();
           }
 
           @Override
           public void onResume() {
-            internalResume();
+            wakeConsumerThread();
           }
         },
         new ConsumerHealthController.HealthMetricsObserver() {
@@ -314,7 +313,7 @@ public class KPipeConsumer implements AutoCloseable {
         builder.batchSpecs.values(),
         this.scheduler,
         this.offsetManager,
-        this.health,
+        this.healthController,
         exporter,
         this.counters,
         builder.attemptFailedObserver,
@@ -473,14 +472,14 @@ public class KPipeConsumer implements AutoCloseable {
     }
   }
 
-  /// Initiates a graceful shutdown overriding the builder's `waitForMessagesTimeout`. Use when the
-  /// host wants to choose the drain budget at shutdown time (e.g. a signal handler that knows how
-  /// much time it has left). Pauses, waits up to `timeout` for dispatched records to finish, then
-  /// closes, which flushes the records buffered for batches.
+  /// Shuts down with a drain budget chosen at shutdown time, for a signal handler that knows how
+  /// much time it has left. Pauses, waits up to `timeout` for dispatched records to finish, then
+  /// closes. Close waits up to the builder's `waitForMessagesTimeout` again for any still
+  /// dispatched, then flushes the records buffered for batches.
   ///
-  /// @param timeout maximum time to wait for dispatched records to finish
-  /// @return `true` if every in-flight record, buffered batch records included, reached a
-  ///     terminal state; `false` if records remained when shutdown forced through
+  /// @param timeout maximum time to wait for dispatched records to finish before closing
+  /// @return `true` if nothing is left in flight once close returns, buffered batch records
+  ///     included; `false` if records remained when shutdown forced through
   public boolean shutdownGracefully(final Duration timeout) {
     Objects.requireNonNull(timeout, "timeout cannot be null");
     // Snapshot state once. CLOSED → nothing to drain, already done.
@@ -529,7 +528,7 @@ public class KPipeConsumer implements AutoCloseable {
     try {
       MetricsLog.LOGGER.log(
         Level.INFO,
-        MetricsLog.line(topics, consumerGroup, metrics(), health.circuitBreakerState())
+        MetricsLog.line(topics, consumerGroup, metrics(), healthController.circuitBreakerState())
       );
     } catch (final RuntimeException e) {
       LOGGER.log(Level.WARNING, "Could not log the consumer's metrics", e);
@@ -554,41 +553,34 @@ public class KPipeConsumer implements AutoCloseable {
     final var threadLabel = topics.size() == 1 ? topics.iterator().next() : "topics-%d".formatted(topics.size());
     final var thread = Thread.ofVirtual()
       .name("kafka-consumer-%s-%s".formatted(threadLabel, UUID.randomUUID().toString().substring(0, 8)))
-      .uncaughtExceptionHandler((t, e) -> {
-        LOGGER.log(Level.ERROR, "Uncaught exception in thread {0}", t.getName(), e);
-        transitionToClosing();
-      })
+      .uncaughtExceptionHandler((t, e) -> LOGGER.log(Level.ERROR, "Uncaught exception in thread {0}", t.getName(), e))
       .start(() -> {
         try {
           while (isRunning()) {
             processCommands();
-            health.tickBackpressure(kafkaConsumer);
+            healthController.tickBackpressure(kafkaConsumer);
             if (!isRunning()) break;
-            // Flush the command queue — including whatever the tick above queued — so
-            // the Kafka-level pause state matches the consumer state before the poll
-            // below. Both directions need it: pause must reach Kafka before a paused
-            // poll, and a queued Resume before a running one, or the poll fetches
-            // nothing from partitions Kafka still has paused. This sits outside the
-            // `isPaused()` check because a tick-driven resume has already cleared the
-            // pause by the time it gets here, so a guarded flush would skip exactly the
-            // resume case.
+            // Flush whatever arrived during the tick, such as a Close, before the poll.
             processCommands();
             // Recheck after this flush too, not only after the one at the top of
             // the loop. A Close drained just above sets CLOSING, and an unpaused
             // consumer meets no other check between here and the poll.
             if (!isRunning()) break;
+            // Kafka's pause state follows the pause sources, applied here on every pass
+            // and nowhere else, so no ordering of pause() and resume() calls on other
+            // threads can leave Kafka paused with no source holding a pause, or the
+            // reverse. Pause state is per partition and does not survive a revoke/assign
+            // cycle, so the full assignment is paused each time; `pausingOnAssign` covers
+            // partitions assigned inside the poll below.
             if (isPaused()) {
-              // Defensively re-pause the full assignment: pause state is
-              // per-partition and does not survive a revoke/assign cycle, so a
-              // rebalance inside an earlier poll can hand this consumer new,
-              // un-paused partitions.
-              //
               // `Thread.interrupted()` clears the flag, so it stays on this path
               // alone: running it every iteration would consume an interrupt only
               // the paused path acts on. The `isRunning()` arm catches a close()
               // landing between the recheck above and this line.
               if (!isRunning() || Thread.interrupted()) break;
               kafkaConsumer.pause(kafkaConsumer.assignment());
+            } else if (!kafkaConsumer.paused().isEmpty()) {
+              kafkaConsumer.resume(kafkaConsumer.paused());
             }
 
             // Paused or not, keep calling poll(). With every partition paused the fetch
@@ -604,7 +596,7 @@ public class KPipeConsumer implements AutoCloseable {
             // `pausingOnAssign` before it is fetched. Records that arrive while paused
             // anyway have already advanced the position, so dropping them would lose
             // data; they are processed normally.
-            final var records = health.heldByInFlightBackpressure()
+            final var records = healthController.heldByInFlightBackpressure()
               ? pollAfterBackpressureWait()
               : pollRecords(pollTimeout);
             sampleLag();
@@ -613,9 +605,8 @@ public class KPipeConsumer implements AutoCloseable {
         } catch (final Exception e) {
           if (isRunning()) LOGGER.log(Level.WARNING, "Error in consumer thread", e);
         } finally {
-          // A loop that ends on its own, by a failure, is shutting down from here on, so
-          // health
-          // stops reporting it as running while it tears down.
+          // A loop that ends by failing or by an interrupt is shutting down from here on,
+          // so `health().running()` turns false while it tears down.
           transitionToClosing();
           // Drain in-flight work + commands before teardown (see method docs).
           drainInFlightBeforeTeardown();
@@ -652,9 +643,9 @@ public class KPipeConsumer implements AutoCloseable {
   /// polls fetch nothing but retain the group membership, so a long pause does not trigger a
   /// `max.poll.interval.ms` eviction and the resulting rebalance.
   ///
-  /// This method is idempotent - calling it multiple times has no additional effect.
+  /// Callable before [#start()]: the consumer then starts paused. Idempotent.
   public void pause() {
-    if (health.requestPause(PauseSource.MANUAL)) internalPause();
+    if (healthController.requestPause(PauseSource.MANUAL)) wakeConsumerThread();
   }
 
   /// Wraps the rebalance listener so a partition assigned while the consumer is paused is paused
@@ -685,21 +676,22 @@ public class KPipeConsumer implements AutoCloseable {
     };
   }
 
-  /// Asks the consumer thread to pause Kafka fetching. A pause requested before [#start()] is
-  /// held by its source and applied by the poll loop's first pass, so the consumer starts paused.
-  private void internalPause() {
-    commandQueue.offer(new ConsumerCommand.Pause());
+  /// Wakes the consumer thread when it is parked waiting for in-flight records, so its next pass
+  /// applies a pause change at once. A pause requested before [#start()] is held by its source,
+  /// and `pausingOnAssign` pauses the partitions as they are assigned, so the consumer starts
+  /// paused.
+  private void wakeConsumerThread() {
+    final var thread = consumerThread.get();
+    if (thread != null) LockSupport.unpark(thread);
   }
 
   /// Drains the command queue on the consumer thread. Commands are the only mechanism by which
-  /// off-thread callers can ask Kafka APIs (`pause` / `resume` / `commitSync`) or the
+  /// off-thread callers can ask Kafka APIs (`commitSync`) or the
   /// [OffsetManager] to mutate state — serializing them here keeps those calls single-threaded
   /// without locks.
   ///
   /// Recognized commands:
   ///
-  /// * `Pause` — `kafkaConsumer.pause(assignment)`
-  /// * `Resume` — `kafkaConsumer.resume(assignment)`
   /// * `Close` — flips the consumer to `CLOSING`
   /// * `CommitOffsets` — invokes the command's offsets supplier (execution-time frontier, see
   ///   [CommitExecutor]), runs `kafkaConsumer.commitSync`, completes the outcome future
@@ -715,14 +707,6 @@ public class KPipeConsumer implements AutoCloseable {
     while ((command = commandQueue.poll()) != null) {
       try {
         switch (command) {
-          case ConsumerCommand.Pause _ -> {
-            kafkaConsumer.pause(kafkaConsumer.assignment());
-            LOGGER.log(Level.INFO, "Consumer paused for topics {0}", topics);
-          }
-          case ConsumerCommand.Resume _ -> {
-            kafkaConsumer.resume(kafkaConsumer.assignment());
-            LOGGER.log(Level.INFO, "Consumer resumed for topics {0}", topics);
-          }
           case ConsumerCommand.Close _ -> {
             state.set(ConsumerState.CLOSING);
             LOGGER.log(Level.INFO, "Consumer shutdown initiated for topics {0}", topics);
@@ -756,13 +740,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// @throws IllegalStateException if the consumer has been closed
   public void resume() {
     if (state.get() == ConsumerState.CLOSED) throw new IllegalStateException("Cannot resume a closed consumer");
-    if (health.releasePause(PauseSource.MANUAL)) internalResume();
-  }
-
-  private void internalResume() {
-    commandQueue.offer(new ConsumerCommand.Resume());
-    final var thread = consumerThread.get();
-    if (thread != null) LockSupport.unpark(thread);
+    if (healthController.releasePause(PauseSource.MANUAL)) wakeConsumerThread();
   }
 
   /// Whether any source holds a pause: a [#pause()] call, backpressure, or an open circuit
@@ -770,7 +748,7 @@ public class KPipeConsumer implements AutoCloseable {
   ///
   /// @return `true` if the consumer is paused, `false` otherwise
   public boolean isPaused() {
-    return health.isPaused();
+    return healthController.isPaused();
   }
 
   /// The consumer's counters now: records received, processed, filtered and failed, in total
@@ -835,17 +813,17 @@ public class KPipeConsumer implements AutoCloseable {
   }
 
   /// The consumer's health now: whether it runs, which sources hold a pause, and the circuit
-  /// breaker's state, all read at one moment. Serve [HealthSnapshot#healthy()] from a liveness
+  /// breaker's state, each read once. Serve [HealthSnapshot#healthy()] from a liveness
   /// probe rather than [#isRunning()], which is still true while an open breaker has halted
   /// consumption.
   ///
   /// @return an immutable snapshot of this consumer's health
   public HealthSnapshot health() {
-    return new HealthSnapshot(isRunning(), health.pauseSources(), health.circuitBreakerState());
+    return new HealthSnapshot(isRunning(), healthController.pauseSources(), healthController.circuitBreakerState());
   }
 
-  /// Atomically transitions from any active state (RUNNING or PAUSED) to CLOSING.
-  /// Uses a single-read CAS to avoid the double-CAS window.
+  /// Atomically transitions from RUNNING to CLOSING. Uses a single-read CAS to avoid the
+  /// double-CAS window.
   ///
   /// @return true if the transition succeeded, false if the state was not active
   private boolean transitionToClosing() {
@@ -855,7 +833,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// The failures in the circuit breaker's window. Package-private for the tests that assert how
   /// many failures one record adds.
   long circuitBreakerFailures() {
-    return health.circuitBreakerFailures();
+    return healthController.circuitBreakerFailures();
   }
 
   /// The single-read compare-and-set that backs [#transitionToClosing], lifted to a static method
@@ -904,11 +882,27 @@ public class KPipeConsumer implements AutoCloseable {
       closeNeverStarted();
       return;
     }
-    if (!transitionToClosing()) return;
+    if (!transitionToClosing()) {
+      awaitTeardownInProgress();
+      return;
+    }
 
     initiateShutdown();
     if (!waitForConsumerThreadToJoin()) return;
     finalizeAfterThreadJoined();
+  }
+
+  /// A [#close] that finds the consumer already closing, because another caller is closing it or
+  /// its poll loop failed, waits for that teardown to finish, so `close()` still returns with
+  /// resources released. The wait is bounded by the drain and thread-termination budgets. On the
+  /// consumer thread itself it returns at once, since that thread is the teardown.
+  private void awaitTeardownInProgress() {
+    if (state.get() != ConsumerState.CLOSING || consumerThread.get() == Thread.currentThread()) return;
+    try {
+      shutdownLatch.await(waitForMessagesTimeout.plus(threadTerminationTimeout).toMillis(), TimeUnit.MILLISECONDS);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   /// Path 1 of [#close]: the consumer was built but never started, so the consumer thread that
@@ -1026,7 +1020,7 @@ public class KPipeConsumer implements AutoCloseable {
       }
     }
     try {
-      health.shutdown();
+      healthController.shutdown();
     } catch (final Exception e) {
       LOGGER.log(Level.WARNING, "Error cancelling the circuit-breaker probe timer during shutdown", e);
     }
@@ -1142,7 +1136,7 @@ public class KPipeConsumer implements AutoCloseable {
   /// that cannot release yet. The unpark is a permit, so one that lands before the consumer thread
   /// parks still ends that park.
   private void wakeIfBackpressureDrained() {
-    if (health.inFlightBackpressureDrained()) {
+    if (healthController.inFlightBackpressureDrained()) {
       final var thread = consumerThread.get();
       if (thread != null) LockSupport.unpark(thread);
     }
@@ -1167,7 +1161,7 @@ public class KPipeConsumer implements AutoCloseable {
   ///
   /// @return the records fetched, or `null` when the poll was woken or failed
   private ConsumerRecords<byte[], byte[]> pollAfterBackpressureWait() {
-    if (!health.inFlightBackpressureDrained()) LockSupport.parkNanos(pollTimeout.toNanos());
+    if (!healthController.inFlightBackpressureDrained()) LockSupport.parkNanos(pollTimeout.toNanos());
     return pollRecords(Duration.ZERO);
   }
 

@@ -35,7 +35,7 @@ import org.mockito.Mockito;
 /// above it, and a value oscillating inside the band never flips the decision. Both the
 /// in-flight (PARALLEL) and lag (SEQUENTIAL) strategies are exercised through the same
 /// decision path, and the in-flight reading is verified to include buffered batch records the
-/// way the consumer's `backpressureLoad()` composes the metric.
+/// way the consumer's `inFlight()` composes the metric.
 ///
 /// Watermarks of `100` (high) / `50` (low) are used throughout so the boundary indices read
 /// cleanly.
@@ -301,7 +301,7 @@ class WatermarkHysteresisTest {
     void bufferedBatchRecordsAloneCanTripAndHoldThePauseDecision() {
       final var dispatcherPending = new AtomicLong(0);
       final var bufferedBatch = new AtomicLong(0);
-      // Mirrors KPipeConsumer.backpressureLoad(): pending workers + buffered batch records.
+      // Mirrors KPipeConsumer.inFlight(): pending workers + buffered batch records.
       final var controller = new BackpressureController(
         HIGH,
         LOW,
@@ -317,7 +317,7 @@ class WatermarkHysteresisTest {
       );
 
       // The dispatcher fully drains, yet buffered records still sit above the low watermark →
-      // stay paused. If backpressureLoad ignored the buffer this would wrongly resume.
+      // stay paused. If inFlight ignored the buffer this would wrongly resume.
       dispatcherPending.set(0);
       bufferedBatch.set(LOW + 1);
       assertEquals(

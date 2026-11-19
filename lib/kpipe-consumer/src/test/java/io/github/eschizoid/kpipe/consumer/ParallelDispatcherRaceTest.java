@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 /// Race-on-throw correctness tests for [ParallelDispatcher].
 ///
 /// The dispatcher owns the in-flight counter that the parallel-mode in-flight backpressure
-/// strategy reads through `KPipeConsumer.backpressureLoad()`. The counter is the single source
+/// strategy reads through `KPipeConsumer.inFlight()`. The counter is the single source
 /// of truth for the high/low watermark, so a leaked or double-counted in-flight on the throw
 /// path translates directly into either pause-forever (the watermark latches high and the
 /// consumer stays paused, fetching nothing) or pause-never (the count underflows and
@@ -144,7 +144,7 @@ class ParallelDispatcherRaceTest {
 
   @Test
   void backpressureRecoversAfterABurstOfThrows() throws InterruptedException {
-    // The consumer's backpressureLoad() feeds the dispatcher's drainableCount() into the in-flight
+    // The consumer's inFlight() feeds the dispatcher's drainableCount() into the in-flight
     // backpressure strategy. This test wires a real BackpressureController to the dispatcher's
     // count, the same way the consumer does, and then exercises the pause/resume transition
     // across a burst of records that all throw.

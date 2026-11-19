@@ -5,8 +5,10 @@ import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
 
-/// A consumer's health at one moment, taken with [KPipeConsumer#health()]; every component comes
-/// from the same moment.
+/// A consumer's health, taken with [KPipeConsumer#health()]. Each component is read once, without
+/// a lock, so a snapshot taken during a breaker transition can pair the new breaker state with the
+/// pause sources from just before it; `pauseSources` itself comes from a single read and is never
+/// torn.
 ///
 /// [#healthy()] is the value a liveness or readiness probe should serve. A consumer paused by its
 /// circuit breaker is running but not healthy, since the breaker pauses consumption because

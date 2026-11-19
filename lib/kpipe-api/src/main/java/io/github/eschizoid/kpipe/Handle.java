@@ -13,7 +13,7 @@ import java.util.Map;
 /// graceful shutdown with a 5-second timeout.
 public interface Handle extends AutoCloseable {
   /// The consumer's health now: whether it runs, which sources hold a pause, and the circuit
-  /// breaker's state, read at one moment. `health().healthy()` is the liveness answer; wire a
+  /// breaker's state, each read once. `health().healthy()` is the liveness answer; wire a
   /// probe with `HttpHealthServer.fromEnv(handle::health, "app")`.
   ///
   /// @return an immutable point-in-time health view
@@ -37,10 +37,11 @@ public interface Handle extends AutoCloseable {
   /// @throws InterruptedException if the calling thread is interrupted while waiting
   void awaitShutdown() throws InterruptedException;
 
-  /// Initiates a graceful shutdown, waiting up to `timeout` for in-flight messages.
+  /// Pauses, waits up to `timeout` for dispatched records to finish, then closes, which flushes
+  /// the records buffered for batches.
   ///
-  /// @param timeout maximum wait for in-flight drain
-  /// @return true if shutdown completed cleanly
+  /// @param timeout maximum wait for dispatched records before closing
+  /// @return `true` only when nothing is left in flight after close, buffered records included
   boolean shutdownGracefully(final Duration timeout);
 
   /// Snapshot of the top `n` keys by current queue depth, deepest-first. Only meaningful for

@@ -23,15 +23,14 @@ import org.apache.kafka.clients.consumer.Consumer;
 ///
 /// Owns the pause bitmask, the CB state machine (`AtomicReference<CircuitBreakerState>`), the
 /// trip timestamp, the probe-timer `ScheduledFuture`, and the rolling success/failure window.
-/// Side effects (`kafkaConsumer.pause`, `LockSupport.unpark`, command-queue inserts) stay on
-/// [KPipeConsumer]; pause/resume transitions are signalled through the [PauseLifecycleHook] and
-/// metric events through the [HealthMetricsObserver], both supplied at construction so the host
-/// owns the single site that drives the command queue.
+/// Side effects (`kafkaConsumer.pause`, `LockSupport.unpark`) stay on [KPipeConsumer]; pause and
+/// resume transitions are signalled through the [PauseLifecycleHook] and metric events through
+/// the [HealthMetricsObserver], both supplied at construction.
 ///
 /// Surface used by [KPipeConsumer]:
 ///
 ///   * [#requestPause] / [#releasePause] for MANUAL pause; returns the "you caused the transition"
-///     boolean so the caller can decide whether to call `internalPause`.
+///     boolean so the caller can decide whether to wake the consumer thread.
 ///   * [#recordOutcome] for per-record success/failure; drives the CB state machine and fires the
 ///     pause callbacks itself when CB transitions cross.
 ///   * [#tickBackpressure] runs after each record (or each poll, sequential mode); drives the BP
@@ -41,10 +40,9 @@ final class ConsumerHealthController {
 
   private static final Logger LOGGER = System.getLogger(ConsumerHealthController.class.getName());
 
-  /// Pause-lifecycle side effects the controller drives during arbitration. KPipeConsumer wires
-  /// this to its `internalPause` / `internalResume` choreography — the two callbacks that flip
-  /// actual Kafka consumer state when the arbitrated pause set transitions between empty and
-  /// non-empty. Kept narrow so unit tests can substitute a recording fake.
+  /// Signals the edges of the arbitrated pause set: empty to non-empty, and back. KPipeConsumer
+  /// wakes its consumer thread on both, and that thread applies the pause to Kafka. Kept narrow so
+  /// unit tests can substitute a recording fake.
   interface PauseLifecycleHook {
     /// Invoked when an arbitrary source transitions the consumer into the paused state.
     void onPause();
@@ -138,7 +136,7 @@ final class ConsumerHealthController {
   ///
   /// @param source the pause source acquiring the hold
   /// @return `true` iff this call caused the transition from "no sources holding" to "at least
-  ///     one source holding" — the caller should now invoke `internalPause()`. Idempotent.
+  ///     one source holding", so the caller should wake the consumer thread. Idempotent.
   boolean requestPause(final PauseSource source) {
     return pauseMask.getAndUpdate(m -> m | bit(source)) == 0;
   }
@@ -147,7 +145,7 @@ final class ConsumerHealthController {
   ///
   /// @param source the pause source releasing its hold
   /// @return `true` iff this call caused the transition from "at least one source holding" to
-  ///     "no sources holding" — the caller should now invoke `internalResume()`. Idempotent.
+  ///     "no sources holding", so the caller should wake the consumer thread. Idempotent.
   boolean releasePause(final PauseSource source) {
     final var prev = pauseMask.getAndUpdate(m -> m & ~bit(source));
     return prev != 0 && (prev & ~bit(source)) == 0;
@@ -178,8 +176,9 @@ final class ConsumerHealthController {
   // ─────────────────────────── Backpressure API ─────────────────────────────
 
   /// Runs the backpressure decision against the current metric and dispatches the resulting action.
-  /// On PAUSE this records the pause-start timestamp, fires the trip + onPause callbacks. On RESUME
-  /// this computes the pause duration, fires the duration + onResume callbacks.
+  /// On PAUSE it records the pause start and fires `onBackpressurePause` and, when backpressure is
+  /// the first holder, `onPause`. On RESUME it fires `onBackpressureRelease` and, when backpressure
+  /// was the last holder, `onResume`.
   ///
   /// @param kafkaConsumer the Kafka consumer whose metric is read by the configured strategy
   void tickBackpressure(final Consumer<?, ?> kafkaConsumer) {
@@ -227,9 +226,8 @@ final class ConsumerHealthController {
         // Only release when backpressure actually holds the pause. `check` answers RESUME for
         // "paused and metric at/below the low watermark" regardless of WHICH source paused the
         // consumer — during a MANUAL or circuit-breaker pause with an idle pipeline this arm
-        // would otherwise fire on every tick, feeding a garbage duration (nanoTime origin minus
-        // a never-set pause start) into the backpressure-time counter and logging a misleading
-        // "backpressure resolved" line each time.
+        // would otherwise fire on every tick, counting a backpressure release that had no pause
+        // behind it and logging a misleading "backpressure resolved" line each time.
         if (isHeldBy(PauseSource.BACKPRESSURE)) releaseBackpressure();
       }
       case NONE -> {
@@ -237,7 +235,7 @@ final class ConsumerHealthController {
     }
   }
 
-  /// Releases the backpressure hold: fires the paused-duration callback and — when backpressure
+  /// Releases the backpressure hold: fires the release callback and — when backpressure
   /// was the last holder — the resume callback. Shared by the regular RESUME tick and the
   /// post-pause lost-wakeup guard above.
   private void releaseBackpressure() {

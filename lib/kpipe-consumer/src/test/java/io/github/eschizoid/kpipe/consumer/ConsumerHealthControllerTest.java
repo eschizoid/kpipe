@@ -287,9 +287,8 @@ class ConsumerHealthControllerTest {
     // controller stays paused and the isPaused assertion below fails fast (this test asserts the
     // guard's outcome — it does not itself park a thread); in a real consumer the paused loop
     // keeps polling and re-ticks, so without the guard the miss costs fetch-nothing poll cycles
-    // rather than stranding the consumer. With the guard the Pause and Resume commands are
-    // queued inside the same tick and flush back-to-back in one processCommands() drain, so no
-    // poll ever runs while paused and no cycle is lost.
+    // rather than stranding the consumer. With the guard the pause is taken and released inside
+    // the same tick, so the next pass finds no source holding a pause and no poll runs paused.
     hook.backpressurePauseAction = () -> inflight.set(0);
 
     health.tickBackpressure(consumer);

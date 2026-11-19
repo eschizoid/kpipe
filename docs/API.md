@@ -71,7 +71,7 @@ metric, or log from the filter itself, where `RecordContext.current()` gives the
 | `withMetricsLog(Duration)`                                        | Logs one `key=value` line of the consumer's metrics per interval to the `io.github.eschizoid.kpipe.metrics.log` logger, plus a final line at close after the last flush. Needs no monitoring backend; independent of `withMetrics`.                                                                                                                                                                                                                                                                                   |
 | `withShutdownHook(boolean)`                                       | Registers a JVM shutdown hook to close the consumer. Try-with-resources on `Handle` already covers the normal exit; the hook covers SIGTERM. With default timeouts a shutdown whose teardown hangs can take up to 40 seconds in `PARALLEL` mode with a dead-letter queue (the 5-second in-flight wait plus the 35-second join budget), so give the process a longer grace period, such as Kubernetes' `terminationGracePeriodSeconds`.                                                                                |
 | `withThreadTerminationTimeout(Duration)`                          | How long shutdown waits for the consumer thread to join. The default depends on the processing mode and covers the waits that mode's teardown runs, through the final commit and the Kafka client's 5-second close: 30 seconds for `PARALLEL`, 25 for `KEY_ORDERED`, 15 for `SEQUENTIAL`, and 5 more when the consumer has a producer for a dead-letter queue or Kafka sinks, whose close is bounded the same way. A shorter value can interrupt the final commit when a record is stuck, leaving its result unknown. |
-| `withWaitForMessagesTimeout(Duration)`                            | How long shutdown waits for in-flight records to drain. Distinct from `Handle.shutdownGracefully(Duration)`, which bounds one specific drain call.                                                                                                                                                                                                                                                                                                                                                                    |
+| `withWaitForMessagesTimeout(Duration)`                            | How long close waits for dispatched records to finish. Also applies inside `Handle.shutdownGracefully(Duration)`: its close waits this long again for records still dispatched when its own timeout ends.                                                                                                                                                                                                                                                                                                             |
 | `withSchemaRegistry(SchemaResolver)`                              | Switch an Avro/Protobuf stream to per-record SR lookup. Throws for other formats; not allowed together with `skipBytes`.                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Terminals — each returns `Sink<T>`
@@ -123,15 +123,26 @@ KPipe.json("orders", props)
 
 ## `Handle` — lifecycle
 
-| Method                         | Semantics                                                                                                                                                                         |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `health()`                     | A `HealthSnapshot`: whether the consumer runs, which `PauseSource`s hold a pause, and the circuit breaker state, read at one moment. `health().healthy()` is the liveness answer. |
-| `metrics()`                    | A `MetricsSnapshot`: record counts in total and per topic, in-flight, backpressure and circuit breaker figures.                                                                   |
-| `awaitShutdown()`              | Blocks indefinitely until the consumer stops (throws `InterruptedException`).                                                                                                     |
-| `awaitShutdown(Duration)`      | Bounded wait; returns whether the consumer stopped.                                                                                                                               |
-| `shutdownGracefully(Duration)` | Initiate shutdown with a bounded in-flight drain; returns whether the drain finished cleanly.                                                                                     |
-| `close()`                      | `shutdownGracefully(Duration.ofSeconds(5))`. `Handle` is `AutoCloseable`, so try-with-resources gives you a bounded graceful shutdown by default.                                 |
-| `topKeyQueueDepths(int n)`     | `KEY_ORDERED` diagnostics: the `n` deepest per-key queues, deepest first (empty list in other modes; a `null` Kafka key appears as a `null` entry key).                           |
+| Method                         | Semantics                                                                                                                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `health()`                     | A `HealthSnapshot`: whether the consumer runs, which `PauseSource`s hold a pause, and the circuit breaker state, each read once. `health().healthy()` is the liveness answer; see below. |
+| `metrics()`                    | A `MetricsSnapshot`: record counts in total and per topic, in-flight, backpressure and circuit breaker figures.                                                                          |
+| `awaitShutdown()`              | Blocks indefinitely until the consumer stops (throws `InterruptedException`).                                                                                                            |
+| `awaitShutdown(Duration)`      | Bounded wait; returns whether the consumer stopped.                                                                                                                                      |
+| `shutdownGracefully(Duration)` | Pauses, waits up to the timeout for dispatched records, then closes, which flushes batch buffers. Returns `true` only when nothing is left in flight after close.                        |
+| `close()`                      | `shutdownGracefully(Duration.ofSeconds(5))`. `Handle` is `AutoCloseable`, so try-with-resources gives you a bounded graceful shutdown by default.                                        |
+| `topKeyQueueDepths(int n)`     | `KEY_ORDERED` diagnostics: the `n` deepest per-key queues, deepest first (empty list in other modes; a `null` Kafka key appears as a `null` entry key).                                  |
+
+`HealthSnapshot` answers the probe question; how much work is in flight is a load figure and lives in
+`MetricsSnapshot.inFlight()`.
+
+| Component / method | Meaning                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `running()`        | The consumer has started and is not shutting down, paused or not.                                           |
+| `pauseSources()`   | The `PauseSource`s holding a pause: `MANUAL`, `BACKPRESSURE`, `CIRCUIT_BREAKER`; empty when not paused.     |
+| `paused()`         | At least one source holds a pause.                                                                          |
+| `circuitBreaker()` | `CLOSED`, `OPEN` or `HALF_OPEN`; `CLOSED` when no breaker is configured.                                    |
+| `healthy()`        | `running()` and the breaker is not `OPEN`. A manual or backpressure pause is normal flow and stays healthy. |
 
 `start()` does not block; the consumer runs on its own (non-daemon) thread, so the process stays alive until you close
 the handle or the JVM receives a shutdown signal. Keep the `Handle` — the recommended shape is try-with-resources plus

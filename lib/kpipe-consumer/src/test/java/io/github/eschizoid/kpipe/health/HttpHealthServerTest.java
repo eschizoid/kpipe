@@ -88,11 +88,22 @@ class HttpHealthServerTest {
   }
 
   @Test
-  void anyOtherMethodAnswers405AndNamesGet() throws Exception {
+  void headAnswersLikeGetWithoutABody() throws Exception {
+    final var open = new HealthSnapshot(true, Set.of(PauseSource.CIRCUIT_BREAKER), CircuitBreakerState.OPEN);
+    try (final var healthy = started(() -> HEALTHY); final var unhealthy = started(() -> open)) {
+      final var ok = send(healthy, "HEAD");
+      assertEquals(200, ok.statusCode());
+      assertEquals("", ok.body());
+      assertEquals(503, send(unhealthy, "HEAD").statusCode());
+    }
+  }
+
+  @Test
+  void anyOtherMethodAnswers405AndNamesGetAndHead() throws Exception {
     try (final var server = started(() -> HEALTHY)) {
       final var response = send(server, "POST");
       assertEquals(405, response.statusCode());
-      assertEquals("GET", response.headers().firstValue("Allow").orElse(""));
+      assertEquals("GET, HEAD", response.headers().firstValue("Allow").orElse(""));
       assertEquals("text/plain; charset=utf-8", response.headers().firstValue("Content-Type").orElse(""));
     }
   }
@@ -125,7 +136,7 @@ class HttpHealthServerTest {
         .when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_PATH, HealthConfig.DEFAULT_PATH))
         .thenReturn("/health");
 
-      final var maybeServer = HttpHealthServer.fromEnv(() -> HEALTHY, "test-app");
+      final var maybeServer = HttpHealthServer.fromEnv(() -> HEALTHY);
       assertTrue(maybeServer.isPresent());
       // fromEnv documents that the server is started: no start() call here.
       try (final var server = maybeServer.get()) {
