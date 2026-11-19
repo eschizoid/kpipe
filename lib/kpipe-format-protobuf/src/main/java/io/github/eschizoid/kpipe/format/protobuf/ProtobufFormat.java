@@ -6,6 +6,7 @@ import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import io.github.eschizoid.kpipe.registry.ConfluentEnvelope;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.SchemaResolver;
 import io.github.eschizoid.kpipe.registry.WireDiagnostics;
@@ -153,6 +154,9 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   ///
   /// @param data the binary-encoded bytes
   /// @return the decoded message (a [DynamicMessage]), or null if `data` is null/empty
+  /// @throws MalformedRecordException if the bytes do not decode, or the envelope or its
+  ///     message-index array is malformed; the record fails without retries. A failed schema
+  ///     lookup is thrown as the resolver threw it, and is retried.
   @Override
   public Message deserialize(final byte[] data) {
     if (data == null || data.length == 0) return null;
@@ -160,7 +164,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
     try {
       return DynamicMessage.parseFrom(descriptor, data);
     } catch (final InvalidProtocolBufferException e) {
-      throw new IllegalStateException(
+      throw new MalformedRecordException(
         "ProtobufFormat.deserialize failed on " +
           data.length +
           " bytes for descriptor " +
@@ -182,7 +186,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// followed by `size` zig-zag varint path elements — with the shorthand that `size == 0` means
   /// the array `[0]` (the first top-level message), the common single-message case.
   private Message deserializeFromEnvelope(final byte[] data) {
-    if (data.length < ConfluentEnvelope.HEADER_LENGTH + 1) throw new IllegalStateException(
+    if (data.length < ConfluentEnvelope.HEADER_LENGTH + 1) throw new MalformedRecordException(
       "Record too short for Confluent Protobuf wire envelope: " + data.length + " bytes; expected at least 6"
     );
     final int schemaId = ConfluentEnvelope.readSchemaId(data);
@@ -199,7 +203,7 @@ public final class ProtobufFormat implements MessageFormat<Message> {
       final var payload = CodedInputStream.newInstance(data, payloadOffset, data.length - payloadOffset);
       return DynamicMessage.parseFrom(messageDescriptor, payload);
     } catch (final IOException e) {
-      throw new IllegalStateException(
+      throw new MalformedRecordException(
         "Failed to decode Protobuf record under Confluent wire envelope (schema id " + schemaId + ")",
         e
       );
@@ -215,17 +219,17 @@ public final class ProtobufFormat implements MessageFormat<Message> {
   /// @param data     the full record bytes (for the remaining-length bound check)
   /// @param schemaId the envelope's schema id, for diagnostics only
   /// @return the message-index path
-  /// @throws IllegalStateException on a negative size or a size exceeding the remaining bytes
+  /// @throws MalformedRecordException on a negative size or a size exceeding the remaining bytes
   ///     (each index entry needs at least one byte, so a larger size is a corrupt envelope —
   ///     rejected before allocating, guarding against a huge `int[]` from a bad varint)
   private static int[] readMessageIndex(final VarintCursor cursor, final byte[] data, final int schemaId) {
     final var size = cursor.readZigZagVarint();
     if (size == 0) return FIRST_MESSAGE_INDEX;
     if (size < 0) {
-      throw new IllegalStateException("Negative message-index size " + size + " for schema id " + schemaId);
+      throw new MalformedRecordException("Negative message-index size " + size + " for schema id " + schemaId);
     }
     if (size > data.length - cursor.offset()) {
-      throw new IllegalStateException(
+      throw new MalformedRecordException(
         "Message-index size " + size + " exceeds remaining envelope bytes for schema id " + schemaId
       );
     }
@@ -257,8 +261,10 @@ public final class ProtobufFormat implements MessageFormat<Message> {
       var shift = 0;
       int b;
       do {
-        if (offset >= data.length) throw new IllegalStateException("Truncated varint in Confluent message-index array");
-        if (shift > 28) throw new IllegalStateException("Malformed varint (over 5 bytes) in message-index array");
+        if (offset >= data.length) throw new MalformedRecordException(
+          "Truncated varint in Confluent message-index array"
+        );
+        if (shift > 28) throw new MalformedRecordException("Malformed varint (over 5 bytes) in message-index array");
         b = data[offset++] & 0xff;
         value |= (b & 0x7f) << shift;
         shift += 7;

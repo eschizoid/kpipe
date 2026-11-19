@@ -2,9 +2,11 @@ package io.github.eschizoid.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,38 @@ class TypedPipelineSkipBytesTest {
     public byte[] deserialize(final byte[] data) {
       lastSeen = data;
       return data;
+    }
+  }
+
+  /// A format whose decode always fails, as a registry-backed one or not. Its name contains "Avro",
+  /// which is what picks the `skipBytes(5)` hint.
+  private record FailingAvroFormat(boolean registryBacked, RuntimeException failure) implements MessageFormat<byte[]> {
+    @Override
+    public byte[] serialize(final byte[] data) {
+      return data;
+    }
+
+    @Override
+    public byte[] deserialize(final byte[] data) {
+      throw failure;
+    }
+
+    @Override
+    public boolean isSchemaRegistryBacked() {
+      return registryBacked;
+    }
+  }
+
+  private static final class NullFormat implements MessageFormat<byte[]> {
+
+    @Override
+    public byte[] serialize(final byte[] data) {
+      return data;
+    }
+
+    @Override
+    public byte[] deserialize(final byte[] data) {
+      return null;
     }
   }
 
@@ -90,34 +124,86 @@ class TypedPipelineSkipBytesTest {
   }
 
   @Test
-  void payloadShorterThanPrefixDeserializesToNull() {
+  void payloadShorterThanPrefixIsMalformed() {
     final var format = new CapturingFormat();
     // 4 bytes of envelope, none of payload, against a 5-byte skip.
     final var tooShort = new byte[] { 0x00, 0x00, 0x00, 0x00 };
 
-    assertNull(pipelineWithSkip(format, 5).deserialize(tooShort), "no payload after the prefix decodes to null");
+    final var ex = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(format, 5).deserialize(tooShort)
+    );
+    assertEquals("The record value is 4 bytes, so skipBytes(5) leaves nothing to deserialize", ex.getMessage());
     assertNull(format.lastSeen, "the format must never be invoked when there is nothing left to decode");
   }
 
   @Test
-  void payloadExactlyEqualToPrefixLengthDeserializesToNull() {
+  void payloadExactlyEqualToPrefixLengthIsMalformed() {
     final var format = new CapturingFormat();
     // Exactly the 5-byte envelope, zero payload. The boundary is `data.length <= skip`.
     final var envelopeOnly = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x42 };
 
-    assertNull(pipelineWithSkip(format, 5).deserialize(envelopeOnly), "an envelope with no payload decodes to null");
+    assertThrows(MalformedRecordException.class, () -> pipelineWithSkip(format, 5).deserialize(envelopeOnly));
     assertNull(format.lastSeen);
   }
 
   @Test
-  void deserializeOrFailRejectsTheTruncatedPrefixAsAContractViolation() {
-    // The honest end-to-end path: a too-short record must not be reported as a silently
-    // filtered record. deserializeOrFail turns the null into the retryable no-null violation.
-    final var pipeline = pipelineWithSkip(new CapturingFormat(), 5);
-    final var tooShort = new byte[] { 0x00, 0x00, 0x00 };
+  void aNullValueIsMalformed() {
+    final var tombstone = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(new CapturingFormat(), 0).deserialize(null)
+    );
+    assertTrue(tombstone.getMessage().contains("tombstone"), tombstone.getMessage());
+  }
 
-    final var ex = assertThrows(IllegalStateException.class, () -> pipeline.deserializeOrFail(tooShort));
-    assertEquals("deserialize() returned null — implementations must throw on malformed input", ex.getMessage());
+  /// An empty value is the format's call: raw bytes pass it on, a decoding format returns null.
+  @Test
+  void anEmptyValueIsUpToTheFormat() {
+    assertArrayEquals(new byte[0], pipelineWithSkip(MessageFormat.bytes(), 0).deserialize(new byte[0]));
+
+    final var empty = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(new NullFormat(), 0).deserialize(new byte[0])
+    );
+    assertEquals("The record value is empty, so there is nothing to deserialize", empty.getMessage());
+  }
+
+  /// A decode failure keeps its type through the pipeline, with or without a skipped prefix, so
+  /// bad bytes stay non-retryable and anything else stays retryable.
+  @Test
+  void aDecodeFailureKeepsItsRetryability() {
+    final var envelope = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x02 };
+    for (final var skip : new int[] { 0, 1 }) {
+      final var bad = new FailingAvroFormat(false, new MalformedRecordException("bad"));
+      assertThrows(MalformedRecordException.class, () -> pipelineWithSkip(bad, skip).deserialize(envelope));
+      final var down = new FailingAvroFormat(false, new IllegalStateException("down"));
+      final var ex = assertThrows(RuntimeException.class, () -> pipelineWithSkip(down, skip).deserialize(envelope));
+      assertFalse(NonRetryableException.isNonRetryable(ex), "skip " + skip + ": " + ex);
+    }
+  }
+
+  /// Only a format that does not read the envelope itself gets the `skipBytes` hint.
+  @Test
+  void theSkipBytesHintFollowsTheFormat() {
+    final var envelope = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x02 };
+    final var plain = new FailingAvroFormat(false, new IllegalStateException("bad"));
+    final var registry = new FailingAvroFormat(true, new IllegalStateException("bad"));
+    final var plainEx = assertThrows(RuntimeException.class, () -> pipelineWithSkip(plain, 0).deserialize(envelope));
+    final var registryEx = assertThrows(RuntimeException.class, () ->
+      pipelineWithSkip(registry, 0).deserialize(envelope)
+    );
+    assertTrue(plainEx.getMessage().contains("Confluent Schema Registry envelope"), plainEx.getMessage());
+    assertFalse(registryEx.getMessage().contains("skipBytes"), registryEx.getMessage());
+  }
+
+  /// A built pipeline never returns null, whether or not it skips a prefix.
+  @Test
+  void aFormatReturningNullIsMalformed() {
+    final var plain = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(new NullFormat(), 0).deserialize(new byte[] { 1, 2, 3 })
+    );
+    assertEquals("NullFormat returned null for a 3-byte value instead of throwing", plain.getMessage());
+    final var skipped = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(new NullFormat(), 1).deserialize(new byte[] { 1, 2, 3 })
+    );
+    assertEquals("NullFormat returned null for a 3-byte value instead of throwing", skipped.getMessage());
   }
 
   @Test

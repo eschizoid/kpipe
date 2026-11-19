@@ -47,7 +47,12 @@ public interface MessageFormat<T> {
 
   /// Deserializes the given byte array to data of type T.
   ///
+  /// Throw [MalformedRecordException] for bytes that cannot be decoded, so the record fails
+  /// without retries. A lookup that may succeed later, such as a schema registry call, should
+  /// throw its own exception, which is retried.
+  ///
   /// @param data The serialized byte array
   /// @return The deserialized data
+  /// @throws MalformedRecordException if the bytes cannot be decoded
   T deserialize(final byte[] data);
 }

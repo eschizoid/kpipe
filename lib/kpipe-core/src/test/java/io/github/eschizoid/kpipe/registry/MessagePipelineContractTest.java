@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import org.junit.jupiter.api.Test;
@@ -31,8 +32,18 @@ class MessagePipelineContractTest {
   @Test
   void deserializeOrFailShouldThrowWhenDeserializeReturnsNull() {
     final var pipeline = pipelineWithDeserialize(_ -> null);
-    final var ex = assertThrows(IllegalStateException.class, () -> pipeline.deserializeOrFail(INPUT));
-    assertEquals("deserialize() returned null — implementations must throw on malformed input", ex.getMessage());
+    final var ex = assertThrows(MalformedRecordException.class, () -> pipeline.deserializeOrFail(INPUT));
+    assertEquals(
+      "deserialize() returned null for a " + INPUT.length + "-byte value instead of throwing",
+      ex.getMessage()
+    );
+  }
+
+  @Test
+  void deserializeOrFailNamesANullValueAsATombstone() {
+    final var pipeline = pipelineWithDeserialize(_ -> null);
+    final var ex = assertThrows(MalformedRecordException.class, () -> pipeline.deserializeOrFail(null));
+    assertTrue(ex.getMessage().contains("tombstone"), ex.getMessage());
   }
 
   @Test

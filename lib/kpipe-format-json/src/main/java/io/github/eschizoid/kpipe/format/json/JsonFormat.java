@@ -3,6 +3,7 @@ package io.github.eschizoid.kpipe.format.json;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONFactory;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.WireDiagnostics;
 import java.util.Map;
@@ -61,15 +62,22 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
   ///
   /// @param data the serialized byte array
   /// @return the deserialized map
+  /// @throws MalformedRecordException if the bytes are not a JSON object; the record fails without
+  ///     retries, since the same bytes fail the same way
   @Override
   public Map<String, Object> deserialize(final byte[] data) {
     if (data == null || data.length == 0) return null;
     try {
       return JSON.parseObject(data);
-    } catch (final JSONException e) {
-      throw new IllegalStateException(
-        "JsonFormat.deserialize failed on " + data.length + " bytes (first bytes " +
-          WireDiagnostics.hexPreview(data) + ")",
+    } catch (final RuntimeException e) {
+      // fastjson2 reads only the array, so any failure here is about the bytes: a JSONException
+      // for bad syntax, and an ArrayIndexOutOfBoundsException for a truncated UTF-8 sequence.
+      throw new MalformedRecordException(
+        "JsonFormat.deserialize failed on " +
+          data.length +
+          " bytes (first bytes " +
+          WireDiagnostics.hexPreview(data) +
+          ")",
         e
       );
     }

@@ -82,4 +82,32 @@ class PipelineDiagnosticsTest {
     assertTrue(wrapped.getMessage().contains("Avro schema mismatch at field 'id'"));
     assertEquals("Avro schema mismatch at field 'id'", wrapped.getCause().getMessage());
   }
+
+  @Test
+  void wrappingBadBytesKeepsThemMalformed() {
+    final var wrapped = PipelineDiagnostics.wrap(
+      new byte[] { 1 },
+      0,
+      "JsonFormat",
+      new MalformedRecordException("bad")
+    );
+    assertTrue(wrapped instanceof MalformedRecordException, wrapped.getClass().getName());
+  }
+
+  @Test
+  void wrappingAnyOtherFailureKeepsItRetryable() {
+    final var wrapped = PipelineDiagnostics.wrap(new byte[] { 1 }, 0, "AvroFormat", new IllegalStateException("down"));
+    assertFalse(NonRetryableException.isNonRetryable(wrapped), wrapped.getClass().getName());
+  }
+
+  /// A Schema Registry format reads the envelope itself, so its records always start with `0x00`;
+  /// suggesting `skipBytes` there would be wrong.
+  @Test
+  void doesNotSuggestSkipBytesForARegistryBackedFormat() {
+    final var data = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x42, 0x01, 0x02, 0x03 };
+
+    final var wrapped = PipelineDiagnostics.wrap(data, 0, "AvroFormat", true, new RuntimeException("bad"));
+
+    assertFalse(wrapped.getMessage().contains("skipBytes"), wrapped.getMessage());
+  }
 }

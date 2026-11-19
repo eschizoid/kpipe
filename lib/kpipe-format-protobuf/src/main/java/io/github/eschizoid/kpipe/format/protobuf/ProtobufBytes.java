@@ -5,7 +5,7 @@ import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.WireFormat;
-import io.github.eschizoid.kpipe.registry.NonRetryableException;
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -42,7 +42,7 @@ import java.util.function.UnaryOperator;
 ///
 /// The bytes must be a bare Protobuf message, with no Confluent wire envelope in front. Bytes
 /// whose top-level fields are malformed, and a setter that meets another wire type, throw
-/// [NonRetryableException]: the record fails without retries. The contents of length-delimited
+/// [MalformedRecordException]: the record fails without retries. The contents of length-delimited
 /// fields are copied unchecked, and [#has] stops reading at the first match. Arguments that can
 /// never work, such as no field numbers, throw [IllegalArgumentException] when the operator is
 /// created.
@@ -157,7 +157,7 @@ public final class ProtobufBytes {
         if (tag == 0) break;
         final var field = WireFormat.getTagFieldNumber(tag);
         if (append != null && field == append.fieldNumber() && WireFormat.getTagWireType(tag) != append.wireType()) {
-          throw new NonRetryableException(
+          throw new MalformedRecordException(
             "Field %d has wire type %d, not %d".formatted(field, WireFormat.getTagWireType(tag), append.wireType())
           );
         }
@@ -220,8 +220,8 @@ public final class ProtobufBytes {
     );
   }
 
-  private static NonRetryableException malformed(final IOException e) {
-    return new NonRetryableException(
+  private static MalformedRecordException malformed(final IOException e) {
+    return new MalformedRecordException(
       e instanceof InvalidProtocolBufferException ? "Malformed Protobuf message: " + e.getMessage() : e.getMessage(),
       e
     );

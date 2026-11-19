@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.registry.MalformedRecordException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -61,11 +62,17 @@ class JsonFormatEdgeCasesTest {
     assertDecodeFailure(unbalanced);
   }
 
-  /// Asserts the input fails as the format's own decode error — not a generic exception that would
-  /// green this test on an unrelated bug. `JsonFormat.deserialize` wraps parse failures with this
-  /// prefix; anything else (NPE, coercion) propagates without it and fails the check loudly.
+  /// Asserts the input fails as the format's own decode error: a [MalformedRecordException] whose
+  /// message carries the `JsonFormat.deserialize failed` prefix.
+  /// fastjson2 throws `ArrayIndexOutOfBoundsException`, not `JSONException`, on a truncated UTF-8
+  /// sequence; it is still bad bytes.
+  @Test
+  void truncatedUtf8SequenceThrows() {
+    assertDecodeFailure(new byte[] { (byte) 0xee, (byte) 0x82 });
+  }
+
   private static void assertDecodeFailure(final byte[] data) {
-    final var ex = assertThrows(IllegalStateException.class, () -> JsonFormat.INSTANCE.deserialize(data));
+    final var ex = assertThrows(MalformedRecordException.class, () -> JsonFormat.INSTANCE.deserialize(data));
     assertTrue(
       ex.getMessage() != null && ex.getMessage().contains("JsonFormat.deserialize failed"),
       () -> "expected a JsonFormat decode failure, got: " + ex
