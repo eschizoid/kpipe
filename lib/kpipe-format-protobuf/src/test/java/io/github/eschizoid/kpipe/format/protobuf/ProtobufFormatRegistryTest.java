@@ -309,6 +309,24 @@ class ProtobufFormatRegistryTest {
   }
 
   @Test
+  void negativeMessageIndexSizeIsMalformed() {
+    final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
+    // magic + id=1 + zig-zag size 0x01 (=-1).
+    final var bad = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00 };
+    final var ex = assertThrows(MalformedRecordException.class, () -> format.deserialize(bad));
+    assertTrue(ex.getMessage().contains("Negative message-index size -1"), ex.getMessage());
+  }
+
+  @Test
+  void corruptPayloadUnderAValidEnvelopeIsMalformed() {
+    final var format = ProtobufFormat.withRegistry(new FakeResolver().put(1, "x"), new FakeCompiler());
+    // magic + id=1 + index [0], then field 1 declared 5 bytes long with only 1 byte present.
+    final var bad = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x0a, 0x05, 0x01 };
+    final var ex = assertThrows(MalformedRecordException.class, () -> format.deserialize(bad));
+    assertTrue(ex.getMessage().contains("Failed to decode Protobuf record"), ex.getMessage());
+  }
+
+  @Test
   void payloadShorterThanEnvelopeThrows() {
     final var format = ProtobufFormat.withRegistry(new FakeResolver(), new FakeCompiler());
     final var tooShort = new byte[] { 0x00, 0x00, 0x00 };

@@ -2,6 +2,7 @@ package io.github.eschizoid.kpipe.registry;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -36,6 +37,25 @@ class TypedPipelineSkipBytesTest {
     public byte[] deserialize(final byte[] data) {
       lastSeen = data;
       return data;
+    }
+  }
+
+  /// A format whose decode always fails, as a registry-backed one or not. Its name contains "Avro",
+  /// which is what picks the `skipBytes(5)` hint.
+  private record FailingAvroFormat(boolean registryBacked, RuntimeException failure) implements MessageFormat<byte[]> {
+    @Override
+    public byte[] serialize(final byte[] data) {
+      return data;
+    }
+
+    @Override
+    public byte[] deserialize(final byte[] data) {
+      throw failure;
+    }
+
+    @Override
+    public boolean isSchemaRegistryBacked() {
+      return registryBacked;
     }
   }
 
@@ -143,6 +163,34 @@ class TypedPipelineSkipBytesTest {
       pipelineWithSkip(new NullFormat(), 0).deserialize(new byte[0])
     );
     assertEquals("The record value is empty, so there is nothing to deserialize", empty.getMessage());
+  }
+
+  /// A decode failure keeps its type through the pipeline, with or without a skipped prefix, so
+  /// bad bytes stay non-retryable and anything else stays retryable.
+  @Test
+  void aDecodeFailureKeepsItsRetryability() {
+    final var envelope = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x02 };
+    for (final var skip : new int[] { 0, 1 }) {
+      final var bad = new FailingAvroFormat(false, new MalformedRecordException("bad"));
+      assertThrows(MalformedRecordException.class, () -> pipelineWithSkip(bad, skip).deserialize(envelope));
+      final var down = new FailingAvroFormat(false, new IllegalStateException("down"));
+      final var ex = assertThrows(RuntimeException.class, () -> pipelineWithSkip(down, skip).deserialize(envelope));
+      assertFalse(NonRetryableException.isNonRetryable(ex), "skip " + skip + ": " + ex);
+    }
+  }
+
+  /// Only a format that does not read the envelope itself gets the `skipBytes` hint.
+  @Test
+  void theSkipBytesHintFollowsTheFormat() {
+    final var envelope = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x01, 0x02 };
+    final var plain = new FailingAvroFormat(false, new IllegalStateException("bad"));
+    final var registry = new FailingAvroFormat(true, new IllegalStateException("bad"));
+    final var plainEx = assertThrows(RuntimeException.class, () -> pipelineWithSkip(plain, 0).deserialize(envelope));
+    final var registryEx = assertThrows(RuntimeException.class, () ->
+      pipelineWithSkip(registry, 0).deserialize(envelope)
+    );
+    assertTrue(plainEx.getMessage().contains("Confluent Schema Registry envelope"), plainEx.getMessage());
+    assertFalse(registryEx.getMessage().contains("skipBytes"), registryEx.getMessage());
   }
 
   /// A built pipeline never returns null, whether or not it skips a prefix.
