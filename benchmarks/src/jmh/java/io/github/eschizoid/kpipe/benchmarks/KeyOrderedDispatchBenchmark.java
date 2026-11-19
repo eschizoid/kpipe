@@ -5,7 +5,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -126,9 +126,7 @@ public class KeyOrderedDispatchBenchmark {
 
       // Pure byte-passthrough format keeps the per-record work inside the dispatcher path,
       // so the bench isolates lock contention from SerDe cost.
-      final var registry = new MessageProcessorRegistry();
-      final var pipeline = registry
-        .pipeline(MessageFormat.bytes())
+      final var pipeline = MessagePipeline.from(MessageFormat.bytes())
         .toSink((final byte[] _) -> processedLatch.countDown())
         .build();
 

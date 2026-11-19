@@ -10,8 +10,6 @@ import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
-import io.github.eschizoid.kpipe.registry.RegistryKey;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,7 +19,6 @@ class ProtobufFormatPipelineTest {
 
   private Descriptors.Descriptor descriptor;
   private ProtobufFormat format;
-  private MessageProcessorRegistry registry;
 
   /// Test helper: drives `bytes` through the full pipeline cycle (deserialize → process →
   /// serialize) and returns the resulting bytes. Filtered records return null; failures
@@ -49,7 +46,6 @@ class ProtobufFormatPipelineTest {
   void setUp() throws Exception {
     descriptor = buildTestDescriptor();
     format = new ProtobufFormat(descriptor);
-    registry = new MessageProcessorRegistry();
   }
 
   private DynamicMessage createTestMessage() {
@@ -68,14 +64,7 @@ class ProtobufFormatPipelineTest {
     final UnaryOperator<Message> deactivate = msg ->
       msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("active"), false).build();
 
-    registry.registerOperator(RegistryKey.of("setName", Message.class), setName);
-    registry.registerOperator(RegistryKey.of("deactivate", Message.class), deactivate);
-
-    final var pipeline = registry
-      .pipeline(format)
-      .pipe(RegistryKey.of("setName", Message.class))
-      .pipe(RegistryKey.of("deactivate", Message.class))
-      .build();
+    final var pipeline = MessagePipeline.from(format).pipe(setName).pipe(deactivate).build();
 
     final var input = format.serialize(createTestMessage());
     final var output = roundTrip(format, pipeline, input);
@@ -90,13 +79,13 @@ class ProtobufFormatPipelineTest {
 
   @Test
   void shouldHandleNullInputInPipeline() {
-    final var pipeline = registry.pipeline(format).build();
+    final var pipeline = MessagePipeline.from(format).build();
     assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, null));
   }
 
   @Test
   void shouldHandleEmptyInputInPipeline() {
-    final var pipeline = registry.pipeline(format).build();
+    final var pipeline = MessagePipeline.from(format).build();
     assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, new byte[0]));
   }
 

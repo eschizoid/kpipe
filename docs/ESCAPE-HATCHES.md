@@ -18,8 +18,8 @@ try (var handle = KPipe.json("orders", props)
 }
 ```
 
-Some advanced use cases need the explicit `MessageProcessorRegistry` + `KPipeConsumerBuilder` surface. This page is the
-index — for each capability, it tells you whether it's on the fluent path, on the explicit path, or both, and how to
+Some advanced use cases need the explicit `MessagePipeline.from(format)` + `KPipeConsumerBuilder` surface. This page is
+the index — for each capability, it tells you whether it's on the fluent path, on the explicit path, or both, and how to
 wire it up.
 
 Rows in **bold** are deliberately escape-hatch-only (no fluent equivalent planned).
@@ -28,13 +28,13 @@ Rows in **bold** are deliberately escape-hatch-only (no fluent equivalent planne
 
 | Capability                                     | Facade path                                                                                                               | Explicit-API path                                                                                                          | Notes                                                                                                                                                                                                   |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Format selection                               | `KPipe.json/avro/protobuf/bytes/custom(...)`                                                                              | `new MessageProcessorRegistry()` + `registry.pipeline(format)`                                                             | The registry is format-agnostic; pass the `MessageFormat<T>` per pipeline. The `KPipe.custom(...)` facade form gives user-supplied formats the same fluent surface as the bundled ones.                 |
+| Format selection                               | `KPipe.json/avro/protobuf/bytes/custom(...)`                                                                              | `MessagePipeline.from(format)`                                                                                             | Pass any `MessageFormat<T>`, bundled or your own. The `KPipe.custom(...)` facade form gives user-supplied formats the same fluent surface as the bundled ones.                                          |
 | Topic subscription (homogeneous)               | `KPipe.X(topic, props)`                                                                                                   | `Builder.withTopic(s) / withTopics(...)`                                                                                   | One topic-set, one shared pipeline.                                                                                                                                                                     |
 | Topic subscription (heterogeneous)             | `KPipe.multi(props).json(...).avro(...)...start()`                                                                        | `Builder.withPipelines(Map<String, MessagePipeline<?>>)`                                                                   | Per-topic dispatch.                                                                                                                                                                                     |
-| Operator chain (`pipe/filter/peek/when`)       | `Stream.pipe / filter / peek / when`                                                                                      | `MessageProcessorRegistry.pipeline(format).pipe(...)`                                                                      | Same names and behaviour: `pipe`, `filter`, `peek`, `when`, `skipBytes`, and `toMulti` for best-effort fan-out.                                                                                         |
+| Operator chain (`pipe/filter/peek/when`)       | `Stream.pipe / filter / peek / when`                                                                                      | `MessagePipeline.from(format).pipe / filter / peek / when`                                                                 | Same names and behaviour: `pipe`, `filter`, `peek`, `when`, `skipBytes`, and `toMulti` for best-effort fan-out.                                                                                         |
 | Failed-attempt observer                        | `Stream.onAttemptFailed` / `MultiBuilder.onAttemptFailed`                                                                 | `Builder.withAttemptFailedObserver(...)`                                                                                   | Every failed attempt at every stage, before the error handler.                                                                                                                                          |
-| Custom terminal sink                           | `Stream.toCustom(MessageSink<T>)`                                                                                         | `registry.registerSink(key, sink)`                                                                                         | Any `MessageSink<T>`; facade also offers `.toConsole()`.                                                                                                                                                |
-| Multi-sink fanout                              | `Stream.toMulti(sinks...)`                                                                                                | `pipeline(format).toMulti(...)` or `new CompositeMessageSink<>(...)`                                                       | Best-effort delivery; per-sink errors logged + suppressed.                                                                                                                                              |
+| Custom terminal sink                           | `Stream.toCustom(MessageSink<T>)`                                                                                         | `MessagePipeline.from(format).toSink(MessageSink<T>)`                                                                      | Any `MessageSink<T>`; facade also offers `.toConsole()`.                                                                                                                                                |
+| Multi-sink fanout                              | `Stream.toMulti(sinks...)`                                                                                                | `MessagePipeline.from(format).toMulti(...)` or `new CompositeMessageSink<>(...)`                                           | Best-effort delivery; per-sink errors logged + suppressed.                                                                                                                                              |
 | Batch sink (size + age flush)                  | `Stream.toBatch(BatchSink<T>, BatchPolicy)`                                                                               | `Builder.withBatchPipeline(topic, pipeline, sink, policy)`                                                                 | `BatchSink<T>` returns `BatchResult` for per-record DLQ; `BatchSink.ofVoid(consumer)` wraps void-style sinks (whole-batch DLQ on throw). Sequential + parallel modes both work.                         |
 | Batch sink (multi-topic)                       | `KPipe.multi(props).json(topic, s -> s.toBatch(sink, policy))...start()`                                                  | `Builder.withBatchPipeline(...)` × N                                                                                       | One consumer-group, mixed batch + non-batch routes.                                                                                                                                                     |
 | Skip wire-format prefix                        | `Stream.skipBytes(int)`                                                                                                   | `TypedPipelineBuilder.skipBytes(int)`                                                                                      | Confluent envelope: 5 (Avro) / 6 (Proto single-msg). Don't combine with `withSchemaRegistry(...)`.                                                                                                      |
@@ -61,7 +61,7 @@ Rows in **bold** are deliberately escape-hatch-only (no fluent equivalent planne
 | Metrics log + shutdown hook                    | `Stream.withMetricsLog(Duration)` / `.withShutdownHook(boolean)`, and the `MultiBuilder` mirrors                          | `Builder.withMetricsLog(Duration) / withShutdownHook(true)`                                                                |
 | **Health endpoint**                            | —                                                                                                                         | `HttpHealthServer.fromEnv(...)`                                                                                            | Run alongside `Handle`: `HttpHealthServer.fromEnv(handle::health, "app")`.                                                                                                                              |
 | In-flight drain                                | `Handle.shutdownGracefully(Duration)`                                                                                     | `KPipeConsumer.awaitDispatchIdle(Duration) / shutdownGracefully(Duration)`                                                 | Waits for dispatched records, then closes, which flushes buffered batch records; `true` only when nothing is left in flight.                                                                            |
-| **Custom `MessageProcessorRegistry`**          | —                                                                                                                         | `new MessageProcessorRegistry()` + `register*(...)` + `pipeline(format)`                                                   | Pre-shared pipelines across consumers, multi-format orchestrators. The registry is format-agnostic — the format is supplied per pipeline.                                                               |
+| **Pre-built `MessagePipeline`**                | —                                                                                                                         | `MessagePipeline.from(format)...build()`, then `withPipeline(pipeline)` on each consumer                                   | One built pipeline passed to several consumers; see [the worked example](#one-pipeline-shared-across-consumers).                                                                                        |
 
 ## Worked examples
 
@@ -169,18 +169,14 @@ The delegate-and-wrap shape keeps the default offset bookkeeping intact while le
 time. Make sure to call through to the underlying listener in both `onPartitionsRevoked` and `onPartitionsAssigned` —
 the default `KafkaOffsetManager` listener does real work there (e.g. flushing the safe-offsets buffer on revoke).
 
-### Pre-shared registries across consumers
+### One pipeline shared across consumers
 
 Use case: a single pipeline definition reused across consumer groups for A/B traffic split.
 
 ```java
-final var registry = new MessageProcessorRegistry();
-registry.registerOperator(RegistryKey.json("enrich"), enrichOp);
-registry.registerSink(RegistryKey.json("warehouse"), warehouseSink);
-
-final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
-    .pipe(RegistryKey.json("enrich"))
-    .toSink(RegistryKey.json("warehouse"))
+final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+    .pipe(enrichOp)
+    .toSink(warehouseSink)
     .build();
 
 final var groupA = KPipeConsumer.builder()
@@ -196,7 +192,8 @@ final var groupB = KPipeConsumer.builder()
     .build();
 ```
 
-Both consumers share the same pipeline instance — operators and sinks are thread-safe.
+Both consumers use the same pipeline instance. A built `MessagePipeline` keeps no state of its own between records, but
+both consumers call `enrichOp` and `warehouseSink`, so those must be safe to call from several threads at once.
 
 ## Dropping back to the explicit API mid-stream
 
@@ -208,16 +205,26 @@ thin layer over the builder.
 If you find yourself reaching for an escape hatch that isn't in the table above, open an issue — either it's missing
 from this doc, or it's a real gap in the API.
 
-## Advanced registry patterns
+## Advanced pipeline patterns
 
-Patterns that only make sense on the explicit `MessageProcessorRegistry` surface.
+Patterns for pipelines built with `MessagePipeline.from(format)`.
 
-**Enum-based registration** — declare a service's operators as an enum and bulk-register them, so
-`PROCESSOR_PIPELINE=TIMESTAMP,SOURCE`-style configuration can reference them by name:
+**Operators chosen by name.** To let `PROCESSOR_PIPELINE=TIMESTAMP,SOURCE`-style configuration pick operators, keep your
+own map from name to operator and look each name up while you build:
 
 ```java
-// Bulk register all enum constants (the double cast pins the payload type)
-registry.registerEnum((Class<Map<String, Object>>) (Class<?>) Map.class, StandardProcessors.class);
+final Map<String, UnaryOperator<Map<String, Object>>> operators = Map.of(
+    "TIMESTAMP", JsonFields.derive("processedAt", record -> System.currentTimeMillis()),
+    "SOURCE", JsonFields.set("source", "orders-service"));
+
+final var builder = MessagePipeline.from(JsonFormat.INSTANCE);
+for (final var name : System.getenv().getOrDefault("PROCESSOR_PIPELINE", "").split(",")) {
+  if (name.isBlank()) continue;
+  final var operator = operators.get(name.strip());
+  if (operator == null) throw new IllegalArgumentException("Unknown operator: " + name);
+  builder.pipe(operator);
+}
+final var pipeline = builder.toSink(sink).build();
 ```
 
 **Conditional processing** — `TypedPipelineBuilder.when(predicate, ifTrue, ifFalse)` branches inside one pipeline; both

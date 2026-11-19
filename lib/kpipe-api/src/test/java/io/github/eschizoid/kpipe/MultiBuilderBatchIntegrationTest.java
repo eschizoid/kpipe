@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
+import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -128,8 +128,7 @@ class MultiBuilderBatchIntegrationTest {
   /// route. The builder must reject the combo at `build()` rather than dispatching ambiguously.
   @Test
   void builderRejectsTopicConfiguredAsBothRegularAndBatch() {
-    final var registry = new MessageProcessorRegistry();
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
+    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).build();
     final BatchSink<Map<String, Object>> sink = BatchSink.ofVoid(_ -> {});
 
     final var ex = assertThrows(IllegalArgumentException.class, () ->
@@ -150,8 +149,7 @@ class MultiBuilderBatchIntegrationTest {
   /// on different topics.
   @Test
   void builderAcceptsTwoBatchRoutesOnDifferentTopics() {
-    final var registry = new MessageProcessorRegistry();
-    final var pipeline = registry.pipeline(JsonFormat.INSTANCE).build();
+    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).build();
     final BatchSink<Map<String, Object>> wholeBatch = BatchSink.ofVoid(_ -> {});
     final BatchSink<Map<String, Object>> perRecordBatch = b -> BatchResult.allSucceeded(b.size());
 

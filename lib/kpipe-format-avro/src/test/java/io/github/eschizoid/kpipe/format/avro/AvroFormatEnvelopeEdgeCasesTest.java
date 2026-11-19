@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -21,7 +20,7 @@ import org.junit.jupiter.api.Test;
 
 /// Avro edge cases that live on the static-mode + `skipBytes` path: the exact 5-byte Confluent
 /// envelope boundary, off-by-one wire-prefix stripping, and oversized payloads. These exercise
-/// the real pipeline built from the registry, so the slice fed to the codec is whatever the
+/// the real pipeline built by `MessagePipeline.from`, so the slice fed to the codec is whatever the
 /// builder produced — the surface where an envelope off-by-one corrupts silently.
 class AvroFormatEnvelopeEdgeCasesTest {
 
@@ -33,8 +32,6 @@ class AvroFormatEnvelopeEdgeCasesTest {
         {"name": "value", "type": "string"}
       ]
     }""";
-
-  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
   /// Drives `bytes` through deserialize -> process -> serialize, re-throwing a failure cause.
   private static <T> byte[] roundTrip(
@@ -82,7 +79,7 @@ class AvroFormatEnvelopeEdgeCasesTest {
     final var payload = encode(format.schema(), "hello");
     final var framed = withEnvelope(42, payload);
 
-    final var pipeline = REGISTRY.pipeline(format).skipBytes(5).build();
+    final var pipeline = MessagePipeline.from(format).skipBytes(5).build();
     final var decoded = pipeline.deserializeOrFail(framed);
 
     assertNotNull(decoded);
@@ -97,7 +94,7 @@ class AvroFormatEnvelopeEdgeCasesTest {
     final var payload = encode(format.schema(), "hello");
     final var framed = withEnvelope(42, payload);
 
-    final var pipeline = REGISTRY.pipeline(format).skipBytes(4).build();
+    final var pipeline = MessagePipeline.from(format).skipBytes(4).build();
 
     var corrupted = false;
     try {
@@ -119,7 +116,7 @@ class AvroFormatEnvelopeEdgeCasesTest {
     final var payload = encode(format.schema(), "hello");
     final var framed = withEnvelope(42, payload);
 
-    final var pipeline = REGISTRY.pipeline(format).skipBytes(6).build();
+    final var pipeline = MessagePipeline.from(format).skipBytes(6).build();
 
     var corrupted = false;
     try {
@@ -139,7 +136,7 @@ class AvroFormatEnvelopeEdgeCasesTest {
     final var big = "x".repeat(2_000_000);
     final var bytes = encode(format.schema(), big);
 
-    final var pipeline = REGISTRY.pipeline(format).build();
+    final var pipeline = MessagePipeline.from(format).build();
     final var result = roundTrip(format, pipeline, bytes);
 
     assertNotNull(result);

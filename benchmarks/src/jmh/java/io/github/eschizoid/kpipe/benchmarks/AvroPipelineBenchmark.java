@@ -2,8 +2,6 @@ package io.github.eschizoid.kpipe.benchmarks;
 
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
-import io.github.eschizoid.kpipe.registry.RegistryKey;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -88,13 +86,6 @@ public class AvroPipelineBenchmark {
     System.arraycopy(avroBytes, 0, avroWithMagicBytes, 5, avroBytes.length);
 
     format = AvroFormat.of(schemaJson);
-    final var registry = new MessageProcessorRegistry();
-
-    // Register operators inline using the native Avro API (operator helpers were removed in
-    // 1.11.x).
-    final var op1 = RegistryKey.of("op1", GenericRecord.class);
-    final var op2 = RegistryKey.of("op2", GenericRecord.class);
-
     final UnaryOperator<GenericRecord> setProcessed = r -> {
       r.put("processed", true);
       return r;
@@ -104,11 +95,8 @@ public class AvroPipelineBenchmark {
       return r;
     };
 
-    registry.registerOperator(op1, setProcessed);
-    registry.registerOperator(op2, renameProcessed);
-
-    kpipePipeline = registry.pipeline(format).pipe(op1, op2).build();
-    kpipeMagicPipeline = registry.pipeline(format).skipBytes(5).pipe(op1, op2).build();
+    kpipePipeline = MessagePipeline.from(format).pipe(setProcessed).pipe(renameProcessed).build();
+    kpipeMagicPipeline = MessagePipeline.from(format).skipBytes(5).pipe(setProcessed).pipe(renameProcessed).build();
   }
 
   @Benchmark

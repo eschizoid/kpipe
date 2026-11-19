@@ -125,7 +125,7 @@ public final class KPipeConsumerBuilder {
   ///
   /// The consumer always operates on `byte[]` at the boundary; format SerDe lives inside the
   /// pipeline. The pipeline must be a [MessagePipeline] — typically produced by
-  /// `MessageProcessorRegistry.pipeline(format).build()`.
+  /// `MessagePipeline.from(format).build()`.
   ///
   /// All subscribed topics share this pipeline (homogeneous case). For heterogeneous
   /// per-topic pipelines, use [#withPipelines(Map)].

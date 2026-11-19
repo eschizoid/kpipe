@@ -5,14 +5,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.alibaba.fastjson2.JSON;
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
 class JsonFormatPipelineTest {
-
-  private static final MessageProcessorRegistry REGISTRY = new MessageProcessorRegistry();
 
   /// Test helper: drives `bytes` through the full pipeline cycle (deserialize → process →
   /// serialize) and returns the resulting bytes. Filtered records return null; failures
@@ -56,7 +53,7 @@ class JsonFormatPipelineTest {
       """;
 
     // Act
-    final var pipeline = REGISTRY.pipeline(JsonFormat.INSTANCE).build();
+    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).build();
     final var result = roundTrip(JsonFormat.INSTANCE, pipeline, json.getBytes(StandardCharsets.UTF_8));
 
     // Assert
@@ -69,7 +66,7 @@ class JsonFormatPipelineTest {
     final var invalidJson = "invalid json";
 
     // Act
-    final var pipeline = REGISTRY.pipeline(JsonFormat.INSTANCE).build();
+    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).build();
 
     // Assert — per MessagePipeline contract, malformed input throws.
     assertThrows(RuntimeException.class, () ->
@@ -83,7 +80,7 @@ class JsonFormatPipelineTest {
     final var emptyJson = "{}";
 
     // Act
-    final var pipeline = REGISTRY.pipeline(JsonFormat.INSTANCE).build();
+    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).build();
     final var result = roundTrip(JsonFormat.INSTANCE, pipeline, emptyJson.getBytes(StandardCharsets.UTF_8));
 
     // Assert
@@ -94,7 +91,7 @@ class JsonFormatPipelineTest {
   void testParseJsonNullInput() {
     // Arrange
     // Act
-    final var pipeline = REGISTRY.pipeline(JsonFormat.INSTANCE).build();
+    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).build();
 
     // Assert — null input is a contract violation; throw rather than swallow.
     assertThrows(RuntimeException.class, () -> roundTrip(JsonFormat.INSTANCE, pipeline, null));

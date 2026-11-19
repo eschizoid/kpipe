@@ -11,28 +11,19 @@ On the fluent path you attach a sink with a terminal: `.toConsole()`, `.toCustom
 [API.md](API.md#terminals--each-returns-sinkt). This page covers the sink building blocks themselves. Snippets use
 placeholder values; they show shape, not a runnable program.
 
-## Registering sinks in the explicit API
+## Sinks in the explicit API
 
-`MessageProcessorRegistry` holds operators and sinks in two namespaces under the same key shape:
-`registerOperator(key, op)` / `registerSink(key, sink)` to add, `getOperator(key)` / `getSink(key)` to look up, and
-per-namespace utilities (`getAllSinks`, `getSinkKeys`, `unregisterSink`, `clearSinks`). A pipeline has one sink. To fan
-out to several, use `toMulti(...)`, on a stream or on the pipeline builder; delivery is best effort, so a sink that
-throws is logged and the record still succeeds. To retry the record when any destination fails, write one sink that
-calls each in turn. A key must be registered before a pipeline uses it with `pipe`, `toSink` or `toMulti`; building with
-an unregistered key throws `IllegalArgumentException`. Console sinks (`JsonConsoleSink`, `AvroConsoleSink`,
-`ProtobufConsoleSink`) live in their format modules and are not auto-registered:
+In the explicit API, `MessagePipeline.from(format)` returns a builder that takes a sink directly. A pipeline has one
+sink: `toSink(sink)` sets it, and a second call throws `IllegalStateException`. To fan out to several, use
+`toMulti(...)`, on a stream or on the pipeline builder; delivery is best effort, so a sink that throws is logged and the
+record still succeeds. To retry the record when any destination fails, write one sink that calls each in turn. Console
+sinks (`JsonConsoleSink`, `AvroConsoleSink`, `ProtobufConsoleSink`) live in their format modules, and you pass an
+instance to `toSink` like any other sink:
 
 ```java
-final var registry = new MessageProcessorRegistry();
-
-registry.registerSink(RegistryKey.json("jsonConsole"), new JsonConsoleSink<Map<String, Object>>());
-registry.registerSink(RegistryKey.json("database"), databaseSink);
-registry.registerOperator(RegistryKey.json("sanitize"), sanitize);
-
-final var pipeline = registry
-  .pipeline(JsonFormat.INSTANCE)
-  .pipe(RegistryKey.json("sanitize"))
-  .toSink(RegistryKey.json("database"))
+final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+  .pipe(sanitize)
+  .toSink(databaseSink)
   .build();
 ```
 
@@ -71,11 +62,9 @@ import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 
 final var producer = new KafkaProducer<byte[], byte[]>(producerProps);
-registry.registerOperator(RegistryKey.json("transform"), transform);
 
-final var pipeline = registry
-  .pipeline(JsonFormat.INSTANCE)
-  .pipe(RegistryKey.json("transform"))
+final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+  .pipe(transform)
   .toSink(KafkaMessageSink.of(producer, "output-topic", JsonFormat.INSTANCE::serialize, Tracer.noop()))
   .build();
 ```

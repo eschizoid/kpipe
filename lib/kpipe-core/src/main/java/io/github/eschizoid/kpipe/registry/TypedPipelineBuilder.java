@@ -11,24 +11,19 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
-/// A generic builder for creating type-safe [MessagePipeline] instances.
+/// Builds a [MessagePipeline]: a format, optional bytes to skip, operators applied in order, and
+/// at most one sink. Start one with [MessagePipeline#from(MessageFormat)].
 ///
-/// @param <T> The type of the object in the pipeline.
+/// @param <T> the type of the value the pipeline carries
 public final class TypedPipelineBuilder<T> {
 
   private final MessageFormat<T> format;
   private final List<UnaryOperator<T>> operators = new ArrayList<>();
-  private final MessageProcessorRegistry registry;
   private MessageSink<T> sink;
   private int skipBytes = 0;
 
-  /// Creates a new TypedPipelineBuilder.
-  ///
-  /// @param format   The message format for serialization/deserialization.
-  /// @param registry The registry for looking up operators and sinks.
-  public TypedPipelineBuilder(final MessageFormat<T> format, MessageProcessorRegistry registry) {
+  TypedPipelineBuilder(final MessageFormat<T> format) {
     this.format = Objects.requireNonNull(format, "format cannot be null");
-    this.registry = Objects.requireNonNull(registry, "registry cannot be null");
   }
 
   /// Configures the pipeline to skip a certain number of bytes before deserialization.
@@ -49,22 +44,6 @@ public final class TypedPipelineBuilder<T> {
   /// @return this builder
   public TypedPipelineBuilder<T> pipe(final UnaryOperator<T> operator) {
     operators.add(Objects.requireNonNull(operator, "operator cannot be null"));
-    return this;
-  }
-
-  /// Appends operators from the registry. Each one looks its key up when it runs, so
-  /// re-registering a key takes effect at once.
-  ///
-  /// @param keys the registry keys of the operators
-  /// @return this builder
-  /// @throws IllegalArgumentException if no operator is registered under one of the keys
-  @SafeVarargs
-  public final TypedPipelineBuilder<T> pipe(final RegistryKey<T>... keys) {
-    for (final var key : keys)
-      if (!registry.hasOperator(key)) throw new IllegalArgumentException(
-        "No operator registered under key %s; register it before adding it to a pipeline".formatted(key)
-      );
-    for (final var key : keys) pipe(registry.getOperator(key));
     return this;
   }
 
@@ -146,18 +125,6 @@ public final class TypedPipelineBuilder<T> {
     return this;
   }
 
-  /// Sets the pipeline's sink from the registry. It looks its key up when it runs, so
-  /// re-registering the key takes effect at once.
-  ///
-  /// @param key the registry key of the sink
-  /// @return this builder
-  /// @throws IllegalArgumentException if no sink is registered under `key`
-  /// @throws IllegalStateException if the pipeline already has a sink
-  public TypedPipelineBuilder<T> toSink(final RegistryKey<T> key) {
-    requireSink(key);
-    return toSink(registry.getSink(key));
-  }
-
   /// Delivers each record to every one of `sinks`, in order, as `Stream.toMulti` does. Delivery is
   /// best effort: a sink that throws is logged and the others still run, and the record does not
   /// fail.
@@ -170,27 +137,6 @@ public final class TypedPipelineBuilder<T> {
   public final TypedPipelineBuilder<T> toMulti(final MessageSink<T>... sinks) {
     if (sinks.length == 0) throw new IllegalArgumentException("toMulti needs at least one sink");
     return toSink(new CompositeMessageSink<>(List.of(sinks)));
-  }
-
-  /// Delivers each record to the registry sinks under `keys`, as [#toMulti(MessageSink...)] does.
-  ///
-  /// @param keys the registry keys of the sinks, at least one
-  /// @return this builder
-  /// @throws IllegalArgumentException if no key is given, or no sink is registered under one
-  /// @throws IllegalStateException if the pipeline already has a sink
-  @SafeVarargs
-  public final TypedPipelineBuilder<T> toMulti(final RegistryKey<T>... keys) {
-    if (keys.length == 0) throw new IllegalArgumentException("toMulti needs at least one sink key");
-    for (final var key : keys) requireSink(key);
-    final var sinks = new ArrayList<MessageSink<T>>();
-    for (final var key : keys) sinks.add(registry.getSink(key));
-    return toSink(new CompositeMessageSink<>(sinks));
-  }
-
-  private void requireSink(final RegistryKey<T> key) {
-    if (!registry.hasSink(key)) throw new IllegalArgumentException(
-      "No sink registered under key %s; register it before adding it to a pipeline".formatted(key)
-    );
   }
 
   /// Builds the [MessagePipeline].

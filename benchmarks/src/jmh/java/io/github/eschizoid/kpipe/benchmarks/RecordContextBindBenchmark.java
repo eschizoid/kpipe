@@ -3,14 +3,13 @@ package io.github.eschizoid.kpipe.benchmarks;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
-import io.github.eschizoid.kpipe.registry.RegistryKey;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
@@ -74,32 +73,28 @@ public class RecordContextBindBenchmark {
       Optional.empty()
     );
 
-    final var registry = new MessageProcessorRegistry();
-    final var op1 = RegistryKey.json("op1");
-    final var op2 = RegistryKey.json("op2");
-    final var op3 = RegistryKey.json("op3");
-    final var readKey = RegistryKey.json("readKey");
-    registry.registerOperator(op1, map -> {
+    final UnaryOperator<Map<String, Object>> op1 = map -> {
       map.put("processed_by", "kpipe");
       return map;
-    });
-    registry.registerOperator(op2, map -> {
+    };
+    final UnaryOperator<Map<String, Object>> op2 = map -> {
       map.put("timestamp", BENCHMARK_TIMESTAMP);
       return map;
-    });
-    registry.registerOperator(op3, map -> {
+    };
+    final UnaryOperator<Map<String, Object>> op3 = map -> {
       map.remove("email");
       return map;
-    });
-    registry.registerOperator(readKey, map -> {
+    };
+    final UnaryOperator<Map<String, Object>> readKey = map -> {
       map.put("key", RecordContext.current().keyString());
       return map;
-    });
-    valuePipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(op1, op2, op3).build();
-    readingPipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(op1, op2, op3, readKey).build();
-    changingPipeline = registry
-      .pipeline(JsonFormat.INSTANCE)
-      .pipe(op1, op2, op3)
+    };
+    valuePipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).build();
+    readingPipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).pipe(readKey).build();
+    changingPipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+      .pipe(op1)
+      .pipe(op2)
+      .pipe(op3)
       .rekeyString(map -> String.valueOf(map.get("id")))
       .withHeader("processed-by", _ -> PROCESSED_BY)
       .build();

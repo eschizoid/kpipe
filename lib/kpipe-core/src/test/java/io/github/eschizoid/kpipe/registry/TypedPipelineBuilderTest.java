@@ -14,12 +14,9 @@ import org.junit.jupiter.api.Test;
 /// The builder's operator and sink methods behave as their `Stream` namesakes do.
 class TypedPipelineBuilderTest {
 
-  private final MessageProcessorRegistry registry = new MessageProcessorRegistry();
-
   @Test
   void filterKeepsMatchingRecordsAndFiltersTheRest() {
-    final var pipeline = registry
-      .pipeline(MessageFormat.bytes())
+    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
       .filter(value -> value[0] > 0)
       .build();
 
@@ -30,8 +27,7 @@ class TypedPipelineBuilderTest {
   @Test
   void peekRunsTheSideEffectAndPassesTheRecordOn() {
     final var seen = new ArrayList<Byte>();
-    final var pipeline = registry
-      .pipeline(MessageFormat.bytes())
+    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
       .peek(value -> seen.add(value[0]))
       .build();
 
@@ -43,7 +39,7 @@ class TypedPipelineBuilderTest {
   @Test
   void aSecondSinkIsRejected() {
     final MessageSink<byte[]> sink = _ -> {};
-    final var builder = registry.pipeline(MessageFormat.bytes()).toSink(sink);
+    final var builder = MessagePipeline.from(MessageFormat.bytes()).toSink(sink);
 
     final var thrown = assertThrows(IllegalStateException.class, () -> builder.toSink(sink));
     assertTrue(thrown.getMessage().contains("toMulti"), thrown.getMessage());
@@ -53,8 +49,7 @@ class TypedPipelineBuilderTest {
   @Test
   void toMultiDeliversToEverySinkAndCarriesOnPastOneThatThrows() {
     final var delivered = new ArrayList<String>();
-    final var pipeline = registry
-      .pipeline(MessageFormat.bytes())
+    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
       .toMulti(
         _ -> delivered.add("first"),
         _ -> {
@@ -69,32 +64,17 @@ class TypedPipelineBuilderTest {
   }
 
   @Test
-  void toMultiByKeyRejectsAKeyWithNothingRegistered() {
-    final var registered = RegistryKey.of("audit", byte[].class);
-    registry.registerSink(registered, _ -> {});
-    final var builder = registry.pipeline(MessageFormat.bytes());
-
-    assertThrows(IllegalArgumentException.class, () ->
-      builder.toMulti(registered, RegistryKey.of("missing", byte[].class))
-    );
-    assertDoesNotThrow(() -> builder.toSink(registered), "the failed toMulti left the builder without a sink");
-  }
-
-  @Test
   @SuppressWarnings("unchecked")
   void toMultiWithNoSinksIsRejected() {
-    final var builder = registry.pipeline(MessageFormat.bytes());
+    final var builder = MessagePipeline.from(MessageFormat.bytes());
     final MessageSink<byte[]>[] noSinks = new MessageSink[0];
-    final RegistryKey<byte[]>[] noKeys = new RegistryKey[0];
 
     assertThrows(IllegalArgumentException.class, () -> builder.toMulti(noSinks), "an empty fan-out drops every record");
-    assertThrows(IllegalArgumentException.class, () -> builder.toMulti(noKeys));
   }
 
   @Test
   void whenAppliesTheOperatorForTheBranchTheRecordMatches() {
-    final var pipeline = registry
-      .pipeline(MessageFormat.bytes())
+    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
       .when(value -> value[0] > 0, _ -> new byte[] { 1 }, _ -> new byte[] { 2 })
       .build();
 
@@ -105,25 +85,9 @@ class TypedPipelineBuilderTest {
   }
 
   @Test
-  void toMultiByKeyDeliversToEachRegisteredSinkInOrder() {
-    final var delivered = new ArrayList<String>();
-    final var audit = RegistryKey.of("audit", byte[].class);
-    final var archive = RegistryKey.of("archive", byte[].class);
-    registry.registerSink(audit, _ -> delivered.add("audit"));
-    registry.registerSink(archive, _ -> delivered.add("archive"));
-    final var pipeline = registry.pipeline(MessageFormat.bytes()).toMulti(audit, archive).build();
-
-    pipeline.getSink().accept(new byte[] { 1 });
-
-    assertEquals(List.of("audit", "archive"), delivered);
-  }
-
-  /// `rekeyString` and `withHeader` change what later operators read as the current record.
-  @Test
   void rekeyStringAndWithHeaderChangeTheCurrentRecordForLaterOperators() {
     final var seen = new ArrayList<String>();
-    final var pipeline = registry
-      .pipeline(MessageFormat.bytes())
+    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
       .rekey(value -> new byte[] { value[0] })
       .peek(_ -> seen.add("bytes-" + RecordContext.current().key()[0]))
       .rekeyString(value -> "key-" + value[0])

@@ -21,6 +21,22 @@ import io.github.eschizoid.kpipe.sink.MessageSink;
 ///
 /// @param <T> the type of the object in the pipeline.
 public interface MessagePipeline<T> {
+  /// Starts building a pipeline that reads values with `format`.
+  ///
+  /// ```java
+  /// final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+  ///   .pipe(JsonFields.remove("password"))
+  ///   .toSink(sink)
+  ///   .build();
+  /// ```
+  ///
+  /// @param format the format that turns record bytes into values and back
+  /// @param <T>    the type of the value the pipeline carries
+  /// @return a new builder
+  static <T> TypedPipelineBuilder<T> from(final MessageFormat<T> format) {
+    return new TypedPipelineBuilder<>(format);
+  }
+
   /// Deserializes the raw byte array into a typed object.
   ///
   /// Implementations must throw rather than return `null`: [MalformedRecordException] for bytes

@@ -2,12 +2,11 @@ package io.github.eschizoid.kpipe.benchmarks;
 
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
-import io.github.eschizoid.kpipe.registry.RegistryKey;
 import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -53,26 +52,20 @@ public class JsonPipelineBenchmark {
       }
       """.getBytes(StandardCharsets.UTF_8);
 
-    final var registry = new MessageProcessorRegistry();
-    // Register some operators
-    final var op1 = RegistryKey.json("op1");
-    final var op2 = RegistryKey.json("op2");
-    final var op3 = RegistryKey.json("op3");
-
-    registry.registerOperator(op1, map -> {
+    final UnaryOperator<Map<String, Object>> op1 = map -> {
       map.put("processed_by", "kpipe");
       return map;
-    });
-    registry.registerOperator(op2, map -> {
+    };
+    final UnaryOperator<Map<String, Object>> op2 = map -> {
       map.put("timestamp", BENCHMARK_TIMESTAMP);
       return map;
-    });
-    registry.registerOperator(op3, map -> {
+    };
+    final UnaryOperator<Map<String, Object>> op3 = map -> {
       map.remove("email");
       return map;
-    });
+    };
 
-    kpipePipeline = registry.pipeline(JsonFormat.INSTANCE).pipe(op1, op2, op3).build();
+    kpipePipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).build();
   }
 
   @Benchmark

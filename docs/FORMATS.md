@@ -54,22 +54,14 @@ Add `kpipe-format-json` (parsing backed by [fastjson2](https://github.com/alibab
 ```java
 import static io.github.eschizoid.kpipe.format.json.JsonFields.remove;
 
-final var registry = new MessageProcessorRegistry();
-
-final var sanitizeKey = RegistryKey.json("sanitize");
-registry.registerOperator(sanitizeKey, remove("password", "ssn"));
-
-// Inline lambdas work too. Returning null from an operator filters the record: downstream
-// sinks are skipped but the offset is still marked processed.
-final var lowerEmailKey = RegistryKey.json("lowerEmail");
-registry.registerOperator(lowerEmailKey, msg -> {
-  if (msg.get("email") instanceof String s) msg.put("email", s.toLowerCase());
-  return msg;
-});
-
-final var pipeline = registry.pipeline(JsonFormat.INSTANCE)
-    .pipe(sanitizeKey)
-    .pipe(lowerEmailKey)
+final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+    .pipe(remove("password", "ssn"))
+    // Inline lambdas work too. Returning null from an operator filters the record: downstream
+    // sinks are skipped but the offset is still marked processed.
+    .pipe(msg -> {
+      if (msg.get("email") instanceof String s) msg.put("email", s.toLowerCase());
+      return msg;
+    })
     .build();
 ```
 
@@ -88,12 +80,12 @@ final var format = AvroFormat.of("""
     {"name":"id","type":"string"},{"name":"name","type":"string"}
   ]}""");
 
-final var registry = new MessageProcessorRegistry();
-final var lowerNameKey = RegistryKey.of("lowerName", GenericRecord.class);
-registry.registerOperator(lowerNameKey, record -> {
-  if (record.get("name") != null) record.put("name", record.get("name").toString().toLowerCase());
-  return record;
-});
+final var pipeline = MessagePipeline.from(format)
+    .pipe(record -> {
+      if (record.get("name") != null) record.put("name", record.get("name").toString().toLowerCase());
+      return record;
+    })
+    .build();
 ```
 
 ## Protobuf
@@ -103,13 +95,13 @@ message:
 
 ```java
 final var format = new ProtobufFormat(CustomerProto.Customer.getDescriptor());
-final var registry = new MessageProcessorRegistry();
 
-final var clearEmailKey = RegistryKey.of("clearEmail", Message.class);
-registry.registerOperator(clearEmailKey, msg -> {
-  final var emailField = msg.getDescriptorForType().findFieldByName("email");
-  return msg.toBuilder().clearField(emailField).build();
-});
+final var pipeline = MessagePipeline.from(format)
+    .pipe(msg -> {
+      final var emailField = msg.getDescriptorForType().findFieldByName("email");
+      return msg.toBuilder().clearField(emailField).build();
+    })
+    .build();
 ```
 
 ### Editing encoded bytes

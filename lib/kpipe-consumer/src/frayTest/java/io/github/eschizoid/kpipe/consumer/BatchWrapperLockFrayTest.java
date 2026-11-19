@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -71,7 +70,7 @@ class BatchWrapperLockFrayTest {
   }
 
   private static MessagePipeline<byte[]> identityPipeline() {
-    return new MessageProcessorRegistry().pipeline(MessageFormat.bytes()).build();
+    return MessagePipeline.from(MessageFormat.bytes()).build();
   }
 
   /// Reports every batch as fully succeeded, so a size-triggered flush runs the real flush path

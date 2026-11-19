@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.MessageProcessorRegistry;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -113,7 +112,7 @@ class BatchCloseDrainFrayTest {
   }
 
   private static MessagePipeline<byte[]> identityPipeline() {
-    return new MessageProcessorRegistry().pipeline(MessageFormat.bytes()).build();
+    return MessagePipeline.from(MessageFormat.bytes()).build();
   }
 
   private static BatchSink<byte[]> succeedingSink() {
