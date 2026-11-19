@@ -69,7 +69,9 @@ public final class JsonFormat implements MessageFormat<Map<String, Object>> {
     if (data == null || data.length == 0) return null;
     try {
       return JSON.parseObject(data);
-    } catch (final JSONException e) {
+    } catch (final RuntimeException e) {
+      // fastjson2 reads only the array, so any failure here is about the bytes: a JSONException
+      // for bad syntax, and an ArrayIndexOutOfBoundsException for a truncated UTF-8 sequence.
       throw new MalformedRecordException(
         "JsonFormat.deserialize failed on " +
           data.length +

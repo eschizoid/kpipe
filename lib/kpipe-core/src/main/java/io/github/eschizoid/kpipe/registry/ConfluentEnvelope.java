@@ -23,8 +23,8 @@ public final class ConfluentEnvelope {
   ///
   /// @param data the full record bytes (non-null; callers null-check the record value first)
   /// @return the schema id encoded in the envelope
-  /// @throws MalformedRecordException if the record is shorter than [#HEADER_LENGTH] or the
-  ///     magic byte is not `0x00`
+  /// @throws MalformedRecordException if the record is shorter than [#HEADER_LENGTH], the magic
+  ///     byte is not `0x00`, or the schema id is negative
   public static int readSchemaId(final byte[] data) {
     if (data.length < HEADER_LENGTH) throw new MalformedRecordException(
       "Record too short for Confluent wire envelope: " +
@@ -41,6 +41,14 @@ public final class ConfluentEnvelope {
         WireDiagnostics.hexPreview(data)
       )
     );
-    return ((data[1] & 0xff) << 24) | ((data[2] & 0xff) << 16) | ((data[3] & 0xff) << 8) | (data[4] & 0xff);
+    final var schemaId =
+      ((data[1] & 0xff) << 24) | ((data[2] & 0xff) << 16) | ((data[3] & 0xff) << 8) | (data[4] & 0xff);
+    if (schemaId < 0) throw new MalformedRecordException(
+      "Negative schema id %d in Confluent wire envelope; schema ids are never negative (first bytes %s)".formatted(
+        schemaId,
+        WireDiagnostics.hexPreview(data)
+      )
+    );
+    return schemaId;
   }
 }

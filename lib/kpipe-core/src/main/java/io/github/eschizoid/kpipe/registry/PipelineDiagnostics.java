@@ -37,12 +37,32 @@ final class PipelineDiagnostics {
     final String formatClassName,
     final RuntimeException cause
   ) {
+    return wrap(data, configuredSkip, formatClassName, false, cause);
+  }
+
+  /// Same as [#wrap(byte\[\], int, String, RuntimeException)], without the `skipBytes(...)` hint
+  /// when `registryBacked`: a Schema Registry format reads the envelope itself, so its records
+  /// always start with `0x00` and skipping the envelope would be wrong advice.
+  ///
+  /// @param data            the bytes handed to the format, as for the other overload
+  /// @param configuredSkip  the pipeline's `skipBytes` value
+  /// @param formatClassName the simple name of the `MessageFormat` impl
+  /// @param registryBacked  whether the format reads a Schema Registry envelope itself
+  /// @param cause           the exception thrown by the format
+  /// @return the wrapped exception, as for the other overload
+  static RuntimeException wrap(
+    final byte[] data,
+    final int configuredSkip,
+    final String formatClassName,
+    final boolean registryBacked,
+    final RuntimeException cause
+  ) {
     final var msg = new StringBuilder("Deserialization failed");
     if (formatClassName != null) msg.append(" in ").append(formatClassName);
     msg.append(": ").append(cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage());
     if (data != null && data.length > 0) {
       msg.append(". Leading bytes: ").append(hexDump(data));
-      if (configuredSkip == 0 && data[0] == CONFLUENT_MAGIC) {
+      if (configuredSkip == 0 && !registryBacked && data[0] == CONFLUENT_MAGIC) {
         final var suggestion = suggestionFor(formatClassName);
         if (suggestion != null) {
           msg

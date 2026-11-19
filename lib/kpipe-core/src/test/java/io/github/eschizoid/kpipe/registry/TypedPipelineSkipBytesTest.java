@@ -39,6 +39,19 @@ class TypedPipelineSkipBytesTest {
     }
   }
 
+  private static final class NullFormat implements MessageFormat<byte[]> {
+
+    @Override
+    public byte[] serialize(final byte[] data) {
+      return data;
+    }
+
+    @Override
+    public byte[] deserialize(final byte[] data) {
+      return null;
+    }
+  }
+
   private static MessagePipeline<byte[]> pipelineWithSkip(final MessageFormat<byte[]> format, final int skip) {
     return new TypedPipelineBuilder<>(format, new MessageProcessorRegistry()).skipBytes(skip).build();
   }
@@ -114,13 +127,35 @@ class TypedPipelineSkipBytesTest {
   }
 
   @Test
-  void nullAndEmptyValuesAreMalformed() {
-    final var pipeline = pipelineWithSkip(new CapturingFormat(), 0);
-
-    final var tombstone = assertThrows(MalformedRecordException.class, () -> pipeline.deserialize(null));
+  void aNullValueIsMalformed() {
+    final var tombstone = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(new CapturingFormat(), 0).deserialize(null)
+    );
     assertTrue(tombstone.getMessage().contains("tombstone"), tombstone.getMessage());
-    final var empty = assertThrows(MalformedRecordException.class, () -> pipeline.deserialize(new byte[0]));
+  }
+
+  /// An empty value is the format's call: raw bytes pass it on, a decoding format returns null.
+  @Test
+  void anEmptyValueIsUpToTheFormat() {
+    assertArrayEquals(new byte[0], pipelineWithSkip(MessageFormat.bytes(), 0).deserialize(new byte[0]));
+
+    final var empty = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(new NullFormat(), 0).deserialize(new byte[0])
+    );
     assertEquals("The record value is empty, so there is nothing to deserialize", empty.getMessage());
+  }
+
+  /// A built pipeline never returns null, whether or not it skips a prefix.
+  @Test
+  void aFormatReturningNullIsMalformed() {
+    final var plain = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(new NullFormat(), 0).deserialize(new byte[] { 1, 2, 3 })
+    );
+    assertEquals("NullFormat returned null for a 3-byte value instead of throwing", plain.getMessage());
+    final var skipped = assertThrows(MalformedRecordException.class, () ->
+      pipelineWithSkip(new NullFormat(), 1).deserialize(new byte[] { 1, 2, 3 })
+    );
+    assertEquals("NullFormat returned null for a 3-byte value instead of throwing", skipped.getMessage());
   }
 
   @Test

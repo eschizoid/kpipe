@@ -200,10 +200,9 @@ public final class TypedPipelineBuilder<T> {
     final var pipelineOperators = List.copyOf(operators);
     final var pipelineSink = this.sink;
     final var bytesToSkip = this.skipBytes;
-    // Hoisted once at build-time — getClass().getSimpleName() walks the class hierarchy and is only
-    // used inside the catch arm of deserialize. Computing it per-record put the cost on every
-    // successful deserialize as well.
+    // getSimpleName() walks the class hierarchy; compute it once at build time, not per record.
     final var formatName = format.getClass().getSimpleName();
+    final var registryBacked = format.isSchemaRegistryBacked();
 
     return new MessagePipeline<>() {
       @Override
@@ -216,10 +215,7 @@ public final class TypedPipelineBuilder<T> {
         if (data == null) throw new MalformedRecordException(
           "The record value is null (a tombstone), so there is nothing to deserialize"
         );
-        if (data.length == 0) throw new MalformedRecordException(
-          "The record value is empty, so there is nothing to deserialize"
-        );
-        if (data.length <= bytesToSkip) throw new MalformedRecordException(
+        if (bytesToSkip > 0 && data.length <= bytesToSkip) throw new MalformedRecordException(
           "The record value is " +
             data.length +
             " bytes, so skipBytes(" +
@@ -233,17 +229,21 @@ public final class TypedPipelineBuilder<T> {
           try {
             value = format.deserialize(actualData);
           } catch (final RuntimeException e) {
-            throw PipelineDiagnostics.wrap(data, bytesToSkip, formatName, e);
+            throw PipelineDiagnostics.wrap(data, bytesToSkip, formatName, registryBacked, e);
           }
         } else {
           try {
             value = format.deserialize(data);
           } catch (final RuntimeException e) {
-            throw PipelineDiagnostics.wrap(data, 0, formatName, e);
+            throw PipelineDiagnostics.wrap(data, 0, formatName, registryBacked, e);
           }
         }
+        // An empty value is the format's call: raw bytes pass it through, the decoding formats
+        // return null for it.
         if (value == null) throw new MalformedRecordException(
-          formatName + " returned null for a " + data.length + "-byte value instead of throwing"
+          data.length == 0
+            ? "The record value is empty, so there is nothing to deserialize"
+            : formatName + " returned null for a " + data.length + "-byte value instead of throwing"
         );
         return value;
       }
