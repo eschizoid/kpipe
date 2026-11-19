@@ -653,9 +653,6 @@ lives in the GitHub epics instead (verification in #312, architecture in #313), 
 - **Transient-vs-permanent DLQ-send classification.** A failed DLQ send increments a counter, logs at ERROR, and leaves
   the offset pending so the record is reprocessed on restart. A down DLQ applies backpressure rather than silently
   dropping.
-- **Extracting a shared DLQ-or-mark helper.** The per-path asymmetries are deliberate, and `DlqTerminalContractTest`
-  enforces the lockstep a shared helper would have provided — a 2×3 matrix over both paths, with both production sites
-  carrying `LOCKSTEP:` comments naming it.
 - **A unified metrics collector / `MetricsContext` bundle, and a `RegistryModeFormat` base class.** Extract when a third
   implementation arrives, not before.
 - **`Tracer.isEnabled()`.** `Tracer.noop()` already makes the guard free, so the method would buy nothing.

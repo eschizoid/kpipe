@@ -39,7 +39,7 @@ A record whose bytes cannot be decoded fails at once with `MalformedRecordExcept
 same bytes fail the same way on every attempt. That covers a null value (a tombstone), an empty value, a value no longer
 than `skipBytes`, a Confluent envelope that is too short or has the wrong magic byte, a Protobuf message index the
 schema does not have, and a payload the format cannot parse. The record skips its retries, goes to the error handler and
-the dead-letter topic, and does not count toward the circuit breaker.
+the dead-letter topic, and does not count toward the circuit breaker unless its dead-letter send fails.
 
 A Schema Registry lookup that fails is different. The registry may be down, so that failure keeps its own type and is
 retried. To route bad bytes on their own, test `error.exception() instanceof MalformedRecordException` in the error

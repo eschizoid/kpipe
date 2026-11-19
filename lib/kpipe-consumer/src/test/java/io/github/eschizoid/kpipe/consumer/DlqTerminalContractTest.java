@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.time.Duration;
@@ -31,19 +32,20 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-/// Lockstep contract for the two failure paths that own the durable-terminal-state rule.
+/// The terminal-state contract for a failed record, asserted on both paths that reach it: the
+/// per-record path and a batch flush.
 ///
-/// The rule: a failed record's offset advances only once the record reaches a durable terminal
-/// state — parked in the DLQ on a successful send, or explicitly opted into log-and-advance when
-/// no DLQ is configured. A failed DLQ send leaves the offset pending (reprocess on restart, never
-/// silently drop). That rule is implemented TWICE — in `handleProcessingError` (per-record) and in
-/// the batch wrapper's `onBatchFailure` callback — and was deliberately left duplicated rather
-/// than extracted (the paths carry deliberate asymmetries around span handling, retry counts, and
-/// circuit-breaker ordering that a shared helper would blur).
+/// A failed record's offset advances only once the record is in a durable terminal state: parked
+/// in the DLQ on a successful send, or explicitly opted into log-and-advance when no DLQ is
+/// configured. A failed DLQ send leaves the offset pending, so the record is reprocessed on
+/// restart and never silently dropped.
 ///
-/// This table is the drift guard: every cell of {path} × {DLQ scenario} asserts the identical
-/// terminal outcome on both paths. If a future change touches one path's DLQ-or-mark block and
-/// not the other, a cell here fails.
+/// The record adds one failure to the circuit breaker when a retry might have fixed it, or when
+/// its DLQ send failed. A non-retryable record that is safely parked stays out of the breaker's
+/// window; a DLQ that is down is a downstream outage and counts.
+///
+/// Every cell of {path} × {failure} × {DLQ scenario} asserts the same outcome on both paths, with
+/// a breaker that trips on a single failure.
 class DlqTerminalContractTest {
 
   private static final String TOPIC = "contract-topic";
@@ -55,6 +57,11 @@ class DlqTerminalContractTest {
     BATCH,
   }
 
+  enum Failure {
+    RETRYABLE,
+    NON_RETRYABLE,
+  }
+
   enum DlqScenario {
     SEND_OK,
     SEND_FAIL,
@@ -62,25 +69,30 @@ class DlqTerminalContractTest {
   }
 
   static Stream<Arguments> cells() {
-    return Stream.of(
-      // marked?, dlqSent, dlqFailed — identical per scenario across BOTH paths, by contract.
-      Arguments.of(Path.PER_RECORD, DlqScenario.SEND_OK, true, 1L, 0L),
-      Arguments.of(Path.PER_RECORD, DlqScenario.SEND_FAIL, false, 0L, 1L),
-      Arguments.of(Path.PER_RECORD, DlqScenario.NOT_CONFIGURED, true, 0L, 0L),
-      Arguments.of(Path.BATCH, DlqScenario.SEND_OK, true, 1L, 0L),
-      Arguments.of(Path.BATCH, DlqScenario.SEND_FAIL, false, 0L, 1L),
-      Arguments.of(Path.BATCH, DlqScenario.NOT_CONFIGURED, true, 0L, 0L)
+    return Stream.of(Path.values()).flatMap(path ->
+      Stream.of(
+        // marked?, dlqSent, dlqFailed, breaker tripped? — identical per cell across
+        // BOTH paths.
+        Arguments.of(path, Failure.RETRYABLE, DlqScenario.SEND_OK, true, 1L, 0L, true),
+        Arguments.of(path, Failure.RETRYABLE, DlqScenario.SEND_FAIL, false, 0L, 1L, true),
+        Arguments.of(path, Failure.RETRYABLE, DlqScenario.NOT_CONFIGURED, true, 0L, 0L, true),
+        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.SEND_OK, true, 1L, 0L, false),
+        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.SEND_FAIL, false, 0L, 1L, true),
+        Arguments.of(path, Failure.NON_RETRYABLE, DlqScenario.NOT_CONFIGURED, true, 0L, 0L, false)
+      )
     );
   }
 
-  @ParameterizedTest(name = "{0} × {1} → marked={2} dlqSent={3} dlqFailed={4}")
+  @ParameterizedTest(name = "{0} × {1} × {2} → marked={3} dlqSent={4} dlqFailed={5} tripped={6}")
   @MethodSource("cells")
   void bothFailurePathsShareTheDurableTerminalContract(
     final Path path,
+    final Failure failure,
     final DlqScenario scenario,
     final boolean expectMarked,
     final long expectDlqSent,
-    final long expectDlqFailed
+    final long expectDlqFailed,
+    final boolean expectTripped
   ) throws Exception {
     final var recorder = new RecordingOffsetManager();
     final var errorsSeen = new AtomicInteger();
@@ -90,6 +102,7 @@ class DlqTerminalContractTest {
       .withProperties(byteProperties())
       .withOffsetManager(recorder)
       .withErrorHandler(_ -> errorsSeen.incrementAndGet())
+      .withCircuitBreaker(new CircuitBreakerController(1.0, 1, Duration.ofMinutes(1)))
       .withPollTimeout(Duration.ofMillis(10));
 
     if (scenario != DlqScenario.NOT_CONFIGURED) {
@@ -101,7 +114,7 @@ class DlqTerminalContractTest {
         .withTopic(TOPIC)
         .withPipeline(
           TestPipelines.sideEffect(_ -> {
-            throw new RuntimeException("processor always fails");
+            throw failure("processor always fails", failure);
           })
         )
         .withRetry(0, Duration.ofMillis(1));
@@ -110,7 +123,7 @@ class DlqTerminalContractTest {
         final var record = new ConsumerRecord<>(TOPIC, 0, OFFSET, "k".getBytes(UTF_8), "v".getBytes(UTF_8));
         recorder.trackOffset(record);
         consumer.processRecord(record);
-        assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed);
+        assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed, expectTripped);
       }
     } else {
       // Batch: the pipeline passes, the batch sink throws, so the single record's whole-batch
@@ -121,7 +134,7 @@ class DlqTerminalContractTest {
           TOPIC,
           TestPipelines.sideEffect(v -> v),
           BatchSink.ofVoid(_ -> {
-            throw new RuntimeException("batch sink always fails");
+            throw failure("batch sink always fails", failure);
           }),
           BatchPolicy.ofSize(1)
         );
@@ -136,7 +149,7 @@ class DlqTerminalContractTest {
           awaitCondition(() -> consumer.metrics().records().dlqFailed() >= 1, 5_000);
         }
         awaitCondition(() -> errorsSeen.get() >= 1, 5_000);
-        assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed);
+        assertCell(consumer, recorder, errorsSeen, expectMarked, expectDlqSent, expectDlqFailed, expectTripped);
       }
     }
   }
@@ -147,7 +160,8 @@ class DlqTerminalContractTest {
     final AtomicInteger errorsSeen,
     final boolean expectMarked,
     final long expectDlqSent,
-    final long expectDlqFailed
+    final long expectDlqFailed,
+    final boolean expectTripped
   ) {
     assertTrue(recorder.tracked.contains(OFFSET), "record must have been tracked (guards the negative assertions)");
     if (expectMarked) {
@@ -158,6 +172,15 @@ class DlqTerminalContractTest {
     assertEquals(expectDlqSent, consumer.metrics().records().dlqSent(), "dlqSent");
     assertEquals(expectDlqFailed, consumer.metrics().records().dlqFailed(), "dlqFailed");
     assertEquals(1, errorsSeen.get(), "error handler must observe the failure exactly once");
+    assertEquals(
+      expectTripped ? CircuitBreakerState.OPEN : CircuitBreakerState.CLOSED,
+      consumer.health().circuitBreaker(),
+      "circuit breaker"
+    );
+  }
+
+  private static RuntimeException failure(final String message, final Failure failure) {
+    return failure == Failure.NON_RETRYABLE ? new NonRetryableException(message) : new RuntimeException(message);
   }
 
   @SuppressWarnings("unchecked")

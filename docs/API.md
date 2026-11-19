@@ -188,7 +188,7 @@ an existing field with a rename, remove it first: `.pipe(remove("timestamp")).pi
 
 A record that fails `require` or `rename` fails with `NonRetryableException`: the same record would fail again, so it
 skips the retries and goes straight to the error handler and the dead-letter topic when one is configured, and it does
-not count toward the circuit breaker. To skip a record without a field instead, use
+not count toward the circuit breaker unless its dead-letter send fails. To skip a record without a field instead, use
 `filter(record -> record.get("id") != null)`.
 
 The operators change the record's map in place and return it. That is safe in a pipeline, where a record's map belongs
