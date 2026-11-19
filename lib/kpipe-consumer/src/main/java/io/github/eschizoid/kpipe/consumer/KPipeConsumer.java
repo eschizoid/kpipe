@@ -11,6 +11,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.TopicPartition;
@@ -548,7 +549,7 @@ public class KPipeConsumer implements AutoCloseable {
 
     if (offsetManager != null) offsetManager.start();
     batchWrappers.values().forEach(BatchPipelineWrapper::start);
-    kafkaConsumer.subscribe(topics, pausingOnAssign(rebalanceListener));
+    kafkaConsumer.subscribe(topics, pausingOnAssign(rebalanceListener, this::isPaused, kafkaConsumer));
 
     final var threadLabel = topics.size() == 1 ? topics.iterator().next() : "topics-%d".formatted(topics.size());
     final var thread = Thread.ofVirtual()
@@ -655,8 +656,14 @@ public class KPipeConsumer implements AutoCloseable {
   /// inside `poll`, the one thread allowed to touch the Kafka consumer.
   ///
   /// @param delegate the configured listener, or null when there is none
+  /// @param paused   whether a pause source holds a pause now
+  /// @param kafka    the Kafka consumer whose new partitions are paused
   /// @return a listener that runs `delegate` first, then pauses new partitions while paused
-  private ConsumerRebalanceListener pausingOnAssign(final ConsumerRebalanceListener delegate) {
+  static ConsumerRebalanceListener pausingOnAssign(
+    final ConsumerRebalanceListener delegate,
+    final BooleanSupplier paused,
+    final Consumer<?, ?> kafka
+  ) {
     return new ConsumerRebalanceListener() {
       @Override
       public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
@@ -666,7 +673,7 @@ public class KPipeConsumer implements AutoCloseable {
       @Override
       public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
         if (delegate != null) delegate.onPartitionsAssigned(partitions);
-        if (isPaused()) kafkaConsumer.pause(partitions);
+        if (paused.getAsBoolean()) kafka.pause(partitions);
       }
 
       @Override
@@ -874,6 +881,11 @@ public class KPipeConsumer implements AutoCloseable {
   /// self-terminates (uncaught throw, internal error). All terminal paths CAS-guard
   /// [#releaseConstructedResources] so resources are freed exactly once regardless of which
   /// path runs first.
+  ///
+  /// A `close()` that finds a shutdown already under way waits for it to finish. Call it from
+  /// outside the pipeline: called from a record, sink or callback thread, it waits for a teardown
+  /// that is itself waiting for that thread, until the drain and thread-termination budgets run
+  /// out.
   ///
   /// Idempotent — calling it multiple times has no additional effect.
   @Override

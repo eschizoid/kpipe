@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import org.apache.kafka.clients.consumer.CloseOptions;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -851,6 +852,73 @@ class KPipeConsumerTest {
       release.countDown();
       consumer.close();
     }
+  }
+
+  /// A graceful shutdown of a running consumer drains it, closes it, and reports that nothing is
+  /// left in flight.
+  @Test
+  void shutdownGracefullyReportsADrainedConsumer() throws InterruptedException {
+    final var mock = singlePartitionMock();
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    consumer.start();
+    TestAwaits.pollUntil(() -> consumer.metrics().records().processed() == 1L, Duration.ofSeconds(5), "processed");
+
+    assertTrue(consumer.shutdownGracefully(Duration.ofSeconds(5)));
+    assertTrue(mock.closed());
+    assertTrue(consumer.shutdownGracefully(Duration.ofSeconds(5)), "a closed consumer has nothing left in flight");
+  }
+
+  /// A graceful shutdown that finds the consumer already shutting down waits for that shutdown to
+  /// finish before it reports, so it returns with the Kafka consumer closed.
+  @Test
+  void shutdownGracefullyDuringAShutdownWaitsForIt() throws InterruptedException {
+    final var closeGate = new CountDownLatch(1);
+    final var mock = new MockConsumer<byte[], byte[]>("earliest") {
+      @Override
+      public synchronized void subscribe(final Collection<String> topics, final ConsumerRebalanceListener cb) {}
+
+      @Override
+      public void close(final CloseOptions options) {
+        try {
+          closeGate.await();
+        } catch (final InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+        super.close(options);
+      }
+    };
+    final var partition = new TopicPartition(TOPIC, 0);
+    mock.assign(List.of(partition));
+    mock.updateBeginningOffsets(Map.of(partition, 0L));
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    consumer.start();
+    final var closer = Thread.ofVirtual().start(consumer::close);
+    TestAwaits.pollUntil(() -> !consumer.isRunning(), Duration.ofSeconds(5), "the first shutdown has begun");
+
+    final var drained = new AtomicBoolean();
+    final var graceful = Thread.ofVirtual().start(() ->
+      drained.set(consumer.shutdownGracefully(Duration.ofSeconds(10)))
+    );
+    assertFalse(graceful.join(Duration.ofMillis(300)), "shutdownGracefully waits while the teardown is held open");
+
+    closeGate.countDown();
+    assertTrue(graceful.join(Duration.ofSeconds(10)), "shutdownGracefully returns once the teardown ends");
+    assertTrue(drained.get());
+    assertTrue(mock.closed(), "the Kafka consumer is closed when shutdownGracefully returns");
+    assertTrue(closer.join(Duration.ofSeconds(5)));
   }
 
   private static MockConsumer<byte[], byte[]> singlePartitionMock() {
