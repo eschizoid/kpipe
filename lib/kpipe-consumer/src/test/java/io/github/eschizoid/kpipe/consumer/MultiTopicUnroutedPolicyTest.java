@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -204,7 +204,7 @@ class MultiTopicUnroutedPolicyTest {
     final var routedProcessed = new AtomicInteger(0);
     final var sharedQueue = new ConcurrentLinkedQueue<ConsumerCommand>();
 
-    final MessagePipeline<byte[]> routedPipeline = TestPipelines.sideEffect(v -> {
+    final Pipeline<byte[]> routedPipeline = TestPipelines.sideEffect(v -> {
       routedProcessed.incrementAndGet();
       return v;
     });

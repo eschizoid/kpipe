@@ -177,7 +177,7 @@ KPipe.multi(kafkaProps)
 
 ## Built-in operators
 
-`io.github.eschizoid.kpipe.registry.Operators` provides operators for any payload type: `filter`, `drop`, `peek` and
+`io.github.eschizoid.kpipe.pipeline.Operators` provides operators for any payload type: `filter`, `drop`, `peek` and
 `compose`.
 
 `io.github.eschizoid.kpipe.format.json.JsonFields` changes the fields of a JSON record:
@@ -212,6 +212,6 @@ decoding them; see [FORMATS.md](FORMATS.md#editing-encoded-bytes).
 
 ## The explicit API
 
-Everything above is a facade over `MessagePipeline.from(format)` + `KPipeConsumerBuilder`. Drop down when you need
-custom offset managers, one built pipeline shared by several consumers, custom Kafka consumer factories, or shutdown
-tuning. The capability map and worked examples are in [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).
+Everything above is a facade over `Pipeline.from(format)` + `KPipeConsumerBuilder`. Drop down when you need custom
+offset managers, one built pipeline shared by several consumers, custom Kafka consumer factories, or shutdown tuning.
+The capability map and worked examples are in [ESCAPE-HATCHES.md](ESCAPE-HATCHES.md).

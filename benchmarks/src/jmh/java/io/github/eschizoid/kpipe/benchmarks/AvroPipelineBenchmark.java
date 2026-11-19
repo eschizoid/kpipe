@@ -1,8 +1,8 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
@@ -39,8 +39,8 @@ public class AvroPipelineBenchmark {
   private AvroFormat format;
   private byte[] avroBytes;
   private byte[] avroWithMagicBytes;
-  private MessagePipeline<GenericRecord> kpipePipeline;
-  private MessagePipeline<GenericRecord> kpipeMagicPipeline;
+  private Pipeline<GenericRecord> kpipePipeline;
+  private Pipeline<GenericRecord> kpipeMagicPipeline;
 
   @Setup
   public void setup() throws IOException {
@@ -95,8 +95,8 @@ public class AvroPipelineBenchmark {
       return r;
     };
 
-    kpipePipeline = MessagePipeline.from(format).pipe(setProcessed).pipe(renameProcessed).build();
-    kpipeMagicPipeline = MessagePipeline.from(format).skipBytes(5).pipe(setProcessed).pipe(renameProcessed).build();
+    kpipePipeline = Pipeline.from(format).pipe(setProcessed).pipe(renameProcessed).build();
+    kpipeMagicPipeline = Pipeline.from(format).skipBytes(5).pipe(setProcessed).pipe(renameProcessed).build();
   }
 
   @Benchmark

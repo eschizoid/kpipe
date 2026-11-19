@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,7 +18,7 @@ class WireDiagnosticsTest {
 
   @Test
   void hexPreviewRendersLowercaseSpaceDelimited() {
-    assertEquals("00 01 ff", WireDiagnostics.hexPreview(new byte[] {0x00, 0x01, (byte) 0xff}));
+    assertEquals("00 01 ff", WireDiagnostics.hexPreview(new byte[] { 0x00, 0x01, (byte) 0xff }));
   }
 
   @Test
@@ -38,11 +38,11 @@ class WireDiagnosticsTest {
 
   @Test
   void hexDumpRendersUpToMaxBytesWithoutSuffixWhenNotTruncated() {
-    assertEquals("00 01 ff", WireDiagnostics.hexDump(new byte[] {0x00, 0x01, (byte) 0xff}, 8));
+    assertEquals("00 01 ff", WireDiagnostics.hexDump(new byte[] { 0x00, 0x01, (byte) 0xff }, 8));
   }
 
   @Test
   void hexDumpAppendsTotalCountWhenTruncated() {
-    assertEquals("00 01 …(4 bytes total)", WireDiagnostics.hexDump(new byte[] {0x00, 0x01, 0x02, 0x03}, 2));
+    assertEquals("00 01 …(4 bytes total)", WireDiagnostics.hexDump(new byte[] { 0x00, 0x01, 0x02, 0x03 }, 2));
   }
 }

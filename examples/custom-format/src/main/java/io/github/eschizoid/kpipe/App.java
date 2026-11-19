@@ -2,7 +2,7 @@ package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.config.AppConfig;
 import io.github.eschizoid.kpipe.consumer.config.KafkaConsumerConfig;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -87,7 +87,9 @@ public final class App {
       final var line = new String(data, StandardCharsets.UTF_8).strip();
       final var parts = line.split(",", -1);
       if (parts.length != 3) {
-        throw new IllegalArgumentException("Expected 3 CSV fields (id,sku,quantity), got " + parts.length + ": " + line);
+        throw new IllegalArgumentException(
+          "Expected 3 CSV fields (id,sku,quantity), got " + parts.length + ": " + line
+        );
       }
       try {
         return new CsvOrder(parts[0].strip(), parts[1].strip(), Integer.parseInt(parts[2].strip()));

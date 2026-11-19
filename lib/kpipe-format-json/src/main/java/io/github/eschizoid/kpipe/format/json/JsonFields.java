@@ -1,6 +1,6 @@
 package io.github.eschizoid.kpipe.format.json;
 
-import io.github.eschizoid.kpipe.registry.NonRetryableException;
+import io.github.eschizoid.kpipe.pipeline.NonRetryableException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;

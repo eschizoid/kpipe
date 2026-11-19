@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -9,14 +9,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import org.junit.jupiter.api.Test;
 
-/// Verifies the [MessagePipeline] error contract:
+/// Verifies the [Pipeline] error contract:
 /// - exceptions thrown by `deserialize` propagate (no silent swallowing) — `Result` is reserved
 ///   for the `process()` boundary.
-/// - [MessagePipeline#process] returns `Result<T>`: `Passed`, `Filtered`, or `Failed`. Callers
+/// - [Pipeline#process] returns `Result<T>`: `Passed`, `Filtered`, or `Failed`. Callers
 ///   `switch` on the variant directly; there are no byte-level convenience entry points that
 ///   unwrap to `null`/throw.
-/// - [MessagePipeline#deserializeOrFail] throws if `deserialize` violates the no-null contract.
-class MessagePipelineContractTest {
+/// - [Pipeline#deserializeOrFail] throws if `deserialize` violates the no-null contract.
+class PipelineContractTest {
 
   private static final byte[] INPUT = new byte[] { 1, 2, 3 };
 
@@ -91,11 +91,11 @@ class MessagePipelineContractTest {
     Result<T> apply(T value);
   }
 
-  private static MessagePipeline<String> pipelineWithDeserialize(final DeserializeFn<String> fn) {
+  private static Pipeline<String> pipelineWithDeserialize(final DeserializeFn<String> fn) {
     return new TestPipeline<>(fn, Result::passed, null);
   }
 
-  private static MessagePipeline<String> pipelineWithProcess(final ProcessFn<String> fn) {
+  private static Pipeline<String> pipelineWithProcess(final ProcessFn<String> fn) {
     return new TestPipeline<>(_ -> "v", fn, null);
   }
 
@@ -106,7 +106,7 @@ class MessagePipelineContractTest {
     DeserializeFn<T> deserializer,
     ProcessFn<T> processor,
     MessageSink<T> sink
-  ) implements MessagePipeline<T> {
+  ) implements Pipeline<T> {
     @Override
     public T deserialize(final byte[] data) {
       return deserializer.apply(data);

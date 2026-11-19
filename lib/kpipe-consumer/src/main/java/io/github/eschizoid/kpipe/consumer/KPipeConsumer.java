@@ -1,7 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -47,7 +47,7 @@ import org.apache.kafka.common.errors.WakeupException;
 /// Example usage:
 ///
 /// ```java
-/// final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+/// final var pipeline = Pipeline.from(JsonFormat.INSTANCE)
 ///     .toSink(new JsonConsoleSink<>())
 ///     .build();
 ///
@@ -176,11 +176,11 @@ public class KPipeConsumer implements AutoCloseable {
       // `build()` sets `topics` to the UNION of regular + batch routes for Kafka subscription, so
       // the homogeneous branch must filter out batch-route topics to avoid replicating the regular
       // pipeline onto a topic that's owned by a batch wrapper.
-      final Map<String, MessagePipeline<?>> pipelines;
+      final Map<String, Pipeline<?>> pipelines;
       if (builder.pipelinesPerTopic != null) {
         pipelines = builder.pipelinesPerTopic;
       } else if (builder.pipeline != null) {
-        final var map = new LinkedHashMap<String, MessagePipeline<?>>(builder.topics.size());
+        final var map = new LinkedHashMap<String, Pipeline<?>>(builder.topics.size());
         for (final var t : builder.topics) if (!builder.batchSpecs.containsKey(t)) map.put(t, builder.pipeline);
         pipelines = Map.copyOf(map);
       } else {

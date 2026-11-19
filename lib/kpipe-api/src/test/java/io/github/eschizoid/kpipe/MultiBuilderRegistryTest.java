@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.pipeline.SchemaResolver;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
 

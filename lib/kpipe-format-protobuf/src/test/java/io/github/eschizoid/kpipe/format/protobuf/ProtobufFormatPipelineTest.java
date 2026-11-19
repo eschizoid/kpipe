@@ -8,9 +8,9 @@ import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,13 +23,9 @@ class ProtobufFormatPipelineTest {
   /// Test helper: drives `bytes` through the full pipeline cycle (deserialize → process →
   /// serialize) and returns the resulting bytes. Filtered records return null; failures
   /// re-throw the cause. Replaces the byte-level `apply(byte[])` entry point that was removed
-  /// from `MessagePipeline` so production callers couldn't accidentally rely on its
+  /// from `Pipeline` so production callers couldn't accidentally rely on its
   /// null-for-filter / rethrow-for-failure semantics.
-  private static <T> byte[] roundTrip(
-    final MessageFormat<T> format,
-    final MessagePipeline<T> pipeline,
-    final byte[] bytes
-  ) {
+  private static <T> byte[] roundTrip(final MessageFormat<T> format, final Pipeline<T> pipeline, final byte[] bytes) {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
       case Result.Passed<T> p -> format.serialize(p.value());
@@ -64,7 +60,7 @@ class ProtobufFormatPipelineTest {
     final UnaryOperator<Message> deactivate = msg ->
       msg.toBuilder().setField(msg.getDescriptorForType().findFieldByName("active"), false).build();
 
-    final var pipeline = MessagePipeline.from(format).pipe(setName).pipe(deactivate).build();
+    final var pipeline = Pipeline.from(format).pipe(setName).pipe(deactivate).build();
 
     final var input = format.serialize(createTestMessage());
     final var output = roundTrip(format, pipeline, input);
@@ -79,13 +75,13 @@ class ProtobufFormatPipelineTest {
 
   @Test
   void shouldHandleNullInputInPipeline() {
-    final var pipeline = MessagePipeline.from(format).build();
+    final var pipeline = Pipeline.from(format).build();
     assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, null));
   }
 
   @Test
   void shouldHandleEmptyInputInPipeline() {
-    final var pipeline = MessagePipeline.from(format).build();
+    final var pipeline = Pipeline.from(format).build();
     assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, new byte[0]));
   }
 

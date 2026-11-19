@@ -3,8 +3,8 @@ package io.github.eschizoid.kpipe.consumer;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -69,8 +69,8 @@ class BatchWrapperLockFrayTest {
     return new BatchPipelineWrapper<>(TOPIC, identityPipeline(), succeedingSink(), policy, null, noopCallbacks());
   }
 
-  private static MessagePipeline<byte[]> identityPipeline() {
-    return MessagePipeline.from(MessageFormat.bytes()).build();
+  private static Pipeline<byte[]> identityPipeline() {
+    return Pipeline.from(MessageFormat.bytes()).build();
   }
 
   /// Reports every batch as fully succeeded, so a size-triggered flush runs the real flush path

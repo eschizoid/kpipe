@@ -2,24 +2,20 @@ package io.github.eschizoid.kpipe.format.json;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
-/// JSON pipelines built with [MessagePipeline#from] compose their operators in order.
+/// JSON pipelines built with [Pipeline#from] compose their operators in order.
 class JsonPipelineCompositionTest {
 
   /// Test helper: drives `bytes` through the full pipeline cycle (deserialize → process →
   /// serialize) and returns the resulting bytes. Filtered records return null; failures
   /// re-throw the cause.
-  private static <T> byte[] roundTrip(
-    final MessageFormat<T> format,
-    final MessagePipeline<T> pipeline,
-    final byte[] bytes
-  ) {
+  private static <T> byte[] roundTrip(final MessageFormat<T> format, final Pipeline<T> pipeline, final byte[] bytes) {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
       case Result.Passed<T> p -> format.serialize(p.value());
@@ -34,7 +30,7 @@ class JsonPipelineCompositionTest {
 
   @Test
   void shouldComposeJsonProcessorChain() {
-    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+    final var pipeline = Pipeline.from(JsonFormat.INSTANCE)
       .pipe(obj -> {
         obj.put("source", "test-app");
         return obj;
@@ -62,7 +58,7 @@ class JsonPipelineCompositionTest {
       throw new RuntimeException("Test exception");
     };
 
-    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(operator).build();
+    final var pipeline = Pipeline.from(JsonFormat.INSTANCE).pipe(operator).build();
 
     final var ex = assertThrows(RuntimeException.class, () ->
       roundTrip(JsonFormat.INSTANCE, pipeline, "{}".getBytes())
@@ -81,7 +77,7 @@ class JsonPipelineCompositionTest {
       return message;
     };
 
-    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+    final var pipeline = Pipeline.from(JsonFormat.INSTANCE)
       .when(obj -> !obj.isEmpty(), trueOp, falseOp)
       .build();
 
@@ -94,7 +90,7 @@ class JsonPipelineCompositionTest {
 
   @Test
   void shouldComposeSeveralOperatorsInOrder() {
-    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+    final var pipeline = Pipeline.from(JsonFormat.INSTANCE)
       .pipe(obj -> {
         obj.put("b1", "v1");
         return obj;

@@ -7,10 +7,10 @@ import static org.mockito.Mockito.*;
 
 import io.github.eschizoid.kpipe.format.json.JsonFields;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
+import io.github.eschizoid.kpipe.pipeline.NonRetryableException;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.NonRetryableException;
-import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -266,8 +266,8 @@ class KPipeDlqTest {
     }
   }
 
-  private static MessagePipeline<String> nullDeserializePipeline() {
-    return new MessagePipeline<>() {
+  private static Pipeline<String> nullDeserializePipeline() {
+    return new Pipeline<>() {
       @Override
       public String deserialize(final byte[] data) {
         return null;
@@ -408,7 +408,7 @@ class KPipeDlqTest {
       final var consumer = KPipeConsumer.builder()
         .withProperties(byteProperties())
         .withTopic(TOPIC)
-        .withPipeline(MessagePipeline.from(JsonFormat.INSTANCE).pipe(JsonFields.require("id")).build())
+        .withPipeline(Pipeline.from(JsonFormat.INSTANCE).pipe(JsonFields.require("id")).build())
         .withRetry(3, Duration.ofSeconds(30))
         .withDeadLetterTopic(DLQ_TOPIC)
         .withKafkaProducer(mockProducer)

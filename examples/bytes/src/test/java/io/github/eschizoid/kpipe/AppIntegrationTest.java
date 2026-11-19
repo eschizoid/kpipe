@@ -12,8 +12,8 @@ import io.github.eschizoid.kpipe.consumer.OffsetManager;
 import io.github.eschizoid.kpipe.consumer.OffsetState;
 import io.github.eschizoid.kpipe.consumer.OffsetStatistics;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.test.CapturingSink;
 import java.time.Duration;
 import java.util.Collection;
@@ -65,10 +65,7 @@ class AppIntegrationTest {
     };
 
     final var capturingSink = new CapturingSink<byte[]>();
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
-      .pipe(hexPreviewOperator)
-      .toSink(capturingSink)
-      .build();
+    final var pipeline = Pipeline.from(MessageFormat.bytes()).pipe(hexPreviewOperator).toSink(capturingSink).build();
 
     final var offsetManager = new MarkRecordingOffsetManager();
     final var mock = seededWith(BINARY_PAYLOAD, LONG_PAYLOAD);

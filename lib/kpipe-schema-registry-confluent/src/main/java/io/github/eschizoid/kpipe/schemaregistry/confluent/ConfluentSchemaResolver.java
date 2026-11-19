@@ -1,6 +1,6 @@
 package io.github.eschizoid.kpipe.schemaregistry.confluent;
 
-import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.pipeline.SchemaResolver;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;

@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -25,13 +25,9 @@ class AvroFormatRoundTripTest {
   /// Test helper: drives `bytes` through the full pipeline cycle (deserialize → process →
   /// serialize) and returns the resulting bytes. Filtered records return null; failures
   /// re-throw the cause. Replaces the byte-level `apply(byte[])` entry point that was removed
-  /// from `MessagePipeline` so production callers couldn't accidentally rely on its
+  /// from `Pipeline` so production callers couldn't accidentally rely on its
   /// null-for-filter / rethrow-for-failure semantics.
-  private static <T> byte[] roundTrip(
-    final MessageFormat<T> format,
-    final MessagePipeline<T> pipeline,
-    final byte[] bytes
-  ) {
+  private static <T> byte[] roundTrip(final MessageFormat<T> format, final Pipeline<T> pipeline, final byte[] bytes) {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
       case Result.Passed<T> p -> format.serialize(p.value());
@@ -56,7 +52,7 @@ class AvroFormatRoundTripTest {
   @Test
   void testParseAvroInvalidRecord() {
     final var format = AvroFormat.of(SIMPLE_SCHEMA_JSON);
-    final var pipeline = MessagePipeline.from(format).build();
+    final var pipeline = Pipeline.from(format).build();
     final var invalidAvroBytes = "invalid avro".getBytes(StandardCharsets.UTF_8);
 
     assertThrows(RuntimeException.class, () -> roundTrip(format, pipeline, invalidAvroBytes));
@@ -67,7 +63,7 @@ class AvroFormatRoundTripTest {
     final var format = AvroFormat.of(SIMPLE_SCHEMA_JSON);
     final var avroBytes = encode(format.schema(), "test");
 
-    final var pipeline = MessagePipeline.from(format).build();
+    final var pipeline = Pipeline.from(format).build();
     final var result = roundTrip(format, pipeline, avroBytes);
 
     assertNotNull(result);
@@ -79,7 +75,7 @@ class AvroFormatRoundTripTest {
     final var format = AvroFormat.of(SIMPLE_SCHEMA_JSON);
     final var avroBytes = encode(format.schema(), "test-value");
 
-    final var pipeline = MessagePipeline.from(format).build();
+    final var pipeline = Pipeline.from(format).build();
     final var result = roundTrip(format, pipeline, avroBytes);
 
     assertNotNull(result);

@@ -1,7 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
@@ -30,12 +30,12 @@ public final class KPipeConsumerBuilder {
   /// naming
   /// per-record outcomes; void-style consumers can use [BatchSink#ofVoid] to opt into
   /// whole-batch success/failure semantics.
-  record BatchSpec<T>(String topic, MessagePipeline<T> pipeline, BatchSink<T> sink, BatchPolicy policy) {}
+  record BatchSpec<T>(String topic, Pipeline<T> pipeline, BatchSink<T> sink, BatchPolicy policy) {}
 
   Properties kafkaProps;
   Set<String> topics;
-  MessagePipeline<?> pipeline;
-  Map<String, MessagePipeline<?>> pipelinesPerTopic;
+  Pipeline<?> pipeline;
+  Map<String, Pipeline<?>> pipelinesPerTopic;
   final Map<String, BatchSpec<?>> batchSpecs = new LinkedHashMap<>();
   Duration pollTimeout = ConsumerDefaults.POLL_TIMEOUT;
   KPipeConsumer.ErrorHandler attemptFailedObserver;
@@ -101,7 +101,7 @@ public final class KPipeConsumerBuilder {
 
   /// Sets multiple Kafka topics to consume from with a single shared pipeline.
   ///
-  /// All topics must produce the same payload type because they share one [MessagePipeline].
+  /// All topics must produce the same payload type because they share one [Pipeline].
   /// For per-topic typing, run separate consumers.
   ///
   /// @param topics The topic names (must be non-empty)
@@ -124,15 +124,15 @@ public final class KPipeConsumerBuilder {
   /// Sets the pipeline to process each consumed message.
   ///
   /// The consumer always operates on `byte[]` at the boundary; format SerDe lives inside the
-  /// pipeline. The pipeline must be a [MessagePipeline] — typically produced by
-  /// `MessagePipeline.from(format).build()`.
+  /// pipeline. The pipeline must be a [Pipeline] — typically produced by
+  /// `Pipeline.from(format).build()`.
   ///
   /// All subscribed topics share this pipeline (homogeneous case). For heterogeneous
   /// per-topic pipelines, use [#withPipelines(Map)].
   ///
   /// @param pipeline The pipeline to apply to message values
   /// @return This builder instance for method chaining
-  public KPipeConsumerBuilder withPipeline(final MessagePipeline<?> pipeline) {
+  public KPipeConsumerBuilder withPipeline(final Pipeline<?> pipeline) {
     this.pipeline = Objects.requireNonNull(pipeline, "pipeline cannot be null");
     return this;
   }
@@ -147,7 +147,7 @@ public final class KPipeConsumerBuilder {
   ///
   /// @param pipelinesPerTopic the topic → pipeline map (must be non-empty)
   /// @return This builder instance for method chaining
-  public KPipeConsumerBuilder withPipelines(final Map<String, MessagePipeline<?>> pipelinesPerTopic) {
+  public KPipeConsumerBuilder withPipelines(final Map<String, Pipeline<?>> pipelinesPerTopic) {
     Objects.requireNonNull(pipelinesPerTopic, "pipelinesPerTopic cannot be null");
     if (pipelinesPerTopic.isEmpty()) throw new IllegalArgumentException("pipelinesPerTopic cannot be empty");
     this.pipelinesPerTopic = Map.copyOf(pipelinesPerTopic);
@@ -182,7 +182,7 @@ public final class KPipeConsumerBuilder {
   /// @return this builder instance for method chaining
   public <T> KPipeConsumerBuilder withBatchPipeline(
     final String topic,
-    final MessagePipeline<T> pipeline,
+    final Pipeline<T> pipeline,
     final BatchSink<T> sink,
     final BatchPolicy policy
   ) {

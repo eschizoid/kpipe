@@ -1,8 +1,8 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 /// Identity-passthrough [MessageFormat] for `byte[]` payloads.
 ///
-/// Use this when you want the [TypedPipelineBuilder] ergonomics — fluent `pipe(...)`
+/// Use this when you want the [Pipeline.Builder] ergonomics — fluent `pipe(...)`
 /// and `toSink(...)` — but don't need real deserialization. Common cases:
 ///
 /// - Tests that exercise consumer mechanics (backpressure, retry, offsets) without
@@ -12,7 +12,7 @@ package io.github.eschizoid.kpipe.registry;
 ///
 /// Example:
 /// ```java
-/// final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+/// final var pipeline = Pipeline.from(MessageFormat.bytes())
 ///     .pipe(b -> { metrics.inc(); return b; })
 ///     .toSink(b -> System.out.println(new String(b)))
 ///     .build();

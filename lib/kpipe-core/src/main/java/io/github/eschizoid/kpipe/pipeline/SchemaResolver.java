@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 /// SPI for fetching a schema's text by the integer ID embedded in a wire-format envelope.
 ///

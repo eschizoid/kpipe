@@ -1,14 +1,14 @@
 package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /// Package-private [Sink] impl for batch terminals. Builds a sink-less
-/// [io.github.eschizoid.kpipe.registry.MessagePipeline]
+/// [io.github.eschizoid.kpipe.pipeline.Pipeline]
 /// from the stream's operator chain (deserialize → operators → return value) and wires it into
 /// [KPipeConsumerBuilder#withBatchPipeline] together with the configured [BatchSink] and
 /// [BatchPolicy]. Every consumer-wide setting the underlying [DefaultStream] carries (processing
@@ -63,8 +63,8 @@ final class DefaultBatchSink<T> implements Sink<T> {
 
   /// Builds the typed pipeline (deserialize → operators → return value) used by the consumer to
   /// turn each `byte[]` into a `T` before enqueueing into the batch buffer.
-  MessagePipeline<T> buildPipeline() {
-    final var pipelineBuilder = MessagePipeline.from(stream.format()).skipBytes(stream.skipBytes());
+  Pipeline<T> buildPipeline() {
+    final var pipelineBuilder = Pipeline.from(stream.format()).skipBytes(stream.skipBytes());
     for (final var op : stream.operators()) pipelineBuilder.pipe(op);
     return pipelineBuilder.build();
   }

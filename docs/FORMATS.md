@@ -54,7 +54,7 @@ Add `kpipe-format-json` (parsing backed by [fastjson2](https://github.com/alibab
 ```java
 import static io.github.eschizoid.kpipe.format.json.JsonFields.remove;
 
-final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+final var pipeline = Pipeline.from(JsonFormat.INSTANCE)
     .pipe(remove("password", "ssn"))
     // Inline lambdas work too. Returning null from an operator filters the record: downstream
     // sinks are skipped but the offset is still marked processed.
@@ -80,7 +80,7 @@ final var format = AvroFormat.of("""
     {"name":"id","type":"string"},{"name":"name","type":"string"}
   ]}""");
 
-final var pipeline = MessagePipeline.from(format)
+final var pipeline = Pipeline.from(format)
     .pipe(record -> {
       if (record.get("name") != null) record.put("name", record.get("name").toString().toLowerCase());
       return record;
@@ -96,7 +96,7 @@ message:
 ```java
 final var format = new ProtobufFormat(CustomerProto.Customer.getDescriptor());
 
-final var pipeline = MessagePipeline.from(format)
+final var pipeline = Pipeline.from(format)
     .pipe(msg -> {
       final var emailField = msg.getDescriptorForType().findFieldByName("email");
       return msg.toBuilder().clearField(emailField).build();

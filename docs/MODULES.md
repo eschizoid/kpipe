@@ -57,7 +57,7 @@ depend on `kpipe-consumer` directly.
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `kpipe-api`                       | Fluent entry point: `KPipe`, `Stream<T>`, `Sink<T>`, `Handle`                                                        |
 | `kpipe-bom`                       | Maven BOM — pins all `kpipe-*` artifacts to matching versions                                                        |
-| `kpipe-core`                      | `MessagePipeline` and its builder, `MessageFormat`, `MessageSink`, operators, `BatchSink`                            |
+| `kpipe-core`                      | `Pipeline` and its builder, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                   |
 | `kpipe-consumer`                  | `KPipeConsumer`, `KPipeConsumerBuilder`, backpressure, circuit breaker, offset management, metrics, health server    |
 | `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, DLQ producer                                                             |
 | `kpipe-metrics-otel`              | OpenTelemetry export of consumer metrics (opt-in)                                                                    |

@@ -6,11 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
+import io.github.eschizoid.kpipe.pipeline.MalformedRecordException;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.NonRetryableException;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.record.RecordContext;
-import io.github.eschizoid.kpipe.registry.MalformedRecordException;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.NonRetryableException;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import java.time.Duration;
@@ -84,7 +84,7 @@ class AttemptFailedObserverTest {
 
   @Test
   void aSinkFailureIsHeard() throws Exception {
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .toSink(_ -> {
         throw new IllegalStateException("sink down");
       })
@@ -102,7 +102,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withTopic(TOPIC)
       .withPipeline(
-        MessagePipeline.from(JsonFormat.INSTANCE)
+        Pipeline.from(JsonFormat.INSTANCE)
           .toSink(_ -> {})
           .build()
       )
@@ -140,7 +140,7 @@ class AttemptFailedObserverTest {
       }
     };
     run(
-      MessagePipeline.from(registryDown)
+      Pipeline.from(registryDown)
         .toSink(_ -> {})
         .build(),
       2,
@@ -156,7 +156,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withBatchPipeline(
         TOPIC,
-        MessagePipeline.from(MessageFormat.bytes()).build(),
+        Pipeline.from(MessageFormat.bytes()).build(),
         values -> BatchResult.allFailed(values.size(), new IllegalStateException("flush down")),
         BatchPolicy.ofSize(1)
       )
@@ -226,7 +226,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withBatchPipeline(
         TOPIC,
-        MessagePipeline.from(MessageFormat.bytes()).build(),
+        Pipeline.from(MessageFormat.bytes()).build(),
         values -> new BatchResult(List.of(0), Map.of(1, new IllegalStateException("second down"))),
         BatchPolicy.ofSize(2)
       )
@@ -247,7 +247,7 @@ class AttemptFailedObserverTest {
       .withProperties(props())
       .withBatchPipeline(
         TOPIC,
-        MessagePipeline.from(MessageFormat.bytes())
+        Pipeline.from(MessageFormat.bytes())
           .pipe(value -> {
             if (calls.incrementAndGet() == 1) throw new IllegalStateException("transient");
             return value;
@@ -266,14 +266,14 @@ class AttemptFailedObserverTest {
     assertEquals(List.of("attempt:0:transient", "attempt:1:flush down", "error:1:flush down"), List.copyOf(heard));
   }
 
-  private static MessagePipeline<byte[]> operator(final UnaryOperator<byte[]> op) {
-    return MessagePipeline.from(MessageFormat.bytes())
+  private static Pipeline<byte[]> operator(final UnaryOperator<byte[]> op) {
+    return Pipeline.from(MessageFormat.bytes())
       .pipe(op)
       .toSink(_ -> {})
       .build();
   }
 
-  private void run(final MessagePipeline<?> pipeline, final int retries, final int expected) throws Exception {
+  private void run(final Pipeline<?> pipeline, final int retries, final int expected) throws Exception {
     final var builder = KPipeConsumer.builder()
       .withProperties(props())
       .withTopic(TOPIC)

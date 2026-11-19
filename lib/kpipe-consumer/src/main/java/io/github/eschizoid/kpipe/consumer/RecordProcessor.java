@@ -1,10 +1,10 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import io.github.eschizoid.kpipe.pipeline.NonRetryableException;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.record.RecordContext;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.NonRetryableException;
-import io.github.eschizoid.kpipe.registry.Result;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -37,7 +37,7 @@ final class RecordProcessor {
 
   private static final Logger LOGGER = System.getLogger(RecordProcessor.class.getName());
 
-  private final Map<String, MessagePipeline<?>> pipelines;
+  private final Map<String, Pipeline<?>> pipelines;
   private final Map<String, BatchPipelineWrapper<?>> batchWrappers;
   private final OffsetManager offsetManager;
   private final ConsumerHealthController health;
@@ -77,7 +77,7 @@ final class RecordProcessor {
   }
 
   RecordProcessor(
-    final Map<String, MessagePipeline<?>> pipelines,
+    final Map<String, Pipeline<?>> pipelines,
     final Collection<KPipeConsumerBuilder.BatchSpec<?>> batchSpecs,
     final ScheduledExecutorService scheduler,
     final OffsetManager offsetManager,
@@ -344,7 +344,7 @@ final class RecordProcessor {
   /// the pipeline reports `Failed` so the calling retry/error path handles it.
   ///
   /// @return true when the record passed and its sink ran, false when it was filtered
-  private static <T> boolean driveSinkedPipeline(final MessagePipeline<T> pipeline, final byte[] data) {
+  private static <T> boolean driveSinkedPipeline(final Pipeline<T> pipeline, final byte[] data) {
     final var deserialized = pipeline.deserializeOrFail(data);
     return switch (pipeline.process(deserialized)) {
       case Result.Passed<T> p -> {
@@ -358,9 +358,9 @@ final class RecordProcessor {
   }
 
   /// Re-throw a captured `Result.Failed` cause as an unchecked exception so the retry/error path
-  /// can catch it. Mirrors the legacy MessagePipeline byte-level entry point behavior — it just
+  /// can catch it. Mirrors the legacy Pipeline byte-level entry point behavior — it just
   /// lives here now, where the catching happens, rather than buried in three duplicated unwrap
-  /// blocks inside MessagePipeline.
+  /// blocks inside Pipeline.
   private static RuntimeException rethrowResultCause(final Throwable cause) {
     if (cause instanceof RuntimeException re) return re;
     if (cause instanceof Error err) throw err;

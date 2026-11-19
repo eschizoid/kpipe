@@ -1,7 +1,7 @@
 package io.github.eschizoid.kpipe.test;
 
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.util.List;
 import java.util.Properties;
@@ -9,7 +9,7 @@ import java.util.function.UnaryOperator;
 
 /// Shared construction plumbing for the Docker-free test kit.
 ///
-/// Both harnesses build the same two artifacts: a [MessagePipeline] over a format,
+/// Both harnesses build the same two artifacts: a [Pipeline] over a format,
 /// an operator chain, and an optional sink; and a minimal, never-contacted consumer `Properties`
 /// object. Holding both here stops [TestStream] and [CrashRestartHarness] from drifting — before
 /// this, each hand-rolled an identical builder loop and property set (differing only in group id).
@@ -26,12 +26,12 @@ final class TestKitSupport {
   /// @param sink the terminal sink, or `null` for a sink-less pipeline
   /// @param <T> the pipeline value type
   /// @return the built pipeline
-  static <T> MessagePipeline<T> pipeline(
+  static <T> Pipeline<T> pipeline(
     final MessageFormat<T> format,
     final List<UnaryOperator<T>> operators,
     final MessageSink<T> sink
   ) {
-    final var builder = MessagePipeline.from(format);
+    final var builder = Pipeline.from(format);
     for (final var op : operators) builder.pipe(op);
     if (sink != null) builder.toSink(sink);
     return builder.build();

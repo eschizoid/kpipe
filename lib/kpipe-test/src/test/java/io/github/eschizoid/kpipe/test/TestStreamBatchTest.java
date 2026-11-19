@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.eschizoid.kpipe.registry.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.nio.charset.StandardCharsets;
 import java.util.List;

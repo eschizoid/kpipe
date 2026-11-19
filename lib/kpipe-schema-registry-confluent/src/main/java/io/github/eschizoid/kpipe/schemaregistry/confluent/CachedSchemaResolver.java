@@ -1,6 +1,6 @@
 package io.github.eschizoid.kpipe.schemaregistry.confluent;
 
-import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.pipeline.SchemaResolver;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.Objects;

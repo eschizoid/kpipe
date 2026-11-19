@@ -1,7 +1,7 @@
 package io.github.eschizoid.kpipe.consumer;
 
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.record.RecordContext;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
@@ -74,7 +74,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   }
 
   private final String topic;
-  private final MessagePipeline<T> pipeline;
+  private final Pipeline<T> pipeline;
   private final BatchSink<T> sink;
   private final BatchPolicy policy;
   private final ScheduledExecutorService scheduler;
@@ -101,7 +101,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
 
   BatchPipelineWrapper(
     final String topic,
-    final MessagePipeline<T> pipeline,
+    final Pipeline<T> pipeline,
     final BatchSink<T> sink,
     final BatchPolicy policy,
     final ScheduledExecutorService scheduler,
@@ -115,7 +115,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     this.callbacks = callbacks;
   }
 
-  MessagePipeline<T> pipeline() {
+  Pipeline<T> pipeline() {
     return pipeline;
   }
 

@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -12,11 +12,11 @@ import java.util.function.BiConsumer;
 import org.junit.jupiter.api.Test;
 
 /// The builder's operator and sink methods behave as their `Stream` namesakes do.
-class TypedPipelineBuilderTest {
+class PipelineBuilderTest {
 
   @Test
   void filterKeepsMatchingRecordsAndFiltersTheRest() {
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .filter(value -> value[0] > 0)
       .build();
 
@@ -27,7 +27,7 @@ class TypedPipelineBuilderTest {
   @Test
   void peekRunsTheSideEffectAndPassesTheRecordOn() {
     final var seen = new ArrayList<Byte>();
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .peek(value -> seen.add(value[0]))
       .build();
 
@@ -39,7 +39,7 @@ class TypedPipelineBuilderTest {
   @Test
   void aSecondSinkIsRejected() {
     final MessageSink<byte[]> sink = _ -> {};
-    final var builder = MessagePipeline.from(MessageFormat.bytes()).toSink(sink);
+    final var builder = Pipeline.from(MessageFormat.bytes()).toSink(sink);
 
     final var thrown = assertThrows(IllegalStateException.class, () -> builder.toSink(sink));
     assertTrue(thrown.getMessage().contains("toMulti"), thrown.getMessage());
@@ -49,7 +49,7 @@ class TypedPipelineBuilderTest {
   @Test
   void toMultiDeliversToEverySinkAndCarriesOnPastOneThatThrows() {
     final var delivered = new ArrayList<String>();
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .toMulti(
         _ -> delivered.add("first"),
         _ -> {
@@ -66,7 +66,7 @@ class TypedPipelineBuilderTest {
   @Test
   @SuppressWarnings("unchecked")
   void toMultiWithNoSinksIsRejected() {
-    final var builder = MessagePipeline.from(MessageFormat.bytes());
+    final var builder = Pipeline.from(MessageFormat.bytes());
     final MessageSink<byte[]>[] noSinks = new MessageSink[0];
 
     assertThrows(IllegalArgumentException.class, () -> builder.toMulti(noSinks), "an empty fan-out drops every record");
@@ -74,7 +74,7 @@ class TypedPipelineBuilderTest {
 
   @Test
   void whenAppliesTheOperatorForTheBranchTheRecordMatches() {
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .when(value -> value[0] > 0, _ -> new byte[] { 1 }, _ -> new byte[] { 2 })
       .build();
 
@@ -87,7 +87,7 @@ class TypedPipelineBuilderTest {
   @Test
   void rekeyStringAndWithHeaderChangeTheCurrentRecordForLaterOperators() {
     final var seen = new ArrayList<String>();
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .rekey(value -> new byte[] { value[0] })
       .peek(_ -> seen.add("bytes-" + RecordContext.current().key()[0]))
       .rekeyString(value -> "key-" + value[0])

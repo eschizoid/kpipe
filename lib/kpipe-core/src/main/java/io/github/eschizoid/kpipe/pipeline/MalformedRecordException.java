@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 /// A record whose bytes cannot be decoded: a null or empty value, an envelope that is too short or
 /// has the wrong magic byte, or a payload the format cannot parse. The same bytes fail the same

@@ -4,9 +4,9 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.record.RecordContext;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import java.time.Duration;
@@ -54,7 +54,7 @@ class RecordContextBindingTest {
   void everyAttemptAndTheSinkReadTheConsumedRecord() throws Exception {
     final var attempts = new AtomicInteger();
     final var seen = new CopyOnWriteArrayList<Seen>();
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .pipe(value -> {
         seen.add(Seen.current());
         if (attempts.incrementAndGet() == 1) throw new IllegalStateException("first attempt fails");
@@ -86,7 +86,7 @@ class RecordContextBindingTest {
   void aBatchRouteBindsTheRecordBeforeBufferingAndNoneWhileTheSinkRuns() throws Exception {
     final var beforeBuffer = new CopyOnWriteArrayList<Seen>();
     final var inSink = new CopyOnWriteArrayList<String>();
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .pipe(value -> {
         beforeBuffer.add(Seen.current());
         return value;
@@ -127,7 +127,7 @@ class RecordContextBindingTest {
     final KPipeConsumer.ErrorHandler handler = error ->
       bound.add(error.record().offset() + ":" + (RecordContext.isBound() ? "bound" : "unbound"));
 
-    final var failing = MessagePipeline.from(MessageFormat.bytes())
+    final var failing = Pipeline.from(MessageFormat.bytes())
       .pipe(_ -> {
         throw new IllegalStateException("operator fails");
       })
@@ -152,7 +152,7 @@ class RecordContextBindingTest {
       .withProperties(props())
       .withBatchPipeline(
         TOPIC,
-        MessagePipeline.from(MessageFormat.bytes()).build(),
+        Pipeline.from(MessageFormat.bytes()).build(),
         values -> BatchResult.allFailed(values.size(), new IllegalStateException("sink fails")),
         BatchPolicy.ofSize(2)
       )
@@ -184,7 +184,7 @@ class RecordContextBindingTest {
 
   private static List<String> flushOf(final BatchPolicy policy) throws Exception {
     final var flushed = new CopyOnWriteArrayList<String>();
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .rekeyString(_ -> "key-" + RecordContext.current().offset())
       .build();
     final var consumer = KPipeConsumer.builder()

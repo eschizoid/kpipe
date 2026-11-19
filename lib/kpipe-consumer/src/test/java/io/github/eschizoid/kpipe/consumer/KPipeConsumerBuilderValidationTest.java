@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.Properties;
@@ -129,7 +129,7 @@ class KPipeConsumerBuilderValidationTest {
   /// `ClassCastException` deep inside record processing.
   private static Properties buildWithProps(final Properties props) {
     @SuppressWarnings("unchecked")
-    final var pipeline = (MessagePipeline<String>) mock(MessagePipeline.class);
+    final var pipeline = (Pipeline<String>) mock(Pipeline.class);
     final var b = builder()
       .withProperties(props)
       .withTopic("t")
@@ -166,7 +166,7 @@ class KPipeConsumerBuilderValidationTest {
   @Test
   void allSettersAcceptNonNullValues() {
     @SuppressWarnings("unchecked")
-    final var pipeline = (MessagePipeline<String>) mock(MessagePipeline.class);
+    final var pipeline = (Pipeline<String>) mock(Pipeline.class);
     @SuppressWarnings("unchecked")
     final var producer = (Producer<byte[], byte[]>) mock(Producer.class);
     @SuppressWarnings("unchecked")

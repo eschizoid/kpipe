@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.eschizoid.kpipe.format.json.JsonFields;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;

@@ -11,9 +11,9 @@ import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
@@ -426,7 +426,7 @@ public final class MultiBuilder {
       "MultiBuilder.start() requires at least one route — call .json(...) / .avro(...) / .protobuf(...) / .bytes(...) / .custom(...) before start()."
     );
 
-    final var nonBatchPipelines = new LinkedHashMap<String, MessagePipeline<?>>();
+    final var nonBatchPipelines = new LinkedHashMap<String, Pipeline<?>>();
     final var consumerBuilder = KPipeConsumer.builder().withProperties(kafkaProps);
 
     for (final var entry : routes.entrySet()) {
