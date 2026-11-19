@@ -1,7 +1,7 @@
 package io.github.eschizoid.kpipe;
 
-import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.CircuitBreakerController;
+import io.github.eschizoid.kpipe.consumer.ConsumerSettings;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
@@ -35,11 +35,10 @@ import java.util.function.UnaryOperator;
 /// This makes branching safe (`s.pipe(a)` and `s.pipe(b)` produce independent streams) and
 /// matches the Java Stream API's functional style.
 ///
-/// Pipeline-level state (topics, format, operators, skipBytes) lives as record
-/// components here; every consumer-wide setting lives in the single [ConsumerConfig] component,
-/// whose `with*` methods below are thin delegates. Adding a new fluent setter is a one-place
-/// change: declare it on [ConsumerConfig] (or as a component + [Mut] field here if it is
-/// pipeline-level) and write the `with*` method as a `mutate(...)` / `mutateConfig(...)` lambda.
+/// Pipeline-level state (topics, format, operators, skipBytes) lives as record components here.
+/// Every consumer-wide setting lives in the one [ConsumerSettings] component, and the
+/// consumer-wide `with*` methods below delegate to it, so its validation and defaults apply here
+/// unchanged.
 ///
 /// @param <T> the deserialized message type
 record DefaultStream<T>(
@@ -49,7 +48,7 @@ record DefaultStream<T>(
   Supplier<MessageSink<T>> defaultConsoleSinkFactory,
   List<UnaryOperator<T>> operators,
   int skipBytes,
-  ConsumerConfig consumerConfig
+  ConsumerSettings settings
 ) implements Stream<T> {
   /// Public constructor used by [KPipe] factories — single topic, empty pipeline, default
   /// retry / backpressure settings.
@@ -78,7 +77,7 @@ record DefaultStream<T>(
       Objects.requireNonNull(defaultConsoleSinkFactory, "defaultConsoleSinkFactory cannot be null"),
       List.of(),
       0,
-      ConsumerConfig.defaults()
+      ConsumerSettings.defaults()
     );
   }
 
@@ -133,43 +132,27 @@ record DefaultStream<T>(
 
   @Override
   public Stream<T> withRetry(final int maxRetries, final Duration backoff) {
-    if (maxRetries < 0) throw new IllegalArgumentException("maxRetries cannot be negative");
-    Objects.requireNonNull(backoff, "backoff cannot be null");
-    return mutateConfig(c -> {
-      c.maxRetries = maxRetries;
-      c.retryBackoff = backoff;
-    });
+    return withSettings(settings.withRetry(maxRetries, backoff));
   }
 
   @Override
   public Stream<T> withBackpressure() {
-    return withBackpressure(
-      BackpressureController.DEFAULT_HIGH_WATERMARK,
-      BackpressureController.DEFAULT_LOW_WATERMARK
-    );
+    return withSettings(settings.withBackpressure());
   }
 
   @Override
   public Stream<T> withBackpressure(final long high, final long low) {
-    if (low < 0 || low >= high) throw new IllegalArgumentException(
-      "withBackpressure requires high > low > 0 (got high=%d, low=%d)".formatted(high, low)
-    );
-    return mutateConfig(c -> {
-      c.backpressureHigh = high;
-      c.backpressureLow = low;
-    });
+    return withSettings(settings.withBackpressure(high, low));
   }
 
   @Override
   public Stream<T> withProcessingMode(final ProcessingMode mode) {
-    Objects.requireNonNull(mode, "mode cannot be null");
-    return mutateConfig(c -> c.processingMode = mode);
+    return withSettings(settings.withProcessingMode(mode));
   }
 
   @Override
   public Stream<T> withKeyOrderedMaxKeys(final int maxKeys) {
-    if (maxKeys <= 0) throw new IllegalArgumentException("maxKeys must be positive, got " + maxKeys);
-    return mutateConfig(c -> c.keyOrderedMaxKeys = maxKeys);
+    return withSettings(settings.withKeyOrderedMaxKeys(maxKeys));
   }
 
   @Override
@@ -215,73 +198,62 @@ record DefaultStream<T>(
 
   @Override
   public Stream<T> withMetrics(final MetricsExporter exporter) {
-    Objects.requireNonNull(exporter, "exporter cannot be null");
-    return mutateConfig(c -> c.metricsExporter = exporter);
+    return withSettings(settings.withMetrics(exporter));
   }
 
   @Override
   public Stream<T> withErrorHandler(final Consumer<KPipeConsumer.ProcessingError> handler) {
-    Objects.requireNonNull(handler, "handler cannot be null");
-    return mutateConfig(c -> c.errorHandler = handler);
+    return withSettings(settings.withErrorHandler(handler));
   }
 
   @Override
   public Stream<T> onAttemptFailed(final Consumer<KPipeConsumer.ProcessingError> observer) {
-    Objects.requireNonNull(observer, "observer cannot be null");
-    return mutateConfig(c -> c.attemptFailedObserver = observer);
+    return withSettings(settings.onAttemptFailed(observer));
   }
 
   @Override
   public Stream<T> withDeadLetterTopic(final String dlqTopic) {
-    if (dlqTopic == null || dlqTopic.isBlank()) throw new IllegalArgumentException("dlqTopic cannot be null or blank");
-    return mutateConfig(c -> c.deadLetterTopic = dlqTopic);
+    return withSettings(settings.withDeadLetterTopic(dlqTopic));
   }
 
   @Override
   public Stream<T> withPollTimeout(final Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout cannot be null");
-    return mutateConfig(c -> c.pollTimeout = timeout);
+    return withSettings(settings.withPollTimeout(timeout));
   }
 
   @Override
   public Stream<T> withCommitInterval(final Duration interval) {
-    Objects.requireNonNull(interval, "interval cannot be null");
-    return mutateConfig(c -> c.commitInterval = interval);
+    return withSettings(settings.withCommitInterval(interval));
   }
 
   @Override
   public Stream<T> withOffsetStore(final OffsetStore store) {
-    Objects.requireNonNull(store, "store cannot be null");
-    return mutateConfig(c -> c.offsetStore = store);
+    return withSettings(settings.withOffsetStore(store));
   }
 
   @Override
   public Stream<T> withMetricsLog(final Duration interval) {
-    final var checked = ConsumerConfig.positiveInterval(interval);
-    return mutateConfig(c -> c.metricsLogInterval = checked);
+    return withSettings(settings.withMetricsLog(interval));
   }
 
   @Override
   public Stream<T> withShutdownHook(final boolean useShutdownHook) {
-    return mutateConfig(c -> c.shutdownHook = useShutdownHook);
+    return withSettings(settings.withShutdownHook(useShutdownHook));
   }
 
   @Override
   public Stream<T> withThreadTerminationTimeout(final Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout cannot be null");
-    return mutateConfig(c -> c.threadTerminationTimeout = timeout);
+    return withSettings(settings.withThreadTerminationTimeout(timeout));
   }
 
   @Override
   public Stream<T> withWaitForMessagesTimeout(final Duration timeout) {
-    Objects.requireNonNull(timeout, "timeout cannot be null");
-    return mutateConfig(c -> c.waitForMessagesTimeout = timeout);
+    return withSettings(settings.withWaitForMessagesTimeout(timeout));
   }
 
   @Override
   public Stream<T> withTracer(final Tracer tracer) {
-    Objects.requireNonNull(tracer, "tracer cannot be null");
-    return mutateConfig(c -> c.tracer = tracer);
+    return withSettings(settings.withTracer(tracer));
   }
 
   @Override
@@ -295,8 +267,7 @@ record DefaultStream<T>(
 
   @Override
   public Stream<T> withCircuitBreaker(final CircuitBreakerController controller) {
-    Objects.requireNonNull(controller, "controller cannot be null");
-    return mutateConfig(c -> c.circuitBreaker = controller);
+    return withSettings(settings.withCircuitBreaker(controller));
   }
 
   @Override
@@ -340,17 +311,16 @@ record DefaultStream<T>(
 
   /// Single funnel for every wither: snapshot this record into a [Mut], let the caller change
   /// what they need, rebuild a new record. New pipeline-level fields slot in at one site (the
-  /// Mut declaration + its `from`/`build`); consumer-wide fields go through [#mutateConfig].
+  /// Mut declaration + its `from`/`build`); consumer-wide fields go through [#withSettings].
   private DefaultStream<T> mutate(final Consumer<Mut<T>> change) {
     final var m = Mut.from(this);
     change.accept(m);
     return m.build();
   }
 
-  /// Funnel for the consumer-wide withers: rebuilds this stream around an updated
-  /// [ConsumerConfig], preserving the immutability contract (a new stream per call).
-  private DefaultStream<T> mutateConfig(final Consumer<ConsumerConfig.Mut> change) {
-    return mutate(m -> m.consumerConfig = consumerConfig.with(change));
+  /// Rebuilds this stream around `newSettings`; a new stream per call, as for every wither.
+  private DefaultStream<T> withSettings(final ConsumerSettings newSettings) {
+    return mutate(m -> m.settings = newSettings);
   }
 
   /// Mutable mirror of [DefaultStream]'s components used only inside [#mutate]. Each public
@@ -364,7 +334,7 @@ record DefaultStream<T>(
     Supplier<MessageSink<T>> defaultConsoleSinkFactory;
     List<UnaryOperator<T>> operators;
     int skipBytes;
-    ConsumerConfig consumerConfig;
+    ConsumerSettings settings;
 
     static <T> Mut<T> from(final DefaultStream<T> s) {
       final var m = new Mut<T>();
@@ -374,20 +344,12 @@ record DefaultStream<T>(
       m.defaultConsoleSinkFactory = s.defaultConsoleSinkFactory;
       m.operators = s.operators;
       m.skipBytes = s.skipBytes;
-      m.consumerConfig = s.consumerConfig;
+      m.settings = s.settings;
       return m;
     }
 
     DefaultStream<T> build() {
-      return new DefaultStream<>(
-        topics,
-        kafkaProps,
-        format,
-        defaultConsoleSinkFactory,
-        operators,
-        skipBytes,
-        consumerConfig
-      );
+      return new DefaultStream<>(topics, kafkaProps, format, defaultConsoleSinkFactory, operators, skipBytes, settings);
     }
   }
 }

@@ -165,11 +165,12 @@ KPipe.multi(kafkaProps)
   `custom(topic, MessageFormat<T>, configurator)`. Registering the same topic twice throws.
 - Unlike `Stream`, `MultiBuilder` is a mutable builder (`with*` methods return `this`).
 - Consumer-wide settings (`withRetry`, `withBackpressure`, `withProcessingMode`, `withKeyOrderedMaxKeys`, `withMetrics`,
-  `withTracer`, `withCircuitBreaker(CircuitBreakerController)`, `withDeadLetterTopic`, `withErrorHandler`,
-  `withPollTimeout`, `withMetricsLog`, `withShutdownHook`, `withThreadTerminationTimeout`, `withWaitForMessagesTimeout`,
-  `withCommitInterval`, `withOffsetStore`) live on the builder. Setting one inside a route configurator throws
-  `IllegalArgumentException` pointing you at the builder-level mirror — per-route values would silently fight over one
-  consumer otherwise.
+  `onAttemptFailed`, `withErrorHandler`, `withDeadLetterTopic`, `withPollTimeout`, `withTracer`,
+  `withCircuitBreaker(CircuitBreakerController)`, `withMetricsLog`, `withShutdownHook`, `withThreadTerminationTimeout`,
+  `withWaitForMessagesTimeout`, `withCommitInterval`, `withOffsetStore`) live on the builder. Each is declared once, in
+  `ConsumerSettings`, so `Stream`, `MultiBuilder` and `KPipeConsumerBuilder` validate it the same way when it is called.
+  Calling one inside a route configurator, even with the default value, makes `start()` throw an
+  `IllegalArgumentException` that names the call and its `MultiBuilder` method, because one consumer serves every route.
 - The circuit breaker observes outcomes across **all** routes; one trip pauses the whole consumer.
 - Records for topics with no registered route are dropped at WARNING and their offsets are committed (a config error
   must not wedge the consumer into infinite refetch).
