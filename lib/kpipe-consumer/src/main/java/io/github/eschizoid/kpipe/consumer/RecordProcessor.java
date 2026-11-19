@@ -161,45 +161,8 @@ final class RecordProcessor {
         final int retries
       ) {
         attemptFailed(record, cause, retries);
-        counters.topic(record.topic()).failed.increment();
-        if (!NonRetryableException.isNonRetryable(cause)) health.recordOutcome(false);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
-        // LOCKSTEP: mirror of the per-record path's DLQ-or-mark block in handleProcessingError
-        // —
-        // mark the offset only after a successful DLQ send; a failed send leaves it pending so
-        // the record is reprocessed, never dropped. Deliberately duplicated (the paths differ
-        // on
-        // span handling, retry counts, and circuit-breaker ordering — recordOutcome runs BEFORE
-        // this block here, AFTER it on the per-record path). Any change here must be mirrored
-        // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
-        if (deadLetterTopic != null && kpipeProducer != null) {
-          if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause)) {
-            counters.topic(record.topic()).dlqSent.increment();
-            if (offsetManager != null) offsetManager.markOffsetProcessed(record);
-          } else {
-            counters.topic(record.topic()).dlqFailed.increment();
-            LOGGER.log(
-              Level.ERROR,
-              () ->
-                "DLQ delivery failed for batch record at offset " +
-                record.offset() +
-                "; offset NOT committed, record will be reprocessed on restart/rebalance"
-            );
-          }
-        } else if (offsetManager != null) {
-          offsetManager.markOffsetProcessed(record);
-        }
-        try {
-          errorHandler.accept(new KPipeConsumer.ProcessingError(record, cause, retries));
-        } catch (final Exception ex) {
-          LOGGER.log(
-            Level.ERROR,
-            "Error handler threw on batch failure at offset {0}: {1}",
-            record.offset(),
-            ex.getMessage(),
-            ex
-          );
-        }
+        failTerminally(record, cause, retries);
       }
     };
     return new BatchPipelineWrapper<>(spec.topic(), spec.pipeline(), spec.sink(), spec.policy(), scheduler, callbacks);
@@ -432,7 +395,6 @@ final class RecordProcessor {
     final int retryCount,
     final Tracer.SpanScope span
   ) {
-    counters.topic(record.topic()).failed.increment();
     // Mark the span as errored. Guarded — a misbehaving tracer must never crash the consumer
     // thread, leak in-flight counts, or skip offset marking.
     try {
@@ -445,44 +407,26 @@ final class RecordProcessor {
       () -> "Failed to process message at offset " + record.offset() + " after " + (retryCount + 1) + " attempt(s)",
       e
     );
-    if (deadLetterTopic != null && kpipeProducer != null) {
-      // The offset advances only once the record reaches a durable terminal state: either the sink
-      // processed it (handled elsewhere) or it is safely parked in the DLQ. If the DLQ send fails
-      // the record is in neither place, so leave the offset pending — the commit point holds and
-      // the record is re-fetched (and the DLQ retried) on the next restart or partition
-      // reassignment. A down DLQ stalls the commit point rather than silently dropping data
-      // (the fetch position races ahead in-memory; this is a commit stall, not a pause).
-      //
-      // LOCKSTEP: this DLQ-or-mark block is deliberately duplicated in the batch wrapper's
-      // onBatchFailure callback — the two paths differ on span handling, retry counts, and
-      // circuit-breaker ordering (recordOutcome runs AFTER this block here, BEFORE it on the
-      // batch path), so a shared helper would blur those. Any change here must be mirrored
-      // there; DlqTerminalContractTest asserts both paths cell-for-cell and fails on drift.
-      if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), e)) {
-        counters.topic(record.topic()).dlqSent.increment();
-        markOffsetProcessed(record);
-      } else {
-        counters.topic(record.topic()).dlqFailed.increment();
-        LOGGER.log(
-          Level.ERROR,
-          () ->
-            "DLQ delivery failed for record at offset " +
-            record.offset() +
-            "; offset NOT committed, record will be reprocessed on restart/rebalance"
-        );
-      }
-    } else {
-      // No DLQ configured: the caller opted into log-and-advance. Mark processed and move on.
-      markOffsetProcessed(record);
-    }
-    // A record that cannot succeed says nothing about downstream health, so it stays out of the
-    // circuit breaker's window.
-    if (!NonRetryableException.isNonRetryable(e)) health.recordOutcome(false);
+    failTerminally(record, e, retryCount);
+  }
+
+  /// Takes a failed record to its terminal state; the per-record path and a batch flush both end
+  /// here. The record counts as failed, is parked, feeds the circuit breaker, and reaches the
+  /// error handler, in that order.
+  ///
+  /// The record adds one failure to the circuit breaker's window when a retry might have fixed
+  /// it, or when its dead-letter send failed. A record that cannot succeed but is safely parked
+  /// says nothing about downstream health; a dead-letter topic that is down is a downstream
+  /// outage like any other.
+  private void failTerminally(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retries) {
+    counters.topic(record.topic()).failed.increment();
+    final var parked = park(record, cause);
+    if (!parked || !NonRetryableException.isNonRetryable(cause)) health.recordOutcome(false);
     try {
       // A failure can reach here from inside an attempt, where the record is bound; the error
       // handler gets the record in the ProcessingError and never has a current record.
       RecordContext.callWithout(() -> {
-        errorHandler.accept(new KPipeConsumer.ProcessingError(record, e, retryCount));
+        errorHandler.accept(new KPipeConsumer.ProcessingError(record, cause, retries));
         return null;
       });
     } catch (final Exception ex) {
@@ -494,6 +438,35 @@ final class RecordProcessor {
         ex
       );
     }
+  }
+
+  /// Parks a failed record in the dead-letter topic, or advances past it when none is configured,
+  /// which opts into log-and-advance. Its offset advances only once the record is in one of those
+  /// durable terminal states. A failed send leaves the offset pending, so the commit point holds
+  /// and the record, and its send, are retried after the next restart or partition reassignment.
+  /// A dead-letter topic that is down stalls the commit point instead of dropping the record,
+  /// while the fetch position keeps moving ahead in memory.
+  ///
+  /// @return `false` only when the dead-letter send failed
+  private boolean park(final ConsumerRecord<byte[], byte[]> record, final Exception cause) {
+    if (deadLetterTopic == null || kpipeProducer == null) {
+      markOffsetProcessed(record);
+      return true;
+    }
+    if (kpipeProducer.sendToDlq(deadLetterTopic, record, record.topic(), cause)) {
+      counters.topic(record.topic()).dlqSent.increment();
+      markOffsetProcessed(record);
+      return true;
+    }
+    counters.topic(record.topic()).dlqFailed.increment();
+    LOGGER.log(
+      Level.ERROR,
+      () ->
+        "DLQ delivery failed for record at offset " +
+        record.offset() +
+        "; offset NOT committed, record will be reprocessed on restart/rebalance"
+    );
+    return false;
   }
 
   /// Whether a failure is an interruption to abandon the record for, rather than a failure to

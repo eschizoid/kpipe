@@ -8,8 +8,10 @@ import java.util.IdentityHashMap;
 ///
 /// KPipe retries other failures up to the configured `maxRetries`. A record that fails with this
 /// exception, or with an exception caused by it, goes straight to the error handler and the
-/// dead-letter topic when one is configured, and does not count as a failure toward the circuit
-/// breaker: it says the record is bad, not that a downstream system is down.
+/// dead-letter topic when one is configured. It does not count as a failure toward the circuit
+/// breaker, because it says the record is bad, not that a downstream system is down. The
+/// exception is a dead-letter send that fails: a dead-letter topic that is down is a downstream
+/// outage, so that record counts.
 public class NonRetryableException extends RuntimeException {
 
   /// @param message what is wrong with the record
