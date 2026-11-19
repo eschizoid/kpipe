@@ -58,7 +58,7 @@ class AppIntegrationTest {
         .toCustom(capturingSink)
         .start()
     ) {
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       final var payload = DynamicMessage.newBuilder(descriptor)
         .setField(descriptor.findFieldByName("id"), 1L)
@@ -81,7 +81,7 @@ class AppIntegrationTest {
       );
 
       assertTrue(handle.shutdownGracefully(Duration.ofSeconds(5)));
-      assertFalse(handle.isHealthy());
+      assertFalse(handle.health().healthy());
     }
   }
 

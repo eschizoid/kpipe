@@ -3,95 +3,118 @@ package io.github.eschizoid.kpipe.health;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.consumer.CircuitBreakerState;
+import io.github.eschizoid.kpipe.consumer.HealthSnapshot;
+import io.github.eschizoid.kpipe.consumer.PauseSource;
 import io.github.eschizoid.kpipe.consumer.config.AppConfig;
 import io.github.eschizoid.kpipe.consumer.config.HealthConfig;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.Optional;
-import java.util.function.BooleanSupplier;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 class HttpHealthServerTest {
 
+  private static final HealthSnapshot HEALTHY = new HealthSnapshot(true, Set.of(), CircuitBreakerState.CLOSED);
+
   @Test
-  void shouldNormalizePathAndDefaultAppName() throws Exception {
-    final var server = new HttpHealthServer("127.0.0.1", 0, "health", () -> true, () -> 5L, () -> true, null);
-    try (server) {
-      server.start();
-      final var response = sendRequest(server, "GET");
+  void aHealthyConsumerAnswers200WithItsSnapshot() throws Exception {
+    final var snapshot = new HealthSnapshot(
+      true,
+      Set.of(PauseSource.CIRCUIT_BREAKER, PauseSource.MANUAL),
+      CircuitBreakerState.HALF_OPEN
+    );
+    try (final var server = started(() -> snapshot)) {
+      final var response = send(server, "GET");
       assertEquals(200, response.statusCode());
       assertEquals("application/json; charset=utf-8", response.headers().firstValue("Content-Type").orElse(""));
-      assertTrue(response.body().contains("\"status\": \"OK\""));
-      assertTrue(response.body().contains("\"inFlight\": 5"));
-      assertTrue(response.body().contains("\"paused\": true"));
+      assertEquals(
+        "{\"healthy\": true, \"running\": true, \"pauseSources\": [\"manual\", \"circuit_breaker\"], \"circuitBreaker\": \"half_open\"}",
+        response.body()
+      );
     }
   }
 
   @Test
-  void shouldReturnOkWhenHealthy() throws Exception {
-    try (final var server = newServer(() -> true)) {
-      server.start();
-
-      final var response = sendRequest(server, "GET");
-      assertEquals(200, response.statusCode());
-      assertTrue(response.body().contains("\"status\": \"OK\""));
-    }
-  }
-
-  @Test
-  void shouldReturnUnhealthyWhenSupplierFalse() throws Exception {
-    try (final var server = newServer(() -> false)) {
-      server.start();
-
-      final var response = sendRequest(server, "GET");
+  void anOpenBreakerAnswers503() throws Exception {
+    final var snapshot = new HealthSnapshot(true, Set.of(PauseSource.CIRCUIT_BREAKER), CircuitBreakerState.OPEN);
+    try (final var server = started(() -> snapshot)) {
+      final var response = send(server, "GET");
       assertEquals(503, response.statusCode());
-      assertTrue(response.body().contains("\"status\": \"UNHEALTHY\""));
+      assertTrue(response.body().startsWith("{\"healthy\": false, \"running\": true"), response.body());
     }
   }
 
   @Test
-  void shouldReturnUnhealthyWhenSupplierThrows() throws Exception {
-    final BooleanSupplier supplier = () -> {
-      throw new RuntimeException("boom");
-    };
+  void eachRequestReadsOneSnapshot() throws Exception {
+    final var reads = new AtomicInteger();
+    try (
+      final var server = started(() -> {
+        reads.incrementAndGet();
+        return HEALTHY;
+      })
+    ) {
+      send(server, "GET");
+      send(server, "GET");
+      assertEquals(2, reads.get());
+    }
+  }
 
-    try (final var server = newServer(supplier)) {
-      server.start();
-
-      final var response = sendRequest(server, "GET");
+  @Test
+  void aSupplierThatThrowsAnswers503() throws Exception {
+    try (
+      final var server = started(() -> {
+        throw new IllegalStateException("boom");
+      })
+    ) {
+      final var response = send(server, "GET");
       assertEquals(503, response.statusCode());
-      assertTrue(response.body().contains("\"status\": \"UNHEALTHY\""));
+      assertEquals("{\"healthy\": false}", response.body());
     }
   }
 
   @Test
-  void shouldReturnMethodNotAllowedForNonGet() throws Exception {
-    try (final var server = newServer(() -> true)) {
-      server.start();
+  void aSupplierThatReturnsNullAnswers503() throws Exception {
+    try (final var server = started(() -> null)) {
+      final var response = send(server, "GET");
+      assertEquals(503, response.statusCode());
+      assertEquals("{\"healthy\": false}", response.body());
+    }
+  }
 
-      final var response = sendRequest(server, "POST");
+  @Test
+  void anyOtherMethodAnswers405AndNamesGet() throws Exception {
+    try (final var server = started(() -> HEALTHY)) {
+      final var response = send(server, "POST");
       assertEquals(405, response.statusCode());
-      assertEquals("Method Not Allowed", response.body());
+      assertEquals("GET", response.headers().firstValue("Allow").orElse(""));
+      assertEquals("text/plain; charset=utf-8", response.headers().firstValue("Content-Type").orElse(""));
     }
   }
 
   @Test
-  void shouldReturnEmptyWhenDisabledFromEnv() {
+  void aPathWithoutALeadingSlashIsServedWithOne() throws Exception {
+    try (final var server = new HttpHealthServer("127.0.0.1", 0, "health", () -> HEALTHY, null)) {
+      server.start();
+      assertEquals(200, send(server, "GET").statusCode());
+    }
+  }
+
+  @Test
+  void fromEnvReturnsEmptyWhenDisabled() {
     try (final var mocked = Mockito.mockStatic(AppConfig.class)) {
       mocked.when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_ENABLED, "true")).thenReturn("false");
-
-      final Optional<HttpHealthServer> server = HttpHealthServer.fromEnv(() -> true, () -> 0L, () -> false, "test-app");
-      assertTrue(server.isEmpty());
+      assertTrue(HttpHealthServer.fromEnv(() -> HEALTHY, "test-app").isEmpty());
     }
   }
 
   @Test
-  void shouldReturnStartedServerFromEnv() throws Exception {
-    // fromEnv documents that the returned server is started; this proves the contract by hitting
-    // the endpoint without calling start() ourselves.
+  void fromEnvReturnsAStartedServer() throws Exception {
     try (final var mocked = Mockito.mockStatic(AppConfig.class)) {
       mocked.when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_ENABLED, "true")).thenReturn("true");
       mocked
@@ -102,27 +125,24 @@ class HttpHealthServerTest {
         .when(() -> AppConfig.getEnvOrDefault(HealthConfig.ENV_PATH, HealthConfig.DEFAULT_PATH))
         .thenReturn("/health");
 
-      final var maybeServer = HttpHealthServer.fromEnv(() -> true, () -> 7L, () -> false, "test-app");
+      final var maybeServer = HttpHealthServer.fromEnv(() -> HEALTHY, "test-app");
       assertTrue(maybeServer.isPresent());
-
+      // fromEnv documents that the server is started: no start() call here.
       try (final var server = maybeServer.get()) {
-        final var response = sendRequest(server, "GET");
-        assertEquals(200, response.statusCode());
-        assertTrue(response.body().contains("\"inFlight\": 7"));
+        assertEquals(200, send(server, "GET").statusCode());
       }
     }
   }
 
-  private static HttpHealthServer newServer(final BooleanSupplier supplier) throws Exception {
-    return new HttpHealthServer("127.0.0.1", 0, "/health", supplier, () -> 0L, () -> false, "test-app");
+  private static HttpHealthServer started(final Supplier<HealthSnapshot> health) throws Exception {
+    final var server = new HttpHealthServer("127.0.0.1", 0, "/health", health, "test-app");
+    server.start();
+    return server;
   }
 
-  private static HttpResponse<String> sendRequest(final HttpHealthServer server, final String method) throws Exception {
-    final var address = server.getAddress();
-    final var uri = URI.create("http://127.0.0.1:" + address.getPort() + "/health");
-
+  private static HttpResponse<String> send(final HttpHealthServer server, final String method) throws Exception {
+    final var uri = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/health");
     final var request = HttpRequest.newBuilder(uri).method(method, HttpRequest.BodyPublishers.noBody()).build();
-
     return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
   }
 }

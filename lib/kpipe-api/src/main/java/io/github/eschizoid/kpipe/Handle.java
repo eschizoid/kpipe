@@ -12,14 +12,9 @@ import java.util.Map;
 /// Implements [AutoCloseable] for try-with-resources usage; the default `close()` performs a
 /// graceful shutdown with a 5-second timeout.
 public interface Handle extends AutoCloseable {
-  /// Returns whether the underlying consumer is healthy.
-  ///
-  /// @return true when the consumer is running and the configured health check passes
-  boolean isHealthy();
-
-  /// Full health snapshot: running/paused state, active pause sources, circuit-breaker state,
-  /// and in-flight count. Wire liveness probes (e.g. `HttpHealthServer`) to this rather than
-  /// polling `metrics()`.
+  /// The consumer's health now: whether it runs, which sources hold a pause, and the circuit
+  /// breaker's state, read at one moment. `health().healthy()` is the liveness answer; wire a
+  /// probe with `HttpHealthServer.fromEnv(handle::health, "app")`.
   ///
   /// @return an immutable point-in-time health view
   HealthSnapshot health();

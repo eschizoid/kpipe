@@ -1,8 +1,8 @@
-/// Optional HTTP health / readiness endpoint.
+/// Optional HTTP health endpoint.
 ///
-/// [HttpHealthServer] exposes liveness and readiness probes over `jdk.httpserver`, suitable for
-/// Kubernetes, Nomad, or any orchestrator that polls an HTTP endpoint. Wire-up is opt-in and
-/// driven by [io.github.eschizoid.kpipe.consumer.config.HealthConfig]; if you do not need probes,
-/// you pay
-/// nothing.
+/// [HttpHealthServer] serves a consumer's [io.github.eschizoid.kpipe.consumer.HealthSnapshot]
+/// over `jdk.httpserver`, for Kubernetes, Nomad, or any orchestrator that polls an HTTP endpoint.
+/// Wire it with `HttpHealthServer.fromEnv(handle::health, "app")`; the `HEALTH_*` environment
+/// variables read by [io.github.eschizoid.kpipe.consumer.config.HealthConfig] configure or
+/// disable it.
 package io.github.eschizoid.kpipe.health;

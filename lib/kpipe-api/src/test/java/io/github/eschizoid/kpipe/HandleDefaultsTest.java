@@ -26,13 +26,8 @@ class HandleDefaultsTest {
     final AtomicReference<Duration> shutdownTimeout = new AtomicReference<>();
 
     @Override
-    public boolean isHealthy() {
-      return true;
-    }
-
-    @Override
     public HealthSnapshot health() {
-      return new HealthSnapshot(true, false, Set.of(), CircuitBreakerState.CLOSED, 0L);
+      return new HealthSnapshot(true, Set.of(), CircuitBreakerState.CLOSED);
     }
 
     @Override

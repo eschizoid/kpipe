@@ -71,7 +71,7 @@ class KPipeFacadeIntegrationTest {
 
     try {
       // Verify health before producing.
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       // Produce 5 JSON messages and wait for them to be consumed.
       produceUntilConsumed(topic, 5, captured, Duration.ofSeconds(20));
@@ -92,14 +92,14 @@ class KPipeFacadeIntegrationTest {
       assertTrue(processed >= 5L, "processed (%d) must be >= 5".formatted(processed));
 
       // Still healthy mid-flight.
-      assertTrue(handle.isHealthy(), "Handle should remain healthy while running");
+      assertTrue(handle.health().healthy(), "Handle should remain healthy while running");
 
       // Graceful shutdown.
       final var clean = handle.shutdownGracefully(Duration.ofSeconds(5));
       assertTrue(clean, "shutdownGracefully should complete within timeout");
 
       // Post-shutdown the runner should no longer report healthy.
-      assertFalse(handle.isHealthy(), "Handle should not be healthy after shutdown");
+      assertFalse(handle.health().healthy(), "Handle should not be healthy after shutdown");
     } finally {
       // Idempotent close on failure paths — runner.shutdownGracefully is safe to call twice.
       handle.shutdownGracefully(Duration.ofSeconds(2));
@@ -170,7 +170,7 @@ class KPipeFacadeIntegrationTest {
       .start();
 
     try {
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       // Produce messages with ids 1..6; expect only 1, 3, 5 to make it through.
       produceFixedAndWait(captured, Duration.ofSeconds(20));
@@ -206,7 +206,7 @@ class KPipeFacadeIntegrationTest {
       .start();
 
     try {
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       // Produce 3 messages per topic — 9 total.
       final var perTopic = 3;
@@ -270,7 +270,7 @@ class KPipeFacadeIntegrationTest {
       .start();
 
     try {
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       final var perTopic = 3;
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {

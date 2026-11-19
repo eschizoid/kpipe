@@ -67,7 +67,7 @@ class StreamParallelBatchIntegrationTest {
     final var handle = KPipe.json(topic, consumerProps).toBatch(batchSink, policy).start();
 
     try {
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
         for (int i = 1; i <= RECORD_COUNT; i++) {

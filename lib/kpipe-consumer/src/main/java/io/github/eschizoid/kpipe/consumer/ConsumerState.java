@@ -1,27 +1,18 @@
 package io.github.eschizoid.kpipe.consumer;
 
-/// Represents the operational states of the consumer.
-///
-/// The consumer transitions through these states during its lifecycle:
-///
-/// * `CREATED` - Initial state after creation, before starting
-/// * `RUNNING` - Actively consuming messages from the topic
-/// * `PAUSED` - Consumption temporarily suspended
-/// * `CLOSING` - In the process of shutting down
-/// * `CLOSED` - Terminated with all resources released
-public enum ConsumerState {
-  /// Consumer has been created but not started.
+/// The lifecycle of a consumer: `CREATED` → `RUNNING` → `CLOSING` → `CLOSED`, or `CREATED` →
+/// `CLOSED` for one closed before it started. Whether a running consumer is paused is not a
+/// lifecycle state; the pause sources answer that.
+enum ConsumerState {
+  /// Built but not started.
   CREATED,
 
-  /// Consumer is actively processing messages.
+  /// Started; its poll loop is live, paused or not.
   RUNNING,
 
-  /// Consumer is temporarily paused.
-  PAUSED,
-
-  /// Consumer is in the process of shutting down.
+  /// Shutting down: the poll loop has stopped or is stopping, and resources are being released.
   CLOSING,
 
-  /// Consumer has completed shutdown and can't be restarted.
+  /// Shut down for good; it cannot be restarted.
   CLOSED,
 }

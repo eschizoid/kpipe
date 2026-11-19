@@ -2,54 +2,58 @@ package io.github.eschizoid.kpipe.health;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.eschizoid.kpipe.consumer.HealthSnapshot;
 import io.github.eschizoid.kpipe.consumer.config.HealthConfig;
 import java.io.IOException;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
-/// Lightweight HTTP health check server using the JDK built-in HttpServer.
+/// A small HTTP health endpoint on the JDK's built-in server. Each `GET` reads one
+/// [HealthSnapshot] and answers `200` when it is healthy and `503` otherwise, with the snapshot
+/// as JSON:
+///
+/// ```json
+/// {"healthy": true, "running": true, "pauseSources": ["backpressure"], "circuitBreaker": "closed"}
+/// ```
+///
+/// Enum values are lowercase, as in the OpenTelemetry attributes and the metrics log line. A
+/// snapshot supplier that throws or returns null answers `503` with `{"healthy": false}`. Any
+/// other method answers `405` with an `Allow: GET` header.
 public final class HttpHealthServer implements AutoCloseable {
 
   private static final Logger LOGGER = System.getLogger(HttpHealthServer.class.getName());
 
   private final HttpServer server;
-  private final BooleanSupplier healthSupplier;
-  private final Supplier<Long> inFlightSupplier;
-  private final BooleanSupplier pausedSupplier;
+  private final Supplier<HealthSnapshot> health;
   private final String path;
   private final String appName;
   private final AtomicBoolean started = new AtomicBoolean(false);
 
-  /// Create a new [HttpHealthServer] bound to the provided host/port and exposing the
-  /// configured health endpoint.
+  /// Creates a server bound to `host:port` that serves `health` on `path`; call [#start()] to
+  /// begin answering.
   ///
-  /// @param host the host to bind the HTTP server to (e.g. "0.0.0.0")
-  /// @param port the port to bind the HTTP server to (1-65535)
-  /// @param path the HTTP path to expose the health check on (e.g. "/health")
-  /// @param healthSupplier a supplier that returns true when the application is healthy
-  /// @param inFlightSupplier a supplier that returns the current number of in-flight messages
-  /// @param pausedSupplier a supplier that returns true when the consumer is paused
-  /// @param appName optional application name used for logging (may be null)
-  /// @throws IOException if the underlying HTTP server cannot be created or bound
+  /// @param host    the host to bind to, such as "0.0.0.0"
+  /// @param port    the port to bind to, or 0 for any free port
+  /// @param path    the path to serve, such as "/health"; a missing leading slash is added
+  /// @param health  reads the health to serve, once per request, such as `handle::health`
+  /// @param appName the name used in log lines, or null for "kpipe-app"
+  /// @throws IOException if the server cannot be created or bound
   public HttpHealthServer(
     final String host,
     final int port,
     final String path,
-    final BooleanSupplier healthSupplier,
-    final Supplier<Long> inFlightSupplier,
-    final BooleanSupplier pausedSupplier,
+    final Supplier<HealthSnapshot> health,
     final String appName
   ) throws IOException {
-    this.healthSupplier = Objects.requireNonNull(healthSupplier, "Health supplier cannot be null");
-    this.inFlightSupplier = inFlightSupplier != null ? inFlightSupplier : () -> 0L;
-    this.pausedSupplier = pausedSupplier != null ? pausedSupplier : () -> false;
+    this.health = Objects.requireNonNull(health, "health cannot be null");
     this.path = normalizePath(path);
     this.appName = appName != null ? appName : "kpipe-app";
     this.server = HttpServer.create(new InetSocketAddress(host, port), 0);
@@ -63,35 +67,20 @@ public final class HttpHealthServer implements AutoCloseable {
     }
   }
 
-  /// Create an [HttpHealthServer] using environment variables when enabled.
-  /// The method reads environment variables via [HealthConfig].
+  /// Creates and starts a server configured by the `HEALTH_*` environment variables (see
+  /// [HealthConfig]), unless they disable it.
   ///
-  /// @param healthSupplier supplier that returns true when the application is healthy
-  /// @param inFlightSupplier supplier that returns the current number of in-flight messages
-  /// @param pausedSupplier supplier that returns true when the consumer is paused
-  /// @param appName optional application name used for logging
-  /// @return Optional containing a started [HttpHealthServer] instance when enabled and
-  ///     successfully constructed, or [Optional#empty()] when disabled or on failure
-  public static Optional<HttpHealthServer> fromEnv(
-    final BooleanSupplier healthSupplier,
-    final Supplier<Long> inFlightSupplier,
-    final BooleanSupplier pausedSupplier,
-    final String appName
-  ) {
+  /// @param health  reads the health to serve, once per request, such as `handle::health`
+  /// @param appName the name used in log lines, or null for "kpipe-app"
+  /// @return the started server, or empty when disabled or when it could not be started
+  public static Optional<HttpHealthServer> fromEnv(final Supplier<HealthSnapshot> health, final String appName) {
     if (!HealthConfig.isEnabled()) return Optional.empty();
-
-    final var host = HealthConfig.getHost();
-    final var path = HealthConfig.getPath();
-    final var port = HealthConfig.getPort();
-
     try {
       final var server = new HttpHealthServer(
-        host,
-        port,
-        path,
-        healthSupplier,
-        inFlightSupplier,
-        pausedSupplier,
+        HealthConfig.getHost(),
+        HealthConfig.getPort(),
+        HealthConfig.getPath(),
+        health,
         appName
       );
       server.start();
@@ -120,37 +109,59 @@ public final class HttpHealthServer implements AutoCloseable {
 
   private void handleHealth(final HttpExchange exchange) throws IOException {
     if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-      sendResponse(exchange, 405, "Method Not Allowed");
+      exchange.getResponseHeaders().add("Allow", "GET");
+      send(exchange, 405, "text/plain; charset=utf-8", "Method Not Allowed");
       return;
     }
-
-    boolean healthy;
-    try {
-      healthy = healthSupplier.getAsBoolean();
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Health check failed for %s".formatted(appName), e);
-      healthy = false;
-    }
-
-    final var inFlight = inFlightSupplier.get();
-    final var paused = pausedSupplier.getAsBoolean();
-
-    final var body = """
-      {
-        "status": "%s",
-        "inFlight": %d,
-        "paused": %b
-      }
-      """.formatted(healthy ? "OK" : "UNHEALTHY", inFlight, paused)
-      .strip();
-
-    sendResponse(exchange, healthy ? 200 : 503, body);
+    final var snapshot = read();
+    final var healthy = snapshot != null && snapshot.healthy();
+    send(
+      exchange,
+      healthy ? 200 : 503,
+      "application/json; charset=utf-8",
+      snapshot == null ? UNREADABLE : json(snapshot)
+    );
   }
 
-  private static void sendResponse(final HttpExchange exchange, final int status, final String body)
+  private static final String UNREADABLE = "{\"healthy\": false}";
+
+  private HealthSnapshot read() {
+    try {
+      final var snapshot = health.get();
+      if (snapshot == null) LOGGER.log(Level.WARNING, "Health supplier returned null for %s".formatted(appName));
+      return snapshot;
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.WARNING, "Health check failed for %s".formatted(appName), e);
+      return null;
+    }
+  }
+
+  /// Renders a snapshot as the endpoint's JSON body.
+  ///
+  /// @param snapshot the snapshot to render
+  /// @return the JSON body
+  static String json(final HealthSnapshot snapshot) {
+    final var sources = snapshot
+      .pauseSources()
+      .stream()
+      .map(source -> "\"" + lower(source) + "\"")
+      .collect(Collectors.joining(", ", "[", "]"));
+    return "{\"healthy\": %b, \"running\": %b, \"pauseSources\": %s, \"circuitBreaker\": \"%s\"}".formatted(
+      snapshot.healthy(),
+      snapshot.running(),
+      sources,
+      lower(snapshot.circuitBreaker())
+    );
+  }
+
+  private static String lower(final Enum<?> value) {
+    return value.name().toLowerCase(Locale.ROOT);
+  }
+
+  private static void send(final HttpExchange exchange, final int status, final String contentType, final String body)
     throws IOException {
     final var payload = body.getBytes(StandardCharsets.UTF_8);
-    exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+    exchange.getResponseHeaders().add("Content-Type", contentType);
     exchange.sendResponseHeaders(status, payload.length);
     try (final var out = exchange.getResponseBody()) {
       out.write(payload);

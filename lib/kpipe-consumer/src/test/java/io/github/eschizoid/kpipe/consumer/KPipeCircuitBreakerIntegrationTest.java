@@ -83,7 +83,7 @@ class KPipeCircuitBreakerIntegrationTest {
     assertTrue(snapshot.running(), "consumer thread is alive while the breaker is open");
     assertTrue(snapshot.paused(), "breaker pause must be visible in the snapshot");
     assertEquals(CircuitBreakerState.OPEN, snapshot.circuitBreaker(), "snapshot must expose the OPEN breaker");
-    assertTrue(snapshot.pauseSources().contains("CIRCUIT_BREAKER"), "pause source must name the breaker");
+    assertTrue(snapshot.pauseSources().contains(PauseSource.CIRCUIT_BREAKER), "pause source must name the breaker");
     assertTrue(!snapshot.healthy(), "an OPEN breaker must make the consumer unhealthy");
 
     consumer.close();

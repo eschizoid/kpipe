@@ -72,7 +72,7 @@ class KPipeConsumerMockingTest {
 
     try (functionalConsumer) {
       functionalConsumer.start();
-      verify(mockConsumer).subscribe(topicCaptor.capture());
+      verify(mockConsumer).subscribe(topicCaptor.capture(), any(ConsumerRebalanceListener.class));
       assertEquals(Set.of(TOPIC), Set.copyOf(topicCaptor.getValue()));
     }
   }

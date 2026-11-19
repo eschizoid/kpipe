@@ -14,7 +14,7 @@ final class ConsumerDefaults {
   /// paused-loop backpressure re-check cadence).
   static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
 
-  /// Max time `waitForInFlightDrain` / graceful shutdown waits for in-flight records to finish.
+  /// Max time `awaitDispatchIdle` / graceful shutdown waits for in-flight records to finish.
   static final Duration WAIT_FOR_MESSAGES = Duration.ofMillis(5000);
 
   /// Max time `close()` waits for the dispatcher's executor to drain before `shutdownNow()`.

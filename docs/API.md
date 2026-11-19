@@ -123,15 +123,15 @@ KPipe.json("orders", props)
 
 ## `Handle` — lifecycle
 
-| Method                         | Semantics                                                                                                                                               |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `isHealthy()`                  | Liveness snapshot.                                                                                                                                      |
-| `metrics()`                    | A `MetricsSnapshot`: record counts in total and per topic, in-flight, backpressure and circuit breaker figures.                                         |
-| `awaitShutdown()`              | Blocks indefinitely until the consumer stops (throws `InterruptedException`).                                                                           |
-| `awaitShutdown(Duration)`      | Bounded wait; returns whether the consumer stopped.                                                                                                     |
-| `shutdownGracefully(Duration)` | Initiate shutdown with a bounded in-flight drain; returns whether the drain finished cleanly.                                                           |
-| `close()`                      | `shutdownGracefully(Duration.ofSeconds(5))`. `Handle` is `AutoCloseable`, so try-with-resources gives you a bounded graceful shutdown by default.       |
-| `topKeyQueueDepths(int n)`     | `KEY_ORDERED` diagnostics: the `n` deepest per-key queues, deepest first (empty list in other modes; a `null` Kafka key appears as a `null` entry key). |
+| Method                         | Semantics                                                                                                                                                                         |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `health()`                     | A `HealthSnapshot`: whether the consumer runs, which `PauseSource`s hold a pause, and the circuit breaker state, read at one moment. `health().healthy()` is the liveness answer. |
+| `metrics()`                    | A `MetricsSnapshot`: record counts in total and per topic, in-flight, backpressure and circuit breaker figures.                                                                   |
+| `awaitShutdown()`              | Blocks indefinitely until the consumer stops (throws `InterruptedException`).                                                                                                     |
+| `awaitShutdown(Duration)`      | Bounded wait; returns whether the consumer stopped.                                                                                                                               |
+| `shutdownGracefully(Duration)` | Initiate shutdown with a bounded in-flight drain; returns whether the drain finished cleanly.                                                                                     |
+| `close()`                      | `shutdownGracefully(Duration.ofSeconds(5))`. `Handle` is `AutoCloseable`, so try-with-resources gives you a bounded graceful shutdown by default.                                 |
+| `topKeyQueueDepths(int n)`     | `KEY_ORDERED` diagnostics: the `n` deepest per-key queues, deepest first (empty list in other modes; a `null` Kafka key appears as a `null` entry key).                           |
 
 `start()` does not block; the consumer runs on its own (non-daemon) thread, so the process stays alive until you close
 the handle or the JVM receives a shutdown signal. Keep the `Handle` — the recommended shape is try-with-resources plus

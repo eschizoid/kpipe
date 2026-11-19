@@ -66,7 +66,7 @@ class MultiBuilderBatchIntegrationTest {
       .start();
 
     try {
-      assertTrue(handle.isHealthy());
+      assertTrue(handle.health().healthy());
 
       try (final var producer = new KafkaProducer<byte[], byte[]>(producerProps())) {
         // Produce 6 to nonBatch, 12 to batch (two size-triggered flushes plus a 2-record drain),

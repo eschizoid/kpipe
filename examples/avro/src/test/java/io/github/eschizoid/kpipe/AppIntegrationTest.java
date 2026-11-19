@@ -60,7 +60,7 @@ class AppIntegrationTest {
     final var capturingSink = new CapturingSink<GenericRecord>();
 
     try (final var handle = KPipe.avro(topic, consumerProps(), format).skipBytes(5).toCustom(capturingSink).start()) {
-      assertTrue(handle.isHealthy(), "Handle should be healthy after start()");
+      assertTrue(handle.health().healthy(), "Handle should be healthy after start()");
 
       produceUntilConsumed(topic, createConfluentWirePayload(), capturingSink, Duration.ofSeconds(15));
 
@@ -73,7 +73,7 @@ class AppIntegrationTest {
       );
 
       assertTrue(handle.shutdownGracefully(Duration.ofSeconds(5)));
-      assertFalse(handle.isHealthy());
+      assertFalse(handle.health().healthy());
     }
   }
 
