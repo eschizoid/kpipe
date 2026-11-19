@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe.format.protobuf.confluent;
 import com.google.protobuf.Descriptors.Descriptor;
 import io.confluent.kafka.schemaregistry.protobuf.ProtobufSchema;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufDescriptorCompiler;
-import io.github.eschizoid.kpipe.registry.MalformedRecordException;
+import io.github.eschizoid.kpipe.pipeline.MalformedRecordException;
 import java.util.Objects;
 
 /// Confluent-backed [ProtobufDescriptorCompiler]: compiles `.proto` source text to a protobuf

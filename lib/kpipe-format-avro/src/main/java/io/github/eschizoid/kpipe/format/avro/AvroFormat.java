@@ -1,10 +1,10 @@
 package io.github.eschizoid.kpipe.format.avro;
 
-import io.github.eschizoid.kpipe.registry.ConfluentEnvelope;
-import io.github.eschizoid.kpipe.registry.MalformedRecordException;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.SchemaResolver;
-import io.github.eschizoid.kpipe.registry.WireDiagnostics;
+import io.github.eschizoid.kpipe.pipeline.ConfluentEnvelope;
+import io.github.eschizoid.kpipe.pipeline.MalformedRecordException;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.SchemaResolver;
+import io.github.eschizoid.kpipe.pipeline.WireDiagnostics;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Objects;

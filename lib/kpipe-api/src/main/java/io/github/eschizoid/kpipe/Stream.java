@@ -5,7 +5,7 @@ import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.OffsetStore;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.pipeline.SchemaResolver;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
@@ -48,7 +48,7 @@ public interface Stream<T> {
   ///
   /// @param op the operator to append (must not be null). Returning `null` from the operator
   ///     is treated as intentional filtering — downstream operators are skipped for that
-  ///     message (see [io.github.eschizoid.kpipe.registry.MessagePipeline] error semantics).
+  ///     message (see [io.github.eschizoid.kpipe.pipeline.Pipeline] error semantics).
   /// @return a new stream with `op` appended
   /// @throws NullPointerException if `op` is null
   Stream<T> pipe(final UnaryOperator<T> op);

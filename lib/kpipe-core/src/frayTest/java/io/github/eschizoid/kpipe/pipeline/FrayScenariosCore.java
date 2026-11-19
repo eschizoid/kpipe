@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 /// Runs actions on their own threads and joins them.
 ///

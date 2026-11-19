@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.google.protobuf.DynamicMessage;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.registry.SchemaResolver;
+import io.github.eschizoid.kpipe.pipeline.SchemaResolver;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Test;

@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufDescriptorCompiler;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
-import io.github.eschizoid.kpipe.registry.MalformedRecordException;
+import io.github.eschizoid.kpipe.pipeline.MalformedRecordException;
 import java.util.ServiceLoader;
 import org.junit.jupiter.api.Test;
 

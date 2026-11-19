@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 /// Builds diagnostic messages for deserialization failures at the byte boundary.
 ///

@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 /// Represents a message format abstraction for KPipe pipelines.
 ///
@@ -22,7 +22,7 @@ package io.github.eschizoid.kpipe.registry;
 public interface MessageFormat<T> {
   /// Returns the identity-passthrough [MessageFormat] for `byte[]` payloads.
   ///
-  /// Use with the [TypedPipelineBuilder] when you want fluent operator chaining
+  /// Use with the [Pipeline.Builder] when you want fluent operator chaining
   /// without real deserialization — tests, benchmarks, byte-level routing pipelines.
   ///
   /// @return a singleton MessageFormat<byte[]> whose deserialize/serialize are identity

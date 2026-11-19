@@ -4,8 +4,8 @@ import io.confluent.parallelconsumer.ParallelConsumerOptions;
 import io.confluent.parallelconsumer.ParallelStreamProcessor;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -187,7 +187,7 @@ public final class PerRecordLatencyHarness {
     final ProcessingMode mode,
     final Consumer<byte[]> sink
   ) {
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .pipe(bytes -> {
         sink.accept(bytes);
         return bytes;

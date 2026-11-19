@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -53,9 +53,9 @@ class OperatorsTest {
 
   @Test
   void filterShouldComposeInPipeline() {
-    // Verify the operator actually integrates with TypedPipelineBuilder's
+    // Verify the operator actually integrates with Pipeline.Builder's
     // null-handling — filtered messages short-circuit the chain.
-    final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+    final var pipeline = Pipeline.from(MessageFormat.bytes())
       .pipe(Operators.filter(b -> new String(b).startsWith("keep-")))
       .pipe(
         Operators.peek(b -> {

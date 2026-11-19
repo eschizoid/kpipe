@@ -13,15 +13,15 @@ placeholder values; they show shape, not a runnable program.
 
 ## Sinks in the explicit API
 
-In the explicit API, `MessagePipeline.from(format)` returns a builder that takes a sink directly. A pipeline has one
-sink: `toSink(sink)` sets it, and a second call throws `IllegalStateException`. To fan out to several, use
-`toMulti(...)`, on a stream or on the pipeline builder; delivery is best effort, so a sink that throws is logged and the
-record still succeeds. To retry the record when any destination fails, write one sink that calls each in turn. Console
-sinks (`JsonConsoleSink`, `AvroConsoleSink`, `ProtobufConsoleSink`) live in their format modules, and you pass an
-instance to `toSink` like any other sink:
+In the explicit API, `Pipeline.from(format)` returns a builder that takes a sink directly. A pipeline has one sink:
+`toSink(sink)` sets it, and a second call throws `IllegalStateException`. To fan out to several, use `toMulti(...)`, on
+a stream or on the pipeline builder; delivery is best effort, so a sink that throws is logged and the record still
+succeeds. To retry the record when any destination fails, write one sink that calls each in turn. Console sinks
+(`JsonConsoleSink`, `AvroConsoleSink`, `ProtobufConsoleSink`) live in their format modules, and you pass an instance to
+`toSink` like any other sink:
 
 ```java
-final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+final var pipeline = Pipeline.from(JsonFormat.INSTANCE)
   .pipe(sanitize)
   .toSink(databaseSink)
   .build();
@@ -63,7 +63,7 @@ import io.github.eschizoid.kpipe.tracing.Tracer;
 
 final var producer = new KafkaProducer<byte[], byte[]>(producerProps);
 
-final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+final var pipeline = Pipeline.from(JsonFormat.INSTANCE)
   .pipe(transform)
   .toSink(KafkaMessageSink.of(producer, "output-topic", JsonFormat.INSTANCE::serialize, Tracer.noop()))
   .build();

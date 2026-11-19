@@ -10,10 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
-import io.github.eschizoid.kpipe.registry.MalformedRecordException;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
+import io.github.eschizoid.kpipe.pipeline.MalformedRecordException;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -32,11 +32,7 @@ class ProtobufFormatEdgeCasesTest {
   }
 
   /// Drives `bytes` through deserialize -> process -> serialize, re-throwing a failure cause.
-  private static <T> byte[] roundTrip(
-    final MessageFormat<T> format,
-    final MessagePipeline<T> pipeline,
-    final byte[] bytes
-  ) {
+  private static <T> byte[] roundTrip(final MessageFormat<T> format, final Pipeline<T> pipeline, final byte[] bytes) {
     final var deserialized = pipeline.deserializeOrFail(bytes);
     return switch (pipeline.process(deserialized)) {
       case Result.Passed<T> p -> format.serialize(p.value());
@@ -75,7 +71,7 @@ class ProtobufFormatEdgeCasesTest {
     final var big = "z".repeat(2_000_000);
     final var bytes = format.serialize(message(1L, big));
 
-    final var pipeline = MessagePipeline.from(format).build();
+    final var pipeline = Pipeline.from(format).build();
     final var result = roundTrip(format, pipeline, bytes);
 
     assertNotNull(result);
@@ -96,7 +92,7 @@ class ProtobufFormatEdgeCasesTest {
     final var payload = format.serialize(message(7L, "framed"));
     final var framed = withEnvelope(99, payload);
 
-    final var pipeline = MessagePipeline.from(format).skipBytes(6).build();
+    final var pipeline = Pipeline.from(format).skipBytes(6).build();
     final var decoded = pipeline.deserializeOrFail(framed);
 
     assertNotNull(decoded);
@@ -110,7 +106,7 @@ class ProtobufFormatEdgeCasesTest {
     final var payload = format.serialize(message(7L, "framed"));
     final var framed = withEnvelope(99, payload);
 
-    final var pipeline = MessagePipeline.from(format).skipBytes(5).build();
+    final var pipeline = Pipeline.from(format).skipBytes(5).build();
 
     var corrupted = false;
     try {

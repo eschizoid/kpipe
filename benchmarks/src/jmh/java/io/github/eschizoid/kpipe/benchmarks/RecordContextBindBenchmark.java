@@ -1,9 +1,9 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import io.github.eschizoid.kpipe.record.RecordContext;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
@@ -37,9 +37,9 @@ public class RecordContextBindBenchmark {
   private static final byte[] PROCESSED_BY = "kpipe".getBytes(StandardCharsets.UTF_8);
 
   private ConsumerRecord<byte[], byte[]> record;
-  private MessagePipeline<Map<String, Object>> valuePipeline;
-  private MessagePipeline<Map<String, Object>> readingPipeline;
-  private MessagePipeline<Map<String, Object>> changingPipeline;
+  private Pipeline<Map<String, Object>> valuePipeline;
+  private Pipeline<Map<String, Object>> readingPipeline;
+  private Pipeline<Map<String, Object>> changingPipeline;
 
   @Setup
   public void setup() {
@@ -89,9 +89,9 @@ public class RecordContextBindBenchmark {
       map.put("key", RecordContext.current().keyString());
       return map;
     };
-    valuePipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).build();
-    readingPipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).pipe(readKey).build();
-    changingPipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+    valuePipeline = Pipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).build();
+    readingPipeline = Pipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).pipe(readKey).build();
+    changingPipeline = Pipeline.from(JsonFormat.INSTANCE)
       .pipe(op1)
       .pipe(op2)
       .pipe(op3)
@@ -131,7 +131,7 @@ public class RecordContextBindBenchmark {
     );
   }
 
-  private static byte[] run(final MessagePipeline<Map<String, Object>> pipeline, final byte[] data) {
+  private static byte[] run(final Pipeline<Map<String, Object>> pipeline, final byte[] data) {
     final var result = pipeline.process(pipeline.deserializeOrFail(data));
     if (!(result instanceof Result.Passed<Map<String, Object>> passed)) {
       throw new AssertionError("benchmark input should always pass: " + result);

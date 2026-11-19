@@ -1,10 +1,10 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
-/// Reusable [UnaryOperator] factories for [TypedPipelineBuilder#pipe(UnaryOperator)] and
+/// Reusable [UnaryOperator] factories for [Pipeline.Builder#pipe(UnaryOperator)] and
 /// `Stream.pipe`.
 ///
 /// These helpers work on any payload type. Operators that change the fields of a JSON record,
@@ -12,9 +12,9 @@ import java.util.function.UnaryOperator;
 ///
 /// Example:
 /// ```java
-/// import static io.github.eschizoid.kpipe.registry.Operators.filter;
+/// import static io.github.eschizoid.kpipe.pipeline.Operators.filter;
 ///
-/// MessagePipeline.from(JsonFormat.INSTANCE)
+/// Pipeline.from(JsonFormat.INSTANCE)
 ///     .pipe(filter(msg -> "active".equals(msg.get("status"))))
 ///     .toSink(activeMessageSink)
 ///     .build();
@@ -25,7 +25,7 @@ public final class Operators {
 
   /// Returns an operator that keeps messages matching the predicate and drops others.
   ///
-  /// Per the [MessagePipeline] error contract, returning `null` from an operator signals
+  /// Per the [Pipeline] error contract, returning `null` from an operator signals
   /// intentional filtering — the consumer marks the offset as processed but does not
   /// invoke any sink. Filtered messages are not counted as errors.
   ///
@@ -81,7 +81,7 @@ public final class Operators {
 
   /// Returns an operator that chains multiple operators left-to-right.
   ///
-  /// If any operator in the chain returns `null` (the [MessagePipeline] filter signal),
+  /// If any operator in the chain returns `null` (the [Pipeline] filter signal),
   /// downstream operators are short-circuited and the composed operator returns `null`.
   /// Calling `compose()` with no arguments yields an identity operator.
   ///

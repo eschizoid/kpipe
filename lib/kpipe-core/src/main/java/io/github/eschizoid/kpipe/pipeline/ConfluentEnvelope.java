@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 /// The Confluent Schema Registry wire-envelope prefix shared by the Avro and Protobuf
 /// registry-mode formats: a 1-byte magic (`0x00`) followed by a 4-byte big-endian schema id. The

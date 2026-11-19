@@ -3,9 +3,9 @@ package io.github.eschizoid.kpipe.format.json;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONException;
 import com.alibaba.fastjson2.JSONFactory;
-import io.github.eschizoid.kpipe.registry.MalformedRecordException;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.WireDiagnostics;
+import io.github.eschizoid.kpipe.pipeline.MalformedRecordException;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.WireDiagnostics;
 import java.util.Map;
 
 /// JSON implementation of [MessageFormat] for KPipe.

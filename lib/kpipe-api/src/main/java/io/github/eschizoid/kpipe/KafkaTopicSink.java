@@ -1,9 +1,9 @@
 package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.KPipeConsumerBuilder;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.util.ArrayList;

@@ -3,9 +3,9 @@ package io.github.eschizoid.kpipe.format.json;
 import static io.github.eschizoid.kpipe.format.json.JsonFields.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.NonRetryableException;
-import io.github.eschizoid.kpipe.registry.Result;
+import io.github.eschizoid.kpipe.pipeline.NonRetryableException;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
@@ -96,7 +96,7 @@ class JsonFieldsTest {
 
   @Test
   void aFailingFieldOperatorFailsTheRecordInAPipeline() {
-    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(require("id")).build();
+    final var pipeline = Pipeline.from(JsonFormat.INSTANCE).pipe(require("id")).build();
     final var decoded = pipeline.deserializeOrFail("{\"name\":\"a\"}".getBytes(StandardCharsets.UTF_8));
 
     final var failed = assertInstanceOf(Result.Failed.class, pipeline.process(decoded));
@@ -124,7 +124,7 @@ class JsonFieldsTest {
 
   @Test
   void aJsonNullFailsRequireInAPipeline() {
-    final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(require("id")).build();
+    final var pipeline = Pipeline.from(JsonFormat.INSTANCE).pipe(require("id")).build();
     final var decoded = pipeline.deserializeOrFail("{\"id\":null,\"x\":1}".getBytes(StandardCharsets.UTF_8));
 
     assertInstanceOf(Result.Failed.class, pipeline.process(decoded));

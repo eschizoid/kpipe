@@ -1,8 +1,8 @@
 package io.github.eschizoid.kpipe.benchmarks;
 
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
-import io.github.eschizoid.kpipe.registry.Result;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
+import io.github.eschizoid.kpipe.pipeline.Result;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -33,7 +33,7 @@ public class JsonPipelineBenchmark {
   private static final long BENCHMARK_TIMESTAMP = 1_700_000_000_000L;
 
   private byte[] jsonBytes;
-  private MessagePipeline<Map<String, Object>> kpipePipeline;
+  private Pipeline<Map<String, Object>> kpipePipeline;
 
   @Setup
   public void setup() {
@@ -65,7 +65,7 @@ public class JsonPipelineBenchmark {
       return map;
     };
 
-    kpipePipeline = MessagePipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).build();
+    kpipePipeline = Pipeline.from(JsonFormat.INSTANCE).pipe(op1).pipe(op2).pipe(op3).build();
   }
 
   @Benchmark

@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
 import io.github.eschizoid.kpipe.record.RecordContext;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;

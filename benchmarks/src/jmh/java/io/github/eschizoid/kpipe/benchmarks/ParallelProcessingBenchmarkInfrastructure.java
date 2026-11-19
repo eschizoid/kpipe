@@ -11,8 +11,8 @@ import io.confluent.parallelconsumer.ParallelStreamProcessor;
 import io.github.eschizoid.kpipe.consumer.BackpressureController;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
-import io.github.eschizoid.kpipe.registry.MessageFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.MessageFormat;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -297,7 +297,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       processedCount = new AtomicInteger(0);
       final var props = kafkaContext.consumerProps("kpipe-group");
       final var workMicros = params.workMicros;
-      final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+      final var pipeline = Pipeline.from(MessageFormat.bytes())
         .pipe(b -> {
           simulateWork(workMicros);
           processedCount.incrementAndGet();
@@ -342,7 +342,7 @@ public final class ParallelProcessingBenchmarkInfrastructure {
       processedCount = new AtomicInteger(0);
       final var props = kafkaContext.consumerProps("kpipe-keyordered-group");
       final var workMicros = params.workMicros;
-      final var pipeline = MessagePipeline.from(MessageFormat.bytes())
+      final var pipeline = Pipeline.from(MessageFormat.bytes())
         .pipe(b -> {
           simulateWork(workMicros);
           processedCount.incrementAndGet();

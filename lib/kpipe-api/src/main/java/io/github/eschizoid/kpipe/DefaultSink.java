@@ -1,7 +1,7 @@
 package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import java.util.List;
 import java.util.Objects;
@@ -49,10 +49,10 @@ final class DefaultSink<T> implements Sink<T> {
     return KafkaTopicSink.closingOnFailure(opened, () -> DefaultHandle.startAndWrap(consumerBuilder.build()));
   }
 
-  /// Builds the [MessagePipeline] for this sink's stream + terminal sink. Reused by
+  /// Builds the [Pipeline] for this sink's stream + terminal sink. Reused by
   /// [MultiBuilder] when assembling a per-topic pipeline map.
-  MessagePipeline<?> buildPipeline() {
-    final var pipelineBuilder = MessagePipeline.from(stream.format()).skipBytes(stream.skipBytes());
+  Pipeline<?> buildPipeline() {
+    final var pipelineBuilder = Pipeline.from(stream.format()).skipBytes(stream.skipBytes());
     for (final var op : stream.operators()) pipelineBuilder.pipe(op);
     return pipelineBuilder.toSink(terminalSink).build();
   }

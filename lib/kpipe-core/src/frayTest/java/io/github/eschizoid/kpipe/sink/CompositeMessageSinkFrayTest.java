@@ -2,7 +2,7 @@ package io.github.eschizoid.kpipe.sink;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.github.eschizoid.kpipe.registry.FrayScenariosCore;
+import io.github.eschizoid.kpipe.pipeline.FrayScenariosCore;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Tag;

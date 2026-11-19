@@ -1,8 +1,8 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 import java.util.Objects;
 
-/// Three-way outcome of a [MessagePipeline] stage. Replaces the pre-1.13.0 convention (`null =
+/// Three-way outcome of a [Pipeline] stage. Replaces the pre-1.13.0 convention (`null =
 /// filter`, `throw = fail`) with a type-level distinction enforced by the compiler.
 ///
 /// Use the static factories or pattern-match exhaustively:

@@ -1,4 +1,4 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
-/// Pins the wire-prefix stripping done by the pipeline built from [TypedPipelineBuilder].
+/// Pins the wire-prefix stripping done by the pipeline built from [Pipeline.Builder].
 ///
 /// `skipBytes(n)` is the seam that strips Confluent magic-byte envelopes (5 bytes for Avro,
 /// 6 for single-message Protobuf) before the format ever sees the payload. An off-by-one here
@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 /// tests verify the slice handed to the format is exactly `data[n..]`, and that a payload no
 /// longer than the prefix surfaces through the no-null contract rather than slipping through
 /// as a quietly filtered record.
-class TypedPipelineSkipBytesTest {
+class PipelineSkipBytesTest {
 
   /// Records the exact bytes the format was asked to deserialize so the test can assert on the
   /// post-skip slice. Echoes the bytes back as the "decoded" value.
@@ -72,8 +72,8 @@ class TypedPipelineSkipBytesTest {
     }
   }
 
-  private static MessagePipeline<byte[]> pipelineWithSkip(final MessageFormat<byte[]> format, final int skip) {
-    return MessagePipeline.from(format).skipBytes(skip).build();
+  private static Pipeline<byte[]> pipelineWithSkip(final MessageFormat<byte[]> format, final int skip) {
+    return Pipeline.from(format).skipBytes(skip).build();
   }
 
   @Test

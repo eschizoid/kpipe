@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe.benchmarks;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.json.JsonFormat;
-import io.github.eschizoid.kpipe.registry.MessagePipeline;
+import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
 import java.nio.charset.StandardCharsets;
@@ -143,7 +143,7 @@ public class BatchSinkLatencyBenchmark {
 
       // The pipeline is identical across cells: deserialize JSON once, no operators. Construction
       // happens in setup so it doesn't pollute measured time.
-      final var pipeline = MessagePipeline.from(JsonFormat.INSTANCE).build();
+      final var pipeline = Pipeline.from(JsonFormat.INSTANCE).build();
 
       final var props = baseProps();
 
@@ -157,7 +157,7 @@ public class BatchSinkLatencyBenchmark {
         // Per-record control path — wire a normal MessageSink that parks once per record. This
         // exercises the same byte → JSON deserialization path the batch path uses; the only
         // difference is the terminal sink.
-        final var perRecordPipeline = MessagePipeline.from(JsonFormat.INSTANCE)
+        final var perRecordPipeline = Pipeline.from(JsonFormat.INSTANCE)
           .toSink((final Map<String, Object> _) -> {
             LockSupport.parkNanos(nanos);
             processedLatch.countDown();

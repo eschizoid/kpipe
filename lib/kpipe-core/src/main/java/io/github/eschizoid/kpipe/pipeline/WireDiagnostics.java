@@ -1,10 +1,10 @@
-package io.github.eschizoid.kpipe.registry;
+package io.github.eschizoid.kpipe.pipeline;
 
 import java.util.HexFormat;
 
-/// Cross-cutting helpers for rendering leading bytes in wire-level failure messages. One home so the
-/// pipeline boundary (`PipelineDiagnostics`) and the format modules (JSON/Avro/Protobuf) render byte
-/// previews the same way instead of each hand-rolling — and drifting on — its own copy.
+/// Helpers for rendering leading bytes in wire-level failure messages. The pipeline boundary
+/// (`PipelineDiagnostics`) and the format modules (JSON, Avro, Protobuf) all render byte
+/// previews through here, so they render them the same way.
 ///
 /// Two presentations, deliberately distinct:
 ///   * [#hexPreview] — compact, up to [#HEX_PREVIEW_LIMIT] bytes, ` ...` when truncated. For
@@ -26,7 +26,8 @@ public final class WireDiagnostics {
   /// writer/reader schema mismatch on real bytes).
   ///
   /// @param data the byte array to preview (must be non-null)
-  /// @return space-separated lowercase hex of the leading bytes, with a trailing ` ...` when truncated
+  /// @return space-separated lowercase hex of the leading bytes, with a trailing ` ...` when
+  ///     truncated
   public static String hexPreview(final byte[] data) {
     final var count = Math.min(data.length, HEX_PREVIEW_LIMIT);
     final var hex = HexFormat.ofDelimiter(" ").formatHex(data, 0, count);
