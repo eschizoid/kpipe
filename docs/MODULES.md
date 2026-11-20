@@ -77,7 +77,7 @@ kpipe-producer                     → core, tracing
 kpipe-consumer                     → core, producer, tracing
 kpipe-format-{json,avro,protobuf}  → core
 kpipe-api                          → core, consumer, producer, tracing; format modules are compile-only (requires static)
-kpipe-otel                         → consumer
+kpipe-otel                         → consumer, tracing
 kpipe-schema-registry-confluent    → core
 kpipe-format-protobuf-confluent    → format-protobuf
 kpipe-test                         → consumer

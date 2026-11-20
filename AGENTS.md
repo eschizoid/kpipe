@@ -127,18 +127,18 @@ callback keeps reporting, so counters never go down. Without an exporter nothing
 There are no producer metrics: a DLQ write counts as `dlq.sent` / `dlq.failed`, and a `KafkaMessageSink` send, which
 waits for the broker's ack, counts as processed or failed.
 
-| Instrument                                                                         | Type                       |
-| ---------------------------------------------------------------------------------- | -------------------------- |
-| `kpipe.consumer.records.{received,processed,filtered,failed,retries}`              | counter, per topic         |
-| `kpipe.consumer.dlq.{sent,failed}`                                                 | counter, per topic         |
-| `kpipe.consumer.records.in_flight`                                                 | up-down counter            |
-| `kpipe.consumer.lag`                                                               | up-down counter, per topic |
-| `kpipe.consumer.processing.duration` (seconds)                                     | histogram, per topic       |
-| `kpipe.consumer.backpressure.{pauses,time}`                                        | counter                    |
-| `kpipe.consumer.circuit_breaker.{trips,open_time}`                                 | counter                    |
-| `kpipe.consumer.circuit_breaker.state` (consumers per state)                       | up-down counter            |
-| `kpipe.consumer.offsets.{commits,commit_failures}` (default offset manager only)   | counter                    |
-| `kpipe.schema_registry.cache.{hits,misses,size}` (via `exportSchemaRegistryCache`) | counter / gauge            |
+| Instrument                                                                             | Type                       |
+| -------------------------------------------------------------------------------------- | -------------------------- |
+| `kpipe.consumer.records.{received,processed,filtered,failed,retries}`                  | counter, per topic         |
+| `kpipe.consumer.dlq.{sent,failed}`                                                     | counter, per topic         |
+| `kpipe.consumer.records.in_flight`                                                     | up-down counter            |
+| `kpipe.consumer.lag`                                                                   | up-down counter, per topic |
+| `kpipe.consumer.processing.duration` (seconds)                                         | histogram, per topic       |
+| `kpipe.consumer.backpressure.{pauses,time}`                                            | counter                    |
+| `kpipe.consumer.circuit_breaker.{trips,open_time}`                                     | counter                    |
+| `kpipe.consumer.circuit_breaker.state` (consumers per state)                           | up-down counter            |
+| `kpipe.consumer.offsets.{commits,commit_failures}` (default offset manager only)       | counter                    |
+| `kpipe.schema_registry.cache.{hits,misses,size}` (via `KPipeOtel.schemaRegistryCache`) | counter / gauge            |
 
 Log-based fallback: `withMetricsLog(Duration)` writes one `key=value` line per interval to the
 `io.github.eschizoid.kpipe.metrics.log` logger, plus a final line at close after the last flush.

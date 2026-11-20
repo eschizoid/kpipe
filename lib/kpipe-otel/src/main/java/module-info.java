@@ -3,9 +3,10 @@
 /// so this module is needed only to trace or export metrics with it:
 ///
 /// ```java
+/// final var metrics = KPipeOtel.metrics(openTelemetry); // one per OpenTelemetry, shared
 /// builder
 ///   .withTracer(KPipeOtel.tracer(openTelemetry))
-///   .withMetrics(KPipeOtel.metrics(openTelemetry));
+///   .withMetrics(metrics);
 /// ```
 ///
 /// Bring your own SDK and exporter; this module requires only `opentelemetry-api`.
