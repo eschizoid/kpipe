@@ -144,4 +144,52 @@ class GuardedTracerTest {
     assertSame(Tracer.noop(), Tracer.guarded(Tracer.noop()));
     assertSame(Tracer.noop(), Tracer.noop());
   }
+
+  @Test
+  void aWorkingSpanIsCalledThroughUnchanged() {
+    final var calls = new ArrayList<String>();
+    final Tracer.SpanScope working = new Tracer.SpanScope() {
+      @Override
+      public Activation activate() {
+        calls.add("activate");
+        return () -> calls.add("deactivate");
+      }
+
+      @Override
+      public void inject(final Headers headers) {
+        calls.add("inject");
+        headers.add("x-span", new byte[] { 1 });
+      }
+
+      @Override
+      public void attemptFailed(final int attempt, final Throwable cause) {
+        calls.add("attemptFailed " + attempt);
+      }
+
+      @Override
+      public void recordException(final Throwable cause) {
+        calls.add("recordException " + cause.getMessage());
+      }
+
+      @Override
+      public void close() {
+        calls.add("close");
+      }
+    };
+    final var span = Tracer.guarded((_, _) -> working).startConsumerSpan(RECORD, null);
+    final var headers = new RecordHeaders();
+
+    try (var _ = span.activate()) {
+      span.inject(headers);
+      span.attemptFailed(2, new RuntimeException());
+      span.recordException(new RuntimeException("last"));
+    }
+    span.close();
+
+    assertEquals(
+      List.of("activate", "inject", "attemptFailed 2", "recordException last", "deactivate", "close"),
+      calls
+    );
+    assertEquals(1, headers.lastHeader("x-span").value()[0]);
+  }
 }
