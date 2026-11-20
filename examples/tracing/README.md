@@ -8,7 +8,7 @@ Reads JSON records from a topic, tags each one and writes it to another topic, w
 
 ```java
 KPipe.json(config.topic(), props)
-  .withTracer(new OtelTracer(openTelemetry))
+  .withTracer(KPipeOtel.tracer(openTelemetry))
   .withDeadLetterTopic(dlqTopic)
   .peek(msg -> LOGGER.log(Level.INFO, "received {0}", msg))
   .pipe(msg -> {

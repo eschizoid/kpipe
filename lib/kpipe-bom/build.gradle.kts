@@ -7,9 +7,7 @@ description = "KPipe BOM — Maven Bill-of-Materials that pins all kpipe-* modul
 // Derive the constrained set from the :lib project graph instead of hand-listing modules. Every
 // sibling :lib module except this BOM is a published artifact that must be pinned; sourcing from
 // `parent.subprojects` keeps the BOM in lockstep with `publishAllLibModules` and the JReleaser
-// deploy list (both already graph-sourced), so a newly added lib module can't silently drop out of
-// the BOM — the drift that left tracing-otel, schema-registry-confluent, and format-protobuf-confluent
-// unpinned through 1.17.0.
+// deploy list (both graph-sourced), so a new lib module cannot drop out of the BOM.
 dependencies {
   constraints {
     publishedLibModules().forEach { api(project(it.path)) }

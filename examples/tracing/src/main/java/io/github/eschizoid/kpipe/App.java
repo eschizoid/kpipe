@@ -2,7 +2,7 @@ package io.github.eschizoid.kpipe;
 
 import io.github.eschizoid.kpipe.consumer.config.AppConfig;
 import io.github.eschizoid.kpipe.consumer.config.KafkaConsumerConfig;
-import io.github.eschizoid.kpipe.tracing.otel.OtelTracer;
+import io.github.eschizoid.kpipe.otel.KPipeOtel;
 import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -31,7 +31,7 @@ public final class App {
 
     try (
       final var handle = KPipe.json(config.topic(), props)
-        .withTracer(new OtelTracer(openTelemetry))
+        .withTracer(KPipeOtel.tracer(openTelemetry))
         .withDeadLetterTopic(dlqTopic)
         .peek(msg -> LOGGER.log(Level.INFO, "received {0}", msg))
         .pipe(msg -> {

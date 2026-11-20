@@ -63,8 +63,8 @@ public final class MultiBuilder {
   }
 
   /// Exports the multi-topic consumer's metrics to a monitoring backend, such as OpenTelemetry
-  /// through `OtelMetrics.of(openTelemetry)` from `kpipe-metrics-otel`. Record counts carry the
-  /// topic, so dashboards can break them down per route.
+  /// through `KPipeOtel.metrics(openTelemetry)` from `kpipe-otel`. Record counts carry the topic,
+  /// so dashboards can break them down per route.
   ///
   /// @param exporter the exporter (must not be null)
   /// @return this builder
@@ -78,7 +78,7 @@ public final class MultiBuilder {
   /// through `toKafka` and `KafkaMessageSink`, carries that span's context, even when a batch flush
   /// writes it from another thread.
   ///
-  /// @param tracer the tracer, such as `new OtelTracer(openTelemetry)` from `kpipe-tracing-otel`;
+  /// @param tracer the tracer, such as `KPipeOtel.tracer(openTelemetry)` from `kpipe-otel`;
   ///     `Tracer.noop()`, the default, traces nothing
   /// @return this builder
   public MultiBuilder withTracer(final Tracer tracer) {

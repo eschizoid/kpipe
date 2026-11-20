@@ -10,5 +10,5 @@
 ///
 /// Cross-Kafka-boundary tracing is pluggable via the
 /// [io.github.eschizoid.kpipe.tracing.Tracer] SPI (the `kpipe-tracing` module, required
-/// transitively); the OpenTelemetry-backed implementation is the opt-in `kpipe-tracing-otel`.
+/// transitively); the OpenTelemetry-backed implementation is in the opt-in `kpipe-otel`.
 package io.github.eschizoid.kpipe.producer;

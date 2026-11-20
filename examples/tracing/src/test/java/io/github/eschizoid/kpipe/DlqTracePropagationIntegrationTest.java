@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.eschizoid.kpipe.tracing.otel.OtelTracer;
+import io.github.eschizoid.kpipe.otel.KPipeOtel;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -79,7 +79,7 @@ class DlqTracePropagationIntegrationTest {
       .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
       .build();
 
-    final var tracer = new OtelTracer(sdk);
+    final var tracer = KPipeOtel.tracer(sdk);
 
     // A pipeline that always fails, so every record goes to the DLQ, carrying its own span.
     final var handle = KPipe.json(inputTopic, consumerProps("dlq-trace-group-" + UUID.randomUUID()))

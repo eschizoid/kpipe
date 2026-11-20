@@ -8,8 +8,8 @@ import com.google.protobuf.Descriptors.Descriptor;
 /// This seam keeps `kpipe-format-protobuf` dependency-light: the base module speaks only
 /// `protobuf-java` types, while the real `.proto` compilation (which needs Confluent's
 /// `ProtobufSchema` and its Square-Wire parser) lives in the opt-in impl module
-/// `kpipe-format-protobuf-confluent`. Same SPI/impl split as `Tracer` vs `OtelTracer`
-/// (`kpipe-tracing-otel`): bring the heavy runtime only when you need it.
+/// `kpipe-format-protobuf-confluent`. Same SPI/impl split as `Tracer` and its OpenTelemetry
+/// implementation in `kpipe-otel`: bring the heavy runtime only when you need it.
 ///
 /// Discovered via [java.util.ServiceLoader] — `ProtobufFormat.withRegistry(resolver)` finds the
 /// impl on the runtime path, so the base's registry API stays a single-param mirror of

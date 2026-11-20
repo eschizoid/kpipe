@@ -168,8 +168,8 @@ public interface Stream<T> {
   Stream<T> withKeyOrderedMaxKeys(final int maxKeys);
 
   /// Returns a new stream that exports its metrics to a monitoring backend, such as OpenTelemetry
-  /// through `OtelMetrics.of(openTelemetry)` from `kpipe-metrics-otel`. Without an exporter the
-  /// metrics are still counted and readable through `Handle.metrics()`.
+  /// through `KPipeOtel.metrics(openTelemetry)` from `kpipe-otel`. Without an exporter the metrics
+  /// are still counted and readable through `Handle.metrics()`.
   ///
   /// @param exporter the exporter (must not be null)
   /// @return a new stream with the exporter attached
@@ -181,7 +181,7 @@ public interface Stream<T> {
   /// the dead-letter topic or through `toKafka` and `KafkaMessageSink`, carries that span's
   /// context, even when a batch flush writes it from another thread.
   ///
-  /// @param tracer the tracer, such as `new OtelTracer(openTelemetry)` from `kpipe-tracing-otel`;
+  /// @param tracer the tracer, such as `KPipeOtel.tracer(openTelemetry)` from `kpipe-otel`;
   ///     [Tracer#noop()], the default, traces nothing
   /// @return a new stream with tracing attached
   /// @throws NullPointerException if `tracer` is null

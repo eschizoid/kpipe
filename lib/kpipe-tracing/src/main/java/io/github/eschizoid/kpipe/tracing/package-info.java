@@ -13,6 +13,6 @@
 /// - [Tracer#noop()] and [Tracer.SpanScope#noop()]: the defaults when no backend is configured,
 ///   which record nothing.
 ///
-/// `kpipe-tracing-otel` implements the SPI with OpenTelemetry. This module depends only on
+/// `kpipe-otel` implements the SPI with OpenTelemetry. This module depends only on
 /// `kafka-clients`, so `kpipe-consumer` and `kpipe-producer` carry no tracing vendor.
 package io.github.eschizoid.kpipe.tracing;

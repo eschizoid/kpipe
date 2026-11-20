@@ -3,8 +3,8 @@ package io.github.eschizoid.kpipe;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.eschizoid.kpipe.otel.KPipeOtel;
 import io.github.eschizoid.kpipe.test.CapturingSink;
-import io.github.eschizoid.kpipe.tracing.otel.OtelTracer;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -59,7 +59,7 @@ class AppIntegrationTest {
       .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
       .build();
 
-    final var tracer = new OtelTracer(sdk);
+    final var tracer = KPipeOtel.tracer(sdk);
 
     try (final var handle = KPipe.json(topic, consumerProps()).withTracer(tracer).toCustom(capturingSink).start()) {
       // Produce a record carrying a known traceparent.

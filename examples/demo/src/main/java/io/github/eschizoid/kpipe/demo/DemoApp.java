@@ -4,13 +4,14 @@ import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import io.github.eschizoid.kpipe.Handle;
 import io.github.eschizoid.kpipe.KPipe;
+import io.github.eschizoid.kpipe.consumer.MetricsExporter;
 import io.github.eschizoid.kpipe.consumer.config.KafkaConsumerConfig;
 import io.github.eschizoid.kpipe.format.avro.AvroFormat;
 import io.github.eschizoid.kpipe.format.json.JsonConsoleSink;
 import io.github.eschizoid.kpipe.format.json.JsonFields;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.health.HttpHealthServer;
-import io.github.eschizoid.kpipe.metrics.otel.OtelMetrics;
+import io.github.eschizoid.kpipe.otel.KPipeOtel;
 import io.github.eschizoid.kpipe.schemaregistry.confluent.ConfluentSchemaResolver;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
@@ -31,7 +32,7 @@ public class DemoApp implements AutoCloseable {
   private static final Logger LOGGER = System.getLogger(DemoApp.class.getName());
   private static OpenTelemetry SHARED_OTEL;
   private static OpenTelemetry metricsOtel;
-  private static OtelMetrics metrics;
+  private static MetricsExporter metrics;
 
   private final Handle handle;
 
@@ -68,11 +69,11 @@ public class DemoApp implements AutoCloseable {
     }
   }
 
-  /// One [OtelMetrics] per `OpenTelemetry`, shared by every DemoApp built on it: each instance's
+  /// One metrics exporter per `OpenTelemetry`, shared by every DemoApp built on it: each instance's
   /// callback stays registered with the SDK.
-  private static synchronized OtelMetrics metricsFor(final OpenTelemetry otel) {
+  private static synchronized MetricsExporter metricsFor(final OpenTelemetry otel) {
     if (metrics == null || metricsOtel != otel) {
-      metrics = OtelMetrics.of(otel);
+      metrics = KPipeOtel.metrics(otel);
       metricsOtel = otel;
     }
     return metrics;

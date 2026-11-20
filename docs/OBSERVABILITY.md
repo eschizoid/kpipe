@@ -51,13 +51,13 @@ kpipe metrics [orders group=billing] received=120 processed=117 filtered=1 faile
 
 ## OpenTelemetry metrics
 
-Add `kpipe-metrics-otel` plus your own OTel SDK and exporter, then pass `OtelMetrics.of(openTelemetry)` to
-`withMetrics(...)`. Create one `OtelMetrics` per `OpenTelemetry` and share it across every consumer: its callback stays
+Add `kpipe-otel` plus your own OTel SDK and exporter, then pass `KPipeOtel.metrics(openTelemetry)` to
+`withMetrics(...)`. Create one exporter per `OpenTelemetry` and share it across every consumer: its callback stays
 registered with the SDK for good. Without `withMetrics(...)`, the consumer still counts everything and
 `Handle.metrics()` still works; nothing is exported and the OTel API is not needed.
 
 ```java
-final var metrics = OtelMetrics.of(GlobalOpenTelemetry.get());   // one, shared by every consumer
+final var metrics = KPipeOtel.metrics(GlobalOpenTelemetry.get());   // one, shared by every consumer
 
 try (var handle = KPipe.json("orders", kafkaProps)
     .pipe(enrich)
@@ -68,10 +68,10 @@ try (var handle = KPipe.json("orders", kafkaProps)
 }
 ```
 
-Every instrument except the processing-time histogram is observable. One batch callback per `OtelMetrics` reads every
-running consumer's `MetricsSnapshot` at each collection and adds the final counts of consumers that have closed, so each
-running consumer reports the numbers its `Handle.metrics()` returns; the state counter reads `Handle.health()`.
-Processing time is a histogram recorded once per processed record on per-record routes.
+Every instrument except the processing-time histogram is observable. One batch callback per exporter reads every running
+consumer's `MetricsSnapshot` at each collection and adds the final counts of consumers that have closed, so each running
+consumer reports the numbers its `Handle.metrics()` returns; the state counter reads `Handle.health()`. Processing time
+is a histogram recorded once per processed record on per-record routes.
 
 | Instrument                                 | Type                     | Unit         | Description                                                        |
 | ------------------------------------------ | ------------------------ | ------------ | ------------------------------------------------------------------ |
@@ -99,10 +99,10 @@ instruments also carry `messaging.destination.name`, and the state counter carri
 topic add up into the same series.
 
 When a consumer closes, its final counts, including records flushed during shutdown, stay in its counters for as long as
-the `OtelMetrics` lives, so a counter never goes down when one of the consumers adding into it closes. The closed
-consumer drops out of `in_flight`, the lag and the state counter. Close consumers before shutting down the OTel SDK, so
-the SDK's final collection includes their final counts. Retired totals are kept per group and topic, so their size grows
-only with the number of distinct groups and topics ever seen.
+the exporter lives, so a counter never goes down when one of the consumers adding into it closes. The closed consumer
+drops out of `in_flight`, the lag and the state counter. Close consumers before shutting down the OTel SDK, so the SDK's
+final collection includes their final counts. Retired totals are kept per group and topic, so their size grows only with
+the number of distinct groups and topics ever seen.
 
 A rising `filtered` or `failed` count while the sink stays flat is the usual sign of a pipeline silently dropping
 records, and it shows up here without any extra wiring.
@@ -111,7 +111,7 @@ Using Confluent SR auto-lookup? Export the resolver's cache as `kpipe.schema_reg
 `.size`, with no attributes:
 
 ```java
-final var cacheMetrics = OtelMetrics.exportSchemaRegistryCache(
+final var cacheMetrics = KPipeOtel.schemaRegistryCache(
   otel,
   resolver::hitCount,
   resolver::missCount,
@@ -121,7 +121,7 @@ final var cacheMetrics = OtelMetrics.exportSchemaRegistryCache(
 ```
 
 Call it once per cache: each call reports the cache, so two calls over one cache double its counts. It takes
-`LongSupplier`s rather than the resolver, so `kpipe-metrics-otel` does not depend on `kpipe-schema-registry-confluent`.
+`LongSupplier`s rather than the resolver, so `kpipe-otel` does not depend on `kpipe-schema-registry-confluent`.
 
 ### Sends to Kafka
 
@@ -132,28 +132,29 @@ broker has the record, or as `failed` when the send fails (after retries, if con
 ## Distributed tracing (W3C trace context)
 
 `withTracer(Tracer)` turns on tracing. The `Tracer` SPI is in `kpipe-tracing`, which `kpipe-api` brings in, so it needs
-nothing in your build. `OtelTracer`, the OpenTelemetry implementation, is in the opt-in `kpipe-tracing-otel` module.
-Without a tracer the consumer uses `Tracer.noop()`, which records nothing and needs no OpenTelemetry API.
+nothing in your build. `KPipeOtel.tracer(openTelemetry)` returns the OpenTelemetry implementation, from the opt-in
+`kpipe-otel` module. Without a tracer the consumer uses `Tracer.noop()`, which records nothing and needs no
+OpenTelemetry API.
 
 ```java
 final var openTelemetry = AutoConfiguredOpenTelemetrySdk.initialize().getOpenTelemetrySdk();
 
 KPipe.json("events", kafkaProps)
-  .withTracer(new OtelTracer(openTelemetry))
+  .withTracer(KPipeOtel.tracer(openTelemetry))
   .pipe(enrich)
   .toKafka("events-enriched")
   .start();
 ```
 
-`OtelTracer` takes only the `OpenTelemetry` instance. Its spans report under the instrumentation scope
-`OtelTracer.INSTRUMENTATION_SCOPE`, which is `io.github.eschizoid.kpipe`. [`examples/tracing`](../examples/tracing) runs
-this setup against Kafka.
+`KPipeOtel.tracer` takes only the `OpenTelemetry` instance. Its spans, like the metrics instruments, report under the
+instrumentation scope `KPipeOtel.SCOPE`, which is `io.github.eschizoid.kpipe`. [`examples/tracing`](../examples/tracing)
+runs this setup against Kafka.
 
 ### One span per record
 
 The consumer starts one span for each record it consumes. When the record's headers carry a trace context, the span is
-its child and joins the producer's trace. When they carry none, the span starts a new trace. `OtelTracer` names the span
-`process <topic>`, gives it the kind `CONSUMER` and sets these attributes:
+its child and joins the producer's trace. When they carry none, the span starts a new trace. The OpenTelemetry tracer
+names the span `process <topic>`, gives it the kind `CONSUMER` and sets these attributes:
 
 | Attribute                            | Value                                                          |
 | ------------------------------------ | -------------------------------------------------------------- |
@@ -193,11 +194,11 @@ written record continues the same trace:
 
 ### The propagator
 
-`OtelTracer` reads and writes headers through the text-map propagator of the `OpenTelemetry` instance, so that instance
-needs one, such as `W3CTraceContextPropagator`. The SDK autoconfigure module sets up W3C trace context and baggage
-unless `OTEL_PROPAGATORS` says otherwise. With no propagator, spans still start and end, but no context is read from or
-written to the headers, and the `OtelTracer` constructor logs a warning. `GlobalOpenTelemetry.get()` has no propagator
-until an SDK is registered as the global instance.
+The OpenTelemetry tracer reads and writes headers through the text-map propagator of the `OpenTelemetry` instance, so
+that instance needs one, such as `W3CTraceContextPropagator`. The SDK autoconfigure module sets up W3C trace context and
+baggage unless `OTEL_PROPAGATORS` says otherwise. With no propagator, spans still start and end, but no context is read
+from or written to the headers, and `KPipeOtel.tracer(...)` logs a warning. `GlobalOpenTelemetry.get()` has no
+propagator until an SDK is registered as the global instance.
 
 ### Spans inside your code
 

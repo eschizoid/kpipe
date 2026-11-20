@@ -8,8 +8,8 @@ import org.apache.kafka.common.header.Headers;
 /// it writes on that record's behalf, to the dead-letter topic or through a Kafka sink, carries
 /// that span's context in its headers.
 ///
-/// The default, [#noop()], traces nothing at no cost. `OtelTracer` in `kpipe-tracing-otel`
-/// implements W3C trace-context propagation with OpenTelemetry; this module itself has no
+/// The default, [#noop()], traces nothing at no cost. `KPipeOtel.tracer(OpenTelemetry)` in
+/// `kpipe-otel` implements W3C trace-context propagation with OpenTelemetry; this module has no
 /// OpenTelemetry dependency, so another tracing system can implement it.
 ///
 /// The consumer wraps the tracer it is given with [#guarded(Tracer)], so a tracer or span that
