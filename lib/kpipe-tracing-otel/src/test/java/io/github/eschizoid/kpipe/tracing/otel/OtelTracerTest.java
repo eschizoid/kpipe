@@ -1,13 +1,17 @@
 package io.github.eschizoid.kpipe.tracing.otel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
@@ -24,9 +28,8 @@ import org.junit.jupiter.api.Test;
 
 /// Unit test for [OtelTracer] backed by the in-memory SDK exporter.
 ///
-/// Core invariant: a record arriving with a W3C `traceparent` header is processed under a span
-/// whose parent is the same trace ID as the inbound header. That's distributed-trace continuity
-/// across the Kafka boundary.
+/// A record arriving with a W3C `traceparent` header is processed under a span in the same trace,
+/// and every record written on its behalf carries that span's context.
 class OtelTracerTest {
 
   // Known parent context — trace-id and parent span-id encoded into a `traceparent` header.
@@ -45,7 +48,7 @@ class OtelTracerTest {
       .setTracerProvider(SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(spanExporter)).build())
       .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
       .build();
-    tracer = new OtelTracer(sdk, "test-pipeline");
+    tracer = new OtelTracer(sdk);
   }
 
   @AfterEach
@@ -54,105 +57,114 @@ class OtelTracerTest {
   }
 
   @Test
-  void startConsumerSpanInheritsParentTraceFromTraceparentHeader() {
-    final var headers = new RecordHeaders();
-    headers.add("traceparent", TRACEPARENT_HEADER.getBytes(StandardCharsets.UTF_8));
-    final var record = new ConsumerRecord<>("source-topic", 0, 42L, null, new byte[] { 1, 2, 3 });
-    // Attach the headers post-construction (ConsumerRecord exposes a mutable Headers).
-    for (final var h : headers) record.headers().add(h.key(), h.value());
+  void aSpanContinuesTheTraceInTheRecordsHeadersWithMessagingAttributes() {
+    final var record = new ConsumerRecord<>("source-topic", 3, 42L, null, new byte[] { 1, 2, 3 });
+    record.headers().add("traceparent", TRACEPARENT_HEADER.getBytes(StandardCharsets.UTF_8));
 
-    try (final var scope = tracer.startConsumerSpan(record)) {
-      // Span is started + made current. End the scope to flush the span to the exporter.
-      assertNotNull(scope);
-    }
-
-    final var spans = spanExporter.getFinishedSpanItems();
-    assertEquals(1, spans.size(), "Expected exactly one finished span");
-    final var span = spans.getFirst();
-
-    // CORE INVARIANT — propagation works: the started span lives inside the upstream trace.
-    assertEquals(PARENT_TRACE_ID, span.getTraceId(), "Span must inherit the inbound trace-id");
-    assertEquals(PARENT_SPAN_ID, span.getParentSpanId(), "Span's parent must be the inbound span-id");
-    // The new span's own span-id is fresh (different from the parent's).
-    assertNotEquals(PARENT_SPAN_ID, span.getSpanId());
-
-    // Sanity checks on enrichment attributes — names follow OTel messaging semantic conventions.
-    assertEquals("source-topic", span.getAttributes().get(AttributeKey.stringKey("messaging.kafka.topic")));
-    assertEquals("kafka", span.getAttributes().get(AttributeKey.stringKey("messaging.system")));
-  }
-
-  @Test
-  void startConsumerSpanWithoutParentHeaderCreatesNewTrace() {
-    final var record = new ConsumerRecord<>("source-topic", 0, 99L, null, new byte[] { 9 });
-
-    try (final var scope = tracer.startConsumerSpan(record)) {
+    try (final var scope = tracer.startConsumerSpan(record, "billing")) {
       assertNotNull(scope);
     }
 
     final var spans = spanExporter.getFinishedSpanItems();
     assertEquals(1, spans.size());
     final var span = spans.getFirst();
-    // No parent → fresh trace id (not the known constant).
-    assertNotEquals(PARENT_TRACE_ID, span.getTraceId());
-    assertTrue(span.getParentSpanContext() == null || !span.getParentSpanContext().isValid());
+    assertEquals(PARENT_TRACE_ID, span.getTraceId(), "the span continues the inbound trace");
+    assertEquals(PARENT_SPAN_ID, span.getParentSpanId());
+    assertEquals("process source-topic", span.getName());
+    assertEquals(SpanKind.CONSUMER, span.getKind());
+    final var attributes = span.getAttributes();
+    assertEquals("kafka", attributes.get(AttributeKey.stringKey("messaging.system")));
+    assertEquals("process", attributes.get(AttributeKey.stringKey("messaging.operation.type")));
+    assertEquals("source-topic", attributes.get(AttributeKey.stringKey("messaging.destination.name")));
+    assertEquals("3", attributes.get(AttributeKey.stringKey("messaging.destination.partition.id")));
+    assertEquals(42L, attributes.get(AttributeKey.longKey("messaging.kafka.offset")));
+    assertEquals("billing", attributes.get(AttributeKey.stringKey("messaging.consumer.group.name")));
   }
 
   @Test
-  // The scope makes the span current for injectContextInto; it isn't referenced in the body by
-  // design.
-  @SuppressWarnings("try")
-  void injectContextIntoWritesTraceparentDerivedFromActiveSpan() {
-    final var inbound = new ConsumerRecord<>("source-topic", 0, 1L, null, new byte[] { 0 });
-    inbound.headers().add("traceparent", TRACEPARENT_HEADER.getBytes(StandardCharsets.UTF_8));
+  void aRecordWithoutATraceStartsANewOne() {
+    final var record = new ConsumerRecord<>("source-topic", 0, 99L, null, new byte[] { 9 });
 
-    final var outbound = new RecordHeaders();
-    try (final var scope = tracer.startConsumerSpan(inbound)) {
-      tracer.injectContextInto(outbound);
+    try (final var scope = tracer.startConsumerSpan(record, null)) {
+      assertNotNull(scope);
     }
 
-    final var injected = outbound.lastHeader("traceparent");
-    assertNotNull(injected, "Outbound headers should contain `traceparent` after injection");
-    final var injectedStr = new String(injected.value(), StandardCharsets.UTF_8);
-    // The injected traceparent must carry the SAME trace-id (still the same distributed trace).
-    assertTrue(
-      injectedStr.contains(PARENT_TRACE_ID),
-      "Injected traceparent (" + injectedStr + ") must carry the upstream trace-id " + PARENT_TRACE_ID
+    final var span = spanExporter.getFinishedSpanItems().getFirst();
+    assertNotEquals(PARENT_TRACE_ID, span.getTraceId());
+    assertFalse(span.getParentSpanContext().isValid());
+    assertNull(span.getAttributes().get(AttributeKey.stringKey("messaging.consumer.group.name")));
+  }
+
+  /// The span writes its own context into headers on any thread, active there or not, which is
+  /// what lets a batch flush write each record's trace.
+  @Test
+  void injectWritesTheSpansOwnContextFromAnotherThread() throws Exception {
+    final var inbound = new ConsumerRecord<>("source-topic", 0, 1L, null, new byte[] { 0 });
+    inbound.headers().add("traceparent", TRACEPARENT_HEADER.getBytes(StandardCharsets.UTF_8));
+    final var outbound = new RecordHeaders();
+
+    try (final var scope = tracer.startConsumerSpan(inbound, null)) {
+      final var other = Thread.ofPlatform().start(() -> scope.inject(outbound));
+      other.join();
+    }
+
+    final var span = spanExporter.getFinishedSpanItems().getFirst();
+    final var injected = new String(outbound.lastHeader("traceparent").value(), StandardCharsets.UTF_8);
+    assertEquals("00-" + PARENT_TRACE_ID + "-" + span.getSpanId() + "-01", injected);
+  }
+
+  @Test
+  void activateMakesTheSpanCurrentUntilClosed() {
+    final var record = new ConsumerRecord<>("source-topic", 0, 1L, null, new byte[] { 0 });
+    try (final var scope = tracer.startConsumerSpan(record, null)) {
+      try (var _ = scope.activate()) {
+        assertTrue(Span.current().getSpanContext().isValid(), "the span is current while activated");
+      }
+      assertFalse(Span.current().getSpanContext().isValid(), "closing the activation restores the previous context");
+    }
+  }
+
+  @Test
+  void aFailedAttemptAddsAnEventAndAFinalFailureMarksTheSpan() {
+    final var record = new ConsumerRecord<>("source-topic", 0, 7L, null, new byte[] { 0 });
+
+    try (final var scope = tracer.startConsumerSpan(record, null)) {
+      scope.attemptFailed(0, new IllegalStateException("first"));
+      scope.recordException(new IllegalArgumentException("last"));
+    }
+
+    final var span = spanExporter.getFinishedSpanItems().getFirst();
+    final var attempt = span
+      .getEvents()
+      .stream()
+      .filter(e -> e.getName().equals("kpipe.attempt.failed"))
+      .findFirst()
+      .orElseThrow();
+    assertEquals(0L, attempt.getAttributes().get(AttributeKey.longKey("kpipe.attempt")));
+    assertEquals(
+      IllegalStateException.class.getName(),
+      attempt.getAttributes().get(AttributeKey.stringKey("exception.type"))
+    );
+    assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
+    assertEquals(
+      IllegalArgumentException.class.getName(),
+      span.getAttributes().get(AttributeKey.stringKey("error.type"))
     );
   }
 
   @Test
-  void recordExceptionMarksSpanStatusErrored() {
-    final var record = new ConsumerRecord<>("source-topic", 0, 7L, null, new byte[] { 0 });
-    final var boom = new RuntimeException("kaboom");
-
-    try (final var scope = tracer.startConsumerSpan(record)) {
-      scope.recordException(boom);
-    }
-
-    final var spans = spanExporter.getFinishedSpanItems();
-    assertEquals(1, spans.size());
-    assertEquals(StatusCode.ERROR, spans.getFirst().getStatus().getStatusCode());
-  }
-
-  @Test
-  void noopTracerInjectionAndExtractionAreSilentNoops() {
-    // Sanity — the noop default doesn't allocate, doesn't throw, and produces no span.
+  void theNoopTracerRecordsNothing() {
     final var noop = Tracer.noop();
-    final var record = new ConsumerRecord<>("t", 0, 0L, null, new byte[0]);
-    try (final var scope = noop.startConsumerSpan(record)) {
-      noop.injectContextInto(new RecordHeaders());
+    final var headers = new RecordHeaders();
+    try (final var scope = noop.startConsumerSpan(new ConsumerRecord<>("t", 0, 0L, null, new byte[0]), "g")) {
+      scope.inject(headers);
       scope.recordException(new RuntimeException("ignored"));
     }
     assertEquals(0, spanExporter.getFinishedSpanItems().size());
-
-    // Singleton-identity pins: Tracer.noop() / SpanScope.noop() must return the enum INSTANCE,
-    // not a fresh allocation. KPipeConsumer invokes both per record on the hot path; a
-    // regression that returned `new Noop()` would silently allocate on every poll.
-    assertSame(Tracer.noop(), Tracer.noop(), "Tracer.noop() must return the shared singleton, not a fresh allocation");
+    assertFalse(headers.iterator().hasNext());
     assertSame(
       Tracer.SpanScope.noop(),
-      Tracer.SpanScope.noop(),
-      "SpanScope.noop() must return the shared singleton, not a fresh allocation"
+      noop.startConsumerSpan(new ConsumerRecord<>("t", 0, 0L, null, new byte[0]), null)
     );
   }
 }

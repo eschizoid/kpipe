@@ -45,8 +45,8 @@ import org.testcontainers.utility.DockerImageName;
 ///
 /// The chain under test: inbound record carries a known `traceparent` → consumer starts a span
 /// parented off it (span is current on the worker thread) → an operator throws → the consumer
-/// routes the record to the DLQ via its auto-built producer (wired with the same tracer) →
-/// `injectContextInto` writes the active context onto the DLQ record. The DLQ `traceparent`
+/// routes the record to the DLQ → the DLQ send writes the record's span context onto the DLQ
+/// record. The DLQ `traceparent`
 /// must therefore reuse the inbound trace id (same trace) but carry a fresh span id (the
 /// consumer span, not the inbound parent). The exported consumer span is also asserted to be
 /// parented off the inbound span and marked errored.
@@ -79,11 +79,9 @@ class DlqTracePropagationIntegrationTest {
       .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
       .build();
 
-    final var tracer = new OtelTracer(sdk, "dlq-trace-test");
+    final var tracer = new OtelTracer(sdk);
 
-    // A pipeline that always fails — drives every record onto the DLQ path. The DLQ producer
-    // is auto-built by the consumer and wired with this same tracer, so the active consumer
-    // span is injected onto the DLQ record.
+    // A pipeline that always fails, so every record goes to the DLQ, carrying its own span.
     final var handle = KPipe.json(inputTopic, consumerProps("dlq-trace-group-" + UUID.randomUUID()))
       .withTracer(tracer)
       .withDeadLetterTopic(dlqTopic)
@@ -132,7 +130,7 @@ class DlqTracePropagationIntegrationTest {
       assertTrue(parentCtx.isValid(), "consumer span must have a valid parent context");
       assertEquals(INBOUND_TRACE_ID, parentCtx.getTraceId(), "consumer span parent trace id must equal inbound");
       assertEquals(INBOUND_SPAN_ID, parentCtx.getSpanId(), "consumer span parent span id must equal inbound");
-      assertEquals(inputTopic, span.getAttributes().get(AttributeKey.stringKey("messaging.kafka.topic")));
+      assertEquals(inputTopic, span.getAttributes().get(AttributeKey.stringKey("messaging.destination.name")));
       // The injected DLQ span id must be the consumer span that processed the failing record.
       assertEquals(span.getSpanContext().getSpanId(), parts[2], "DLQ span id must be the consumer span id");
 

@@ -131,29 +131,100 @@ broker has the record, or as `failed` when the send fails (after retries, if con
 
 ## Distributed tracing (W3C trace context)
 
-KPipe propagates `traceparent` / `tracestate` Kafka headers: the upstream context is extracted on poll, a CONSUMER span
-with `messaging.kafka.{topic,partition,offset}` attributes wraps processing (closed in a nested `finally` so a throwing
-user callback cannot leak the scope), and the current context is injected into outbound headers on produce and on DLQ
-writes. The `Tracer` SPI lives in `kpipe-tracing` (pulled transitively — nothing to add to your build); the
-implementation is the opt-in `kpipe-tracing-otel` module. Without `.withTracer(...)`, `Tracer.noop()` is used and no
-OTel API is needed.
+`withTracer(Tracer)` turns on tracing. The `Tracer` SPI is in `kpipe-tracing`, which `kpipe-api` brings in, so it needs
+nothing in your build. `OtelTracer`, the OpenTelemetry implementation, is in the opt-in `kpipe-tracing-otel` module.
+Without a tracer the consumer uses `Tracer.noop()`, which records nothing and needs no OpenTelemetry API.
 
 ```java
-final OpenTelemetry otel = /* GlobalOpenTelemetry.get() or your SDK */;
+final var openTelemetry = AutoConfiguredOpenTelemetrySdk.initialize().getOpenTelemetrySdk();
 
 KPipe.json("events", kafkaProps)
-    .withTracer(new OtelTracer(otel, "events-consumer"))
-    .pipe(enrich)
-    .toKafka("events-enriched")
-    .start();
+  .withTracer(new OtelTracer(openTelemetry))
+  .pipe(enrich)
+  .toKafka("events-enriched")
+  .start();
 ```
+
+`OtelTracer` takes only the `OpenTelemetry` instance. Its spans report under the instrumentation scope
+`OtelTracer.INSTRUMENTATION_SCOPE`, which is `io.github.eschizoid.kpipe`. [`examples/tracing`](../examples/tracing) runs
+this setup against Kafka.
+
+### One span per record
+
+The consumer starts one span for each record it consumes. When the record's headers carry a trace context, the span is
+its child and joins the producer's trace. When they carry none, the span starts a new trace. `OtelTracer` names the span
+`process <topic>`, gives it the kind `CONSUMER` and sets these attributes:
+
+| Attribute                            | Value                                                          |
+| ------------------------------------ | -------------------------------------------------------------- |
+| `messaging.system`                   | `kafka`                                                        |
+| `messaging.operation.type`           | `process`                                                      |
+| `messaging.operation.name`           | `process`                                                      |
+| `messaging.destination.name`         | The record's topic                                             |
+| `messaging.destination.partition.id` | The record's partition, as a string                            |
+| `messaging.kafka.offset`             | The record's offset                                            |
+| `messaging.consumer.group.name`      | The consumer's `group.id`. Set only when the consumer has one. |
+
+One span covers every attempt at the record. Each failed attempt adds a `kpipe.attempt.failed` event with the attributes
+`kpipe.attempt` (the attempt number, from 0), `exception.type` and, when the exception has a message,
+`exception.message`. A record that succeeds on a retry keeps those events and has no error status. When the record fails
+for good, the span records the exception, sets `error.type` to the exception's class name and gets the status `ERROR`.
+
+The span ends when the consumer is done with the record: its sink returned, it was filtered, or its failure was handled,
+including the dead-letter write. On a batch route the span stays open while the record waits in the buffer, so its
+duration includes the wait. The flush that holds the record ends the span. When that flush fails, the failure is
+recorded on the span before the dead-letter write and the error handler run.
+
+### Trace context on written records
+
+Every record KPipe writes on behalf of a consumed record carries that record's span in its headers, so a consumer of the
+written record continues the same trace:
+
+- `toKafka(...)` and `KafkaMessageSink` write the span of the record being processed. They read it from
+  `TraceContext.current()`, which the consumer binds around each record's processing, so the sink takes no tracer. The
+  new `traceparent` replaces the one copied from the input record.
+- A dead-letter record carries the failed record's span, whichever producer sends it. That includes a producer passed to
+  `withKafkaProducer(...)` or `withDeadLetterQueue(...)` on `KPipeConsumerBuilder`.
+- On a batch route, the dead-letter record written after a failed flush carries its own record's trace, even though the
+  flush runs on a different thread from the one that processed the record.
+
+`TraceContext.current()` returns `Tracer.SpanScope.noop()` when no record is being processed. Code of your own can call
+`TraceContext.current().inject(headers)` to write the record's trace into a record it sends.
+
+### The propagator
+
+`OtelTracer` reads and writes headers through the text-map propagator of the `OpenTelemetry` instance, so that instance
+needs one, such as `W3CTraceContextPropagator`. The SDK autoconfigure module sets up W3C trace context and baggage
+unless `OTEL_PROPAGATORS` says otherwise. With no propagator, spans still start and end, but no context is read from or
+written to the headers, and the `OtelTracer` constructor logs a warning. `GlobalOpenTelemetry.get()` has no propagator
+until an SDK is registered as the global instance.
+
+### Spans inside your code
+
+While the consumer processes a record, the record's span is the current OpenTelemetry span on the record's thread.
+OpenTelemetry instrumentation inside an operator or sink, such as an instrumented HTTP or JDBC client or a span you
+start yourself, nests under the record's span. Work you hand to another thread sees the span only if you pass the
+OpenTelemetry context along. A batch flush covers many records, so instrumentation inside a batch sink does not nest
+under each record's span.
+
+### A tracer that throws
+
+The consumer guards every call to the tracer and to its spans. When a call throws anything other than a
+`VirtualMachineError`, the consumer logs a warning, loses that span and still processes the record.
+
+To trace with another system, implement `Tracer`. It is a functional interface with one method,
+`startConsumerSpan(ConsumerRecord<?, byte[]> record, String consumerGroup)`, which returns a `Tracer.SpanScope`. The
+consumer calls `activate()` on the span for the record's thread, `inject(headers)` for each written record,
+`attemptFailed(attempt, failure)` for each failed attempt, `recordException(failure)` for a final failure and `close()`
+when the record is done. `close()` may run on a different thread from the one that started the span, and must be
+idempotent.
 
 ## Health endpoint
 
 `HttpHealthServer` serves `Handle.health()` over HTTP for Kubernetes or any orchestrator that polls an endpoint:
 
 ```java
-try (final var handle = KPipe.json(props, "orders").toConsole().start();
+try (final var handle = KPipe.json("orders", props).toConsole().start();
      final var server = HttpHealthServer.fromEnv(handle::health).orElse(null)) {
   handle.awaitShutdown();
 }

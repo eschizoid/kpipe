@@ -8,6 +8,7 @@ import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Tag;
@@ -84,13 +85,14 @@ class BatchWrapperLockFrayTest {
   private static BatchPipelineWrapper.BatchCallbacks noopCallbacks() {
     return new BatchPipelineWrapper.BatchCallbacks() {
       @Override
-      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {}
 
       @Override
       public void onBatchFailure(
         final ConsumerRecord<byte[], byte[]> record,
         final Exception cause,
-        final int retries
+        final int retries,
+        final Tracer.SpanScope span
       ) {}
     };
   }

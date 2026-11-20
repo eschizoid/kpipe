@@ -39,12 +39,7 @@ final class DefaultSink<T> implements Sink<T> {
       .withPipeline(buildPipeline());
 
     consumerBuilder.withSettings(stream.settings());
-    final var opened = KafkaTopicSink.openAll(
-      List.of(terminalSink),
-      stream.kafkaProps(),
-      stream.settings().tracer(),
-      consumerBuilder
-    );
+    final var opened = KafkaTopicSink.openAll(List.of(terminalSink), stream.kafkaProps(), consumerBuilder);
 
     return KafkaTopicSink.closingOnFailure(opened, () -> DefaultHandle.startAndWrap(consumerBuilder.build()));
   }

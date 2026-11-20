@@ -47,12 +47,18 @@ class KPipeProducerDurabilityTest {
   @Test
   void sendToDlqReturnsTrueOnlyAfterDurableAck() throws Exception {
     final var mock = manualMockProducer();
-    final var producer = new KPipeProducer<>(mock, false, Tracer.noop());
+    final var producer = new KPipeProducer<>(mock, false);
 
     final var done = new CountDownLatch(1);
     final var result = new boolean[1];
     final var thread = Thread.ofVirtual().start(() -> {
-      result[0] = producer.sendToDlq(DLQ_TOPIC, failedRecord(), TOPIC, new RuntimeException("boom"));
+      result[0] = producer.sendToDlq(
+        DLQ_TOPIC,
+        failedRecord(),
+        TOPIC,
+        new RuntimeException("boom"),
+        Tracer.SpanScope.noop()
+      );
       done.countDown();
     });
 
@@ -73,12 +79,18 @@ class KPipeProducerDurabilityTest {
   @Test
   void sendToDlqReturnsFalseOnSendError() throws Exception {
     final var mock = manualMockProducer();
-    final var producer = new KPipeProducer<>(mock, false, Tracer.noop());
+    final var producer = new KPipeProducer<>(mock, false);
 
     final var done = new CountDownLatch(1);
     final var result = new boolean[] { true };
     Thread.ofVirtual().start(() -> {
-      result[0] = producer.sendToDlq(DLQ_TOPIC, failedRecord(), TOPIC, new RuntimeException("boom"));
+      result[0] = producer.sendToDlq(
+        DLQ_TOPIC,
+        failedRecord(),
+        TOPIC,
+        new RuntimeException("boom"),
+        Tracer.SpanScope.noop()
+      );
       done.countDown();
     });
 
@@ -95,13 +107,19 @@ class KPipeProducerDurabilityTest {
   @Test
   void sendToDlqRetryAfterTransientFailureEventuallySucceeds() throws Exception {
     final var mock = manualMockProducer();
-    final var producer = new KPipeProducer<>(mock, false, Tracer.noop());
+    final var producer = new KPipeProducer<>(mock, false);
 
     // Attempt 1: transient failure → false.
     final var firstDone = new CountDownLatch(1);
     final var firstResult = new boolean[] { true };
     Thread.ofVirtual().start(() -> {
-      firstResult[0] = producer.sendToDlq(DLQ_TOPIC, failedRecord(), TOPIC, new RuntimeException("boom"));
+      firstResult[0] = producer.sendToDlq(
+        DLQ_TOPIC,
+        failedRecord(),
+        TOPIC,
+        new RuntimeException("boom"),
+        Tracer.SpanScope.noop()
+      );
       firstDone.countDown();
     });
     awaitBufferedSend(mock);
@@ -113,7 +131,13 @@ class KPipeProducerDurabilityTest {
     final var secondDone = new CountDownLatch(1);
     final var secondResult = new boolean[1];
     Thread.ofVirtual().start(() -> {
-      secondResult[0] = producer.sendToDlq(DLQ_TOPIC, failedRecord(), TOPIC, new RuntimeException("boom"));
+      secondResult[0] = producer.sendToDlq(
+        DLQ_TOPIC,
+        failedRecord(),
+        TOPIC,
+        new RuntimeException("boom"),
+        Tracer.SpanScope.noop()
+      );
       secondDone.countDown();
     });
     awaitBufferedSend(mock);
@@ -129,7 +153,7 @@ class KPipeProducerDurabilityTest {
   @Test
   void synchronousSendSurfacesAckOutcome() throws Exception {
     final var mock = manualMockProducer();
-    final var producer = new KPipeProducer<>(mock, false, Tracer.noop());
+    final var producer = new KPipeProducer<>(mock, false);
 
     final var done = new CountDownLatch(1);
     final var thrown = new Throwable[1];

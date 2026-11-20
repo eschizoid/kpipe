@@ -3,7 +3,7 @@ package io.github.eschizoid.kpipe.producer.sink;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.sink.MessageSink;
-import io.github.eschizoid.kpipe.tracing.Tracer;
+import io.github.eschizoid.kpipe.tracing.TraceContext;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.Objects;
@@ -40,11 +40,10 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 /// set `linger.ms=0` on the producer for such pipelines. PARALLEL overlaps sends across records,
 /// and KEY_ORDERED across keys.
 ///
-/// **Trace propagation.** A non-null `tracer` injects the active span's context (W3C `traceparent`
-/// by default) into outbound record headers so downstream consumers see the same trace.
-/// `OtelTracer` replaces any trace header copied from the input record; without a tracer, the
-/// copied headers pass through unchanged. Pass `null` to disable injection — the sink coalesces to
-/// an internal no-op tracer.
+/// **Trace propagation.** Each sent record carries the context of the span of the record being
+/// processed, from [TraceContext#current()], so a downstream consumer continues the same trace.
+/// The consumer's `withTracer(...)` decides the tracer; with none, the headers copied from the
+/// input record pass through unchanged.
 ///
 /// @param <T> The type of the processed object.
 public final class KafkaMessageSink<T> implements MessageSink<T> {
@@ -54,18 +53,15 @@ public final class KafkaMessageSink<T> implements MessageSink<T> {
   private final Function<ProducerRecord<byte[], byte[]>, Future<RecordMetadata>> send;
   private final String topic;
   private final Function<T, byte[]> valueMapper;
-  private final Tracer tracer;
 
   private KafkaMessageSink(
     final Function<ProducerRecord<byte[], byte[]>, Future<RecordMetadata>> send,
     final String topic,
-    final Function<T, byte[]> valueMapper,
-    final Tracer tracer
+    final Function<T, byte[]> valueMapper
   ) {
     this.send = send;
     this.topic = Objects.requireNonNull(topic, "topic cannot be null");
     this.valueMapper = Objects.requireNonNull(valueMapper, "valueMapper cannot be null");
-    this.tracer = tracer != null ? tracer : Tracer.noop();
   }
 
   /// Creates a sink that sends through `producer`. The caller owns the producer and closes it.
@@ -73,17 +69,15 @@ public final class KafkaMessageSink<T> implements MessageSink<T> {
   /// @param producer    the Kafka producer to use
   /// @param topic       the destination topic
   /// @param valueMapper function to serialize the value
-  /// @param tracer      injects span context into outbound headers; pass `null` to disable
   /// @param <T>         the type of the processed object
   /// @return a new KafkaMessageSink
   public static <T> KafkaMessageSink<T> of(
     final Producer<byte[], byte[]> producer,
     final String topic,
-    final Function<T, byte[]> valueMapper,
-    final Tracer tracer
+    final Function<T, byte[]> valueMapper
   ) {
     Objects.requireNonNull(producer, "producer cannot be null");
-    return new KafkaMessageSink<>(producer::send, topic, valueMapper, tracer);
+    return new KafkaMessageSink<>(producer::send, topic, valueMapper);
   }
 
   /// Creates a sink that sends through a [KPipeProducer]. The caller owns the producer and closes
@@ -92,17 +86,15 @@ public final class KafkaMessageSink<T> implements MessageSink<T> {
   /// @param producer    the KPipe producer to use
   /// @param topic       the destination topic
   /// @param valueMapper function to serialize the value
-  /// @param tracer      injects span context into outbound headers; pass `null` to disable
   /// @param <T>         the type of the processed object
   /// @return a new KafkaMessageSink
   public static <T> KafkaMessageSink<T> of(
     final KPipeProducer<byte[], byte[]> producer,
     final String topic,
-    final Function<T, byte[]> valueMapper,
-    final Tracer tracer
+    final Function<T, byte[]> valueMapper
   ) {
     Objects.requireNonNull(producer, "producer cannot be null");
-    return new KafkaMessageSink<>(producer::sendAsync, topic, valueMapper, tracer);
+    return new KafkaMessageSink<>(producer::sendAsync, topic, valueMapper);
   }
 
   @Override
@@ -112,9 +104,11 @@ public final class KafkaMessageSink<T> implements MessageSink<T> {
     final var record = new ProducerRecord<>(topic, context != null ? context.key() : null, valueMapper.apply(value));
     if (context != null) context.forEachHeader(record.headers()::add);
     try {
-      tracer.injectContextInto(record.headers());
-    } catch (final Exception traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.injectContextInto threw", traceEx);
+      TraceContext.current().inject(record.headers());
+    } catch (final VirtualMachineError fatal) {
+      throw fatal;
+    } catch (final Throwable traceEx) {
+      LOGGER.log(Level.WARNING, "Tracer.SpanScope.inject threw", traceEx);
     }
     try {
       send.apply(record).get();

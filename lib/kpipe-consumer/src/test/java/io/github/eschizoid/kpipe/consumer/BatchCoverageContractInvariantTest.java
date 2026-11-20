@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -75,7 +76,7 @@ class BatchCoverageContractInvariantTest {
     final Map<Long, Exception> failureCauseByOffset = new HashMap<>();
 
     @Override
-    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
       processed.add(record.offset());
     }
 
@@ -83,7 +84,8 @@ class BatchCoverageContractInvariantTest {
     public synchronized void onBatchFailure(
       final ConsumerRecord<byte[], byte[]> record,
       final Exception cause,
-      final int retries
+      final int retries,
+      final Tracer.SpanScope span
     ) {
       failed.add(record.offset());
       failureCauseByOffset.put(record.offset(), cause);

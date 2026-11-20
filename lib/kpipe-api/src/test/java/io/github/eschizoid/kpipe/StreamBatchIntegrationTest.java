@@ -19,11 +19,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
@@ -122,20 +120,13 @@ class StreamBatchIntegrationTest {
 
   @Test
   void batchPathWiresTracerAndCircuitBreaker() throws Exception {
-    // Regression: DefaultBatchSink.start() used to skip tracer + circuit breaker (it called only
-    // applyCommonConsumerConfig, which excluded both), so a tracer set on a toBatch(...) stream was
-    // silently dropped. Assert the tracer is now invoked once per record on the batch path.
+    // A tracer and a circuit breaker set on a toBatch(...) stream reach the batch consumer: the
+    // tracer starts one span per record.
     final var topic = "kpipe-batch-tracer-" + UUID.randomUUID().toString().substring(0, 8);
     final var spans = new AtomicInteger();
-    final Tracer countingTracer = new Tracer() {
-      @Override
-      public Tracer.SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
-        spans.incrementAndGet();
-        return Tracer.SpanScope.noop();
-      }
-
-      @Override
-      public void injectContextInto(final Headers headers) {}
+    final Tracer countingTracer = (_, _) -> {
+      spans.incrementAndGet();
+      return Tracer.SpanScope.noop();
     };
     // High threshold + large window so the breaker never trips during the test — we only need it
     // wired, not tripping.

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
@@ -54,12 +55,17 @@ class BatchPipelineWrapperConcurrencyTest {
     final CopyOnWriteArrayList<ConsumerRecord<byte[], byte[]>> failed = new CopyOnWriteArrayList<>();
 
     @Override
-    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
       processed.add(record);
     }
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retries) {
+    public void onBatchFailure(
+      final ConsumerRecord<byte[], byte[]> record,
+      final Exception cause,
+      final int retries,
+      final Tracer.SpanScope span
+    ) {
       failed.add(record);
     }
   }

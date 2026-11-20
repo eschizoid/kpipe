@@ -3,11 +3,11 @@ package io.github.eschizoid.kpipe.tracing.otel;
 import io.github.eschizoid.kpipe.tracing.Tracer;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
-import io.opentelemetry.context.Scope;
 import io.opentelemetry.context.propagation.TextMapGetter;
 import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.context.propagation.TextMapSetter;
@@ -15,160 +15,163 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
 
-/// OpenTelemetry-backed [Tracer] — W3C `traceparent` propagation across the Kafka boundary.
+/// A [Tracer] on OpenTelemetry. Each record gets a `CONSUMER` span named `process <topic>`, a child
+/// of the trace in its headers, with the OpenTelemetry messaging attributes:
+/// `messaging.system` (`kafka`), `messaging.operation.type` and `messaging.operation.name`
+/// (`process`), `messaging.destination.name`, `messaging.destination.partition.id`,
+/// `messaging.kafka.offset` and, when the consumer has a group, `messaging.consumer.group.name`.
+/// A failed attempt adds a `kpipe.attempt.failed` event; a record that fails for good records its
+/// exception, sets `error.type` and marks the span as an error.
 ///
-/// Wire via the consumer builder:
+/// Context travels in the headers through the `OpenTelemetry` instance's text-map propagator, so
+/// that instance needs one configured, such as W3C trace context. With none, nothing propagates,
+/// and the constructor logs a warning.
 ///
 /// ```java
-/// final var otel = GlobalOpenTelemetry.get();
-/// KPipeConsumer.builder()
-///   .withProperties(props)
-///   .withTracer(new OtelTracer(otel, "my-pipeline"))
-///   .build();
+/// KPipe.json("orders", props)
+///   .withTracer(new OtelTracer(openTelemetry))
+///   .toKafka("orders-enriched");
 /// ```
-///
-/// When OpenTelemetry is not configured, prefer [Tracer#noop()] from `kpipe-tracing` to avoid
-/// this module's classpath dependency entirely.
-///
-/// **Scope of v1:** uses `otel.getPropagators().getTextMapPropagator()` which defaults to W3C
-/// trace context. B3, Datadog, and custom propagators are out of scope for v1 (configure your
-/// SDK with `W3CTraceContextPropagator` if not already the default).
 public final class OtelTracer implements Tracer {
 
   private static final Logger LOGGER = System.getLogger(OtelTracer.class.getName());
 
-  /// Default instrumentation name used when constructing the tracer without an explicit name.
-  public static final String DEFAULT_INSTRUMENTATION_NAME = "io.github.eschizoid.kpipe.consumer";
+  /// The instrumentation scope this tracer reports under.
+  public static final String INSTRUMENTATION_SCOPE = "io.github.eschizoid.kpipe";
 
-  private static final String SPAN_NAME = "kpipe.consumer.process";
-  private static final AttributeKey<String> KAFKA_TOPIC_KEY = AttributeKey.stringKey("messaging.kafka.topic");
-  private static final AttributeKey<Long> KAFKA_PARTITION_KEY = AttributeKey.longKey("messaging.kafka.partition");
-  private static final AttributeKey<Long> KAFKA_OFFSET_KEY = AttributeKey.longKey("messaging.kafka.offset");
-  private static final AttributeKey<String> MESSAGING_SYSTEM_KEY = AttributeKey.stringKey("messaging.system");
-  private static final AttributeKey<String> MESSAGING_OPERATION_KEY = AttributeKey.stringKey("messaging.operation");
+  private static final AttributeKey<String> SYSTEM = AttributeKey.stringKey("messaging.system");
+  private static final AttributeKey<String> OPERATION_TYPE = AttributeKey.stringKey("messaging.operation.type");
+  private static final AttributeKey<String> OPERATION_NAME = AttributeKey.stringKey("messaging.operation.name");
+  private static final AttributeKey<String> DESTINATION = AttributeKey.stringKey("messaging.destination.name");
+  private static final AttributeKey<String> PARTITION = AttributeKey.stringKey("messaging.destination.partition.id");
+  private static final AttributeKey<Long> OFFSET = AttributeKey.longKey("messaging.kafka.offset");
+  private static final AttributeKey<String> GROUP = AttributeKey.stringKey("messaging.consumer.group.name");
+  private static final AttributeKey<String> ERROR_TYPE = AttributeKey.stringKey("error.type");
+  private static final AttributeKey<Long> ATTEMPT = AttributeKey.longKey("kpipe.attempt");
+  private static final AttributeKey<String> EXCEPTION_TYPE = AttributeKey.stringKey("exception.type");
+  private static final AttributeKey<String> EXCEPTION_MESSAGE = AttributeKey.stringKey("exception.message");
 
-  private final io.opentelemetry.api.trace.Tracer otelTracer;
+  private final io.opentelemetry.api.trace.Tracer tracer;
   private final TextMapPropagator propagator;
 
-  /// Creates an [OtelTracer] using the supplied [OpenTelemetry] entry point and an explicit
-  /// instrumentation name (typically a pipeline / app name).
-  ///
-  /// @param openTelemetry the OTel entry point (e.g. `GlobalOpenTelemetry.get()`)
-  /// @param instrumentationName the tracer name (`otel.getTracer(name)`)
-  public OtelTracer(final OpenTelemetry openTelemetry, final String instrumentationName) {
-    Objects.requireNonNull(openTelemetry, "openTelemetry");
-    Objects.requireNonNull(instrumentationName, "instrumentationName");
-    this.otelTracer = openTelemetry.getTracer(instrumentationName);
-    this.propagator = openTelemetry.getPropagators().getTextMapPropagator();
-  }
-
-  /// Creates an [OtelTracer] with the default instrumentation name.
-  ///
-  /// @param openTelemetry the OTel entry point
+  /// @param openTelemetry where spans go and which propagator carries their context
   public OtelTracer(final OpenTelemetry openTelemetry) {
-    this(openTelemetry, DEFAULT_INSTRUMENTATION_NAME);
+    Objects.requireNonNull(openTelemetry, "openTelemetry cannot be null");
+    this.tracer = openTelemetry.getTracer(INSTRUMENTATION_SCOPE);
+    this.propagator = openTelemetry.getPropagators().getTextMapPropagator();
+    if (propagator == TextMapPropagator.noop()) LOGGER.log(
+      Level.WARNING,
+      "The OpenTelemetry instance has no text-map propagator, so no trace context reaches or leaves the records; " +
+        "configure one, such as W3CTraceContextPropagator"
+    );
   }
 
   @Override
-  public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
-    // Extract any upstream context from the record's headers (W3C `traceparent` + tracestate).
-    final Context parent;
+  public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record, final String consumerGroup) {
     try {
-      parent = propagator.extract(Context.current(), record.headers(), HeadersGetter.INSTANCE);
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to extract trace context from headers", e);
-      return SpanScope.noop();
-    }
-
-    final Span span;
-    try {
-      span = otelTracer
-        .spanBuilder(SPAN_NAME)
+      final var parent =
+        record.headers() == null
+          ? Context.root()
+          : propagator.extract(Context.root(), record.headers(), HeadersGetter.INSTANCE);
+      final var builder = tracer
+        .spanBuilder("process " + record.topic())
         .setParent(parent)
         .setSpanKind(SpanKind.CONSUMER)
-        .setAttribute(MESSAGING_SYSTEM_KEY, "kafka")
-        .setAttribute(MESSAGING_OPERATION_KEY, "process")
-        .setAttribute(KAFKA_TOPIC_KEY, record.topic())
-        .setAttribute(KAFKA_PARTITION_KEY, (long) record.partition())
-        .setAttribute(KAFKA_OFFSET_KEY, record.offset())
-        .startSpan();
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to start span", e);
+        .setAttribute(SYSTEM, "kafka")
+        .setAttribute(OPERATION_TYPE, "process")
+        .setAttribute(OPERATION_NAME, "process")
+        .setAttribute(DESTINATION, record.topic())
+        .setAttribute(PARTITION, Integer.toString(record.partition()))
+        .setAttribute(OFFSET, record.offset());
+      if (consumerGroup != null) builder.setAttribute(GROUP, consumerGroup);
+      final var span = builder.startSpan();
+      return new OtelSpanScope(span, parent.with(span), propagator);
+    } catch (final RuntimeException e) {
+      LOGGER.log(Level.WARNING, "Failed to start a span for the record", e);
       return SpanScope.noop();
-    }
-
-    final Scope scope;
-    try {
-      scope = span.makeCurrent();
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to make span current", e);
-      span.end();
-      return SpanScope.noop();
-    }
-
-    return new OtelSpanScope(span, scope);
-  }
-
-  @Override
-  public void injectContextInto(final Headers headers) {
-    if (headers == null) return;
-    try {
-      propagator.inject(Context.current(), headers, HeadersSetter.INSTANCE);
-    } catch (final Exception e) {
-      LOGGER.log(Level.WARNING, "Failed to inject trace context into headers", e);
     }
   }
 
-  /// Span scope returned by [#startConsumerSpan]. Closing the scope detaches the context from the
-  /// current thread AND ends the span.
+  /// One record's span and the context it continues, so [#inject] writes this record's trace on any
+  /// thread.
   private static final class OtelSpanScope implements SpanScope {
 
     private final Span span;
-    private final Scope scope;
-    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final Context context;
+    private final TextMapPropagator propagator;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
-    OtelSpanScope(final Span span, final Scope scope) {
+    OtelSpanScope(final Span span, final Context context, final TextMapPropagator propagator) {
       this.span = span;
-      this.scope = scope;
+      this.context = context;
+      this.propagator = propagator;
     }
 
     @Override
-    public void recordException(final Throwable t) {
-      if (closed.get() || t == null) return;
+    public Activation activate() {
       try {
-        span.recordException(t);
-        span.setStatus(StatusCode.ERROR, t.getClass().getSimpleName());
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Failed to record exception on span", e);
+        return context.makeCurrent()::close;
+      } catch (final RuntimeException e) {
+        LOGGER.log(Level.WARNING, "Failed to make the span current", e);
+        return Activation.NONE;
+      }
+    }
+
+    @Override
+    public void inject(final Headers headers) {
+      if (headers == null) return;
+      try {
+        propagator.inject(context, headers, HeadersSetter.INSTANCE);
+      } catch (final RuntimeException e) {
+        LOGGER.log(Level.WARNING, "Failed to write the trace context into headers", e);
+      }
+    }
+
+    @Override
+    public void attemptFailed(final int attempt, final Throwable failure) {
+      if (closed.get() || failure == null) return;
+      try {
+        final var attributes = Attributes.builder()
+          .put(ATTEMPT, (long) attempt)
+          .put(EXCEPTION_TYPE, failure.getClass().getName());
+        if (failure.getMessage() != null) attributes.put(EXCEPTION_MESSAGE, failure.getMessage());
+        span.addEvent("kpipe.attempt.failed", attributes.build());
+      } catch (final RuntimeException e) {
+        LOGGER.log(Level.WARNING, "Failed to record a failed attempt", e);
+      }
+    }
+
+    @Override
+    public void recordException(final Throwable failure) {
+      if (closed.get() || failure == null) return;
+      try {
+        span.recordException(failure);
+        span.setAttribute(ERROR_TYPE, failure.getClass().getName());
+        span.setStatus(StatusCode.ERROR, failure.getClass().getSimpleName());
+      } catch (final RuntimeException e) {
+        LOGGER.log(Level.WARNING, "Failed to record an exception on the span", e);
       }
     }
 
     @Override
     public void close() {
       if (!closed.compareAndSet(false, true)) return;
-      // Always detach the Context (scope) before ending the span; otherwise a subsequent
-      // injection on the same carrier thread would read a stale span.
-      try {
-        scope.close();
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Failed to close scope", e);
-      }
       try {
         span.end();
-      } catch (final Exception e) {
-        LOGGER.log(Level.WARNING, "Failed to end span", e);
+      } catch (final RuntimeException e) {
+        LOGGER.log(Level.WARNING, "Failed to end the span", e);
       }
     }
   }
 
-  /// [TextMapGetter] adapter that reads UTF-8 string values from Kafka [Headers]. Used by
-  /// [#startConsumerSpan] to extract `traceparent` / `tracestate` from inbound records.
+  /// Reads UTF-8 header values for the propagator.
   private static final class HeadersGetter implements TextMapGetter<Headers> {
 
     static final HeadersGetter INSTANCE = new HeadersGetter();
@@ -177,6 +180,7 @@ public final class OtelTracer implements Tracer {
 
     @Override
     public Iterable<String> keys(final Headers carrier) {
+      if (carrier == null) return List.of();
       final var keys = new ArrayList<String>();
       for (final Header h : carrier) keys.add(h.key());
       return keys;
@@ -191,12 +195,8 @@ public final class OtelTracer implements Tracer {
     }
   }
 
-  /// [TextMapSetter] adapter that writes UTF-8 string values into Kafka [Headers]. Used by
-  /// [#injectContextInto] to add `traceparent` / `tracestate` to outbound DLQ records and
-  /// sink-produced records.
-  ///
-  /// Replaces existing headers with the same key so re-injection on a retried record yields a
-  /// single up-to-date `traceparent`.
+  /// Writes UTF-8 header values for the propagator, replacing a header of the same name, so a
+  /// record that copies its source's headers carries one, current `traceparent`.
   private static final class HeadersSetter implements TextMapSetter<Headers> {
 
     static final HeadersSetter INSTANCE = new HeadersSetter();

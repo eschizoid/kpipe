@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -49,13 +50,14 @@ class BatchFlushLockHoldTest {
 
     final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
       @Override
-      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {}
 
       @Override
       public void onBatchFailure(
         final ConsumerRecord<byte[], byte[]> record,
         final Exception cause,
-        final int retries
+        final int retries,
+        final Tracer.SpanScope span
       ) {
         dispatchStarted.countDown();
         // Stands in for KPipeProducer.send(...).get() waiting on a broker that will not ack.
@@ -139,13 +141,14 @@ class BatchFlushLockHoldTest {
     });
     final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
       @Override
-      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {}
 
       @Override
       public void onBatchFailure(
         final ConsumerRecord<byte[], byte[]> record,
         final Exception cause,
-        final int retries
+        final int retries,
+        final Tracer.SpanScope span
       ) {}
     };
     final var wrapper = new BatchPipelineWrapper<byte[]>(

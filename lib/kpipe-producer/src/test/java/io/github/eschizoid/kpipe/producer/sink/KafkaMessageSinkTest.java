@@ -38,7 +38,7 @@ class KafkaMessageSinkTest {
   @Test
   void shouldSendToKafka() {
     acknowledgeSends();
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
 
     sink.accept("hello");
 
@@ -56,7 +56,7 @@ class KafkaMessageSinkTest {
   @Test
   void forwardsTheCurrentRecordsKeyAndHeaders() {
     acknowledgeSends();
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
     final var context = new FixedContext(
       "key".getBytes(),
       List.of(Map.entry("tenant", "acme".getBytes()), Map.entry("tenant", "beta".getBytes()))
@@ -86,7 +86,7 @@ class KafkaMessageSinkTest {
   @Test
   void withNoCurrentRecordTheKeyIsNullAndNoHeadersAreCopied() {
     acknowledgeSends();
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
 
     sink.accept("value");
 
@@ -104,7 +104,7 @@ class KafkaMessageSinkTest {
   void sendsThroughAKPipeProducer() {
     acknowledgeSends();
     final var producer = KPipeProducer.<byte[], byte[]>builder().withProducer(mockProducer).build();
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(producer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(producer, TOPIC, String::getBytes);
 
     RecordContext.callWith(new FixedContext("key".getBytes(), List.of()), () -> {
       sink.accept("value");
@@ -122,7 +122,7 @@ class KafkaMessageSinkTest {
 
   @Test
   void shouldNotSendWhenValueIsNull() {
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
 
     sink.accept(null);
 
@@ -135,7 +135,7 @@ class KafkaMessageSinkTest {
   void aRejectedSendFailsAccept() {
     final var rejected = new KafkaException("broker rejected the send");
     when(mockProducer.send(any())).thenReturn(CompletableFuture.failedFuture(rejected));
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
 
     final var thrown = assertThrows(IllegalStateException.class, () -> sink.accept("payload"));
     assertSame(rejected, thrown.getCause(), "the broker's exception is the cause");
@@ -147,7 +147,7 @@ class KafkaMessageSinkTest {
   void acceptWaitsForTheAck() throws Exception {
     final var ack = new CompletableFuture<RecordMetadata>();
     when(mockProducer.send(any())).thenReturn(ack);
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
 
     final var accepted = new CompletableFuture<Void>();
     Thread.ofVirtual().start(() -> {
@@ -166,7 +166,7 @@ class KafkaMessageSinkTest {
   @Test
   void anInterruptWhileWaitingFailsAcceptAndKeepsTheFlag() {
     when(mockProducer.send(any())).thenReturn(new CompletableFuture<>());
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
 
     Thread.currentThread().interrupt();
     try {
@@ -184,7 +184,7 @@ class KafkaMessageSinkTest {
     final var failure = new KafkaException("synchronous send failure");
     when(mockProducer.send(any())).thenThrow(failure);
 
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
 
     final var thrown = assertThrows(KafkaException.class, () -> sink.accept("payload"));
     assertSame(failure, thrown, "the original KafkaException must propagate unwrapped");
@@ -197,7 +197,7 @@ class KafkaMessageSinkTest {
     final var closed = new IllegalStateException("Cannot perform operation after producer has been closed");
     when(mockProducer.send(any())).thenThrow(closed);
 
-    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes, null);
+    final KafkaMessageSink<String> sink = KafkaMessageSink.of(mockProducer, TOPIC, String::getBytes);
 
     final var thrown = assertThrows(IllegalStateException.class, () -> sink.accept("payload"));
     assertSame(closed, thrown, "the closed-producer ISE must propagate unwrapped");

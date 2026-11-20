@@ -176,15 +176,13 @@ public interface Stream<T> {
   /// @throws NullPointerException if `exporter` is null
   Stream<T> withMetrics(final MetricsExporter exporter);
 
-  /// Returns a new stream with a [Tracer] attached for W3C trace-context propagation. The tracer
-  /// starts a consumer span around each record (extracting upstream context from headers) and
-  /// injects the active context into DLQ and producer-sink outbound records.
+  /// Returns a new stream that traces its records: the tracer starts one span per record,
+  /// continuing the trace its headers carry, and every record written on that record's behalf, to
+  /// the dead-letter topic or through `toKafka` and `KafkaMessageSink`, carries that span's
+  /// context, even when a batch flush writes it from another thread.
   ///
-  /// Use `new OtelTracer(openTelemetry, "my-pipeline")` from `kpipe-tracing-otel` for OpenTelemetry
-  /// wiring. Pass [Tracer#noop] to disable tracing explicitly (also the default when this method
-  /// is not called).
-  ///
-  /// @param tracer the tracer implementation (must not be null; use `Tracer.noop()` to disable)
+  /// @param tracer the tracer, such as `new OtelTracer(openTelemetry)` from `kpipe-tracing-otel`;
+  ///     [Tracer#noop()], the default, traces nothing
   /// @return a new stream with tracing attached
   /// @throws NullPointerException if `tracer` is null
   Stream<T> withTracer(final Tracer tracer);

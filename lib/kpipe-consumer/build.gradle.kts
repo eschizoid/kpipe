@@ -54,6 +54,7 @@ dependencies {
   // explicitly rather than by extending testImplementation, which would also drag Testcontainers
   // and the rest of the integration-test stack onto this source set.
   frayTestImplementation(project(":lib:kpipe-core"))
+  frayTestImplementation(project(":lib:kpipe-tracing"))
   "frayTestRuntimeOnly"(libs.junitPlatformLauncher)
 }
 

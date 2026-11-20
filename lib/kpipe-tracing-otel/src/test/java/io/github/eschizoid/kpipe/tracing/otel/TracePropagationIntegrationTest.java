@@ -104,12 +104,12 @@ class TracePropagationIntegrationTest {
       .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
       .build();
 
-    final var tracer = new OtelTracer(sdk, "trace-propagation-test");
+    final var tracer = new OtelTracer(sdk);
 
-    // The KPipe consumer produces to the output topic via KafkaMessageSink (with the same tracer
-    // so it injects the active context into outbound headers).
+    // The KPipe consumer produces to the output topic through a KafkaMessageSink, which writes the
+    // record's span into the outbound headers.
     final Producer<byte[], byte[]> sinkProducer = new KafkaProducer<>(producerProps());
-    final var sink = KafkaMessageSink.<byte[]>of(sinkProducer, outputTopic, v -> v, tracer);
+    final var sink = KafkaMessageSink.<byte[]>of(sinkProducer, outputTopic, v -> v);
 
     final var handle = KPipe.bytes(inputTopic, consumerProps("trace-prop-group-" + UUID.randomUUID()))
       .withTracer(tracer)
@@ -153,7 +153,7 @@ class TracePropagationIntegrationTest {
       assertTrue(parentCtx.isValid(), "captured span must have a valid parent context");
       assertEquals(INBOUND_TRACE_ID, parentCtx.getTraceId(), "span parent trace id must equal inbound trace id");
       assertEquals(INBOUND_SPAN_ID, parentCtx.getSpanId(), "span parent span id must equal inbound parent id");
-      assertEquals(inputTopic, span.getAttributes().get(AttributeKey.stringKey("messaging.kafka.topic")));
+      assertEquals(inputTopic, span.getAttributes().get(AttributeKey.stringKey("messaging.destination.name")));
     } finally {
       try {
         handle.shutdownGracefully(Duration.ofSeconds(5));

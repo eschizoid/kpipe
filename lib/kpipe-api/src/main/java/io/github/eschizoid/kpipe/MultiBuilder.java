@@ -73,11 +73,13 @@ public final class MultiBuilder {
     return this;
   }
 
-  /// Attaches a [Tracer] to the multi-topic consumer. The tracer wraps every record (regardless
-  /// of route) with a consumer span and injects the active context into outbound DLQ headers.
+  /// Traces every route's records: the tracer starts one span per record, continuing the trace its
+  /// headers carry, and every record written on that record's behalf, to the dead-letter topic or
+  /// through `toKafka` and `KafkaMessageSink`, carries that span's context, even when a batch flush
+  /// writes it from another thread.
   ///
-  /// @param tracer the tracer (typically `new OtelTracer(otel, "my-pipeline")` from
-  ///     `kpipe-tracing-otel`); pass `Tracer.noop()` to disable explicitly
+  /// @param tracer the tracer, such as `new OtelTracer(openTelemetry)` from `kpipe-tracing-otel`;
+  ///     `Tracer.noop()`, the default, traces nothing
   /// @return this builder
   public MultiBuilder withTracer(final Tracer tracer) {
     settings = settings.withTracer(tracer);
@@ -434,7 +436,7 @@ public final class MultiBuilder {
       .filter(DefaultSink.class::isInstance)
       .map(s -> ((DefaultSink<?>) s).terminalSink())
       .toList();
-    final var opened = KafkaTopicSink.openAll(terminalSinks, kafkaProps, settings.tracer(), consumerBuilder);
+    final var opened = KafkaTopicSink.openAll(terminalSinks, kafkaProps, consumerBuilder);
     return KafkaTopicSink.closingOnFailure(opened, () -> DefaultHandle.startAndWrap(consumerBuilder.build()));
   }
 

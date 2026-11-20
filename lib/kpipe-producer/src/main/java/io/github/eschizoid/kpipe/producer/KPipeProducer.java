@@ -25,17 +25,14 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
   private final Producer<K, V> producer;
   private final boolean ownProducer;
-  private final Tracer tracer;
 
   /// Creates a new KPipeProducer that wraps an existing Kafka producer.
   ///
   /// @param producer    the Kafka producer to wrap
   /// @param ownProducer whether this wrapper owns the producer and should close it
-  /// @param tracer      the tracer for outbound header injection; uses noop if null
-  KPipeProducer(final Producer<K, V> producer, final boolean ownProducer, final Tracer tracer) {
+  KPipeProducer(final Producer<K, V> producer, final boolean ownProducer) {
     this.producer = Objects.requireNonNull(producer, "Producer cannot be null");
     this.ownProducer = ownProducer;
-    this.tracer = tracer != null ? tracer : Tracer.noop();
   }
 
   /// Creates a new builder for constructing [KPipeProducer] instances.
@@ -61,7 +58,6 @@ public class KPipeProducer<K, V> implements AutoCloseable {
 
     private Properties props;
     private Producer<K, V> producer;
-    private Tracer tracer;
 
     /// Sets the properties used to create the underlying Kafka producer.
     ///
@@ -86,25 +82,15 @@ public class KPipeProducer<K, V> implements AutoCloseable {
       return this;
     }
 
-    /// Sets the tracer used to inject the active span's context into outbound headers (DLQ and
-    /// Kafka sinks). When not set, no propagation occurs (`Tracer.noop()`).
-    ///
-    /// @param tracer the tracer to use; pass `Tracer.noop()` to disable explicitly
-    /// @return this builder instance for method chaining
-    public Builder<K, V> withTracer(final Tracer tracer) {
-      this.tracer = tracer;
-      return this;
-    }
-
     /// Builds a new [KPipeProducer].
     ///
     /// @return a new KPipeProducer instance
     /// @throws NullPointerException if neither [#withProducer(Producer)] nor
     ///     [#withProperties(Properties)] was called
     public KPipeProducer<K, V> build() {
-      if (producer != null) return new KPipeProducer<>(producer, false, tracer);
+      if (producer != null) return new KPipeProducer<>(producer, false);
       Objects.requireNonNull(props, "Either withProducer or withProperties must be called");
-      return new KPipeProducer<>(new KafkaProducer<>(buildProducerProperties(props)), true, tracer);
+      return new KPipeProducer<>(new KafkaProducer<>(buildProducerProperties(props)), true);
     }
 
     /// Builds the effective producer Properties from a source `Properties`. Visible for testing.
@@ -140,6 +126,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @param record      the original consumer record that failed
   /// @param sourceTopic the original source topic name
   /// @param exception   the exception that caused the processing failure
+  /// @param span        the failed record's span, whose context the DLQ record carries
   /// @return true if the record was successfully sent to the DLQ, false otherwise (DLQ disabled or
   ///         send failed). Callers can use the return value to update their own counters or
   ///         trigger fallback handling.
@@ -147,7 +134,8 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     final String dlqTopic,
     final ConsumerRecord<K, V> record,
     final String sourceTopic,
-    final Exception exception
+    final Exception exception,
+    final Tracer.SpanScope span
   ) {
     if (dlqTopic == null) return false;
 
@@ -171,12 +159,14 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     // travels as a header so replay tooling can restore it.
     producerRecord.headers().add("x-dlq-source-timestamp", String.valueOf(record.timestamp()).getBytes());
 
-    // Inject the current trace context (e.g. W3C `traceparent`) so DLQ subscribers can continue
-    // the trace. Guarded — a misbehaving tracer must not break the error path.
+    // The DLQ record continues the failed record's own trace, on whatever thread it is sent from.
+    // Guarded: a tracer that throws must not stop the record reaching the DLQ.
     try {
-      tracer.injectContextInto(producerRecord.headers());
-    } catch (final Exception traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.injectContextInto threw during DLQ send", traceEx);
+      span.inject(producerRecord.headers());
+    } catch (final VirtualMachineError fatal) {
+      throw fatal;
+    } catch (final Throwable traceEx) {
+      LOGGER.log(Level.WARNING, "Tracer.SpanScope.inject threw during DLQ send", traceEx);
     }
 
     try {

@@ -141,23 +141,24 @@ class PipelineInterruptionWhileRunningTest {
     // The record's span closes after its whole outcome path, error handler included, has run, so
     // waiting on it is a complete signal rather than a guess at how long that path takes.
     final var stuckRecordDone = new CountDownLatch(1);
-    final var tracer = new Tracer() {
-      @Override
-      public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
-        return new SpanScope() {
-          @Override
-          public void recordException(final Throwable t) {}
+    final Tracer tracer = (record, _) ->
+      new Tracer.SpanScope() {
+        @Override
+        public Activation activate() {
+          return Activation.NONE;
+        }
 
-          @Override
-          public void close() {
-            if (record.offset() == FAILING_OFFSET) stuckRecordDone.countDown();
-          }
-        };
-      }
+        @Override
+        public void inject(final Headers headers) {}
 
-      @Override
-      public void injectContextInto(final Headers headers) {}
-    };
+        @Override
+        public void recordException(final Throwable t) {}
+
+        @Override
+        public void close() {
+          if (record.offset() == FAILING_OFFSET) stuckRecordDone.countDown();
+        }
+      };
     final var neverReleased = new CountDownLatch(1);
     final var properties = new Properties();
     properties.put("bootstrap.servers", "localhost:9092");

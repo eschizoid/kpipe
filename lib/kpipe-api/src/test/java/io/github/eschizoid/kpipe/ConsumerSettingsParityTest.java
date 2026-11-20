@@ -26,9 +26,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.UnaryOperator;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.header.Headers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -47,15 +45,7 @@ class ConsumerSettingsParityTest {
   private static final MetricsExporter EXPORTER = _ -> MetricsExporter.Export.NONE;
   private static final CircuitBreakerController BREAKER = new CircuitBreakerController(0.5, 10, ofSeconds(1));
   private static final KPipeConsumer.ErrorHandler HANDLER = _ -> {};
-  private static final Tracer TRACER = new Tracer() {
-    @Override
-    public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
-      return Tracer.noop().startConsumerSpan(record);
-    }
-
-    @Override
-    public void injectContextInto(final Headers headers) {}
-  };
+  private static final Tracer TRACER = (_, _) -> Tracer.SpanScope.noop();
   private static final OffsetStore STORE = new OffsetStore() {
     @Override
     public Map<TopicPartition, Long> load(final Collection<TopicPartition> partitions) {

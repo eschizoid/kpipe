@@ -3,109 +3,99 @@ package io.github.eschizoid.kpipe.tracing;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Headers;
 
-/// Tracer SPI for KPipe — opt-in distributed tracing across the Kafka boundary.
+/// Traces records across the Kafka boundary. For each consumed record the consumer starts one span
+/// with [#startConsumerSpan], continuing any trace the record's headers carry, and every record
+/// it writes on that record's behalf, to the dead-letter topic or through a Kafka sink, carries
+/// that span's context in its headers.
 ///
-/// A `Tracer` is responsible for two operations on the consumer side:
+/// The default, [#noop()], traces nothing at no cost. `OtelTracer` in `kpipe-tracing-otel`
+/// implements W3C trace-context propagation with OpenTelemetry; this module itself has no
+/// OpenTelemetry dependency, so another tracing system can implement it.
 ///
-///   1. **Extract** a parent context from an inbound [ConsumerRecord]'s headers and **start a
-///      span** that represents the work of processing the record.
-///   2. **Inject** the active span's context into outbound [Headers] so downstream consumers (DLQ
-///      subscribers, services that read records produced by `KafkaMessageSink`) see the same
-///      trace.
-///
-/// This module ships no concrete implementation. The default [#noop()] is a zero-cost stub used
-/// when tracing is not configured. Add the `kpipe-tracing-otel` module and pass
-/// `new OtelTracer(openTelemetry, "my-pipeline")` to wire W3C `traceparent` propagation through
-/// the OpenTelemetry API.
-///
-/// **Why this is its own module:** the SPI references Kafka's `Headers` and `ConsumerRecord`
-/// types, so it requires `kafka.clients` — but nothing else. Keeping it standalone means a
-/// tracing backend (`kpipe-tracing-otel`, or a custom implementation) depends only on this SPI
-/// and never drags `kpipe-producer` onto its consumers' classpath. `kpipe-producer` and
-/// `kpipe-consumer` both `requires transitive` this module, so the SPI is reachable from the
-/// injection callsites (`KPipeProducer.sendToDlq`, `KafkaMessageSink`) and the span-start
-/// callsite (`KPipeConsumer.processRecord`) alike.
-///
-/// **No OTel types in this SPI** — kept pure-Java so implementations can be swapped (B3, Datadog,
-/// custom) without dragging an OTel API dependency onto every user's classpath.
+/// An implementation must not throw: a failure to read or start a trace returns
+/// [SpanScope#noop()]. The consumer guards every call anyway, so a tracer that throws only loses
+/// its span and never fails a record.
+@FunctionalInterface
 public interface Tracer {
-  /// Starts a span representing the processing of `record`. The implementation should extract any
-  /// upstream span context from the record's headers (e.g. W3C `traceparent`) and use it as the
-  /// parent. The returned [SpanScope] MUST be closed when processing completes — typically in a
-  /// `finally` block.
+  /// Starts the span for processing `record`, as a child of the trace its headers carry, if any.
   ///
-  /// Implementations must never throw from this method on a parse failure; return a no-op scope
-  /// instead. A throwing tracer must never crash the consumer thread.
-  ///
-  /// @param record the Kafka record being processed
-  /// @return a scope that ends the span when closed
-  SpanScope startConsumerSpan(ConsumerRecord<?, byte[]> record);
+  /// @param record        the record being processed
+  /// @param consumerGroup the consumer's `group.id`, or null when it has none
+  /// @return the record's span; the consumer closes it once the record is done
+  SpanScope startConsumerSpan(ConsumerRecord<?, byte[]> record, String consumerGroup);
 
-  /// Injects the currently-active span context into `headers` so a downstream consumer can pick
-  /// up the same trace. Called by `KPipeProducer.sendToDlq` and the Kafka sink before each
-  /// outbound `send`.
-  ///
-  /// @param headers the outbound record's headers
-  void injectContextInto(Headers headers);
-
-  /// Returns the no-op tracer used when tracing is not configured. Zero allocation, zero cost.
-  ///
-  /// @return a shared no-op `Tracer`
+  /// @return the tracer that traces nothing
   static Tracer noop() {
-    return Noop.INSTANCE;
+    return (_, _) -> SpanScope.noop();
   }
 
-  /// Zero-cost default [Tracer] used when tracing is not configured. Reached only through
-  /// [#noop()].
-  enum Noop implements Tracer {
-    INSTANCE;
-
-    @Override
-    public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record) {
-      return SpanScope.noop();
-    }
-
-    @Override
-    public void injectContextInto(final Headers headers) {
-      // no-op
-    }
-  }
-
-  /// Scope handle returned by [#startConsumerSpan]. Closing the scope ends the span and detaches
-  /// it from the current thread.
+  /// One record's span. The consumer activates it on the record's thread while the record is
+  /// processed, its retries included, records failures on it, and closes it once the record is
+  /// done for good: when its sink returns, when it fails, or, on a batch route, when the batch that
+  /// holds it is flushed. Close may therefore run on another thread than the one that started the
+  /// span.
   interface SpanScope extends AutoCloseable {
-    /// Records `t` as an exception on the active span and marks the span status as error.
-    /// Implementations must never throw — a failing tracer must not crash the caller.
+    /// Makes this span current on the calling thread until the returned activation is closed, on
+    /// the same thread, so instrumentation inside an operator or sink nests its own spans under
+    /// it.
     ///
-    /// @param t the exception to record
-    void recordException(Throwable t);
+    /// @return the activation to close when the attempt ends
+    Activation activate();
 
-    /// Ends the span and detaches it from the current thread. Idempotent — closing twice is a
-    /// no-op.
+    /// Writes this span's context into `headers`, so a consumer of the written record continues
+    /// the trace. Works on any thread, whether or not the span is active there.
+    ///
+    /// @param headers the outgoing record's headers
+    void inject(Headers headers);
+
+    /// Records one failed processing attempt. The record may still succeed on a retry.
+    ///
+    /// @param attempt the attempt, from 0
+    /// @param failure why it failed
+    default void attemptFailed(final int attempt, final Throwable failure) {}
+
+    /// Records that the record failed for good, and marks the span as an error.
+    ///
+    /// @param failure why it failed
+    void recordException(Throwable failure);
+
+    /// Ends the span. Idempotent; may run on any thread.
     @Override
     void close();
 
-    /// Returns the no-op scope. Useful for tracer implementations that decide a particular record
-    /// does not warrant a span.
-    ///
-    /// @return a shared no-op `SpanScope`
+    /// @return the span that records nothing
     static SpanScope noop() {
       return Noop.INSTANCE;
     }
 
-    /// Zero-cost default [SpanScope] returned by [Tracer.Noop]. Reached only through [#noop()].
+    /// A span made current on one thread; closing it restores what was current before.
+    @FunctionalInterface
+    interface Activation extends AutoCloseable {
+      /// The activation of a span that is never made current.
+      Activation NONE = () -> {};
+
+      @Override
+      void close();
+    }
+
+    /// The span that records nothing, behind [SpanScope#noop()].
     enum Noop implements SpanScope {
+      /// The only instance.
       INSTANCE;
 
       @Override
-      public void recordException(final Throwable t) {
-        // no-op
+      public Activation activate() {
+        return Activation.NONE;
       }
 
       @Override
-      public void close() {
-        // no-op
-      }
+      public void inject(final Headers headers) {}
+
+      @Override
+      public void recordException(final Throwable failure) {}
+
+      @Override
+      public void close() {}
     }
   }
 }
