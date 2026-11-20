@@ -17,8 +17,6 @@ import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.OffsetManager;
-import io.github.eschizoid.kpipe.consumer.OffsetState;
-import io.github.eschizoid.kpipe.consumer.OffsetStatistics;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.format.protobuf.ProtobufFormat;
 import io.github.eschizoid.kpipe.pipeline.Pipeline;
@@ -222,14 +220,7 @@ class AppIntegrationTest {
     final Set<Long> marked = ConcurrentHashMap.newKeySet();
 
     @Override
-    public OffsetManager start() {
-      return this;
-    }
-
-    @Override
-    public OffsetManager stop() {
-      return this;
-    }
+    public void start() {}
 
     @Override
     public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
@@ -237,21 +228,6 @@ class AppIntegrationTest {
     @Override
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       marked.add(record.offset());
-    }
-
-    @Override
-    public OffsetState getState() {
-      return OffsetState.CREATED;
-    }
-
-    @Override
-    public boolean isRunning() {
-      return true;
-    }
-
-    @Override
-    public OffsetStatistics getStatistics() {
-      return OffsetStatistics.empty();
     }
 
     @Override

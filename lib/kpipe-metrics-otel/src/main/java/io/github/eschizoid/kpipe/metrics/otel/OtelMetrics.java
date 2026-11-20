@@ -59,6 +59,8 @@ import java.util.function.LongSupplier;
 /// | `kpipe.consumer.circuit_breaker.trips` | counter | `{trip}` |
 /// | `kpipe.consumer.circuit_breaker.open_time` | counter | `s` |
 /// | `kpipe.consumer.circuit_breaker.state` | up-down counter, per state | `{consumer}` |
+/// | `kpipe.consumer.offsets.commits` | counter | `{commit}` |
+/// | `kpipe.consumer.offsets.commit_failures` | counter | `{commit}` |
 ///
 /// Every instrument carries `messaging.consumer.group.name` when the consumer has a `group.id`;
 /// per-topic ones also carry `messaging.destination.name`, and the state instrument carries
@@ -147,6 +149,16 @@ public final class OtelMetrics implements MetricsExporter {
       "kpipe.consumer.circuit_breaker.open_time",
       "Time the circuit breaker spent open"
     );
+    final var commits = meter
+      .counterBuilder("kpipe.consumer.offsets.commits")
+      .setDescription("Offset commits the default offset manager made")
+      .setUnit("{commit}")
+      .buildObserver();
+    final var commitFailures = meter
+      .counterBuilder("kpipe.consumer.offsets.commit_failures")
+      .setDescription("Offset commits that failed or did not finish in time")
+      .setUnit("{commit}")
+      .buildObserver();
     final var state = meter
       .upDownCounterBuilder("kpipe.consumer.circuit_breaker.state")
       .setDescription("Consumers whose circuit breaker is in each state")
@@ -170,6 +182,8 @@ public final class OtelMetrics implements MetricsExporter {
           pausedTime.record(g.pausedNanos / 1e9, attributes);
           trips.record(g.trips, attributes);
           openTime.record(g.openNanos / 1e9, attributes);
+          commits.record(g.commits, attributes);
+          commitFailures.record(g.commitFailures, attributes);
         });
         collection.inFlight.forEach((attributes, n) -> inFlight.record(n, attributes));
         collection.lag.forEach((attributes, n) -> lag.record(n, attributes));
@@ -188,6 +202,8 @@ public final class OtelMetrics implements MetricsExporter {
       pausedTime,
       trips,
       openTime,
+      commits,
+      commitFailures,
       state
     );
   }
@@ -336,12 +352,16 @@ public final class OtelMetrics implements MetricsExporter {
     long pausedNanos;
     long trips;
     long openNanos;
+    long commits;
+    long commitFailures;
 
     void add(final MetricsSnapshot m) {
       pauses += m.backpressure().pauses();
       pausedNanos += m.backpressure().time().toNanos();
       trips += m.circuitBreaker().trips();
       openNanos += m.circuitBreaker().openTime().toNanos();
+      commits += m.commits().succeeded();
+      commitFailures += m.commits().failed();
     }
 
     void add(final GroupTotals g) {
@@ -349,6 +369,8 @@ public final class OtelMetrics implements MetricsExporter {
       pausedNanos += g.pausedNanos;
       trips += g.trips;
       openNanos += g.openNanos;
+      commits += g.commits;
+      commitFailures += g.commitFailures;
     }
   }
 

@@ -415,15 +415,8 @@ class RebalanceAtScaleIntegrationTest {
     }
 
     @Override
-    public OffsetManager start() {
+    public void start() {
       delegate.start();
-      return this;
-    }
-
-    @Override
-    public OffsetManager stop() {
-      delegate.stop();
-      return this;
     }
 
     @Override
@@ -434,21 +427,6 @@ class RebalanceAtScaleIntegrationTest {
     @Override
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       delegate.markOffsetProcessed(record);
-    }
-
-    @Override
-    public OffsetState getState() {
-      return delegate.getState();
-    }
-
-    @Override
-    public boolean isRunning() {
-      return delegate.isRunning();
-    }
-
-    @Override
-    public OffsetStatistics getStatistics() {
-      return delegate.getStatistics();
     }
 
     @Override

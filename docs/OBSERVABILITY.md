@@ -14,6 +14,7 @@ m.records().averageProcessingTime();
 m.inFlight();
 m.backpressure().time();            // counts a pause still in progress
 m.circuitBreaker().trips();
+m.commits().failed();               // offset commits that failed or timed out
 ```
 
 `records()` holds received, processed, filtered, failed, retries, dlqSent, dlqFailed and processingTime. Filtered
@@ -22,6 +23,12 @@ in-flight records finish, `received = processed + filtered + failed`, except for
 redelivery. Each snapshot reads the outcome counts before `received`, so it never shows more outcomes than records
 received. Batch routes do not measure processing time; read `averageProcessingTime()` per topic when some topics are
 batch routes.
+
+`commits()` counts the offset commits the default `KafkaOffsetManager` makes, periodic, on revoke and at close, to Kafka
+or to an `OffsetStore`: `succeeded()` and `failed()`. A failed periodic commit leaves the commit point where it was, so
+the next one retries from there; a failed commit on revoke or at close is not retried. Without an `OffsetStore`, a lost
+partition counts as a failure, because Kafka rejects that commit. A custom `OffsetManager` commits on its own, and its
+commits are not counted.
 
 `m.lag()` and `m.lag("orders")` give the offsets between the consumer's position and the end of the log (the high
 watermark, or the last stable offset under `read_committed`), summed over its assigned partitions. The poll loop reads
@@ -39,7 +46,7 @@ closes, after its last records are counted. The keys follow the OpenTelemetry in
 and `circuit_breaker.state` is the current state:
 
 ```text
-kpipe metrics [orders group=billing] received=120 processed=117 filtered=1 failed=2 retries=3 dlq.sent=2 dlq.failed=0 in_flight=0 lag=14 processing.avg=4.2ms backpressure.pauses=0 backpressure.time=0.0ms circuit_breaker.state=closed circuit_breaker.trips=0 circuit_breaker.open_time=0.0ms
+kpipe metrics [orders group=billing] received=120 processed=117 filtered=1 failed=2 retries=3 dlq.sent=2 dlq.failed=0 in_flight=0 lag=14 processing.avg=4.2ms backpressure.pauses=0 backpressure.time=0.0ms circuit_breaker.state=closed circuit_breaker.trips=0 circuit_breaker.open_time=0.0ms offsets.commits=4 offsets.commit_failures=0
 ```
 
 ## OpenTelemetry metrics
@@ -83,6 +90,8 @@ Processing time is a histogram recorded once per processed record on per-record 
 | `kpipe.consumer.circuit_breaker.trips`     | Counter                  | `{trip}`     | Times the circuit breaker opened                                   |
 | `kpipe.consumer.circuit_breaker.open_time` | Counter                  | `s`          | Time the circuit breaker spent open                                |
 | `kpipe.consumer.circuit_breaker.state`     | UpDownCounter, per state | `{consumer}` | Consumers whose circuit breaker is in each state                   |
+| `kpipe.consumer.offsets.commits`           | Counter                  | `{commit}`   | Offset commits the default offset manager made                     |
+| `kpipe.consumer.offsets.commit_failures`   | Counter                  | `{commit}`   | Offset commits that failed or did not finish in time               |
 
 Every consumer instrument carries `messaging.consumer.group.name` (the consumer's `group.id`) when one is set. Per-topic
 instruments also carry `messaging.destination.name`, and the state counter carries `kpipe.circuit_breaker.state`

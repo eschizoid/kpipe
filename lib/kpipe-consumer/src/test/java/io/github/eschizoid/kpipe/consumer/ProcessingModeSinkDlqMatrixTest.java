@@ -88,14 +88,7 @@ class ProcessingModeSinkDlqMatrixTest {
     final Set<Long> markedOffsets = ConcurrentHashMap.newKeySet();
 
     @Override
-    public OffsetManager start() {
-      return this;
-    }
-
-    @Override
-    public OffsetManager stop() {
-      return this;
-    }
+    public void start() {}
 
     @Override
     public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
@@ -103,21 +96,6 @@ class ProcessingModeSinkDlqMatrixTest {
     @Override
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       markedOffsets.add(record.offset());
-    }
-
-    @Override
-    public OffsetState getState() {
-      return OffsetState.CREATED;
-    }
-
-    @Override
-    public boolean isRunning() {
-      return true;
-    }
-
-    @Override
-    public OffsetStatistics getStatistics() {
-      return OffsetStatistics.empty();
     }
 
     @Override

@@ -1,6 +1,6 @@
 package io.github.eschizoid.kpipe.consumer;
 
-/// Represents the possible operational states of a KafkaOffsetManager.
+/// The lifecycle of a [KafkaOffsetManager].
 ///
 /// The state transitions generally follow this sequence:
 ///
@@ -12,7 +12,7 @@ package io.github.eschizoid.kpipe.consumer;
 /// </ul>
 ///
 /// State transitions are atomic and thread-safe when managed properly.
-public enum OffsetState {
+enum OffsetState {
   /// Initial state when the KafkaOffsetManager is created but not yet started. No offset tracking
   /// or committing occurs in this state.
   CREATED,

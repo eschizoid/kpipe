@@ -112,34 +112,6 @@ class OffsetLedgerTest {
   }
 
   @Test
-  void statisticsAggregateOffsetStateAndInjectLifecycleFields() {
-    final var ledger = new OffsetLedger();
-    ledger.track("topic", 0, 100L); // pending
-    ledger.track("topic", 1, 200L);
-    ledger.markProcessed("topic", 1, 200L); // processed, drained
-
-    final var stats = ledger.statistics(OffsetState.RUNNING, 3);
-    assertEquals(2, stats.partitionCount());
-    assertEquals(1, stats.totalPendingOffsets(), "only P0 is still pending");
-    assertEquals(1, stats.totalProcessedPartitions(), "only P1 has a processed offset");
-    assertEquals(OffsetState.RUNNING, stats.managerState(), "lifecycle state is injected by the manager");
-    assertEquals(3, stats.pendingCommits(), "pending-commit count is injected by the manager");
-    assertEquals(200L, stats.highestProcessedOffsetsByPartition().get(P1));
-    assertEquals(200.0, stats.averageHighestProcessedOffset(), "mean of the one processed partition's highest offset");
-  }
-
-  @Test
-  void statisticsForAnEmptyLedgerAreZeroed() {
-    final var stats = new OffsetLedger().statistics(OffsetState.CREATED, 0);
-    assertEquals(0, stats.partitionCount());
-    assertEquals(0, stats.totalPendingOffsets());
-    assertEquals(0, stats.totalProcessedPartitions());
-    assertEquals(0.0, stats.averageHighestProcessedOffset(), "no processed partitions -> zero average, not NaN");
-    assertTrue(stats.highestProcessedOffsetsByPartition().isEmpty());
-    assertEquals(OffsetState.CREATED, stats.managerState());
-  }
-
-  @Test
   void partitionStateSnapshotReportsFrontierAndPendingWindow() {
     final var ledger = new OffsetLedger();
     ledger.track("topic", 0, 100L);

@@ -35,10 +35,12 @@ accept) is what makes it public, and that includes the types those signatures me
 and `ProcessingMode`. The published `kpipe-test` module is public API too — user test code compiles against it.
 
 **SPI** — a public interface users are expected to _implement_: `MessageFormat`, `MessageSink`, `BatchSink`,
-`SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `MetricsExporter`,
-`KPipeConsumer.ErrorHandler`. `MetricsSource` is implemented by KPipe and handed to exporters, so it is API. Same
-stability rules, with one asymmetry worth knowing: adding a method to one of these is a breaking change for an
-implementer and invisible to a caller.
+`SchemaResolver`, `Tracer`, `ProtobufDescriptorCompiler`, `OffsetManager`, `OffsetStore`, `MetricsExporter`,
+`KPipeConsumer.ErrorHandler`. `MetricsSource` is implemented by KPipe and handed to exporters, so it is API.
+`CommitExecutor` is API for the same reason: KPipe implements it and hands it out through
+`KPipeConsumerBuilder.getCommitExecutor()`, for a custom offset manager to call. Same stability rules, with one
+asymmetry worth knowing: adding a method to one of these is a breaking change for an implementer and invisible to a
+caller.
 
 **Internal** — anything **package-private**, plus a small set of types that are public only because Java has no
 friend-module visibility. Within a single module, package-private is the boundary that operates: every package in every
@@ -51,10 +53,10 @@ between KPipe modules and Java has no friend-module visibility, so they cannot b
 user surface. The shape does not identify them — `Operators` and `MetricsSnapshot` look identical and are genuine API —
 so this list is the answer, not a pattern to apply.
 
-`KafkaOffsetManager.getPartitionState` and the `PartitionState` it returns sit outside these tiers: a diagnostic
-surface, documented in [OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md) for observing the commit frontier, with no
-production caller inside the library. Treat it as observability rather than API — useful for assertions and dashboards,
-not something to build on.
+`KafkaOffsetManager` is a `final` class. Its test hooks, `getPartitionState`, `commitSyncAndWait`, `commitSafeOffsets`
+and `stop`, are package-private, and so are `PartitionState` and `OffsetState`; they are internal, and the property and
+Fray suites in [OFFSET-INVARIANTS.md](OFFSET-INVARIANTS.md) use them to observe the commit frontier. Commit health for
+dashboards is public API: `MetricsSnapshot.commits()` and the `kpipe.consumer.offsets.*` instruments.
 
 Note the name is never the rule: `CircuitBreakerController` and `BackpressureController` are public API despite the
 suffix, because `Stream` methods take them as parameters.

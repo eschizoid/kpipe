@@ -207,6 +207,7 @@ public class KPipeConsumer implements AutoCloseable {
           : builder.offsetManagerProvider != null
             ? builder.offsetManagerProvider.apply(this.kafkaConsumer)
             : null;
+      if (this.offsetManager instanceof KafkaOffsetManager manager) manager.observeCommits(counters.commitObserver());
       this.commandQueue = builder.commandQueue != null ? builder.commandQueue : new ConcurrentLinkedQueue<>();
       this.rebalanceListener =
         builder.rebalanceListener != null
@@ -674,6 +675,18 @@ public class KPipeConsumer implements AutoCloseable {
     };
   }
 
+  /// Tracks `record` with the offset manager. A manager that throws is logged and the record is
+  /// still processed; its offset is then not tracked, so a custom manager's commit point decides
+  /// what happens to it.
+  private void trackOffset(final ConsumerRecord<byte[], byte[]> record) {
+    try {
+      offsetManager.trackOffset(record);
+    } catch (final Exception e) {
+      // Exception, not RuntimeException: an undeclared checked exception would end the poll loop.
+      LOGGER.log(Level.ERROR, "OffsetManager.trackOffset threw at offset " + record.offset(), e);
+    }
+  }
+
   /// Wakes the consumer thread when it is parked waiting for in-flight records, so its next pass
   /// applies a pause change at once. A pause requested before [#start()] is held by its source,
   /// and `pausingOnAssign` pauses the partitions as they are assigned, so the consumer starts
@@ -1115,7 +1128,7 @@ public class KPipeConsumer implements AutoCloseable {
       // committed past: the frontier stops at the last one processed, and the rest are fetched
       // again on restart.
       if (processingMode == ProcessingMode.SEQUENTIAL && closingStarted()) return;
-      if (offsetManager != null) offsetManager.trackOffset(record);
+      if (offsetManager != null) trackOffset(record);
       dispatcher.dispatch(record, () -> processRecord(record), this::wakeIfBackpressureDrained);
     }
   }

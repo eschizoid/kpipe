@@ -84,14 +84,7 @@ class HardeningGuardsTest {
   private static OffsetManager markingOffsetManager(final List<Long> marked) {
     return new OffsetManager() {
       @Override
-      public OffsetManager start() {
-        return this;
-      }
-
-      @Override
-      public OffsetManager stop() {
-        return this;
-      }
+      public void start() {}
 
       @Override
       public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
@@ -99,21 +92,6 @@ class HardeningGuardsTest {
       @Override
       public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
         marked.add(record.offset());
-      }
-
-      @Override
-      public OffsetState getState() {
-        return OffsetState.RUNNING;
-      }
-
-      @Override
-      public boolean isRunning() {
-        return true;
-      }
-
-      @Override
-      public OffsetStatistics getStatistics() {
-        return OffsetStatistics.empty();
       }
 
       @Override

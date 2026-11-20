@@ -71,14 +71,15 @@ class MetricsLogTest {
       3,
       Map.of(TOPIC, 7L),
       new MetricsSnapshot.Backpressure(5, Duration.ofMillis(1500)),
-      new MetricsSnapshot.CircuitBreaker(2, Duration.ofMillis(250))
+      new MetricsSnapshot.CircuitBreaker(2, Duration.ofMillis(250)),
+      new MetricsSnapshot.Commits(8, 1)
     );
 
     assertEquals(
       "kpipe metrics [orders group=billing] received=10 processed=6 filtered=2 failed=1 retries=4 " +
         "dlq.sent=1 dlq.failed=0 in_flight=3 lag=7 processing.avg=5.0ms backpressure.pauses=5 " +
         "backpressure.time=1500.0ms circuit_breaker.state=half_open circuit_breaker.trips=2 " +
-        "circuit_breaker.open_time=250.0ms",
+        "circuit_breaker.open_time=250.0ms offsets.commits=8 offsets.commit_failures=1",
       MetricsLog.line(List.of(TOPIC), "billing", snapshot, CircuitBreakerState.HALF_OPEN)
     );
     assertTrue(

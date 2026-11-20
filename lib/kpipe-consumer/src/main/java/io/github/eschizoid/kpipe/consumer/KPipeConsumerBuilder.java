@@ -44,6 +44,9 @@ public final class KPipeConsumerBuilder {
   /// The provider `build()` installed for the default offset manager, so a second `build()` on
   /// the same builder does not mistake it for one the caller supplied.
   private Function<Consumer<byte[], byte[]>, OffsetManager> defaultOffsetManagerProvider;
+  /// The offset manager instance the last `build()` used, so a second `build()` cannot hand one
+  /// manager to two consumers.
+  private OffsetManager builtWithOffsetManager;
   Supplier<Consumer<byte[], byte[]>> consumerProvider;
   Queue<ConsumerCommand> commandQueue = new ConcurrentLinkedQueue<>();
   ConsumerRebalanceListener rebalanceListener;
@@ -628,8 +631,14 @@ public final class KPipeConsumerBuilder {
     // Without an offset manager nothing commits the frontier: with enable.auto.commit=false no
     // offset is ever committed, and Kafka's auto-commit commits polled offsets before their records
     // finish. Every consumer gets a KafkaOffsetManager unless the caller supplies its own.
-    final var customOffsetManager =
-      offsetManager != null || (offsetManagerProvider != null && offsetManagerProvider != defaultOffsetManagerProvider);
+    final var customProvider = offsetManagerProvider != null && offsetManagerProvider != defaultOffsetManagerProvider;
+    if (offsetManager != null && customProvider) throw new IllegalArgumentException(
+      "withOffsetManager and withOffsetManagerProvider are alternatives; set one"
+    );
+    if (offsetManager != null && offsetManager == builtWithOffsetManager) throw new IllegalStateException(
+      "This builder's OffsetManager already belongs to a consumer it built; use withOffsetManagerProvider to build several"
+    );
+    final var customOffsetManager = offsetManager != null || customProvider;
     final var commitInterval = settings.commitInterval();
     final var offsetStore = settings.offsetStore();
     if (customOffsetManager && commitInterval != null) throw new IllegalArgumentException(
@@ -671,7 +680,9 @@ public final class KPipeConsumerBuilder {
         processingMode
       );
     }
-    return new KPipeConsumer(this);
+    final var consumer = new KPipeConsumer(this);
+    builtWithOffsetManager = offsetManager;
+    return consumer;
   }
 
   /// Keys are always `byte[]`: pin `key.deserializer` to [ByteArrayDeserializer] regardless of

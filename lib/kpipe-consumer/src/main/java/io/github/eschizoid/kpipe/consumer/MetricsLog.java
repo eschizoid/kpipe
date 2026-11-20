@@ -61,7 +61,11 @@ final class MetricsLog {
       " circuit_breaker.trips=" +
       m.circuitBreaker().trips() +
       " circuit_breaker.open_time=" +
-      millis(m.circuitBreaker().openTime())
+      millis(m.circuitBreaker().openTime()) +
+      " offsets.commits=" +
+      m.commits().succeeded() +
+      " offsets.commit_failures=" +
+      m.commits().failed()
     );
   }
 

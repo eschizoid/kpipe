@@ -5,45 +5,67 @@ import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 
-/// Interface for managing Kafka consumer offsets.
+/// Decides which offsets a consumer commits. The default, [KafkaOffsetManager], commits the
+/// contiguous frontier of processed records to Kafka or to an [OffsetStore]; implement this only
+/// to replace how that frontier is computed or committed.
 ///
-/// This allows for different offset management strategies, such as committing to Kafka
-/// or using external storage.
+/// The consumer calls the methods in this order, and an implementation may rely on it:
+///
+/// 1. [#start()] once, before the consumer subscribes.
+/// 2. [#trackOffset] for each record, on the consumer thread, before the record is dispatched.
+/// 3. [#markOffsetProcessed] once a record is done for good: processed, filtered, unrouted, parked
+///    in the dead-letter topic, or failed with no dead-letter topic configured. It is called from
+///    worker threads, batch flush threads and the consumer thread, concurrently, so it must be
+///    thread-safe. It is not called for a record whose dead-letter send failed, which stays pending
+///    until the next restart or rebalance.
+/// 4. The rebalance listener from [#createRebalanceListener()], on the consumer thread, inside
+///    `poll`. On revoke it must commit what it owns for the revoked partitions and forget them. On
+///    loss it must forget them; another consumer may already own them, so a commit to storage that
+///    cannot tell, unlike Kafka, would move the new owner's offset backwards.
+/// 5. [#close()], once, normally on the consumer thread before the Kafka consumer closes, or on the
+///    caller's thread for a consumer that never started. `close` makes the final commit. When
+///    another thread closes the consumer, [#signalClosing()] comes first, on that thread and
+///    concurrently with the consumer thread, so a manager blocking the consumer thread can stop. A
+///    poll loop that ends on its own goes straight to `close`.
+///
+/// Only the consumer thread may call the Kafka consumer. To commit from a timer, go through the
+/// consumer's [CommitExecutor] (`KPipeConsumerBuilder.getCommitExecutor()`), which runs the
+/// commit on that thread.
+///
+/// A [#trackOffset] or [#markOffsetProcessed] that throws is logged at ERROR and does not stop the
+/// consumer or re-run the record, but the offset then stays pending, so the commit point holds
+/// there until the next restart or rebalance.
 public interface OffsetManager extends AutoCloseable {
-  /// Starts the offset manager.
-  /// @return The started OffsetManager instance
-  OffsetManager start();
+  /// Starts the manager, before the consumer subscribes.
+  void start();
 
-  /// Stops the offset manager.
-  /// @return The stopped OffsetManager instance
-  OffsetManager stop();
-
-  /// Tracks an offset that is about to be processed.
-  /// @param record The consumer record whose offset is being tracked
+  /// Records that `record` is about to be processed.
+  ///
+  /// @param record the record
   void trackOffset(final ConsumerRecord<byte[], byte[]> record);
 
-  /// Marks an offset as successfully processed.
-  /// @param record The consumer record whose offset is marked as processed
+  /// Records that `record` is done for good, so its offset may be committed once every earlier
+  /// offset in its partition is done too.
+  ///
+  /// @param record the record
   void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record);
 
-  /// Creates a rebalance listener for this offset manager.
+  /// The rebalance listener the consumer subscribes with. The default does nothing, which is right
+  /// only for a manager that keeps no per-partition state; one that does must commit and forget
+  /// revoked partitions, and forget lost ones. A wrapper around another manager must forward
+  /// `onPartitionsLost` too: `ConsumerRebalanceListener`'s own default treats a loss as a revoke.
   ///
-  /// Default implementation is a no-op — most custom offset stores key their state by
-  /// [TopicPartition] and can retain it across rebalances without any action. Override only
-  /// to drain pending state, invalidate caches, or surrender resources on revoke/assign.
-  ///
-  /// @return a [ConsumerRebalanceListener] (never null)
+  /// @return the listener, never null
   default ConsumerRebalanceListener createRebalanceListener() {
     return new ConsumerRebalanceListener() {
       @Override
-      public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {
-        // no-op
-      }
+      public void onPartitionsRevoked(final Collection<TopicPartition> partitions) {}
 
       @Override
-      public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {
-        // no-op
-      }
+      public void onPartitionsAssigned(final Collection<TopicPartition> partitions) {}
+
+      @Override
+      public void onPartitionsLost(final Collection<TopicPartition> partitions) {}
     };
   }
 
@@ -52,18 +74,7 @@ public interface OffsetManager extends AutoCloseable {
   /// rebalance callback, can stop. The final commit still belongs to [#close].
   default void signalClosing() {}
 
-  /// Gets the current operational state of the offset manager.
-  /// @return The current OffsetState
-  OffsetState getState();
-
-  /// Checks if the offset manager is currently running.
-  /// @return True if the offset manager is running, false otherwise
-  boolean isRunning();
-
-  /// Gets statistics about the offset manager's performance and state.
-  /// @return a typed statistics snapshot
-  OffsetStatistics getStatistics();
-
+  /// Makes the final commit and releases the manager's resources.
   @Override
   void close();
 }
