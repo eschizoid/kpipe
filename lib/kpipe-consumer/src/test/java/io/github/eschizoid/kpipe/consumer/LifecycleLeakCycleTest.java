@@ -71,14 +71,7 @@ class LifecycleLeakCycleTest {
     final AtomicInteger marks = new AtomicInteger(0);
 
     @Override
-    public OffsetManager start() {
-      return this;
-    }
-
-    @Override
-    public OffsetManager stop() {
-      return this;
-    }
+    public void start() {}
 
     @Override
     public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
@@ -86,21 +79,6 @@ class LifecycleLeakCycleTest {
     @Override
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       marks.incrementAndGet();
-    }
-
-    @Override
-    public OffsetState getState() {
-      return OffsetState.CREATED;
-    }
-
-    @Override
-    public boolean isRunning() {
-      return true;
-    }
-
-    @Override
-    public OffsetStatistics getStatistics() {
-      return OffsetStatistics.empty();
     }
 
     @Override

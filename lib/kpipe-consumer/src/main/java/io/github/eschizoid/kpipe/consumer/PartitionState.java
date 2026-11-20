@@ -13,7 +13,7 @@ import java.util.OptionalLong;
 /// @param pendingCount          number of offsets currently in flight (not yet committed)
 /// @param lowestPendingOffset   the lowest in-flight offset, empty if none pending
 /// @param highestPendingOffset  the highest in-flight offset, empty if none pending
-public record PartitionState(
+record PartitionState(
   long nextOffsetToCommit,
   long highestProcessedOffset,
   OffsetState managerState,

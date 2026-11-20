@@ -988,8 +988,7 @@ class KafkaOffsetManagerTest {
 
       assertTrue(errors.isEmpty(), "no thread should fail: " + errors);
 
-      final var stats = manager.getStatistics();
-      assertEquals(0, (int) stats.totalPendingOffsets(), "all tracked offsets should be marked");
+      assertEquals(0, manager.getPartitionState(PARTITION).pendingCount(), "all tracked offsets should be marked");
 
       // The "highest processed" offset must equal the last offset across all threads.
       final var partitionState = manager.getPartitionState(PARTITION);
@@ -1173,13 +1172,6 @@ class KafkaOffsetManagerTest {
       assertTrue(
         elapsedMillis >= 900 && elapsedMillis <= 2500,
         "commitSyncAndWait should fire near its 1s timeout, elapsed=" + elapsedMillis + "ms"
-      );
-
-      // Assert: future was cleaned up via the finally block in performCommit().
-      assertEquals(
-        0,
-        offsetManager.getStatistics().pendingCommits(),
-        "pendingCommits should be 0 after timeout cleanup"
       );
     }
   }

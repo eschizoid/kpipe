@@ -89,14 +89,7 @@ class KPipeConsumerTest {
     final AtomicBoolean consumerOpenWhenClosed = new AtomicBoolean(false);
 
     @Override
-    public OffsetManager start() {
-      return this;
-    }
-
-    @Override
-    public OffsetManager stop() {
-      return this;
-    }
+    public void start() {}
 
     @Override
     public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
@@ -105,21 +98,6 @@ class KPipeConsumerTest {
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
       if (closed.get()) markedAfterClose.set(true);
       marks.incrementAndGet();
-    }
-
-    @Override
-    public OffsetState getState() {
-      return OffsetState.CREATED;
-    }
-
-    @Override
-    public boolean isRunning() {
-      return true;
-    }
-
-    @Override
-    public OffsetStatistics getStatistics() {
-      return OffsetStatistics.empty();
     }
 
     @Override
@@ -919,6 +897,70 @@ class KPipeConsumerTest {
     assertTrue(drained.get());
     assertTrue(mock.closed(), "the Kafka consumer is closed when shutdownGracefully returns");
     assertTrue(closer.join(Duration.ofSeconds(5)));
+  }
+
+  /// The default offset manager's commits are counted: one record processed and the consumer
+  /// closed gives a successful final commit.
+  @Test
+  void theFinalCommitIsCountedInTheMetrics() throws InterruptedException {
+    final var mock = singlePartitionMock();
+    mock.addRecord(new ConsumerRecord<>(TOPIC, 0, 0L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(TestPipelines.identity())
+      .withConsumer(() -> mock)
+      .withPollTimeout(Duration.ofMillis(10))
+      .build();
+    consumer.start();
+    TestAwaits.pollUntil(() -> consumer.metrics().records().processed() == 1L, Duration.ofSeconds(5), "processed");
+
+    consumer.close();
+
+    assertTrue(consumer.metrics().commits().succeeded() >= 1, consumer.metrics().commits().toString());
+    assertEquals(0L, consumer.metrics().commits().failed());
+  }
+
+  /// A custom offset manager whose `markOffsetProcessed` throws is logged, and the record is not
+  /// sent through its sink a second time.
+  @Test
+  void anOffsetManagerThatThrowsOnMarkDoesNotRerunTheSink() {
+    final var sinkCalls = new AtomicInteger();
+    final var consumer = KPipeConsumer.builder()
+      .withProperties(properties)
+      .withTopic(TOPIC)
+      .withPipeline(
+        TestPipelines.sideEffect(value -> {
+          sinkCalls.incrementAndGet();
+          return value;
+        })
+      )
+      .withRetry(2, Duration.ofMillis(1))
+      .withOffsetManager(
+        new OffsetManager() {
+          @Override
+          public void start() {}
+
+          @Override
+          public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
+
+          @Override
+          public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
+            throw new IllegalStateException("broken manager");
+          }
+
+          @Override
+          public void close() {}
+        }
+      )
+      .build();
+
+    consumer.processRecord(createRecord(0, "key", "value"));
+
+    assertEquals(1, sinkCalls.get(), "the record runs once");
+    assertEquals(1L, consumer.metrics().records().processed());
+    assertEquals(0L, consumer.metrics().records().failed());
+    consumer.close();
   }
 
   private static MockConsumer<byte[], byte[]> singlePartitionMock() {

@@ -2,8 +2,6 @@ package io.github.eschizoid.kpipe.test;
 
 import io.github.eschizoid.kpipe.consumer.KPipeConsumer;
 import io.github.eschizoid.kpipe.consumer.OffsetManager;
-import io.github.eschizoid.kpipe.consumer.OffsetState;
-import io.github.eschizoid.kpipe.consumer.OffsetStatistics;
 import io.github.eschizoid.kpipe.consumer.ProcessingMode;
 import io.github.eschizoid.kpipe.pipeline.MessageFormat;
 import io.github.eschizoid.kpipe.record.RecordContext;
@@ -293,35 +291,13 @@ public final class CrashRestartHarness<T> {
   private static final class NoCommitOffsetManager implements OffsetManager {
 
     @Override
-    public OffsetManager start() {
-      return this;
-    }
-
-    @Override
-    public OffsetManager stop() {
-      return this;
-    }
+    public void start() {}
 
     @Override
     public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {}
 
     @Override
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {}
-
-    @Override
-    public OffsetState getState() {
-      return OffsetState.RUNNING;
-    }
-
-    @Override
-    public boolean isRunning() {
-      return true;
-    }
-
-    @Override
-    public OffsetStatistics getStatistics() {
-      return OffsetStatistics.empty();
-    }
 
     @Override
     public void close() {}

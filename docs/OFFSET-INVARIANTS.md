@@ -58,14 +58,15 @@ phrased as a property a test can assert.
 ## Vocabulary
 
 - **track**: `trackOffset(record)` — adds `record.offset()` to the per-partition pending set (`PendingOffsetSet`, a
-  monitor-synchronized sorted primitive-`long` window; previously `ConcurrentSkipListSet<Long>`, replaced to eliminate
-  per-record boxing and skiplist-node churn). Marks "this offset has started processing."
+  monitor-synchronized sorted primitive-`long` window that holds offsets without boxing them). Marks "this offset has
+  started processing."
 - **mark**: `markOffsetProcessed(record)` — removes `record.offset()` from the pending set and bumps the per-partition
   `highestProcessedOffset`. Marks "this offset reached a terminal state." A mark counts only for an offset that is still
   pending; marking any other offset changes nothing.
 - **commit point**: the offset the manager would commit to Kafka right now for a partition. In Kafka's "next offset"
   model this is the offset of the next record expected, so a partition that has fully processed offset `N` commits
-  `N + 1`. Observable per-partition through `getPartitionState(partition).nextOffsetToCommit()`:
+  `N + 1`. Tests observe it per partition through `getPartitionState(partition).nextOffsetToCommit()`, a package-private
+  hook on `KafkaOffsetManager`:
   - if any offset is still pending → the lowest pending offset (commit cannot pass it);
   - else if anything was processed → `highestProcessedOffset + 1`;
   - else → `-1` (nothing tracked).
@@ -129,17 +130,23 @@ moves on.
 
 ## I4 — revocation (commit-and-clear on revoke)
 
-On `onPartitionsRevoked`, for each revoked partition the manager commits the current commit point (lowest pending, else
-`highestProcessed + 1`), then clears that partition's pending set, highest-processed entry, and cached `TopicPartition`
-before the partition can be reassigned. A commit request already submitted through the `CommitExecutor` seam but not yet
-executed cannot commit a revoked partition: its offsets supplier reads the ledger on the consumer thread at execution
-time — after this callback has cleared the revoked partitions — so revoked entries are structurally invisible to it (no
-queue rewriting involved).
+On `onPartitionsRevoked`, for each revoked partition the manager reads the current commit point (lowest pending, else
+`highestProcessed + 1`), clears that partition's pending set, highest-processed entry, and cached `TopicPartition`, and
+commits the commit point it read: through `commitSync` to Kafka, or as a write to the `OffsetStore` when one is set. The
+partition is cleared whether or not the commit succeeds. A commit request already submitted through the `CommitExecutor`
+seam but not yet executed cannot commit a revoked partition: its offsets supplier reads the ledger on the consumer
+thread at execution time — after this callback has cleared the revoked partitions — so revoked entries are structurally
+invisible to it (no queue rewriting involved).
+
+On `onPartitionsLost` the partitions may already belong to another consumer. With an `OffsetStore` the manager clears
+them and writes nothing, since a store cannot tell that this member no longer owns them and a write could move the new
+owner's offset backwards. Without a store a loss is handled as a revoke: Kafka rejects a commit from a member that lost
+its partitions, so the offset does not move, and the partitions are cleared.
 
 **Assertable property.** After `onPartitionsRevoked([p])`:
 
-- `kafkaConsumer.commitSync(...)` was invoked with an entry for `p` equal to the pre-revoke commit point (when `p` had
-  any tracked/processed state);
+- `kafkaConsumer.commitSync(...)`, or `OffsetStore.commit(...)` when a store is set, was invoked with an entry for `p`
+  equal to the pre-revoke commit point (when `p` had any tracked/processed state);
 - `getPartitionState(p)` reports `nextOffsetToCommit == -1` and `pendingCount == 0` (state cleared);
 - any still-pending `CommitOffsets` request, when its offsets supplier is invoked, computes a map with no entry for `p`.
 

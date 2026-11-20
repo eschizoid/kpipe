@@ -28,13 +28,15 @@ import java.util.Objects;
 ///     log, summed over its assigned partitions whose lag is known; read at most once a second
 /// @param backpressure how often and how long backpressure paused consumption
 /// @param circuitBreaker how often and how long the circuit breaker stopped consumption
+/// @param commits how many offset commits the default offset manager made and how many failed
 public record MetricsSnapshot(
   Records records,
   Map<String, Records> topics,
   long inFlight,
   Map<String, Long> lagByTopic,
   Backpressure backpressure,
-  CircuitBreaker circuitBreaker
+  CircuitBreaker circuitBreaker,
+  Commits commits
 ) {
   /// Copies `topics` and rejects null parts.
   public MetricsSnapshot {
@@ -43,6 +45,7 @@ public record MetricsSnapshot(
     lagByTopic = Map.copyOf(lagByTopic);
     Objects.requireNonNull(backpressure, "backpressure");
     Objects.requireNonNull(circuitBreaker, "circuitBreaker");
+    Objects.requireNonNull(commits, "commits");
   }
 
   /// A snapshot of a consumer that has received nothing, for test doubles.
@@ -55,7 +58,8 @@ public record MetricsSnapshot(
       0,
       Map.of(),
       new Backpressure(0, Duration.ZERO),
-      new CircuitBreaker(0, Duration.ZERO)
+      new CircuitBreaker(0, Duration.ZERO),
+      new Commits(0, 0)
     );
   }
 
@@ -143,4 +147,13 @@ public record MetricsSnapshot(
       Objects.requireNonNull(openTime, "openTime");
     }
   }
+
+  /// The offset commits the default offset manager made: periodic, on revoke and at close, to
+  /// Kafka or to an `OffsetStore`. A custom `OffsetManager` commits on its own, and its commits
+  /// are not counted here. A failed periodic commit leaves the commit point where it was, so the
+  /// next one retries from there; a failed commit on revoke or at close is not retried.
+  ///
+  /// @param succeeded commits that succeeded
+  /// @param failed commits that failed or did not finish in time
+  public record Commits(long succeeded, long failed) {}
 }

@@ -23,14 +23,14 @@ import org.apache.kafka.common.TopicPartition;
 ///
 /// **Ownership boundary.** The ledger owns everything keyed by partition. It knows nothing about
 /// the consumer lifecycle (start/stop/close), the commit I/O (the [CommitExecutor] seam), or
-/// rebalance orchestration — those stay on [KafkaOffsetManager], which injects the two fields it
-/// owns ([OffsetState], pending-commit count) into the reporting projections. The ledger's only
-/// role in a commit is being read: [#committableOffsets] is the executor's offsets supplier.
+/// rebalance orchestration — those stay on [KafkaOffsetManager], which passes its [OffsetState]
+/// into [#partitionState]. The ledger's only role in a commit is being read: [#committableOffsets]
+/// is the executor's offsets supplier.
 ///
 /// **Concurrency.** The maps are [ConcurrentHashMap]; every read-modify-write on a per-partition
 /// value stays inside a bucket-locked `compute` / `computeIfPresent` so it is atomic against the
 /// remove-if-empty path. [PendingOffsetSet] is monitor-synchronized, so the diagnostic reads
-/// ([#frontier], [#statistics], [#partitionState]) that run outside the bucket lock stay safe.
+/// ([#frontier], [#partitionState]) that run outside the bucket lock stay safe.
 final class OffsetLedger {
 
   /// Per-partition pending offsets: a sorted primitive-`long` window ([PendingOffsetSet]) rather
@@ -131,37 +131,6 @@ final class OffsetLedger {
       highestProcessedOffsets.remove(partition);
       evictCachedTopicPartition(partition);
     });
-  }
-
-  /// Overall statistics across all tracked partitions. The offset-derived fields are computed here;
-  /// the caller injects the two fields the ledger doesn't own — the manager's lifecycle state and
-  /// the pending-commit count.
-  ///
-  /// @param lifecycleState the offset manager's lifecycle state
-  /// @param pendingCommits commits issued but not yet acknowledged
-  /// @return a typed snapshot across all partitions
-  OffsetStatistics statistics(final OffsetState lifecycleState, final int pendingCommits) {
-    final var totalPending = pendingOffsets.values().stream().mapToInt(PendingOffsetSet::size).sum();
-
-    final Map<TopicPartition, Long> byPartition;
-    final double average;
-    if (!highestProcessedOffsets.isEmpty()) {
-      byPartition = Map.copyOf(highestProcessedOffsets);
-      average = highestProcessedOffsets.values().stream().mapToLong(Long::longValue).average().orElse(0);
-    } else {
-      byPartition = Map.of();
-      average = 0.0;
-    }
-
-    return new OffsetStatistics(
-      trackedPartitions().size(),
-      totalPending,
-      highestProcessedOffsets.size(),
-      lifecycleState,
-      byPartition,
-      average,
-      pendingCommits
-    );
   }
 
   /// A typed snapshot of one partition's offset-tracking state. Reads the pending window once so

@@ -97,7 +97,8 @@ class OtelMetricsTest {
       inFlight,
       Map.of(TOPIC, 2 * inFlight),
       backpressure,
-      breaker
+      breaker,
+      new MetricsSnapshot.Commits(8, 1)
     );
   }
 

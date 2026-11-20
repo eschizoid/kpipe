@@ -141,7 +141,7 @@ final class RecordProcessor {
         // rate, exactly like the per-record path. Both branches must report, or the rolling
         // window would see only failures and trip spuriously.
         health.recordOutcome(true);
-        if (offsetManager != null) offsetManager.markOffsetProcessed(record);
+        markOffsetProcessed(record);
       }
 
       @Override
@@ -367,8 +367,18 @@ final class RecordProcessor {
     return new RuntimeException(cause);
   }
 
+  /// Marks `record` with the offset manager. A manager that throws is logged and changes nothing
+  /// else: the record is not retried or failed again, and its offset stays pending, so the commit
+  /// point holds there until the next restart or rebalance.
   private void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
-    if (offsetManager != null) offsetManager.markOffsetProcessed(record);
+    if (offsetManager == null) return;
+    try {
+      offsetManager.markOffsetProcessed(record);
+    } catch (final Exception e) {
+      // Exception, not RuntimeException: a manager can throw a checked exception it does not
+      // declare, and letting it escape would fail a record that was already processed.
+      LOGGER.log(Level.ERROR, "OffsetManager.markOffsetProcessed threw at offset " + record.offset(), e);
+    }
   }
 
   /// Reports one failed attempt to the attempt observer, with no record bound, as the error

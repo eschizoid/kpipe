@@ -28,7 +28,7 @@ import org.apache.kafka.common.TopicPartition;
 /// * The future completes `true` on commit success, `false` on failure (the executor logs the
 ///   failure at WARNING). It is never completed exceptionally by the built-in implementation.
 /// * A request submitted while the consumer is shutting down may never execute; callers must
-///   bound their wait (see `KafkaOffsetManager.commitSyncAndWait`).
+///   bound their wait.
 ///
 /// The production implementation is [KPipeConsumerBuilder#getCommitExecutor()], which enqueues
 /// onto the consumer's command queue; `KPipeConsumer.processCommands()` drains it on the consumer

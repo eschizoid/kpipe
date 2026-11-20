@@ -91,15 +91,8 @@ class MultiTopicUnroutedPolicyTest {
     }
 
     @Override
-    public OffsetManager start() {
+    public void start() {
       delegate.start();
-      return this;
-    }
-
-    @Override
-    public OffsetManager stop() {
-      delegate.stop();
-      return this;
     }
 
     @Override
@@ -116,21 +109,6 @@ class MultiTopicUnroutedPolicyTest {
     @Override
     public ConsumerRebalanceListener createRebalanceListener() {
       return delegate.createRebalanceListener();
-    }
-
-    @Override
-    public OffsetState getState() {
-      return delegate.getState();
-    }
-
-    @Override
-    public boolean isRunning() {
-      return delegate.isRunning();
-    }
-
-    @Override
-    public OffsetStatistics getStatistics() {
-      return delegate.getStatistics();
     }
 
     @Override

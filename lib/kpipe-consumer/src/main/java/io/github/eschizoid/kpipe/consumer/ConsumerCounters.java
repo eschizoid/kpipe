@@ -61,6 +61,8 @@ final class ConsumerCounters {
   private long openSince = -1;
   private boolean stopped;
   private volatile Map<String, Long> lag = Map.of();
+  private final LongAdder commitsSucceeded = new LongAdder();
+  private final LongAdder commitsFailed = new LongAdder();
 
   ConsumerCounters() {
     this(System::nanoTime);
@@ -101,6 +103,21 @@ final class ConsumerCounters {
         openSince = -1;
       }
     }
+  }
+
+  /// @return an observer that counts each commit outcome
+  CommitObserver commitObserver() {
+    return new CommitObserver() {
+      @Override
+      public void committed() {
+        commitsSucceeded.increment();
+      }
+
+      @Override
+      public void failed() {
+        commitsFailed.increment();
+      }
+    };
   }
 
   /// Replaces the lag with a fresh reading.
@@ -146,7 +163,8 @@ final class ConsumerCounters {
         Duration.ofNanos(openNanos + (openSince < 0 ? 0 : now - openSince))
       );
     }
-    return new MetricsSnapshot(total(perTopic), perTopic, inFlight, lag, backpressure, circuitBreaker);
+    final var commits = new MetricsSnapshot.Commits(commitsSucceeded.sum(), commitsFailed.sum());
+    return new MetricsSnapshot(total(perTopic), perTopic, inFlight, lag, backpressure, circuitBreaker, commits);
   }
 
   private static MetricsSnapshot.Records total(final Map<String, MetricsSnapshot.Records> perTopic) {

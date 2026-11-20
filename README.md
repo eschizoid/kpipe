@@ -152,8 +152,8 @@ Each is one fluent call; exact semantics are in [docs/API.md](docs/API.md).
   A `NonRetryableException`, or a failure caused by one, is not retried.
 - **Dead-letter topic** — `withDeadLetterTopic("orders.dlq")`: terminally-failed records are produced there with their
   original headers plus an `x-dlq-*` envelope (error, source topic/partition/offset, timestamp), making the dead-letter
-  topic (DLQ) replayable. A failed DLQ send leaves the offset uncommitted — a down DLQ applies backpressure rather than
-  dropping records.
+  topic (DLQ) replayable. A failed DLQ send leaves the offset uncommitted, so a down DLQ stalls the commit point rather
+  than dropping records; the consumer is not paused, and the record is redelivered on restart.
 - **Backpressure** — on by default: pauses all assigned partitions at 10,000 in-flight records, resumes at 7,000
   (hysteresis prevents flapping). A paused consumer keeps polling, which keeps its group membership alive (no
   `max.poll.interval.ms` eviction while paused).

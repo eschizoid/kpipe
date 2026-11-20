@@ -5,7 +5,6 @@ import static java.lang.System.Logger.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -23,42 +22,18 @@ import org.apache.kafka.common.errors.WakeupException;
 /// committed to Kafka. This is particularly useful when records are processed in parallel or in a
 /// non-sequential order.
 ///
-/// Key features include:
-///
-/// * Thread-safe tracking of offsets across multiple partitions
-/// * Contiguous commit strategy that prevents data loss during rebalancing
-/// * Explicit offset tracking with `trackOffset` and `markOffsetProcessed`
-/// * Support for both synchronous and asynchronous commit operations
-/// * Automatic periodic offset commits with configurable intervals
-/// * Proper rebalance handling with custom `ConsumerRebalanceListener`
-/// * Recovery from consumer failures and partition reassignments
-/// * Gap detection to ensure only fully processed offset ranges are committed
-/// * Diagnostic methods for monitoring offset state and troubleshooting
-/// * Virtual thread execution for non-blocking I/O operations
-/// * Commits to an external [OffsetStore] in place of Kafka, set with
-///   [Builder#withOffsetStore(OffsetStore)]
-///
-/// Example usage:
+/// It tracks each record's offset when the record is dispatched and marks it when the record is
+/// done for good, then commits, per partition, the offset after the longest run of done records,
+/// so a record still in flight is never skipped. It commits every commit interval, on revoke and
+/// at close: to Kafka through the consumer's [CommitExecutor], or to an [OffsetStore] when one is
+/// set. Each commit's outcome is counted in `MetricsSnapshot.commits()`.
 ///
 /// ```java
-/// // Create offset manager wired to the consumer builder's commit executor
 /// final var offsetManager = KafkaOffsetManager.builder(consumer)
 ///     .withCommitExecutor(consumerBuilder.getCommitExecutor())
 ///     .build();
-/// offsetManager.start();
-///
-/// // Track and process records
-/// offsetManager.trackOffset(record);
-/// // Process the record...
-/// offsetManager.markOffsetProcessed(record);
-///
-/// // Commit offsets explicitly
-/// final var success = offsetManager.commitSyncAndWait(Duration.ofSeconds(5));
-///
-/// // Clean up resources when done
-/// offsetManager.close();
 /// ```
-public class KafkaOffsetManager implements OffsetManager {
+public final class KafkaOffsetManager implements OffsetManager {
 
   private static final System.Logger LOGGER = System.getLogger(KafkaOffsetManager.class.getName());
 
@@ -72,9 +47,9 @@ public class KafkaOffsetManager implements OffsetManager {
   /// never commits partitions the rebalance revoked — see [CommitExecutor].
   private final CommitExecutor commitExecutor;
 
-  /// Commits submitted through [#commitExecutor] whose outcome has not yet resolved — surfaced
-  /// as [OffsetStatistics#pendingCommits].
-  private final AtomicInteger pendingCommits = new AtomicInteger();
+  /// Hears the outcome of every commit: periodic, on revoke and at close. The consumer sets it to
+  /// count commits in its metrics.
+  private volatile CommitObserver commitObserver = CommitObserver.NONE;
 
   /// Where commits go when offsets live outside Kafka. Null means Kafka: periodic commits through
   /// [#commitExecutor], revoke and close through `commitSync`.
@@ -134,15 +109,19 @@ public class KafkaOffsetManager implements OffsetManager {
       return this;
     }
 
-    /// Sets the commit interval for periodic offset commits.
+    /// Sets the commit interval for periodic offset commits. The default is 30 seconds.
     ///
-    /// @param interval The duration between commits
+    /// @param interval The duration between commits, between 1 millisecond and `Long.MAX_VALUE`
+    ///     milliseconds
     /// @return This builder instance
+    /// @throws IllegalArgumentException if `interval` is out of range
     public Builder withCommitInterval(final Duration interval) {
-      this.commitInterval = Objects.requireNonNull(interval, "Commit interval cannot be null");
-      if (interval.isNegative() || interval.isZero()) throw new IllegalArgumentException(
-        "Commit interval must be positive, got " + interval
-      );
+      Objects.requireNonNull(interval, "interval cannot be null");
+      // The commit scheduler works in whole milliseconds.
+      if (
+        interval.compareTo(Duration.ofMillis(1)) < 0 || interval.compareTo(Duration.ofMillis(Long.MAX_VALUE)) > 0
+      ) throw new IllegalArgumentException("interval must be between 1ms and Long.MAX_VALUE ms, got " + interval);
+      this.commitInterval = interval;
       return this;
     }
 
@@ -175,13 +154,11 @@ public class KafkaOffsetManager implements OffsetManager {
     this.offsetStore = builder.offsetStore;
   }
 
-  /// Starts the KafkaOffsetManager and begins periodic offset commits. This method is idempotent -
-  /// calling it multiple times has no effect if the manager is already started.
+  /// Starts the periodic commits. Idempotent.
   ///
-  /// @return this instance for method chaining
-  /// @throws IllegalStateException if the KafkaOffsetManager is already closed
+  /// @throws IllegalStateException if the manager is already closed
   @Override
-  public KafkaOffsetManager start() {
+  public void start() {
     if (state.get() == OffsetState.STOPPED) throw new IllegalStateException(
       "Cannot restart a stopped KafkaOffsetManager"
     );
@@ -200,51 +177,37 @@ public class KafkaOffsetManager implements OffsetManager {
 
       LOGGER.log(Level.INFO, "KafkaOffsetManager started with commit interval of %s".formatted(commitInterval));
     }
-
-    return this;
   }
 
-  /// Tracks an offset that is about to be processed using a ConsumerRecord.
+  /// Sets who hears each commit's outcome. Package-private: the consumer counts commits through it.
   ///
-  /// This method extracts the topic, partition, and offset from the consumer record and adds the
-  /// offset+1 to the pending offsets. In Kafka's offset model, committing offset N means you've
-  /// processed through offset N-1 and expect to receive N next.
+  /// @param observer the observer
+  void observeCommits(final CommitObserver observer) {
+    this.commitObserver = Objects.requireNonNull(observer, "observer cannot be null");
+  }
+
+  /// Records that `record` is about to be processed; its offset stays pending until it is marked.
   ///
-  /// When using this method with [#markOffsetProcessed(ConsumerRecord)], the offset
-  /// transformation is handled automatically. This method initializes the next offset to commit
-  /// using the raw record offset, which is appropriate for the first record in a partition.
-  ///
-  /// @param record The consumer record to track
+  /// @param record the record
   @Override
   public void trackOffset(final ConsumerRecord<byte[], byte[]> record) {
     if (state.get() == OffsetState.STOPPED) return;
     ledger.track(record.topic(), record.partition(), record.offset());
   }
 
-  /// Marks an offset as successfully processed using a ConsumerRecord.
+  /// Records that `record` is done for good. A mark counts only for an offset that was tracked and
+  /// is still pending: marking an offset that was never tracked, or whose partition has since been
+  /// revoked, changes nothing.
   ///
-  /// This method extracts the topic, partition, and offset from the consumer record, increments
-  /// the offset by 1 to match Kafka's "next offset" semantics.
-  ///
-  /// The +1 adjustment ensures that when this record's offset is committed, Kafka will begin
-  /// delivering messages from the next offset after this one.
-  ///
-  /// A mark counts only for an offset that was tracked with [#trackOffset] and is still pending.
-  /// Marking an offset that was never tracked, or whose partition has since been revoked, changes
-  /// nothing.
-  ///
-  /// @param record The consumer record that was processed
+  /// @param record the record
   @Override
   public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> record) {
     if (state.get() == OffsetState.STOPPED) return;
     ledger.markProcessed(record.topic(), record.partition(), record.offset());
   }
 
-  /// Commits offsets that are safe to commit based on the current processing state.
-  ///
-  /// This method is called periodically to ensure that offsets are committed in a timely manner
-  /// without losing any unprocessed messages.
-  public void commitSafeOffsets() {
+  /// The periodic commit. Package-private: tests run it on a thread of their choosing.
+  void commitSafeOffsets() {
     try {
       commitSyncAndWait(Duration.ofSeconds(60));
     } catch (final InterruptedException e) {
@@ -253,13 +216,10 @@ public class KafkaOffsetManager implements OffsetManager {
     }
   }
 
-  /// Stops the periodic offset commit task but doesn't close resources. This can be used to
-  /// temporarily pause offset management.
-  ///
-  /// @return this instance for method chaining
-  @Override
-  public KafkaOffsetManager stop() {
-    if (!state.compareAndSet(OffsetState.RUNNING, OffsetState.STOPPING)) return this; // Not running, nothing to stop
+  /// Stops committing for good without a final commit, as a crash would. Package-private: tests
+  /// use it to simulate a consumer that dies with offsets uncommitted.
+  void stop() {
+    if (!state.compareAndSet(OffsetState.RUNNING, OffsetState.STOPPING)) return;
 
     try {
       stopScheduler();
@@ -267,8 +227,6 @@ public class KafkaOffsetManager implements OffsetManager {
       state.set(OffsetState.STOPPED);
       LOGGER.log(Level.INFO, "KafkaOffsetManager stopped");
     }
-
-    return this;
   }
 
   //  Stops the scheduler if it's running.
@@ -301,10 +259,12 @@ public class KafkaOffsetManager implements OffsetManager {
   /// With an [OffsetStore] the commit runs on the calling thread and `timeout` does not apply;
   /// the store bounds its own call.
   ///
+  /// Package-private: the periodic commit and tests call it.
+  ///
   /// @param timeout Maximum time to wait for the commit
   /// @return true if the commit was successful
   /// @throws InterruptedException if the thread is interrupted while waiting
-  public boolean commitSyncAndWait(final Duration timeout) throws InterruptedException {
+  boolean commitSyncAndWait(final Duration timeout) throws InterruptedException {
     if (state.get() == OffsetState.STOPPED) return true;
     if (ledger.committableOffsets().isEmpty()) return true;
 
@@ -314,18 +274,18 @@ public class KafkaOffsetManager implements OffsetManager {
   /// Writes the current frontier to the [OffsetStore]. The frontier is read under [#storeLock],
   /// so it never includes a partition that a revoke has already written and forgotten.
   private boolean performStoreCommit() {
-    pendingCommits.incrementAndGet();
     try {
       synchronized (storeLock) {
         final var offsets = ledger.committableOffsets();
-        if (!offsets.isEmpty()) writeToStore(offsets);
+        if (offsets.isEmpty()) return true;
+        writeToStore(offsets);
       }
+      commitObserver.committed();
       return true;
     } catch (final Exception e) {
+      commitObserver.failed();
       LOGGER.log(Level.WARNING, "Failed to commit offsets to the offset store", e);
       return false;
-    } finally {
-      pendingCommits.decrementAndGet();
     }
   }
 
@@ -349,10 +309,17 @@ public class KafkaOffsetManager implements OffsetManager {
         synchronized (storeLock) {
           stored = offsetStore.load(partitions);
         }
+        checkLoaded(stored, partitions);
         stored.forEach((partition, offset) -> {
           if (partitions.contains(partition)) kafkaConsumer.seek(partition, offset);
         });
         return;
+      } catch (final InvalidStoredOffsets e) {
+        // A store that answers with a value no partition can hold will answer the same way again,
+        // so this is reported as the store's mistake, at ERROR, while the retry keeps the
+        // partition from starting at an offset nobody chose.
+        if (isClosing()) throw new IllegalStateException(closedBeforeLoad(partitions), e);
+        LOGGER.log(Level.ERROR, "%s; retrying in %s".formatted(e.getMessage(), backoff));
       } catch (final Exception e) {
         // Exception, not RuntimeException: a store can throw a checked exception it does not
         // declare, and letting that escape would skip the seek, so the partition would start from
@@ -373,6 +340,32 @@ public class KafkaOffsetManager implements OffsetManager {
     }
   }
 
+  /// Rejects a load result that cannot be applied: a null map, or a null or negative offset. A
+  /// partition the consumer was not assigned is ignored and logged, since seeking it would throw.
+  private static void checkLoaded(final Map<TopicPartition, Long> stored, final Collection<TopicPartition> partitions) {
+    if (stored == null) throw new InvalidStoredOffsets("OffsetStore.load returned null for " + partitions);
+    final var unrequested = new ArrayList<TopicPartition>();
+    for (final var entry : stored.entrySet()) {
+      final var offset = entry.getValue();
+      if (offset == null || offset < 0) throw new InvalidStoredOffsets(
+        "OffsetStore.load returned offset %s for %s, which is not a valid offset".formatted(offset, entry.getKey())
+      );
+      if (!partitions.contains(entry.getKey())) unrequested.add(entry.getKey());
+    }
+    if (!unrequested.isEmpty()) LOGGER.log(
+      Level.WARNING,
+      "OffsetStore.load returned offsets for %s, which were not requested; ignoring them".formatted(unrequested)
+    );
+  }
+
+  /// A load result [#checkLoaded] rejects.
+  private static final class InvalidStoredOffsets extends RuntimeException {
+
+    InvalidStoredOffsets(final String message) {
+      super(message);
+    }
+  }
+
   private boolean isClosing() {
     return closing.getCount() == 0 || state.get() != OffsetState.RUNNING;
   }
@@ -386,51 +379,27 @@ public class KafkaOffsetManager implements OffsetManager {
   /// committed frontier is always current (and never includes partitions revoked between
   /// submission and execution).
   private boolean performCommit(final Duration timeout) throws InterruptedException {
-    pendingCommits.incrementAndGet();
     try {
-      final var outcome = commitExecutor.commit(ledger::committableOffsets);
-      return outcome.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+      final var committed = commitExecutor
+        .commit(ledger::committableOffsets)
+        .get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+      if (committed) commitObserver.committed();
+      else commitObserver.failed();
+      return committed;
     } catch (final ExecutionException | TimeoutException e) {
+      commitObserver.failed();
       LOGGER.log(Level.WARNING, "Error waiting for offset commit", e);
       return false;
-    } finally {
-      pendingCommits.decrementAndGet();
     }
   }
 
-  /// Returns a typed snapshot of the current processing state for a partition.
+  /// The offset-tracking state of `partition`. Package-private: the Fray and property suites
+  /// assert on the commit frontier through it.
   ///
-  /// @param partition The partition to get state for
-  /// @return the partition's offset-tracking state
-  /// **Test observation point.** No production caller — the Fray and property suites assert on
-  /// the commit frontier through this window. Not intended for operational dashboards; wire
-  /// [KPipeConsumer#health()] or `getStatistics()` for those.
-  public PartitionState getPartitionState(final TopicPartition partition) {
+  /// @param partition the partition
+  /// @return its state
+  PartitionState getPartitionState(final TopicPartition partition) {
     return ledger.partitionState(partition, state.get());
-  }
-
-  /// Returns typed overall statistics about all partitions being managed.
-  ///
-  /// @return statistics across all partitions
-  @Override
-  public OffsetStatistics getStatistics() {
-    return ledger.statistics(state.get(), pendingCommits.get());
-  }
-
-  /// Gets the current state of the KafkaOffsetManager.
-  ///
-  /// @return The current state
-  @Override
-  public OffsetState getState() {
-    return state.get();
-  }
-
-  /// Checks if the KafkaOffsetManager is running.
-  ///
-  /// @return true if running, false otherwise
-  @Override
-  public boolean isRunning() {
-    return state.get() == OffsetState.RUNNING;
   }
 
   /// Ends any wait between store load retries, so a consumer closing during a rebalance is not
@@ -451,16 +420,21 @@ public class KafkaOffsetManager implements OffsetManager {
     try {
       stopScheduler();
       try {
+        final boolean committed;
         if (offsetStore != null) {
           synchronized (storeLock) {
             final var offsetsToCommit = ledger.committableOffsets();
-            if (!offsetsToCommit.isEmpty()) writeToStore(offsetsToCommit);
+            committed = !offsetsToCommit.isEmpty();
+            if (committed) writeToStore(offsetsToCommit);
           }
         } else {
           final var offsetsToCommit = ledger.committableOffsets();
-          if (!offsetsToCommit.isEmpty()) commitFinalOffsets(offsetsToCommit);
+          committed = !offsetsToCommit.isEmpty();
+          if (committed) commitFinalOffsets(offsetsToCommit);
         }
+        if (committed) commitObserver.committed();
       } catch (final Exception e) {
+        commitObserver.failed();
         LOGGER.log(Level.WARNING, "Error during final offset commit", e);
       }
     } finally {
@@ -498,8 +472,10 @@ public class KafkaOffsetManager implements OffsetManager {
             try {
               if (offsetStore != null) writeToStore(offsetsToCommit);
               else kafkaConsumer.commitSync(offsetsToCommit);
+              commitObserver.committed();
               LOGGER.log(Level.INFO, "Committed offsets for revoked partitions: %s".formatted(offsetsToCommit));
             } catch (final Exception e) {
+              commitObserver.failed();
               LOGGER.log(Level.WARNING, "Failed to commit offsets during rebalance", e);
             }
           }

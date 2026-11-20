@@ -86,14 +86,7 @@ class ShutdownOrderingTest {
     }
 
     @Override
-    public OffsetManager start() {
-      return this;
-    }
-
-    @Override
-    public OffsetManager stop() {
-      return this;
-    }
+    public void start() {}
 
     @Override
     public void trackOffset(final ConsumerRecord<byte[], byte[]> r) {}
@@ -102,21 +95,6 @@ class ShutdownOrderingTest {
     public void markOffsetProcessed(final ConsumerRecord<byte[], byte[]> r) {
       if (closeCount.get() > 0) markedAfterClose.set(true);
       marks.incrementAndGet();
-    }
-
-    @Override
-    public OffsetState getState() {
-      return OffsetState.CREATED;
-    }
-
-    @Override
-    public boolean isRunning() {
-      return true;
-    }
-
-    @Override
-    public OffsetStatistics getStatistics() {
-      return OffsetStatistics.empty();
     }
 
     @Override
