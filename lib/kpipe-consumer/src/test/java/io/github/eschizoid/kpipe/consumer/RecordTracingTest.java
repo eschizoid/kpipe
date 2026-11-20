@@ -2,7 +2,6 @@ package io.github.eschizoid.kpipe.consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
@@ -24,6 +23,7 @@ import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.producer.MockProducer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.Headers;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.junit.jupiter.api.Test;
 
@@ -106,7 +106,7 @@ class RecordTracingTest {
     ) {
       consumer.processRecord(new ConsumerRecord<>(TOPIC, 0, 5L, "k".getBytes(UTF_8), "v".getBytes(UTF_8)));
 
-      assertSame(tracer.spans.get(5L), seen.getFirst());
+      assertEquals(5L, offsetOf(seen.getFirst()), "the sink sees its record's span");
       assertEquals(1, tracer.spans.get(5L).closes.get());
     }
   }
@@ -184,8 +184,8 @@ class RecordTracingTest {
       );
       tracer.spans.values().forEach(s -> assertEquals(1, s.failures.get()));
       TestAwaits.pollUntil(() -> handlerSaw.size() == 3, Duration.ofSeconds(5), "three error handler calls");
-      tracer.spans.forEach((offset, span) ->
-        assertSame(span, handlerSaw.get(offset), "the handler runs under its record's span")
+      handlerSaw.forEach((offset, span) ->
+        assertEquals(offset, offsetOf(span), "the handler runs under its record's span")
       );
     }
   }
@@ -266,6 +266,13 @@ class RecordTracingTest {
       }
     }
     assertEquals(1, closes.get(), "the span is still closed when its activation's close throws");
+  }
+
+  /// The offset a span from [RecordingTracer] stamps, read through whatever wraps it.
+  private static long offsetOf(final Tracer.SpanScope span) {
+    final var headers = new RecordHeaders();
+    span.inject(headers);
+    return Long.parseLong(new String(headers.lastHeader("x-span").value(), UTF_8));
   }
 
   private static MockConsumer<byte[], byte[]> seeded(final int count) {

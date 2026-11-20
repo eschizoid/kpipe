@@ -15,7 +15,6 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -32,7 +31,8 @@ import org.apache.kafka.common.header.Headers;
 ///
 /// Context travels in the headers through the `OpenTelemetry` instance's text-map propagator, so
 /// that instance needs one configured, such as W3C trace context. With none, nothing propagates,
-/// and the constructor logs a warning.
+/// and the constructor logs a warning. Like the OpenTelemetry API it calls, this tracer does not
+/// guard its own calls; the consumer wraps every tracer with [Tracer#guarded(Tracer)].
 ///
 /// ```java
 /// KPipe.json("orders", props)
@@ -75,28 +75,20 @@ public final class OtelTracer implements Tracer {
 
   @Override
   public SpanScope startConsumerSpan(final ConsumerRecord<?, byte[]> record, final String consumerGroup) {
-    try {
-      final var parent =
-        record.headers() == null
-          ? Context.root()
-          : propagator.extract(Context.root(), record.headers(), HeadersGetter.INSTANCE);
-      final var builder = tracer
-        .spanBuilder("process " + record.topic())
-        .setParent(parent)
-        .setSpanKind(SpanKind.CONSUMER)
-        .setAttribute(SYSTEM, "kafka")
-        .setAttribute(OPERATION_TYPE, "process")
-        .setAttribute(OPERATION_NAME, "process")
-        .setAttribute(DESTINATION, record.topic())
-        .setAttribute(PARTITION, Integer.toString(record.partition()))
-        .setAttribute(OFFSET, record.offset());
-      if (consumerGroup != null) builder.setAttribute(GROUP, consumerGroup);
-      final var span = builder.startSpan();
-      return new OtelSpanScope(span, parent.with(span), propagator);
-    } catch (final RuntimeException e) {
-      LOGGER.log(Level.WARNING, "Failed to start a span for the record", e);
-      return SpanScope.noop();
-    }
+    final var parent = propagator.extract(Context.root(), record.headers(), HeadersGetter.INSTANCE);
+    final var builder = tracer
+      .spanBuilder("process " + record.topic())
+      .setParent(parent)
+      .setSpanKind(SpanKind.CONSUMER)
+      .setAttribute(SYSTEM, "kafka")
+      .setAttribute(OPERATION_TYPE, "process")
+      .setAttribute(OPERATION_NAME, "process")
+      .setAttribute(DESTINATION, record.topic())
+      .setAttribute(PARTITION, Integer.toString(record.partition()))
+      .setAttribute(OFFSET, record.offset());
+    if (consumerGroup != null) builder.setAttribute(GROUP, consumerGroup);
+    final var span = builder.startSpan();
+    return new OtelSpanScope(span, parent.with(span), propagator);
   }
 
   /// One record's span and the context it continues, so [#inject] writes this record's trace on any
@@ -116,58 +108,35 @@ public final class OtelTracer implements Tracer {
 
     @Override
     public Activation activate() {
-      try {
-        return context.makeCurrent()::close;
-      } catch (final RuntimeException e) {
-        LOGGER.log(Level.WARNING, "Failed to make the span current", e);
-        return Activation.NONE;
-      }
+      return context.makeCurrent()::close;
     }
 
     @Override
     public void inject(final Headers headers) {
-      if (headers == null) return;
-      try {
-        propagator.inject(context, headers, HeadersSetter.INSTANCE);
-      } catch (final RuntimeException e) {
-        LOGGER.log(Level.WARNING, "Failed to write the trace context into headers", e);
-      }
+      propagator.inject(context, headers, HeadersSetter.INSTANCE);
     }
 
     @Override
     public void attemptFailed(final int attempt, final Throwable failure) {
-      if (closed.get() || failure == null) return;
-      try {
-        final var attributes = Attributes.builder()
-          .put(ATTEMPT, (long) attempt)
-          .put(EXCEPTION_TYPE, failure.getClass().getName());
-        if (failure.getMessage() != null) attributes.put(EXCEPTION_MESSAGE, failure.getMessage());
-        span.addEvent("kpipe.attempt.failed", attributes.build());
-      } catch (final RuntimeException e) {
-        LOGGER.log(Level.WARNING, "Failed to record a failed attempt", e);
-      }
+      if (closed.get()) return;
+      final var attributes = Attributes.builder()
+        .put(ATTEMPT, (long) attempt)
+        .put(EXCEPTION_TYPE, failure.getClass().getName());
+      if (failure.getMessage() != null) attributes.put(EXCEPTION_MESSAGE, failure.getMessage());
+      span.addEvent("kpipe.attempt.failed", attributes.build());
     }
 
     @Override
     public void recordException(final Throwable failure) {
-      if (closed.get() || failure == null) return;
-      try {
-        span.recordException(failure);
-        span.setAttribute(ERROR_TYPE, failure.getClass().getName());
-        span.setStatus(StatusCode.ERROR, failure.getClass().getSimpleName());
-      } catch (final RuntimeException e) {
-        LOGGER.log(Level.WARNING, "Failed to record an exception on the span", e);
-      }
+      if (closed.get()) return;
+      span.recordException(failure);
+      span.setAttribute(ERROR_TYPE, failure.getClass().getName());
+      span.setStatus(StatusCode.ERROR, failure.getClass().getSimpleName());
     }
 
     @Override
     public void close() {
-      if (!closed.compareAndSet(false, true)) return;
-      try {
-        span.end();
-      } catch (final RuntimeException e) {
-        LOGGER.log(Level.WARNING, "Failed to end the span", e);
-      }
+      if (closed.compareAndSet(false, true)) span.end();
     }
   }
 
@@ -180,7 +149,6 @@ public final class OtelTracer implements Tracer {
 
     @Override
     public Iterable<String> keys(final Headers carrier) {
-      if (carrier == null) return List.of();
       final var keys = new ArrayList<String>();
       for (final Header h : carrier) keys.add(h.key());
       return keys;
@@ -188,7 +156,6 @@ public final class OtelTracer implements Tracer {
 
     @Override
     public String get(final Headers carrier, final String key) {
-      if (carrier == null) return null;
       final var header = carrier.lastHeader(key);
       if (header == null || header.value() == null) return null;
       return new String(header.value(), StandardCharsets.UTF_8);
@@ -205,7 +172,6 @@ public final class OtelTracer implements Tracer {
 
     @Override
     public void set(final Headers carrier, final String key, final String value) {
-      if (carrier == null) return;
       carrier.remove(key);
       carrier.add(key, value.getBytes(StandardCharsets.UTF_8));
     }

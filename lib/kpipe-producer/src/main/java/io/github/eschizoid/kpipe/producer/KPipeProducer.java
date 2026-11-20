@@ -126,7 +126,8 @@ public class KPipeProducer<K, V> implements AutoCloseable {
   /// @param record      the original consumer record that failed
   /// @param sourceTopic the original source topic name
   /// @param exception   the exception that caused the processing failure
-  /// @param span        the failed record's span, whose context the DLQ record carries
+  /// @param span        the failed record's span, whose context the DLQ record carries; the
+  ///     consumer passes a span from [Tracer#guarded(Tracer)], which never throws
   /// @return true if the record was successfully sent to the DLQ, false otherwise (DLQ disabled or
   ///         send failed). Callers can use the return value to update their own counters or
   ///         trigger fallback handling.
@@ -160,14 +161,7 @@ public class KPipeProducer<K, V> implements AutoCloseable {
     producerRecord.headers().add("x-dlq-source-timestamp", String.valueOf(record.timestamp()).getBytes());
 
     // The DLQ record continues the failed record's own trace, on whatever thread it is sent from.
-    // Guarded: a tracer that throws must not stop the record reaching the DLQ.
-    try {
-      span.inject(producerRecord.headers());
-    } catch (final VirtualMachineError fatal) {
-      throw fatal;
-    } catch (final Throwable traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.inject threw during DLQ send", traceEx);
-    }
+    span.inject(producerRecord.headers());
 
     try {
       send(producerRecord);

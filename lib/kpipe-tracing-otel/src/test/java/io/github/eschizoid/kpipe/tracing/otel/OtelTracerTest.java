@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.eschizoid.kpipe.tracing.Tracer;
+import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
@@ -20,6 +21,11 @@ import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.junit.jupiter.api.AfterEach;
@@ -166,5 +172,53 @@ class OtelTracerTest {
       Tracer.SpanScope.noop(),
       noop.startConsumerSpan(new ConsumerRecord<>("t", 0, 0L, null, new byte[0]), null)
     );
+  }
+
+  @Test
+  void anOpenTelemetryWithoutAPropagatorIsReportedAtConstruction() {
+    final var logger = Logger.getLogger(OtelTracer.class.getName());
+    final var warnings = new ArrayList<String>();
+    final var handler = new Handler() {
+      @Override
+      public void publish(final LogRecord record) {
+        if (record.getLevel() == Level.WARNING) warnings.add(record.getMessage());
+      }
+
+      @Override
+      public void flush() {}
+
+      @Override
+      public void close() {}
+    };
+    logger.addHandler(handler);
+    try {
+      new OtelTracer(OpenTelemetry.noop());
+      assertEquals(1, warnings.size());
+      assertTrue(warnings.getFirst().contains("no text-map propagator"));
+
+      new OtelTracer(sdk);
+      assertEquals(1, warnings.size(), "a configured propagator is not reported");
+    } finally {
+      logger.removeHandler(handler);
+    }
+  }
+
+  @Test
+  void aClosedSpanEndsOnceAndIgnoresLaterFailures() {
+    final var record = new ConsumerRecord<>("source-topic", 0, 7L, null, new byte[] { 0 });
+
+    final var scope = tracer.startConsumerSpan(record, null);
+    scope.attemptFailed(1, new IllegalStateException());
+    scope.close();
+    scope.close();
+    scope.attemptFailed(2, new IllegalStateException("late"));
+    scope.recordException(new IllegalStateException("late"));
+
+    final var spans = spanExporter.getFinishedSpanItems();
+    assertEquals(1, spans.size(), "closing twice ends the span once");
+    final var span = spans.getFirst();
+    assertEquals(1, span.getEvents().size());
+    assertNull(span.getEvents().getFirst().getAttributes().get(AttributeKey.stringKey("exception.message")));
+    assertEquals(StatusCode.UNSET, span.getStatus().getStatusCode());
   }
 }

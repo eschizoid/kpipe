@@ -107,7 +107,7 @@ final class RecordProcessor {
     this.errorHandler = errorHandler;
     this.deadLetterTopic = deadLetterTopic;
     this.kpipeProducer = kpipeProducer;
-    this.tracer = tracer;
+    this.tracer = Tracer.guarded(tracer);
     this.consumerGroup = consumerGroup;
     this.maxRetries = maxRetries;
     this.retryBackoff = retryBackoff;
@@ -147,7 +147,7 @@ final class RecordProcessor {
         // window would see only failures and trip spuriously.
         health.recordOutcome(true);
         markOffsetProcessed(record);
-        closeSpan(span);
+        span.close();
       }
 
       @Override
@@ -168,17 +168,17 @@ final class RecordProcessor {
         final Tracer.SpanScope span
       ) {
         attemptFailed(record, cause, retries, span);
-        recordFailure(span, cause);
+        span.recordException(cause);
         LOGGER.log(Level.WARNING, () -> "Batch failure for record at offset " + record.offset(), cause);
         // The DLQ record and anything the error handler produces continue this record's trace;
         // the span is current while they run, as it is on the per-record path.
-        try (var _ = activate(span)) {
+        try (var _ = span.activate()) {
           TraceContext.callWith(span, () -> {
             failTerminally(record, cause, retries, span);
             return null;
           });
         } finally {
-          closeSpan(span);
+          span.close();
         }
       }
     };
@@ -199,12 +199,13 @@ final class RecordProcessor {
     final var topic = counters.topic(record.topic());
     topic.received.increment();
 
-    final var span = startSpan(record);
+    final var span = tracer.startConsumerSpan(record, consumerGroup);
     var buffered = false;
     final long startNanos = System.nanoTime();
     // The span is current on this thread for OpenTelemetry instrumentation inside the pipeline, and
     // bound in TraceContext so a Kafka sink writes this record's trace whatever thread it runs on.
-    try (var _ = activate(span)) {
+    // The tracer is guarded, so none of its calls can fail the record.
+    try (var _ = span.activate()) {
       switch (TraceContext.callWith(span, () -> tryProcessRecord(record, span))) {
         case PROCESSED -> {
           final var durationNanos = System.nanoTime() - startNanos;
@@ -219,7 +220,7 @@ final class RecordProcessor {
         }
       }
     } finally {
-      if (!buffered) closeSpan(span);
+      if (!buffered) span.close();
       // In-flight count + backpressure-unpark handled by the dispatcher's `onComplete`
       // callback (`wakeIfBackpressureDrained`). See `KPipeConsumer.processRecords`.
     }
@@ -401,13 +402,7 @@ final class RecordProcessor {
     final int retryCount,
     final Tracer.SpanScope span
   ) {
-    try {
-      span.attemptFailed(retryCount, cause);
-    } catch (final VirtualMachineError fatal) {
-      throw fatal;
-    } catch (final Throwable traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.attemptFailed threw", traceEx);
-    }
+    span.attemptFailed(retryCount, cause);
     final var observer = attemptFailedObserver;
     if (observer == null) return;
     try {
@@ -428,7 +423,7 @@ final class RecordProcessor {
     final int retryCount,
     final Tracer.SpanScope span
   ) {
-    recordFailure(span, e);
+    span.recordException(e);
     LOGGER.log(
       Level.WARNING,
       () -> "Failed to process message at offset " + record.offset() + " after " + (retryCount + 1) + " attempt(s)",
@@ -513,64 +508,6 @@ final class RecordProcessor {
   private boolean interruptedBy(final Exception failure) {
     if (Thread.currentThread().isInterrupted()) return true;
     return !consumerActive.getAsBoolean() && Interruptions.isInterruptionRelated(failure);
-  }
-
-  // Tracer calls are guarded against everything but the JVM's own fatal errors: a tracer that
-  // throws
-  // or returns null loses its span and never fails, retries or strands a record.
-
-  private Tracer.SpanScope startSpan(final ConsumerRecord<byte[], byte[]> record) {
-    try {
-      final var span = tracer.startConsumerSpan(record, consumerGroup);
-      return span != null ? span : Tracer.SpanScope.noop();
-    } catch (final VirtualMachineError fatal) {
-      throw fatal;
-    } catch (final Throwable traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.startConsumerSpan threw", traceEx);
-      return Tracer.SpanScope.noop();
-    }
-  }
-
-  private static Tracer.SpanScope.Activation activate(final Tracer.SpanScope span) {
-    final Tracer.SpanScope.Activation activation;
-    try {
-      activation = span.activate();
-    } catch (final VirtualMachineError fatal) {
-      throw fatal;
-    } catch (final Throwable traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.activate threw", traceEx);
-      return Tracer.SpanScope.Activation.NONE;
-    }
-    if (activation == null) return Tracer.SpanScope.Activation.NONE;
-    return () -> {
-      try {
-        activation.close();
-      } catch (final VirtualMachineError fatal) {
-        throw fatal;
-      } catch (final Throwable traceEx) {
-        LOGGER.log(Level.WARNING, "Tracer.SpanScope.Activation.close threw", traceEx);
-      }
-    };
-  }
-
-  private static void recordFailure(final Tracer.SpanScope span, final Throwable failure) {
-    try {
-      span.recordException(failure);
-    } catch (final VirtualMachineError fatal) {
-      throw fatal;
-    } catch (final Throwable traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.recordException threw", traceEx);
-    }
-  }
-
-  private static void closeSpan(final Tracer.SpanScope span) {
-    try {
-      span.close();
-    } catch (final VirtualMachineError fatal) {
-      throw fatal;
-    } catch (final Throwable traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw", traceEx);
-    }
   }
 
   /// Surfaces a rejection from `ParallelDispatcher`'s executor (typically during shutdown)

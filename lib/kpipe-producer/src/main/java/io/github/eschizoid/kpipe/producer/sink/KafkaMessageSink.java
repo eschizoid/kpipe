@@ -4,8 +4,6 @@ import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.sink.MessageSink;
 import io.github.eschizoid.kpipe.tracing.TraceContext;
-import java.lang.System.Logger;
-import java.lang.System.Logger.Level;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -47,8 +45,6 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 ///
 /// @param <T> The type of the processed object.
 public final class KafkaMessageSink<T> implements MessageSink<T> {
-
-  private static final Logger LOGGER = System.getLogger(KafkaMessageSink.class.getName());
 
   private final Function<ProducerRecord<byte[], byte[]>, Future<RecordMetadata>> send;
   private final String topic;
@@ -103,13 +99,8 @@ public final class KafkaMessageSink<T> implements MessageSink<T> {
     final var context = RecordContext.isBound() ? RecordContext.current() : null;
     final var record = new ProducerRecord<>(topic, context != null ? context.key() : null, valueMapper.apply(value));
     if (context != null) context.forEachHeader(record.headers()::add);
-    try {
-      TraceContext.current().inject(record.headers());
-    } catch (final VirtualMachineError fatal) {
-      throw fatal;
-    } catch (final Throwable traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.inject threw", traceEx);
-    }
+    // The consumer binds a guarded span, which never throws.
+    TraceContext.current().inject(record.headers());
     try {
       send.apply(record).get();
     } catch (final InterruptedException e) {

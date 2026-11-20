@@ -12,9 +12,8 @@ import org.apache.kafka.common.header.Headers;
 /// implements W3C trace-context propagation with OpenTelemetry; this module itself has no
 /// OpenTelemetry dependency, so another tracing system can implement it.
 ///
-/// An implementation must not throw: a failure to read or start a trace returns
-/// [SpanScope#noop()]. The consumer guards every call anyway, so a tracer that throws only loses
-/// its span and never fails a record.
+/// The consumer wraps the tracer it is given with [#guarded(Tracer)], so a tracer or span that
+/// throws, or returns null, only loses its span and never fails a record.
 @FunctionalInterface
 public interface Tracer {
   /// Starts the span for processing `record`, as a child of the trace its headers carry, if any.
@@ -26,7 +25,17 @@ public interface Tracer {
 
   /// @return the tracer that traces nothing
   static Tracer noop() {
-    return (_, _) -> SpanScope.noop();
+    return GuardedTracer.NOOP;
+  }
+
+  /// Wraps `tracer` so that neither it nor its spans and activations ever throw: a failure is
+  /// logged at WARNING and the call does nothing, and a null span or activation becomes a no-op.
+  /// The JVM's own fatal errors, such as `OutOfMemoryError`, still pass through.
+  ///
+  /// @param tracer the tracer to guard
+  /// @return the guarded tracer; `tracer` itself when it is already guarded or is [#noop()]
+  static Tracer guarded(final Tracer tracer) {
+    return GuardedTracer.of(tracer);
   }
 
   /// One record's span. The consumer activates it on the record's thread while the record is

@@ -209,8 +209,10 @@ under each record's span.
 
 ### A tracer that throws
 
-The consumer guards every call to the tracer and to its spans. When a call throws anything other than a
-`VirtualMachineError`, the consumer logs a warning, loses that span and still processes the record.
+The consumer wraps the tracer it is given with `Tracer.guarded(tracer)`, which guards every call to the tracer, its
+spans and their activations. When a call throws anything other than a `VirtualMachineError`, or returns null, the guard
+logs a warning and the call does nothing, so the record loses that span and is still processed. Code that calls a tracer
+outside the consumer can wrap it the same way.
 
 To trace with another system, implement `Tracer`. It is a functional interface with one method,
 `startConsumerSpan(ConsumerRecord<?, byte[]> record, String consumerGroup)`, which returns a `Tracer.SpanScope`. The

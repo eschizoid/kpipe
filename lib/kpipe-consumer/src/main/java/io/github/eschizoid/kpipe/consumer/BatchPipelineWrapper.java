@@ -554,14 +554,9 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     Tracer.SpanScope span
   ) {}
 
-  /// Ends the span of a record no callback will see, guarded like every tracer call.
+  /// Ends the span of a record no callback will see. The consumer's spans are guarded, so this
+  /// cannot throw.
   private static void endSpan(final Entry<?> entry) {
-    try {
-      entry.span().close();
-    } catch (final VirtualMachineError fatal) {
-      throw fatal;
-    } catch (final Throwable traceEx) {
-      LOGGER.log(Level.WARNING, "Tracer.SpanScope.close threw", traceEx);
-    }
+    entry.span().close();
   }
 }
