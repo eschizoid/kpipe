@@ -487,7 +487,7 @@ public final class KPipeConsumerBuilder {
   }
 
   /// Exports this consumer's metrics to a monitoring backend, such as OpenTelemetry through
-  /// `OtelMetrics.of(openTelemetry)` from `kpipe-metrics-otel`. Without an exporter the metrics are
+  /// `KPipeOtel.metrics(openTelemetry)` from `kpipe-otel`. Without an exporter the metrics are
   /// still counted and readable through [KPipeConsumer#metrics].
   ///
   /// @param exporter the exporter
@@ -502,7 +502,7 @@ public final class KPipeConsumerBuilder {
   /// through `toKafka` and `KafkaMessageSink`, carries that span's context, even when a batch flush
   /// writes it from another thread. The DLQ record carries it whichever producer sends it.
   ///
-  /// @param tracer the tracer, such as `new OtelTracer(openTelemetry)` from `kpipe-tracing-otel`;
+  /// @param tracer the tracer, such as `KPipeOtel.tracer(openTelemetry)` from `kpipe-otel`;
   ///     [Tracer#noop()], the default, traces nothing
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withTracer(final Tracer tracer) {

@@ -184,10 +184,7 @@ jreleaser {
           active.set(ALWAYS)
           url.set("https://central.sonatype.com/api/v1/publisher")
           // Iterate every `:lib` subproject (which all apply maven-publish in `subprojects {}`
-          // above) so adding a new lib module automatically participates in the release. The
-          // previous hand-maintained list silently dropped kpipe-tracing-otel and
-          // kpipe-schema-registry-confluent through v1.16.0; sourcing the list from the actual
-          // project graph removes that failure mode entirely.
+          // above) so a new lib module joins the release without a hand-maintained module list.
           subprojects.forEach { sub ->
             stagingRepository(
               sub.layout.buildDirectory

@@ -12,7 +12,7 @@ description = "KPipe - W3C trace context propagation example"
 
 dependencies {
   implementation(project(":lib:kpipe-format-json"))
-  implementation(project(":lib:kpipe-tracing-otel"))
+  implementation(project(":lib:kpipe-otel"))
   implementation(project(":lib:kpipe-producer"))
   implementation(rootProject.libs.opentelemetryApi)
   implementation(rootProject.libs.opentelemetrySdk)

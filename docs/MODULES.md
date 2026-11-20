@@ -60,9 +60,8 @@ depend on `kpipe-consumer` directly.
 | `kpipe-core`                      | `Pipeline` and its builder, `MessageFormat`, `MessageSink`, operators, `BatchSink`                                   |
 | `kpipe-consumer`                  | `KPipeConsumer`, `KPipeConsumerBuilder`, backpressure, circuit breaker, offset management, metrics, health server    |
 | `kpipe-producer`                  | Kafka producer wrapper, `KafkaMessageSink`, DLQ producer                                                             |
-| `kpipe-metrics-otel`              | OpenTelemetry export of consumer metrics (opt-in)                                                                    |
 | `kpipe-tracing`                   | Vendor-neutral `Tracer` SPI for cross-Kafka-boundary trace propagation (no-op default)                               |
-| `kpipe-tracing-otel`              | W3C trace-context propagation through Kafka headers (opt-in)                                                         |
+| `kpipe-otel`                      | OpenTelemetry tracer and metrics exporter, through `KPipeOtel` (opt-in)                                              |
 | `kpipe-schema-registry-confluent` | Confluent Schema Registry HTTP client + in-process cache (opt-in)                                                    |
 | `kpipe-format-json`               | `JsonFormat` (payload type `Map<String, Object>`), `JsonConsoleSink`                                                 |
 | `kpipe-format-avro`               | `AvroFormat` (payload type `GenericRecord`), `AvroConsoleSink`                                                       |
@@ -78,8 +77,7 @@ kpipe-producer                     → core, tracing
 kpipe-consumer                     → core, producer, tracing
 kpipe-format-{json,avro,protobuf}  → core
 kpipe-api                          → core, consumer, producer, tracing; format modules are compile-only (requires static)
-kpipe-metrics-otel                 → core, consumer
-kpipe-tracing-otel                 → tracing
+kpipe-otel                         → consumer
 kpipe-schema-registry-confluent    → core
 kpipe-format-protobuf-confluent    → format-protobuf
 kpipe-test                         → consumer
@@ -100,9 +98,9 @@ A modular application using the fluent API with JSON:
 
 ```java
 module my.application {
-  requires io.github.eschizoid.kpipe;              // the kpipe-api jar; consumer/producer/core readable transitively
-  requires io.github.eschizoid.kpipe.format.json;  // formats are opt-in — require the one you use
-  requires io.github.eschizoid.kpipe.metrics.otel; // optional: OTel-backed metrics
+  requires io.github.eschizoid.kpipe;             // the kpipe-api jar; consumer/producer/core readable transitively
+  requires io.github.eschizoid.kpipe.format.json; // formats are opt-in — require the one you use
+  requires io.github.eschizoid.kpipe.otel;        // optional: OpenTelemetry tracing and metrics
 }
 ```
 

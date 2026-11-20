@@ -159,11 +159,11 @@ Each is one fluent call; exact semantics are in [docs/API.md](docs/API.md).
   `max.poll.interval.ms` eviction while paused).
 - **Circuit breaker** — `withCircuitBreaker(threshold, window, openDuration)`: pauses consumption when the terminal
   failure rate trips, probes recovery after a cool-down. Off unless configured.
-- **Metrics** — `withMetrics(...)`: OpenTelemetry-backed counters/histograms via the opt-in `kpipe-metrics-otel`, or
+- **Metrics** — `withMetrics(...)`: OpenTelemetry-backed counters/histograms via the opt-in `kpipe-otel`, or
   `withMetricsLog(Duration)` for one log line per interval; `Handle.metrics()` for programmatic snapshots, including
   lag. [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 - **Tracing** — `withTracer(...)`: one span per record that continues the trace in the record's headers. Records written
-  to Kafka or to the DLQ on the record's behalf carry its trace (opt-in `kpipe-tracing-otel`).
+  to Kafka or to the DLQ on the record's behalf carry its trace (opt-in `kpipe-otel`).
   [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md#distributed-tracing-w3c-trace-context).
 - **Graceful shutdown** — bounded in-flight drain, batch-buffer flush, then a final synchronous commit. Interrupted
   records are not marked processed, so they are redelivered rather than lost.

@@ -2,11 +2,11 @@ package io.github.eschizoid.kpipe.consumer;
 
 import java.time.Duration;
 
-/// Publishes consumers' metrics to a monitoring backend. `kpipe-metrics-otel` provides one for
+/// Publishes consumers' metrics to a monitoring backend. `kpipe-otel` provides one for
 /// OpenTelemetry:
 ///
 /// ```java
-/// final var metrics = OtelMetrics.of(openTelemetry);
+/// final var metrics = KPipeOtel.metrics(openTelemetry);
 ///
 /// KPipe.json("orders", props)
 ///     .withMetrics(metrics)

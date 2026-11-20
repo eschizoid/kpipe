@@ -10,8 +10,8 @@ import java.util.Objects;
 /// [Descriptor] using Confluent's `ProtobufSchema` (the reference parser for Confluent Protobuf
 /// Schema Registry), then resolves the message type selected by the wire message-index path.
 ///
-/// This is the heavy, opt-in impl module (`kpipe-format-protobuf-confluent`) — the analogue of
-/// `OtelTracer` / `kpipe-metrics-otel`. It ships as a shaded jar (Square Wire relocated) so the
+/// This is the heavy, opt-in impl module (`kpipe-format-protobuf-confluent`), in the same way that
+/// `kpipe-otel` is for tracing and metrics. It ships as a shaded jar (Square Wire relocated) so the
 /// Confluent parser never leaks its split-package onto a consumer's module path.
 public final class ConfluentProtobufDescriptorCompiler implements ProtobufDescriptorCompiler {
 

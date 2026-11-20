@@ -35,8 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /// concurrently, only one HTTP call goes out and the other waits for it to populate.
 ///
 /// **Observability.** [#hitCount], [#missCount] and [#size] expose the cache so the user can
-/// wire it into their metrics layer (see `kpipe-metrics-otel`'s
-/// `OtelMetrics.exportSchemaRegistryCache(...)`).
+/// wire it into their metrics layer (see `KPipeOtel.schemaRegistryCache(...)` in `kpipe-otel`).
 ///
 /// ```java
 /// final var raw = new ConfluentSchemaResolver("<http://schema-registry:8081>");

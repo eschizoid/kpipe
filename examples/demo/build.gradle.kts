@@ -18,7 +18,7 @@ dependencies {
   implementation(project(":lib:kpipe-format-protobuf"))
   implementation(project(":lib:kpipe-schema-registry-confluent"))
   implementation(project(":lib:kpipe-producer"))
-  implementation(project(":lib:kpipe-metrics-otel"))
+  implementation(project(":lib:kpipe-otel"))
   implementation(rootProject.libs.avro)
   implementation(rootProject.libs.protobufJava)
   implementation(rootProject.libs.protobufUtil)
