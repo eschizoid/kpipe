@@ -120,8 +120,7 @@ class KPipeProducerIntegrationTest {
     final var kafkaSink = KafkaMessageSink.<byte[]>of(
       new KafkaProducer<>(props, new ByteArraySerializer(), new ByteArraySerializer()),
       outputTopic,
-      v -> v,
-      null
+      v -> v
     );
     final var consumer = KPipeConsumer.builder()
       .withProperties(props)

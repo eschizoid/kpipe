@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -73,13 +74,18 @@ class BatchPipelineWrapperCoverageContractTest {
     final CopyOnWriteArrayList<String> events = new CopyOnWriteArrayList<>();
 
     @Override
-    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
       processed.add(record);
       events.add("markProcessed:" + record.offset());
     }
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retries) {
+    public void onBatchFailure(
+      final ConsumerRecord<byte[], byte[]> record,
+      final Exception cause,
+      final int retries,
+      final Tracer.SpanScope span
+    ) {
       failed.add(record);
       failureCauses.add(cause);
       events.add("onBatchFailure:" + record.offset());
@@ -330,7 +336,7 @@ class BatchPipelineWrapperCoverageContractTest {
     final var markProcessedLatch = new CountDownLatch(1);
     final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
       @Override
-      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
         markProcessedLatch.countDown();
       }
 
@@ -338,7 +344,8 @@ class BatchPipelineWrapperCoverageContractTest {
       public void onBatchFailure(
         final ConsumerRecord<byte[], byte[]> record,
         final Exception cause,
-        final int retries
+        final int retries,
+        final Tracer.SpanScope span
       ) {
         // no-op — the clean path shouldn't reach this
       }

@@ -9,6 +9,7 @@ import io.github.eschizoid.kpipe.pipeline.Pipeline;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -90,7 +91,7 @@ class BatchCloseDrainFrayTest {
   ) {
     final var callbacks = new BatchPipelineWrapper.BatchCallbacks() {
       @Override
-      public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
+      public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
         observe();
       }
 
@@ -98,7 +99,8 @@ class BatchCloseDrainFrayTest {
       public void onBatchFailure(
         final ConsumerRecord<byte[], byte[]> record,
         final Exception cause,
-        final int retries
+        final int retries,
+        final Tracer.SpanScope span
       ) {
         observe();
       }

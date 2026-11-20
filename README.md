@@ -162,8 +162,9 @@ Each is one fluent call; exact semantics are in [docs/API.md](docs/API.md).
 - **Metrics** — `withMetrics(...)`: OpenTelemetry-backed counters/histograms via the opt-in `kpipe-metrics-otel`, or
   `withMetricsLog(Duration)` for one log line per interval; `Handle.metrics()` for programmatic snapshots, including
   lag. [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
-- **Tracing** — `withTracer(...)`: W3C `traceparent` extraction on consume, injection on produce and DLQ writes (opt-in
-  `kpipe-tracing-otel`).
+- **Tracing** — `withTracer(...)`: one span per record that continues the trace in the record's headers. Records written
+  to Kafka or to the DLQ on the record's behalf carry its trace (opt-in `kpipe-tracing-otel`).
+  [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md#distributed-tracing-w3c-trace-context).
 - **Graceful shutdown** — bounded in-flight drain, batch-buffer flush, then a final synchronous commit. Interrupted
   records are not marked processed, so they are redelivered rather than lost.
 

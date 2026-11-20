@@ -5,6 +5,7 @@ import io.github.eschizoid.kpipe.record.RecordContext;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
@@ -50,16 +51,17 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   /// Hooks back into the owning consumer for offset bookkeeping and failure handling. Decouples
   /// the wrapper from `KPipeConsumer`'s package-private state for testability.
   interface BatchCallbacks {
-    /// Mark a record's offset as successfully processed (after a successful batch flush).
-    void markProcessed(ConsumerRecord<byte[], byte[]> record);
+    /// Mark a record's offset as successfully processed (after a successful batch flush). The
+    /// callback owns `span` from here and closes it.
+    void markProcessed(ConsumerRecord<byte[], byte[]> record, Tracer.SpanScope span);
 
     /// Handle a record that was part of a failed batch: increment error metrics, route to the DLQ
     /// if one is configured, and invoke the error handler. The offset is marked processed only if
     /// the record reaches a durable terminal state — successfully parked in the DLQ, or no DLQ is
     /// configured (log-and-advance). A failed DLQ send leaves the offset pending so the record is
     /// reprocessed on restart rather than silently dropped. `retries` is how many retries the
-    /// record took before it was buffered.
-    void onBatchFailure(ConsumerRecord<byte[], byte[]> record, Exception cause, int retries);
+    /// record took before it was buffered. The callback owns `span` from here and closes it.
+    void onBatchFailure(ConsumerRecord<byte[], byte[]> record, Exception cause, int retries, Tracer.SpanScope span);
 
     /// Called after a flush's dispatch has lowered [#bufferedCount], on the thread that ran the
     /// flush. The owning consumer uses it to end an in-flight backpressure wait the flush drained.
@@ -126,18 +128,20 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     tickFuture = scheduler.scheduleWithFixedDelay(this::tick, tickMs, tickMs, TimeUnit.MILLISECONDS);
   }
 
-  /// [#enqueue(ConsumerRecord, Object, RecordContext, int)] with the record as it was consumed and
-  /// no retries, so any `rekey` or `withHeader` is lost. For tests that drive the wrapper
-  /// directly; the consumer buffers the current record.
+  /// [#enqueue(ConsumerRecord, Object, RecordContext, int, Tracer.SpanScope)] with the record as it
+  /// was consumed and no retries, so any `rekey` or `withHeader` is lost. For tests that drive the
+  /// wrapper directly; the consumer buffers the current record.
   void enqueueAsConsumed(final ConsumerRecord<byte[], byte[]> record, final T value) {
-    enqueue(record, value, new KafkaRecordContext(record), 0);
+    enqueue(record, value, new KafkaRecordContext(record), 0, Tracer.SpanScope.noop());
   }
 
   /// Adds `(record, value)` to the buffer, with `context` as the record a batch sink reads through
   /// [RecordContext#currentBatch()] and `retries` as the retries the record took before it was
-  /// buffered, which a flush failure reports. If the new size meets the policy threshold, flushes
-  /// inline. The caller must already have driven the pipeline (`pipeline.process(...)`) and only
-  /// enqueue the `Passed` value; filtered records skip enqueueing entirely.
+  /// buffered, which a flush failure reports. `span` is the record's span; the flush outcome
+  /// closes it, so a record's trace covers the time it waits in the buffer. If the new size meets
+  /// the policy threshold, flushes inline. The caller must already have driven the pipeline
+  /// (`pipeline.process(...)`) and only enqueue the `Passed` value; filtered records skip
+  /// enqueueing entirely.
   ///
   /// `bufferedCount` is incremented before the lock is released so the in-flight backpressure
   /// strategy observes the new buffered record on its next check. The matching decrement happens
@@ -146,13 +150,14 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     final ConsumerRecord<byte[], byte[]> record,
     final T value,
     final RecordContext context,
-    final int retries
+    final int retries,
+    final Tracer.SpanScope span
   ) {
     Runnable dispatch = null;
     lock.lock();
     try {
       if (buffer.isEmpty()) oldestEnqueueNanos = System.nanoTime();
-      buffer.add(new Entry<>(record, value, context, retries));
+      buffer.add(new Entry<>(record, value, context, retries, span));
       bufferedCount.incrementAndGet();
       if (buffer.size() >= policy.maxSize()) dispatch = flushLocked();
     } finally {
@@ -393,8 +398,9 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
 
     return () -> {
       for (int i = 0; i < size; i++) {
-        final var record = snapshot.get(i).record();
-        final var retries = snapshot.get(i).retries();
+        final var entry = snapshot.get(i);
+        final var record = entry.record();
+        final var retries = entry.retries();
         // Per-iteration guard: a throwing callback (a custom OffsetManager in markProcessed, or a
         // buggy hook) must not abort the loop and strand the REMAINING records with no outcome at
         // all — every record in the batch gets its callback attempt. The failing record's own
@@ -402,12 +408,15 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
         // than dropped.
         try {
           if (succeeded.get(i)) {
-            callbacks.markProcessed(record);
+            callbacks.markProcessed(record, entry.span());
             continue;
           }
           // An interrupted flush did not finish, so a record it did not report as succeeded may
           // never have reached the sink; it stays unmarked and is redelivered.
-          if (interrupted) continue;
+          if (interrupted) {
+            endSpan(entry);
+            continue;
+          }
           final var perRecordCause = failedByIndex.get(i);
           callbacks.onBatchFailure(
             record,
@@ -416,7 +425,8 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
               : (coverageViolation != null
                   ? coverageViolation
                   : new IllegalStateException("BatchSink contract violation at index " + i + " for topic " + topic)),
-            retries
+            retries,
+            entry.span()
           );
         } catch (final Exception callbackEx) {
           if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -449,7 +459,10 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
   /// restored for the thread running the dispatch.
   private Runnable leaveUnmarked(final List<Entry<T>> snapshot, final Throwable cause) {
     logInterrupted(snapshot, cause);
-    return () -> Thread.currentThread().interrupt();
+    return () -> {
+      snapshot.forEach(BatchPipelineWrapper::endSpan);
+      Thread.currentThread().interrupt();
+    };
   }
 
   private void logInterrupted(final List<Entry<T>> snapshot, final Throwable cause) {
@@ -475,7 +488,7 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     return () -> {
       for (final var entry : snapshot) {
         try {
-          callbacks.onBatchFailure(entry.record(), cause, entry.retries());
+          callbacks.onBatchFailure(entry.record(), cause, entry.retries(), entry.span());
         } catch (final Exception callbackEx) {
           if (callbackEx instanceof InterruptedException) Thread.currentThread().interrupt();
           LOGGER.log(
@@ -533,5 +546,17 @@ final class BatchPipelineWrapper<T> implements AutoCloseable {
     awaitDispatchesQuiesced();
   }
 
-  record Entry<T>(ConsumerRecord<byte[], byte[]> record, T value, RecordContext context, int retries) {}
+  record Entry<T>(
+    ConsumerRecord<byte[], byte[]> record,
+    T value,
+    RecordContext context,
+    int retries,
+    Tracer.SpanScope span
+  ) {}
+
+  /// Ends the span of a record no callback will see. The consumer's spans are guarded, so this
+  /// cannot throw.
+  private static void endSpan(final Entry<?> entry) {
+    entry.span().close();
+  }
 }

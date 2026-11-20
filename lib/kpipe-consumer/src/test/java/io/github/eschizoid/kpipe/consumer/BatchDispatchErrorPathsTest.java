@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.github.eschizoid.kpipe.sink.BatchPolicy;
 import io.github.eschizoid.kpipe.sink.BatchResult;
 import io.github.eschizoid.kpipe.sink.BatchSink;
+import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -219,10 +220,15 @@ class BatchDispatchErrorPathsTest {
     Long throwForOffset
   ) implements BatchPipelineWrapper.BatchCallbacks {
     @Override
-    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {}
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {}
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retries) {
+    public void onBatchFailure(
+      final ConsumerRecord<byte[], byte[]> record,
+      final Exception cause,
+      final int retries,
+      final Tracer.SpanScope span
+    ) {
       if (throwForOffset != null && throwForOffset == record.offset()) {
         throw new IllegalStateException("callback failure for offset " + record.offset());
       }
@@ -241,12 +247,17 @@ class BatchDispatchErrorPathsTest {
     }
 
     @Override
-    public void markProcessed(final ConsumerRecord<byte[], byte[]> record) {
+    public void markProcessed(final ConsumerRecord<byte[], byte[]> record, final Tracer.SpanScope span) {
       marked.add(record.offset());
     }
 
     @Override
-    public void onBatchFailure(final ConsumerRecord<byte[], byte[]> record, final Exception cause, final int retries) {
+    public void onBatchFailure(
+      final ConsumerRecord<byte[], byte[]> record,
+      final Exception cause,
+      final int retries,
+      final Tracer.SpanScope span
+    ) {
       failed.add(record.offset());
     }
 

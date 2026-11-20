@@ -49,8 +49,8 @@ Registry cannot use `toKafka`, because its format only reads; it throws `Illegal
 Each output record carries the key and headers of the record it came from, after any `rekey` or `withHeader`. With the
 default partitioner, records with the same non-null key go to one output partition. Within one output partition, records
 consumed with the same key arrive in the order they were consumed in `KEY_ORDERED` and `SEQUENTIAL` mode, and in
-`SEQUENTIAL` mode every record does. With an `OtelTracer`, the outbound `traceparent` is the current span's and replaces
-the one copied from the input; without a tracer, the copied headers pass through unchanged.
+`SEQUENTIAL` mode every record does. With a tracer, each output record carries the span of the record it came from, and
+its `traceparent` replaces the one copied from the input. Without a tracer, the copied headers pass through unchanged.
 
 In the explicit API, `KafkaMessageSink` (in `io.github.eschizoid.kpipe.producer.sink`) does the same with a producer you
 create and close. It reads the key and headers from `RecordContext.current()`. When no record is bound, which is the
@@ -59,13 +59,12 @@ case outside a pipeline, on any other thread and inside a batch sink, it writes 
 ```java
 import org.apache.kafka.clients.producer.KafkaProducer;
 import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
-import io.github.eschizoid.kpipe.tracing.Tracer;
 
 final var producer = new KafkaProducer<byte[], byte[]>(producerProps);
 
 final var pipeline = Pipeline.from(JsonFormat.INSTANCE)
   .pipe(transform)
-  .toSink(KafkaMessageSink.of(producer, "output-topic", JsonFormat.INSTANCE::serialize, Tracer.noop()))
+  .toSink(KafkaMessageSink.of(producer, "output-topic", JsonFormat.INSTANCE::serialize))
   .build();
 ```
 
@@ -76,7 +75,8 @@ configured, the dead-letter topic, and counts as failed in the consumer's metric
 handling, unless the dead-letter write also fails. Delivery is at least once: a send that times out may still have
 reached the broker, so its retry can write the record twice. In SEQUENTIAL mode each record waits for its own ack,
 including the producer's `linger.ms`, so set `linger.ms=0` for such pipelines; PARALLEL overlaps sends across records,
-and KEY_ORDERED across keys. Pass a real `Tracer` to propagate trace context into the outbound headers.
+and KEY_ORDERED across keys. The sink takes no tracer: it writes the span of the record being processed, from
+`TraceContext.current()`, so the consumer's `withTracer(...)` decides what the outbound headers carry.
 
 ## Fan-out to multiple sinks
 

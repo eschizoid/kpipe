@@ -22,3 +22,7 @@ service:
       receivers: [ otlp ]
       processors: [ batch ]
       exporters: [ prometheus, debug ]
+    traces:
+      receivers: [ otlp ]
+      processors: [ batch ]
+      exporters: [ debug ]

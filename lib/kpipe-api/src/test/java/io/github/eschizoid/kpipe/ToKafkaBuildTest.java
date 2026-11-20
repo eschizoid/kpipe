@@ -62,7 +62,7 @@ class ToKafkaBuildTest {
   @Test
   void aConsumerThatFailsToBuildClosesTheProducerAndFreesTheSinks() {
     final var sink = KafkaTopicSink.of("out", JsonFormat.INSTANCE);
-    final var opened = KafkaTopicSink.openAll(List.of(sink), props(), null, KPipeConsumer.builder());
+    final var opened = KafkaTopicSink.openAll(List.of(sink), props(), KPipeConsumer.builder());
     final var failure = new IllegalArgumentException("bad config");
 
     final var thrown = assertThrows(IllegalArgumentException.class, () ->
@@ -76,7 +76,7 @@ class ToKafkaBuildTest {
       opened.producer().sendAsync(new ProducerRecord<>("out", new byte[0]))
     );
     assertTrue(e.getMessage().contains("closed"), e.getMessage());
-    KafkaTopicSink.openAll(List.of(sink), props(), null, KPipeConsumer.builder()).abandon();
+    KafkaTopicSink.openAll(List.of(sink), props(), KPipeConsumer.builder()).abandon();
   }
 
   /// A `toKafka` sink belongs to one consumer: opening it again, as a second `MultiBuilder.start()`
@@ -84,10 +84,10 @@ class ToKafkaBuildTest {
   @Test
   void aSinkThatAlreadyBelongsToAConsumerCannotBeOpenedAgain() {
     final var sink = KafkaTopicSink.of("out", JsonFormat.INSTANCE);
-    final var opened = KafkaTopicSink.openAll(List.of(sink), props(), null, KPipeConsumer.builder());
+    final var opened = KafkaTopicSink.openAll(List.of(sink), props(), KPipeConsumer.builder());
     try {
       final var e = assertThrows(IllegalStateException.class, () ->
-        KafkaTopicSink.openAll(List.of(sink), props(), null, KPipeConsumer.builder())
+        KafkaTopicSink.openAll(List.of(sink), props(), KPipeConsumer.builder())
       );
       assertTrue(e.getMessage().contains("already used by a consumer"), e.getMessage());
     } finally {

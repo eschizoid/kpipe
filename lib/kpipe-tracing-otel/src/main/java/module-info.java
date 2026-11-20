@@ -1,18 +1,15 @@
-/// KPipe Tracing OTel module — OpenTelemetry-backed implementation of the
-/// [io.github.eschizoid.kpipe.tracing.Tracer] SPI.
-///
-/// Add this module only when you want W3C `traceparent` propagation across the Kafka boundary.
-/// The library code in `kpipe-consumer` / `kpipe-producer` depends only on the `kpipe-tracing`
-/// SPI and has no transitive dependency on the OpenTelemetry API. Wire-up is opt-in:
+/// KPipe's OpenTelemetry tracer: `OtelTracer` implements the
+/// [io.github.eschizoid.kpipe.tracing.Tracer] SPI on the OpenTelemetry API. `kpipe-consumer` and
+/// `kpipe-producer` depend only on that SPI, so this module, and the OpenTelemetry API with it, is
+/// needed only when tracing is wanted:
 ///
 /// ```java
-/// final var otel = GlobalOpenTelemetry.get();
-/// builder.withTracer(new OtelTracer(otel, "my-pipeline"));
+/// builder.withTracer(new OtelTracer(openTelemetry));
 /// ```
 ///
-/// Bring your own SDK (`io.opentelemetry:opentelemetry-sdk` + an exporter); this module only
-/// requires `opentelemetry-api`. Propagation is W3C-only in v1 (no B3, Datadog, or custom
-/// propagators).
+/// Bring your own SDK and exporter; this module requires only `opentelemetry-api`. Context travels
+/// through whichever text-map propagator the `OpenTelemetry` instance has, such as W3C trace
+/// context or B3.
 module io.github.eschizoid.kpipe.tracing.otel {
 // Only the SPI — this module deliberately does not require kpipe-producer or kpipe-consumer.
   requires transitive io.github.eschizoid.kpipe.tracing;

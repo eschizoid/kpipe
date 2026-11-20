@@ -231,7 +231,7 @@ public class KPipeConsumer implements AutoCloseable {
         builder.kpipeProducer != null
           ? builder.kpipeProducer
           : deadLetterTopic != null
-            ? KPipeProducer.<byte[], byte[]>builder().withProperties(builder.kafkaProps).withTracer(tracer).build()
+            ? KPipeProducer.<byte[], byte[]>builder().withProperties(builder.kafkaProps).build()
             : null;
 
       final var needScheduler = !builder.batchSpecs.isEmpty() || settings.circuitBreaker() != null;
@@ -314,6 +314,7 @@ public class KPipeConsumer implements AutoCloseable {
         deadLetterTopic,
         this.kpipeProducer,
         tracer,
+        consumerGroup,
         settings.maxRetries(),
         settings.retryBackoff(),
         this::isRunning,

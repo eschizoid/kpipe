@@ -497,18 +497,13 @@ public final class KPipeConsumerBuilder {
     return this;
   }
 
-  /// Sets the tracer used for span propagation across the Kafka boundary.
+  /// Traces the consumer's records: the tracer starts one span per record, continuing the trace its
+  /// headers carry, and every record written on that record's behalf, to the dead-letter topic or
+  /// through `toKafka` and `KafkaMessageSink`, carries that span's context, even when a batch flush
+  /// writes it from another thread. The DLQ record carries it whichever producer sends it.
   ///
-  /// On record receive, the tracer extracts any upstream context (e.g. W3C `traceparent`)
-  /// from the record's headers and starts a span scoped to the record's processing. On DLQ
-  /// send, the tracer injects the active context into outbound headers so downstream consumers
-  /// stay on the same trace.
-  ///
-  /// Add the `kpipe-tracing-otel` module and pass
-  /// `new OtelTracer(openTelemetry, "my-pipeline")` to wire OpenTelemetry-backed propagation.
-  /// When not set, the default is [Tracer#noop()] (zero overhead).
-  ///
-  /// @param tracer the tracer; pass `Tracer.noop()` to disable explicitly
+  /// @param tracer the tracer, such as `new OtelTracer(openTelemetry)` from `kpipe-tracing-otel`;
+  ///     [Tracer#noop()], the default, traces nothing
   /// @return This builder instance for method chaining
   public KPipeConsumerBuilder withTracer(final Tracer tracer) {
     settings = settings.withTracer(tracer);

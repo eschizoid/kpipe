@@ -59,7 +59,7 @@ class AppIntegrationTest {
       .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
       .build();
 
-    final var tracer = new OtelTracer(sdk, "tracing-example-test");
+    final var tracer = new OtelTracer(sdk);
 
     try (final var handle = KPipe.json(topic, consumerProps()).withTracer(tracer).toCustom(capturingSink).start()) {
       // Produce a record carrying a known traceparent.
@@ -98,7 +98,7 @@ class AppIntegrationTest {
       assertTrue(parentCtx.isValid(), "captured span must have a valid parent context");
       assertEquals(INBOUND_TRACE_ID, parentCtx.getTraceId(), "span parent trace id should equal inbound trace id");
       assertEquals(INBOUND_SPAN_ID, parentCtx.getSpanId(), "span parent span id should equal inbound parent id");
-      assertEquals(topic, span.getAttributes().get(AttributeKey.stringKey("messaging.kafka.topic")));
+      assertEquals(topic, span.getAttributes().get(AttributeKey.stringKey("messaging.destination.name")));
 
       assertTrue(handle.shutdownGracefully(Duration.ofSeconds(5)));
     } finally {

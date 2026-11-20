@@ -5,7 +5,6 @@ import io.github.eschizoid.kpipe.pipeline.MessageFormat;
 import io.github.eschizoid.kpipe.producer.KPipeProducer;
 import io.github.eschizoid.kpipe.producer.sink.KafkaMessageSink;
 import io.github.eschizoid.kpipe.sink.MessageSink;
-import io.github.eschizoid.kpipe.tracing.Tracer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -38,7 +37,7 @@ final class KafkaTopicSink<T> implements MessageSink<T> {
       "toKafka(\"" +
         topic +
         "\") needs a format that can serialize, and a Schema-Registry-backed format " +
-        "only reads. Use toCustom(KafkaMessageSink.of(producer, topic, serializer, tracer)) with a writer format."
+        "only reads. Use toCustom(KafkaMessageSink.of(producer, topic, serializer)) with a writer format."
     );
     return new KafkaTopicSink<>(topic, format);
   }
@@ -56,8 +55,8 @@ final class KafkaTopicSink<T> implements MessageSink<T> {
     sink.accept(value);
   }
 
-  private boolean tryOpen(final KPipeProducer<byte[], byte[]> producer, final Tracer tracer) {
-    return delegate.compareAndSet(null, KafkaMessageSink.of(producer, topic, format::serialize, tracer));
+  private boolean tryOpen(final KPipeProducer<byte[], byte[]> producer) {
+    return delegate.compareAndSet(null, KafkaMessageSink.of(producer, topic, format::serialize));
   }
 
   private void reset() {
@@ -83,7 +82,6 @@ final class KafkaTopicSink<T> implements MessageSink<T> {
   static Opened openAll(
     final Collection<? extends MessageSink<?>> sinks,
     final Properties props,
-    final Tracer tracer,
     final KPipeConsumerBuilder builder
   ) {
     final var kafkaSinks = sinks
@@ -92,10 +90,10 @@ final class KafkaTopicSink<T> implements MessageSink<T> {
       .map(s -> (KafkaTopicSink<?>) s)
       .toList();
     if (kafkaSinks.isEmpty()) return null;
-    final var producer = KPipeProducer.<byte[], byte[]>builder().withProperties(props).withTracer(tracer).build();
+    final var producer = KPipeProducer.<byte[], byte[]>builder().withProperties(props).build();
     final var opened = new ArrayList<KafkaTopicSink<?>>(kafkaSinks.size());
     for (final var sink : kafkaSinks) {
-      if (!sink.tryOpen(producer, tracer)) {
+      if (!sink.tryOpen(producer)) {
         new Opened(producer, opened).abandon();
         throw new IllegalStateException(
           "The toKafka(\"" + sink.topic + "\") sink is already used by a consumer; build a new stream to start another"
